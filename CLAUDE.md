@@ -9,7 +9,7 @@ cargo test           # 26 unit tests + 1 doc-test
 
 ## Architecture
 
-Shikumi extracts karakuri's configuration patterns into a reusable library
+Shikumi extracts ayatsuri's configuration patterns into a reusable library
 for Nix-managed desktop applications. Four modules, each independently testable:
 
 ### Module Map
@@ -48,7 +48,7 @@ symlink target changes but the symlink path stays the same:
 
 ### Consumers
 
-- **karakuri** — window manager (future migration from inline config)
+- **ayatsuri** — window manager (future migration from inline config)
 - **tobira** — app launcher
 - Any Nix-managed desktop app that needs hot-reloadable YAML/TOML config
 
