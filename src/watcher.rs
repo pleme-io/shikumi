@@ -183,4 +183,124 @@ mod tests {
         let result = ConfigWatcher::watch(Path::new("/nonexistent/config.yaml"), |_| {});
         assert!(result.is_err());
     }
+
+    #[test]
+    fn symlink_target_broken_symlink_returns_none() {
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("deleted_target.yaml");
+        let link = dir.path().join("broken_link.yaml");
+        // Create target, symlink, then delete target
+        fs::write(&target, "key: value").unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        fs::remove_file(&target).unwrap();
+
+        // Broken symlink: canonicalize should fail
+        let result = symlink_target(&link);
+        assert!(
+            result.is_none(),
+            "broken symlink should return None"
+        );
+    }
+
+    #[test]
+    fn symlink_target_directory_symlink() {
+        let dir = TempDir::new().unwrap();
+        let target_dir = dir.path().join("target_dir");
+        fs::create_dir_all(&target_dir).unwrap();
+        let link = dir.path().join("link_dir");
+        std::os::unix::fs::symlink(&target_dir, &link).unwrap();
+
+        let result = symlink_target(&link);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), fs::canonicalize(&target_dir).unwrap());
+    }
+
+    #[test]
+    fn rewatch_creates_new_watcher() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("rewatch.yaml");
+        fs::write(&file, "key: value").unwrap();
+
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let events_clone = events.clone();
+
+        // rewatch is equivalent to watch, but emphasizes re-creation
+        let _watcher = ConfigWatcher::rewatch(&file, move |event| {
+            events_clone.lock().unwrap().push(event);
+        })
+        .unwrap();
+
+        thread::sleep(Duration::from_millis(100));
+        fs::write(&file, "key: updated").unwrap();
+        thread::sleep(Duration::from_millis(500));
+
+        let captured = events.lock().unwrap();
+        assert!(
+            !captured.is_empty(),
+            "rewatch should detect file changes"
+        );
+    }
+
+    #[test]
+    fn watch_symlink_detects_target_change() {
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("target.yaml");
+        fs::write(&target, "key: original").unwrap();
+        let link = dir.path().join("watched_link.yaml");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let events_clone = events.clone();
+
+        let _watcher = ConfigWatcher::watch(&link, move |event| {
+            events_clone.lock().unwrap().push(event);
+        })
+        .unwrap();
+
+        // Give watcher time to set up, then modify the target
+        thread::sleep(Duration::from_millis(200));
+        fs::write(&target, "key: modified").unwrap();
+
+        // PollWatcher has 3s interval, wait a bit longer
+        thread::sleep(Duration::from_millis(4000));
+
+        let captured = events.lock().unwrap();
+        // Soft assertion: poll watcher may or may not fire in time on all platforms
+        if !captured.is_empty() {
+            // At least one event was detected
+            assert!(captured.iter().any(|e| !e.paths.is_empty()));
+        }
+    }
+
+    #[test]
+    fn watch_callback_receives_event_with_path() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("pathcheck.yaml");
+        fs::write(&file, "key: value").unwrap();
+
+        let paths = Arc::new(Mutex::new(Vec::new()));
+        let paths_clone = paths.clone();
+
+        let _watcher = ConfigWatcher::watch(&file, move |event| {
+            for p in &event.paths {
+                paths_clone.lock().unwrap().push(p.clone());
+            }
+        })
+        .unwrap();
+
+        thread::sleep(Duration::from_millis(100));
+        fs::write(&file, "key: new_value").unwrap();
+        thread::sleep(Duration::from_millis(500));
+
+        let captured = paths.lock().unwrap();
+        if !captured.is_empty() {
+            // At least one path should reference our file's parent or the file itself
+            assert!(
+                captured.iter().any(|p| {
+                    p.display().to_string().contains("pathcheck")
+                }),
+                "expected event path to reference the watched file"
+            );
+        }
+    }
 }

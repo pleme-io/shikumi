@@ -4,7 +4,7 @@
 
 ```bash
 cargo build          # compile
-cargo test           # 26 unit tests + 1 doc-test
+cargo test           # 77 unit tests + 1 doc-test
 ```
 
 ## Architecture
