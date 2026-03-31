@@ -151,11 +151,44 @@ where
         self.inner.clone()
     }
 
+    /// Load config from multiple paths, merging in order (last wins).
+    ///
+    /// Each path is layered via figment merge, so later files override
+    /// earlier ones. Environment variables (with `env_prefix`) are applied
+    /// as the final layer and override everything.
+    ///
+    /// This is designed to work with `ConfigDiscovery::discover_all()`,
+    /// which returns paths in merge order (lowest priority first).
+    ///
+    /// # Errors
+    ///
+    /// Returns `ShikumiError` if the merged config cannot be parsed.
+    pub fn load_merged(paths: &[PathBuf], env_prefix: &str) -> Result<Self, ShikumiError> {
+        let config = Self::load_from_paths(paths, env_prefix)?;
+        let primary_path = paths.last().cloned().unwrap_or_default();
+
+        Ok(Self {
+            inner: Arc::new(ArcSwap::from_pointee(config)),
+            path: primary_path,
+            env_prefix: env_prefix.to_owned(),
+            _watcher: None,
+        })
+    }
+
     fn load_from_path(path: &Path, env_prefix: &str) -> Result<T, ShikumiError> {
         ProviderChain::new()
             .with_env(env_prefix)
             .with_file(path)
             .extract()
+    }
+
+    fn load_from_paths(paths: &[PathBuf], env_prefix: &str) -> Result<T, ShikumiError> {
+        let mut chain = ProviderChain::new();
+        for path in paths {
+            chain = chain.with_file(path);
+        }
+        chain = chain.with_env(env_prefix);
+        chain.extract()
     }
 }
 
@@ -489,5 +522,137 @@ mod tests {
         let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_UNI_").unwrap();
         let config = store.get();
         assert_eq!(config.name.as_deref(), Some("日本語テスト"));
+    }
+
+    // ---- load_merged tests ----
+
+    #[test]
+    fn load_merged_single_file() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("single.yaml");
+        fs::write(&file, "name: only\ncount: 1\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load_merged(
+            &[file.clone()],
+            "SHIKUMI_MERGE_SINGLE_",
+        )
+        .unwrap();
+        let config = store.get();
+        assert_eq!(config.name.as_deref(), Some("only"));
+        assert_eq!(config.count, Some(1));
+        assert_eq!(store.path(), file);
+    }
+
+    #[test]
+    fn load_merged_last_file_wins() {
+        let dir = TempDir::new().unwrap();
+        let base = dir.path().join("base.yaml");
+        let override_ = dir.path().join("override.yaml");
+        fs::write(&base, "name: base\ncount: 1\n").unwrap();
+        fs::write(&override_, "name: override\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load_merged(
+            &[base, override_.clone()],
+            "SHIKUMI_MERGE_LAST_",
+        )
+        .unwrap();
+        let config = store.get();
+        // name overridden, count preserved from base
+        assert_eq!(config.name.as_deref(), Some("override"));
+        assert_eq!(config.count, Some(1));
+        assert_eq!(store.path(), override_);
+    }
+
+    #[test]
+    fn load_merged_three_layers() {
+        let dir = TempDir::new().unwrap();
+        let sys = dir.path().join("system.yaml");
+        let user = dir.path().join("user.yaml");
+        let local = dir.path().join("local.yaml");
+        fs::write(&sys, "name: system\ncount: 1\n").unwrap();
+        fs::write(&user, "name: user\n").unwrap();
+        fs::write(&local, "count: 99\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load_merged(
+            &[sys, user, local],
+            "SHIKUMI_MERGE_3LAYER_",
+        )
+        .unwrap();
+        let config = store.get();
+        // name from user (second layer), count from local (third layer)
+        assert_eq!(config.name.as_deref(), Some("user"));
+        assert_eq!(config.count, Some(99));
+    }
+
+    #[test]
+    fn load_merged_nonexistent_files_skipped() {
+        let dir = TempDir::new().unwrap();
+        let exists = dir.path().join("exists.yaml");
+        let missing = dir.path().join("missing.yaml");
+        fs::write(&exists, "name: present\ncount: 42\n").unwrap();
+
+        // Figment silently ignores nonexistent files
+        let store = ConfigStore::<TestConfig>::load_merged(
+            &[missing, exists],
+            "SHIKUMI_MERGE_MISS_",
+        )
+        .unwrap();
+        let config = store.get();
+        assert_eq!(config.name.as_deref(), Some("present"));
+        assert_eq!(config.count, Some(42));
+    }
+
+    #[test]
+    fn load_merged_empty_paths() {
+        // Empty paths list should produce default values
+        let store = ConfigStore::<TestConfig>::load_merged(
+            &[],
+            "SHIKUMI_MERGE_EMPTY_",
+        )
+        .unwrap();
+        let config = store.get();
+        assert_eq!(config.name, None);
+        assert_eq!(config.count, None);
+    }
+
+    #[test]
+    fn load_merged_env_overrides_all_files() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("merged_env.yaml");
+        fs::write(&file, "name: from_file\ncount: 10\n").unwrap();
+
+        let prefix = "SHIKUMI_MERGE_ENV_";
+        unsafe { std::env::set_var("SHIKUMI_MERGE_ENV_NAME", "from_env") };
+
+        let store = ConfigStore::<TestConfig>::load_merged(
+            &[file],
+            prefix,
+        )
+        .unwrap();
+        let config = store.get();
+
+        unsafe { std::env::remove_var("SHIKUMI_MERGE_ENV_NAME") };
+
+        // Env is last layer, so it wins over files
+        assert_eq!(config.name.as_deref(), Some("from_env"));
+        assert_eq!(config.count, Some(10));
+    }
+
+    #[test]
+    fn load_merged_mixed_yaml_and_toml() {
+        let dir = TempDir::new().unwrap();
+        let yaml = dir.path().join("base.yaml");
+        let toml = dir.path().join("override.toml");
+        fs::write(&yaml, "name: from_yaml\ncount: 5\n").unwrap();
+        fs::write(&toml, "name = \"from_toml\"\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load_merged(
+            &[yaml, toml],
+            "SHIKUMI_MERGE_MIX_",
+        )
+        .unwrap();
+        let config = store.get();
+        assert_eq!(config.name.as_deref(), Some("from_toml"));
+        assert_eq!(config.count, Some(5));
     }
 }
