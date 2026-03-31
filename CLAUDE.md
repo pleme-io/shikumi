@@ -52,6 +52,43 @@ symlink target changes but the symlink path stays the same:
 - **tobira** — app launcher
 - Any Nix-managed desktop app that needs hot-reloadable YAML/TOML config
 
+
+## Advanced Discovery Methods
+
+### `discover_all()`
+
+Returns all config files found across the entire search hierarchy, not just the
+first match. Useful when you need to merge configs from multiple locations:
+
+```rust
+let discovery = ConfigDiscovery::new("myapp");
+let all_paths = discovery.discover_all();
+// Returns: [~/.config/myapp/myapp.yaml, /etc/myapp/myapp.yaml, ...]
+```
+
+### `load_merged()`
+
+Loads and merges all discovered config files in precedence order (most specific
+wins). Layered on top of `discover_all()`:
+
+```rust
+let config: MyConfig = ConfigDiscovery::new("myapp").load_merged()?;
+// Merges: defaults <- /etc/myapp.yaml <- ~/.config/myapp/myapp.yaml <- env vars
+```
+
+### `hierarchical()`
+
+Discovers configs with directory-hierarchical override support. Walks from the
+current directory upward, merging configs at each level:
+
+```rust
+let config: MyConfig = ConfigDiscovery::new("myapp").hierarchical()?;
+// Merges: ~/.config/myapp.yaml <- ~/code/myapp.yaml <- ~/code/org/myapp.yaml <- ./myapp.yaml
+```
+
+This is the pattern used by CLAUDE.md discovery -- each directory level can
+override settings from parent directories.
+
 ## Testing Principles
 
 - All modules are pure Rust with no platform dependencies
