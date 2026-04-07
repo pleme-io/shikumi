@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 /// Errors produced by shikumi's config discovery, loading, and watching.
 #[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
 pub enum ShikumiError {
     /// No config file was found at any of the searched locations.
     #[error("config file not found; tried: {}", tried.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", "))]

@@ -14,9 +14,11 @@ use tracing::warn;
 use crate::error::ShikumiError;
 
 /// Supported config file formats, in preference order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
 pub enum Format {
     /// YAML format (`.yaml` and `.yml` extensions).
+    #[default]
     Yaml,
     /// TOML format (`.toml` extension).
     Toml,
