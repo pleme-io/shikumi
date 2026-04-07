@@ -1,6 +1,6 @@
 //! Config file discovery — parameterized XDG path scanning.
 //!
-//! Extracted from karakuri's `CONFIGURATION_FILE` LazyLock. Generalized
+//! Extracted from karakuri's `CONFIGURATION_FILE` `LazyLock`. Generalized
 //! so any app can use the same discovery logic by providing its name.
 //!
 //! Supports both single-file discovery (`discover()`) and hierarchical
@@ -123,18 +123,17 @@ impl ConfigDiscovery {
     /// Returns `ShikumiError::NotFound` if no config file exists at any
     /// of the standard locations.
     pub fn discover(&self) -> Result<PathBuf, ShikumiError> {
-        // 1. Environment variable override
-        if let Some(ref var) = self.env_override {
-            if let Ok(path_str) = env::var(var) {
-                let path = PathBuf::from(&path_str);
-                if path.exists() {
-                    return Ok(path);
-                }
-                warn!(
-                    "${var} is set to {}, but the file does not exist. Falling back to defaults.",
-                    path.display()
-                );
+        if let Some(ref var) = self.env_override
+            && let Ok(path_str) = env::var(var)
+        {
+            let path = PathBuf::from(&path_str);
+            if path.exists() {
+                return Ok(path);
             }
+            warn!(
+                "${var} is set to {}, but the file does not exist. Falling back to defaults.",
+                path.display()
+            );
         }
 
         // 2. Standard XDG / home paths
@@ -177,7 +176,7 @@ impl ConfigDiscovery {
             self.collect_dir_configs(&PathBuf::from(format!("/etc/{app}")), app, &mut found);
 
             // Layer 2: ~/.config/{app}/{app}.yaml (user-level)
-            if let Some(config_dir) = self.user_config_dir() {
+            if let Some(config_dir) = Self::user_config_dir() {
                 self.collect_dir_configs(&config_dir.join(app), app, &mut found);
             }
 
@@ -199,13 +198,12 @@ impl ConfigDiscovery {
             }
         } else {
             // Non-hierarchical: return all existing standard paths
-            // Check env override first
-            if let Some(ref var) = self.env_override {
-                if let Ok(path_str) = env::var(var) {
-                    let path = PathBuf::from(&path_str);
-                    if path.exists() {
-                        found.push(path);
-                    }
+            if let Some(ref var) = self.env_override
+                && let Ok(path_str) = env::var(var)
+            {
+                let path = PathBuf::from(&path_str);
+                if path.exists() {
+                    found.push(path);
                 }
             }
 
@@ -236,7 +234,7 @@ impl ConfigDiscovery {
     /// Resolve the user config directory.
     ///
     /// Prefers `$XDG_CONFIG_HOME`, falls back to `$HOME/.config`.
-    fn user_config_dir(&self) -> Option<PathBuf> {
+    fn user_config_dir() -> Option<PathBuf> {
         if let Ok(xdg) = env::var("XDG_CONFIG_HOME") {
             return Some(PathBuf::from(xdg));
         }

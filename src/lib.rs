@@ -1,4 +1,4 @@
-//! Shikumi (仕組み) — config discovery, hot-reload, and ArcSwap store
+//! Shikumi (仕組み) — config discovery, hot-reload, and `ArcSwap` store
 //! for Nix-managed desktop applications.
 //!
 //! Extracted from [karakuri](https://github.com/pleme-io/karakuri)'s configuration
@@ -6,7 +6,7 @@
 //!
 //! - **XDG config discovery** with env var overrides and format preference
 //! - **Figment provider chains** (defaults → env vars → config file)
-//! - **Lock-free concurrent reads** via ArcSwap
+//! - **Lock-free concurrent reads** via `ArcSwap`
 //! - **Hot-reload** with symlink-aware file watching (for nix-darwin managed configs)
 //!
 //! # Quick Start

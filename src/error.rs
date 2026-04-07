@@ -17,7 +17,7 @@ pub enum ShikumiError {
 
     /// Figment extraction or merge failed.
     ///
-    /// Boxed to keep `ShikumiError` small (figment::Error is ~208 bytes).
+    /// Boxed to keep `ShikumiError` small (`figment::Error` is ~208 bytes).
     #[error("figment error: {0}")]
     Figment(#[from] Box<figment::Error>),
 }

@@ -124,6 +124,7 @@ where
     ///
     /// This is lock-free and never blocks. The returned guard can be
     /// dereferenced to `&T`.
+    #[must_use]
     pub fn get(&self) -> Guard<Arc<T>> {
         self.inner.load()
     }

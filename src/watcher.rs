@@ -2,7 +2,7 @@
 //!
 //! Extracted from karakuri's `setup_config_watcher` and `ConfigHandler`.
 //! Handles the nix-darwin pattern where config files are symlinks into
-//! the Nix store — PollWatcher for symlinks, RecommendedWatcher for
+//! the Nix store — `PollWatcher` for symlinks, `RecommendedWatcher` for
 //! regular files.
 
 use std::path::{Path, PathBuf};
@@ -15,6 +15,7 @@ use crate::error::ShikumiError;
 
 /// Resolves a symlink to its canonical target, or returns `None` if the
 /// path is not a symlink.
+#[must_use]
 pub fn symlink_target(path: &Path) -> Option<PathBuf> {
     let metadata = std::fs::symlink_metadata(path).ok()?;
     if metadata.file_type().is_symlink() {
@@ -28,7 +29,7 @@ pub fn symlink_target(path: &Path) -> Option<PathBuf> {
 ///
 /// - **Symlinks** (nix-managed): Uses `PollWatcher` with `follow_symlinks(true)`
 ///   and a 3-second poll interval. Watches the resolved target.
-/// - **Regular files**: Uses `RecommendedWatcher` (FSEvents on macOS,
+/// - **Regular files**: Uses `RecommendedWatcher` (`FSEvents` on macOS,
 ///   inotify on Linux) for instant notification.
 ///
 /// In both cases, the original path is also watched so parent directory
