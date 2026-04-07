@@ -109,9 +109,9 @@ impl ConfigDiscovery {
     ///
     /// Default format preference: YAML first, then TOML.
     #[must_use]
-    pub fn new(app_name: &str) -> Self {
+    pub fn new(app_name: impl Into<String>) -> Self {
         Self {
-            app_name: app_name.to_owned(),
+            app_name: app_name.into(),
             env_override: None,
             formats: vec![Format::Yaml, Format::Toml],
             hierarchical: false,
@@ -123,8 +123,8 @@ impl ConfigDiscovery {
 
     /// Set the environment variable to check first (e.g. `"MYAPP_CONFIG"`).
     #[must_use]
-    pub fn env_override(mut self, var: &str) -> Self {
-        self.env_override = Some(var.to_owned());
+    pub fn env_override(mut self, var: impl Into<String>) -> Self {
+        self.env_override = Some(var.into());
         self
     }
 
@@ -181,8 +181,8 @@ impl ConfigDiscovery {
     /// directory. Use this to start from an explicit directory instead,
     /// which is also useful for deterministic testing.
     #[must_use]
-    pub fn start_dir(mut self, dir: &Path) -> Self {
-        self.start_dir = Some(dir.to_owned());
+    pub fn start_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.start_dir = Some(dir.into());
         self
     }
 
@@ -191,8 +191,8 @@ impl ConfigDiscovery {
     /// When set, this value is used instead of reading the
     /// `XDG_CONFIG_HOME` environment variable. Useful for testing.
     #[must_use]
-    pub fn xdg_config_home(mut self, dir: &Path) -> Self {
-        self.xdg_config_home = Some(dir.to_owned());
+    pub fn xdg_config_home(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.xdg_config_home = Some(dir.into());
         self
     }
 
@@ -201,8 +201,8 @@ impl ConfigDiscovery {
     /// When set, this value is used instead of reading the `HOME`
     /// environment variable. Useful for testing.
     #[must_use]
-    pub fn home_dir(mut self, dir: &Path) -> Self {
-        self.home_dir = Some(dir.to_owned());
+    pub fn home_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.home_dir = Some(dir.into());
         self
     }
 
@@ -239,6 +239,22 @@ impl ConfigDiscovery {
 
         Err(ShikumiError::NotFound {
             tried: paths,
+        })
+    }
+
+    /// Discover the config file, or return a default path if none exists.
+    ///
+    /// Unlike [`discover()`](Self::discover), this never returns `NotFound`.
+    /// Useful when you want to create a config at the preferred location.
+    #[must_use]
+    pub fn discover_or_default(&self) -> PathBuf {
+        self.discover().unwrap_or_else(|_| {
+            self.standard_paths()
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| {
+                    PathBuf::from(format!(".{}.yaml", self.app_name))
+                })
         })
     }
 
@@ -550,6 +566,37 @@ mod tests {
                 assert!(s.ends_with(".toml"), "expected toml in XDG paths, got: {s}");
             }
         }
+    }
+
+    #[test]
+    fn discover_or_default_returns_first_standard_path() {
+        let d = ConfigDiscovery::new("shikumi_fallback_xyz");
+        let path = d.discover_or_default();
+        let s = path.display().to_string();
+        assert!(
+            s.contains("shikumi_fallback_xyz"),
+            "default path should contain app name, got: {s}"
+        );
+    }
+
+    #[test]
+    fn discover_or_default_returns_existing_when_found() {
+        let dir = TempDir::new().unwrap();
+        let config_dir = dir.path().join("fallbackapp");
+        fs::create_dir_all(&config_dir).unwrap();
+        let config_file = config_dir.join("fallbackapp.yaml");
+        fs::write(&config_file, "key: value").unwrap();
+
+        let var = "SHIKUMI_TEST_FALLBACK";
+        unsafe { env::set_var(var, config_file.to_str().unwrap()) };
+
+        let path = ConfigDiscovery::new("fallbackapp")
+            .env_override(var)
+            .discover_or_default();
+
+        unsafe { env::remove_var(var) };
+
+        assert_eq!(path, config_file);
     }
 
     #[test]
