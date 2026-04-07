@@ -298,8 +298,7 @@ impl ConfigDiscovery {
     /// Collect main config + partials from a structured config directory.
     ///
     /// Looks for `{dir}/{app}.yaml` and `{dir}/{app}-*.yaml` partials.
-    fn collect_dir_configs(&self, dir: &PathBuf, app: &str, found: &mut Vec<PathBuf>) {
-        // Main config: {dir}/{app}.yaml
+    fn collect_dir_configs(&self, dir: &Path, app: &str, found: &mut Vec<PathBuf>) {
         for format in &self.formats {
             for ext in format.extensions() {
                 let main_path = dir.join(format!("{app}.{ext}"));
@@ -308,16 +307,13 @@ impl ConfigDiscovery {
                 }
             }
         }
-
-        // Partials: {dir}/{app}-*.yaml, sorted alphabetically
-        self.collect_partials_in_dir(dir, app, found);
+        self.collect_partials(dir, app, false, found);
     }
 
     /// Collect walk-up configs from a directory (dot-prefixed).
     ///
     /// Looks for `.{app}.yaml` and `.{app}-*.yaml` partials.
-    fn collect_walkup_configs(&self, dir: &PathBuf, app: &str, found: &mut Vec<PathBuf>) {
-        // Main config: {dir}/.{app}.yaml
+    fn collect_walkup_configs(&self, dir: &Path, app: &str, found: &mut Vec<PathBuf>) {
         for format in &self.formats {
             for ext in format.extensions() {
                 let main_path = dir.join(format!(".{app}.{ext}"));
@@ -326,13 +322,17 @@ impl ConfigDiscovery {
                 }
             }
         }
-
-        // Partials: {dir}/.{app}-*.yaml, sorted alphabetically
-        self.collect_dot_partials_in_dir(dir, app, found);
+        self.collect_partials(dir, app, true, found);
     }
 
-    /// Collect partial configs matching `{app}-*.{ext}` in a directory.
-    fn collect_partials_in_dir(&self, dir: &PathBuf, app: &str, found: &mut Vec<PathBuf>) {
+    /// Collect partial configs matching `[.]{app}-*.{ext}` in a directory.
+    fn collect_partials(
+        &self,
+        dir: &Path,
+        app: &str,
+        dot_prefix: bool,
+        found: &mut Vec<PathBuf>,
+    ) {
         if !dir.is_dir() {
             return;
         }
@@ -341,26 +341,7 @@ impl ConfigDiscovery {
             for entry in entries.flatten() {
                 let name = entry.file_name();
                 let name_str = name.to_string_lossy();
-                if self.is_partial_match(&name_str, app, false) {
-                    partials.push(entry.path());
-                }
-            }
-        }
-        partials.sort();
-        found.extend(partials);
-    }
-
-    /// Collect partial configs matching `.{app}-*.{ext}` in a directory.
-    fn collect_dot_partials_in_dir(&self, dir: &PathBuf, app: &str, found: &mut Vec<PathBuf>) {
-        if !dir.is_dir() {
-            return;
-        }
-        let mut partials: Vec<PathBuf> = Vec::new();
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let name = entry.file_name();
-                let name_str = name.to_string_lossy();
-                if self.is_partial_match(&name_str, app, true) {
+                if self.is_partial_match(&name_str, app, dot_prefix) {
                     partials.push(entry.path());
                 }
             }
