@@ -184,10 +184,9 @@ where
     }
 
     fn load_from_paths(paths: &[PathBuf], env_prefix: &str) -> Result<T, ShikumiError> {
-        let mut chain = ProviderChain::new();
-        for path in paths {
-            chain = chain.with_file(path);
-        }
+        let mut chain = paths
+            .iter()
+            .fold(ProviderChain::new(), |chain, path| chain.with_file(path));
         chain = chain.with_env(env_prefix);
         chain.extract()
     }

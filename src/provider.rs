@@ -8,8 +8,10 @@ use std::path::Path;
 
 use figment::{
     Figment,
-    providers::{Env, Format, Serialized, Toml as FigToml, Yaml as FigYaml},
+    providers::{Env, Format as _, Serialized, Toml as FigToml, Yaml as FigYaml},
 };
+
+use crate::discovery::Format;
 use serde::{Deserialize, Serialize};
 
 use crate::error::ShikumiError;
@@ -53,11 +55,16 @@ impl ProviderChain {
     /// - anything else → TOML provider
     #[must_use]
     pub fn with_file(mut self, path: &Path) -> Self {
-        match path.extension().and_then(|e| e.to_str()) {
-            Some("yaml" | "yml") => {
+        let format = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .and_then(Format::from_extension);
+
+        match format {
+            Some(Format::Yaml) => {
                 self.figment = self.figment.merge(FigYaml::file(path));
             }
-            _ => {
+            Some(Format::Toml) | None => {
                 self.figment = self.figment.merge(FigToml::file(path));
             }
         }
