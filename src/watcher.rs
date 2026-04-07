@@ -295,7 +295,6 @@ mod tests {
 
         let captured = paths.lock().unwrap();
         if !captured.is_empty() {
-            // At least one path should reference our file's parent or the file itself
             assert!(
                 captured.iter().any(|p| {
                     p.display().to_string().contains("pathcheck")
@@ -303,5 +302,34 @@ mod tests {
                 "expected event path to reference the watched file"
             );
         }
+    }
+
+    #[test]
+    fn symlink_target_nested_symlink() {
+        let dir = TempDir::new().unwrap();
+        let target = dir.path().join("real.yaml");
+        fs::write(&target, "key: value").unwrap();
+
+        let link1 = dir.path().join("link1.yaml");
+        std::os::unix::fs::symlink(&target, &link1).unwrap();
+
+        let link2 = dir.path().join("link2.yaml");
+        std::os::unix::fs::symlink(&link1, &link2).unwrap();
+
+        let resolved = symlink_target(&link2);
+        assert!(resolved.is_some());
+        assert_eq!(resolved.unwrap(), fs::canonicalize(&target).unwrap());
+    }
+
+    #[test]
+    fn rewatch_nonexistent_file_errors() {
+        let result = ConfigWatcher::rewatch(Path::new("/nonexistent/rewatch.yaml"), |_| {});
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn symlink_target_returns_none_for_plain_directory() {
+        let dir = TempDir::new().unwrap();
+        assert!(symlink_target(dir.path()).is_none());
     }
 }

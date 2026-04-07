@@ -656,4 +656,61 @@ mod tests {
         assert_eq!(config.name.as_deref(), Some("from_toml"));
         assert_eq!(config.count, Some(5));
     }
+
+    #[test]
+    fn load_merged_path_is_last_in_list() {
+        let dir = TempDir::new().unwrap();
+        let first = dir.path().join("first.yaml");
+        let last = dir.path().join("last.yaml");
+        fs::write(&first, "name: first\n").unwrap();
+        fs::write(&last, "name: last\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load_merged(
+            &[first.clone(), last.clone()],
+            "SHIKUMI_MERGE_PATH_",
+        )
+        .unwrap();
+        assert_eq!(store.path(), last, "path() should return the last file");
+    }
+
+    #[test]
+    fn load_merged_empty_path_is_default() {
+        let store = ConfigStore::<TestConfig>::load_merged(
+            &[],
+            "SHIKUMI_MERGE_EMPTYP_",
+        )
+        .unwrap();
+        assert_eq!(store.path(), Path::new(""));
+    }
+
+    #[test]
+    fn reload_after_file_deletion_returns_defaults() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("deleteme.yaml");
+        fs::write(&file, "name: present\ncount: 42\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_DEL_").unwrap();
+        assert_eq!(store.get().name.as_deref(), Some("present"));
+
+        fs::remove_file(&file).unwrap();
+        store.reload().unwrap();
+
+        let config = store.get();
+        assert_eq!(config.name, None, "deleted file should yield defaults");
+        assert_eq!(config.count, None);
+    }
+
+    #[test]
+    fn get_returns_arc_that_outlives_store() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("outlive.yaml");
+        fs::write(&file, "name: persistent\n").unwrap();
+
+        let guard = {
+            let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_OUTLIVE_").unwrap();
+            let shared = store.shared();
+            shared.load_full()
+        };
+        assert_eq!(guard.name.as_deref(), Some("persistent"));
+    }
 }

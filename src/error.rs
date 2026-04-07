@@ -75,4 +75,60 @@ mod tests {
         let debug = format!("{err:?}");
         assert!(debug.contains("Parse"));
     }
+
+    #[test]
+    fn watch_error_from_conversion() {
+        let notify_err = notify::Error::generic("test watcher error");
+        let shikumi_err: ShikumiError = notify_err.into();
+        assert!(
+            matches!(shikumi_err, ShikumiError::Watch(_)),
+            "expected Watch variant"
+        );
+        let msg = shikumi_err.to_string();
+        assert!(msg.contains("test watcher error"));
+    }
+
+    #[test]
+    fn watch_error_display() {
+        let notify_err = notify::Error::generic("poll failed");
+        let err: ShikumiError = notify_err.into();
+        let msg = err.to_string();
+        assert!(msg.contains("file watch error"));
+        assert!(msg.contains("poll failed"));
+    }
+
+    #[test]
+    fn figment_error_display_contains_context() {
+        let figment = figment::Figment::new();
+        let result: Result<String, figment::Error> = figment.extract();
+        let figment_err = result.unwrap_err();
+        let err: ShikumiError = Box::new(figment_err).into();
+        let msg = err.to_string();
+        assert!(msg.contains("figment error"), "should have figment prefix");
+    }
+
+    #[test]
+    fn error_source_chain() {
+        use std::error::Error;
+
+        let notify_err = notify::Error::generic("test");
+        let err: ShikumiError = notify_err.into();
+        assert!(err.source().is_some(), "Watch variant should have a source");
+
+        let parse_err = ShikumiError::Parse("test".to_owned());
+        assert!(
+            parse_err.source().is_none(),
+            "Parse variant should not have a source"
+        );
+    }
+
+    #[test]
+    fn not_found_single_path() {
+        let err = ShikumiError::NotFound {
+            tried: vec![PathBuf::from("/only/one.yaml")],
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("/only/one.yaml"));
+        assert!(!msg.contains(", "), "single path should have no comma");
+    }
 }
