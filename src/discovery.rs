@@ -7,7 +7,7 @@
 //! multi-file discovery with merge (`discover_all()`).
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tracing::warn;
 
@@ -42,6 +42,9 @@ pub struct ConfigDiscovery {
     env_override: Option<String>,
     formats: Vec<Format>,
     hierarchical: bool,
+    start_dir: Option<PathBuf>,
+    xdg_config_home: Option<PathBuf>,
+    home_dir: Option<PathBuf>,
 }
 
 impl ConfigDiscovery {
@@ -55,6 +58,9 @@ impl ConfigDiscovery {
             env_override: None,
             formats: vec![Format::Yaml, Format::Toml],
             hierarchical: false,
+            start_dir: None,
+            xdg_config_home: None,
+            home_dir: None,
         }
     }
 
@@ -77,24 +83,23 @@ impl ConfigDiscovery {
     pub fn standard_paths(&self) -> Vec<PathBuf> {
         let mut paths = Vec::new();
         let app = &self.app_name;
+        let xdg = self.resolve_xdg_config_home();
+        let home = self.resolve_home();
 
         for format in &self.formats {
             for ext in format.extensions() {
-                // $XDG_CONFIG_HOME/{app}/{app}.{ext}
-                if let Ok(xdg) = env::var("XDG_CONFIG_HOME") {
-                    paths.push(PathBuf::from(&xdg).join(format!("{app}/{app}.{ext}")));
+                if let Some(ref xdg) = xdg {
+                    paths.push(xdg.join(format!("{app}/{app}.{ext}")));
                 }
-                // $HOME/.config/{app}/{app}.{ext}
-                if let Ok(home) = env::var("HOME") {
-                    paths.push(PathBuf::from(&home).join(format!(".config/{app}/{app}.{ext}")));
+                if let Some(ref home) = home {
+                    paths.push(home.join(format!(".config/{app}/{app}.{ext}")));
                 }
             }
         }
 
-        // Legacy: $HOME/.{app} and $HOME/.{app}.toml
-        if let Ok(home) = env::var("HOME") {
-            paths.push(PathBuf::from(&home).join(format!(".{app}")));
-            paths.push(PathBuf::from(&home).join(format!(".{app}.toml")));
+        if let Some(ref home) = home {
+            paths.push(home.join(format!(".{app}")));
+            paths.push(home.join(format!(".{app}.toml")));
         }
 
         paths
@@ -110,6 +115,37 @@ impl ConfigDiscovery {
     #[must_use]
     pub fn hierarchical(mut self) -> Self {
         self.hierarchical = true;
+        self
+    }
+
+    /// Override the starting directory for hierarchical walk-up discovery.
+    ///
+    /// By default, hierarchical discovery walks up from the current working
+    /// directory. Use this to start from an explicit directory instead,
+    /// which is also useful for deterministic testing.
+    #[must_use]
+    pub fn start_dir(mut self, dir: &Path) -> Self {
+        self.start_dir = Some(dir.to_owned());
+        self
+    }
+
+    /// Override `$XDG_CONFIG_HOME` for path resolution.
+    ///
+    /// When set, this value is used instead of reading the
+    /// `XDG_CONFIG_HOME` environment variable. Useful for testing.
+    #[must_use]
+    pub fn xdg_config_home(mut self, dir: &Path) -> Self {
+        self.xdg_config_home = Some(dir.to_owned());
+        self
+    }
+
+    /// Override `$HOME` for path resolution.
+    ///
+    /// When set, this value is used instead of reading the `HOME`
+    /// environment variable. Useful for testing.
+    #[must_use]
+    pub fn home_dir(mut self, dir: &Path) -> Self {
+        self.home_dir = Some(dir.to_owned());
         self
     }
 
@@ -176,20 +212,22 @@ impl ConfigDiscovery {
             self.collect_dir_configs(&PathBuf::from(format!("/etc/{app}")), app, &mut found);
 
             // Layer 2: ~/.config/{app}/{app}.yaml (user-level)
-            if let Some(config_dir) = Self::user_config_dir() {
+            if let Some(config_dir) = self.user_config_dir() {
                 self.collect_dir_configs(&config_dir.join(app), app, &mut found);
             }
 
-            // Layer 3: Walk up from CWD — collect directories from root to CWD
-            if let Ok(cwd) = env::current_dir() {
-                // Collect ancestor directories from root → CWD (root = lowest priority)
+            let start = self
+                .start_dir
+                .clone()
+                .or_else(|| env::current_dir().ok());
+
+            if let Some(cwd) = start {
                 let mut ancestors: Vec<PathBuf> = Vec::new();
                 let mut current = Some(cwd.as_path());
                 while let Some(dir) = current {
                     ancestors.push(dir.to_path_buf());
                     current = dir.parent();
                 }
-                // Reverse so root is first (lowest priority), CWD is last (highest)
                 ancestors.reverse();
 
                 for dir in &ancestors {
@@ -231,17 +269,30 @@ impl ConfigDiscovery {
         }
     }
 
+    /// Resolve `XDG_CONFIG_HOME`, preferring the builder override.
+    fn resolve_xdg_config_home(&self) -> Option<PathBuf> {
+        if let Some(ref dir) = self.xdg_config_home {
+            return Some(dir.clone());
+        }
+        env::var("XDG_CONFIG_HOME").ok().map(PathBuf::from)
+    }
+
+    /// Resolve `HOME`, preferring the builder override.
+    fn resolve_home(&self) -> Option<PathBuf> {
+        if let Some(ref dir) = self.home_dir {
+            return Some(dir.clone());
+        }
+        env::var("HOME").ok().map(PathBuf::from)
+    }
+
     /// Resolve the user config directory.
     ///
     /// Prefers `$XDG_CONFIG_HOME`, falls back to `$HOME/.config`.
-    fn user_config_dir() -> Option<PathBuf> {
-        if let Ok(xdg) = env::var("XDG_CONFIG_HOME") {
-            return Some(PathBuf::from(xdg));
+    fn user_config_dir(&self) -> Option<PathBuf> {
+        if let Some(xdg) = self.resolve_xdg_config_home() {
+            return Some(xdg);
         }
-        if let Ok(home) = env::var("HOME") {
-            return Some(PathBuf::from(home).join(".config"));
-        }
-        None
+        self.resolve_home().map(|home| home.join(".config"))
     }
 
     /// Collect main config + partials from a structured config directory.
@@ -440,17 +491,9 @@ mod tests {
         let config_file = config_dir.join("myxdgapp.yaml");
         fs::write(&config_file, "key: value").unwrap();
 
-        let xdg_var = "XDG_CONFIG_HOME";
-        let old_xdg = env::var(xdg_var).ok();
-        unsafe { env::set_var(xdg_var, dir.path().to_str().unwrap()) };
-
-        let result = ConfigDiscovery::new("myxdgapp").discover();
-
-        // Restore previous XDG_CONFIG_HOME
-        match old_xdg {
-            Some(val) => unsafe { env::set_var(xdg_var, &val) },
-            None => unsafe { env::remove_var(xdg_var) },
-        }
+        let result = ConfigDiscovery::new("myxdgapp")
+            .xdg_config_home(dir.path())
+            .discover();
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), config_file);
@@ -464,25 +507,11 @@ mod tests {
         let config_file = dot_config.join("homeapp.yaml");
         fs::write(&config_file, "key: value").unwrap();
 
-        let home_var = "HOME";
-        let old_home = env::var(home_var).ok();
-        // Temporarily unset XDG_CONFIG_HOME to force HOME fallback
-        let xdg_var = "XDG_CONFIG_HOME";
-        let old_xdg = env::var(xdg_var).ok();
-        unsafe { env::remove_var(xdg_var) };
-        unsafe { env::set_var(home_var, dir.path().to_str().unwrap()) };
-
-        let result = ConfigDiscovery::new("homeapp").discover();
-
-        // Restore
-        match old_home {
-            Some(val) => unsafe { env::set_var(home_var, &val) },
-            None => unsafe { env::remove_var(home_var) },
-        }
-        match old_xdg {
-            Some(val) => unsafe { env::set_var(xdg_var, &val) },
-            None => {} // was already unset
-        }
+        let nonexistent = dir.path().join("nonexistent_xdg");
+        let result = ConfigDiscovery::new("homeapp")
+            .xdg_config_home(&nonexistent)
+            .home_dir(dir.path())
+            .discover();
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), config_file);
@@ -494,23 +523,11 @@ mod tests {
         let legacy_file = dir.path().join(".legacyapp");
         fs::write(&legacy_file, "some config").unwrap();
 
-        let home_var = "HOME";
-        let old_home = env::var(home_var).ok();
-        let xdg_var = "XDG_CONFIG_HOME";
-        let old_xdg = env::var(xdg_var).ok();
-        unsafe { env::remove_var(xdg_var) };
-        unsafe { env::set_var(home_var, dir.path().to_str().unwrap()) };
-
-        let result = ConfigDiscovery::new("legacyapp").discover();
-
-        match old_home {
-            Some(val) => unsafe { env::set_var(home_var, &val) },
-            None => unsafe { env::remove_var(home_var) },
-        }
-        match old_xdg {
-            Some(val) => unsafe { env::set_var(xdg_var, &val) },
-            None => {}
-        }
+        let nonexistent = dir.path().join("nonexistent_xdg");
+        let result = ConfigDiscovery::new("legacyapp")
+            .xdg_config_home(&nonexistent)
+            .home_dir(dir.path())
+            .discover();
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), legacy_file);
@@ -522,23 +539,11 @@ mod tests {
         let legacy_file = dir.path().join(".legacytoml.toml");
         fs::write(&legacy_file, "key = \"value\"").unwrap();
 
-        let home_var = "HOME";
-        let old_home = env::var(home_var).ok();
-        let xdg_var = "XDG_CONFIG_HOME";
-        let old_xdg = env::var(xdg_var).ok();
-        unsafe { env::remove_var(xdg_var) };
-        unsafe { env::set_var(home_var, dir.path().to_str().unwrap()) };
-
-        let result = ConfigDiscovery::new("legacytoml").discover();
-
-        match old_home {
-            Some(val) => unsafe { env::set_var(home_var, &val) },
-            None => unsafe { env::remove_var(home_var) },
-        }
-        match old_xdg {
-            Some(val) => unsafe { env::set_var(xdg_var, &val) },
-            None => {}
-        }
+        let nonexistent = dir.path().join("nonexistent_xdg");
+        let result = ConfigDiscovery::new("legacytoml")
+            .xdg_config_home(&nonexistent)
+            .home_dir(dir.path())
+            .discover();
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), legacy_file);
@@ -546,7 +551,6 @@ mod tests {
 
     #[test]
     fn discover_env_override_takes_precedence_over_standard() {
-        // Create both an env-pointed file and a standard XDG file
         let env_dir = TempDir::new().unwrap();
         let env_file = env_dir.path().join("override.yaml");
         fs::write(&env_file, "source: env_override").unwrap();
@@ -558,23 +562,16 @@ mod tests {
         fs::write(&xdg_file, "source: xdg").unwrap();
 
         let var = "SHIKUMI_TEST_PRECEDENCE";
-        let xdg_var = "XDG_CONFIG_HOME";
-        let old_xdg = env::var(xdg_var).ok();
         unsafe { env::set_var(var, env_file.to_str().unwrap()) };
-        unsafe { env::set_var(xdg_var, xdg_dir.path().to_str().unwrap()) };
 
         let result = ConfigDiscovery::new("precapp")
             .env_override(var)
+            .xdg_config_home(xdg_dir.path())
             .discover();
 
         unsafe { env::remove_var(var) };
-        match old_xdg {
-            Some(val) => unsafe { env::set_var(xdg_var, &val) },
-            None => unsafe { env::remove_var(xdg_var) },
-        }
 
         assert!(result.is_ok());
-        // Env override should win
         assert_eq!(result.unwrap(), env_file);
     }
 
@@ -594,25 +591,16 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let app_dir = dir.path().join("preftest");
         fs::create_dir_all(&app_dir).unwrap();
-        // Create both .yaml and .yml
         let yaml_file = app_dir.join("preftest.yaml");
         let yml_file = app_dir.join("preftest.yml");
         fs::write(&yaml_file, "format: yaml").unwrap();
         fs::write(&yml_file, "format: yml").unwrap();
 
-        let xdg_var = "XDG_CONFIG_HOME";
-        let old_xdg = env::var(xdg_var).ok();
-        unsafe { env::set_var(xdg_var, dir.path().to_str().unwrap()) };
-
-        let result = ConfigDiscovery::new("preftest").discover();
-
-        match old_xdg {
-            Some(val) => unsafe { env::set_var(xdg_var, &val) },
-            None => unsafe { env::remove_var(xdg_var) },
-        }
+        let result = ConfigDiscovery::new("preftest")
+            .xdg_config_home(dir.path())
+            .discover();
 
         assert!(result.is_ok());
-        // .yaml comes before .yml in Format::Yaml extensions
         assert!(
             result.unwrap().display().to_string().ends_with(".yaml"),
             "expected .yaml to be preferred over .yml"
@@ -629,16 +617,9 @@ mod tests {
         fs::write(&yaml_file, "format: yaml").unwrap();
         fs::write(&toml_file, "format = \"toml\"").unwrap();
 
-        let xdg_var = "XDG_CONFIG_HOME";
-        let old_xdg = env::var(xdg_var).ok();
-        unsafe { env::set_var(xdg_var, dir.path().to_str().unwrap()) };
-
-        let result = ConfigDiscovery::new("fmtpref").discover();
-
-        match old_xdg {
-            Some(val) => unsafe { env::set_var(xdg_var, &val) },
-            None => unsafe { env::remove_var(xdg_var) },
-        }
+        let result = ConfigDiscovery::new("fmtpref")
+            .xdg_config_home(dir.path())
+            .discover();
 
         assert!(result.is_ok());
         assert!(
@@ -787,18 +768,10 @@ mod tests {
         let config_file = config_dir.join(format!("{app}.yaml"));
         fs::write(&config_file, "source: xdg").unwrap();
 
-        let xdg_var = "XDG_CONFIG_HOME";
-        let old_xdg = env::var(xdg_var).ok();
-        unsafe { env::set_var(xdg_var, dir.path().to_str().unwrap()) };
-
         let result = ConfigDiscovery::new(app)
+            .xdg_config_home(dir.path())
             .hierarchical()
             .discover_all();
-
-        match old_xdg {
-            Some(val) => unsafe { env::set_var(xdg_var, &val) },
-            None => unsafe { env::remove_var(xdg_var) },
-        }
 
         assert!(result.is_ok());
         let paths = result.unwrap();
@@ -811,31 +784,18 @@ mod tests {
     #[test]
     fn hierarchical_walkup_finds_dotfile_in_cwd() {
         let dir = TempDir::new().unwrap();
-        // Canonicalize to handle macOS /var -> /private/var symlinks
         let dir_path = dir.path().canonicalize().unwrap();
         let app = "hierwalk";
         let dotfile = dir_path.join(format!(".{app}.yaml"));
         fs::write(&dotfile, "source: cwd").unwrap();
 
-        // Temporarily change CWD to the temp dir
-        let old_cwd = env::current_dir().unwrap();
-        env::set_current_dir(&dir_path).unwrap();
-
-        // Use a unique XDG to avoid picking up real configs
-        let xdg_var = "XDG_CONFIG_HOME";
-        let old_xdg = env::var(xdg_var).ok();
-        unsafe { env::set_var(xdg_var, dir_path.join("nonexistent_xdg").to_str().unwrap()) };
-
+        let nonexistent_xdg = dir_path.join("nonexistent_xdg");
         let result = ConfigDiscovery::new(app)
             .formats(&[Format::Yaml])
+            .xdg_config_home(&nonexistent_xdg)
             .hierarchical()
+            .start_dir(&dir_path)
             .discover_all();
-
-        env::set_current_dir(&old_cwd).unwrap();
-        match old_xdg {
-            Some(val) => unsafe { env::set_var(xdg_var, &val) },
-            None => unsafe { env::remove_var(xdg_var) },
-        }
 
         assert!(result.is_ok());
         let paths = result.unwrap();
@@ -858,30 +818,18 @@ mod tests {
         fs::write(&parent_file, "level: parent").unwrap();
         fs::write(&child_file, "level: child").unwrap();
 
-        let old_cwd = env::current_dir().unwrap();
-        env::set_current_dir(&child).unwrap();
-
-        let xdg_var = "XDG_CONFIG_HOME";
-        let old_xdg = env::var(xdg_var).ok();
-        unsafe { env::set_var(xdg_var, parent_path.join("nonexistent_xdg").to_str().unwrap()) };
-
+        let nonexistent_xdg = parent_path.join("nonexistent_xdg");
         let result = ConfigDiscovery::new(app)
             .formats(&[Format::Yaml])
+            .xdg_config_home(&nonexistent_xdg)
             .hierarchical()
+            .start_dir(&child)
             .discover_all();
-
-        env::set_current_dir(&old_cwd).unwrap();
-        match old_xdg {
-            Some(val) => unsafe { env::set_var(xdg_var, &val) },
-            None => unsafe { env::remove_var(xdg_var) },
-        }
 
         assert!(result.is_ok());
         let paths = result.unwrap();
-        // Both should be found
         assert!(paths.contains(&parent_file), "should contain parent config");
         assert!(paths.contains(&child_file), "should contain child config");
-        // Parent should come before child (lower priority)
         let parent_idx = paths.iter().position(|p| p == &parent_file).unwrap();
         let child_idx = paths.iter().position(|p| p == &child_file).unwrap();
         assert!(
@@ -896,35 +844,23 @@ mod tests {
         let dir_path = dir.path().canonicalize().unwrap();
         let app = "hierpart";
 
-        // Create dot-prefixed partials in dir
         let partial_b = dir_path.join(format!(".{app}-02-beta.yaml"));
         let partial_a = dir_path.join(format!(".{app}-01-alpha.yaml"));
         fs::write(&partial_a, "alpha: true").unwrap();
         fs::write(&partial_b, "beta: true").unwrap();
 
-        let old_cwd = env::current_dir().unwrap();
-        env::set_current_dir(&dir_path).unwrap();
-
-        let xdg_var = "XDG_CONFIG_HOME";
-        let old_xdg = env::var(xdg_var).ok();
-        unsafe { env::set_var(xdg_var, dir_path.join("nonexistent_xdg").to_str().unwrap()) };
-
+        let nonexistent_xdg = dir_path.join("nonexistent_xdg");
         let result = ConfigDiscovery::new(app)
             .formats(&[Format::Yaml])
+            .xdg_config_home(&nonexistent_xdg)
             .hierarchical()
+            .start_dir(&dir_path)
             .discover_all();
-
-        env::set_current_dir(&old_cwd).unwrap();
-        match old_xdg {
-            Some(val) => unsafe { env::set_var(xdg_var, &val) },
-            None => unsafe { env::remove_var(xdg_var) },
-        }
 
         assert!(result.is_ok());
         let paths = result.unwrap();
         assert!(paths.contains(&partial_a), "should contain alpha partial");
         assert!(paths.contains(&partial_b), "should contain beta partial");
-        // Alpha should come before beta (alphabetical)
         let a_idx = paths.iter().position(|p| p == &partial_a).unwrap();
         let b_idx = paths.iter().position(|p| p == &partial_b).unwrap();
         assert!(
@@ -944,23 +880,13 @@ mod tests {
         fs::write(&main_file, "main: true").unwrap();
         fs::write(&partial, "extra: true").unwrap();
 
-        let old_cwd = env::current_dir().unwrap();
-        env::set_current_dir(&dir_path).unwrap();
-
-        let xdg_var = "XDG_CONFIG_HOME";
-        let old_xdg = env::var(xdg_var).ok();
-        unsafe { env::set_var(xdg_var, dir_path.join("nonexistent_xdg").to_str().unwrap()) };
-
+        let nonexistent_xdg = dir_path.join("nonexistent_xdg");
         let result = ConfigDiscovery::new(app)
             .formats(&[Format::Yaml])
+            .xdg_config_home(&nonexistent_xdg)
             .hierarchical()
+            .start_dir(&dir_path)
             .discover_all();
-
-        env::set_current_dir(&old_cwd).unwrap();
-        match old_xdg {
-            Some(val) => unsafe { env::set_var(xdg_var, &val) },
-            None => unsafe { env::remove_var(xdg_var) },
-        }
 
         assert!(result.is_ok());
         let paths = result.unwrap();
@@ -974,30 +900,18 @@ mod tests {
 
     #[test]
     fn hierarchical_missing_files_silently_skipped() {
-        // No config files exist, just an empty dir
         let dir = TempDir::new().unwrap();
         let dir_path = dir.path().canonicalize().unwrap();
         let app = "hiermiss";
 
-        let old_cwd = env::current_dir().unwrap();
-        env::set_current_dir(&dir_path).unwrap();
-
-        let xdg_var = "XDG_CONFIG_HOME";
-        let old_xdg = env::var(xdg_var).ok();
-        unsafe { env::set_var(xdg_var, dir_path.join("nonexistent_xdg").to_str().unwrap()) };
-
+        let nonexistent_xdg = dir_path.join("nonexistent_xdg");
         let result = ConfigDiscovery::new(app)
             .formats(&[Format::Yaml])
+            .xdg_config_home(&nonexistent_xdg)
             .hierarchical()
+            .start_dir(&dir_path)
             .discover_all();
 
-        env::set_current_dir(&old_cwd).unwrap();
-        match old_xdg {
-            Some(val) => unsafe { env::set_var(xdg_var, &val) },
-            None => unsafe { env::remove_var(xdg_var) },
-        }
-
-        // Should return NotFound, not panic or error differently
         assert!(result.is_err());
         match result.unwrap_err() {
             ShikumiError::NotFound { tried } => {
@@ -1021,25 +935,15 @@ mod tests {
         fs::write(&partial_a, "db: postgres").unwrap();
         fs::write(&partial_b, "cache: redis").unwrap();
 
-        let xdg_var = "XDG_CONFIG_HOME";
-        let old_xdg = env::var(xdg_var).ok();
-        unsafe { env::set_var(xdg_var, dir.path().to_str().unwrap()) };
-
-        // Use an empty temp dir as CWD so walk-up doesn't pick up anything
         let empty_dir = TempDir::new().unwrap();
-        let old_cwd = env::current_dir().unwrap();
-        env::set_current_dir(empty_dir.path()).unwrap();
+        let empty_path = empty_dir.path().canonicalize().unwrap();
 
         let result = ConfigDiscovery::new(app)
             .formats(&[Format::Yaml])
+            .xdg_config_home(dir.path())
             .hierarchical()
+            .start_dir(&empty_path)
             .discover_all();
-
-        env::set_current_dir(&old_cwd).unwrap();
-        match old_xdg {
-            Some(val) => unsafe { env::set_var(xdg_var, &val) },
-            None => unsafe { env::remove_var(xdg_var) },
-        }
 
         assert!(result.is_ok());
         let paths = result.unwrap();
@@ -1047,7 +951,6 @@ mod tests {
         assert!(paths.contains(&partial_a), "should contain XDG partial a");
         assert!(paths.contains(&partial_b), "should contain XDG partial b");
 
-        // Verify order: main before partials, partials alphabetical
         let main_idx = paths.iter().position(|p| p == &main_file).unwrap();
         let a_idx = paths.iter().position(|p| p == &partial_a).unwrap();
         let b_idx = paths.iter().position(|p| p == &partial_b).unwrap();
@@ -1104,22 +1007,12 @@ mod tests {
         let dir_path = dir.path().canonicalize().unwrap();
         let app = "hiernf";
 
-        let old_cwd = env::current_dir().unwrap();
-        env::set_current_dir(&dir_path).unwrap();
-
-        let xdg_var = "XDG_CONFIG_HOME";
-        let old_xdg = env::var(xdg_var).ok();
-        unsafe { env::set_var(xdg_var, dir_path.join("nonexistent_xdg").to_str().unwrap()) };
-
+        let nonexistent_xdg = dir_path.join("nonexistent_xdg");
         let result = ConfigDiscovery::new(app)
+            .xdg_config_home(&nonexistent_xdg)
             .hierarchical()
+            .start_dir(&dir_path)
             .discover_all();
-
-        env::set_current_dir(&old_cwd).unwrap();
-        match old_xdg {
-            Some(val) => unsafe { env::set_var(xdg_var, &val) },
-            None => unsafe { env::remove_var(xdg_var) },
-        }
 
         assert!(result.is_err());
         if let Err(ShikumiError::NotFound { tried }) = result {
