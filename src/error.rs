@@ -1,18 +1,25 @@
 use std::path::PathBuf;
 
+/// Errors produced by shikumi's config discovery, loading, and watching.
 #[derive(thiserror::Error, Debug)]
 pub enum ShikumiError {
+    /// No config file was found at any of the searched locations.
     #[error("config file not found; tried: {}", tried.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", "))]
     NotFound { tried: Vec<PathBuf> },
 
+    /// The config file could not be parsed.
     #[error("config parse error: {0}")]
     Parse(String),
 
+    /// The file watcher encountered an error.
     #[error("file watch error: {0}")]
     Watch(#[from] notify::Error),
 
+    /// Figment extraction or merge failed.
+    ///
+    /// Boxed to keep `ShikumiError` small (figment::Error is ~208 bytes).
     #[error("figment error: {0}")]
-    Figment(#[from] figment::Error),
+    Figment(#[from] Box<figment::Error>),
 }
 
 #[cfg(test)]
@@ -49,17 +56,15 @@ mod tests {
 
     #[test]
     fn figment_error_from_conversion() {
-        // Create a figment error by extracting a missing required field
         let figment = figment::Figment::new();
         let result: Result<String, figment::Error> = figment.extract();
         let figment_err = result.unwrap_err();
 
-        let shikumi_err: ShikumiError = figment_err.into();
+        let shikumi_err: ShikumiError = Box::new(figment_err).into();
         assert!(
             matches!(shikumi_err, ShikumiError::Figment(_)),
             "expected Figment variant"
         );
-        // Should have a meaningful display message
         let msg = shikumi_err.to_string();
         assert!(!msg.is_empty());
     }

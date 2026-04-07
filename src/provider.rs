@@ -71,7 +71,9 @@ impl ProviderChain {
     /// Returns `ShikumiError::Figment` if extraction fails (missing required
     /// fields, type mismatches, etc.).
     pub fn extract<T: for<'de> Deserialize<'de>>(self) -> Result<T, ShikumiError> {
-        Ok(self.figment.extract()?)
+        self.figment
+            .extract()
+            .map_err(|e| ShikumiError::Figment(Box::new(e)))
     }
 
     /// Escape hatch: return the raw `Figment` for advanced use.
