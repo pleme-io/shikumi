@@ -7,7 +7,9 @@
 //! multi-file discovery with merge (`discover_all()`).
 
 use std::env;
+use std::fmt;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use tracing::warn;
 
@@ -31,6 +33,55 @@ impl Format {
         match self {
             Self::Yaml => &["yaml", "yml"],
             Self::Toml => &["toml"],
+        }
+    }
+
+    /// Infer format from a file extension string.
+    ///
+    /// Returns `None` for unrecognized extensions.
+    #[must_use]
+    pub fn from_extension(ext: &str) -> Option<Self> {
+        match ext {
+            "yaml" | "yml" => Some(Self::Yaml),
+            "toml" => Some(Self::Toml),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for Format {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Yaml => f.write_str("yaml"),
+            Self::Toml => f.write_str("toml"),
+        }
+    }
+}
+
+impl TryFrom<&Path> for Format {
+    type Error = ShikumiError;
+
+    fn try_from(path: &Path) -> Result<Self, Self::Error> {
+        path.extension()
+            .and_then(|e| e.to_str())
+            .and_then(Self::from_extension)
+            .ok_or_else(|| {
+                ShikumiError::Parse(format!(
+                    "cannot determine config format from path: {}",
+                    path.display()
+                ))
+            })
+    }
+}
+
+impl FromStr for Format {
+    type Err = ShikumiError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "yaml" | "yml" => Ok(Self::Yaml),
+            "toml" => Ok(Self::Toml),
+            _ => Err(ShikumiError::Parse(format!("unknown config format: {s}"))),
         }
     }
 }
@@ -383,6 +434,46 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    #[test]
+    fn format_display_round_trip() {
+        for fmt in [Format::Yaml, Format::Toml] {
+            let s = fmt.to_string();
+            let parsed: Format = s.parse().unwrap();
+            assert_eq!(fmt, parsed);
+        }
+    }
+
+    #[test]
+    fn format_from_str_case_insensitive() {
+        assert_eq!("YAML".parse::<Format>().unwrap(), Format::Yaml);
+        assert_eq!("yml".parse::<Format>().unwrap(), Format::Yaml);
+        assert_eq!("TOML".parse::<Format>().unwrap(), Format::Toml);
+        assert!("json".parse::<Format>().is_err());
+    }
+
+    #[test]
+    fn format_default_is_yaml() {
+        assert_eq!(Format::default(), Format::Yaml);
+    }
+
+    #[test]
+    fn format_from_extension() {
+        assert_eq!(Format::from_extension("yaml"), Some(Format::Yaml));
+        assert_eq!(Format::from_extension("yml"), Some(Format::Yaml));
+        assert_eq!(Format::from_extension("toml"), Some(Format::Toml));
+        assert_eq!(Format::from_extension("json"), None);
+        assert_eq!(Format::from_extension(""), None);
+    }
+
+    #[test]
+    fn format_try_from_path() {
+        assert_eq!(Format::try_from(Path::new("config.yaml")).unwrap(), Format::Yaml);
+        assert_eq!(Format::try_from(Path::new("config.yml")).unwrap(), Format::Yaml);
+        assert_eq!(Format::try_from(Path::new("config.toml")).unwrap(), Format::Toml);
+        assert!(Format::try_from(Path::new("config.json")).is_err());
+        assert!(Format::try_from(Path::new("no_extension")).is_err());
+    }
 
     #[test]
     fn standard_paths_contains_xdg_and_home() {
