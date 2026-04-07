@@ -16,11 +16,38 @@ pub enum ShikumiError {
     #[error("file watch error: {0}")]
     Watch(#[from] notify::Error),
 
+    /// An I/O error occurred during config file operations.
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
     /// Figment extraction or merge failed.
     ///
     /// Boxed to keep `ShikumiError` small (`figment::Error` is ~208 bytes).
     #[error("figment error: {0}")]
     Figment(#[from] Box<figment::Error>),
+}
+
+impl ShikumiError {
+    /// Returns `true` if this is a `NotFound` error.
+    #[must_use]
+    pub fn is_not_found(&self) -> bool {
+        matches!(self, Self::NotFound { .. })
+    }
+
+    /// Returns `true` if this is a `Parse` error.
+    #[must_use]
+    pub fn is_parse(&self) -> bool {
+        matches!(self, Self::Parse(_))
+    }
+
+    /// Returns the list of paths that were tried, if this is a `NotFound` error.
+    #[must_use]
+    pub fn tried_paths(&self) -> Option<&[PathBuf]> {
+        match self {
+            Self::NotFound { tried } => Some(tried),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -68,6 +95,42 @@ mod tests {
         );
         let msg = shikumi_err.to_string();
         assert!(!msg.is_empty());
+    }
+
+    #[test]
+    fn is_not_found_helper() {
+        let err = ShikumiError::NotFound {
+            tried: vec![PathBuf::from("/a")],
+        };
+        assert!(err.is_not_found());
+        assert!(!err.is_parse());
+    }
+
+    #[test]
+    fn is_parse_helper() {
+        let err = ShikumiError::Parse("bad".to_owned());
+        assert!(err.is_parse());
+        assert!(!err.is_not_found());
+    }
+
+    #[test]
+    fn tried_paths_returns_paths_for_not_found() {
+        let paths = vec![PathBuf::from("/x"), PathBuf::from("/y")];
+        let err = ShikumiError::NotFound {
+            tried: paths.clone(),
+        };
+        assert_eq!(err.tried_paths(), Some(paths.as_slice()));
+
+        let parse_err = ShikumiError::Parse("bad".to_owned());
+        assert_eq!(parse_err.tried_paths(), None);
+    }
+
+    #[test]
+    fn io_error_from_conversion() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file gone");
+        let shikumi_err: ShikumiError = io_err.into();
+        assert!(matches!(shikumi_err, ShikumiError::Io(_)));
+        assert!(shikumi_err.to_string().contains("file gone"));
     }
 
     #[test]
