@@ -95,8 +95,9 @@ struct CallbackHandler(Box<dyn Fn(notify::Event) + Send>);
 
 impl notify::EventHandler for CallbackHandler {
     fn handle_event(&mut self, event: notify::Result<notify::Event>) {
-        if let Ok(event) = event {
-            (self.0)(event);
+        match event {
+            Ok(event) => (self.0)(event),
+            Err(err) => tracing::warn!("file watcher error: {err}"),
         }
     }
 }
