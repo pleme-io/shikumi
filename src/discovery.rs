@@ -1004,4 +1004,225 @@ mod tests {
             assert!(!tried.is_empty(), "should list representative paths");
         }
     }
+
+    // ---- Builder injection tests ----
+
+    #[test]
+    fn xdg_config_home_builder_used_in_standard_paths() {
+        let dir = TempDir::new().unwrap();
+        let d = ConfigDiscovery::new("injapp")
+            .xdg_config_home(dir.path());
+        let paths = d.standard_paths();
+        assert!(
+            paths.iter().any(|p| p.starts_with(dir.path())),
+            "expected XDG override path in standard_paths"
+        );
+    }
+
+    #[test]
+    fn home_dir_builder_used_in_standard_paths() {
+        let dir = TempDir::new().unwrap();
+        let d = ConfigDiscovery::new("homeinj")
+            .xdg_config_home(&dir.path().join("nonexistent"))
+            .home_dir(dir.path());
+        let paths = d.standard_paths();
+        assert!(
+            paths.iter().any(|p| p.starts_with(dir.path())),
+            "expected HOME override path in standard_paths"
+        );
+    }
+
+    #[test]
+    fn home_dir_produces_legacy_paths() {
+        let dir = TempDir::new().unwrap();
+        let d = ConfigDiscovery::new("leginjapp")
+            .home_dir(dir.path());
+        let paths = d.standard_paths();
+        let path_strs: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
+        assert!(
+            path_strs.iter().any(|p| p.ends_with(".leginjapp")),
+            "expected legacy path from injected HOME"
+        );
+        assert!(
+            path_strs.iter().any(|p| p.ends_with(".leginjapp.toml")),
+            "expected legacy toml path from injected HOME"
+        );
+    }
+
+    #[test]
+    fn xdg_config_home_overrides_env_var() {
+        let dir1 = TempDir::new().unwrap();
+        let dir2 = TempDir::new().unwrap();
+        let app = "xdgovr";
+        let config_dir = dir1.path().join(app);
+        fs::create_dir_all(&config_dir).unwrap();
+        let config_file = config_dir.join(format!("{app}.yaml"));
+        fs::write(&config_file, "key: value").unwrap();
+
+        let result = ConfigDiscovery::new(app)
+            .xdg_config_home(dir1.path())
+            .home_dir(dir2.path())
+            .discover();
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), config_file);
+    }
+
+    #[test]
+    fn discover_all_non_hierarchical_with_injected_xdg() {
+        let dir = TempDir::new().unwrap();
+        let app = "daninj";
+        let config_dir = dir.path().join(app);
+        fs::create_dir_all(&config_dir).unwrap();
+        let config_file = config_dir.join(format!("{app}.yaml"));
+        fs::write(&config_file, "key: value").unwrap();
+
+        let result = ConfigDiscovery::new(app)
+            .xdg_config_home(dir.path())
+            .discover_all();
+
+        assert!(result.is_ok());
+        let paths = result.unwrap();
+        assert!(paths.contains(&config_file));
+    }
+
+    #[test]
+    fn start_dir_builder_sets_field() {
+        let dir = TempDir::new().unwrap();
+        let d = ConfigDiscovery::new("sdtest")
+            .start_dir(dir.path());
+        assert_eq!(d.start_dir, Some(dir.path().to_path_buf()));
+    }
+
+    #[test]
+    fn discover_with_both_xdg_and_home_prefers_xdg() {
+        let xdg_dir = TempDir::new().unwrap();
+        let home_dir = TempDir::new().unwrap();
+        let app = "bothpref";
+
+        let xdg_config = xdg_dir.path().join(app);
+        fs::create_dir_all(&xdg_config).unwrap();
+        let xdg_file = xdg_config.join(format!("{app}.yaml"));
+        fs::write(&xdg_file, "from: xdg").unwrap();
+
+        let home_config = home_dir.path().join(".config").join(app);
+        fs::create_dir_all(&home_config).unwrap();
+        let home_file = home_config.join(format!("{app}.yaml"));
+        fs::write(&home_file, "from: home").unwrap();
+
+        let result = ConfigDiscovery::new(app)
+            .xdg_config_home(xdg_dir.path())
+            .home_dir(home_dir.path())
+            .discover();
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), xdg_file, "XDG should take precedence over HOME");
+    }
+
+    #[test]
+    fn format_debug_display() {
+        let yaml = Format::Yaml;
+        let toml = Format::Toml;
+        assert_eq!(format!("{yaml:?}"), "Yaml");
+        assert_eq!(format!("{toml:?}"), "Toml");
+    }
+
+    #[test]
+    fn discover_yml_extension_found_when_yaml_absent() {
+        let dir = TempDir::new().unwrap();
+        let app = "ymlonly";
+        let config_dir = dir.path().join(app);
+        fs::create_dir_all(&config_dir).unwrap();
+        let yml_file = config_dir.join(format!("{app}.yml"));
+        fs::write(&yml_file, "key: value").unwrap();
+
+        let result = ConfigDiscovery::new(app)
+            .xdg_config_home(dir.path())
+            .discover();
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().display().to_string().ends_with(".yml"));
+    }
+
+    #[test]
+    fn hierarchical_toml_format_finds_dotfile() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path().canonicalize().unwrap();
+        let app = "hiertoml";
+        let dotfile = dir_path.join(format!(".{app}.toml"));
+        fs::write(&dotfile, "key = \"value\"").unwrap();
+
+        let nonexistent_xdg = dir_path.join("nonexistent_xdg");
+        let result = ConfigDiscovery::new(app)
+            .formats(&[Format::Toml])
+            .xdg_config_home(&nonexistent_xdg)
+            .hierarchical()
+            .start_dir(&dir_path)
+            .discover_all();
+
+        assert!(result.is_ok());
+        let paths = result.unwrap();
+        assert!(
+            paths.iter().any(|p| p == &dotfile),
+            "expected .toml dotfile in hierarchical results"
+        );
+    }
+
+    #[test]
+    fn hierarchical_multiple_formats_found() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path().canonicalize().unwrap();
+        let app = "hiermulti";
+
+        let yaml_file = dir_path.join(format!(".{app}.yaml"));
+        let toml_file = dir_path.join(format!(".{app}.toml"));
+        fs::write(&yaml_file, "format: yaml").unwrap();
+        fs::write(&toml_file, "format = \"toml\"").unwrap();
+
+        let nonexistent_xdg = dir_path.join("nonexistent_xdg");
+        let result = ConfigDiscovery::new(app)
+            .formats(&[Format::Yaml, Format::Toml])
+            .xdg_config_home(&nonexistent_xdg)
+            .hierarchical()
+            .start_dir(&dir_path)
+            .discover_all();
+
+        assert!(result.is_ok());
+        let paths = result.unwrap();
+        assert!(paths.contains(&yaml_file), "should find yaml");
+        assert!(paths.contains(&toml_file), "should find toml");
+    }
+
+    #[test]
+    fn discover_all_non_hierarchical_env_override_included() {
+        let dir = TempDir::new().unwrap();
+        let override_file = dir.path().join("custom.yaml");
+        fs::write(&override_file, "key: value").unwrap();
+
+        let var = "SHIKUMI_TEST_DA_ENV";
+        unsafe { env::set_var(var, override_file.to_str().unwrap()) };
+
+        let result = ConfigDiscovery::new("shikumi_nonexist_da_env")
+            .env_override(var)
+            .discover_all();
+
+        unsafe { env::remove_var(var) };
+
+        assert!(result.is_ok());
+        let paths = result.unwrap();
+        assert!(paths.contains(&override_file));
+    }
+
+    #[test]
+    fn standard_paths_with_no_home_or_xdg() {
+        let nonexistent = PathBuf::from("/nonexistent_for_test_12345");
+        let d = ConfigDiscovery::new("nohome")
+            .xdg_config_home(&nonexistent)
+            .home_dir(&nonexistent);
+        let paths = d.standard_paths();
+        assert!(
+            paths.iter().all(|p| p.starts_with(&nonexistent)),
+            "all paths should be under the injected directories"
+        );
+    }
 }
