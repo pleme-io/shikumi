@@ -14,14 +14,18 @@ use tracing::warn;
 use crate::error::ShikumiError;
 
 /// Supported config file formats, in preference order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Format {
+    /// YAML format (`.yaml` and `.yml` extensions).
     Yaml,
+    /// TOML format (`.toml` extension).
     Toml,
 }
 
 impl Format {
-    fn extensions(self) -> &'static [&'static str] {
+    /// Returns the file extensions associated with this format.
+    #[must_use]
+    pub fn extensions(self) -> &'static [&'static str] {
         match self {
             Self::Yaml => &["yaml", "yml"],
             Self::Toml => &["toml"],
