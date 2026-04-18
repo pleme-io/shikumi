@@ -53,8 +53,7 @@ impl ConfigWatcher {
         F: Fn(notify::Event) + Send + 'static,
     {
         let handler = CallbackHandler(Box::new(on_change));
-        let setup = notify::Config::default()
-            .with_poll_interval(Duration::from_secs(3));
+        let setup = notify::Config::default().with_poll_interval(Duration::from_secs(3));
 
         let symlink = symlink_target(path);
 
@@ -198,10 +197,7 @@ mod tests {
 
         // Broken symlink: canonicalize should fail
         let result = symlink_target(&link);
-        assert!(
-            result.is_none(),
-            "broken symlink should return None"
-        );
+        assert!(result.is_none(), "broken symlink should return None");
     }
 
     #[test]
@@ -237,10 +233,7 @@ mod tests {
         thread::sleep(Duration::from_millis(500));
 
         let captured = events.lock().unwrap();
-        assert!(
-            !captured.is_empty(),
-            "rewatch should detect file changes"
-        );
+        assert!(!captured.is_empty(), "rewatch should detect file changes");
     }
 
     #[test]
@@ -297,9 +290,9 @@ mod tests {
         let captured = paths.lock().unwrap();
         if !captured.is_empty() {
             assert!(
-                captured.iter().any(|p| {
-                    p.display().to_string().contains("pathcheck")
-                }),
+                captured
+                    .iter()
+                    .any(|p| { p.display().to_string().contains("pathcheck") }),
                 "expected event path to reference the watched file"
             );
         }

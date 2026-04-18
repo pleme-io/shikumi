@@ -16,6 +16,10 @@ use tracing::warn;
 use crate::error::ShikumiError;
 
 /// Supported config file formats, in preference order.
+///
+/// **Tatara-lisp is a first-class configuration format** alongside YAML, TOML,
+/// and Nix. Per the pleme-io tatara-lisp ecosystem standard, every configurable
+/// application supports all four natively and auto-detects by extension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
 pub enum Format {
@@ -24,6 +28,17 @@ pub enum Format {
     Yaml,
     /// TOML format (`.toml` extension).
     Toml,
+    /// Tatara-lisp format (`.lisp` / `.lsp` / `.el` extensions).
+    ///
+    /// The first top-level `(defX …)` form's kwargs become the config dict;
+    /// nested kwargs lists become nested maps. Bare symbols → strings;
+    /// nil → null. See [`crate::lisp_provider`] for the full mapping.
+    Lisp,
+    /// Nix format (`.nix` extension).
+    ///
+    /// Evaluated via `nix eval --file <path> --json` and parsed as JSON.
+    /// The file must evaluate to an attrset; its attrs become the config.
+    Nix,
 }
 
 impl Format {
@@ -33,6 +48,8 @@ impl Format {
         match self {
             Self::Yaml => &["yaml", "yml"],
             Self::Toml => &["toml"],
+            Self::Lisp => &["lisp", "lsp", "el"],
+            Self::Nix => &["nix"],
         }
     }
 
@@ -44,6 +61,8 @@ impl Format {
         match ext {
             "yaml" | "yml" => Some(Self::Yaml),
             "toml" => Some(Self::Toml),
+            "lisp" | "lsp" | "el" => Some(Self::Lisp),
+            "nix" => Some(Self::Nix),
             _ => None,
         }
     }
@@ -54,6 +73,8 @@ impl fmt::Display for Format {
         match self {
             Self::Yaml => f.write_str("yaml"),
             Self::Toml => f.write_str("toml"),
+            Self::Lisp => f.write_str("lisp"),
+            Self::Nix => f.write_str("nix"),
         }
     }
 }
@@ -81,6 +102,8 @@ impl FromStr for Format {
         match s.to_ascii_lowercase().as_str() {
             "yaml" | "yml" => Ok(Self::Yaml),
             "toml" => Ok(Self::Toml),
+            "lisp" | "lsp" | "el" => Ok(Self::Lisp),
+            "nix" => Ok(Self::Nix),
             _ => Err(ShikumiError::Parse(format!("unknown config format: {s}"))),
         }
     }
@@ -237,9 +260,7 @@ impl ConfigDiscovery {
             }
         }
 
-        Err(ShikumiError::NotFound {
-            tried: paths,
-        })
+        Err(ShikumiError::NotFound { tried: paths })
     }
 
     /// Discover the config file, or return a default path if none exists.
@@ -252,9 +273,7 @@ impl ConfigDiscovery {
             self.standard_paths()
                 .into_iter()
                 .next()
-                .unwrap_or_else(|| {
-                    PathBuf::from(format!(".{}.yaml", self.app_name))
-                })
+                .unwrap_or_else(|| PathBuf::from(format!(".{}.yaml", self.app_name)))
         })
     }
 
@@ -289,10 +308,7 @@ impl ConfigDiscovery {
                 self.collect_dir_configs(&config_dir.join(app), app, &mut found);
             }
 
-            let start = self
-                .start_dir
-                .clone()
-                .or_else(|| env::current_dir().ok());
+            let start = self.start_dir.clone().or_else(|| env::current_dir().ok());
 
             if let Some(cwd) = start {
                 let mut ancestors: Vec<PathBuf> = Vec::new();
@@ -399,13 +415,7 @@ impl ConfigDiscovery {
     }
 
     /// Collect partial configs matching `[.]{app}-*.{ext}` in a directory.
-    fn collect_partials(
-        &self,
-        dir: &Path,
-        app: &str,
-        dot_prefix: bool,
-        found: &mut Vec<PathBuf>,
-    ) {
+    fn collect_partials(&self, dir: &Path, app: &str, dot_prefix: bool, found: &mut Vec<PathBuf>) {
         if !dir.is_dir() {
             return;
         }
@@ -484,9 +494,18 @@ mod tests {
 
     #[test]
     fn format_try_from_path() {
-        assert_eq!(Format::try_from(Path::new("config.yaml")).unwrap(), Format::Yaml);
-        assert_eq!(Format::try_from(Path::new("config.yml")).unwrap(), Format::Yaml);
-        assert_eq!(Format::try_from(Path::new("config.toml")).unwrap(), Format::Toml);
+        assert_eq!(
+            Format::try_from(Path::new("config.yaml")).unwrap(),
+            Format::Yaml
+        );
+        assert_eq!(
+            Format::try_from(Path::new("config.yml")).unwrap(),
+            Format::Yaml
+        );
+        assert_eq!(
+            Format::try_from(Path::new("config.toml")).unwrap(),
+            Format::Toml
+        );
         assert!(Format::try_from(Path::new("config.json")).is_err());
         assert!(Format::try_from(Path::new("no_extension")).is_err());
     }
@@ -513,9 +532,7 @@ mod tests {
         let var = "SHIKUMI_TEST_DISCOVER";
         unsafe { env::set_var(var, config_file.to_str().unwrap()) };
 
-        let result = ConfigDiscovery::new("testapp")
-            .env_override(var)
-            .discover();
+        let result = ConfigDiscovery::new("testapp").env_override(var).discover();
 
         unsafe { env::remove_var(var) };
 
@@ -879,8 +896,7 @@ mod tests {
 
     #[test]
     fn discover_all_non_hierarchical_missing_returns_error() {
-        let result = ConfigDiscovery::new("shikumi_disc_all_noexist_xyz")
-            .discover_all();
+        let result = ConfigDiscovery::new("shikumi_disc_all_noexist_xyz").discover_all();
         assert!(result.is_err());
     }
 
@@ -1150,8 +1166,7 @@ mod tests {
     #[test]
     fn xdg_config_home_builder_used_in_standard_paths() {
         let dir = TempDir::new().unwrap();
-        let d = ConfigDiscovery::new("injapp")
-            .xdg_config_home(dir.path());
+        let d = ConfigDiscovery::new("injapp").xdg_config_home(dir.path());
         let paths = d.standard_paths();
         assert!(
             paths.iter().any(|p| p.starts_with(dir.path())),
@@ -1175,8 +1190,7 @@ mod tests {
     #[test]
     fn home_dir_produces_legacy_paths() {
         let dir = TempDir::new().unwrap();
-        let d = ConfigDiscovery::new("leginjapp")
-            .home_dir(dir.path());
+        let d = ConfigDiscovery::new("leginjapp").home_dir(dir.path());
         let paths = d.standard_paths();
         let path_strs: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
         assert!(
@@ -1229,8 +1243,7 @@ mod tests {
     #[test]
     fn start_dir_builder_sets_field() {
         let dir = TempDir::new().unwrap();
-        let d = ConfigDiscovery::new("sdtest")
-            .start_dir(dir.path());
+        let d = ConfigDiscovery::new("sdtest").start_dir(dir.path());
         assert_eq!(d.start_dir, Some(dir.path().to_path_buf()));
     }
 
@@ -1256,7 +1269,11 @@ mod tests {
             .discover();
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), xdg_file, "XDG should take precedence over HOME");
+        assert_eq!(
+            result.unwrap(),
+            xdg_file,
+            "XDG should take precedence over HOME"
+        );
     }
 
     #[test]

@@ -57,10 +57,7 @@ mod tests {
     #[test]
     fn not_found_display_lists_paths() {
         let err = ShikumiError::NotFound {
-            tried: vec![
-                PathBuf::from("/a/b.yaml"),
-                PathBuf::from("/c/d.toml"),
-            ],
+            tried: vec![PathBuf::from("/a/b.yaml"), PathBuf::from("/c/d.toml")],
         };
         let msg = err.to_string();
         assert!(msg.contains("/a/b.yaml"), "error should list first path");

@@ -52,7 +52,11 @@ impl ProviderChain {
     /// Merge a config file, auto-detecting format by extension.
     ///
     /// - `.yaml` / `.yml` → YAML provider
-    /// - anything else → TOML provider
+    /// - `.yaml` / `.yml` → YAML provider
+    /// - `.toml` → TOML provider
+    /// - `.lisp` / `.lsp` / `.el` → Tatara-lisp provider ([`crate::LispProvider`])
+    /// - `.nix` → Nix provider ([`crate::NixProvider`], shells out to `nix eval`)
+    /// - anything else → TOML provider (conservative fallback)
     #[must_use]
     pub fn with_file(mut self, path: &Path) -> Self {
         let format = path
@@ -63,6 +67,16 @@ impl ProviderChain {
         match format {
             Some(Format::Yaml) => {
                 self.figment = self.figment.merge(FigYaml::file(path));
+            }
+            Some(Format::Lisp) => {
+                self.figment = self
+                    .figment
+                    .merge(crate::lisp_provider::LispProvider::file(path));
+            }
+            Some(Format::Nix) => {
+                self.figment = self
+                    .figment
+                    .merge(crate::nix_provider::NixProvider::file(path));
             }
             Some(Format::Toml) | None => {
                 self.figment = self.figment.merge(FigToml::file(path));
@@ -148,10 +162,7 @@ mod tests {
         let file = dir.path().join("test.toml");
         fs::write(&file, "name = \"from_toml\"\ncount = 7\n").unwrap();
 
-        let config: TestConfig = ProviderChain::new()
-            .with_file(&file)
-            .extract()
-            .unwrap();
+        let config: TestConfig = ProviderChain::new().with_file(&file).extract().unwrap();
         assert_eq!(config.name.as_deref(), Some("from_toml"));
         assert_eq!(config.count, Some(7));
     }
@@ -226,10 +237,7 @@ mod tests {
         let file = dir.path().join("test.yml");
         fs::write(&file, "name: from_yml\ncount: 55\n").unwrap();
 
-        let config: TestConfig = ProviderChain::new()
-            .with_file(&file)
-            .extract()
-            .unwrap();
+        let config: TestConfig = ProviderChain::new().with_file(&file).extract().unwrap();
         assert_eq!(config.name.as_deref(), Some("from_yml"));
         assert_eq!(config.count, Some(55));
     }
@@ -240,10 +248,7 @@ mod tests {
         let file = dir.path().join("empty.yaml");
         fs::write(&file, "").unwrap();
 
-        let config: TestConfig = ProviderChain::new()
-            .with_file(&file)
-            .extract()
-            .unwrap();
+        let config: TestConfig = ProviderChain::new().with_file(&file).extract().unwrap();
         assert_eq!(config.name, None);
         assert_eq!(config.count, None);
     }
@@ -254,10 +259,7 @@ mod tests {
         let file = dir.path().join("empty.toml");
         fs::write(&file, "").unwrap();
 
-        let config: TestConfig = ProviderChain::new()
-            .with_file(&file)
-            .extract()
-            .unwrap();
+        let config: TestConfig = ProviderChain::new().with_file(&file).extract().unwrap();
         assert_eq!(config.name, None);
         assert_eq!(config.count, None);
     }
@@ -299,10 +301,7 @@ mod tests {
         unsafe { std::env::set_var("SHIKUMI_NESTED_TEST_OPTIONS__PADDING", "42") };
         unsafe { std::env::set_var("SHIKUMI_NESTED_TEST_OPTIONS__COLOR", "blue") };
 
-        let config: NestedConfig = ProviderChain::new()
-            .with_env(prefix)
-            .extract()
-            .unwrap();
+        let config: NestedConfig = ProviderChain::new().with_env(prefix).extract().unwrap();
 
         unsafe { std::env::remove_var("SHIKUMI_NESTED_TEST_OPTIONS__PADDING") };
         unsafe { std::env::remove_var("SHIKUMI_NESTED_TEST_OPTIONS__COLOR") };
@@ -374,10 +373,7 @@ mod tests {
         let file = dir.path().join("unicode.yaml");
         fs::write(&file, "name: \"仕組み config 🔧\"\n").unwrap();
 
-        let config: TestConfig = ProviderChain::new()
-            .with_file(&file)
-            .extract()
-            .unwrap();
+        let config: TestConfig = ProviderChain::new().with_file(&file).extract().unwrap();
         assert_eq!(config.name.as_deref(), Some("仕組み config 🔧"));
     }
 

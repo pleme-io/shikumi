@@ -35,12 +35,16 @@
 
 mod discovery;
 mod error;
+pub mod lisp_provider;
+pub mod nix_provider;
 mod provider;
 mod store;
 mod watcher;
 
 pub use discovery::{ConfigDiscovery, Format};
 pub use error::ShikumiError;
+pub use lisp_provider::{LispProvider, load_from_str as load_lisp_from_str};
+pub use nix_provider::NixProvider;
 pub use provider::ProviderChain;
 pub use store::ConfigStore;
 pub use watcher::{ConfigWatcher, symlink_target};

@@ -77,8 +77,8 @@ where
         let prefix_owned = env_prefix.to_owned();
 
         let watcher = ConfigWatcher::watch(path, move |event| {
-            use notify::event::{DataChange, MetadataKind, ModifyKind};
             use notify::EventKind;
+            use notify::event::{DataChange, MetadataKind, ModifyKind};
 
             match &event.kind {
                 EventKind::Modify(
@@ -271,10 +271,7 @@ mod tests {
             &file,
             "SHIKUMI_WATCH_TEST_",
             move |config: &TestConfig| {
-                reloads_clone
-                    .lock()
-                    .unwrap()
-                    .push(config.name.clone());
+                reloads_clone.lock().unwrap().push(config.name.clone());
             },
         )
         .unwrap();
@@ -532,11 +529,9 @@ mod tests {
         let file = dir.path().join("single.yaml");
         fs::write(&file, "name: only\ncount: 1\n").unwrap();
 
-        let store = ConfigStore::<TestConfig>::load_merged(
-            &[file.clone()],
-            "SHIKUMI_MERGE_SINGLE_",
-        )
-        .unwrap();
+        let store =
+            ConfigStore::<TestConfig>::load_merged(&[file.clone()], "SHIKUMI_MERGE_SINGLE_")
+                .unwrap();
         let config = store.get();
         assert_eq!(config.name.as_deref(), Some("only"));
         assert_eq!(config.count, Some(1));
@@ -573,11 +568,9 @@ mod tests {
         fs::write(&user, "name: user\n").unwrap();
         fs::write(&local, "count: 99\n").unwrap();
 
-        let store = ConfigStore::<TestConfig>::load_merged(
-            &[sys, user, local],
-            "SHIKUMI_MERGE_3LAYER_",
-        )
-        .unwrap();
+        let store =
+            ConfigStore::<TestConfig>::load_merged(&[sys, user, local], "SHIKUMI_MERGE_3LAYER_")
+                .unwrap();
         let config = store.get();
         // name from user (second layer), count from local (third layer)
         assert_eq!(config.name.as_deref(), Some("user"));
@@ -592,11 +585,9 @@ mod tests {
         fs::write(&exists, "name: present\ncount: 42\n").unwrap();
 
         // Figment silently ignores nonexistent files
-        let store = ConfigStore::<TestConfig>::load_merged(
-            &[missing, exists],
-            "SHIKUMI_MERGE_MISS_",
-        )
-        .unwrap();
+        let store =
+            ConfigStore::<TestConfig>::load_merged(&[missing, exists], "SHIKUMI_MERGE_MISS_")
+                .unwrap();
         let config = store.get();
         assert_eq!(config.name.as_deref(), Some("present"));
         assert_eq!(config.count, Some(42));
@@ -605,11 +596,7 @@ mod tests {
     #[test]
     fn load_merged_empty_paths() {
         // Empty paths list should produce default values
-        let store = ConfigStore::<TestConfig>::load_merged(
-            &[],
-            "SHIKUMI_MERGE_EMPTY_",
-        )
-        .unwrap();
+        let store = ConfigStore::<TestConfig>::load_merged(&[], "SHIKUMI_MERGE_EMPTY_").unwrap();
         let config = store.get();
         assert_eq!(config.name, None);
         assert_eq!(config.count, None);
@@ -624,11 +611,7 @@ mod tests {
         let prefix = "SHIKUMI_MERGE_ENV_";
         unsafe { std::env::set_var("SHIKUMI_MERGE_ENV_NAME", "from_env") };
 
-        let store = ConfigStore::<TestConfig>::load_merged(
-            &[file],
-            prefix,
-        )
-        .unwrap();
+        let store = ConfigStore::<TestConfig>::load_merged(&[file], prefix).unwrap();
         let config = store.get();
 
         unsafe { std::env::remove_var("SHIKUMI_MERGE_ENV_NAME") };
@@ -646,11 +629,8 @@ mod tests {
         fs::write(&yaml, "name: from_yaml\ncount: 5\n").unwrap();
         fs::write(&toml, "name = \"from_toml\"\n").unwrap();
 
-        let store = ConfigStore::<TestConfig>::load_merged(
-            &[yaml, toml],
-            "SHIKUMI_MERGE_MIX_",
-        )
-        .unwrap();
+        let store =
+            ConfigStore::<TestConfig>::load_merged(&[yaml, toml], "SHIKUMI_MERGE_MIX_").unwrap();
         let config = store.get();
         assert_eq!(config.name.as_deref(), Some("from_toml"));
         assert_eq!(config.count, Some(5));
@@ -674,11 +654,7 @@ mod tests {
 
     #[test]
     fn load_merged_empty_path_is_default() {
-        let store = ConfigStore::<TestConfig>::load_merged(
-            &[],
-            "SHIKUMI_MERGE_EMPTYP_",
-        )
-        .unwrap();
+        let store = ConfigStore::<TestConfig>::load_merged(&[], "SHIKUMI_MERGE_EMPTYP_").unwrap();
         assert_eq!(store.path(), Path::new(""));
     }
 
