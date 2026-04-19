@@ -30,6 +30,13 @@ lisp = ["dep:tatara-lisp"]
 # for the full native-integration story across all 5 vault backends.
 akeyless-native = ["dep:akeyless-api", "dep:tokio"]
 
+# Native AWS Secrets Manager via the upstream aws-sdk-secretsmanager
+# crate. AWS generates their SDKs from Smithy, not OpenAPI, so we
+# consume the official crate rather than regenerating via forge-gen.
+# Pulls in the AWS credential chain (IRSA, IMDSv2, profile files) via
+# aws-config. See RFC 0001 for the full rationale.
+aws-native = ["dep:aws-sdk-secretsmanager", "dep:aws-config", "dep:tokio"]
+
 [dependencies]
 arc-swap = "1.8"
 figment = { version = "0.10", features = ["env", "yaml", "toml"] }
@@ -41,6 +48,9 @@ tracing = "0.1"
 tatara-lisp = { path = "../tatara/tatara-lisp", optional = true }
 # Feature-gated native Akeyless SDK (generated from OpenAPI via forge-gen).
 akeyless-api = { git = "https://github.com/pleme-io/akeyless-api", optional = true }
+# Feature-gated native AWS Secrets Manager SDK + credential provider chain.
+aws-sdk-secretsmanager = { version = "1", optional = true }
+aws-config = { version = "1", features = ["behavior-version-latest"], optional = true }
 tokio = { version = "1", features = ["rt"], optional = true }
 
 [dev-dependencies]

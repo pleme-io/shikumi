@@ -618,6 +618,87 @@ pub async fn resolve_akeyless_auto(
     }
 }
 
+// ── AWS Secrets Manager ────────────────────────────────────────────
+
+/// Fetch an AWS secret via the official `aws-sdk-secretsmanager` crate.
+///
+/// AWS generates their SDKs from Smithy, not OpenAPI, so we consume the
+/// official crate directly instead of regenerating via forge-gen (RFC
+/// 0001 §5 covers the rationale).
+///
+/// The `client` comes from the caller — they construct an
+/// `aws_sdk_secretsmanager::Client` via `aws_config::load_from_env().await`
+/// + `aws_sdk_secretsmanager::Client::new(&config)`. Credentials follow
+/// the standard AWS chain (env vars, profile files, IMDSv2 for EC2,
+/// IRSA for EKS, AssumeRole).
+///
+/// For structured SecretStrings (JSON maps), the caller parses the
+/// returned string. shikumi doesn't mediate that — each daemon knows
+/// its own secret shape.
+///
+/// # Errors
+///
+/// - [`ShikumiError::Parse`] if the SDK returns any error: secret
+///   missing, access denied, STS credentials expired, region
+///   misconfiguration. The underlying error message is included.
+/// - [`ShikumiError::Parse`] if the secret has no `SecretString`
+///   (binary-only secrets aren't in scope — use the SDK directly).
+#[cfg(feature = "aws-native")]
+pub async fn resolve_aws_secret_native(
+    client: &aws_sdk_secretsmanager::Client,
+    secret_id: &str,
+) -> Result<String, ShikumiError> {
+    let response = client
+        .get_secret_value()
+        .secret_id(secret_id)
+        .send()
+        .await
+        .map_err(|e| {
+            ShikumiError::Parse(format!(
+                "aws secretsmanager get-secret-value({secret_id}) failed: {e}"
+            ))
+        })?;
+
+    response.secret_string().map(str::to_owned).ok_or_else(|| {
+        ShikumiError::Parse(format!(
+            "aws secret {secret_id} has no SecretString (binary secrets not supported here — use the SDK directly)"
+        ))
+    })
+}
+
+/// Build an AWS Secrets Manager client from the default credential chain.
+///
+/// Helper so consumers don't have to depend on `aws-config` + `aws-sdk-secretsmanager`
+/// directly. Reads region from `AWS_REGION` / `AWS_DEFAULT_REGION` env
+/// vars, profile files, or IMDSv2. Defaults to `us-east-1` if nothing
+/// is set (matches aws-sdk-rust's behavior).
+#[cfg(feature = "aws-native")]
+pub async fn aws_secretsmanager_client() -> aws_sdk_secretsmanager::Client {
+    let cfg = aws_config::load_from_env().await;
+    aws_sdk_secretsmanager::Client::new(&cfg)
+}
+
+/// Auto-select native or CLI based on the `aws-native` feature +
+/// whether a client was provided.
+///
+/// When `aws-native` is enabled and `client` is `Some`: uses the SDK.
+/// Otherwise falls back to [`resolve_aws_secret`] (CLI).
+///
+/// # Errors
+///
+/// Propagates errors from the underlying resolver.
+#[cfg(feature = "aws-native")]
+pub async fn resolve_aws_secret_auto(
+    client: Option<&aws_sdk_secretsmanager::Client>,
+    secret_id: &str,
+) -> Result<String, ShikumiError> {
+    if let Some(c) = client {
+        resolve_aws_secret_native(c, secret_id).await
+    } else {
+        resolve_aws_secret(secret_id)
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Back-compat: resolve_or_command kept for the 11 existing call sites
 // ─────────────────────────────────────────────────────────────────────

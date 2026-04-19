@@ -54,10 +54,10 @@ resolver alongside the CLI resolver.
 
 | Backend | OpenAPI source | Generated crate | Status |
 |---|---|---|---|
-| Akeyless | <https://api.akeyless.io/openapi.json> | `akeyless-api` | ✅ shipped (604 endpoints, 1334 types) |
+| Akeyless | <https://api.akeyless.io/openapi.json> | `akeyless-api` | ✅ shipped — `shikumi --features akeyless-native` |
+| AWS Secrets Manager | aws-sdk-rust / Smithy | `aws-sdk-secretsmanager` on crates.io | ✅ shipped — `shikumi --features aws-native` |
 | 1Password Connect | <https://developer.1password.com/docs/connect/connect-api-reference/> | `op-connect-api` | not yet |
 | HashiCorp Vault | <https://developer.hashicorp.com/vault/api-docs> (OpenAPI endpoint: `GET /v1/sys/internal/specs/openapi`) | `vault-api` | not yet |
-| AWS Secrets Manager | aws-sdk-rust / Smithy (not OpenAPI but has equivalent specs) | `aws-sdk-secretsmanager` on crates.io | use upstream |
 | GCP Secret Manager | Google Discovery API: <https://secretmanager.googleapis.com/$discovery/rest> | `gcp-secretmanager-api` | not yet |
 
 **AWS is special:** AWS's SDKs are generated from Smithy models, not
