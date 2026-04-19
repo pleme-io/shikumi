@@ -23,6 +23,13 @@ default = []
 # need Lisp configs opt in explicitly.
 lisp = ["dep:tatara-lisp"]
 
+# Native HTTP client for Akeyless Vault via the akeyless-api SDK (604
+# endpoints, 1334 types, generated from the Akeyless OpenAPI spec).
+# Enables `resolve_akeyless_native` alongside the existing CLI-based
+# `resolve_akeyless`. See docs/rfcs/0001-native-vault-sdks-via-forge-gen.md
+# for the full native-integration story across all 5 vault backends.
+akeyless-native = ["dep:akeyless-api", "dep:tokio"]
+
 [dependencies]
 arc-swap = "1.8"
 figment = { version = "0.10", features = ["env", "yaml", "toml"] }
@@ -32,6 +39,9 @@ serde_json = "1.0"
 thiserror = "2.0"
 tracing = "0.1"
 tatara-lisp = { path = "../tatara/tatara-lisp", optional = true }
+# Feature-gated native Akeyless SDK (generated from OpenAPI via forge-gen).
+akeyless-api = { git = "https://github.com/pleme-io/akeyless-api", optional = true }
+tokio = { version = "1", features = ["rt"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"

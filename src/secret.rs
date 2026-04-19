@@ -483,6 +483,142 @@ pub fn resolve_gcp_secret(name: &str) -> Result<String, ShikumiError> {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Native HTTP backends (feature-gated)
+// ─────────────────────────────────────────────────────────────────────
+//
+// See docs/rfcs/0001-native-vault-sdks-via-forge-gen.md for the full
+// native-integration story. Each backend has:
+//
+//   resolve_<backend>()         — sync, shells out to reference CLI
+//   resolve_<backend>_native()  — async, uses generated SDK (gated)
+//   resolve_<backend>_auto()    — picks native if feature on, CLI otherwise
+//
+// Akeyless is implemented first because akeyless-api (the generated
+// 604-endpoint SDK) already exists. 1Password Connect, HashiCorp Vault,
+// and GCP Secret Manager will follow the same shape as their OpenAPI-
+// generated SDKs land.
+
+/// Auth token + gateway URL for a native Akeyless client.
+///
+/// Feature-gated behind `akeyless-native`. Consumers construct this
+/// from their own config. The simplest shape: token from
+/// `AKEYLESS_TOKEN` env + gateway URL from `AKEYLESS_GATEWAY_URL` or
+/// the default public endpoint.
+#[cfg(feature = "akeyless-native")]
+#[derive(Debug, Clone)]
+pub struct AkeylessAuth {
+    /// Akeyless gateway URL. Public API is `https://api.akeyless.io`;
+    /// self-hosted gateways have their own URL.
+    pub gateway_url: String,
+    /// Auth token (from `akeyless auth` or a service-account token).
+    pub token: String,
+}
+
+#[cfg(feature = "akeyless-native")]
+impl AkeylessAuth {
+    /// Read from environment. Gateway defaults to the public API when
+    /// `AKEYLESS_GATEWAY_URL` is unset.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ShikumiError::Parse`] if `AKEYLESS_TOKEN` is absent —
+    /// without a token the SDK cannot authenticate.
+    pub fn from_env() -> Result<Self, ShikumiError> {
+        let token = std::env::var("AKEYLESS_TOKEN").map_err(|_| {
+            ShikumiError::Parse(
+                "AKEYLESS_TOKEN not set — required for native Akeyless client".into(),
+            )
+        })?;
+        let gateway_url = std::env::var("AKEYLESS_GATEWAY_URL")
+            .unwrap_or_else(|_| "https://api.akeyless.io".into());
+        Ok(Self { gateway_url, token })
+    }
+
+    /// Build an `akeyless-api` client configuration from this auth.
+    #[must_use]
+    pub fn configuration(&self) -> akeyless_api::apis::configuration::Configuration {
+        let mut cfg = akeyless_api::apis::configuration::Configuration::new();
+        cfg.base_path = self.gateway_url.clone();
+        cfg
+    }
+}
+
+/// Fetch an Akeyless secret via the generated `akeyless-api` SDK.
+///
+/// Async because the underlying SDK uses `reqwest`. Consumers call this
+/// from inside a tokio runtime (every pleme-io daemon already has one).
+///
+/// The "native" path from the RFC: direct HTTP, ~5 ms cold-start per
+/// read, pooled connections, typed errors. Contrast with
+/// [`resolve_akeyless`] which shells out (~150 ms per read, requires
+/// `akeyless` on PATH).
+///
+/// # Errors
+///
+/// - [`ShikumiError::Parse`] if the SDK returns an error (auth failure,
+///   secret not found, gateway unreachable, malformed response). The
+///   underlying error message is included for diagnosis.
+#[cfg(feature = "akeyless-native")]
+pub async fn resolve_akeyless_native(
+    auth: &AkeylessAuth,
+    name: &str,
+) -> Result<String, ShikumiError> {
+    let cfg = auth.configuration();
+    let request = akeyless_api::models::GetSecretValue {
+        names: vec![name.to_string()],
+        token: Some(auth.token.clone()),
+        ..Default::default()
+    };
+
+    let response = akeyless_api::apis::v2_api::get_secret_value(&cfg, request)
+        .await
+        .map_err(|e| {
+            ShikumiError::Parse(format!("akeyless get_secret_value({name}) failed: {e}"))
+        })?;
+
+    // Response is a JSON object: { "<secret_name>": "<value>" }.
+    let obj = response.as_object().ok_or_else(|| {
+        ShikumiError::Parse(format!(
+            "akeyless response for {name} was not a JSON object: {response}"
+        ))
+    })?;
+    let value = obj
+        .get(name)
+        .ok_or_else(|| {
+            ShikumiError::Parse(format!(
+                "akeyless response missing key {name:?}: {response}"
+            ))
+        })?;
+    value
+        .as_str()
+        .map(|s| s.to_owned())
+        .ok_or_else(|| {
+            ShikumiError::Parse(format!("akeyless value for {name} was not a string: {value}"))
+        })
+}
+
+/// Auto-select native or CLI based on the `akeyless-native` feature +
+/// whether auth was provided.
+///
+/// When `akeyless-native` is enabled and `auth` is `Some`: uses the
+/// native HTTP path. Otherwise falls back to [`resolve_akeyless`] (CLI).
+///
+/// # Errors
+///
+/// Propagates errors from the underlying resolver.
+#[cfg(feature = "akeyless-native")]
+pub async fn resolve_akeyless_auto(
+    auth: Option<&AkeylessAuth>,
+    name: &str,
+) -> Result<String, ShikumiError> {
+    if let Some(a) = auth {
+        resolve_akeyless_native(a, name).await
+    } else {
+        resolve_akeyless(name)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Back-compat: resolve_or_command kept for the 11 existing call sites
 // ─────────────────────────────────────────────────────────────────────
 
