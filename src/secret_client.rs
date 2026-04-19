@@ -18,14 +18,19 @@
 //!
 //! | Backend | get | list | put | delete | rotate | versions |
 //! |---|---|---|---|---|---|---|
-//! | Literal (in-memory) | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-//! | Command (shell) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-//! | 1Password Connect | ✅ | ✅ | ⚠️ (via API) | ⚠️ | ❌ | ❌ |
-//! | SOPS (file-based) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-//! | Akeyless | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-//! | HashiCorp Vault | ✅ | ✅ | ✅ | ✅ | ⚠️ (engine-dependent) | ✅ |
-//! | AWS Secrets Manager | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-//! | GCP Secret Manager | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
+//! | MemClient (in-memory) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+//! | CommandClient (shell) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+//! | AkeylessClient | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+//! | AwsClient | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+//! | 1Password Connect | planned | planned | planned | planned | ❌ | ❌ |
+//! | HashiCorp Vault | planned | planned | planned | planned | ⚠️ (engine) | planned |
+//! | GCP Secret Manager | planned | planned | planned | planned | ❌ | planned |
+//! | SOPS (file-based) | stays CLI-only (no HTTP API) |
+//!
+//! "✅" = implemented. "⚠️" = supported but backend-specific.
+//! "❌" = fundamentally unsupported.
+//! "planned" = queued in RFC 0001 (`op-connect-api`, `vault-api`,
+//! `gcp-secretmanager-api` need generating via forge-gen).
 //!
 //! "✅" = universally supported via the backend's API.
 //! "⚠️" = supported but with backend-specific caveats (see per-impl docs).
@@ -248,9 +253,11 @@ pub trait SecretClient: Send + Sync {
 /// Thread-safe in-memory `SecretClient`. Useful for tests and for
 /// seeding dev secrets without hitting a real vault.
 ///
-/// Backed by a `RwLock<HashMap>` so reads don't contend.
+/// Backed by a `RwLock<HashMap>` so reads don't contend. Version
+/// history is kept per-name: each write appends; `rotate` also
+/// appends a new generated value. Versions are numbered starting at 1.
 pub struct MemClient {
-    store: RwLock<HashMap<String, String>>,
+    store: RwLock<HashMap<String, Vec<String>>>,
 }
 
 impl MemClient {
@@ -262,7 +269,7 @@ impl MemClient {
     }
 
     /// Seed the client with an initial set of secrets. Convenient for
-    /// test fixtures and dev defaults.
+    /// test fixtures and dev defaults. Each seed value becomes version 1.
     #[must_use]
     pub fn with_seed<I, K, V>(iter: I) -> Self
     where
@@ -276,7 +283,7 @@ impl MemClient {
                 .store
                 .write()
                 .expect("MemClient lock poisoned")
-                .insert(k.into(), v.into());
+                .insert(k.into(), vec![v.into()]);
         }
         client
     }
@@ -295,25 +302,33 @@ impl SecretClient for MemClient {
     }
 
     fn capabilities(&self) -> Capabilities {
-        Capabilities {
-            get: true,
-            list: true,
-            put: true,
-            delete: true,
-            rotate: false,
-            versions: false,
-        }
+        Capabilities::full()
     }
 
     async fn get(&self, name: &str) -> Result<String, SecretError> {
-        self.store
-            .read()
-            .expect("MemClient lock poisoned")
+        let store = self.store.read().expect("MemClient lock poisoned");
+        store
             .get(name)
-            .cloned()
+            .and_then(|versions| versions.last().cloned())
             .ok_or_else(|| SecretError::NotFound {
                 name: name.to_owned(),
             })
+    }
+
+    async fn get_with_metadata(&self, name: &str) -> Result<Secret, SecretError> {
+        let store = self.store.read().expect("MemClient lock poisoned");
+        let versions = store.get(name).ok_or_else(|| SecretError::NotFound {
+            name: name.to_owned(),
+        })?;
+        let value = versions.last().cloned().ok_or_else(|| SecretError::NotFound {
+            name: name.to_owned(),
+        })?;
+        let metadata = SecretMetadata {
+            version: Some(versions.len().to_string()),
+            updated_at: None,
+            tags: HashMap::new(),
+        };
+        Ok(Secret { value, metadata })
     }
 
     async fn list(&self, prefix: Option<&str>) -> Result<Vec<String>, SecretError> {
@@ -331,7 +346,9 @@ impl SecretClient for MemClient {
         self.store
             .write()
             .expect("MemClient lock poisoned")
-            .insert(name.to_owned(), value.to_owned());
+            .entry(name.to_owned())
+            .or_default()
+            .push(value.to_owned());
         Ok(())
     }
 
@@ -348,6 +365,48 @@ impl SecretClient for MemClient {
                 name: name.to_owned(),
             })
         }
+    }
+
+    async fn rotate(&self, name: &str) -> Result<(), SecretError> {
+        // Rotation semantics for an in-memory client: append a
+        // deterministic-ish new value derived from the current version
+        // count. Real vaults delegate rotation to a producer; this is
+        // a test/dev scaffold so callers can exercise the code path.
+        let mut store = self.store.write().expect("MemClient lock poisoned");
+        let versions = store.get_mut(name).ok_or_else(|| SecretError::NotFound {
+            name: name.to_owned(),
+        })?;
+        let next = format!("rotated-v{}-{name}", versions.len() + 1);
+        versions.push(next);
+        Ok(())
+    }
+
+    async fn get_version(
+        &self,
+        name: &str,
+        version: &str,
+    ) -> Result<String, SecretError> {
+        let n: usize = version.parse().map_err(|_| {
+            SecretError::Backend(format!(
+                "mem version must be an integer, got {version:?}"
+            ))
+        })?;
+        if n == 0 {
+            return Err(SecretError::Backend(
+                "mem versions are 1-indexed; 0 is invalid".into(),
+            ));
+        }
+        let store = self.store.read().expect("MemClient lock poisoned");
+        let versions = store.get(name).ok_or_else(|| SecretError::NotFound {
+            name: name.to_owned(),
+        })?;
+        versions
+            .get(n - 1)
+            .cloned()
+            .ok_or_else(|| SecretError::Backend(format!(
+                "mem has {} versions for {name}, version {n} out of range",
+                versions.len()
+            )))
     }
 }
 
@@ -465,21 +524,145 @@ impl SecretClient for AkeylessClient {
     }
 
     fn capabilities(&self) -> Capabilities {
-        // get is implemented; list/put/delete/rotate/versions pending.
-        Capabilities {
-            get: true,
-            list: false,
-            put: false,
-            delete: false,
-            rotate: false,
-            versions: false,
-        }
+        Capabilities::full()
     }
 
     async fn get(&self, name: &str) -> Result<String, SecretError> {
         crate::secret::resolve_akeyless_native(&self.auth, name)
             .await
             .map_err(SecretError::from)
+    }
+
+    async fn list(&self, prefix: Option<&str>) -> Result<Vec<String>, SecretError> {
+        let cfg = self.auth.configuration();
+        let request = akeyless_api::models::ListItems {
+            token: Some(self.auth.token.clone()),
+            path: prefix.map(str::to_owned),
+            auto_pagination: Some("enabled".into()),
+            ..Default::default()
+        };
+        let response = akeyless_api::apis::v2_api::list_items(&cfg, request)
+            .await
+            .map_err(|e| SecretError::Backend(format!("akeyless list-items: {e}")))?;
+
+        let mut names: Vec<String> = response
+            .items
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|item| item.item_name)
+            .collect();
+        names.sort();
+        Ok(names)
+    }
+
+    async fn put(&self, name: &str, value: &str) -> Result<(), SecretError> {
+        let cfg = self.auth.configuration();
+        // Try update first; fall through to create on ItemNotFound.
+        let update = akeyless_api::models::UpdateSecretVal {
+            token: Some(self.auth.token.clone()),
+            name: name.to_owned(),
+            value: value.to_owned(),
+            ..Default::default()
+        };
+        let update_result =
+            akeyless_api::apis::v2_api::update_secret_val(&cfg, update).await;
+        match update_result {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                let msg = format!("{err}");
+                if msg.contains("ItemNotExist")
+                    || msg.contains("not exist")
+                    || msg.contains("not found")
+                {
+                    let create = akeyless_api::models::CreateSecret {
+                        token: Some(self.auth.token.clone()),
+                        name: name.to_owned(),
+                        value: value.to_owned(),
+                        ..Default::default()
+                    };
+                    akeyless_api::apis::v2_api::create_secret(&cfg, create)
+                        .await
+                        .map_err(|e| {
+                            SecretError::Backend(format!(
+                                "akeyless create-secret({name}): {e}"
+                            ))
+                        })?;
+                    Ok(())
+                } else {
+                    Err(SecretError::Backend(format!(
+                        "akeyless update-secret-val({name}): {msg}"
+                    )))
+                }
+            }
+        }
+    }
+
+    async fn delete(&self, name: &str) -> Result<(), SecretError> {
+        let cfg = self.auth.configuration();
+        let request = akeyless_api::models::DeleteItem {
+            token: Some(self.auth.token.clone()),
+            name: name.to_owned(),
+            delete_immediately: Some(true),
+            ..Default::default()
+        };
+        akeyless_api::apis::v2_api::delete_item(&cfg, request)
+            .await
+            .map_err(|e| SecretError::Backend(format!("akeyless delete-item({name}): {e}")))?;
+        Ok(())
+    }
+
+    async fn rotate(&self, name: &str) -> Result<(), SecretError> {
+        let cfg = self.auth.configuration();
+        let request = akeyless_api::models::RotateSecret {
+            token: Some(self.auth.token.clone()),
+            name: name.to_owned(),
+            ..Default::default()
+        };
+        akeyless_api::apis::v2_api::rotate_secret(&cfg, request)
+            .await
+            .map_err(|e| {
+                SecretError::Backend(format!("akeyless rotate-secret({name}): {e}"))
+            })?;
+        Ok(())
+    }
+
+    async fn get_version(
+        &self,
+        name: &str,
+        version: &str,
+    ) -> Result<String, SecretError> {
+        let cfg = self.auth.configuration();
+        let version_num: i32 = version.parse().map_err(|_| {
+            SecretError::Backend(format!(
+                "akeyless version must be an integer, got {version:?}"
+            ))
+        })?;
+        let request = akeyless_api::models::GetSecretValue {
+            names: vec![name.to_owned()],
+            token: Some(self.auth.token.clone()),
+            version: Some(version_num),
+            ..Default::default()
+        };
+        let response = akeyless_api::apis::v2_api::get_secret_value(&cfg, request)
+            .await
+            .map_err(|e| {
+                SecretError::Backend(format!(
+                    "akeyless get-secret-value({name}, v={version}): {e}"
+                ))
+            })?;
+        let obj = response.as_object().ok_or_else(|| {
+            SecretError::Backend(format!(
+                "akeyless response for {name} v{version} was not an object"
+            ))
+        })?;
+        obj.get(name)
+            .and_then(|v| v.as_str())
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                SecretError::Backend(format!(
+                    "akeyless response missing value for {name} v{version}"
+                ))
+            })
     }
 }
 
@@ -518,20 +701,163 @@ impl SecretClient for AwsClient {
     }
 
     fn capabilities(&self) -> Capabilities {
-        Capabilities {
-            get: true,
-            list: false,
-            put: false,
-            delete: false,
-            rotate: false,
-            versions: false,
-        }
+        Capabilities::full()
     }
 
     async fn get(&self, name: &str) -> Result<String, SecretError> {
         crate::secret::resolve_aws_secret_native(&self.client, name)
             .await
             .map_err(SecretError::from)
+    }
+
+    async fn get_with_metadata(&self, name: &str) -> Result<Secret, SecretError> {
+        let response = self
+            .client
+            .get_secret_value()
+            .secret_id(name)
+            .send()
+            .await
+            .map_err(|e| SecretError::Backend(format!("aws get-secret-value({name}): {e}")))?;
+
+        let value = response
+            .secret_string()
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                SecretError::Backend(format!(
+                    "aws secret {name} has no SecretString (binary-only)"
+                ))
+            })?;
+
+        let mut metadata = SecretMetadata::default();
+        if let Some(version) = response.version_id() {
+            metadata.version = Some(version.to_owned());
+        }
+        if let Some(created) = response.created_date() {
+            // AWS DateTime → epoch seconds → display. Keeping a
+            // chrono-free representation since shikumi doesn't pull
+            // chrono as a dep.
+            metadata.updated_at = Some(format!("{}", created.secs()));
+        }
+        if !response.version_stages().is_empty() {
+            metadata.tags.insert(
+                "stages".into(),
+                response.version_stages().join(","),
+            );
+        }
+        Ok(Secret { value, metadata })
+    }
+
+    async fn list(&self, prefix: Option<&str>) -> Result<Vec<String>, SecretError> {
+        let mut names = Vec::new();
+        let mut next_token: Option<String> = None;
+        loop {
+            let mut req = self.client.list_secrets();
+            if let Some(t) = &next_token {
+                req = req.next_token(t);
+            }
+            let resp = req.send().await.map_err(|e| {
+                SecretError::Backend(format!("aws list-secrets: {e}"))
+            })?;
+            for entry in resp.secret_list() {
+                if let Some(n) = entry.name() {
+                    if prefix.is_none_or(|p| n.starts_with(p)) {
+                        names.push(n.to_owned());
+                    }
+                }
+            }
+            next_token = resp.next_token().map(str::to_owned);
+            if next_token.is_none() {
+                break;
+            }
+        }
+        names.sort();
+        Ok(names)
+    }
+
+    async fn put(&self, name: &str, value: &str) -> Result<(), SecretError> {
+        // Try update first; if the secret doesn't exist, create it.
+        let update_result = self
+            .client
+            .put_secret_value()
+            .secret_id(name)
+            .secret_string(value)
+            .send()
+            .await;
+        match update_result {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                // ResourceNotFoundException → fall through to create.
+                let err_str = format!("{err}");
+                if err_str.contains("ResourceNotFoundException")
+                    || err_str.contains("not found")
+                {
+                    self.client
+                        .create_secret()
+                        .name(name)
+                        .secret_string(value)
+                        .send()
+                        .await
+                        .map_err(|e| {
+                            SecretError::Backend(format!(
+                                "aws create-secret({name}): {e}"
+                            ))
+                        })?;
+                    Ok(())
+                } else {
+                    Err(SecretError::Backend(format!(
+                        "aws put-secret-value({name}): {err_str}"
+                    )))
+                }
+            }
+        }
+    }
+
+    async fn delete(&self, name: &str) -> Result<(), SecretError> {
+        // ForceDeleteWithoutRecovery=true bypasses the 7-30 day
+        // recovery window. Callers that need soft-delete compose their
+        // own SDK call.
+        self.client
+            .delete_secret()
+            .secret_id(name)
+            .force_delete_without_recovery(true)
+            .send()
+            .await
+            .map_err(|e| SecretError::Backend(format!("aws delete-secret({name}): {e}")))?;
+        Ok(())
+    }
+
+    async fn rotate(&self, name: &str) -> Result<(), SecretError> {
+        self.client
+            .rotate_secret()
+            .secret_id(name)
+            .send()
+            .await
+            .map_err(|e| SecretError::Backend(format!("aws rotate-secret({name}): {e}")))?;
+        Ok(())
+    }
+
+    async fn get_version(
+        &self,
+        name: &str,
+        version: &str,
+    ) -> Result<String, SecretError> {
+        let response = self
+            .client
+            .get_secret_value()
+            .secret_id(name)
+            .version_id(version)
+            .send()
+            .await
+            .map_err(|e| {
+                SecretError::Backend(format!(
+                    "aws get-secret-value({name}, v={version}): {e}"
+                ))
+            })?;
+        response.secret_string().map(str::to_owned).ok_or_else(|| {
+            SecretError::Backend(format!(
+                "aws secret {name} v{version} has no SecretString"
+            ))
+        })
     }
 }
 
@@ -602,33 +928,65 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mem_client_rotate_is_unsupported() {
+    async fn mem_client_rotate_missing_key_errors() {
         let client = MemClient::new();
         match client.rotate("anything").await {
-            Err(SecretError::Unsupported {
-                backend,
-                operation,
-            }) => {
-                assert_eq!(backend, "mem");
-                assert_eq!(operation, "rotate");
-            }
-            other => panic!("expected Unsupported, got {other:?}"),
+            Err(SecretError::NotFound { name }) => assert_eq!(name, "anything"),
+            other => panic!("expected NotFound, got {other:?}"),
         }
     }
 
     #[tokio::test]
-    async fn mem_client_capabilities_advertised() {
-        let caps = MemClient::new().capabilities();
-        assert!(caps.get && caps.list && caps.put && caps.delete);
-        assert!(!caps.rotate && !caps.versions);
+    async fn mem_client_rotate_appends_version() {
+        let client = MemClient::with_seed([("key", "v1")]);
+        client.rotate("key").await.unwrap();
+        let v1 = client.get_version("key", "1").await.unwrap();
+        let v2 = client.get_version("key", "2").await.unwrap();
+        assert_eq!(v1, "v1");
+        assert!(v2.starts_with("rotated-v2-"));
+        // get() returns latest (v2)
+        assert_eq!(client.get("key").await.unwrap(), v2);
     }
 
     #[tokio::test]
-    async fn mem_client_get_with_metadata_empty_by_default() {
+    async fn mem_client_versions_track_puts() {
+        let client = MemClient::new();
+        client.put("key", "v1").await.unwrap();
+        client.put("key", "v2").await.unwrap();
+        client.put("key", "v3").await.unwrap();
+        assert_eq!(client.get_version("key", "1").await.unwrap(), "v1");
+        assert_eq!(client.get_version("key", "2").await.unwrap(), "v2");
+        assert_eq!(client.get_version("key", "3").await.unwrap(), "v3");
+        // get_with_metadata exposes the current version number
+        let secret = client.get_with_metadata("key").await.unwrap();
+        assert_eq!(secret.value, "v3");
+        assert_eq!(secret.metadata.version.as_deref(), Some("3"));
+    }
+
+    #[tokio::test]
+    async fn mem_client_get_version_out_of_range_errors() {
+        let client = MemClient::with_seed([("key", "v1")]);
+        assert!(matches!(
+            client.get_version("key", "99").await,
+            Err(SecretError::Backend(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn mem_client_capabilities_advertised_full() {
+        let caps = MemClient::new().capabilities();
+        assert!(caps.get && caps.list && caps.put && caps.delete);
+        assert!(caps.rotate && caps.versions);
+    }
+
+    #[tokio::test]
+    async fn mem_client_get_with_metadata_exposes_version() {
         let client = MemClient::with_seed([("key", "value")]);
         let secret = client.get_with_metadata("key").await.unwrap();
         assert_eq!(secret.value, "value");
-        assert!(secret.metadata.version.is_none());
+        // Seeded values start at version 1; updated_at is None (MemClient
+        // isn't a real store with timestamps).
+        assert_eq!(secret.metadata.version.as_deref(), Some("1"));
         assert!(secret.metadata.tags.is_empty());
     }
 
