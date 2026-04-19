@@ -35,6 +35,7 @@
 
 mod discovery;
 mod error;
+#[cfg(feature = "lisp")]
 pub mod lisp_provider;
 pub mod nix_provider;
 mod provider;
@@ -44,6 +45,7 @@ mod watcher;
 
 pub use discovery::{ConfigDiscovery, Format};
 pub use error::ShikumiError;
+#[cfg(feature = "lisp")]
 pub use lisp_provider::{LispProvider, load_from_str as load_lisp_from_str};
 pub use nix_provider::NixProvider;
 pub use provider::ProviderChain;

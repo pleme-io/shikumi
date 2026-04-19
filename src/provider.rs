@@ -69,9 +69,20 @@ impl ProviderChain {
                 self.figment = self.figment.merge(FigYaml::file(path));
             }
             Some(Format::Lisp) => {
-                self.figment = self
-                    .figment
-                    .merge(crate::lisp_provider::LispProvider::file(path));
+                #[cfg(feature = "lisp")]
+                {
+                    self.figment = self
+                        .figment
+                        .merge(crate::lisp_provider::LispProvider::file(path));
+                }
+                #[cfg(not(feature = "lisp"))]
+                {
+                    tracing::warn!(
+                        path = %path.display(),
+                        "shikumi built without the `lisp` feature; skipping .lisp config. \
+                         Enable the feature or convert to .yaml/.toml/.nix."
+                    );
+                }
             }
             Some(Format::Nix) => {
                 self.figment = self

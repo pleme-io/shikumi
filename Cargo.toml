@@ -15,6 +15,14 @@ keywords = ["config", "hot-reload", "nix", "figment", "arcswap"]
 [lints.clippy]
 pedantic = "warn"
 
+[features]
+default = []
+# tatara-lisp config file support. Off by default because tatara-lisp is
+# a monorepo-local crate (path = "../tatara/tatara-lisp") and including
+# it unconditionally breaks git-based consumption of shikumi. Apps that
+# need Lisp configs opt in explicitly.
+lisp = ["dep:tatara-lisp"]
+
 [dependencies]
 arc-swap = "1.8"
 figment = { version = "0.10", features = ["env", "yaml", "toml"] }
@@ -23,7 +31,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
 tracing = "0.1"
-tatara-lisp = { path = "../tatara/tatara-lisp" }
+tatara-lisp = { path = "../tatara/tatara-lisp", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
