@@ -424,6 +424,117 @@ impl SecretClient for CommandClient {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Native backend impls (feature-gated)
+// ─────────────────────────────────────────────────────────────────────
+
+/// Native Akeyless `SecretClient` — HTTP via the `akeyless-api` SDK.
+///
+/// Feature-gated on `akeyless-native`. Only `get` is implemented at
+/// present; `list`/`put`/`delete`/`rotate` will land as follow-ups that
+/// wire the corresponding Akeyless API endpoints (list-items,
+/// create-secret, delete-item, rotate-secret).
+#[cfg(feature = "akeyless-native")]
+pub struct AkeylessClient {
+    auth: crate::secret::AkeylessAuth,
+}
+
+#[cfg(feature = "akeyless-native")]
+impl AkeylessClient {
+    #[must_use]
+    pub fn new(auth: crate::secret::AkeylessAuth) -> Self {
+        Self { auth }
+    }
+
+    /// Construct from `AKEYLESS_TOKEN` + `AKEYLESS_GATEWAY_URL` env vars.
+    ///
+    /// # Errors
+    ///
+    /// Propagates [`crate::secret::AkeylessAuth::from_env`] errors.
+    pub fn from_env() -> Result<Self, SecretError> {
+        let auth = crate::secret::AkeylessAuth::from_env()?;
+        Ok(Self::new(auth))
+    }
+}
+
+#[cfg(feature = "akeyless-native")]
+#[async_trait]
+impl SecretClient for AkeylessClient {
+    fn backend_name(&self) -> &'static str {
+        "akeyless"
+    }
+
+    fn capabilities(&self) -> Capabilities {
+        // get is implemented; list/put/delete/rotate/versions pending.
+        Capabilities {
+            get: true,
+            list: false,
+            put: false,
+            delete: false,
+            rotate: false,
+            versions: false,
+        }
+    }
+
+    async fn get(&self, name: &str) -> Result<String, SecretError> {
+        crate::secret::resolve_akeyless_native(&self.auth, name)
+            .await
+            .map_err(SecretError::from)
+    }
+}
+
+/// Native AWS Secrets Manager `SecretClient`.
+///
+/// Feature-gated on `aws-native`. Only `get` is implemented at present;
+/// `list`/`put`/`delete`/`rotate`/versions will land as follow-ups that
+/// wire the corresponding SDK operations (`ListSecrets`, `CreateSecret`,
+/// `DeleteSecret`, `RotateSecret`, `GetSecretValue` with version id).
+#[cfg(feature = "aws-native")]
+pub struct AwsClient {
+    client: aws_sdk_secretsmanager::Client,
+}
+
+#[cfg(feature = "aws-native")]
+impl AwsClient {
+    #[must_use]
+    pub fn new(client: aws_sdk_secretsmanager::Client) -> Self {
+        Self { client }
+    }
+
+    /// Construct with a client built from the default AWS credential
+    /// chain. Reads region + creds from env vars, profile files, or
+    /// IMDSv2 (EC2) / IRSA (EKS).
+    pub async fn from_env() -> Self {
+        let client = crate::secret::aws_secretsmanager_client().await;
+        Self::new(client)
+    }
+}
+
+#[cfg(feature = "aws-native")]
+#[async_trait]
+impl SecretClient for AwsClient {
+    fn backend_name(&self) -> &'static str {
+        "aws-secrets-manager"
+    }
+
+    fn capabilities(&self) -> Capabilities {
+        Capabilities {
+            get: true,
+            list: false,
+            put: false,
+            delete: false,
+            rotate: false,
+            versions: false,
+        }
+    }
+
+    async fn get(&self, name: &str) -> Result<String, SecretError> {
+        crate::secret::resolve_aws_secret_native(&self.client, name)
+            .await
+            .map_err(SecretError::from)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
