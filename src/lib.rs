@@ -40,6 +40,7 @@ pub mod lisp_provider;
 pub mod nix_provider;
 mod provider;
 pub mod secret;
+pub mod secret_client;
 mod store;
 mod watcher;
 
