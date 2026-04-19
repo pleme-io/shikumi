@@ -37,6 +37,15 @@ akeyless-native = ["dep:akeyless-api", "dep:tokio"]
 # aws-config. See RFC 0001 for the full rationale.
 aws-native = ["dep:aws-sdk-secretsmanager", "dep:aws-config", "dep:tokio"]
 
+# Native 1Password Connect client via thin reqwest HTTP. 1Password's
+# Connect API is small enough (~8 endpoints for vaults + items) that a
+# hand-written client is cheaper than generating a full SDK. See RFC 0001.
+op-native = ["dep:reqwest", "dep:tokio"]
+
+# Native HashiCorp Vault client via thin reqwest HTTP, covering KV v2
+# (read/list/write/delete/metadata). See RFC 0001.
+vault-native = ["dep:reqwest", "dep:tokio"]
+
 [dependencies]
 arc-swap = "1.8"
 figment = { version = "0.10", features = ["env", "yaml", "toml"] }
@@ -54,6 +63,10 @@ akeyless-api = { git = "https://github.com/pleme-io/akeyless-api", optional = tr
 aws-sdk-secretsmanager = { version = "1", optional = true }
 aws-config = { version = "1", features = ["behavior-version-latest"], optional = true }
 tokio = { version = "1", features = ["rt"], optional = true }
+# Thin HTTP client for `op-native` / `vault-native`. rustls-tls avoids
+# pulling openssl into the closure; the features match shikumi's
+# deployment story (statically linked Nix binaries).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"

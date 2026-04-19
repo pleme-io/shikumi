@@ -2150,6 +2150,7 @@ dependencies = [
  "aws-sdk-secretsmanager",
  "figment",
  "notify",
+ "reqwest",
  "serde",
  "serde_json",
  "serde_yaml",

@@ -22,8 +22,8 @@
 //! | CommandClient (shell) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 //! | AkeylessClient | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 //! | AwsClient | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-//! | 1Password Connect | planned | planned | planned | planned | ❌ | ❌ |
-//! | HashiCorp Vault | planned | planned | planned | planned | ⚠️ (engine) | planned |
+//! | OpConnectClient | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+//! | VaultClient (KV v2) | ✅ | ✅ | ✅ | ✅ | ⚠️ (engine) | ✅ |
 //! | GCP Secret Manager | planned | planned | planned | planned | ❌ | planned |
 //! | SOPS (file-based) | stays CLI-only (no HTTP API) |
 //!
@@ -861,6 +861,634 @@ impl SecretClient for AwsClient {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// OpConnectClient — 1Password Connect via thin reqwest HTTP
+// ─────────────────────────────────────────────────────────────────────
+
+/// Native 1Password Connect `SecretClient`.
+///
+/// Feature-gated on `op-native`. Talks to a 1Password Connect server
+/// (self-hosted sync service) over HTTP with a Bearer token. Secrets
+/// are modeled as Connect Items; `name` is the item *title*, resolved
+/// to a UUID per-call.
+///
+/// The Connect API is small — 8 endpoints for vault + item CRUD — so
+/// this is a hand-written thin client rather than a generated SDK.
+/// Rotation and versioning are not supported: 1Password doesn't expose
+/// programmatic rotation and item-history retrieval isn't in the
+/// Connect API surface.
+#[cfg(feature = "op-native")]
+pub struct OpConnectClient {
+    http: reqwest::Client,
+    base_url: String,
+    token: String,
+    vault_id: String,
+}
+
+#[cfg(feature = "op-native")]
+#[derive(Debug, Clone)]
+pub struct OpConnectConfig {
+    /// e.g. `https://connect.example.com` (no trailing slash).
+    pub base_url: String,
+    /// Bearer token from 1Password Connect server (not a vault API key).
+    pub token: String,
+    /// Vault UUID. Connect items are scoped to a vault.
+    pub vault_id: String,
+}
+
+#[cfg(feature = "op-native")]
+impl OpConnectClient {
+    /// Construct from an explicit config.
+    #[must_use]
+    pub fn new(config: OpConnectConfig) -> Self {
+        Self {
+            http: reqwest::Client::new(),
+            base_url: config.base_url.trim_end_matches('/').to_owned(),
+            token: config.token,
+            vault_id: config.vault_id,
+        }
+    }
+
+    /// Construct from env: `OP_CONNECT_HOST`, `OP_CONNECT_TOKEN`,
+    /// `OP_CONNECT_VAULT`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SecretError::Unauthorized`] if any required variable is missing.
+    pub fn from_env() -> Result<Self, SecretError> {
+        let read = |var: &str| {
+            std::env::var(var).map_err(|_| SecretError::Unauthorized {
+                message: format!("{var} not set"),
+            })
+        };
+        Ok(Self::new(OpConnectConfig {
+            base_url: read("OP_CONNECT_HOST")?,
+            token: read("OP_CONNECT_TOKEN")?,
+            vault_id: read("OP_CONNECT_VAULT")?,
+        }))
+    }
+
+    fn auth_header(&self) -> String {
+        format!("Bearer {}", self.token)
+    }
+
+    /// Resolve a human-readable item title to a Connect item UUID.
+    async fn resolve_item_id(&self, name: &str) -> Result<String, SecretError> {
+        let url = format!(
+            "{}/v1/vaults/{}/items?filter=title+eq+%22{}%22",
+            self.base_url,
+            self.vault_id,
+            urlencode(name)
+        );
+        let response = self
+            .http
+            .get(&url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await
+            .map_err(|e| SecretError::Backend(format!("op list items: {e}")))?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED
+            || response.status() == reqwest::StatusCode::FORBIDDEN
+        {
+            return Err(SecretError::Unauthorized {
+                message: format!("op list items: {}", response.status()),
+            });
+        }
+        if !response.status().is_success() {
+            return Err(SecretError::Backend(format!(
+                "op list items: HTTP {}",
+                response.status()
+            )));
+        }
+
+        let items: Vec<serde_json::Value> = response
+            .json()
+            .await
+            .map_err(|e| SecretError::Backend(format!("op list items parse: {e}")))?;
+
+        items
+            .into_iter()
+            .find_map(|item| {
+                item.get("id")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_owned)
+            })
+            .ok_or_else(|| SecretError::NotFound {
+                name: name.to_owned(),
+            })
+    }
+
+    /// Fetch an item by UUID and return its first `password` / `concealed`
+    /// field value.
+    async fn fetch_item_value(&self, item_id: &str, name: &str) -> Result<String, SecretError> {
+        let url = format!(
+            "{}/v1/vaults/{}/items/{}",
+            self.base_url, self.vault_id, item_id
+        );
+        let response = self
+            .http
+            .get(&url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await
+            .map_err(|e| SecretError::Backend(format!("op get item({name}): {e}")))?;
+
+        if !response.status().is_success() {
+            return Err(SecretError::Backend(format!(
+                "op get item({name}): HTTP {}",
+                response.status()
+            )));
+        }
+
+        let item: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| SecretError::Backend(format!("op get item({name}) parse: {e}")))?;
+
+        let fields = item.get("fields").and_then(|v| v.as_array()).ok_or_else(|| {
+            SecretError::Backend(format!("op item {name} has no fields array"))
+        })?;
+        fields
+            .iter()
+            .find_map(|f| {
+                let purpose = f.get("purpose").and_then(|v| v.as_str()).unwrap_or("");
+                let kind = f.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                if purpose == "PASSWORD" || kind == "CONCEALED" {
+                    f.get("value").and_then(|v| v.as_str()).map(str::to_owned)
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| {
+                SecretError::Backend(format!(
+                    "op item {name} has no PASSWORD/CONCEALED field with a value"
+                ))
+            })
+    }
+}
+
+#[cfg(feature = "op-native")]
+#[async_trait]
+impl SecretClient for OpConnectClient {
+    fn backend_name(&self) -> &'static str {
+        "op-connect"
+    }
+
+    fn capabilities(&self) -> Capabilities {
+        Capabilities {
+            get: true,
+            list: true,
+            put: true,
+            delete: true,
+            rotate: false,
+            versions: false,
+        }
+    }
+
+    async fn get(&self, name: &str) -> Result<String, SecretError> {
+        let id = self.resolve_item_id(name).await?;
+        self.fetch_item_value(&id, name).await
+    }
+
+    async fn list(&self, prefix: Option<&str>) -> Result<Vec<String>, SecretError> {
+        let url = format!("{}/v1/vaults/{}/items", self.base_url, self.vault_id);
+        let response = self
+            .http
+            .get(&url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await
+            .map_err(|e| SecretError::Backend(format!("op list items: {e}")))?;
+        if !response.status().is_success() {
+            return Err(SecretError::Backend(format!(
+                "op list items: HTTP {}",
+                response.status()
+            )));
+        }
+        let items: Vec<serde_json::Value> = response
+            .json()
+            .await
+            .map_err(|e| SecretError::Backend(format!("op list items parse: {e}")))?;
+
+        let mut names: Vec<String> = items
+            .into_iter()
+            .filter_map(|item| {
+                item.get("title")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_owned)
+            })
+            .filter(|n| prefix.is_none_or(|p| n.starts_with(p)))
+            .collect();
+        names.sort();
+        Ok(names)
+    }
+
+    async fn put(&self, name: &str, value: &str) -> Result<(), SecretError> {
+        // Create-or-update: look up by title. If missing, POST to
+        // create; else PUT to replace the item body.
+        let existing = self.resolve_item_id(name).await;
+        let body = serde_json::json!({
+            "vault": { "id": self.vault_id },
+            "title": name,
+            "category": "API_CREDENTIAL",
+            "fields": [{
+                "id": "credential",
+                "label": "credential",
+                "type": "CONCEALED",
+                "purpose": "PASSWORD",
+                "value": value,
+            }]
+        });
+        let response = match existing {
+            Ok(id) => {
+                let url = format!(
+                    "{}/v1/vaults/{}/items/{}",
+                    self.base_url, self.vault_id, id
+                );
+                self.http
+                    .put(&url)
+                    .header("Authorization", self.auth_header())
+                    .json(&body)
+                    .send()
+                    .await
+            }
+            Err(SecretError::NotFound { .. }) => {
+                let url = format!("{}/v1/vaults/{}/items", self.base_url, self.vault_id);
+                self.http
+                    .post(&url)
+                    .header("Authorization", self.auth_header())
+                    .json(&body)
+                    .send()
+                    .await
+            }
+            Err(e) => return Err(e),
+        }
+        .map_err(|e| SecretError::Backend(format!("op put item({name}): {e}")))?;
+
+        if !response.status().is_success() {
+            return Err(SecretError::Backend(format!(
+                "op put item({name}): HTTP {}",
+                response.status()
+            )));
+        }
+        Ok(())
+    }
+
+    async fn delete(&self, name: &str) -> Result<(), SecretError> {
+        let id = self.resolve_item_id(name).await?;
+        let url = format!(
+            "{}/v1/vaults/{}/items/{}",
+            self.base_url, self.vault_id, id
+        );
+        let response = self
+            .http
+            .delete(&url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await
+            .map_err(|e| SecretError::Backend(format!("op delete item({name}): {e}")))?;
+        if !response.status().is_success() {
+            return Err(SecretError::Backend(format!(
+                "op delete item({name}): HTTP {}",
+                response.status()
+            )));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "op-native")]
+fn urlencode(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '~') {
+                c.to_string()
+            } else {
+                format!("%{:02X}", c as u32)
+            }
+        })
+        .collect()
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// VaultClient — HashiCorp Vault KV v2 via thin reqwest HTTP
+// ─────────────────────────────────────────────────────────────────────
+
+/// Native HashiCorp Vault `SecretClient` — KV v2 engine.
+///
+/// Feature-gated on `vault-native`. Only KV v2 semantics are covered
+/// here: a `mount` (e.g. `"secret"`) + a path. `name` maps to the item
+/// path under that mount; the value lookup reads `data.data.value`
+/// (single-field convention) unless a nested-object schema is used,
+/// in which case the full JSON string is returned.
+///
+/// Rotation is ⚠️ backend-specific: Vault doesn't rotate KV secrets —
+/// rotation is a property of dynamic-secret engines (database, aws,
+/// pki). `rotate` here returns `Unsupported`; callers that want
+/// dynamic-secret rotation should call the engine-specific API.
+#[cfg(feature = "vault-native")]
+pub struct VaultClient {
+    http: reqwest::Client,
+    base_url: String,
+    token: String,
+    mount: String,
+    namespace: Option<String>,
+}
+
+#[cfg(feature = "vault-native")]
+#[derive(Debug, Clone)]
+pub struct VaultConfig {
+    /// Vault URL, e.g. `https://vault.example.com:8200` (no trailing slash).
+    pub base_url: String,
+    /// Vault auth token (X-Vault-Token header).
+    pub token: String,
+    /// KV v2 mount path, e.g. `"secret"` or `"kv"`.
+    pub mount: String,
+    /// Optional Vault Enterprise namespace (X-Vault-Namespace header).
+    pub namespace: Option<String>,
+}
+
+#[cfg(feature = "vault-native")]
+impl VaultClient {
+    #[must_use]
+    pub fn new(config: VaultConfig) -> Self {
+        Self {
+            http: reqwest::Client::new(),
+            base_url: config.base_url.trim_end_matches('/').to_owned(),
+            token: config.token,
+            mount: config.mount.trim_matches('/').to_owned(),
+            namespace: config.namespace,
+        }
+    }
+
+    /// Construct from env: `VAULT_ADDR`, `VAULT_TOKEN`,
+    /// `VAULT_KV_MOUNT` (default `"secret"`), `VAULT_NAMESPACE` (optional).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SecretError::Unauthorized`] if `VAULT_ADDR` or
+    /// `VAULT_TOKEN` is missing.
+    pub fn from_env() -> Result<Self, SecretError> {
+        let base_url = std::env::var("VAULT_ADDR").map_err(|_| SecretError::Unauthorized {
+            message: "VAULT_ADDR not set".into(),
+        })?;
+        let token = std::env::var("VAULT_TOKEN").map_err(|_| SecretError::Unauthorized {
+            message: "VAULT_TOKEN not set".into(),
+        })?;
+        let mount = std::env::var("VAULT_KV_MOUNT").unwrap_or_else(|_| "secret".into());
+        let namespace = std::env::var("VAULT_NAMESPACE").ok();
+        Ok(Self::new(VaultConfig {
+            base_url,
+            token,
+            mount,
+            namespace,
+        }))
+    }
+
+    fn apply_headers(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        let mut req = req.header("X-Vault-Token", &self.token);
+        if let Some(ns) = &self.namespace {
+            req = req.header("X-Vault-Namespace", ns);
+        }
+        req
+    }
+
+    fn data_url(&self, path: &str) -> String {
+        format!(
+            "{}/v1/{}/data/{}",
+            self.base_url,
+            self.mount,
+            path.trim_start_matches('/')
+        )
+    }
+
+    fn metadata_url(&self, path: &str) -> String {
+        format!(
+            "{}/v1/{}/metadata/{}",
+            self.base_url,
+            self.mount,
+            path.trim_start_matches('/')
+        )
+    }
+
+    /// Parse a KV v2 data response: extract `data.data` as the secret body.
+    /// If the body has a single `value` field, return that; otherwise
+    /// return the whole object serialized as JSON.
+    fn extract_value(body: &serde_json::Value, name: &str) -> Result<String, SecretError> {
+        let data = body
+            .get("data")
+            .and_then(|v| v.get("data"))
+            .ok_or_else(|| {
+                SecretError::Backend(format!("vault response for {name} missing data.data"))
+            })?;
+        if let Some(obj) = data.as_object() {
+            if obj.len() == 1 {
+                if let Some(v) = obj.values().next().and_then(|v| v.as_str()) {
+                    return Ok(v.to_owned());
+                }
+            }
+        }
+        Ok(data.to_string())
+    }
+}
+
+#[cfg(feature = "vault-native")]
+#[async_trait]
+impl SecretClient for VaultClient {
+    fn backend_name(&self) -> &'static str {
+        "vault"
+    }
+
+    fn capabilities(&self) -> Capabilities {
+        Capabilities {
+            get: true,
+            list: true,
+            put: true,
+            delete: true,
+            rotate: false,
+            versions: true,
+        }
+    }
+
+    async fn get(&self, name: &str) -> Result<String, SecretError> {
+        let response = self
+            .apply_headers(self.http.get(self.data_url(name)))
+            .send()
+            .await
+            .map_err(|e| SecretError::Backend(format!("vault get({name}): {e}")))?;
+
+        match response.status() {
+            reqwest::StatusCode::NOT_FOUND => Err(SecretError::NotFound {
+                name: name.to_owned(),
+            }),
+            reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => {
+                Err(SecretError::Unauthorized {
+                    message: format!("vault get({name}): {}", response.status()),
+                })
+            }
+            status if !status.is_success() => Err(SecretError::Backend(format!(
+                "vault get({name}): HTTP {status}"
+            ))),
+            _ => {
+                let body: serde_json::Value = response
+                    .json()
+                    .await
+                    .map_err(|e| SecretError::Backend(format!("vault get({name}) parse: {e}")))?;
+                Self::extract_value(&body, name)
+            }
+        }
+    }
+
+    async fn get_with_metadata(&self, name: &str) -> Result<Secret, SecretError> {
+        let response = self
+            .apply_headers(self.http.get(self.data_url(name)))
+            .send()
+            .await
+            .map_err(|e| SecretError::Backend(format!("vault get({name}): {e}")))?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(SecretError::NotFound {
+                name: name.to_owned(),
+            });
+        }
+        if !response.status().is_success() {
+            return Err(SecretError::Backend(format!(
+                "vault get({name}): HTTP {}",
+                response.status()
+            )));
+        }
+        let body: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| SecretError::Backend(format!("vault get({name}) parse: {e}")))?;
+        let value = Self::extract_value(&body, name)?;
+        let mut metadata = SecretMetadata::default();
+        if let Some(v) = body
+            .get("data")
+            .and_then(|v| v.get("metadata"))
+            .and_then(|m| m.get("version"))
+        {
+            metadata.version = Some(v.to_string());
+        }
+        if let Some(t) = body
+            .get("data")
+            .and_then(|v| v.get("metadata"))
+            .and_then(|m| m.get("created_time"))
+            .and_then(|v| v.as_str())
+        {
+            metadata.updated_at = Some(t.to_owned());
+        }
+        Ok(Secret { value, metadata })
+    }
+
+    async fn list(&self, prefix: Option<&str>) -> Result<Vec<String>, SecretError> {
+        let path = prefix.unwrap_or("").trim_start_matches('/');
+        let url = self.metadata_url(path);
+        let response = self
+            .apply_headers(self.http.request(reqwest::Method::from_bytes(b"LIST").unwrap(), &url))
+            .send()
+            .await
+            .map_err(|e| SecretError::Backend(format!("vault list: {e}")))?;
+
+        match response.status() {
+            reqwest::StatusCode::NOT_FOUND => Ok(Vec::new()),
+            s if !s.is_success() => Err(SecretError::Backend(format!(
+                "vault list: HTTP {s}"
+            ))),
+            _ => {
+                let body: serde_json::Value = response
+                    .json()
+                    .await
+                    .map_err(|e| SecretError::Backend(format!("vault list parse: {e}")))?;
+                let keys = body
+                    .get("data")
+                    .and_then(|v| v.get("keys"))
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+                let mut names: Vec<String> = keys
+                    .into_iter()
+                    .filter_map(|v| v.as_str().map(str::to_owned))
+                    .map(|k| {
+                        if path.is_empty() {
+                            k
+                        } else {
+                            format!("{}/{}", path.trim_end_matches('/'), k)
+                        }
+                    })
+                    .collect();
+                names.sort();
+                Ok(names)
+            }
+        }
+    }
+
+    async fn put(&self, name: &str, value: &str) -> Result<(), SecretError> {
+        let body = serde_json::json!({ "data": { "value": value } });
+        let response = self
+            .apply_headers(self.http.post(self.data_url(name)))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| SecretError::Backend(format!("vault put({name}): {e}")))?;
+        if !response.status().is_success() {
+            return Err(SecretError::Backend(format!(
+                "vault put({name}): HTTP {}",
+                response.status()
+            )));
+        }
+        Ok(())
+    }
+
+    async fn delete(&self, name: &str) -> Result<(), SecretError> {
+        // DELETE metadata also removes all versions. For soft-delete
+        // (versioned tombstone), callers can target /v1/{mount}/delete/{path}.
+        let response = self
+            .apply_headers(self.http.delete(self.metadata_url(name)))
+            .send()
+            .await
+            .map_err(|e| SecretError::Backend(format!("vault delete({name}): {e}")))?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(SecretError::NotFound {
+                name: name.to_owned(),
+            });
+        }
+        if !response.status().is_success() {
+            return Err(SecretError::Backend(format!(
+                "vault delete({name}): HTTP {}",
+                response.status()
+            )));
+        }
+        Ok(())
+    }
+
+    async fn get_version(&self, name: &str, version: &str) -> Result<String, SecretError> {
+        let url = format!("{}?version={}", self.data_url(name), version);
+        let response = self
+            .apply_headers(self.http.get(&url))
+            .send()
+            .await
+            .map_err(|e| SecretError::Backend(format!("vault get({name}, v={version}): {e}")))?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(SecretError::NotFound {
+                name: name.to_owned(),
+            });
+        }
+        if !response.status().is_success() {
+            return Err(SecretError::Backend(format!(
+                "vault get({name}, v={version}): HTTP {}",
+                response.status()
+            )));
+        }
+        let body: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| SecretError::Backend(format!("vault get parse: {e}")))?;
+        Self::extract_value(&body, name)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1080,5 +1708,103 @@ mod tests {
         };
         assert!(unsupported.to_string().contains("sops"));
         assert!(unsupported.to_string().contains("rotate"));
+    }
+
+    #[cfg(feature = "op-native")]
+    #[test]
+    fn op_urlencode_handles_spaces_and_reserved_chars() {
+        assert_eq!(urlencode("simple"), "simple");
+        assert_eq!(urlencode("with space"), "with%20space");
+        assert_eq!(urlencode("a/b?c=d&e"), "a%2Fb%3Fc%3Dd%26e");
+        // Unreserved chars stay as-is.
+        assert_eq!(urlencode("a-b_c.d~e"), "a-b_c.d~e");
+    }
+
+    #[cfg(feature = "op-native")]
+    #[test]
+    fn op_connect_client_constructs_from_config() {
+        let client = OpConnectClient::new(OpConnectConfig {
+            base_url: "https://connect.example.com/".into(),
+            token: "bearer-tok".into(),
+            vault_id: "VAULT_UUID".into(),
+        });
+        assert_eq!(client.backend_name(), "op-connect");
+        let caps = client.capabilities();
+        assert!(caps.get && caps.list && caps.put && caps.delete);
+        assert!(!caps.rotate && !caps.versions);
+        // Trailing slash trimmed.
+        assert_eq!(client.base_url, "https://connect.example.com");
+    }
+
+    #[cfg(feature = "vault-native")]
+    #[test]
+    fn vault_client_constructs_from_config() {
+        let client = VaultClient::new(VaultConfig {
+            base_url: "https://vault.example.com:8200/".into(),
+            token: "vault-tok".into(),
+            mount: "/secret/".into(),
+            namespace: Some("admin/team-a".into()),
+        });
+        assert_eq!(client.backend_name(), "vault");
+        let caps = client.capabilities();
+        assert!(caps.get && caps.list && caps.put && caps.delete && caps.versions);
+        assert!(!caps.rotate);
+        assert_eq!(client.base_url, "https://vault.example.com:8200");
+        assert_eq!(client.mount, "secret");
+    }
+
+    #[cfg(feature = "vault-native")]
+    #[test]
+    fn vault_url_construction() {
+        let client = VaultClient::new(VaultConfig {
+            base_url: "https://vault.example.com:8200".into(),
+            token: "t".into(),
+            mount: "secret".into(),
+            namespace: None,
+        });
+        assert_eq!(
+            client.data_url("foo/bar"),
+            "https://vault.example.com:8200/v1/secret/data/foo/bar"
+        );
+        assert_eq!(
+            client.metadata_url("foo/bar"),
+            "https://vault.example.com:8200/v1/secret/metadata/foo/bar"
+        );
+        // Leading slash on path is tolerated.
+        assert_eq!(
+            client.data_url("/foo"),
+            "https://vault.example.com:8200/v1/secret/data/foo"
+        );
+    }
+
+    #[cfg(feature = "vault-native")]
+    #[test]
+    fn vault_extract_value_single_field() {
+        let body = serde_json::json!({
+            "data": { "data": { "value": "hello" } }
+        });
+        assert_eq!(VaultClient::extract_value(&body, "x").unwrap(), "hello");
+    }
+
+    #[cfg(feature = "vault-native")]
+    #[test]
+    fn vault_extract_value_multi_field_returns_json_string() {
+        let body = serde_json::json!({
+            "data": { "data": { "username": "u", "password": "p" } }
+        });
+        let v = VaultClient::extract_value(&body, "x").unwrap();
+        // JSON object — contains both keys, order indeterminate.
+        assert!(v.contains("\"username\":\"u\""));
+        assert!(v.contains("\"password\":\"p\""));
+    }
+
+    #[cfg(feature = "vault-native")]
+    #[test]
+    fn vault_extract_value_missing_errors() {
+        let body = serde_json::json!({ "data": {} });
+        assert!(matches!(
+            VaultClient::extract_value(&body, "x"),
+            Err(SecretError::Backend(_))
+        ));
     }
 }

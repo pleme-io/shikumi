@@ -56,9 +56,16 @@ resolver alongside the CLI resolver.
 |---|---|---|---|
 | Akeyless | <https://api.akeyless.io/openapi.json> | `akeyless-api` | ✅ shipped — `shikumi --features akeyless-native` |
 | AWS Secrets Manager | aws-sdk-rust / Smithy | `aws-sdk-secretsmanager` on crates.io | ✅ shipped — `shikumi --features aws-native` |
-| 1Password Connect | <https://developer.1password.com/docs/connect/connect-api-reference/> | `op-connect-api` | not yet |
-| HashiCorp Vault | <https://developer.hashicorp.com/vault/api-docs> (OpenAPI endpoint: `GET /v1/sys/internal/specs/openapi`) | `vault-api` | not yet |
+| 1Password Connect | <https://developer.1password.com/docs/connect/connect-api-reference/> | *(hand-written reqwest client)* | ✅ shipped — `shikumi --features op-native` |
+| HashiCorp Vault | <https://developer.hashicorp.com/vault/api-docs> (OpenAPI endpoint: `GET /v1/sys/internal/specs/openapi`) | *(hand-written reqwest client, KV v2)* | ✅ shipped — `shikumi --features vault-native` |
 | GCP Secret Manager | Google Discovery API: <https://secretmanager.googleapis.com/$discovery/rest> | `gcp-secretmanager-api` | not yet |
+
+**1Password + Vault deviation from the forge-gen pattern:** Both APIs
+are small — 1Password Connect is ~8 endpoints for vault + item CRUD,
+Vault KV v2 is 5 endpoints. A hand-written thin `reqwest` client (~200
+LOC each) ships the native path without the SDK-generation overhead.
+Regenerating these later via `forge-gen` remains possible; the
+`SecretClient` trait means consumers won't notice the swap.
 
 **AWS is special:** AWS's SDKs are generated from Smithy models, not
 OpenAPI. The official `aws-sdk-secretsmanager` crate on crates.io is
