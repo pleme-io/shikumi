@@ -38,6 +38,7 @@ mod error;
 pub mod lisp_provider;
 pub mod nix_provider;
 mod provider;
+pub mod secret;
 mod store;
 mod watcher;
 
