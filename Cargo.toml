@@ -46,6 +46,13 @@ op-native = ["dep:reqwest", "dep:tokio"]
 # (read/list/write/delete/metadata). See RFC 0001.
 vault-native = ["dep:reqwest", "dep:tokio"]
 
+# Native GCP Secret Manager client via thin reqwest HTTP. Auth is the
+# caller's job: shikumi accepts a pre-obtained OAuth2 access token
+# (from `gcloud auth print-access-token`, yup-oauth2, metadata server,
+# or IRSA). This keeps the dep tree minimal — ADC handling stays in
+# the consumer that already has auth plumbing. See RFC 0001.
+gcp-native = ["dep:reqwest", "dep:tokio"]
+
 [dependencies]
 arc-swap = "1.8"
 figment = { version = "0.10", features = ["env", "yaml", "toml"] }

@@ -58,14 +58,25 @@ resolver alongside the CLI resolver.
 | AWS Secrets Manager | aws-sdk-rust / Smithy | `aws-sdk-secretsmanager` on crates.io | ✅ shipped — `shikumi --features aws-native` |
 | 1Password Connect | <https://developer.1password.com/docs/connect/connect-api-reference/> | *(hand-written reqwest client)* | ✅ shipped — `shikumi --features op-native` |
 | HashiCorp Vault | <https://developer.hashicorp.com/vault/api-docs> (OpenAPI endpoint: `GET /v1/sys/internal/specs/openapi`) | *(hand-written reqwest client, KV v2)* | ✅ shipped — `shikumi --features vault-native` |
-| GCP Secret Manager | Google Discovery API: <https://secretmanager.googleapis.com/$discovery/rest> | `gcp-secretmanager-api` | not yet |
+| GCP Secret Manager | Google Discovery API: <https://secretmanager.googleapis.com/$discovery/rest> | *(hand-written reqwest client, REST v1)* | ✅ shipped — `shikumi --features gcp-native` |
 
-**1Password + Vault deviation from the forge-gen pattern:** Both APIs
-are small — 1Password Connect is ~8 endpoints for vault + item CRUD,
-Vault KV v2 is 5 endpoints. A hand-written thin `reqwest` client (~200
-LOC each) ships the native path without the SDK-generation overhead.
-Regenerating these later via `forge-gen` remains possible; the
-`SecretClient` trait means consumers won't notice the swap.
+**1Password + Vault + GCP deviation from the forge-gen pattern:** All
+three APIs are small — 1Password Connect is ~8 endpoints for vault +
+item CRUD, Vault KV v2 is 5 endpoints, and the Secret Manager REST v1
+surface we need (access / create / add-version / delete / list) is 5
+endpoints. Hand-written thin `reqwest` clients (~200–300 LOC each)
+ship the native path without the SDK-generation overhead. Regenerating
+these later via `forge-gen` remains possible; the `SecretClient`
+trait means consumers won't notice the swap.
+
+**GCP auth note:** `GcpSecretClient` is deliberately ADC-agnostic —
+shikumi takes a pre-obtained OAuth2 access token and leaves token
+acquisition to the caller (typically `gcloud auth print-access-token`,
+`yup-oauth2`, IAM service account JSON, or the GKE / Cloud Run
+metadata server). This keeps shikumi's dep graph minimal: no OpenSSL
+or gRPC pulled in, no OAuth2 flows to keep up to date. Consumers that
+want hands-free ADC can layer `yup-oauth2` or `google-cloud-auth` on
+top and call `client.set_token()` on token refresh.
 
 **AWS is special:** AWS's SDKs are generated from Smithy models, not
 OpenAPI. The official `aws-sdk-secretsmanager` crate on crates.io is

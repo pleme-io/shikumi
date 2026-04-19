@@ -24,7 +24,7 @@
 //! | AwsClient | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 //! | OpConnectClient | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
 //! | VaultClient (KV v2) | ✅ | ✅ | ✅ | ✅ | ⚠️ (engine) | ✅ |
-//! | GCP Secret Manager | planned | planned | planned | planned | ❌ | planned |
+//! | GcpSecretClient | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ |
 //! | SOPS (file-based) | stays CLI-only (no HTTP API) |
 //!
 //! "✅" = implemented. "⚠️" = supported but backend-specific.
@@ -1489,6 +1489,434 @@ impl SecretClient for VaultClient {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// GcpSecretClient — GCP Secret Manager via thin reqwest HTTP
+// ─────────────────────────────────────────────────────────────────────
+
+/// Native GCP Secret Manager `SecretClient`.
+///
+/// Feature-gated on `gcp-native`. Talks to the Secret Manager REST API
+/// v1 with a caller-provided OAuth2 Bearer token. shikumi deliberately
+/// does *not* implement ADC / Workload Identity / service-account
+/// flows — getting an access token from `gcloud auth print-access-token`
+/// or `yup-oauth2` is the caller's responsibility, which keeps the
+/// dep tree small (no OpenSSL, no gRPC). Tokens expire after 1 hour;
+/// callers should refresh and call [`Self::set_token`] on expiry.
+///
+/// Secrets are identified by short name (e.g. `"db-password"`). The
+/// full resource name is constructed as
+/// `projects/{project}/secrets/{name}`.
+///
+/// Versioning uses GCP's numeric version IDs. `"latest"` is also
+/// accepted by `get_version`.
+///
+/// # Limitations
+///
+/// - Rotation: GCP Secret Manager doesn't have an API-level rotate
+///   action (rotation is a property of the referenced secret version);
+///   returns [`SecretError::Unsupported`].
+#[cfg(feature = "gcp-native")]
+pub struct GcpSecretClient {
+    http: reqwest::Client,
+    project: String,
+    base_url: String,
+    token: std::sync::RwLock<String>,
+}
+
+#[cfg(feature = "gcp-native")]
+#[derive(Debug, Clone)]
+pub struct GcpSecretConfig {
+    /// GCP project ID (not number). e.g. `"my-project-12345"`.
+    pub project: String,
+    /// OAuth2 access token with `cloud-platform` scope. Short-lived
+    /// (≤1h); caller refreshes via [`GcpSecretClient::set_token`].
+    pub token: String,
+    /// Override for tests / private API endpoints. Production default
+    /// is `https://secretmanager.googleapis.com`.
+    pub base_url: Option<String>,
+}
+
+#[cfg(feature = "gcp-native")]
+impl GcpSecretClient {
+    #[must_use]
+    pub fn new(config: GcpSecretConfig) -> Self {
+        Self {
+            http: reqwest::Client::new(),
+            project: config.project,
+            base_url: config
+                .base_url
+                .unwrap_or_else(|| "https://secretmanager.googleapis.com".into()),
+            token: std::sync::RwLock::new(config.token),
+        }
+    }
+
+    /// Construct from env: `GCP_PROJECT`, `GCLOUD_ACCESS_TOKEN`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SecretError::Unauthorized`] if either var is unset.
+    pub fn from_env() -> Result<Self, SecretError> {
+        let project = std::env::var("GCP_PROJECT").map_err(|_| SecretError::Unauthorized {
+            message: "GCP_PROJECT not set".into(),
+        })?;
+        let token =
+            std::env::var("GCLOUD_ACCESS_TOKEN").map_err(|_| SecretError::Unauthorized {
+                message: "GCLOUD_ACCESS_TOKEN not set (run `gcloud auth print-access-token`)"
+                    .into(),
+            })?;
+        Ok(Self::new(GcpSecretConfig {
+            project,
+            token,
+            base_url: None,
+        }))
+    }
+
+    /// Rotate the OAuth2 token (GCP access tokens expire in ~1 hour).
+    pub fn set_token(&self, token: impl Into<String>) {
+        *self.token.write().expect("GcpSecretClient token lock poisoned") = token.into();
+    }
+
+    fn auth_header(&self) -> String {
+        let guard = self.token.read().expect("GcpSecretClient token lock poisoned");
+        format!("Bearer {}", *guard)
+    }
+
+    fn secret_url(&self, name: &str) -> String {
+        format!(
+            "{}/v1/projects/{}/secrets/{}",
+            self.base_url, self.project, name
+        )
+    }
+
+    fn access_url(&self, name: &str, version: &str) -> String {
+        format!(
+            "{}/v1/projects/{}/secrets/{}/versions/{}:access",
+            self.base_url, self.project, name, version
+        )
+    }
+
+    /// Decode the base64-encoded `payload.data` from a Secret Manager
+    /// access response. GCP returns payloads as base64 regardless of
+    /// whether they're text or binary; callers that expect text still
+    /// receive a UTF-8 string here (and get a Parse error if the bytes
+    /// aren't valid UTF-8).
+    fn decode_payload(body: &serde_json::Value, name: &str) -> Result<String, SecretError> {
+        let data_b64 = body
+            .get("payload")
+            .and_then(|p| p.get("data"))
+            .and_then(|d| d.as_str())
+            .ok_or_else(|| {
+                SecretError::Backend(format!("gcp {name}: response missing payload.data"))
+            })?;
+        let bytes = base64_decode(data_b64)
+            .map_err(|e| SecretError::Backend(format!("gcp {name}: base64 decode: {e}")))?;
+        String::from_utf8(bytes)
+            .map_err(|e| SecretError::Backend(format!("gcp {name}: non-UTF8 payload: {e}")))
+    }
+}
+
+#[cfg(feature = "gcp-native")]
+#[async_trait]
+impl SecretClient for GcpSecretClient {
+    fn backend_name(&self) -> &'static str {
+        "gcp-secret-manager"
+    }
+
+    fn capabilities(&self) -> Capabilities {
+        Capabilities {
+            get: true,
+            list: true,
+            put: true,
+            delete: true,
+            rotate: false,
+            versions: true,
+        }
+    }
+
+    async fn get(&self, name: &str) -> Result<String, SecretError> {
+        let response = self
+            .http
+            .get(self.access_url(name, "latest"))
+            .header("Authorization", self.auth_header())
+            .send()
+            .await
+            .map_err(|e| SecretError::Backend(format!("gcp get({name}): {e}")))?;
+
+        match response.status() {
+            reqwest::StatusCode::NOT_FOUND => Err(SecretError::NotFound {
+                name: name.to_owned(),
+            }),
+            reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => {
+                Err(SecretError::Unauthorized {
+                    message: format!("gcp get({name}): {}", response.status()),
+                })
+            }
+            s if !s.is_success() => Err(SecretError::Backend(format!(
+                "gcp get({name}): HTTP {s}"
+            ))),
+            _ => {
+                let body: serde_json::Value = response
+                    .json()
+                    .await
+                    .map_err(|e| SecretError::Backend(format!("gcp get({name}) parse: {e}")))?;
+                Self::decode_payload(&body, name)
+            }
+        }
+    }
+
+    async fn list(&self, prefix: Option<&str>) -> Result<Vec<String>, SecretError> {
+        let mut names = Vec::new();
+        let mut page_token: Option<String> = None;
+        loop {
+            let mut url = format!(
+                "{}/v1/projects/{}/secrets?pageSize=500",
+                self.base_url, self.project
+            );
+            if let Some(tok) = &page_token {
+                url.push_str(&format!("&pageToken={tok}"));
+            }
+            let response = self
+                .http
+                .get(&url)
+                .header("Authorization", self.auth_header())
+                .send()
+                .await
+                .map_err(|e| SecretError::Backend(format!("gcp list-secrets: {e}")))?;
+
+            if !response.status().is_success() {
+                return Err(SecretError::Backend(format!(
+                    "gcp list-secrets: HTTP {}",
+                    response.status()
+                )));
+            }
+            let body: serde_json::Value = response
+                .json()
+                .await
+                .map_err(|e| SecretError::Backend(format!("gcp list-secrets parse: {e}")))?;
+
+            if let Some(secrets) = body.get("secrets").and_then(|v| v.as_array()) {
+                for secret in secrets {
+                    if let Some(resource_name) =
+                        secret.get("name").and_then(|v| v.as_str())
+                    {
+                        // Strip the projects/*/secrets/ prefix to get the short name.
+                        if let Some(short) =
+                            resource_name.rsplit_once('/').map(|(_, n)| n.to_owned())
+                        {
+                            if prefix.is_none_or(|p| short.starts_with(p)) {
+                                names.push(short);
+                            }
+                        }
+                    }
+                }
+            }
+            page_token = body
+                .get("nextPageToken")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned);
+            if page_token.is_none() || page_token.as_deref() == Some("") {
+                break;
+            }
+        }
+        names.sort();
+        Ok(names)
+    }
+
+    async fn put(&self, name: &str, value: &str) -> Result<(), SecretError> {
+        // Two-step: ensure the secret exists, then add a new version.
+        // GCP secrets are container + version; payloads attach to
+        // versions, not the secret. If the secret doesn't exist we
+        // create it with the automatic replication policy.
+        let container_url = self.secret_url(name);
+        let get_response = self
+            .http
+            .get(&container_url)
+            .header("Authorization", self.auth_header())
+            .send()
+            .await
+            .map_err(|e| SecretError::Backend(format!("gcp get-secret({name}): {e}")))?;
+
+        if get_response.status() == reqwest::StatusCode::NOT_FOUND {
+            let create_url = format!(
+                "{}/v1/projects/{}/secrets?secretId={}",
+                self.base_url, self.project, name
+            );
+            let create_body = serde_json::json!({
+                "replication": { "automatic": {} }
+            });
+            let create_response = self
+                .http
+                .post(&create_url)
+                .header("Authorization", self.auth_header())
+                .json(&create_body)
+                .send()
+                .await
+                .map_err(|e| SecretError::Backend(format!("gcp create-secret({name}): {e}")))?;
+            if !create_response.status().is_success() {
+                return Err(SecretError::Backend(format!(
+                    "gcp create-secret({name}): HTTP {}",
+                    create_response.status()
+                )));
+            }
+        } else if !get_response.status().is_success() {
+            return Err(SecretError::Backend(format!(
+                "gcp get-secret({name}): HTTP {}",
+                get_response.status()
+            )));
+        }
+
+        // Add a version with the new payload.
+        let add_url = format!("{container_url}:addVersion");
+        let payload_b64 = base64_encode(value.as_bytes());
+        let add_body = serde_json::json!({
+            "payload": { "data": payload_b64 }
+        });
+        let add_response = self
+            .http
+            .post(&add_url)
+            .header("Authorization", self.auth_header())
+            .json(&add_body)
+            .send()
+            .await
+            .map_err(|e| SecretError::Backend(format!("gcp add-version({name}): {e}")))?;
+        if !add_response.status().is_success() {
+            return Err(SecretError::Backend(format!(
+                "gcp add-version({name}): HTTP {}",
+                add_response.status()
+            )));
+        }
+        Ok(())
+    }
+
+    async fn delete(&self, name: &str) -> Result<(), SecretError> {
+        let response = self
+            .http
+            .delete(self.secret_url(name))
+            .header("Authorization", self.auth_header())
+            .send()
+            .await
+            .map_err(|e| SecretError::Backend(format!("gcp delete-secret({name}): {e}")))?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(SecretError::NotFound {
+                name: name.to_owned(),
+            });
+        }
+        if !response.status().is_success() {
+            return Err(SecretError::Backend(format!(
+                "gcp delete-secret({name}): HTTP {}",
+                response.status()
+            )));
+        }
+        Ok(())
+    }
+
+    async fn get_version(&self, name: &str, version: &str) -> Result<String, SecretError> {
+        let response = self
+            .http
+            .get(self.access_url(name, version))
+            .header("Authorization", self.auth_header())
+            .send()
+            .await
+            .map_err(|e| {
+                SecretError::Backend(format!("gcp get({name}, v={version}): {e}"))
+            })?;
+        match response.status() {
+            reqwest::StatusCode::NOT_FOUND => Err(SecretError::NotFound {
+                name: name.to_owned(),
+            }),
+            s if !s.is_success() => Err(SecretError::Backend(format!(
+                "gcp get({name}, v={version}): HTTP {s}"
+            ))),
+            _ => {
+                let body: serde_json::Value = response
+                    .json()
+                    .await
+                    .map_err(|e| SecretError::Backend(format!("gcp get parse: {e}")))?;
+                Self::decode_payload(&body, name)
+            }
+        }
+    }
+}
+
+#[cfg(feature = "gcp-native")]
+fn base64_encode(bytes: &[u8]) -> String {
+    // RFC 4648 section 4 (standard) base64 — GCP Secret Manager uses
+    // standard base64 (padded) for the payload.data field.
+    const ALPHABET: &[u8] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    let mut chunks = bytes.chunks_exact(3);
+    for chunk in &mut chunks {
+        let n = (u32::from(chunk[0]) << 16) | (u32::from(chunk[1]) << 8) | u32::from(chunk[2]);
+        out.push(ALPHABET[((n >> 18) & 0x3F) as usize] as char);
+        out.push(ALPHABET[((n >> 12) & 0x3F) as usize] as char);
+        out.push(ALPHABET[((n >> 6) & 0x3F) as usize] as char);
+        out.push(ALPHABET[(n & 0x3F) as usize] as char);
+    }
+    let rem = chunks.remainder();
+    match rem.len() {
+        0 => {}
+        1 => {
+            let n = u32::from(rem[0]) << 16;
+            out.push(ALPHABET[((n >> 18) & 0x3F) as usize] as char);
+            out.push(ALPHABET[((n >> 12) & 0x3F) as usize] as char);
+            out.push('=');
+            out.push('=');
+        }
+        2 => {
+            let n = (u32::from(rem[0]) << 16) | (u32::from(rem[1]) << 8);
+            out.push(ALPHABET[((n >> 18) & 0x3F) as usize] as char);
+            out.push(ALPHABET[((n >> 12) & 0x3F) as usize] as char);
+            out.push(ALPHABET[((n >> 6) & 0x3F) as usize] as char);
+            out.push('=');
+        }
+        _ => unreachable!(),
+    }
+    out
+}
+
+#[cfg(feature = "gcp-native")]
+fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
+    // Strict standard base64: A-Z, a-z, 0-9, +, /, =. Whitespace is
+    // tolerated (GCP sometimes line-wraps large payloads).
+    let mut buf = Vec::with_capacity(s.len() * 3 / 4);
+    let mut accum: u32 = 0;
+    let mut bits: u32 = 0;
+    let mut pad = 0usize;
+    for c in s.chars() {
+        if c.is_ascii_whitespace() {
+            continue;
+        }
+        let v = match c {
+            'A'..='Z' => (c as u32) - ('A' as u32),
+            'a'..='z' => (c as u32) - ('a' as u32) + 26,
+            '0'..='9' => (c as u32) - ('0' as u32) + 52,
+            '+' => 62,
+            '/' => 63,
+            '=' => {
+                pad += 1;
+                continue;
+            }
+            _ => return Err(format!("invalid base64 char: {c:?}")),
+        };
+        if pad > 0 {
+            return Err("data after padding".into());
+        }
+        accum = (accum << 6) | v;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            let byte = u8::try_from((accum >> bits) & 0xFF).unwrap_or_default();
+            buf.push(byte);
+            accum &= (1 << bits) - 1;
+        }
+    }
+    if bits != 0 && accum != 0 {
+        return Err(format!("trailing bits: {bits}"));
+    }
+    Ok(buf)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1804,6 +2232,122 @@ mod tests {
         let body = serde_json::json!({ "data": {} });
         assert!(matches!(
             VaultClient::extract_value(&body, "x"),
+            Err(SecretError::Backend(_))
+        ));
+    }
+
+    #[cfg(feature = "gcp-native")]
+    #[test]
+    fn gcp_base64_roundtrip() {
+        // Empty
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_decode("").unwrap(), b"");
+        // Single byte → 2 chars + ==
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_decode("Zg==").unwrap(), b"f");
+        // Two bytes → 3 chars + =
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_decode("Zm8=").unwrap(), b"fo");
+        // Three bytes → 4 chars
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_decode("Zm9v").unwrap(), b"foo");
+        // Longer
+        assert_eq!(base64_encode(b"hello world"), "aGVsbG8gd29ybGQ=");
+        assert_eq!(
+            base64_decode("aGVsbG8gd29ybGQ=").unwrap(),
+            b"hello world"
+        );
+        // Binary-ish bytes (GCP payloads are sometimes non-UTF8)
+        let bin: Vec<u8> = (0..=255).collect();
+        assert_eq!(base64_decode(&base64_encode(&bin)).unwrap(), bin);
+    }
+
+    #[cfg(feature = "gcp-native")]
+    #[test]
+    fn gcp_base64_tolerates_whitespace() {
+        // GCP occasionally line-wraps payloads; our decoder must be
+        // lenient about whitespace to match the server's output.
+        let wrapped = "aGVs\nbG8g\nd29y\nbGQ=";
+        assert_eq!(base64_decode(wrapped).unwrap(), b"hello world");
+    }
+
+    #[cfg(feature = "gcp-native")]
+    #[test]
+    fn gcp_base64_rejects_invalid_chars() {
+        assert!(base64_decode("not*valid").is_err());
+        assert!(base64_decode("Zg==extra").is_err()); // data after padding
+    }
+
+    #[cfg(feature = "gcp-native")]
+    #[test]
+    fn gcp_client_constructs_from_config() {
+        let client = GcpSecretClient::new(GcpSecretConfig {
+            project: "my-project".into(),
+            token: "ya29.abc123".into(),
+            base_url: None,
+        });
+        assert_eq!(client.backend_name(), "gcp-secret-manager");
+        let caps = client.capabilities();
+        assert!(caps.get && caps.list && caps.put && caps.delete && caps.versions);
+        assert!(!caps.rotate);
+        assert_eq!(client.project, "my-project");
+        assert!(client.base_url.starts_with("https://"));
+    }
+
+    #[cfg(feature = "gcp-native")]
+    #[test]
+    fn gcp_url_construction() {
+        let client = GcpSecretClient::new(GcpSecretConfig {
+            project: "p".into(),
+            token: "t".into(),
+            base_url: Some("https://test.googleapis.com".into()),
+        });
+        assert_eq!(
+            client.secret_url("db-password"),
+            "https://test.googleapis.com/v1/projects/p/secrets/db-password"
+        );
+        assert_eq!(
+            client.access_url("db-password", "latest"),
+            "https://test.googleapis.com/v1/projects/p/secrets/db-password/versions/latest:access"
+        );
+        assert_eq!(
+            client.access_url("db-password", "7"),
+            "https://test.googleapis.com/v1/projects/p/secrets/db-password/versions/7:access"
+        );
+    }
+
+    #[cfg(feature = "gcp-native")]
+    #[test]
+    fn gcp_token_rotation() {
+        let client = GcpSecretClient::new(GcpSecretConfig {
+            project: "p".into(),
+            token: "old".into(),
+            base_url: None,
+        });
+        assert_eq!(client.auth_header(), "Bearer old");
+        client.set_token("new");
+        assert_eq!(client.auth_header(), "Bearer new");
+    }
+
+    #[cfg(feature = "gcp-native")]
+    #[test]
+    fn gcp_decode_payload_happy_path() {
+        let body = serde_json::json!({
+            "name": "projects/p/secrets/s/versions/1",
+            "payload": { "data": "aGVsbG8=" }
+        });
+        assert_eq!(
+            GcpSecretClient::decode_payload(&body, "s").unwrap(),
+            "hello"
+        );
+    }
+
+    #[cfg(feature = "gcp-native")]
+    #[test]
+    fn gcp_decode_payload_missing_data_errors() {
+        let body = serde_json::json!({ "name": "x", "payload": {} });
+        assert!(matches!(
+            GcpSecretClient::decode_payload(&body, "x"),
             Err(SecretError::Backend(_))
         ));
     }
