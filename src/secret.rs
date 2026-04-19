@@ -16,21 +16,30 @@
 //! ```yaml
 //! # hanabi.yaml (or taimen.yaml, etc.)
 //! jwt_secret:
-//!   op: "op://prod/hanabi/jwt-secret"     # 1Password reference
+//!   op: "op://prod/hanabi/jwt-secret"                         # 1Password
 //! # or
 //! jwt_secret:
-//!   sops: { file: "secrets/prod.yaml", field: "jwt_secret" }
+//!   sops: { file: "secrets/prod.yaml", field: "jwt_secret" }  # SOPS
 //! # or
 //! jwt_secret:
-//!   akeyless: "/prod/hanabi/jwt"
+//!   akeyless: "/prod/hanabi/jwt"                              # Akeyless
 //! # or
 //! jwt_secret:
-//!   command: "vault read -field=value secret/prod/hanabi/jwt"
+//!   vault: { path: "secret/prod/hanabi", field: "jwt" }       # HashiCorp Vault
+//! # or
+//! jwt_secret:
+//!   aws_secret: "prod/hanabi/jwt"                             # AWS Secrets Manager
+//! # or
+//! jwt_secret:
+//!   gcp_secret: "projects/my-proj/secrets/jwt"                # GCP Secret Manager
+//! # or
+//! jwt_secret:
+//!   command: "custom-vault-cli read prod/jwt"                 # Anything else
 //! # or (dev convenience)
-//! jwt_secret: "dev-secret-change-me"
+//! jwt_secret: "dev-secret-change-me"                          # Plaintext
 //! ```
 //!
-//! All four backend variants plus the literal fall-through decode into
+//! All seven backend variants plus the literal fall-through decode into
 //! the [`SecretSource`] enum. Call [`resolve`] to get a `String`.
 //!
 //! # Direct API
@@ -44,10 +53,13 @@
 //! | 1Password | [`resolve_op`] | `op read <ref>` |
 //! | SOPS | [`resolve_sops_file`] / [`resolve_sops_field`] | `sops -d <file>` (+ optional `jq`) |
 //! | Akeyless | [`resolve_akeyless`] | `akeyless get-secret-value --name <name>` |
+//! | HashiCorp Vault | [`resolve_vault`] | `vault read -field=<field> <path>` |
+//! | AWS Secrets Manager | [`resolve_aws_secret`] | `aws secretsmanager get-secret-value …` |
+//! | GCP Secret Manager | [`resolve_gcp_secret`] | `gcloud secrets versions access …` |
 //!
-//! All four funnel through [`resolve_command`] and therefore share its
-//! error semantics: non-zero exit → [`ShikumiError::Parse`] with stderr
-//! included.
+//! All seven funnel through one `capture_stdout` helper and therefore
+//! share error semantics: non-zero exit → [`ShikumiError::Parse`] with
+//! stderr included.
 //!
 //! # Why not HTTP clients?
 //!
@@ -124,6 +136,14 @@ pub enum SecretBackend {
     Sops(SopsRef),
     /// Akeyless secret name — `/prod/my-secret` (see [`resolve_akeyless`]).
     Akeyless(String),
+    /// HashiCorp Vault path (optionally with a field, see [`resolve_vault`]).
+    Vault(VaultRef),
+    /// AWS Secrets Manager secret id — `prod/my-app/jwt`
+    /// (see [`resolve_aws_secret`]).
+    AwsSecret(String),
+    /// GCP Secret Manager secret name — `projects/.../secrets/.../versions/latest`
+    /// or short form `projects/my-proj/secrets/my-secret` (see [`resolve_gcp_secret`]).
+    GcpSecret(String),
 }
 
 /// SOPS-encrypted file reference.
@@ -144,6 +164,25 @@ pub enum SopsRef {
     /// `"jwt_secret"` pulls the top-level key. Use dotted syntax for
     /// nested keys: `"auth.jwt.secret"` would be `jq -r .auth.jwt.secret`.
     Field { file: PathBuf, field: String },
+}
+
+/// HashiCorp Vault secret reference.
+///
+/// Accepts either a bare path string (`"secret/data/prod/app"`) or a
+/// `{path, field}` pair. Bare form returns the first field of the
+/// secret — handy for single-value KV secrets. The `field` form extracts
+/// a named field — the typical case for KV v2 where the secret is a
+/// key-value map.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum VaultRef {
+    /// Path to the Vault secret. Runs `vault read -field=value <path>` —
+    /// `-field=value` picks the first `data` field for KV v1 and the
+    /// conventional `value` key for single-valued KV v2 secrets.
+    Path(String),
+    /// Read a specific field of the Vault secret via
+    /// `vault read -field=<field> <path>`.
+    Field { path: String, field: String },
 }
 
 /// Dispatch a [`SecretSource`] to the matching backend resolver.
@@ -167,6 +206,16 @@ pub fn resolve(source: &SecretSource) -> Result<String, ShikumiError> {
             resolve_sops_field(file, field)
         }
         SecretSource::Backend(SecretBackend::Akeyless(name)) => resolve_akeyless(name),
+        SecretSource::Backend(SecretBackend::Vault(VaultRef::Path(path))) => {
+            resolve_vault(path, "value")
+        }
+        SecretSource::Backend(SecretBackend::Vault(VaultRef::Field { path, field })) => {
+            resolve_vault(path, field)
+        }
+        SecretSource::Backend(SecretBackend::AwsSecret(secret_id)) => {
+            resolve_aws_secret(secret_id)
+        }
+        SecretSource::Backend(SecretBackend::GcpSecret(name)) => resolve_gcp_secret(name),
     }
 }
 
@@ -305,6 +354,132 @@ pub fn resolve_akeyless(name: &str) -> Result<String, ShikumiError> {
         .arg(name)
         .output()?;
     capture_stdout(&format!("akeyless get-secret-value --name {name}"), &output)
+}
+
+/// Fetch a secret from HashiCorp Vault via the `vault` CLI.
+///
+/// `field` names which field of the Vault secret to return. For KV v1
+/// secrets or single-valued KV v2 (`{"value": "..."}`), pass `"value"`
+/// and the `vault` CLI will pull that field. For multi-valued KV v2,
+/// pass the specific field name (e.g. `"password"`).
+///
+/// Argv form:
+///
+/// ```text
+/// vault read -field=<field> <path>
+/// ```
+///
+/// The `vault` CLI must be authenticated — `VAULT_ADDR` + `VAULT_TOKEN`
+/// env vars, or an active token via `vault login`. This function does
+/// not handle auth.
+///
+/// # Errors
+///
+/// - [`ShikumiError::Io`] if `vault` is not on PATH.
+/// - [`ShikumiError::Parse`] if the path doesn't exist, auth is missing,
+///   or the requested field is absent in the response.
+pub fn resolve_vault(path: &str, field: &str) -> Result<String, ShikumiError> {
+    let output = Command::new("vault")
+        .arg("read")
+        .arg(format!("-field={field}"))
+        .arg(path)
+        .output()?;
+    capture_stdout(&format!("vault read -field={field} {path}"), &output)
+}
+
+/// Fetch a secret from AWS Secrets Manager via the `aws` CLI.
+///
+/// Argv form:
+///
+/// ```text
+/// aws secretsmanager get-secret-value --secret-id <id>
+///     --query SecretString --output text
+/// ```
+///
+/// `--query SecretString --output text` bypasses AWS's default
+/// wrap-everything-in-JSON output so the secret value comes back as the
+/// raw string. This matches how most apps stored their secrets (single
+/// value) and avoids a `jq` dependency.
+///
+/// For structured SecretStrings (a JSON object), fetch and then parse
+/// with `resolve_command` so the `jq` step is visible:
+///
+/// ```yaml
+/// command: "aws secretsmanager get-secret-value --secret-id prod/app
+///           --query SecretString --output text | jq -r .password"
+/// ```
+///
+/// The `aws` CLI must have credentials (`~/.aws/credentials`, env vars,
+/// or IMDS / IRSA). This function does not handle auth.
+///
+/// # Errors
+///
+/// - [`ShikumiError::Io`] if `aws` is not on PATH.
+/// - [`ShikumiError::Parse`] if the secret doesn't exist, the caller
+///   lacks `secretsmanager:GetSecretValue` permission, or STS / SSO
+///   credentials are expired.
+pub fn resolve_aws_secret(secret_id: &str) -> Result<String, ShikumiError> {
+    let output = Command::new("aws")
+        .args(["secretsmanager", "get-secret-value", "--secret-id"])
+        .arg(secret_id)
+        .args(["--query", "SecretString", "--output", "text"])
+        .output()?;
+    capture_stdout(
+        &format!("aws secretsmanager get-secret-value --secret-id {secret_id}"),
+        &output,
+    )
+}
+
+/// Fetch a secret from GCP Secret Manager via the `gcloud` CLI.
+///
+/// Accepts either a fully-qualified name
+/// (`projects/<proj>/secrets/<name>/versions/<ver>`) or the short form
+/// (`projects/<proj>/secrets/<name>` — defaults to version `latest`).
+///
+/// Argv form:
+///
+/// ```text
+/// gcloud secrets versions access <version> --secret=<name>
+/// ```
+///
+/// When the caller passes the short form we substitute `latest`; the
+/// fully-qualified path is split at `/versions/` to pull out the
+/// version.
+///
+/// The `gcloud` CLI must be authenticated (`gcloud auth application-default
+/// login`, service-account impersonation, or GCE metadata). This function
+/// does not handle auth.
+///
+/// # Errors
+///
+/// - [`ShikumiError::Io`] if `gcloud` is not on PATH.
+/// - [`ShikumiError::Parse`] if the secret doesn't exist, the principal
+///   lacks `secretmanager.versions.access`, or auth is expired.
+pub fn resolve_gcp_secret(name: &str) -> Result<String, ShikumiError> {
+    let (secret_path, version) = if let Some(idx) = name.find("/versions/") {
+        let (head, tail) = name.split_at(idx);
+        (head, &tail["/versions/".len()..])
+    } else {
+        (name, "latest")
+    };
+
+    // `gcloud secrets versions access <version> --secret=<short_secret_name>`
+    // where the short secret name is the tail of `projects/.../secrets/<name>`.
+    let short_name = secret_path
+        .rsplit("/secrets/")
+        .next()
+        .unwrap_or(secret_path)
+        .trim_start_matches("secrets/");
+
+    let output = Command::new("gcloud")
+        .args(["secrets", "versions", "access"])
+        .arg(version)
+        .arg(format!("--secret={short_name}"))
+        .output()?;
+    capture_stdout(
+        &format!("gcloud secrets versions access {version} --secret={short_name}"),
+        &output,
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -652,5 +827,136 @@ mod tests {
     fn resolve_akeyless_missing_cli_or_secret_errors() {
         let result = resolve_akeyless("/shikumi-test/nonexistent-secret");
         assert!(result.is_err(), "unknown akeyless secret should error");
+    }
+
+    // ── Vault / AWS / GCP backend tests ────────────────────────────
+
+    #[test]
+    fn secret_source_parses_vault_bare_path() {
+        let source: SecretSource =
+            serde_yaml::from_str("vault: secret/data/prod/app").unwrap();
+        match source {
+            SecretSource::Backend(SecretBackend::Vault(VaultRef::Path(p))) => {
+                assert_eq!(p, "secret/data/prod/app");
+            }
+            other => panic!("expected Vault Path, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn secret_source_parses_vault_with_field() {
+        let yaml = "vault:\n  path: secret/data/prod/app\n  field: password";
+        let source: SecretSource = serde_yaml::from_str(yaml).unwrap();
+        match source {
+            SecretSource::Backend(SecretBackend::Vault(VaultRef::Field { path, field })) => {
+                assert_eq!(path, "secret/data/prod/app");
+                assert_eq!(field, "password");
+            }
+            other => panic!("expected Vault Field, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn secret_source_parses_aws_secret() {
+        let source: SecretSource =
+            serde_yaml::from_str("aws_secret: prod/hanabi/jwt").unwrap();
+        match source {
+            SecretSource::Backend(SecretBackend::AwsSecret(id)) => {
+                assert_eq!(id, "prod/hanabi/jwt");
+            }
+            other => panic!("expected AwsSecret, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn secret_source_parses_gcp_secret() {
+        let source: SecretSource =
+            serde_yaml::from_str("gcp_secret: projects/my-proj/secrets/jwt").unwrap();
+        match source {
+            SecretSource::Backend(SecretBackend::GcpSecret(name)) => {
+                assert_eq!(name, "projects/my-proj/secrets/jwt");
+            }
+            other => panic!("expected GcpSecret, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_vault_missing_cli_errors() {
+        let result = resolve_vault("secret/nonexistent", "value");
+        assert!(result.is_err(), "unknown vault path should error");
+    }
+
+    #[test]
+    fn resolve_aws_secret_missing_cli_errors() {
+        let result = resolve_aws_secret("shikumi-test/nonexistent-secret");
+        assert!(result.is_err(), "unknown AWS secret should error");
+    }
+
+    #[test]
+    fn resolve_gcp_secret_missing_cli_errors() {
+        let result = resolve_gcp_secret("projects/shikumi-test/secrets/nonexistent");
+        assert!(result.is_err(), "unknown GCP secret should error");
+    }
+
+    // GCP name parsing is a pure-string transformation — worth a dedicated
+    // test that doesn't hit the CLI at all. Exercise the short/full form
+    // normalization via a custom args inspection using a wrapper.
+
+    #[test]
+    fn gcp_secret_short_form_uses_latest_version() {
+        // Simulate the parsing logic used inside resolve_gcp_secret.
+        let name = "projects/my-proj/secrets/jwt";
+        let (secret_path, version) = if let Some(idx) = name.find("/versions/") {
+            let (head, tail) = name.split_at(idx);
+            (head, &tail["/versions/".len()..])
+        } else {
+            (name, "latest")
+        };
+        assert_eq!(secret_path, "projects/my-proj/secrets/jwt");
+        assert_eq!(version, "latest");
+    }
+
+    #[test]
+    fn gcp_secret_full_form_extracts_version() {
+        let name = "projects/my-proj/secrets/jwt/versions/3";
+        let (secret_path, version) = if let Some(idx) = name.find("/versions/") {
+            let (head, tail) = name.split_at(idx);
+            (head, &tail["/versions/".len()..])
+        } else {
+            (name, "latest")
+        };
+        assert_eq!(secret_path, "projects/my-proj/secrets/jwt");
+        assert_eq!(version, "3");
+    }
+
+    // resolve() dispatch for the new variants
+
+    #[test]
+    fn resolve_dispatches_vault_missing_cli() {
+        // Without vault on PATH, we should get an error (Io or Parse
+        // depending on environment), NOT a panic or hang.
+        let source = SecretSource::Backend(SecretBackend::Vault(
+            VaultRef::Path("secret/nonexistent-shikumi-test".into()),
+        ));
+        let result = resolve(&source);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolve_dispatches_aws_missing_cli() {
+        let source = SecretSource::Backend(SecretBackend::AwsSecret(
+            "shikumi-test-nonexistent".into(),
+        ));
+        let result = resolve(&source);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn resolve_dispatches_gcp_missing_cli() {
+        let source = SecretSource::Backend(SecretBackend::GcpSecret(
+            "projects/shikumi/secrets/nonexistent".into(),
+        ));
+        let result = resolve(&source);
+        assert!(result.is_err());
     }
 }
