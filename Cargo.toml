@@ -63,7 +63,7 @@ thiserror = "2.0"
 tracing = "0.1"
 # Object-safe async trait — needed for SecretClient in secret_client.rs.
 async-trait = "0.1"
-tatara-lisp = { path = "../tatara/tatara-lisp", optional = true }
+tatara-lisp = { git = "https://github.com/pleme-io/tatara", package = "tatara-lisp", optional = true }
 # Feature-gated native Akeyless SDK (generated from OpenAPI via forge-gen).
 akeyless-api = { git = "https://github.com/pleme-io/akeyless-api", optional = true }
 # Feature-gated native AWS Secrets Manager SDK + credential provider chain.
