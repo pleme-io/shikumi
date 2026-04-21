@@ -1,5 +1,12 @@
 # Shikumi (仕組み) — Config Discovery, Hot-Reload, and ArcSwap Store
 
+<!-- Blackmatter alignment: pillars 2 -->
+<!-- See ~/code/github/pleme-io/BLACKMATTER.md for pillar definitions. -->
+
+## Blackmatter pillars upheld
+
+- **Pillar 2** (Configuration): Shikumi IS Pillar 2. Every service, tool, daemon in pleme-io discovers config via `ConfigDiscovery::new("app")`, loads strongly-typed structs via `ConfigStore::<T>::load`, hot-reloads through ArcSwap. No ad-hoc env parsing, no HashMap configs.
+
 ## Build & Test
 
 ```bash
