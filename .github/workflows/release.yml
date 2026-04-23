@@ -1,0 +1,13 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+jobs:
+  publish:
+    uses: pleme-io/substrate/.github/workflows/crates-publish.yml@main
+    secrets:
+      CRATES_API_TOKEN: ${{ secrets.CRATES_API_TOKEN }}
