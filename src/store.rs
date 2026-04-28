@@ -12,6 +12,7 @@ use tracing::{error, info};
 
 use crate::error::ShikumiError;
 use crate::provider::ProviderChain;
+use crate::source::ConfigSource;
 use crate::watcher::{ConfigWatcher, symlink_target};
 
 /// A concurrent, hot-reloadable config store.
@@ -27,6 +28,7 @@ pub struct ConfigStore<T> {
     inner: Arc<ArcSwap<T>>,
     path: PathBuf,
     env_prefix: String,
+    sources: Vec<ConfigSource>,
     _watcher: Option<ConfigWatcher>,
 }
 
@@ -43,12 +45,13 @@ where
     ///
     /// Returns `ShikumiError` if the file cannot be parsed.
     pub fn load(path: &Path, env_prefix: &str) -> Result<Self, ShikumiError> {
-        let config = Self::load_from_path(path, env_prefix)?;
+        let (config, sources) = Self::load_from_path(path, env_prefix)?;
 
         Ok(Self {
             inner: Arc::new(ArcSwap::from_pointee(config)),
             path: path.to_owned(),
             env_prefix: env_prefix.to_owned(),
+            sources,
             _watcher: None,
         })
     }
@@ -70,7 +73,7 @@ where
     where
         F: Fn(&T) + Send + Sync + 'static,
     {
-        let config = Self::load_from_path(path, env_prefix)?;
+        let (config, sources) = Self::load_from_path(path, env_prefix)?;
         let inner = Arc::new(ArcSwap::from_pointee(config));
         let inner_clone = inner.clone();
         let path_owned = path.to_owned();
@@ -102,7 +105,7 @@ where
 
             info!("reloading configuration from {}", path_owned.display());
             match Self::load_from_path(&path_owned, &prefix_owned) {
-                Ok(new_config) => {
+                Ok((new_config, _)) => {
                     on_reload(&new_config);
                     inner_clone.store(Arc::new(new_config));
                 }
@@ -116,6 +119,7 @@ where
             inner,
             path: path.to_owned(),
             env_prefix: env_prefix.to_owned(),
+            sources,
             _watcher: Some(watcher),
         })
     }
@@ -135,15 +139,33 @@ where
     ///
     /// Returns `ShikumiError` if the file cannot be parsed.
     pub fn reload(&self) -> Result<(), ShikumiError> {
-        let new = Self::load_from_path(&self.path, &self.env_prefix)?;
+        let (new, _) = Self::load_from_path(&self.path, &self.env_prefix)?;
         self.inner.store(Arc::new(new));
         Ok(())
     }
 
     /// The path this store was loaded from.
+    ///
+    /// For [`Self::load_merged`], this is the highest-priority (last)
+    /// path. Use [`Self::sources`] for the full merge order.
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// The full provider chain that produced this store, in merge order
+    /// (lowest priority first, highest priority last).
+    ///
+    /// Each entry is a typed [`ConfigSource`] — defaults, env prefix, or
+    /// file path. Use this for diagnostic dumps, attestation manifests,
+    /// or "where did this value come from?" tooling.
+    ///
+    /// `load` and `load_and_watch` produce two-element chains:
+    /// `[Env, File]` (file overrides env). `load_merged` produces
+    /// `[File, File, …, Env]` (env overrides files).
+    #[must_use]
+    pub fn sources(&self) -> &[ConfigSource] {
+        &self.sources
     }
 
     /// Get a clone of the `Arc<ArcSwap<T>>` for sharing across threads.
@@ -165,30 +187,39 @@ where
     ///
     /// Returns `ShikumiError` if the merged config cannot be parsed.
     pub fn load_merged(paths: &[PathBuf], env_prefix: &str) -> Result<Self, ShikumiError> {
-        let config = Self::load_from_paths(paths, env_prefix)?;
+        let (config, sources) = Self::load_from_paths(paths, env_prefix)?;
         let primary_path = paths.last().cloned().unwrap_or_default();
 
         Ok(Self {
             inner: Arc::new(ArcSwap::from_pointee(config)),
             path: primary_path,
             env_prefix: env_prefix.to_owned(),
+            sources,
             _watcher: None,
         })
     }
 
-    fn load_from_path(path: &Path, env_prefix: &str) -> Result<T, ShikumiError> {
-        ProviderChain::new()
-            .with_env(env_prefix)
-            .with_file(path)
-            .extract()
+    fn load_from_path(
+        path: &Path,
+        env_prefix: &str,
+    ) -> Result<(T, Vec<ConfigSource>), ShikumiError> {
+        let chain = ProviderChain::new().with_env(env_prefix).with_file(path);
+        let sources = chain.sources().to_vec();
+        let value = chain.extract()?;
+        Ok((value, sources))
     }
 
-    fn load_from_paths(paths: &[PathBuf], env_prefix: &str) -> Result<T, ShikumiError> {
-        let mut chain = paths
+    fn load_from_paths(
+        paths: &[PathBuf],
+        env_prefix: &str,
+    ) -> Result<(T, Vec<ConfigSource>), ShikumiError> {
+        let chain = paths
             .iter()
-            .fold(ProviderChain::new(), |chain, path| chain.with_file(path));
-        chain = chain.with_env(env_prefix);
-        chain.extract()
+            .fold(ProviderChain::new(), |chain, path| chain.with_file(path))
+            .with_env(env_prefix);
+        let sources = chain.sources().to_vec();
+        let value = chain.extract()?;
+        Ok((value, sources))
     }
 }
 
@@ -673,6 +704,107 @@ mod tests {
         let config = store.get();
         assert_eq!(config.name, None, "deleted file should yield defaults");
         assert_eq!(config.count, None);
+    }
+
+    // ---- sources() provenance tests ----
+
+    #[test]
+    fn sources_for_single_load_records_env_then_file() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("src.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_SRCS_").unwrap();
+        let s = store.sources();
+        assert_eq!(s.len(), 2, "expected env + file in sources");
+        assert!(s[0].is_env(), "first layer should be env");
+        assert_eq!(s[0].as_env_prefix(), Some("SHIKUMI_SRCS_"));
+        assert!(s[1].is_file(), "second layer should be file");
+        assert_eq!(s[1].as_path(), Some(file.as_path()));
+    }
+
+    #[test]
+    fn sources_for_load_merged_records_files_then_env() {
+        let dir = TempDir::new().unwrap();
+        let a = dir.path().join("a.yaml");
+        let b = dir.path().join("b.yaml");
+        fs::write(&a, "name: a\n").unwrap();
+        fs::write(&b, "name: b\n").unwrap();
+
+        let store =
+            ConfigStore::<TestConfig>::load_merged(&[a.clone(), b.clone()], "SHIKUMI_MERGE_SRCS_")
+                .unwrap();
+        let s = store.sources();
+        assert_eq!(s.len(), 3, "expected 2 files + env in sources");
+        assert_eq!(s[0].as_path(), Some(a.as_path()));
+        assert_eq!(s[1].as_path(), Some(b.as_path()));
+        assert!(s[2].is_env());
+        assert_eq!(s[2].as_env_prefix(), Some("SHIKUMI_MERGE_SRCS_"));
+    }
+
+    #[test]
+    fn sources_for_load_merged_empty_paths_records_only_env() {
+        let store =
+            ConfigStore::<TestConfig>::load_merged(&[], "SHIKUMI_MERGE_EMPTY_SRCS_").unwrap();
+        let s = store.sources();
+        assert_eq!(s.len(), 1);
+        assert!(s[0].is_env());
+    }
+
+    #[test]
+    fn sources_path_matches_last_file_in_chain() {
+        let dir = TempDir::new().unwrap();
+        let a = dir.path().join("a.yaml");
+        let b = dir.path().join("b.yaml");
+        fs::write(&a, "name: a\n").unwrap();
+        fs::write(&b, "name: b\n").unwrap();
+
+        let store =
+            ConfigStore::<TestConfig>::load_merged(&[a.clone(), b.clone()], "SHIKUMI_MERGE_PATHM_")
+                .unwrap();
+        // path() points at the highest-priority *file*, not the env layer.
+        assert_eq!(store.path(), b);
+        let last_file = store
+            .sources()
+            .iter()
+            .filter_map(ConfigSource::as_path)
+            .next_back()
+            .unwrap();
+        assert_eq!(last_file, b);
+    }
+
+    #[test]
+    fn sources_for_load_and_watch_records_chain() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("watched.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load_and_watch(
+            &file,
+            "SHIKUMI_WATCH_SRCS_",
+            |_: &TestConfig| {},
+        )
+        .unwrap();
+
+        let s = store.sources();
+        assert_eq!(s.len(), 2);
+        assert!(s[0].is_env());
+        assert_eq!(s[1].as_path(), Some(file.as_path()));
+    }
+
+    #[test]
+    fn sources_unchanged_after_reload() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("rel.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_SRCS_REL_").unwrap();
+        let before = store.sources().to_vec();
+
+        fs::write(&file, "name: b\n").unwrap();
+        store.reload().unwrap();
+
+        assert_eq!(store.sources(), before.as_slice());
     }
 
     #[test]

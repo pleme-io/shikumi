@@ -15,13 +15,18 @@ use crate::discovery::Format;
 use serde::{Deserialize, Serialize};
 
 use crate::error::ShikumiError;
+use crate::source::ConfigSource;
 
 /// Builder for a figment provider chain.
 ///
 /// Layers are merged in order — later layers override earlier ones.
 /// The typical pattern: defaults → env vars → config file.
+///
+/// Each `with_*` call also records a typed [`ConfigSource`] entry in
+/// merge order, queryable via [`Self::sources`].
 pub struct ProviderChain {
     figment: Figment,
+    sources: Vec<ConfigSource>,
 }
 
 impl ProviderChain {
@@ -30,6 +35,7 @@ impl ProviderChain {
     pub fn new() -> Self {
         Self {
             figment: Figment::new(),
+            sources: Vec::new(),
         }
     }
 
@@ -37,6 +43,7 @@ impl ProviderChain {
     #[must_use]
     pub fn with_defaults<T: Serialize>(mut self, defaults: &T) -> Self {
         self.figment = self.figment.merge(Serialized::defaults(defaults));
+        self.sources.push(ConfigSource::Defaults);
         self
     }
 
@@ -46,6 +53,7 @@ impl ProviderChain {
     #[must_use]
     pub fn with_env(mut self, prefix: &str) -> Self {
         self.figment = self.figment.merge(Env::prefixed(prefix).split("__"));
+        self.sources.push(ConfigSource::Env(prefix.to_owned()));
         self
     }
 
@@ -93,7 +101,19 @@ impl ProviderChain {
                 self.figment = self.figment.merge(FigToml::file(path));
             }
         }
+        self.sources.push(ConfigSource::File(path.to_path_buf()));
         self
+    }
+
+    /// Recorded sources in merge order (lowest priority first).
+    ///
+    /// Each `with_*` builder call appends one [`ConfigSource`] entry. The
+    /// list is the structural record of which layers contributed to the
+    /// final configuration; consumers can show it in errors, debug
+    /// dumps, or attestation manifests.
+    #[must_use]
+    pub fn sources(&self) -> &[ConfigSource] {
+        &self.sources
     }
 
     /// Extract the final configuration.
@@ -425,6 +445,70 @@ mod tests {
         let chain = ProviderChain::default();
         let config: TestConfig = chain.extract().unwrap();
         assert_eq!(config, TestConfig::default());
+    }
+
+    #[test]
+    fn sources_empty_for_new_chain() {
+        let chain = ProviderChain::new();
+        assert!(chain.sources().is_empty());
+    }
+
+    #[test]
+    fn sources_records_defaults() {
+        let defaults = TestConfig::default();
+        let chain = ProviderChain::new().with_defaults(&defaults);
+        assert_eq!(chain.sources(), &[crate::ConfigSource::Defaults]);
+    }
+
+    #[test]
+    fn sources_records_env_with_prefix() {
+        let chain = ProviderChain::new().with_env("MYAPP_");
+        assert_eq!(
+            chain.sources(),
+            &[crate::ConfigSource::Env("MYAPP_".to_owned())]
+        );
+    }
+
+    #[test]
+    fn sources_records_file_path() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("c.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+        let chain = ProviderChain::new().with_file(&file);
+        assert_eq!(chain.sources(), &[crate::ConfigSource::File(file)]);
+    }
+
+    #[test]
+    fn sources_records_full_chain_in_merge_order() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("c.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let defaults = TestConfig::default();
+        let chain = ProviderChain::new()
+            .with_defaults(&defaults)
+            .with_env("APP_")
+            .with_file(&file);
+
+        let s = chain.sources();
+        assert_eq!(s.len(), 3);
+        assert!(s[0].is_defaults());
+        assert!(s[1].is_env());
+        assert_eq!(s[1].as_env_prefix(), Some("APP_"));
+        assert!(s[2].is_file());
+        assert_eq!(s[2].as_path(), Some(file.as_path()));
+    }
+
+    #[test]
+    fn sources_persist_after_clone_via_build() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("c.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+        let chain = ProviderChain::new().with_file(&file).with_env("X_");
+        let recorded = chain.sources().to_vec();
+        // build() consumes; recorded survives.
+        let _ = chain.build();
+        assert_eq!(recorded.len(), 2);
     }
 
     #[test]

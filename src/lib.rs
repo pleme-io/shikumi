@@ -41,6 +41,7 @@ pub mod nix_provider;
 mod provider;
 pub mod secret;
 pub mod secret_client;
+mod source;
 mod store;
 mod watcher;
 
@@ -50,5 +51,6 @@ pub use error::ShikumiError;
 pub use lisp_provider::{LispProvider, load_from_str as load_lisp_from_str};
 pub use nix_provider::NixProvider;
 pub use provider::ProviderChain;
+pub use source::ConfigSource;
 pub use store::ConfigStore;
 pub use watcher::{ConfigWatcher, symlink_target};
