@@ -1,0 +1,5 @@
+{
+  "git+https://github.com/pleme-io/akeyless-api#0.1.0": "0abziklxvp24wxdv51sdc34ma15bnqn3h7sfiwfv480k9hmzma14",
+  "git+https://github.com/pleme-io/tatara#tatara-lisp-derive@0.2.0": "1pw61pgprhyn7gc2s7g6va9zv011z6a3z7gysm49g8njcs34jy6f",
+  "git+https://github.com/pleme-io/tatara#tatara-lisp@0.2.0": "1pw61pgprhyn7gc2s7g6va9zv011z6a3z7gysm49g8njcs34jy6f"
+}
