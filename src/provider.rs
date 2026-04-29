@@ -116,16 +116,45 @@ impl ProviderChain {
         &self.sources
     }
 
+    /// Extract the final configuration along with the recorded
+    /// [`ConfigSource`] chain.
+    ///
+    /// On success returns `(value, sources)`; on failure returns
+    /// [`ShikumiError::Extract`], which embeds the same chain so callers
+    /// can show *which* layers contributed to the failure without
+    /// re-walking discovery.
+    ///
+    /// This is the primitive; [`Self::extract`] is the convenience
+    /// wrapper that drops sources on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ShikumiError::Extract`] if extraction fails (missing
+    /// required fields, type mismatches, malformed file, etc.).
+    pub fn extract_with_sources<T: for<'de> Deserialize<'de>>(
+        self,
+    ) -> Result<(T, Vec<ConfigSource>), ShikumiError> {
+        let Self { figment, sources } = self;
+        match figment.extract::<T>() {
+            Ok(value) => Ok((value, sources)),
+            Err(error) => Err(ShikumiError::Extract {
+                sources,
+                error: Box::new(error),
+            }),
+        }
+    }
+
     /// Extract the final configuration.
     ///
     /// # Errors
     ///
-    /// Returns `ShikumiError::Figment` if extraction fails (missing required
-    /// fields, type mismatches, etc.).
+    /// Returns [`ShikumiError::Extract`] if extraction fails (missing
+    /// required fields, type mismatches, etc.). The error carries the
+    /// typed source chain that produced the failure; use
+    /// [`Self::extract_with_sources`] if you also need the chain on
+    /// success.
     pub fn extract<T: for<'de> Deserialize<'de>>(self) -> Result<T, ShikumiError> {
-        self.figment
-            .extract()
-            .map_err(|e| ShikumiError::Figment(Box::new(e)))
+        self.extract_with_sources().map(|(value, _)| value)
     }
 
     /// Escape hatch: return the raw `Figment` for advanced use.
@@ -509,6 +538,80 @@ mod tests {
         // build() consumes; recorded survives.
         let _ = chain.build();
         assert_eq!(recorded.len(), 2);
+    }
+
+    // ---- extract_with_sources / source-annotated error tests ----
+
+    #[test]
+    fn extract_with_sources_returns_value_and_chain() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("ews.yaml");
+        fs::write(&file, "name: ok\ncount: 3\n").unwrap();
+
+        let (config, sources): (TestConfig, _) = ProviderChain::new()
+            .with_defaults(&TestConfig::default())
+            .with_file(&file)
+            .extract_with_sources()
+            .unwrap();
+        assert_eq!(config.name.as_deref(), Some("ok"));
+        assert_eq!(config.count, Some(3));
+        assert_eq!(sources.len(), 2);
+        assert!(sources[0].is_defaults());
+        assert!(sources[1].is_file());
+    }
+
+    #[test]
+    fn extract_with_sources_attaches_chain_on_failure() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("ews_bad.yaml");
+        fs::write(&file, "count: not_a_number\n").unwrap();
+
+        let err = ProviderChain::new()
+            .with_env("EWS_BAD_")
+            .with_file(&file)
+            .extract_with_sources::<TestConfig>()
+            .unwrap_err();
+
+        let attached = err.sources().expect("Extract carries provenance");
+        assert_eq!(attached.len(), 2, "env + file");
+        assert_eq!(attached[0].as_env_prefix(), Some("EWS_BAD_"));
+        assert_eq!(attached[1].as_path(), Some(file.as_path()));
+    }
+
+    #[test]
+    fn extract_failure_emits_extract_variant_with_sources_in_display() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("ews_disp.yaml");
+        fs::write(&file, "count: not_a_number\n").unwrap();
+
+        let err = ProviderChain::new()
+            .with_file(&file)
+            .extract::<TestConfig>()
+            .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(msg.contains("config extraction failed"));
+        assert!(
+            msg.contains(&file.display().to_string()),
+            "error must cite the failing file path; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn extract_with_sources_empty_chain_on_failure() {
+        // No layers added at all → still an Extract with an empty chain
+        // so callers can distinguish "shikumi-routed failure" from
+        // legacy `Figment` conversions.
+        #[derive(Deserialize, Debug)]
+        struct Strict {
+            #[allow(dead_code)]
+            required: String,
+        }
+        let err = ProviderChain::new()
+            .extract_with_sources::<Strict>()
+            .unwrap_err();
+        let attached = err.sources().expect("Extract carries provenance");
+        assert!(attached.is_empty(), "no layers, but provenance is recorded");
     }
 
     #[test]

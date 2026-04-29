@@ -203,23 +203,21 @@ where
         path: &Path,
         env_prefix: &str,
     ) -> Result<(T, Vec<ConfigSource>), ShikumiError> {
-        let chain = ProviderChain::new().with_env(env_prefix).with_file(path);
-        let sources = chain.sources().to_vec();
-        let value = chain.extract()?;
-        Ok((value, sources))
+        ProviderChain::new()
+            .with_env(env_prefix)
+            .with_file(path)
+            .extract_with_sources()
     }
 
     fn load_from_paths(
         paths: &[PathBuf],
         env_prefix: &str,
     ) -> Result<(T, Vec<ConfigSource>), ShikumiError> {
-        let chain = paths
+        paths
             .iter()
             .fold(ProviderChain::new(), |chain, path| chain.with_file(path))
-            .with_env(env_prefix);
-        let sources = chain.sources().to_vec();
-        let value = chain.extract()?;
-        Ok((value, sources))
+            .with_env(env_prefix)
+            .extract_with_sources()
     }
 }
 

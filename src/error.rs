@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::source::ConfigSource;
+
 /// Errors produced by shikumi's config discovery, loading, and watching.
 #[derive(thiserror::Error, Debug)]
 #[non_exhaustive]
@@ -20,11 +22,45 @@ pub enum ShikumiError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
-    /// Figment extraction or merge failed.
+    /// Figment extraction or merge failed without source attribution.
     ///
-    /// Boxed to keep `ShikumiError` small (`figment::Error` is ~208 bytes).
+    /// Produced by direct `From<Box<figment::Error>>` conversions — e.g.
+    /// when a consumer hands a raw figment error to shikumi. Boxed to keep
+    /// `ShikumiError` small (`figment::Error` is ~208 bytes).
+    ///
+    /// New code should prefer [`ShikumiError::Extract`], which carries the
+    /// [`ConfigSource`] chain that produced the failure.
     #[error("figment error: {0}")]
     Figment(#[from] Box<figment::Error>),
+
+    /// Configuration extraction through a [`crate::ProviderChain`] failed.
+    ///
+    /// Carries the typed [`ConfigSource`] chain in merge order (lowest
+    /// priority first) so the failure can be traced back to the layers
+    /// that produced it without grepping logs or re-walking discovery.
+    #[error(
+        "config extraction failed [layers: {}]: {error}",
+        display_sources(sources)
+    )]
+    Extract {
+        /// The provider chain in merge order at the moment of failure.
+        sources: Vec<ConfigSource>,
+        /// Boxed underlying figment error (kept small; `figment::Error` is ~208 bytes).
+        #[source]
+        error: Box<figment::Error>,
+    },
+}
+
+fn display_sources(sources: &[ConfigSource]) -> String {
+    if sources.is_empty() {
+        "<empty>".to_owned()
+    } else {
+        sources
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(" -> ")
+    }
 }
 
 impl ShikumiError {
@@ -45,6 +81,19 @@ impl ShikumiError {
     pub fn tried_paths(&self) -> Option<&[PathBuf]> {
         match self {
             Self::NotFound { tried } => Some(tried),
+            _ => None,
+        }
+    }
+
+    /// Returns the typed [`ConfigSource`] chain attached to this error.
+    ///
+    /// Currently populated only by [`ShikumiError::Extract`]; future
+    /// variants may attach a chain too. Callers should treat `None` as
+    /// "no provenance recorded," not "no sources contributed."
+    #[must_use]
+    pub fn sources(&self) -> Option<&[ConfigSource]> {
+        match self {
+            Self::Extract { sources, .. } => Some(sources),
             _ => None,
         }
     }
@@ -191,5 +240,100 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("/only/one.yaml"));
         assert!(!msg.contains(", "), "single path should have no comma");
+    }
+
+    // ---- Extract variant tests ----
+
+    fn fake_figment_error() -> Box<figment::Error> {
+        let figment = figment::Figment::new();
+        let result: Result<String, figment::Error> = figment.extract();
+        Box::new(result.unwrap_err())
+    }
+
+    #[test]
+    fn extract_display_lists_layers_in_order() {
+        let err = ShikumiError::Extract {
+            sources: vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/etc/app.yaml")),
+            ],
+            error: fake_figment_error(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("config extraction failed"));
+        assert!(msg.contains("defaults"));
+        assert!(msg.contains("env(APP_)"));
+        assert!(msg.contains("file(/etc/app.yaml)"));
+        // Order matters: defaults first, then env, then file.
+        let d = msg.find("defaults").unwrap();
+        let e = msg.find("env(APP_)").unwrap();
+        let f = msg.find("file(/etc/app.yaml)").unwrap();
+        assert!(d < e && e < f, "layers must render in merge order");
+    }
+
+    #[test]
+    fn extract_display_with_empty_sources() {
+        let err = ShikumiError::Extract {
+            sources: vec![],
+            error: fake_figment_error(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("config extraction failed"));
+        assert!(msg.contains("<empty>"));
+    }
+
+    #[test]
+    fn extract_carries_source_chain_via_helper() {
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/x.yaml")),
+        ];
+        let err = ShikumiError::Extract {
+            sources: chain.clone(),
+            error: fake_figment_error(),
+        };
+        assert_eq!(err.sources(), Some(chain.as_slice()));
+    }
+
+    #[test]
+    fn sources_helper_returns_none_for_other_variants() {
+        assert!(ShikumiError::Parse("x".to_owned()).sources().is_none());
+        assert!(
+            ShikumiError::NotFound {
+                tried: vec![PathBuf::from("/a")]
+            }
+            .sources()
+            .is_none()
+        );
+        assert!(
+            ShikumiError::Figment(fake_figment_error())
+                .sources()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn extract_source_chain_preserves_figment_error() {
+        use std::error::Error;
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults],
+            error: fake_figment_error(),
+        };
+        let src = err.source().expect("Extract should expose a #[source]");
+        // The wrapped figment error should be reachable.
+        assert!(!format!("{src}").is_empty());
+    }
+
+    #[test]
+    fn extract_is_distinct_from_figment_variant() {
+        let extract = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults],
+            error: fake_figment_error(),
+        };
+        let figment = ShikumiError::Figment(fake_figment_error());
+        assert!(matches!(extract, ShikumiError::Extract { .. }));
+        assert!(matches!(figment, ShikumiError::Figment(_)));
+        assert_ne!(extract.to_string(), figment.to_string());
     }
 }
