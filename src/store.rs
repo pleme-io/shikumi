@@ -5,6 +5,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use arc_swap::{ArcSwap, Guard};
 use serde::Deserialize;
@@ -29,6 +30,7 @@ pub struct ConfigStore<T> {
     path: PathBuf,
     env_prefix: String,
     sources: Vec<ConfigSource>,
+    generation: Arc<AtomicU64>,
     _watcher: Option<ConfigWatcher>,
 }
 
@@ -52,6 +54,7 @@ where
             path: path.to_owned(),
             env_prefix: env_prefix.to_owned(),
             sources,
+            generation: Arc::new(AtomicU64::new(0)),
             _watcher: None,
         })
     }
@@ -75,7 +78,9 @@ where
     {
         let (config, sources) = Self::load_from_path(path, env_prefix)?;
         let inner = Arc::new(ArcSwap::from_pointee(config));
+        let generation = Arc::new(AtomicU64::new(0));
         let inner_clone = inner.clone();
+        let generation_clone = generation.clone();
         let path_owned = path.to_owned();
         let prefix_owned = env_prefix.to_owned();
 
@@ -107,7 +112,7 @@ where
             match Self::load_from_path(&path_owned, &prefix_owned) {
                 Ok((new_config, _)) => {
                     on_reload(&new_config);
-                    inner_clone.store(Arc::new(new_config));
+                    Self::swap_in(&inner_clone, &generation_clone, new_config);
                 }
                 Err(err) => {
                     error!("failed to reload config: {err}");
@@ -120,6 +125,7 @@ where
             path: path.to_owned(),
             env_prefix: env_prefix.to_owned(),
             sources,
+            generation,
             _watcher: Some(watcher),
         })
     }
@@ -135,13 +141,29 @@ where
 
     /// Manually reload the config from disk.
     ///
+    /// On success, increments the [generation counter](Self::generation)
+    /// after the new value is published. On failure, the previous value
+    /// and generation are preserved untouched.
+    ///
     /// # Errors
     ///
     /// Returns `ShikumiError` if the file cannot be parsed.
     pub fn reload(&self) -> Result<(), ShikumiError> {
         let (new, _) = Self::load_from_path(&self.path, &self.env_prefix)?;
-        self.inner.store(Arc::new(new));
+        Self::swap_in(&self.inner, &self.generation, new);
         Ok(())
+    }
+
+    /// Publish a new value and bump the generation counter.
+    ///
+    /// The store-then-bump order is load-bearing: when a reader observes a
+    /// new generation via [`Self::generation`] (with `Acquire`), the
+    /// preceding `ArcSwap::store` is guaranteed visible. This is the one
+    /// canonical reload primitive — both [`Self::reload`] and the
+    /// [`Self::load_and_watch`] callback funnel through it.
+    fn swap_in(inner: &ArcSwap<T>, generation: &AtomicU64, new: T) {
+        inner.store(Arc::new(new));
+        generation.fetch_add(1, Ordering::Release);
     }
 
     /// The path this store was loaded from.
@@ -174,6 +196,34 @@ where
         self.inner.clone()
     }
 
+    /// Monotonic reload generation, starting at `0`.
+    ///
+    /// Increments by `1` on every successful reload — manual via
+    /// [`Self::reload`], or hot-reload via the watcher in
+    /// [`Self::load_and_watch`]. A failed reload (parse error, type
+    /// mismatch, missing required field) does **not** increment.
+    ///
+    /// Use it as a typed "did the config change?" hint: cache the value
+    /// alongside any derived state, and recompute when it differs.
+    /// Reads use `Acquire` ordering so observing a new generation also
+    /// makes the corresponding [`Self::get`] visible.
+    #[must_use]
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
+    }
+
+    /// Cross-thread sharable handle to the generation counter.
+    ///
+    /// Useful when a reader needs to detect reloads after the original
+    /// [`ConfigStore`] has been dropped, or alongside the
+    /// [`Self::shared`] `ArcSwap` handle in worker threads. Both handles
+    /// continue to reflect reloads as long as the originating store
+    /// (or its watcher) is alive.
+    #[must_use]
+    pub fn shared_generation(&self) -> Arc<AtomicU64> {
+        self.generation.clone()
+    }
+
     /// Load config from multiple paths, merging in order (last wins).
     ///
     /// Each path is layered via figment merge, so later files override
@@ -195,6 +245,7 @@ where
             path: primary_path,
             env_prefix: env_prefix.to_owned(),
             sources,
+            generation: Arc::new(AtomicU64::new(0)),
             _watcher: None,
         })
     }
@@ -558,9 +609,11 @@ mod tests {
         let file = dir.path().join("single.yaml");
         fs::write(&file, "name: only\ncount: 1\n").unwrap();
 
-        let store =
-            ConfigStore::<TestConfig>::load_merged(&[file.clone()], "SHIKUMI_MERGE_SINGLE_")
-                .unwrap();
+        let store = ConfigStore::<TestConfig>::load_merged(
+            std::slice::from_ref(&file),
+            "SHIKUMI_MERGE_SINGLE_",
+        )
+        .unwrap();
         let config = store.get();
         assert_eq!(config.name.as_deref(), Some("only"));
         assert_eq!(config.count, Some(1));
@@ -817,5 +870,213 @@ mod tests {
             shared.load_full()
         };
         assert_eq!(guard.name.as_deref(), Some("persistent"));
+    }
+
+    // ---- generation() / shared_generation() tests ----
+
+    #[test]
+    fn generation_starts_at_zero_for_load() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("gen0.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_GEN0_").unwrap();
+        assert_eq!(store.generation(), 0);
+    }
+
+    #[test]
+    fn generation_starts_at_zero_for_load_merged() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("genm.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load_merged(
+            std::slice::from_ref(&file),
+            "SHIKUMI_GEN_MERGED_",
+        )
+        .unwrap();
+        assert_eq!(store.generation(), 0);
+    }
+
+    #[test]
+    fn generation_starts_at_zero_for_load_and_watch() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("genw.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load_and_watch(
+            &file,
+            "SHIKUMI_GEN_WATCH_",
+            |_: &TestConfig| {},
+        )
+        .unwrap();
+        assert_eq!(store.generation(), 0);
+    }
+
+    #[test]
+    fn successful_reload_increments_generation() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("gen_inc.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_GEN_INC_").unwrap();
+        assert_eq!(store.generation(), 0);
+
+        fs::write(&file, "name: b\n").unwrap();
+        store.reload().unwrap();
+        assert_eq!(store.generation(), 1);
+
+        fs::write(&file, "name: c\n").unwrap();
+        store.reload().unwrap();
+        assert_eq!(store.generation(), 2);
+    }
+
+    #[test]
+    fn failed_reload_does_not_increment_generation() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("gen_fail.yaml");
+        fs::write(&file, "name: ok\ncount: 1\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_GEN_FAIL_").unwrap();
+        assert_eq!(store.generation(), 0);
+
+        // Type mismatch: count expects u32
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+        assert_eq!(
+            store.generation(),
+            0,
+            "failed reload must not bump generation"
+        );
+
+        // Recover with a valid file: bump should resume from 0 -> 1.
+        fs::write(&file, "name: recovered\n").unwrap();
+        store.reload().unwrap();
+        assert_eq!(store.generation(), 1);
+    }
+
+    #[test]
+    fn generation_observed_after_swap_for_acquire_release_contract() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("gen_obs.yaml");
+        fs::write(&file, "name: before\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_GEN_OBS_").unwrap();
+        let g0 = store.generation();
+        assert_eq!(store.get().name.as_deref(), Some("before"));
+
+        fs::write(&file, "name: after\n").unwrap();
+        store.reload().unwrap();
+
+        // When generation moves forward, the get() value must already
+        // reflect the new state — that's the swap-then-bump contract.
+        assert!(store.generation() > g0);
+        assert_eq!(store.get().name.as_deref(), Some("after"));
+    }
+
+    #[test]
+    fn shared_generation_visible_across_threads() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("gen_shared.yaml");
+        fs::write(&file, "name: t0\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_GEN_SHARED_").unwrap();
+        let gen_handle = store.shared_generation();
+        assert_eq!(gen_handle.load(Ordering::Acquire), 0);
+
+        let observed = thread::spawn({
+            let gen_handle = gen_handle.clone();
+            move || {
+                // Spin briefly until the main thread has published a new gen.
+                for _ in 0..200 {
+                    if gen_handle.load(Ordering::Acquire) > 0 {
+                        return gen_handle.load(Ordering::Acquire);
+                    }
+                    thread::sleep(Duration::from_millis(5));
+                }
+                gen_handle.load(Ordering::Acquire)
+            }
+        });
+
+        fs::write(&file, "name: t1\n").unwrap();
+        store.reload().unwrap();
+
+        let seen = observed.join().expect("observer thread");
+        assert!(seen >= 1, "observer should see incremented generation");
+        assert_eq!(store.generation(), 1);
+    }
+
+    #[test]
+    fn shared_generation_outlives_store() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("gen_outlive.yaml");
+        fs::write(&file, "name: persistent\n").unwrap();
+
+        let (handle, before_drop) = {
+            let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_GEN_OUTLIVE_").unwrap();
+            fs::write(&file, "name: rev1\n").unwrap();
+            store.reload().unwrap();
+            (store.shared_generation(), store.generation())
+        };
+        // The store is dropped; the handle still reads the last value.
+        assert_eq!(handle.load(Ordering::Acquire), before_drop);
+        assert_eq!(handle.load(Ordering::Acquire), 1);
+    }
+
+    #[test]
+    fn shared_generation_is_same_arc_as_internal() {
+        // The handle must point at the same atomic the store mutates,
+        // otherwise reload changes wouldn't be visible through it.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("gen_same.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_GEN_SAME_").unwrap();
+        let handle = store.shared_generation();
+
+        fs::write(&file, "name: y\n").unwrap();
+        store.reload().unwrap();
+
+        assert_eq!(handle.load(Ordering::Acquire), store.generation());
+    }
+
+    #[test]
+    fn load_and_watch_increments_generation_on_manual_reload() {
+        // The watcher closure routes through swap_in too. Verify via the
+        // (always-deterministic) manual reload path; the watcher's own
+        // event delivery is timing-sensitive on CI.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("gen_watch.yaml");
+        fs::write(&file, "name: w0\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load_and_watch(
+            &file,
+            "SHIKUMI_GEN_WATCH_INC_",
+            |_: &TestConfig| {},
+        )
+        .unwrap();
+        assert_eq!(store.generation(), 0);
+
+        fs::write(&file, "name: w1\n").unwrap();
+        store.reload().unwrap();
+        assert_eq!(store.generation(), 1);
+    }
+
+    #[test]
+    fn generation_monotonic_across_many_reloads() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("gen_mono.yaml");
+        fs::write(&file, "count: 0\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_GEN_MONO_").unwrap();
+        let mut last = store.generation();
+        for i in 1..=8 {
+            fs::write(&file, format!("count: {i}\n")).unwrap();
+            store.reload().unwrap();
+            let now = store.generation();
+            assert!(now > last, "generation must be strictly monotonic");
+            last = now;
+        }
+        assert_eq!(store.generation(), 8);
     }
 }
