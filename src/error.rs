@@ -38,9 +38,12 @@ pub enum ShikumiError {
     /// Carries the typed [`ConfigSource`] chain in merge order (lowest
     /// priority first) so the failure can be traced back to the layers
     /// that produced it without grepping logs or re-walking discovery.
+    /// The dotted field path of the offending key (when figment can
+    /// localize it) is also embedded in the rendered display.
     #[error(
-        "config extraction failed [layers: {}]: {error}",
-        display_sources(sources)
+        "config extraction failed [layers: {}]{}: {error}",
+        display_sources(sources),
+        display_field_path(&error.path)
     )]
     Extract {
         /// The provider chain in merge order at the moment of failure.
@@ -60,6 +63,14 @@ fn display_sources(sources: &[ConfigSource]) -> String {
             .map(ToString::to_string)
             .collect::<Vec<_>>()
             .join(" -> ")
+    }
+}
+
+fn display_field_path(path: &[String]) -> String {
+    if path.is_empty() {
+        String::new()
+    } else {
+        format!(" at field `{}`", path.join("."))
     }
 }
 
@@ -94,6 +105,33 @@ impl ShikumiError {
     pub fn sources(&self) -> Option<&[ConfigSource]> {
         match self {
             Self::Extract { sources, .. } => Some(sources),
+            _ => None,
+        }
+    }
+
+    /// Returns the dotted field path that produced the failure, if known.
+    ///
+    /// Drawn from the wrapped [`figment::Error::path`] for variants that
+    /// box one ([`Self::Extract`], [`Self::Figment`]). Returned as a
+    /// borrowed slice so callers can inspect the raw segments
+    /// (`["window", "size"]`) rather than re-parsing the rendered
+    /// "at field" Display segment.
+    ///
+    /// `None` for variants that do not wrap a figment error
+    /// ([`Self::Parse`], [`Self::NotFound`], [`Self::Watch`],
+    /// [`Self::Io`]). An empty slice means figment did not localize the
+    /// offending field — typically a top-level type mismatch or an error
+    /// the deserializer reported without a key context — and is
+    /// distinct from `None`.
+    ///
+    /// Pairs with [`Self::sources`] to form the (where × what) failure
+    /// surface: provenance answers "which layer chain contributed?"
+    /// while this answers "which field inside the produced value did
+    /// the deserializer reject?".
+    #[must_use]
+    pub fn field_path(&self) -> Option<&[String]> {
+        match self {
+            Self::Extract { error, .. } | Self::Figment(error) => Some(&error.path),
             _ => None,
         }
     }
@@ -335,5 +373,127 @@ mod tests {
         assert!(matches!(extract, ShikumiError::Extract { .. }));
         assert!(matches!(figment, ShikumiError::Figment(_)));
         assert_ne!(extract.to_string(), figment.to_string());
+    }
+
+    // ---- field_path() tests ----
+
+    /// Build a real extraction failure that figment can attach a path to:
+    /// type mismatch on a typed field. The deserializer reports the offending
+    /// key, so figment fills in `error.path`.
+    fn extract_error_with_typed_field_path() -> ShikumiError {
+        use crate::provider::ProviderChain;
+        use serde::Deserialize;
+
+        #[derive(Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("typed.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        // Keep the temp dir alive long enough for the caller to read the error.
+        // (figment loads the file synchronously inside `extract`, so the file is
+        // no longer needed after this point.)
+        drop(dir);
+        err
+    }
+
+    #[test]
+    fn field_path_none_for_non_figment_variants() {
+        assert!(ShikumiError::Parse("x".to_owned()).field_path().is_none());
+        assert!(
+            ShikumiError::NotFound {
+                tried: vec![PathBuf::from("/a")]
+            }
+            .field_path()
+            .is_none()
+        );
+        let io = std::io::Error::new(std::io::ErrorKind::NotFound, "x");
+        let io_err: ShikumiError = io.into();
+        assert!(io_err.field_path().is_none());
+    }
+
+    #[test]
+    fn field_path_some_empty_for_extract_without_localized_field() {
+        // Bare Figment::new() failure: no provider, no path attribution.
+        let err = ShikumiError::Extract {
+            sources: vec![],
+            error: fake_figment_error(),
+        };
+        let path = err
+            .field_path()
+            .expect("Extract always exposes a (possibly empty) field path");
+        assert!(
+            path.is_empty(),
+            "no localized field, but accessor is Some(&[])"
+        );
+    }
+
+    #[test]
+    fn field_path_some_empty_for_figment_variant_without_localized_field() {
+        let err = ShikumiError::Figment(fake_figment_error());
+        let path = err
+            .field_path()
+            .expect("Figment always exposes a (possibly empty) field path");
+        assert!(path.is_empty());
+    }
+
+    #[test]
+    fn field_path_carries_offending_field_for_typed_failure() {
+        let err = extract_error_with_typed_field_path();
+        let path = err.field_path().expect("Extract exposes field path");
+        assert_eq!(
+            path,
+            &["count".to_owned()],
+            "figment should localize the offending key"
+        );
+    }
+
+    #[test]
+    fn extract_display_includes_field_path_segment_when_localized() {
+        let err = extract_error_with_typed_field_path();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("at field `count`"),
+            "rendered error must cite the failing field; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn extract_display_omits_field_path_segment_when_empty() {
+        // Bare Figment::new() extraction failure has no path; ensure the
+        // segment is omitted (no stray `at field`` `` slot, no double colons).
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults],
+            error: fake_figment_error(),
+        };
+        let msg = err.to_string();
+        assert!(!msg.contains("at field"), "no path → no `at field` segment");
+        assert!(msg.contains("[layers: defaults]:"));
+    }
+
+    #[test]
+    fn field_path_preserves_dotted_segments_via_with_path() {
+        // figment's Error::with_path splits on '.'; verify the accessor
+        // preserves segment shape rather than collapsing back to a string.
+        let raw = figment::Error::from("typed".to_owned()).with_path("window.size");
+        let err = ShikumiError::Extract {
+            sources: vec![],
+            error: Box::new(raw),
+        };
+        let path = err.field_path().expect("Extract exposes field path");
+        assert_eq!(
+            path,
+            &["window".to_owned(), "size".to_owned()],
+            "segments must be preserved, not collapsed"
+        );
+        // And Display joins them with '.' for the human-readable form.
+        assert!(err.to_string().contains("at field `window.size`"));
     }
 }

@@ -40,21 +40,30 @@ pub struct ReloadFailure {
     /// variants that do not record a chain (see
     /// [`crate::ShikumiError::sources`]).
     pub sources: Vec<ConfigSource>,
+    /// Dotted field path of the offending key at the moment of failure,
+    /// captured from [`crate::ShikumiError::field_path`]. Populated for
+    /// extraction failures that figment could localize (e.g. a type
+    /// mismatch on a typed field renders as `["count"]`); empty for
+    /// non-figment-bearing variants and figment errors without a key
+    /// context.
+    pub field_path: Vec<String>,
 }
 
 impl ReloadFailure {
     /// Capture a [`ReloadFailure`] from a [`ShikumiError`] reference.
     ///
-    /// The error itself is not consumed — only its display string and
-    /// recorded source chain (if any) are copied. This is the one
-    /// canonical constructor; both [`crate::ConfigStore::reload`] and
-    /// the [`crate::ConfigStore::load_and_watch`] watcher closure use
-    /// it on the failure path.
+    /// The error itself is not consumed — only its display string,
+    /// recorded source chain (if any), and dotted field path (if any)
+    /// are copied. This is the one canonical constructor; both
+    /// [`crate::ConfigStore::reload`] and the
+    /// [`crate::ConfigStore::load_and_watch`] watcher closure use it on
+    /// the failure path.
     #[must_use]
     pub fn from_error(err: &ShikumiError) -> Self {
         Self {
             message: err.to_string(),
             sources: err.sources().map(<[_]>::to_vec).unwrap_or_default(),
+            field_path: err.field_path().map(<[_]>::to_vec).unwrap_or_default(),
         }
     }
 }
@@ -117,6 +126,7 @@ mod tests {
         let f = ReloadFailure {
             message: "broken pipe".to_owned(),
             sources: vec![],
+            field_path: vec![],
         };
         assert_eq!(f.to_string(), "broken pipe");
     }
@@ -126,10 +136,12 @@ mod tests {
         let f = ReloadFailure {
             message: "bad".to_owned(),
             sources: vec![ConfigSource::Defaults],
+            field_path: vec!["a".to_owned(), "b".to_owned()],
         };
         let g = f.clone();
         assert_eq!(g.message, f.message);
         assert_eq!(g.sources, f.sources);
+        assert_eq!(g.field_path, f.field_path);
     }
 
     #[test]
@@ -150,5 +162,52 @@ mod tests {
         let f = ReloadFailure::from_error(&err);
         assert_eq!(f.sources.len(), 1);
         assert_eq!(f.sources[0].as_path(), Some(path.as_path()));
+    }
+
+    // ---- field_path capture tests ----
+
+    #[test]
+    fn from_error_captures_field_path_for_extract_with_localized_field() {
+        // Build a figment error that *has* a path attribution.
+        let raw = figment::Error::from("typed".to_owned()).with_path("window.size");
+        let err = ShikumiError::Extract {
+            sources: vec![],
+            error: Box::new(raw),
+        };
+        let f = ReloadFailure::from_error(&err);
+        assert_eq!(f.field_path, vec!["window".to_owned(), "size".to_owned()]);
+    }
+
+    #[test]
+    fn from_error_captures_empty_field_path_for_extract_without_localized_field() {
+        // Bare figment::Error has no path; capture surfaces an empty Vec,
+        // not panic, not None.
+        let err = ShikumiError::Extract {
+            sources: vec![],
+            error: fake_figment_error(),
+        };
+        let f = ReloadFailure::from_error(&err);
+        assert!(f.field_path.is_empty());
+    }
+
+    #[test]
+    fn from_error_captures_empty_field_path_for_non_figment_variant() {
+        let err = ShikumiError::Parse("bad".to_owned());
+        let f = ReloadFailure::from_error(&err);
+        assert!(
+            f.field_path.is_empty(),
+            "non-figment errors yield an empty field_path, not a missing one"
+        );
+    }
+
+    #[test]
+    fn from_error_captures_field_path_for_figment_variant() {
+        let raw = figment::Error::from("typed".to_owned()).with_path("a.b.c");
+        let err = ShikumiError::Figment(Box::new(raw));
+        let f = ReloadFailure::from_error(&err);
+        assert_eq!(
+            f.field_path,
+            vec!["a".to_owned(), "b".to_owned(), "c".to_owned()]
+        );
     }
 }

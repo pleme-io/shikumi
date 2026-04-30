@@ -1265,6 +1265,27 @@ mod tests {
     }
 
     #[test]
+    fn last_reload_error_carries_field_path() {
+        // Type mismatch on a typed field: figment localizes the offending key
+        // (`count`), which propagates through record_failure → ReloadFailure.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("err_field.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_ERR_FIELD_").unwrap();
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+
+        let captured = store.last_reload_error().unwrap();
+        assert_eq!(
+            captured.field_path,
+            vec!["count".to_owned()],
+            "the failing field must surface in the cross-thread observable failure"
+        );
+    }
+
+    #[test]
     fn failed_reload_does_not_increment_generation_but_records_error() {
         let dir = TempDir::new().unwrap();
         let file = dir.path().join("err_gen.yaml");
