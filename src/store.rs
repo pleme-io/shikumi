@@ -7,12 +7,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use arc_swap::{ArcSwap, Guard};
+use arc_swap::{ArcSwap, ArcSwapOption, Guard};
 use serde::Deserialize;
 use tracing::{error, info};
 
 use crate::error::ShikumiError;
 use crate::provider::ProviderChain;
+use crate::reload::ReloadFailure;
 use crate::source::ConfigSource;
 use crate::watcher::{ConfigWatcher, symlink_target};
 
@@ -31,6 +32,7 @@ pub struct ConfigStore<T> {
     env_prefix: String,
     sources: Vec<ConfigSource>,
     generation: Arc<AtomicU64>,
+    last_reload_error: Arc<ArcSwapOption<ReloadFailure>>,
     _watcher: Option<ConfigWatcher>,
 }
 
@@ -55,6 +57,7 @@ where
             env_prefix: env_prefix.to_owned(),
             sources,
             generation: Arc::new(AtomicU64::new(0)),
+            last_reload_error: Arc::new(ArcSwapOption::empty()),
             _watcher: None,
         })
     }
@@ -79,8 +82,10 @@ where
         let (config, sources) = Self::load_from_path(path, env_prefix)?;
         let inner = Arc::new(ArcSwap::from_pointee(config));
         let generation = Arc::new(AtomicU64::new(0));
+        let last_reload_error = Arc::new(ArcSwapOption::empty());
         let inner_clone = inner.clone();
         let generation_clone = generation.clone();
+        let last_err_clone = last_reload_error.clone();
         let path_owned = path.to_owned();
         let prefix_owned = env_prefix.to_owned();
 
@@ -112,9 +117,10 @@ where
             match Self::load_from_path(&path_owned, &prefix_owned) {
                 Ok((new_config, _)) => {
                     on_reload(&new_config);
-                    Self::swap_in(&inner_clone, &generation_clone, new_config);
+                    Self::swap_in(&inner_clone, &generation_clone, &last_err_clone, new_config);
                 }
                 Err(err) => {
+                    Self::record_failure(&last_err_clone, &err);
                     error!("failed to reload config: {err}");
                 }
             }
@@ -126,6 +132,7 @@ where
             env_prefix: env_prefix.to_owned(),
             sources,
             generation,
+            last_reload_error,
             _watcher: Some(watcher),
         })
     }
@@ -142,28 +149,55 @@ where
     /// Manually reload the config from disk.
     ///
     /// On success, increments the [generation counter](Self::generation)
-    /// after the new value is published. On failure, the previous value
-    /// and generation are preserved untouched.
+    /// after the new value is published, and clears any prior
+    /// [last reload error](Self::last_reload_error). On failure, the
+    /// previous value and generation are preserved untouched, and the
+    /// failure is published into the last-reload-error slot.
     ///
     /// # Errors
     ///
     /// Returns `ShikumiError` if the file cannot be parsed.
     pub fn reload(&self) -> Result<(), ShikumiError> {
-        let (new, _) = Self::load_from_path(&self.path, &self.env_prefix)?;
-        Self::swap_in(&self.inner, &self.generation, new);
-        Ok(())
+        match Self::load_from_path(&self.path, &self.env_prefix) {
+            Ok((new, _)) => {
+                Self::swap_in(&self.inner, &self.generation, &self.last_reload_error, new);
+                Ok(())
+            }
+            Err(err) => {
+                Self::record_failure(&self.last_reload_error, &err);
+                Err(err)
+            }
+        }
     }
 
-    /// Publish a new value and bump the generation counter.
+    /// Publish a new value, clear the last-reload-error slot, and bump
+    /// the generation counter.
     ///
-    /// The store-then-bump order is load-bearing: when a reader observes a
-    /// new generation via [`Self::generation`] (with `Acquire`), the
-    /// preceding `ArcSwap::store` is guaranteed visible. This is the one
-    /// canonical reload primitive — both [`Self::reload`] and the
-    /// [`Self::load_and_watch`] callback funnel through it.
-    fn swap_in(inner: &ArcSwap<T>, generation: &AtomicU64, new: T) {
+    /// The store-then-clear-then-bump order is load-bearing: when a
+    /// reader observes a new generation via [`Self::generation`]
+    /// (with `Acquire`), the preceding `ArcSwap::store` and the
+    /// `last_reload_error` clear are both guaranteed visible. This is
+    /// the one canonical reload primitive — both [`Self::reload`] and
+    /// the [`Self::load_and_watch`] callback funnel through it.
+    fn swap_in(
+        inner: &ArcSwap<T>,
+        generation: &AtomicU64,
+        last_reload_error: &ArcSwapOption<ReloadFailure>,
+        new: T,
+    ) {
         inner.store(Arc::new(new));
+        last_reload_error.store(None);
         generation.fetch_add(1, Ordering::Release);
+    }
+
+    /// Capture a failure into the last-reload-error slot.
+    ///
+    /// Replaces any prior failure: only the most recent unrecovered
+    /// failure is observable. Pairs with [`Self::swap_in`]: a
+    /// successful reload clears the slot; a failed reload populates
+    /// it.
+    fn record_failure(slot: &ArcSwapOption<ReloadFailure>, err: &ShikumiError) {
+        slot.store(Some(Arc::new(ReloadFailure::from_error(err))));
     }
 
     /// The path this store was loaded from.
@@ -224,6 +258,41 @@ where
         self.generation.clone()
     }
 
+    /// The most recent reload failure since the last successful
+    /// reload, or `None` if no reload has failed (or the most recent
+    /// reload succeeded).
+    ///
+    /// Pairs with [`Self::generation`]: when an observer sees the
+    /// generation has not advanced past a checkpoint and this returns
+    /// `Some`, the failure is the reason. When this returns `None`,
+    /// either no reload has been attempted or the last attempt
+    /// succeeded — distinguishable via the generation counter.
+    ///
+    /// Cleared atomically inside [`Self::swap_in`] so a successful
+    /// reload erases any prior failure record. Each subsequent failure
+    /// replaces the previous one: this is a "most recent" hint, not a
+    /// history.
+    ///
+    /// The initial load (the constructor itself) is not recorded here;
+    /// initial-load failures surface as `Result::Err` from the
+    /// constructor, never producing a store at all.
+    #[must_use]
+    pub fn last_reload_error(&self) -> Option<Arc<ReloadFailure>> {
+        self.last_reload_error.load_full()
+    }
+
+    /// Cross-thread sharable handle to the last-reload-error slot.
+    ///
+    /// Useful when worker threads need to observe reload failures
+    /// independently of the main store handle, or when the slot must
+    /// outlive the originating [`ConfigStore`]. The handle continues
+    /// to reflect publishes as long as the originating store
+    /// (or its watcher) is alive.
+    #[must_use]
+    pub fn shared_last_reload_error(&self) -> Arc<ArcSwapOption<ReloadFailure>> {
+        self.last_reload_error.clone()
+    }
+
     /// Load config from multiple paths, merging in order (last wins).
     ///
     /// Each path is layered via figment merge, so later files override
@@ -246,6 +315,7 @@ where
             env_prefix: env_prefix.to_owned(),
             sources,
             generation: Arc::new(AtomicU64::new(0)),
+            last_reload_error: Arc::new(ArcSwapOption::empty()),
             _watcher: None,
         })
     }
@@ -1060,6 +1130,268 @@ mod tests {
         fs::write(&file, "name: w1\n").unwrap();
         store.reload().unwrap();
         assert_eq!(store.generation(), 1);
+    }
+
+    // ---- last_reload_error() / shared_last_reload_error() tests ----
+
+    #[test]
+    fn last_reload_error_starts_none_for_load() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("err0.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_ERR0_").unwrap();
+        assert!(store.last_reload_error().is_none());
+    }
+
+    #[test]
+    fn last_reload_error_starts_none_for_load_merged() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("errm.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load_merged(
+            std::slice::from_ref(&file),
+            "SHIKUMI_ERR_MERGED_",
+        )
+        .unwrap();
+        assert!(store.last_reload_error().is_none());
+    }
+
+    #[test]
+    fn last_reload_error_starts_none_for_load_and_watch() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("errw.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load_and_watch(
+            &file,
+            "SHIKUMI_ERR_WATCH_",
+            |_: &TestConfig| {},
+        )
+        .unwrap();
+        assert!(store.last_reload_error().is_none());
+    }
+
+    #[test]
+    fn failed_reload_populates_last_reload_error() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("err_pop.yaml");
+        fs::write(&file, "name: ok\ncount: 1\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_ERR_POP_").unwrap();
+        assert!(store.last_reload_error().is_none());
+
+        // Type mismatch: count expects u32
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+
+        let captured = store
+            .last_reload_error()
+            .expect("failed reload must publish a failure");
+        assert!(!captured.message.is_empty(), "message must be captured");
+    }
+
+    #[test]
+    fn successful_reload_clears_last_reload_error() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("err_clear.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_ERR_CLEAR_").unwrap();
+
+        // Force a failure
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+        assert!(store.last_reload_error().is_some());
+
+        // Recover: success must clear the slot
+        fs::write(&file, "name: recovered\n").unwrap();
+        store.reload().unwrap();
+        assert!(
+            store.last_reload_error().is_none(),
+            "successful reload must clear the failure slot"
+        );
+    }
+
+    #[test]
+    fn most_recent_failure_replaces_prior() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("err_recent.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_ERR_RECENT_").unwrap();
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+        let first = store.last_reload_error().unwrap();
+
+        fs::write(&file, "name: [unclosed\n").unwrap();
+        assert!(store.reload().is_err());
+        let second = store.last_reload_error().unwrap();
+
+        // The second failure replaces the first. Both must carry a
+        // non-empty message; replacement is observable as a different
+        // Arc identity even when messages happen to coincide.
+        assert!(!first.message.is_empty());
+        assert!(!second.message.is_empty());
+        assert!(
+            !Arc::ptr_eq(&first, &second),
+            "second failure must replace the first slot entry"
+        );
+    }
+
+    #[test]
+    fn last_reload_error_carries_source_chain() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("err_chain.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_ERR_CHAIN_").unwrap();
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+
+        let captured = store.last_reload_error().unwrap();
+        // The chain comes from ProviderChain (env + file in load).
+        assert_eq!(captured.sources.len(), 2);
+        assert!(captured.sources[0].is_env());
+        assert_eq!(
+            captured.sources[0].as_env_prefix(),
+            Some("SHIKUMI_ERR_CHAIN_")
+        );
+        assert!(captured.sources[1].is_file());
+        assert_eq!(captured.sources[1].as_path(), Some(file.as_path()));
+    }
+
+    #[test]
+    fn failed_reload_does_not_increment_generation_but_records_error() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("err_gen.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_ERR_GEN_").unwrap();
+        let g_before = store.generation();
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+
+        assert_eq!(
+            store.generation(),
+            g_before,
+            "failed reload must not bump generation"
+        );
+        assert!(
+            store.last_reload_error().is_some(),
+            "failed reload must publish a failure"
+        );
+    }
+
+    #[test]
+    fn shared_last_reload_error_visible_across_threads() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("err_shared.yaml");
+        fs::write(&file, "name: t0\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_ERR_SHARED_").unwrap();
+        let err_handle = store.shared_last_reload_error();
+        assert!(err_handle.load_full().is_none());
+
+        let observed = thread::spawn({
+            let err_handle = err_handle.clone();
+            move || {
+                for _ in 0..200 {
+                    if err_handle.load_full().is_some() {
+                        return true;
+                    }
+                    thread::sleep(Duration::from_millis(5));
+                }
+                err_handle.load_full().is_some()
+            }
+        });
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        let _ = store.reload();
+
+        assert!(
+            observed.join().expect("observer thread"),
+            "observer should see the published failure"
+        );
+    }
+
+    #[test]
+    fn shared_last_reload_error_outlives_store() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("err_outlive.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let handle = {
+            let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_ERR_OUTLIVE_").unwrap();
+            fs::write(&file, "count: not_a_number\n").unwrap();
+            let _ = store.reload();
+            store.shared_last_reload_error()
+        };
+        // The store is dropped; the handle still reads the published failure.
+        let captured = handle
+            .load_full()
+            .expect("failure must persist after store drop");
+        assert!(!captured.message.is_empty());
+    }
+
+    #[test]
+    fn shared_last_reload_error_is_same_arc_as_internal() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("err_same.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_ERR_SAME_").unwrap();
+        let handle = store.shared_last_reload_error();
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        let _ = store.reload();
+
+        // Both views see the same Arc<ReloadFailure>.
+        let via_store = store.last_reload_error().unwrap();
+        let via_handle = handle.load_full().unwrap();
+        assert!(Arc::ptr_eq(&via_store, &via_handle));
+    }
+
+    #[test]
+    fn success_after_failure_clears_slot_and_advances_generation() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("err_recover.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_ERR_RECOVER_").unwrap();
+        let g0 = store.generation();
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+        assert_eq!(store.generation(), g0, "no bump on failure");
+        assert!(store.last_reload_error().is_some());
+
+        fs::write(&file, "name: ok\n").unwrap();
+        store.reload().unwrap();
+        assert_eq!(store.generation(), g0 + 1, "bump on success");
+        assert!(store.last_reload_error().is_none(), "slot cleared");
+    }
+
+    #[test]
+    fn last_reload_error_message_matches_returned_error_display() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("err_msg.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_ERR_MSG_").unwrap();
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        let returned = store.reload().unwrap_err();
+        let captured = store.last_reload_error().unwrap();
+        assert_eq!(
+            captured.message,
+            returned.to_string(),
+            "published failure message must match Display of the returned error"
+        );
     }
 
     #[test]
