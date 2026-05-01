@@ -6,6 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use arc_swap::{ArcSwap, ArcSwapOption, Guard};
 use serde::Deserialize;
@@ -33,6 +34,7 @@ pub struct ConfigStore<T> {
     sources: Vec<ConfigSource>,
     generation: Arc<AtomicU64>,
     last_reload_error: Arc<ArcSwapOption<ReloadFailure>>,
+    last_publish_at: Arc<ArcSwap<Instant>>,
     _watcher: Option<ConfigWatcher>,
 }
 
@@ -58,6 +60,7 @@ where
             sources,
             generation: Arc::new(AtomicU64::new(0)),
             last_reload_error: Arc::new(ArcSwapOption::empty()),
+            last_publish_at: Arc::new(ArcSwap::from_pointee(Instant::now())),
             _watcher: None,
         })
     }
@@ -83,9 +86,11 @@ where
         let inner = Arc::new(ArcSwap::from_pointee(config));
         let generation = Arc::new(AtomicU64::new(0));
         let last_reload_error = Arc::new(ArcSwapOption::empty());
+        let last_publish_at = Arc::new(ArcSwap::from_pointee(Instant::now()));
         let inner_clone = inner.clone();
         let generation_clone = generation.clone();
         let last_err_clone = last_reload_error.clone();
+        let last_publish_at_clone = last_publish_at.clone();
         let path_owned = path.to_owned();
         let prefix_owned = env_prefix.to_owned();
 
@@ -117,7 +122,13 @@ where
             match Self::load_from_path(&path_owned, &prefix_owned) {
                 Ok((new_config, _)) => {
                     on_reload(&new_config);
-                    Self::swap_in(&inner_clone, &generation_clone, &last_err_clone, new_config);
+                    Self::swap_in(
+                        &inner_clone,
+                        &generation_clone,
+                        &last_err_clone,
+                        &last_publish_at_clone,
+                        new_config,
+                    );
                 }
                 Err(err) => {
                     Self::record_failure(&last_err_clone, &err);
@@ -133,6 +144,7 @@ where
             sources,
             generation,
             last_reload_error,
+            last_publish_at,
             _watcher: Some(watcher),
         })
     }
@@ -160,7 +172,13 @@ where
     pub fn reload(&self) -> Result<(), ShikumiError> {
         match Self::load_from_path(&self.path, &self.env_prefix) {
             Ok((new, _)) => {
-                Self::swap_in(&self.inner, &self.generation, &self.last_reload_error, new);
+                Self::swap_in(
+                    &self.inner,
+                    &self.generation,
+                    &self.last_reload_error,
+                    &self.last_publish_at,
+                    new,
+                );
                 Ok(())
             }
             Err(err) => {
@@ -170,23 +188,26 @@ where
         }
     }
 
-    /// Publish a new value, clear the last-reload-error slot, and bump
-    /// the generation counter.
+    /// Publish a new value, clear the last-reload-error slot, stamp
+    /// the publish time, and bump the generation counter.
     ///
-    /// The store-then-clear-then-bump order is load-bearing: when a
-    /// reader observes a new generation via [`Self::generation`]
-    /// (with `Acquire`), the preceding `ArcSwap::store` and the
-    /// `last_reload_error` clear are both guaranteed visible. This is
-    /// the one canonical reload primitive — both [`Self::reload`] and
-    /// the [`Self::load_and_watch`] callback funnel through it.
+    /// The store-then-clear-then-stamp-then-bump order is load-bearing:
+    /// when a reader observes a new generation via [`Self::generation`]
+    /// (with `Acquire`), the preceding `ArcSwap::store`, the
+    /// `last_reload_error` clear, and the `last_publish_at` stamp are
+    /// all guaranteed visible. This is the one canonical reload
+    /// primitive — both [`Self::reload`] and the
+    /// [`Self::load_and_watch`] callback funnel through it.
     fn swap_in(
         inner: &ArcSwap<T>,
         generation: &AtomicU64,
         last_reload_error: &ArcSwapOption<ReloadFailure>,
+        last_publish_at: &ArcSwap<Instant>,
         new: T,
     ) {
         inner.store(Arc::new(new));
         last_reload_error.store(None);
+        last_publish_at.store(Arc::new(Instant::now()));
         generation.fetch_add(1, Ordering::Release);
     }
 
@@ -293,6 +314,59 @@ where
         self.last_reload_error.clone()
     }
 
+    /// The [`Instant`] at which the currently-published value became
+    /// current.
+    ///
+    /// Initialized to `Instant::now()` at construction (so the value
+    /// has been "live" since then) and replaced atomically on every
+    /// successful reload — manual via [`Self::reload`], or hot-reload
+    /// via the watcher in [`Self::load_and_watch`]. A failed reload
+    /// preserves the prior stamp untouched, mirroring the
+    /// [generation counter](Self::generation): a reader observing
+    /// `generation = N` sees the publish time of generation N.
+    ///
+    /// Pairs with [`Self::generation`] (which publish ordinal) and
+    /// [`Self::last_reload_error`] (why the next publish hasn't
+    /// arrived) to form the (which-publish × when-published × why-not-
+    /// next) success-and-failure observation triple. Reads use
+    /// `Acquire` ordering on the underlying [`ArcSwap`], so observing
+    /// a freshly-stamped publish time also makes the corresponding
+    /// [`Self::get`] visible — same swap-then-bump contract as
+    /// [`Self::generation`].
+    #[must_use]
+    pub fn last_publish_at(&self) -> Instant {
+        **self.last_publish_at.load()
+    }
+
+    /// Convenience: how long the currently-published value has been
+    /// live, equal to `self.last_publish_at().elapsed()`.
+    ///
+    /// Use as a typed staleness hint: "the config value an observer
+    /// is reading right now has been current for X." Distinct from
+    /// "time since the file was last touched" (which the OS owns):
+    /// this is "time since shikumi accepted the file's content as the
+    /// next typed value." A failing reload does not advance this
+    /// duration, so a long `time_since_publish` paired with
+    /// `last_reload_error.is_some()` precisely diagnoses "reloads
+    /// have been failing for X."
+    #[must_use]
+    pub fn time_since_publish(&self) -> Duration {
+        self.last_publish_at().elapsed()
+    }
+
+    /// Cross-thread sharable handle to the publish-time slot.
+    ///
+    /// Useful when worker threads need to observe publish times
+    /// independently of the main store handle, or when the slot must
+    /// outlive the originating [`ConfigStore`]. The handle continues
+    /// to reflect publishes as long as the originating store
+    /// (or its watcher) is alive, mirroring [`Self::shared`],
+    /// [`Self::shared_generation`], and [`Self::shared_last_reload_error`].
+    #[must_use]
+    pub fn shared_last_publish_at(&self) -> Arc<ArcSwap<Instant>> {
+        self.last_publish_at.clone()
+    }
+
     /// Load config from multiple paths, merging in order (last wins).
     ///
     /// Each path is layered via figment merge, so later files override
@@ -316,6 +390,7 @@ where
             sources,
             generation: Arc::new(AtomicU64::new(0)),
             last_reload_error: Arc::new(ArcSwapOption::empty()),
+            last_publish_at: Arc::new(ArcSwap::from_pointee(Instant::now())),
             _watcher: None,
         })
     }
@@ -1458,5 +1533,278 @@ mod tests {
             last = now;
         }
         assert_eq!(store.generation(), 8);
+    }
+
+    // ---- last_publish_at() / time_since_publish() / shared_last_publish_at() tests ----
+
+    #[test]
+    fn last_publish_at_stamped_at_construction_for_load() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("pub_t0.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let before = Instant::now();
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_PUB_T0_").unwrap();
+        let after = Instant::now();
+
+        let stamped = store.last_publish_at();
+        assert!(
+            stamped >= before && stamped <= after,
+            "last_publish_at must be stamped between the surrounding Instant::now() calls"
+        );
+    }
+
+    #[test]
+    fn last_publish_at_stamped_at_construction_for_load_merged() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("pub_tm.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let before = Instant::now();
+        let store = ConfigStore::<TestConfig>::load_merged(
+            std::slice::from_ref(&file),
+            "SHIKUMI_PUB_MERGED_",
+        )
+        .unwrap();
+        let after = Instant::now();
+
+        let stamped = store.last_publish_at();
+        assert!(stamped >= before && stamped <= after);
+    }
+
+    #[test]
+    fn last_publish_at_stamped_at_construction_for_load_and_watch() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("pub_tw.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let before = Instant::now();
+        let store = ConfigStore::<TestConfig>::load_and_watch(
+            &file,
+            "SHIKUMI_PUB_WATCH_",
+            |_: &TestConfig| {},
+        )
+        .unwrap();
+        let after = Instant::now();
+
+        let stamped = store.last_publish_at();
+        assert!(stamped >= before && stamped <= after);
+    }
+
+    #[test]
+    fn last_publish_at_advances_on_successful_reload() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("pub_adv.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_PUB_ADV_").unwrap();
+        let t0 = store.last_publish_at();
+
+        // Sleep a measurable interval, then reload.
+        thread::sleep(Duration::from_millis(20));
+        fs::write(&file, "name: b\n").unwrap();
+        store.reload().unwrap();
+
+        let t1 = store.last_publish_at();
+        assert!(
+            t1 > t0,
+            "successful reload must advance last_publish_at; t0={t0:?} t1={t1:?}"
+        );
+        assert!(
+            t1.duration_since(t0) >= Duration::from_millis(15),
+            "advance must reflect the elapsed interval"
+        );
+    }
+
+    #[test]
+    fn last_publish_at_unchanged_on_failed_reload() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("pub_fail.yaml");
+        fs::write(&file, "name: ok\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_PUB_FAIL_").unwrap();
+        let t0 = store.last_publish_at();
+
+        thread::sleep(Duration::from_millis(20));
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+
+        let t1 = store.last_publish_at();
+        assert_eq!(
+            t0, t1,
+            "failed reload must preserve the last_publish_at stamp"
+        );
+    }
+
+    #[test]
+    fn time_since_publish_starts_near_zero() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("pub_near0.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_PUB_NEAR0_").unwrap();
+        let elapsed = store.time_since_publish();
+        // Generous bound to absorb CI jitter; still proves the stamp is fresh.
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "freshly-constructed store should have near-zero elapsed; got {elapsed:?}"
+        );
+    }
+
+    #[test]
+    fn time_since_publish_grows_with_wall_time() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("pub_grow.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_PUB_GROW_").unwrap();
+        let e0 = store.time_since_publish();
+        thread::sleep(Duration::from_millis(30));
+        let e1 = store.time_since_publish();
+        assert!(
+            e1 > e0,
+            "elapsed must grow without a reload; e0={e0:?} e1={e1:?}"
+        );
+        assert!(
+            e1 >= Duration::from_millis(25),
+            "elapsed must reflect the sleep interval"
+        );
+    }
+
+    #[test]
+    fn time_since_publish_resets_on_successful_reload() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("pub_reset.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_PUB_RESET_").unwrap();
+        thread::sleep(Duration::from_millis(50));
+        let stale = store.time_since_publish();
+        assert!(stale >= Duration::from_millis(40));
+
+        fs::write(&file, "name: b\n").unwrap();
+        store.reload().unwrap();
+        let fresh = store.time_since_publish();
+        assert!(
+            fresh < stale,
+            "successful reload must reset elapsed; stale={stale:?} fresh={fresh:?}"
+        );
+    }
+
+    #[test]
+    fn shared_last_publish_at_visible_across_threads() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("pub_shared.yaml");
+        fs::write(&file, "name: t0\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_PUB_SHARED_").unwrap();
+        let handle = store.shared_last_publish_at();
+        let t0 = **handle.load();
+
+        let observed = thread::spawn({
+            let handle = handle.clone();
+            move || {
+                for _ in 0..200 {
+                    let now = **handle.load();
+                    if now > t0 {
+                        return now;
+                    }
+                    thread::sleep(Duration::from_millis(5));
+                }
+                **handle.load()
+            }
+        });
+
+        thread::sleep(Duration::from_millis(10));
+        fs::write(&file, "name: t1\n").unwrap();
+        store.reload().unwrap();
+
+        let seen = observed.join().expect("observer thread");
+        assert!(seen > t0, "observer must see the advanced publish time");
+        assert_eq!(seen, store.last_publish_at());
+    }
+
+    #[test]
+    fn shared_last_publish_at_outlives_store() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("pub_outlive.yaml");
+        fs::write(&file, "name: persistent\n").unwrap();
+
+        let (handle, before_drop) = {
+            let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_PUB_OUTLIVE_").unwrap();
+            fs::write(&file, "name: rev1\n").unwrap();
+            store.reload().unwrap();
+            (store.shared_last_publish_at(), store.last_publish_at())
+        };
+        // The store is dropped; the handle still reads the last stamp.
+        let observed = **handle.load();
+        assert_eq!(observed, before_drop);
+    }
+
+    #[test]
+    fn shared_last_publish_at_is_same_arc_as_internal() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("pub_same.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_PUB_SAME_").unwrap();
+        let handle = store.shared_last_publish_at();
+
+        fs::write(&file, "name: y\n").unwrap();
+        store.reload().unwrap();
+
+        // Both views see the same Instant value.
+        assert_eq!(**handle.load(), store.last_publish_at());
+    }
+
+    #[test]
+    fn last_publish_at_stamped_before_generation_bump_for_acquire_release_contract() {
+        // The ordering inside swap_in is: store value, clear error,
+        // stamp publish_at, bump generation (Release). When a reader
+        // observes generation = N (Acquire), the matching publish_at
+        // must already be visible. We verify via a single-threaded
+        // before/after sandwich: capture publish_at *before* the
+        // generation bump observably finishes (by reading both after
+        // reload returns).
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("pub_order.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_PUB_ORDER_").unwrap();
+        let g0 = store.generation();
+        let t0 = store.last_publish_at();
+
+        thread::sleep(Duration::from_millis(10));
+        fs::write(&file, "name: b\n").unwrap();
+        store.reload().unwrap();
+
+        // Generation advanced; publish_at must have advanced too.
+        assert!(store.generation() > g0);
+        assert!(store.last_publish_at() > t0);
+    }
+
+    #[test]
+    fn long_failure_with_stale_publish_diagnoses_failing_reloads() {
+        // Composition test: time_since_publish + last_reload_error.is_some()
+        // is the canonical "reloads have been failing for X" diagnostic.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("pub_diag.yaml");
+        fs::write(&file, "name: ok\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_PUB_DIAG_").unwrap();
+
+        thread::sleep(Duration::from_millis(40));
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+
+        let elapsed = store.time_since_publish();
+        assert!(
+            elapsed >= Duration::from_millis(35),
+            "failed reload must not reset elapsed"
+        );
+        assert!(
+            store.last_reload_error().is_some(),
+            "failure slot must be populated"
+        );
     }
 }
