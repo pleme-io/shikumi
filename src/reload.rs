@@ -47,6 +47,19 @@ pub struct ReloadFailure {
     /// non-figment-bearing variants and figment errors without a key
     /// context.
     pub field_path: Vec<String>,
+    /// Specific [`ConfigSource`] in [`Self::sources`] that produced the
+    /// offending value, captured from
+    /// [`crate::ShikumiError::failing_source`] at the moment the failure
+    /// was caught. Owned [`ConfigSource`] so the slot survives any
+    /// borrow on the originating error.
+    ///
+    /// `None` for non-`Extract` failures, for `Extract` failures whose
+    /// figment error did not carry per-value `Metadata`, and when the
+    /// metadata could not be matched to any entry in the recorded
+    /// chain. Pairs with [`Self::sources`] (full chain) and
+    /// [`Self::field_path`] (offending key): when present, the triple
+    /// pins `(which-layer × which-field)` for the specific failure.
+    pub failing_source: Option<ConfigSource>,
 }
 
 impl ReloadFailure {
@@ -64,6 +77,7 @@ impl ReloadFailure {
             message: err.to_string(),
             sources: err.sources().map(<[_]>::to_vec).unwrap_or_default(),
             field_path: err.field_path().map(<[_]>::to_vec).unwrap_or_default(),
+            failing_source: err.failing_source().cloned(),
         }
     }
 }
@@ -127,6 +141,7 @@ mod tests {
             message: "broken pipe".to_owned(),
             sources: vec![],
             field_path: vec![],
+            failing_source: None,
         };
         assert_eq!(f.to_string(), "broken pipe");
     }
@@ -137,11 +152,13 @@ mod tests {
             message: "bad".to_owned(),
             sources: vec![ConfigSource::Defaults],
             field_path: vec!["a".to_owned(), "b".to_owned()],
+            failing_source: Some(ConfigSource::Defaults),
         };
         let g = f.clone();
         assert_eq!(g.message, f.message);
         assert_eq!(g.sources, f.sources);
         assert_eq!(g.field_path, f.field_path);
+        assert_eq!(g.failing_source, f.failing_source);
     }
 
     #[test]
@@ -209,5 +226,86 @@ mod tests {
             f.field_path,
             vec!["a".to_owned(), "b".to_owned(), "c".to_owned()]
         );
+    }
+
+    // ---- failing_source capture tests ----
+
+    #[test]
+    fn from_error_captures_failing_source_for_attributed_extract() {
+        // Build a real attributed Extract: type mismatch on a file-only
+        // value, env layer present but irrelevant to the offending field.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_attr.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err = ProviderChain::new()
+            .with_env("RF_ATTR_NOTSET_")
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+
+        let f = ReloadFailure::from_error(&err);
+        let attributed = f
+            .failing_source
+            .expect("Extract attribution must propagate to ReloadFailure");
+        assert!(attributed.is_file());
+        assert_eq!(attributed.as_path(), Some(file.as_path()));
+    }
+
+    #[test]
+    fn from_error_yields_none_failing_source_for_unattributed_extract() {
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults],
+            error: fake_figment_error(),
+        };
+        let f = ReloadFailure::from_error(&err);
+        assert!(
+            f.failing_source.is_none(),
+            "no metadata to map → no failing_source"
+        );
+    }
+
+    #[test]
+    fn from_error_yields_none_failing_source_for_non_extract_variants() {
+        assert!(
+            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned()))
+                .failing_source
+                .is_none()
+        );
+        assert!(
+            ReloadFailure::from_error(&ShikumiError::Figment(fake_figment_error()))
+                .failing_source
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn from_error_failing_source_owns_clone_independent_of_error_lifetime() {
+        // Capture from a borrowed error, then drop the error. The
+        // captured failing_source must remain valid (it's an owned
+        // ConfigSource clone).
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_owned.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let f = {
+            let err = ProviderChain::new()
+                .with_file(&file)
+                .extract::<Cfg>()
+                .unwrap_err();
+            ReloadFailure::from_error(&err)
+        };
+        let owned = f.failing_source.expect("owned attribution survives drop");
+        assert_eq!(owned.as_path(), Some(file.as_path()));
     }
 }

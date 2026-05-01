@@ -1416,6 +1416,33 @@ mod tests {
     }
 
     #[test]
+    fn last_reload_error_carries_failing_source() {
+        // End-to-end: reload failure on a file → ReloadFailure published
+        // through swap_in/record_failure carries the failing-source
+        // attribution alongside chain + field path. Proves the four-
+        // dimensional observation surface (where × when × why × what)
+        // is now five-dimensional with `which-layer` pinned.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("err_failsrc.yaml");
+        fs::write(&file, "name: ok\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_ERR_FAILSRC_").unwrap();
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+
+        let captured = store.last_reload_error().unwrap();
+        let attributed = captured
+            .failing_source
+            .as_ref()
+            .expect("failing source must be captured for figment-attributed failure");
+        assert!(attributed.is_file());
+        assert_eq!(attributed.as_path(), Some(file.as_path()));
+        // And it agrees with the recorded chain.
+        assert!(captured.sources.iter().any(|s| s == attributed));
+    }
+
+    #[test]
     fn generation_monotonic_across_many_reloads() {
         let dir = TempDir::new().unwrap();
         let file = dir.path().join("gen_mono.yaml");

@@ -39,10 +39,13 @@ pub enum ShikumiError {
     /// priority first) so the failure can be traced back to the layers
     /// that produced it without grepping logs or re-walking discovery.
     /// The dotted field path of the offending key (when figment can
-    /// localize it) is also embedded in the rendered display.
+    /// localize it) and — when figment's per-value `Metadata` can be
+    /// matched against an entry in the recorded chain — the specific
+    /// failing source layer are also embedded in the rendered display.
     #[error(
-        "config extraction failed [layers: {}]{}: {error}",
+        "config extraction failed [layers: {}]{}{}: {error}",
         display_sources(sources),
+        display_failing_source(sources, error),
         display_field_path(&error.path)
     )]
     Extract {
@@ -72,6 +75,95 @@ fn display_field_path(path: &[String]) -> String {
     } else {
         format!(" at field `{}`", path.join("."))
     }
+}
+
+fn display_failing_source(sources: &[ConfigSource], error: &figment::Error) -> String {
+    resolve_failing_source(error, sources)
+        .map(|s| format!(" from {s}"))
+        .unwrap_or_default()
+}
+
+/// Map a figment error's per-value [`figment::Metadata`] back to the
+/// specific [`ConfigSource`] in the recorded chain that produced the
+/// offending value.
+///
+/// Returns a borrowed reference into `chain` so callers share its
+/// lifetime. `None` when figment did not attach metadata (e.g. an
+/// `Error::from(String)` constructed without a provider context), or
+/// when the metadata cannot be matched to any recorded entry.
+///
+/// Resolution rules, applied in order:
+/// 1. If `metadata.source` is a [`figment::Source::File`], match by
+///    exact path equality against [`ConfigSource::File`] entries.
+/// 2. If `metadata.name` starts with `"nix: "` or `"lisp: "` (the
+///    shapes used by [`crate::NixProvider`] / [`crate::LispProvider`]),
+///    extract the trailing path and match against
+///    [`ConfigSource::File`].
+/// 3. If `metadata.name` contains `"environment variable"` (figment's
+///    [`figment::providers::Env`] metadata shape), match against the
+///    [`ConfigSource::Env`] entry by uppercased prefix when the name
+///    carries a backtick-wrapped prefix; otherwise return the unique
+///    `Env` entry if exactly one exists.
+/// 4. If `metadata.source` is a [`figment::Source::Code`] location
+///    (the shape produced by [`figment::providers::Serialized`]),
+///    match the unique [`ConfigSource::Defaults`] entry if exactly one
+///    exists.
+fn resolve_failing_source<'a>(
+    error: &figment::Error,
+    chain: &'a [ConfigSource],
+) -> Option<&'a ConfigSource> {
+    let md = error.metadata.as_ref()?;
+
+    if let Some(p) = md.source.as_ref().and_then(|s| s.file_path())
+        && let Some(hit) = chain.iter().find(|s| s.as_path() == Some(p))
+    {
+        return Some(hit);
+    }
+
+    let name = md.name.as_ref();
+    for prefix in ["nix: ", "lisp: "] {
+        if let Some(rest) = name.strip_prefix(prefix) {
+            let p = std::path::Path::new(rest);
+            if let Some(hit) = chain.iter().find(|s| s.as_path() == Some(p)) {
+                return Some(hit);
+            }
+        }
+    }
+
+    if name.contains("environment variable") {
+        if let Some(rest) = name.strip_prefix('`')
+            && let Some(end) = rest.find('`')
+        {
+            let prefix_upper = &rest[..end];
+            if let Some(hit) = chain.iter().find(|s| {
+                s.as_env_prefix()
+                    .is_some_and(|p| p.eq_ignore_ascii_case(prefix_upper))
+            }) {
+                return Some(hit);
+            }
+        }
+        let mut envs = chain.iter().filter(|s| s.is_env());
+        if let Some(only) = envs.next()
+            && envs.next().is_none()
+        {
+            return Some(only);
+        }
+    }
+
+    if md
+        .source
+        .as_ref()
+        .is_some_and(|s| s.code_location().is_some())
+    {
+        let mut defaults = chain.iter().filter(|s| s.is_defaults());
+        if let Some(only) = defaults.next()
+            && defaults.next().is_none()
+        {
+            return Some(only);
+        }
+    }
+
+    None
 }
 
 impl ShikumiError {
@@ -132,6 +224,33 @@ impl ShikumiError {
     pub fn field_path(&self) -> Option<&[String]> {
         match self {
             Self::Extract { error, .. } | Self::Figment(error) => Some(&error.path),
+            _ => None,
+        }
+    }
+
+    /// Returns the specific [`ConfigSource`] in the recorded chain that
+    /// produced the failure, if attribution is possible.
+    ///
+    /// Distinct from [`Self::sources`], which returns the whole chain:
+    /// `failing_source` pinpoints the *one* layer figment's per-value
+    /// metadata blames for the offending field. Returned by reference
+    /// into the recorded chain so it shares the error's lifetime.
+    ///
+    /// Pairs with [`Self::sources`] (full chain) and [`Self::field_path`]
+    /// (offending key) to form the closed (which-layer × which-field)
+    /// failure coordinate inside the (where × what) surface.
+    ///
+    /// Returns `None` for variants that do not record a chain
+    /// ([`Self::Parse`], [`Self::NotFound`], [`Self::Watch`],
+    /// [`Self::Io`], [`Self::Figment`]); for [`Self::Extract`] errors
+    /// when figment did not attach `Metadata` (e.g. a manually
+    /// constructed `figment::Error::from(string)`); and when the
+    /// metadata cannot be matched to any entry in the recorded chain
+    /// (callers should fall back to [`Self::sources`]).
+    #[must_use]
+    pub fn failing_source(&self) -> Option<&ConfigSource> {
+        match self {
+            Self::Extract { sources, error } => resolve_failing_source(error, sources),
             _ => None,
         }
     }
@@ -476,6 +595,207 @@ mod tests {
         let msg = err.to_string();
         assert!(!msg.contains("at field"), "no path → no `at field` segment");
         assert!(msg.contains("[layers: defaults]:"));
+    }
+
+    // ---- failing_source() tests ----
+
+    fn extract_error_with_file_path_failure() -> (tempfile::TempDir, ShikumiError) {
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("typed.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err = ProviderChain::new()
+            .with_env("FAILING_SRC_FILE_NOTSET_")
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        (dir, err)
+    }
+
+    #[test]
+    fn failing_source_pins_file_layer_for_typed_file_failure() {
+        let (dir, err) = extract_error_with_file_path_failure();
+        let s = err
+            .failing_source()
+            .expect("Extract attributes failure to a recorded source");
+        assert!(s.is_file(), "expected failing source to be a file layer");
+        assert_eq!(s.as_path(), Some(dir.path().join("typed.yaml").as_path()));
+    }
+
+    #[test]
+    fn failing_source_pins_env_layer_when_env_provides_offending_field() {
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let var = "FAILSRC_ENV_COUNT";
+        unsafe { std::env::set_var(var, "not_a_number") };
+        let err = ProviderChain::new()
+            .with_env("FAILSRC_ENV_")
+            .extract::<Cfg>()
+            .unwrap_err();
+        unsafe { std::env::remove_var(var) };
+
+        let s = err
+            .failing_source()
+            .expect("env-only failure must attribute to the env layer");
+        assert!(s.is_env(), "expected failing source to be the env layer");
+        assert_eq!(s.as_env_prefix(), Some("FAILSRC_ENV_"));
+    }
+
+    #[test]
+    fn failing_source_distinguishes_env_from_file_in_layered_chain() {
+        // Both env and file are present; only env supplies `count`.
+        // figment's per-value metadata pins the failure to env, not file.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("ok.yaml");
+        std::fs::write(&file, "name: present\n").unwrap();
+
+        let var = "FAILSRC_DISCRIM_COUNT";
+        unsafe { std::env::set_var(var, "not_a_number") };
+        let err = ProviderChain::new()
+            .with_file(&file)
+            .with_env("FAILSRC_DISCRIM_")
+            .extract::<Cfg>()
+            .unwrap_err();
+        unsafe { std::env::remove_var(var) };
+
+        let s = err
+            .failing_source()
+            .expect("Extract must attribute the failure");
+        assert_eq!(
+            s.as_env_prefix(),
+            Some("FAILSRC_DISCRIM_"),
+            "env (the actual offender) must win over the unrelated file layer"
+        );
+    }
+
+    #[test]
+    fn failing_source_none_for_figment_variant() {
+        // `Figment` carries no recorded chain; `failing_source` requires
+        // a chain to resolve into, so it returns None even if the
+        // wrapped error has metadata.
+        let err = ShikumiError::Figment(fake_figment_error());
+        assert!(err.failing_source().is_none());
+    }
+
+    #[test]
+    fn failing_source_none_for_non_figment_variants() {
+        assert!(
+            ShikumiError::Parse("x".to_owned())
+                .failing_source()
+                .is_none()
+        );
+        assert!(
+            ShikumiError::NotFound {
+                tried: vec![PathBuf::from("/a")]
+            }
+            .failing_source()
+            .is_none()
+        );
+        let io = std::io::Error::new(std::io::ErrorKind::NotFound, "x");
+        let io_err: ShikumiError = io.into();
+        assert!(io_err.failing_source().is_none());
+    }
+
+    #[test]
+    fn failing_source_none_when_no_metadata_attached() {
+        // Manually constructed figment::Error has no metadata; even with
+        // a recorded chain, attribution cannot be resolved.
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults, ConfigSource::Env("X_".to_owned())],
+            error: fake_figment_error(),
+        };
+        assert!(
+            err.failing_source().is_none(),
+            "no metadata → no attribution"
+        );
+    }
+
+    #[test]
+    fn failing_source_none_when_chain_missing_matching_entry() {
+        // Build a figment error whose metadata points at a file path that
+        // is *not* in the recorded chain. The resolver must not fabricate
+        // a match.
+        let (_dir, real) = extract_error_with_file_path_failure();
+        let ShikumiError::Extract { error: inner, .. } = real else {
+            unreachable!();
+        };
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults], // no File entry
+            error: inner,
+        };
+        assert!(err.failing_source().is_none());
+    }
+
+    #[test]
+    fn extract_display_includes_failing_source_segment_when_known() {
+        let (dir, err) = extract_error_with_file_path_failure();
+        let path_disp = dir.path().join("typed.yaml").display().to_string();
+        let msg = err.to_string();
+        assert!(
+            msg.contains(&format!("from file({path_disp})")),
+            "rendered error must cite the failing layer; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn extract_display_omits_failing_source_segment_when_unknown() {
+        // No metadata attached → no `from <src>` segment.
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults],
+            error: fake_figment_error(),
+        };
+        let msg = err.to_string();
+        assert!(
+            !msg.contains(" from "),
+            "no attribution → no `from` segment; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn extract_display_orders_segments_layers_then_from_then_field() {
+        let (_dir, err) = extract_error_with_file_path_failure();
+        let msg = err.to_string();
+        let l = msg.find("[layers:").expect("layers segment");
+        let f = msg.find(" from ").expect("from segment");
+        let a = msg.find(" at field ").expect("field segment");
+        assert!(l < f && f < a, "segment order: layers -> from -> at field");
+    }
+
+    #[test]
+    fn failing_source_env_match_is_case_insensitive() {
+        // figment uppercases prefixes when emitting metadata names; our
+        // recorded ConfigSource keeps the original casing. Ensure the
+        // resolver bridges both.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let var = "FAILSRC_CASE_COUNT";
+        unsafe { std::env::set_var(var, "not_a_number") };
+        let err = ProviderChain::new()
+            .with_env("failsrc_case_") // lowercase user input
+            .extract::<Cfg>()
+            .unwrap_err();
+        unsafe { std::env::remove_var(var) };
+        let s = err.failing_source().expect("env attribution");
+        assert_eq!(s.as_env_prefix(), Some("failsrc_case_"));
     }
 
     #[test]
