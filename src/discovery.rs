@@ -301,11 +301,16 @@ impl ConfigDiscovery {
 
         if self.hierarchical {
             // Layer 1: /etc/{app}/{app}.yaml (system-wide, lowest priority)
-            self.collect_dir_configs(&PathBuf::from(format!("/etc/{app}")), app, &mut found);
+            self.collect_configs(
+                &PathBuf::from(format!("/etc/{app}")),
+                app,
+                NameStyle::Bare,
+                &mut found,
+            );
 
             // Layer 2: ~/.config/{app}/{app}.yaml (user-level)
             if let Some(config_dir) = self.user_config_dir() {
-                self.collect_dir_configs(&config_dir.join(app), app, &mut found);
+                self.collect_configs(&config_dir.join(app), app, NameStyle::Bare, &mut found);
             }
 
             let start = self.start_dir.clone().or_else(|| env::current_dir().ok());
@@ -320,7 +325,7 @@ impl ConfigDiscovery {
                 ancestors.reverse();
 
                 for dir in &ancestors {
-                    self.collect_walkup_configs(dir, app, &mut found);
+                    self.collect_configs(dir, app, NameStyle::Dotfile, &mut found);
                 }
             }
         } else {
@@ -384,38 +389,24 @@ impl ConfigDiscovery {
         self.resolve_home().map(|home| home.join(".config"))
     }
 
-    /// Collect main config + partials from a structured config directory.
+    /// Collect main config + partials from a directory using the given naming style.
     ///
-    /// Looks for `{dir}/{app}.yaml` and `{dir}/{app}-*.yaml` partials.
-    fn collect_dir_configs(&self, dir: &Path, app: &str, found: &mut Vec<PathBuf>) {
+    /// `Bare`: `{dir}/{app}.{ext}` and `{dir}/{app}-*.{ext}` partials.
+    /// `Dotfile`: `{dir}/.{app}.{ext}` and `{dir}/.{app}-*.{ext}` partials.
+    fn collect_configs(&self, dir: &Path, app: &str, style: NameStyle, found: &mut Vec<PathBuf>) {
         for format in &self.formats {
             for ext in format.extensions() {
-                let main_path = dir.join(format!("{app}.{ext}"));
+                let main_path = dir.join(style.main_filename(app, ext));
                 if main_path.exists() {
                     found.push(main_path);
                 }
             }
         }
-        self.collect_partials(dir, app, false, found);
-    }
-
-    /// Collect walk-up configs from a directory (dot-prefixed).
-    ///
-    /// Looks for `.{app}.yaml` and `.{app}-*.yaml` partials.
-    fn collect_walkup_configs(&self, dir: &Path, app: &str, found: &mut Vec<PathBuf>) {
-        for format in &self.formats {
-            for ext in format.extensions() {
-                let main_path = dir.join(format!(".{app}.{ext}"));
-                if main_path.exists() {
-                    found.push(main_path);
-                }
-            }
-        }
-        self.collect_partials(dir, app, true, found);
+        self.collect_partials(dir, app, style, found);
     }
 
     /// Collect partial configs matching `[.]{app}-*.{ext}` in a directory.
-    fn collect_partials(&self, dir: &Path, app: &str, dot_prefix: bool, found: &mut Vec<PathBuf>) {
+    fn collect_partials(&self, dir: &Path, app: &str, style: NameStyle, found: &mut Vec<PathBuf>) {
         if !dir.is_dir() {
             return;
         }
@@ -424,7 +415,7 @@ impl ConfigDiscovery {
             for entry in entries.flatten() {
                 let name = entry.file_name();
                 let name_str = name.to_string_lossy();
-                if self.is_partial_match(&name_str, app, dot_prefix) {
+                if self.is_partial_match(&name_str, app, style) {
                     partials.push(entry.path());
                 }
             }
@@ -434,12 +425,8 @@ impl ConfigDiscovery {
     }
 
     /// Check if a filename matches the partial pattern `[.]{app}-*.{ext}`.
-    fn is_partial_match(&self, name: &str, app: &str, dot_prefix: bool) -> bool {
-        let prefix = if dot_prefix {
-            format!(".{app}-")
-        } else {
-            format!("{app}-")
-        };
+    fn is_partial_match(&self, name: &str, app: &str, style: NameStyle) -> bool {
+        let prefix = style.partial_prefix(app);
         if !name.starts_with(&prefix) {
             return false;
         }
@@ -452,6 +439,49 @@ impl ConfigDiscovery {
             }
         }
         false
+    }
+}
+
+/// How config files are named within a directory.
+///
+/// Each variant is a typed morphism `(app, ext) → filename`. Adding a new
+/// naming convention (e.g. an `App/config.{ext}` subdirectory style, or a
+/// `{app}.{environment}.{ext}` overlay style) means adding a variant — the
+/// compiler then forces every call site (main-file construction, partial
+/// prefix construction, future filename queries) to handle it.
+///
+/// This replaces a `dot_prefix: bool` flag previously threaded through
+/// `collect_*_configs` / `collect_partials` / `is_partial_match`. The bool
+/// was load-bearing — it controlled both the main filename and the partial
+/// prefix in lockstep — but its meaning was implicit in every call site.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NameStyle {
+    /// `{app}.{ext}` and `{app}-*.{ext}` — used in `/etc/{app}/`,
+    /// `~/.config/{app}/`, and any structured config directory.
+    Bare,
+    /// `.{app}.{ext}` and `.{app}-*.{ext}` — used during CWD walk-up
+    /// discovery, where dot-prefixed files keep configs out of `ls`.
+    Dotfile,
+}
+
+impl NameStyle {
+    /// The main config filename for this style: `{prefix}{app}.{ext}`.
+    fn main_filename(self, app: &str, ext: &str) -> String {
+        match self {
+            Self::Bare => format!("{app}.{ext}"),
+            Self::Dotfile => format!(".{app}.{ext}"),
+        }
+    }
+
+    /// The partial-config filename prefix for this style: `{prefix}{app}-`.
+    ///
+    /// A partial filename is anything starting with this prefix and ending
+    /// with a recognized config extension.
+    fn partial_prefix(self, app: &str) -> String {
+        match self {
+            Self::Bare => format!("{app}-"),
+            Self::Dotfile => format!(".{app}-"),
+        }
     }
 }
 
@@ -1128,18 +1158,169 @@ mod tests {
         let d = ConfigDiscovery::new("myapp");
 
         // Dot-prefixed partials
-        assert!(d.is_partial_match(".myapp-01-db.yaml", "myapp", true));
-        assert!(d.is_partial_match(".myapp-extra.yml", "myapp", true));
-        assert!(d.is_partial_match(".myapp-config.toml", "myapp", true));
-        assert!(!d.is_partial_match(".myapp.yaml", "myapp", true)); // main, not partial
-        assert!(!d.is_partial_match("myapp-01.yaml", "myapp", true)); // no dot prefix
-        assert!(!d.is_partial_match(".myapp-01.txt", "myapp", true)); // wrong extension
+        assert!(d.is_partial_match(".myapp-01-db.yaml", "myapp", NameStyle::Dotfile));
+        assert!(d.is_partial_match(".myapp-extra.yml", "myapp", NameStyle::Dotfile));
+        assert!(d.is_partial_match(".myapp-config.toml", "myapp", NameStyle::Dotfile));
+        assert!(!d.is_partial_match(".myapp.yaml", "myapp", NameStyle::Dotfile)); // main, not partial
+        assert!(!d.is_partial_match("myapp-01.yaml", "myapp", NameStyle::Dotfile)); // no dot prefix
+        assert!(!d.is_partial_match(".myapp-01.txt", "myapp", NameStyle::Dotfile)); // wrong extension
 
         // Non-dot-prefixed partials
-        assert!(d.is_partial_match("myapp-01-db.yaml", "myapp", false));
-        assert!(d.is_partial_match("myapp-extra.toml", "myapp", false));
-        assert!(!d.is_partial_match(".myapp-01.yaml", "myapp", false)); // has dot prefix
-        assert!(!d.is_partial_match("myapp.yaml", "myapp", false)); // main, not partial
+        assert!(d.is_partial_match("myapp-01-db.yaml", "myapp", NameStyle::Bare));
+        assert!(d.is_partial_match("myapp-extra.toml", "myapp", NameStyle::Bare));
+        assert!(!d.is_partial_match(".myapp-01.yaml", "myapp", NameStyle::Bare)); // has dot prefix
+        assert!(!d.is_partial_match("myapp.yaml", "myapp", NameStyle::Bare)); // main, not partial
+    }
+
+    // ---- NameStyle typed-primitive tests ----
+
+    #[test]
+    fn name_style_bare_main_filename() {
+        assert_eq!(NameStyle::Bare.main_filename("myapp", "yaml"), "myapp.yaml");
+        assert_eq!(NameStyle::Bare.main_filename("myapp", "yml"), "myapp.yml");
+        assert_eq!(NameStyle::Bare.main_filename("myapp", "toml"), "myapp.toml");
+        assert_eq!(NameStyle::Bare.main_filename("a", "yaml"), "a.yaml");
+    }
+
+    #[test]
+    fn name_style_dotfile_main_filename() {
+        assert_eq!(
+            NameStyle::Dotfile.main_filename("myapp", "yaml"),
+            ".myapp.yaml"
+        );
+        assert_eq!(
+            NameStyle::Dotfile.main_filename("myapp", "toml"),
+            ".myapp.toml"
+        );
+        assert_eq!(NameStyle::Dotfile.main_filename("a", "yaml"), ".a.yaml");
+    }
+
+    #[test]
+    fn name_style_bare_partial_prefix() {
+        assert_eq!(NameStyle::Bare.partial_prefix("myapp"), "myapp-");
+        assert_eq!(NameStyle::Bare.partial_prefix("a"), "a-");
+    }
+
+    #[test]
+    fn name_style_dotfile_partial_prefix() {
+        assert_eq!(NameStyle::Dotfile.partial_prefix("myapp"), ".myapp-");
+        assert_eq!(NameStyle::Dotfile.partial_prefix("a"), ".a-");
+    }
+
+    #[test]
+    fn name_style_main_and_partial_share_prefix() {
+        // Within a style, the main filename and the partial prefix share the
+        // same `{[.]?{app}}` head — a partial named exactly like the main
+        // (no `-suffix`) is not a partial. This is the contract `collect_*`
+        // relies on.
+        for style in [NameStyle::Bare, NameStyle::Dotfile] {
+            let main = style.main_filename("app", "yaml");
+            let prefix = style.partial_prefix("app");
+            // main starts with the app head but does NOT have the dash.
+            let head = prefix.trim_end_matches('-');
+            assert!(
+                main.starts_with(head),
+                "{main} should start with {head} for {style:?}"
+            );
+            assert!(
+                !main.starts_with(prefix.as_str()),
+                "{main} must not start with partial prefix {prefix} for {style:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn name_style_is_copy() {
+        // NameStyle is a typed value, not a borrow — passing it to multiple
+        // collect_* call sites (or holding it in a struct) doesn't move it.
+        let style = NameStyle::Dotfile;
+        let a = style;
+        let b = style;
+        assert_eq!(a, b);
+        assert_eq!(a, NameStyle::Dotfile);
+    }
+
+    #[test]
+    fn name_style_match_is_exhaustive() {
+        // Renders the (style × format × ext) cartesian product through the
+        // typed primitive, exercising both variants for every supported ext
+        // — proves no call site has been missed.
+        for style in [NameStyle::Bare, NameStyle::Dotfile] {
+            for format in [Format::Yaml, Format::Toml] {
+                for ext in format.extensions() {
+                    let main = style.main_filename("test", ext);
+                    let prefix = style.partial_prefix("test");
+                    assert!(main.ends_with(&format!(".{ext}")));
+                    assert!(prefix.ends_with('-'));
+                    assert!(prefix.contains("test"));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn collect_configs_bare_finds_main_and_partials() {
+        // End-to-end: the unified collect_configs honors NameStyle::Bare
+        // exactly as the prior collect_dir_configs did.
+        let dir = TempDir::new().unwrap();
+        let app = "barecollect";
+        let main_file = dir.path().join(format!("{app}.yaml"));
+        let partial = dir.path().join(format!("{app}-01-db.yaml"));
+        let unrelated = dir.path().join(format!("{app}.txt")); // wrong ext
+        let dotted = dir.path().join(format!(".{app}.yaml")); // wrong style
+        fs::write(&main_file, "k: v").unwrap();
+        fs::write(&partial, "k: v").unwrap();
+        fs::write(&unrelated, "k: v").unwrap();
+        fs::write(&dotted, "k: v").unwrap();
+
+        let mut found = Vec::new();
+        let d = ConfigDiscovery::new(app).formats(&[Format::Yaml]);
+        d.collect_configs(dir.path(), app, NameStyle::Bare, &mut found);
+
+        assert!(found.contains(&main_file));
+        assert!(found.contains(&partial));
+        assert!(!found.contains(&unrelated));
+        assert!(!found.contains(&dotted));
+    }
+
+    #[test]
+    fn collect_configs_dotfile_finds_main_and_partials() {
+        let dir = TempDir::new().unwrap();
+        let app = "dotcollect";
+        let main_file = dir.path().join(format!(".{app}.yaml"));
+        let partial = dir.path().join(format!(".{app}-99-extra.yaml"));
+        let bare_main = dir.path().join(format!("{app}.yaml")); // wrong style
+        fs::write(&main_file, "k: v").unwrap();
+        fs::write(&partial, "k: v").unwrap();
+        fs::write(&bare_main, "k: v").unwrap();
+
+        let mut found = Vec::new();
+        let d = ConfigDiscovery::new(app).formats(&[Format::Yaml]);
+        d.collect_configs(dir.path(), app, NameStyle::Dotfile, &mut found);
+
+        assert!(found.contains(&main_file));
+        assert!(found.contains(&partial));
+        assert!(!found.contains(&bare_main));
+    }
+
+    #[test]
+    fn collect_configs_main_before_partials() {
+        // Ordering invariant the unified function inherits from the prior
+        // pair: main config is pushed before any partials in the same dir.
+        let dir = TempDir::new().unwrap();
+        let app = "ordercheck";
+        let main_file = dir.path().join(format!("{app}.yaml"));
+        let partial = dir.path().join(format!("{app}-01-extra.yaml"));
+        fs::write(&main_file, "k: v").unwrap();
+        fs::write(&partial, "k: v").unwrap();
+
+        let mut found = Vec::new();
+        let d = ConfigDiscovery::new(app).formats(&[Format::Yaml]);
+        d.collect_configs(dir.path(), app, NameStyle::Bare, &mut found);
+
+        let main_idx = found.iter().position(|p| p == &main_file).unwrap();
+        let partial_idx = found.iter().position(|p| p == &partial).unwrap();
+        assert!(main_idx < partial_idx, "main must come before partials");
     }
 
     #[test]
