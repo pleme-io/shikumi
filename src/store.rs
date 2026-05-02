@@ -35,6 +35,7 @@ pub struct ConfigStore<T> {
     generation: Arc<AtomicU64>,
     last_reload_error: Arc<ArcSwapOption<ReloadFailure>>,
     last_publish_at: Arc<ArcSwap<Instant>>,
+    last_failure_at: Arc<ArcSwapOption<Instant>>,
     _watcher: Option<ConfigWatcher>,
 }
 
@@ -61,6 +62,7 @@ where
             generation: Arc::new(AtomicU64::new(0)),
             last_reload_error: Arc::new(ArcSwapOption::empty()),
             last_publish_at: Arc::new(ArcSwap::from_pointee(Instant::now())),
+            last_failure_at: Arc::new(ArcSwapOption::empty()),
             _watcher: None,
         })
     }
@@ -87,10 +89,12 @@ where
         let generation = Arc::new(AtomicU64::new(0));
         let last_reload_error = Arc::new(ArcSwapOption::empty());
         let last_publish_at = Arc::new(ArcSwap::from_pointee(Instant::now()));
+        let last_failure_at = Arc::new(ArcSwapOption::empty());
         let inner_clone = inner.clone();
         let generation_clone = generation.clone();
         let last_err_clone = last_reload_error.clone();
         let last_publish_at_clone = last_publish_at.clone();
+        let last_failure_at_clone = last_failure_at.clone();
         let path_owned = path.to_owned();
         let prefix_owned = env_prefix.to_owned();
 
@@ -127,11 +131,12 @@ where
                         &generation_clone,
                         &last_err_clone,
                         &last_publish_at_clone,
+                        &last_failure_at_clone,
                         new_config,
                     );
                 }
                 Err(err) => {
-                    Self::record_failure(&last_err_clone, &err);
+                    Self::record_failure(&last_err_clone, &last_failure_at_clone, &err);
                     error!("failed to reload config: {err}");
                 }
             }
@@ -145,6 +150,7 @@ where
             generation,
             last_reload_error,
             last_publish_at,
+            last_failure_at,
             _watcher: Some(watcher),
         })
     }
@@ -177,47 +183,60 @@ where
                     &self.generation,
                     &self.last_reload_error,
                     &self.last_publish_at,
+                    &self.last_failure_at,
                     new,
                 );
                 Ok(())
             }
             Err(err) => {
-                Self::record_failure(&self.last_reload_error, &err);
+                Self::record_failure(&self.last_reload_error, &self.last_failure_at, &err);
                 Err(err)
             }
         }
     }
 
-    /// Publish a new value, clear the last-reload-error slot, stamp
-    /// the publish time, and bump the generation counter.
+    /// Publish a new value, clear the last-reload-error and
+    /// last-failure-at slots, stamp the publish time, and bump the
+    /// generation counter.
     ///
     /// The store-then-clear-then-stamp-then-bump order is load-bearing:
     /// when a reader observes a new generation via [`Self::generation`]
     /// (with `Acquire`), the preceding `ArcSwap::store`, the
-    /// `last_reload_error` clear, and the `last_publish_at` stamp are
-    /// all guaranteed visible. This is the one canonical reload
-    /// primitive — both [`Self::reload`] and the
+    /// `last_reload_error` clear, the `last_failure_at` clear, and the
+    /// `last_publish_at` stamp are all guaranteed visible. This is the
+    /// one canonical reload primitive — both [`Self::reload`] and the
     /// [`Self::load_and_watch`] callback funnel through it.
     fn swap_in(
         inner: &ArcSwap<T>,
         generation: &AtomicU64,
         last_reload_error: &ArcSwapOption<ReloadFailure>,
         last_publish_at: &ArcSwap<Instant>,
+        last_failure_at: &ArcSwapOption<Instant>,
         new: T,
     ) {
         inner.store(Arc::new(new));
         last_reload_error.store(None);
+        last_failure_at.store(None);
         last_publish_at.store(Arc::new(Instant::now()));
         generation.fetch_add(1, Ordering::Release);
     }
 
-    /// Capture a failure into the last-reload-error slot.
+    /// Capture a failure into the last-reload-error slot and stamp the
+    /// last-failure-at slot.
     ///
     /// Replaces any prior failure: only the most recent unrecovered
     /// failure is observable. Pairs with [`Self::swap_in`]: a
-    /// successful reload clears the slot; a failed reload populates
-    /// it.
-    fn record_failure(slot: &ArcSwapOption<ReloadFailure>, err: &ShikumiError) {
+    /// successful reload clears both slots; a failed reload populates
+    /// them. Stamp-then-publish order is load-bearing: a reader observing
+    /// `last_reload_error.is_some()` is guaranteed (via the underlying
+    /// `ArcSwap` Release/Acquire) to also observe a populated
+    /// `last_failure_at`.
+    fn record_failure(
+        slot: &ArcSwapOption<ReloadFailure>,
+        last_failure_at: &ArcSwapOption<Instant>,
+        err: &ShikumiError,
+    ) {
+        last_failure_at.store(Some(Arc::new(Instant::now())));
         slot.store(Some(Arc::new(ReloadFailure::from_error(err))));
     }
 
@@ -367,6 +386,65 @@ where
         self.last_publish_at.clone()
     }
 
+    /// The [`Instant`] at which the most recent unrecovered reload
+    /// failure was caught, or `None` if no reload has failed (or the
+    /// most recent reload succeeded).
+    ///
+    /// Stamped atomically inside [`Self::record_failure`] on every
+    /// failed reload — manual via [`Self::reload`], or hot-reload via
+    /// the watcher in [`Self::load_and_watch`]. Cleared atomically
+    /// inside [`Self::swap_in`] on every successful reload, mirroring
+    /// [`Self::last_reload_error`]: the two slots populate and clear
+    /// together as a pair.
+    ///
+    /// Pairs with [`Self::last_publish_at`] (when the current value
+    /// became current) to form the (publish-time × failure-time)
+    /// temporal coordinate of the reload surface. The canonical
+    /// failing-window diagnostic is `last_failure_at - last_publish_at`:
+    /// the duration between the last successful publish and the most
+    /// recent unrecovered failure (a positive duration ⇒ the failing
+    /// window has been open that long; a `None` ⇒ no failing window).
+    ///
+    /// Use [`Self::time_since_failure`] for the more common
+    /// "how long ago did the most recent failure happen?" question.
+    #[must_use]
+    pub fn last_failure_at(&self) -> Option<Instant> {
+        self.last_failure_at.load_full().map(|arc| *arc)
+    }
+
+    /// Convenience: how long ago the most recent unrecovered reload
+    /// failure was caught, equal to `self.last_failure_at()?.elapsed()`.
+    ///
+    /// Returns `None` when no failure is currently recorded — either
+    /// because no reload has ever failed on this store, or because the
+    /// most recent reload succeeded and cleared both [`Self::last_reload_error`]
+    /// and [`Self::last_failure_at`] together.
+    ///
+    /// Use as a typed liveness hint paired with [`Self::time_since_publish`]:
+    /// a `Some(d)` here with `d` larger than the watcher's expected
+    /// reload cadence ⇒ "reloads have been failing for at least `d`,
+    /// uninterrupted." Distinct from `time_since_publish`, which
+    /// counts forward from the last *successful* publish regardless of
+    /// failures since.
+    #[must_use]
+    pub fn time_since_failure(&self) -> Option<Duration> {
+        self.last_failure_at().map(|t| t.elapsed())
+    }
+
+    /// Cross-thread sharable handle to the failure-time slot.
+    ///
+    /// Useful when worker threads need to observe the temporal axis of
+    /// reload failures independently of the main store handle, or when
+    /// the slot must outlive the originating [`ConfigStore`]. The
+    /// handle continues to reflect publishes as long as the originating
+    /// store (or its watcher) is alive, mirroring [`Self::shared`],
+    /// [`Self::shared_generation`], [`Self::shared_last_reload_error`],
+    /// and [`Self::shared_last_publish_at`].
+    #[must_use]
+    pub fn shared_last_failure_at(&self) -> Arc<ArcSwapOption<Instant>> {
+        self.last_failure_at.clone()
+    }
+
     /// Load config from multiple paths, merging in order (last wins).
     ///
     /// Each path is layered via figment merge, so later files override
@@ -391,6 +469,7 @@ where
             generation: Arc::new(AtomicU64::new(0)),
             last_reload_error: Arc::new(ArcSwapOption::empty()),
             last_publish_at: Arc::new(ArcSwap::from_pointee(Instant::now())),
+            last_failure_at: Arc::new(ArcSwapOption::empty()),
             _watcher: None,
         })
     }
@@ -1805,6 +1884,363 @@ mod tests {
         assert!(
             store.last_reload_error().is_some(),
             "failure slot must be populated"
+        );
+    }
+
+    // ---- last_failure_at() / time_since_failure() / shared_last_failure_at() tests ----
+
+    #[test]
+    fn last_failure_at_starts_none_for_load() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fail_t0_load.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FAIL_T0_LOAD_").unwrap();
+        assert!(
+            store.last_failure_at().is_none(),
+            "no failure has happened yet on a fresh store"
+        );
+        assert!(store.time_since_failure().is_none());
+    }
+
+    #[test]
+    fn last_failure_at_starts_none_for_load_merged() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fail_t0_merged.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load_merged(
+            std::slice::from_ref(&file),
+            "SHIKUMI_FAIL_T0_MERGED_",
+        )
+        .unwrap();
+        assert!(store.last_failure_at().is_none());
+        assert!(store.time_since_failure().is_none());
+    }
+
+    #[test]
+    fn last_failure_at_starts_none_for_load_and_watch() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fail_t0_watch.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load_and_watch(
+            &file,
+            "SHIKUMI_FAIL_T0_WATCH_",
+            |_: &TestConfig| {},
+        )
+        .unwrap();
+        assert!(store.last_failure_at().is_none());
+        assert!(store.time_since_failure().is_none());
+    }
+
+    #[test]
+    fn failed_reload_stamps_last_failure_at() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fail_stamp.yaml");
+        fs::write(&file, "name: ok\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FAIL_STAMP_").unwrap();
+        assert!(store.last_failure_at().is_none());
+
+        let before = Instant::now();
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+        let after = Instant::now();
+
+        let stamp = store
+            .last_failure_at()
+            .expect("failed reload must populate last_failure_at");
+        assert!(
+            stamp >= before && stamp <= after,
+            "stamp must be sandwiched between the surrounding Instant::now() calls"
+        );
+    }
+
+    #[test]
+    fn successful_reload_clears_last_failure_at() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fail_clear.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FAIL_CLEAR_").unwrap();
+
+        // Force a failure
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+        assert!(store.last_failure_at().is_some());
+        assert!(store.last_reload_error().is_some());
+
+        // Recover: success must clear both slots together
+        fs::write(&file, "name: recovered\n").unwrap();
+        store.reload().unwrap();
+        assert!(
+            store.last_failure_at().is_none(),
+            "successful reload must clear the failure-time slot"
+        );
+        assert!(
+            store.last_reload_error().is_none(),
+            "successful reload must clear the failure-error slot"
+        );
+    }
+
+    #[test]
+    fn most_recent_failure_advances_last_failure_at() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fail_advance.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FAIL_ADVANCE_").unwrap();
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+        let t1 = store.last_failure_at().unwrap();
+
+        thread::sleep(Duration::from_millis(20));
+        fs::write(&file, "name: [unclosed\n").unwrap();
+        assert!(store.reload().is_err());
+        let t2 = store.last_failure_at().unwrap();
+
+        assert!(
+            t2 > t1,
+            "second failure must advance the stamp; t1={t1:?} t2={t2:?}"
+        );
+        assert!(
+            t2.duration_since(t1) >= Duration::from_millis(15),
+            "advance must reflect the elapsed interval"
+        );
+    }
+
+    #[test]
+    fn time_since_failure_starts_none_then_grows_with_wall_time() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fail_grow.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FAIL_GROW_").unwrap();
+        assert!(store.time_since_failure().is_none());
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+
+        let e0 = store.time_since_failure().expect("populated after failure");
+        thread::sleep(Duration::from_millis(30));
+        let e1 = store.time_since_failure().expect("populated after failure");
+        assert!(
+            e1 > e0,
+            "elapsed must grow without another reload; e0={e0:?} e1={e1:?}"
+        );
+        assert!(
+            e1 >= Duration::from_millis(25),
+            "elapsed must reflect the sleep interval"
+        );
+    }
+
+    #[test]
+    fn time_since_failure_returns_none_after_recovery() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fail_recover.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FAIL_RECOVER_").unwrap();
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+        assert!(store.time_since_failure().is_some());
+
+        fs::write(&file, "name: ok\n").unwrap();
+        store.reload().unwrap();
+        assert!(
+            store.time_since_failure().is_none(),
+            "recovery must reset the failure-time slot to None"
+        );
+    }
+
+    #[test]
+    fn last_failure_at_does_not_advance_last_publish_at() {
+        // Symmetry contract: failure stamps last_failure_at but does
+        // not touch last_publish_at; success stamps last_publish_at
+        // and clears last_failure_at. The two slots are decoupled
+        // except for the success-side clear.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fail_decoupled.yaml");
+        fs::write(&file, "name: ok\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FAIL_DEC_").unwrap();
+        let pub0 = store.last_publish_at();
+
+        thread::sleep(Duration::from_millis(20));
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+
+        assert_eq!(
+            pub0,
+            store.last_publish_at(),
+            "failed reload must preserve last_publish_at"
+        );
+        assert!(
+            store.last_failure_at().is_some(),
+            "failed reload must populate last_failure_at"
+        );
+        assert!(
+            store.last_failure_at().unwrap() > pub0,
+            "failure stamp must come after the surviving publish stamp"
+        );
+    }
+
+    #[test]
+    fn shared_last_failure_at_visible_across_threads() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fail_shared.yaml");
+        fs::write(&file, "name: ok\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FAIL_SHARED_").unwrap();
+        let handle = store.shared_last_failure_at();
+        assert!(handle.load_full().is_none());
+
+        let observed = thread::spawn({
+            let handle = handle.clone();
+            move || {
+                for _ in 0..200 {
+                    if handle.load_full().is_some() {
+                        return true;
+                    }
+                    thread::sleep(Duration::from_millis(5));
+                }
+                handle.load_full().is_some()
+            }
+        });
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        let _ = store.reload();
+
+        assert!(
+            observed.join().expect("observer thread"),
+            "observer should see the published failure stamp"
+        );
+    }
+
+    #[test]
+    fn shared_last_failure_at_outlives_store() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fail_outlive.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let (handle, captured_before_drop) = {
+            let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FAIL_OUTLIVE_").unwrap();
+            fs::write(&file, "count: not_a_number\n").unwrap();
+            let _ = store.reload();
+            (store.shared_last_failure_at(), store.last_failure_at())
+        };
+        // The store is dropped; the handle still reads the published stamp.
+        let observed = handle
+            .load_full()
+            .expect("failure stamp must persist after store drop");
+        assert_eq!(*observed, captured_before_drop.unwrap());
+    }
+
+    #[test]
+    fn shared_last_failure_at_is_same_arc_as_internal() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fail_same.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FAIL_SAME_").unwrap();
+        let handle = store.shared_last_failure_at();
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        let _ = store.reload();
+
+        // Both views see the same Instant value.
+        let via_store = store.last_failure_at().unwrap();
+        let via_handle = *handle.load_full().unwrap();
+        assert_eq!(via_store, via_handle);
+    }
+
+    #[test]
+    fn last_failure_at_observed_when_last_reload_error_is_some() {
+        // Stamp-then-publish ordering contract: a reader observing
+        // `last_reload_error.is_some()` must also see a populated
+        // `last_failure_at`. record_failure stores the timestamp first,
+        // then the error — ArcSwap Release/Acquire makes the timestamp
+        // visible by the time the error becomes visible.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fail_order.yaml");
+        fs::write(&file, "name: ok\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FAIL_ORDER_").unwrap();
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+
+        // Read the error first; the timestamp must already be visible.
+        if store.last_reload_error().is_some() {
+            assert!(
+                store.last_failure_at().is_some(),
+                "observing last_reload_error=Some must guarantee last_failure_at=Some"
+            );
+        }
+    }
+
+    #[test]
+    fn failing_window_diagnosed_via_publish_and_failure_stamps() {
+        // Composition test: (last_publish_at, last_failure_at) precisely
+        // diagnoses the failing-window duration. After a successful publish
+        // at t0, a wait, then a failed reload at t1, the failing window
+        // duration `t1 - t0` is observable directly from the typed slots
+        // — no external bookkeeping, no log scraping.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fail_window.yaml");
+        fs::write(&file, "name: ok\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FAIL_WINDOW_").unwrap();
+        let t0 = store.last_publish_at();
+
+        thread::sleep(Duration::from_millis(40));
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+        let t1 = store.last_failure_at().unwrap();
+
+        let window = t1.duration_since(t0);
+        assert!(
+            window >= Duration::from_millis(35),
+            "failing window duration must reflect the wait between successful publish and first failure; got {window:?}"
+        );
+        // And after the failing window, time_since_failure paired with
+        // time_since_publish gives the same picture from a different angle.
+        let pub_elapsed = store.time_since_publish();
+        let fail_elapsed = store
+            .time_since_failure()
+            .expect("populated after the failure");
+        assert!(
+            pub_elapsed > fail_elapsed,
+            "publish is older than failure (publish came first); pub={pub_elapsed:?} fail={fail_elapsed:?}"
+        );
+    }
+
+    #[test]
+    fn watcher_constructor_failure_path_routes_through_record_failure() {
+        // The watcher closure routes through record_failure on its
+        // failure path too. Verify via the (always-deterministic) manual
+        // reload path on a load_and_watch store.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fail_watch_route.yaml");
+        fs::write(&file, "name: ok\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load_and_watch(
+            &file,
+            "SHIKUMI_FAIL_WATCH_ROUTE_",
+            |_: &TestConfig| {},
+        )
+        .unwrap();
+        assert!(store.last_failure_at().is_none());
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+
+        assert!(
+            store.last_failure_at().is_some(),
+            "manual reload on a load_and_watch store must stamp last_failure_at"
         );
     }
 }
