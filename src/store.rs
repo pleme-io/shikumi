@@ -33,6 +33,7 @@ pub struct ConfigStore<T> {
     env_prefix: String,
     sources: Vec<ConfigSource>,
     generation: Arc<AtomicU64>,
+    failure_count: Arc<AtomicU64>,
     last_reload_error: Arc<ArcSwapOption<ReloadFailure>>,
     last_publish_at: Arc<ArcSwap<Instant>>,
     last_failure_at: Arc<ArcSwapOption<Instant>>,
@@ -60,6 +61,7 @@ where
             env_prefix: env_prefix.to_owned(),
             sources,
             generation: Arc::new(AtomicU64::new(0)),
+            failure_count: Arc::new(AtomicU64::new(0)),
             last_reload_error: Arc::new(ArcSwapOption::empty()),
             last_publish_at: Arc::new(ArcSwap::from_pointee(Instant::now())),
             last_failure_at: Arc::new(ArcSwapOption::empty()),
@@ -87,11 +89,13 @@ where
         let (config, sources) = Self::load_from_path(path, env_prefix)?;
         let inner = Arc::new(ArcSwap::from_pointee(config));
         let generation = Arc::new(AtomicU64::new(0));
+        let failure_count = Arc::new(AtomicU64::new(0));
         let last_reload_error = Arc::new(ArcSwapOption::empty());
         let last_publish_at = Arc::new(ArcSwap::from_pointee(Instant::now()));
         let last_failure_at = Arc::new(ArcSwapOption::empty());
         let inner_clone = inner.clone();
         let generation_clone = generation.clone();
+        let failure_count_clone = failure_count.clone();
         let last_err_clone = last_reload_error.clone();
         let last_publish_at_clone = last_publish_at.clone();
         let last_failure_at_clone = last_failure_at.clone();
@@ -136,7 +140,12 @@ where
                     );
                 }
                 Err(err) => {
-                    Self::record_failure(&last_err_clone, &last_failure_at_clone, &err);
+                    Self::record_failure(
+                        &last_err_clone,
+                        &last_failure_at_clone,
+                        &failure_count_clone,
+                        &err,
+                    );
                     error!("failed to reload config: {err}");
                 }
             }
@@ -148,6 +157,7 @@ where
             env_prefix: env_prefix.to_owned(),
             sources,
             generation,
+            failure_count,
             last_reload_error,
             last_publish_at,
             last_failure_at,
@@ -189,7 +199,12 @@ where
                 Ok(())
             }
             Err(err) => {
-                Self::record_failure(&self.last_reload_error, &self.last_failure_at, &err);
+                Self::record_failure(
+                    &self.last_reload_error,
+                    &self.last_failure_at,
+                    &self.failure_count,
+                    &err,
+                );
                 Err(err)
             }
         }
@@ -221,22 +236,31 @@ where
         generation.fetch_add(1, Ordering::Release);
     }
 
-    /// Capture a failure into the last-reload-error slot and stamp the
-    /// last-failure-at slot.
+    /// Capture a failure into the last-reload-error slot, stamp the
+    /// last-failure-at slot, and bump the cumulative failure-count
+    /// counter.
     ///
     /// Replaces any prior failure: only the most recent unrecovered
-    /// failure is observable. Pairs with [`Self::swap_in`]: a
-    /// successful reload clears both slots; a failed reload populates
-    /// them. Stamp-then-publish order is load-bearing: a reader observing
+    /// failure is observable through the failure / failure-at slots.
+    /// The failure-count counter is monotonic and never cleared, so
+    /// recovery does not erase the cardinality record.
+    ///
+    /// Pairs with [`Self::swap_in`]: a successful reload clears the
+    /// `last_reload_error` and `last_failure_at` slots; a failed reload
+    /// populates them and bumps `failure_count`. Stamp-then-bump-then-
+    /// publish order is load-bearing: a reader observing
     /// `last_reload_error.is_some()` is guaranteed (via the underlying
     /// `ArcSwap` Release/Acquire) to also observe a populated
-    /// `last_failure_at`.
+    /// `last_failure_at` and a `failure_count` that has advanced past
+    /// any value sampled before the failure.
     fn record_failure(
         slot: &ArcSwapOption<ReloadFailure>,
         last_failure_at: &ArcSwapOption<Instant>,
+        failure_count: &AtomicU64,
         err: &ShikumiError,
     ) {
         last_failure_at.store(Some(Arc::new(Instant::now())));
+        failure_count.fetch_add(1, Ordering::Release);
         slot.store(Some(Arc::new(ReloadFailure::from_error(err))));
     }
 
@@ -445,6 +469,53 @@ where
         self.last_failure_at.clone()
     }
 
+    /// Monotonic count of failed reloads since this store was
+    /// constructed, starting at `0`.
+    ///
+    /// Increments by `1` on every reload that fails — manual via
+    /// [`Self::reload`], or hot-reload via the watcher in
+    /// [`Self::load_and_watch`]. A successful reload (which advances
+    /// [`Self::generation`] instead) does **not** affect this counter.
+    /// Unlike [`Self::last_reload_error`] and [`Self::last_failure_at`]
+    /// — which clear on recovery and pin only the *most recent
+    /// unrecovered* failure — `failure_count` is the *cardinality*
+    /// record over the whole lifetime of the store: it never resets
+    /// and never decrements, so recovery does not erase the count.
+    ///
+    /// Pairs with [`Self::generation`] (cumulative successful reloads)
+    /// to form the (success-count × failure-count) cardinality
+    /// coordinate of the reload surface. Their sum is the total
+    /// number of reload attempts since construction; their ratio is
+    /// the lifetime success / failure rate. Together with
+    /// [`Self::last_publish_at`] / [`Self::last_failure_at`] (the
+    /// temporal coordinate) the cardinality coordinate completes the
+    /// (when × how-many) record on each side.
+    ///
+    /// Reads use `Acquire` ordering so observing an advanced count
+    /// also makes the corresponding [`Self::last_failure_at`] stamp
+    /// and [`Self::last_reload_error`] payload visible — the
+    /// stamp-then-bump-then-publish contract inside
+    /// [`Self::record_failure`].
+    #[must_use]
+    pub fn failure_count(&self) -> u64 {
+        self.failure_count.load(Ordering::Acquire)
+    }
+
+    /// Cross-thread sharable handle to the failure-count counter.
+    ///
+    /// Useful when worker threads need to observe the cumulative
+    /// failure count independently of the main store handle, or when
+    /// the counter must outlive the originating [`ConfigStore`]. The
+    /// handle continues to reflect failures as long as the originating
+    /// store (or its watcher) is alive, mirroring [`Self::shared`],
+    /// [`Self::shared_generation`], [`Self::shared_last_reload_error`],
+    /// [`Self::shared_last_publish_at`], and
+    /// [`Self::shared_last_failure_at`].
+    #[must_use]
+    pub fn shared_failure_count(&self) -> Arc<AtomicU64> {
+        self.failure_count.clone()
+    }
+
     /// Load config from multiple paths, merging in order (last wins).
     ///
     /// Each path is layered via figment merge, so later files override
@@ -467,6 +538,7 @@ where
             env_prefix: env_prefix.to_owned(),
             sources,
             generation: Arc::new(AtomicU64::new(0)),
+            failure_count: Arc::new(AtomicU64::new(0)),
             last_reload_error: Arc::new(ArcSwapOption::empty()),
             last_publish_at: Arc::new(ArcSwap::from_pointee(Instant::now())),
             last_failure_at: Arc::new(ArcSwapOption::empty()),
@@ -2241,6 +2313,307 @@ mod tests {
         assert!(
             store.last_failure_at().is_some(),
             "manual reload on a load_and_watch store must stamp last_failure_at"
+        );
+    }
+
+    // ---- failure_count() / shared_failure_count() tests ----
+
+    #[test]
+    fn failure_count_starts_at_zero_for_load() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fc_load0.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FC_LOAD0_").unwrap();
+        assert_eq!(store.failure_count(), 0);
+    }
+
+    #[test]
+    fn failure_count_starts_at_zero_for_load_merged() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fc_merged0.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load_merged(
+            std::slice::from_ref(&file),
+            "SHIKUMI_FC_MERGED0_",
+        )
+        .unwrap();
+        assert_eq!(store.failure_count(), 0);
+    }
+
+    #[test]
+    fn failure_count_starts_at_zero_for_load_and_watch() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fc_watch0.yaml");
+        fs::write(&file, "name: x\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load_and_watch(
+            &file,
+            "SHIKUMI_FC_WATCH0_",
+            |_: &TestConfig| {},
+        )
+        .unwrap();
+        assert_eq!(store.failure_count(), 0);
+    }
+
+    #[test]
+    fn failed_reload_increments_failure_count() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fc_inc.yaml");
+        fs::write(&file, "name: ok\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FC_INC_").unwrap();
+        assert_eq!(store.failure_count(), 0);
+
+        // Type mismatch
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+        assert_eq!(store.failure_count(), 1, "first failure must bump to 1");
+
+        // Different failure shape
+        fs::write(&file, "name: [unclosed\n").unwrap();
+        assert!(store.reload().is_err());
+        assert_eq!(store.failure_count(), 2, "second failure must bump to 2");
+    }
+
+    #[test]
+    fn successful_reload_does_not_increment_failure_count() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fc_succ.yaml");
+        fs::write(&file, "name: a\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FC_SUCC_").unwrap();
+        assert_eq!(store.failure_count(), 0);
+
+        for letter in ['b', 'c', 'd'] {
+            fs::write(&file, format!("name: {letter}\n")).unwrap();
+            store.reload().unwrap();
+        }
+        assert_eq!(
+            store.failure_count(),
+            0,
+            "successful reloads must not affect failure_count",
+        );
+        assert_eq!(store.generation(), 3, "successful reloads bump generation");
+    }
+
+    #[test]
+    fn recovery_does_not_clear_failure_count() {
+        // Cardinality is lifetime-monotonic: unlike last_failure_at /
+        // last_reload_error, recovery does NOT erase the count.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fc_recover.yaml");
+        fs::write(&file, "name: ok\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FC_RECOVER_").unwrap();
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+        assert_eq!(store.failure_count(), 1);
+        assert!(store.last_failure_at().is_some());
+
+        // Recover: temporal slots clear, cardinality counter persists.
+        fs::write(&file, "name: recovered\n").unwrap();
+        store.reload().unwrap();
+        assert!(
+            store.last_failure_at().is_none(),
+            "recovery clears last_failure_at",
+        );
+        assert!(
+            store.last_reload_error().is_none(),
+            "recovery clears last_reload_error",
+        );
+        assert_eq!(
+            store.failure_count(),
+            1,
+            "failure_count is the lifetime cardinality record; recovery must not erase it",
+        );
+    }
+
+    #[test]
+    fn failure_count_monotonic_across_many_failures() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fc_mono.yaml");
+        fs::write(&file, "name: ok\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FC_MONO_").unwrap();
+
+        let mut prev = store.failure_count();
+        assert_eq!(prev, 0);
+        for _ in 0..10 {
+            fs::write(&file, "count: not_a_number\n").unwrap();
+            assert!(store.reload().is_err());
+            let now = store.failure_count();
+            assert!(now > prev, "failure_count must be strictly increasing");
+            prev = now;
+        }
+        assert_eq!(store.failure_count(), 10);
+    }
+
+    #[test]
+    fn shared_failure_count_visible_across_threads() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fc_shared.yaml");
+        fs::write(&file, "name: ok\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FC_SHARED_").unwrap();
+        let fc_handle = store.shared_failure_count();
+        assert_eq!(fc_handle.load(Ordering::Acquire), 0);
+
+        let observed = thread::spawn({
+            let fc_handle = fc_handle.clone();
+            move || {
+                for _ in 0..200 {
+                    if fc_handle.load(Ordering::Acquire) > 0 {
+                        return fc_handle.load(Ordering::Acquire);
+                    }
+                    thread::sleep(Duration::from_millis(5));
+                }
+                fc_handle.load(Ordering::Acquire)
+            }
+        });
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+
+        let seen = observed.join().expect("observer thread");
+        assert!(
+            seen >= 1,
+            "observer thread must see incremented failure_count",
+        );
+        assert_eq!(store.failure_count(), 1);
+    }
+
+    #[test]
+    fn shared_failure_count_outlives_store() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fc_outlive.yaml");
+        fs::write(&file, "name: ok\n").unwrap();
+
+        let (handle, before_drop) = {
+            let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FC_OUTLIVE_").unwrap();
+            fs::write(&file, "count: not_a_number\n").unwrap();
+            assert!(store.reload().is_err());
+            assert!(store.reload().is_err());
+            (store.shared_failure_count(), store.failure_count())
+        };
+        assert_eq!(handle.load(Ordering::Acquire), before_drop);
+        assert_eq!(handle.load(Ordering::Acquire), 2);
+    }
+
+    #[test]
+    fn shared_failure_count_is_same_arc_as_internal() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fc_same.yaml");
+        fs::write(&file, "name: ok\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FC_SAME_").unwrap();
+        let handle = store.shared_failure_count();
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+
+        assert_eq!(
+            handle.load(Ordering::Acquire),
+            store.failure_count(),
+            "the shared handle must point at the same atomic the store mutates",
+        );
+    }
+
+    #[test]
+    fn watcher_constructor_failure_path_increments_failure_count() {
+        // The watcher closure routes through record_failure too. Verify
+        // via the deterministic manual-reload path on a load_and_watch
+        // store: the failure_count slot must be threaded through both
+        // failure-paths.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fc_watch_route.yaml");
+        fs::write(&file, "name: ok\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load_and_watch(
+            &file,
+            "SHIKUMI_FC_WATCH_ROUTE_",
+            |_: &TestConfig| {},
+        )
+        .unwrap();
+        assert_eq!(store.failure_count(), 0);
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+
+        assert_eq!(
+            store.failure_count(),
+            1,
+            "watcher constructor's manual reload must thread through record_failure",
+        );
+    }
+
+    #[test]
+    fn failure_count_advanced_when_last_reload_error_is_some() {
+        // Stamp-then-bump-then-publish ordering contract: observing
+        // last_reload_error.is_some() implies failure_count has advanced
+        // past zero. Symmetric to the
+        // last_failure_at_observed_when_last_reload_error_is_some test.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fc_order.yaml");
+        fs::write(&file, "name: ok\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FC_ORDER_").unwrap();
+        assert_eq!(store.failure_count(), 0);
+        assert!(store.last_reload_error().is_none());
+
+        fs::write(&file, "count: not_a_number\n").unwrap();
+        assert!(store.reload().is_err());
+
+        assert!(
+            store.last_reload_error().is_some(),
+            "failure must populate the error slot",
+        );
+        assert!(
+            store.failure_count() >= 1,
+            "an observable error implies an advanced failure_count",
+        );
+        assert!(
+            store.last_failure_at().is_some(),
+            "an advanced failure_count implies a populated last_failure_at",
+        );
+    }
+
+    #[test]
+    fn generation_and_failure_count_are_independent_axes() {
+        // The two cardinality counters track orthogonal outcomes:
+        // generation counts only successes, failure_count counts only
+        // failures. Their sum is the total reload-attempt count, and
+        // each is unaffected by the other's events.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("fc_axes.yaml");
+        fs::write(&file, "name: ok\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_FC_AXES_").unwrap();
+        assert_eq!(store.generation(), 0);
+        assert_eq!(store.failure_count(), 0);
+
+        // 3 successes
+        for letter in ['a', 'b', 'c'] {
+            fs::write(&file, format!("name: {letter}\n")).unwrap();
+            store.reload().unwrap();
+        }
+        // 2 failures
+        for _ in 0..2 {
+            fs::write(&file, "count: not_a_number\n").unwrap();
+            assert!(store.reload().is_err());
+        }
+        // 1 more success (recovery)
+        fs::write(&file, "name: recovered\n").unwrap();
+        store.reload().unwrap();
+
+        assert_eq!(store.generation(), 4, "4 successful reloads");
+        assert_eq!(store.failure_count(), 2, "2 failed reloads");
+        assert_eq!(
+            store.generation() + store.failure_count(),
+            6,
+            "sum is the total reload-attempt count",
         );
     }
 }
