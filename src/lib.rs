@@ -38,6 +38,7 @@ mod error;
 #[cfg(feature = "lisp")]
 pub mod lisp_provider;
 pub mod nix_provider;
+mod observatory;
 mod provider;
 mod reload;
 pub mod secret;

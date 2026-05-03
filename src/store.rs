@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant};
 
 use arc_swap::{ArcSwap, ArcSwapOption, Guard};
@@ -13,6 +13,7 @@ use serde::Deserialize;
 use tracing::{error, info};
 
 use crate::error::ShikumiError;
+use crate::observatory::ReloadObservatory;
 use crate::provider::ProviderChain;
 use crate::reload::ReloadFailure;
 use crate::source::ConfigSource;
@@ -32,11 +33,7 @@ pub struct ConfigStore<T> {
     path: PathBuf,
     env_prefix: String,
     sources: Vec<ConfigSource>,
-    generation: Arc<AtomicU64>,
-    failure_count: Arc<AtomicU64>,
-    last_reload_error: Arc<ArcSwapOption<ReloadFailure>>,
-    last_publish_at: Arc<ArcSwap<Instant>>,
-    last_failure_at: Arc<ArcSwapOption<Instant>>,
+    observatory: ReloadObservatory,
     _watcher: Option<ConfigWatcher>,
 }
 
@@ -60,11 +57,7 @@ where
             path: path.to_owned(),
             env_prefix: env_prefix.to_owned(),
             sources,
-            generation: Arc::new(AtomicU64::new(0)),
-            failure_count: Arc::new(AtomicU64::new(0)),
-            last_reload_error: Arc::new(ArcSwapOption::empty()),
-            last_publish_at: Arc::new(ArcSwap::from_pointee(Instant::now())),
-            last_failure_at: Arc::new(ArcSwapOption::empty()),
+            observatory: ReloadObservatory::new(),
             _watcher: None,
         })
     }
@@ -88,17 +81,9 @@ where
     {
         let (config, sources) = Self::load_from_path(path, env_prefix)?;
         let inner = Arc::new(ArcSwap::from_pointee(config));
-        let generation = Arc::new(AtomicU64::new(0));
-        let failure_count = Arc::new(AtomicU64::new(0));
-        let last_reload_error = Arc::new(ArcSwapOption::empty());
-        let last_publish_at = Arc::new(ArcSwap::from_pointee(Instant::now()));
-        let last_failure_at = Arc::new(ArcSwapOption::empty());
+        let observatory = ReloadObservatory::new();
         let inner_clone = inner.clone();
-        let generation_clone = generation.clone();
-        let failure_count_clone = failure_count.clone();
-        let last_err_clone = last_reload_error.clone();
-        let last_publish_at_clone = last_publish_at.clone();
-        let last_failure_at_clone = last_failure_at.clone();
+        let observatory_clone = observatory.clone();
         let path_owned = path.to_owned();
         let prefix_owned = env_prefix.to_owned();
 
@@ -130,22 +115,10 @@ where
             match Self::load_from_path(&path_owned, &prefix_owned) {
                 Ok((new_config, _)) => {
                     on_reload(&new_config);
-                    Self::swap_in(
-                        &inner_clone,
-                        &generation_clone,
-                        &last_err_clone,
-                        &last_publish_at_clone,
-                        &last_failure_at_clone,
-                        new_config,
-                    );
+                    observatory_clone.record_success(&inner_clone, new_config);
                 }
                 Err(err) => {
-                    Self::record_failure(
-                        &last_err_clone,
-                        &last_failure_at_clone,
-                        &failure_count_clone,
-                        &err,
-                    );
+                    observatory_clone.record_failure(&err);
                     error!("failed to reload config: {err}");
                 }
             }
@@ -156,11 +129,7 @@ where
             path: path.to_owned(),
             env_prefix: env_prefix.to_owned(),
             sources,
-            generation,
-            failure_count,
-            last_reload_error,
-            last_publish_at,
-            last_failure_at,
+            observatory,
             _watcher: Some(watcher),
         })
     }
@@ -188,80 +157,14 @@ where
     pub fn reload(&self) -> Result<(), ShikumiError> {
         match Self::load_from_path(&self.path, &self.env_prefix) {
             Ok((new, _)) => {
-                Self::swap_in(
-                    &self.inner,
-                    &self.generation,
-                    &self.last_reload_error,
-                    &self.last_publish_at,
-                    &self.last_failure_at,
-                    new,
-                );
+                self.observatory.record_success(&self.inner, new);
                 Ok(())
             }
             Err(err) => {
-                Self::record_failure(
-                    &self.last_reload_error,
-                    &self.last_failure_at,
-                    &self.failure_count,
-                    &err,
-                );
+                self.observatory.record_failure(&err);
                 Err(err)
             }
         }
-    }
-
-    /// Publish a new value, clear the last-reload-error and
-    /// last-failure-at slots, stamp the publish time, and bump the
-    /// generation counter.
-    ///
-    /// The store-then-clear-then-stamp-then-bump order is load-bearing:
-    /// when a reader observes a new generation via [`Self::generation`]
-    /// (with `Acquire`), the preceding `ArcSwap::store`, the
-    /// `last_reload_error` clear, the `last_failure_at` clear, and the
-    /// `last_publish_at` stamp are all guaranteed visible. This is the
-    /// one canonical reload primitive — both [`Self::reload`] and the
-    /// [`Self::load_and_watch`] callback funnel through it.
-    fn swap_in(
-        inner: &ArcSwap<T>,
-        generation: &AtomicU64,
-        last_reload_error: &ArcSwapOption<ReloadFailure>,
-        last_publish_at: &ArcSwap<Instant>,
-        last_failure_at: &ArcSwapOption<Instant>,
-        new: T,
-    ) {
-        inner.store(Arc::new(new));
-        last_reload_error.store(None);
-        last_failure_at.store(None);
-        last_publish_at.store(Arc::new(Instant::now()));
-        generation.fetch_add(1, Ordering::Release);
-    }
-
-    /// Capture a failure into the last-reload-error slot, stamp the
-    /// last-failure-at slot, and bump the cumulative failure-count
-    /// counter.
-    ///
-    /// Replaces any prior failure: only the most recent unrecovered
-    /// failure is observable through the failure / failure-at slots.
-    /// The failure-count counter is monotonic and never cleared, so
-    /// recovery does not erase the cardinality record.
-    ///
-    /// Pairs with [`Self::swap_in`]: a successful reload clears the
-    /// `last_reload_error` and `last_failure_at` slots; a failed reload
-    /// populates them and bumps `failure_count`. Stamp-then-bump-then-
-    /// publish order is load-bearing: a reader observing
-    /// `last_reload_error.is_some()` is guaranteed (via the underlying
-    /// `ArcSwap` Release/Acquire) to also observe a populated
-    /// `last_failure_at` and a `failure_count` that has advanced past
-    /// any value sampled before the failure.
-    fn record_failure(
-        slot: &ArcSwapOption<ReloadFailure>,
-        last_failure_at: &ArcSwapOption<Instant>,
-        failure_count: &AtomicU64,
-        err: &ShikumiError,
-    ) {
-        last_failure_at.store(Some(Arc::new(Instant::now())));
-        failure_count.fetch_add(1, Ordering::Release);
-        slot.store(Some(Arc::new(ReloadFailure::from_error(err))));
     }
 
     /// The path this store was loaded from.
@@ -307,7 +210,7 @@ where
     /// makes the corresponding [`Self::get`] visible.
     #[must_use]
     pub fn generation(&self) -> u64 {
-        self.generation.load(Ordering::Acquire)
+        self.observatory.generation()
     }
 
     /// Cross-thread sharable handle to the generation counter.
@@ -319,7 +222,7 @@ where
     /// (or its watcher) is alive.
     #[must_use]
     pub fn shared_generation(&self) -> Arc<AtomicU64> {
-        self.generation.clone()
+        self.observatory.shared_generation()
     }
 
     /// The most recent reload failure since the last successful
@@ -342,7 +245,7 @@ where
     /// constructor, never producing a store at all.
     #[must_use]
     pub fn last_reload_error(&self) -> Option<Arc<ReloadFailure>> {
-        self.last_reload_error.load_full()
+        self.observatory.last_reload_error()
     }
 
     /// Cross-thread sharable handle to the last-reload-error slot.
@@ -354,7 +257,7 @@ where
     /// (or its watcher) is alive.
     #[must_use]
     pub fn shared_last_reload_error(&self) -> Arc<ArcSwapOption<ReloadFailure>> {
-        self.last_reload_error.clone()
+        self.observatory.shared_last_reload_error()
     }
 
     /// The [`Instant`] at which the currently-published value became
@@ -378,7 +281,7 @@ where
     /// [`Self::generation`].
     #[must_use]
     pub fn last_publish_at(&self) -> Instant {
-        **self.last_publish_at.load()
+        self.observatory.last_publish_at()
     }
 
     /// Convenience: how long the currently-published value has been
@@ -394,7 +297,7 @@ where
     /// have been failing for X."
     #[must_use]
     pub fn time_since_publish(&self) -> Duration {
-        self.last_publish_at().elapsed()
+        self.observatory.time_since_publish()
     }
 
     /// Cross-thread sharable handle to the publish-time slot.
@@ -407,7 +310,7 @@ where
     /// [`Self::shared_generation`], and [`Self::shared_last_reload_error`].
     #[must_use]
     pub fn shared_last_publish_at(&self) -> Arc<ArcSwap<Instant>> {
-        self.last_publish_at.clone()
+        self.observatory.shared_last_publish_at()
     }
 
     /// The [`Instant`] at which the most recent unrecovered reload
@@ -433,7 +336,7 @@ where
     /// "how long ago did the most recent failure happen?" question.
     #[must_use]
     pub fn last_failure_at(&self) -> Option<Instant> {
-        self.last_failure_at.load_full().map(|arc| *arc)
+        self.observatory.last_failure_at()
     }
 
     /// Convenience: how long ago the most recent unrecovered reload
@@ -452,7 +355,7 @@ where
     /// failures since.
     #[must_use]
     pub fn time_since_failure(&self) -> Option<Duration> {
-        self.last_failure_at().map(|t| t.elapsed())
+        self.observatory.time_since_failure()
     }
 
     /// Cross-thread sharable handle to the failure-time slot.
@@ -466,7 +369,7 @@ where
     /// and [`Self::shared_last_publish_at`].
     #[must_use]
     pub fn shared_last_failure_at(&self) -> Arc<ArcSwapOption<Instant>> {
-        self.last_failure_at.clone()
+        self.observatory.shared_last_failure_at()
     }
 
     /// Monotonic count of failed reloads since this store was
@@ -498,7 +401,7 @@ where
     /// [`Self::record_failure`].
     #[must_use]
     pub fn failure_count(&self) -> u64 {
-        self.failure_count.load(Ordering::Acquire)
+        self.observatory.failure_count()
     }
 
     /// Cross-thread sharable handle to the failure-count counter.
@@ -513,7 +416,7 @@ where
     /// [`Self::shared_last_failure_at`].
     #[must_use]
     pub fn shared_failure_count(&self) -> Arc<AtomicU64> {
-        self.failure_count.clone()
+        self.observatory.shared_failure_count()
     }
 
     /// Load config from multiple paths, merging in order (last wins).
@@ -537,11 +440,7 @@ where
             path: primary_path,
             env_prefix: env_prefix.to_owned(),
             sources,
-            generation: Arc::new(AtomicU64::new(0)),
-            failure_count: Arc::new(AtomicU64::new(0)),
-            last_reload_error: Arc::new(ArcSwapOption::empty()),
-            last_publish_at: Arc::new(ArcSwap::from_pointee(Instant::now())),
-            last_failure_at: Arc::new(ArcSwapOption::empty()),
+            observatory: ReloadObservatory::new(),
             _watcher: None,
         })
     }
@@ -573,6 +472,7 @@ mod tests {
     use super::*;
     use serde::Deserialize;
     use std::fs;
+    use std::sync::atomic::Ordering;
     use std::sync::{Arc, Mutex};
     use std::thread;
     use std::time::Duration;
