@@ -166,14 +166,12 @@ impl ConfigDiscovery {
         let xdg = self.resolve_xdg_config_home();
         let home = self.resolve_home();
 
-        for format in &self.formats {
-            for ext in format.extensions() {
-                if let Some(ref xdg) = xdg {
-                    paths.push(xdg.join(format!("{app}/{app}.{ext}")));
-                }
-                if let Some(ref home) = home {
-                    paths.push(home.join(format!(".config/{app}/{app}.{ext}")));
-                }
+        for ext in self.configured_extensions() {
+            if let Some(ref xdg) = xdg {
+                paths.push(xdg.join(format!("{app}/{app}.{ext}")));
+            }
+            if let Some(ref home) = home {
+                paths.push(home.join(format!(".config/{app}/{app}.{ext}")));
             }
         }
 
@@ -394,12 +392,10 @@ impl ConfigDiscovery {
     /// `Bare`: `{dir}/{app}.{ext}` and `{dir}/{app}-*.{ext}` partials.
     /// `Dotfile`: `{dir}/.{app}.{ext}` and `{dir}/.{app}-*.{ext}` partials.
     fn collect_configs(&self, dir: &Path, app: &str, style: NameStyle, found: &mut Vec<PathBuf>) {
-        for format in &self.formats {
-            for ext in format.extensions() {
-                let main_path = dir.join(style.main_filename(app, ext));
-                if main_path.exists() {
-                    found.push(main_path);
-                }
+        for ext in self.configured_extensions() {
+            let main_path = dir.join(style.main_filename(app, ext));
+            if main_path.exists() {
+                found.push(main_path);
             }
         }
         self.collect_partials(dir, app, style, found);
@@ -426,19 +422,32 @@ impl ConfigDiscovery {
 
     /// Check if a filename matches the partial pattern `[.]{app}-*.{ext}`.
     fn is_partial_match(&self, name: &str, app: &str, style: NameStyle) -> bool {
-        let prefix = style.partial_prefix(app);
-        if !name.starts_with(&prefix) {
-            return false;
-        }
-        // Must end with a known extension
-        for format in &self.formats {
-            for ext in format.extensions() {
-                if name.ends_with(&format!(".{ext}")) {
-                    return true;
-                }
-            }
-        }
-        false
+        name.starts_with(&style.partial_prefix(app))
+            && self
+                .configured_extensions()
+                .any(|ext| name.ends_with(&format!(".{ext}")))
+    }
+
+    /// Iterator over every file extension this discovery honors, in the
+    /// preference order set by [`Self::formats`].
+    ///
+    /// The flat cartesian product of `self.formats` × `Format::extensions()`:
+    /// the default `[Yaml, Toml]` yields `["yaml", "yml", "toml"]`; an
+    /// explicit `formats(&[Format::Toml, Format::Yaml])` flips to
+    /// `["toml", "yaml", "yml"]`. Empty `formats` yields zero items.
+    ///
+    /// One typed primitive owns the (formats × extensions) shape that
+    /// [`Self::standard_paths`], [`Self::collect_configs`], and
+    /// [`Self::is_partial_match`] previously open-coded as a nested
+    /// `for format in &self.formats { for ext in format.extensions() }`
+    /// loop. Adding a new [`Format`] variant (e.g. `Json`, `Hocon`) means
+    /// extending [`Format::extensions`] in one place — every consumer
+    /// here observes the new extension automatically, and the loop body
+    /// at each consumer stays at one level of nesting.
+    fn configured_extensions(&self) -> impl Iterator<Item = &'static str> + '_ {
+        self.formats
+            .iter()
+            .flat_map(|f| f.extensions().iter().copied())
     }
 }
 
@@ -1561,6 +1570,183 @@ mod tests {
         assert!(
             paths.iter().all(|p| p.starts_with(&nonexistent)),
             "all paths should be under the injected directories"
+        );
+    }
+
+    // ---- configured_extensions typed-primitive tests ----
+
+    #[test]
+    fn configured_extensions_default_yields_yaml_then_toml_in_preference_order() {
+        let d = ConfigDiscovery::new("ext_default");
+        let exts: Vec<&'static str> = d.configured_extensions().collect();
+        assert_eq!(exts, vec!["yaml", "yml", "toml"]);
+    }
+
+    #[test]
+    fn configured_extensions_honors_custom_format_order() {
+        // Flipping the format preference flips the extension iteration order.
+        let d = ConfigDiscovery::new("ext_flip").formats(&[Format::Toml, Format::Yaml]);
+        let exts: Vec<&'static str> = d.configured_extensions().collect();
+        assert_eq!(exts, vec!["toml", "yaml", "yml"]);
+    }
+
+    #[test]
+    fn configured_extensions_flattens_multi_extension_formats() {
+        // Format::Yaml owns two extensions (yaml, yml); the cartesian
+        // product flattens them into the iterator without losing order.
+        let d = ConfigDiscovery::new("ext_yaml_only").formats(&[Format::Yaml]);
+        let exts: Vec<&'static str> = d.configured_extensions().collect();
+        assert_eq!(exts, vec!["yaml", "yml"]);
+    }
+
+    #[test]
+    fn configured_extensions_includes_lisp_when_configured() {
+        let d = ConfigDiscovery::new("ext_lisp").formats(&[Format::Lisp]);
+        let exts: Vec<&'static str> = d.configured_extensions().collect();
+        assert_eq!(exts, vec!["lisp", "lsp", "el"]);
+    }
+
+    #[test]
+    fn configured_extensions_empty_when_no_formats() {
+        let d = ConfigDiscovery::new("ext_empty").formats(&[]);
+        let exts: Vec<&'static str> = d.configured_extensions().collect();
+        assert!(exts.is_empty());
+    }
+
+    #[test]
+    fn configured_extensions_cardinality_matches_sum_of_format_extensions() {
+        // The flat cartesian product must yield exactly
+        // sum(format.extensions().len()) items — no dedup, no reordering
+        // beyond the format-then-ext nesting.
+        for formats in [
+            vec![Format::Yaml],
+            vec![Format::Toml],
+            vec![Format::Yaml, Format::Toml],
+            vec![Format::Toml, Format::Yaml, Format::Lisp, Format::Nix],
+        ] {
+            let expected: usize = formats.iter().map(|f| f.extensions().len()).sum();
+            let d = ConfigDiscovery::new("card").formats(&formats);
+            assert_eq!(
+                d.configured_extensions().count(),
+                expected,
+                "cardinality must equal sum of format.extensions().len() for {formats:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn standard_paths_extensions_match_configured_extensions() {
+        // standard_paths is one of the three consumers of the typed
+        // primitive; assert the cartesian product surfaces in every
+        // generated XDG/HOME path.
+        let xdg = PathBuf::from("/xdg_for_invariant");
+        let home = PathBuf::from("/home_for_invariant");
+        let d = ConfigDiscovery::new("inv")
+            .formats(&[Format::Yaml, Format::Toml])
+            .xdg_config_home(&xdg)
+            .home_dir(&home);
+        let paths = d.standard_paths();
+
+        for ext in d.configured_extensions() {
+            assert!(
+                paths
+                    .iter()
+                    .any(|p| p.extension().and_then(|e| e.to_str()) == Some(ext)),
+                "standard_paths must include a path with extension `.{ext}`"
+            );
+        }
+    }
+
+    #[test]
+    fn is_partial_match_accepts_every_configured_extension() {
+        // is_partial_match is the second consumer; assert it accepts a
+        // partial filename for every extension the typed primitive yields.
+        let d = ConfigDiscovery::new("inv2").formats(&[Format::Yaml, Format::Toml, Format::Nix]);
+        for ext in d.configured_extensions() {
+            let name = format!("inv2-overlay.{ext}");
+            assert!(
+                d.is_partial_match(&name, "inv2", NameStyle::Bare),
+                "is_partial_match must accept partial `{name}` for configured ext `.{ext}`"
+            );
+        }
+    }
+
+    #[test]
+    fn is_partial_match_rejects_extensions_outside_configured_set() {
+        // The contract has two sides: every configured ext is accepted
+        // (above), every non-configured ext is rejected (here). With
+        // formats=[Yaml] only, .toml/.json/.nix partials must not match.
+        let d = ConfigDiscovery::new("inv3").formats(&[Format::Yaml]);
+        for ext in ["toml", "json", "nix", "lisp"] {
+            let name = format!("inv3-overlay.{ext}");
+            assert!(
+                !d.is_partial_match(&name, "inv3", NameStyle::Bare),
+                "ext `.{ext}` is not configured; partial `{name}` must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn collect_configs_extensions_match_configured_extensions() {
+        // collect_configs is the third consumer; for every configured ext
+        // the helper must surface the corresponding `{app}.{ext}` main file.
+        let dir = TempDir::new().unwrap();
+        let app = "inv4";
+        let d = ConfigDiscovery::new(app).formats(&[Format::Yaml, Format::Toml]);
+        for ext in d.configured_extensions() {
+            fs::write(dir.path().join(format!("{app}.{ext}")), "k: v").unwrap();
+        }
+
+        let mut found = Vec::new();
+        d.collect_configs(dir.path(), app, NameStyle::Bare, &mut found);
+        for ext in d.configured_extensions() {
+            let expected = dir.path().join(format!("{app}.{ext}"));
+            assert!(
+                found.contains(&expected),
+                "collect_configs must surface `{}` for configured ext `.{ext}`",
+                expected.display()
+            );
+        }
+    }
+
+    #[test]
+    fn configured_extensions_empty_disables_all_three_consumers() {
+        // The cross-call-site invariant from the empty side: zero
+        // extensions => standard_paths has no XDG/HOME paths,
+        // is_partial_match always rejects, collect_configs surfaces nothing.
+        let dir = TempDir::new().unwrap();
+        let app = "emptycross";
+        fs::write(dir.path().join(format!("{app}.yaml")), "k: v").unwrap();
+        fs::write(dir.path().join(format!("{app}-x.yaml")), "k: v").unwrap();
+
+        let d = ConfigDiscovery::new(app)
+            .formats(&[])
+            .xdg_config_home(PathBuf::from("/xdg_empty"))
+            .home_dir(PathBuf::from("/home_empty"));
+
+        assert_eq!(d.configured_extensions().count(), 0);
+        assert!(
+            !d.is_partial_match(&format!("{app}-x.yaml"), app, NameStyle::Bare),
+            "no configured exts ⇒ no partial matches"
+        );
+        let mut found = Vec::new();
+        d.collect_configs(dir.path(), app, NameStyle::Bare, &mut found);
+        assert!(
+            found.is_empty(),
+            "no configured exts ⇒ collect_configs surfaces nothing"
+        );
+
+        // standard_paths still emits the legacy `~/.{app}` and `~/.{app}.toml`
+        // entries (they are not gated on configured_extensions); but no
+        // {app}/{app}.{ext} or .config/{app}/{app}.{ext} entries should appear.
+        let paths = d.standard_paths();
+        let main_name = format!("{app}.yaml");
+        assert!(
+            paths.iter().all(|p| {
+                let by_name = p.file_name().and_then(|n| n.to_str());
+                by_name != Some(main_name.as_str())
+            }),
+            "no configured exts ⇒ no XDG/HOME {app}.{{ext}} paths; got {paths:?}"
         );
     }
 }
