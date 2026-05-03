@@ -42,6 +42,20 @@ pub enum Format {
 }
 
 impl Format {
+    /// Every [`Format`] variant, in declaration order.
+    ///
+    /// The closed list of formats shikumi understands. Iterate to
+    /// enumerate the format space without listing variants by hand —
+    /// e.g. tests that must round-trip every format, or attribution
+    /// resolvers that try every shikumi-built provider's metadata-name
+    /// shape in turn (see [`Self::strip_metadata_name`]).
+    ///
+    /// Adding a new variant means extending this slice in lockstep with
+    /// the variant itself; the compiler enforces nothing here, so the
+    /// `format_all_covers_every_variant` test pins the contract by
+    /// matching every variant.
+    pub const ALL: &'static [Format] = &[Self::Yaml, Self::Toml, Self::Lisp, Self::Nix];
+
     /// Returns the file extensions associated with this format.
     #[must_use]
     pub fn extensions(self) -> &'static [&'static str] {
@@ -65,6 +79,80 @@ impl Format {
             "nix" => Some(Self::Nix),
             _ => None,
         }
+    }
+
+    /// Whether this format is loaded by a shikumi-built figment provider
+    /// (as opposed to delegating to one of figment's built-in providers).
+    ///
+    /// `true` for [`Format::Lisp`] (loaded by [`crate::LispProvider`])
+    /// and [`Format::Nix`] (loaded by [`crate::NixProvider`]); these
+    /// providers tag per-value attribution via
+    /// `figment::Metadata::name = "<format>: <path>"` (see
+    /// [`Self::metadata_name`]).
+    ///
+    /// `false` for [`Format::Yaml`] and [`Format::Toml`], which
+    /// [`crate::ProviderChain::with_file`] hands off to
+    /// `figment::providers::Yaml` / `figment::providers::Toml`. Those
+    /// providers tag per-value attribution via
+    /// `figment::Metadata::source = figment::Source::File(_)` instead,
+    /// so [`crate::ShikumiError::failing_source`] resolves them by path
+    /// equality rather than by metadata-name prefix.
+    #[must_use]
+    pub fn has_shikumi_provider(self) -> bool {
+        match self {
+            Self::Lisp | Self::Nix => true,
+            Self::Yaml | Self::Toml => false,
+        }
+    }
+
+    /// Canonical `figment::Metadata::name` shape used by shikumi-built
+    /// providers for per-value attribution: `"<format>: <path>"` (e.g.
+    /// `"lisp: /home/u/.config/app/app.lisp"`,
+    /// `"nix: /etc/app/app.nix"`).
+    ///
+    /// The `<format>` token is the [`fmt::Display`] form of the variant,
+    /// so [`Format::Display`] is the single source of truth for the
+    /// token shape on both sides of attribution: providers emit it via
+    /// this constructor, and [`Self::strip_metadata_name`] inverts it
+    /// for resolution back to a [`crate::ConfigSource`].
+    ///
+    /// Defined for every [`Format`] variant — including those for which
+    /// [`Self::has_shikumi_provider`] returns `false` — so the morphism
+    /// is total. Callers that only care about shikumi-built emissions
+    /// should gate on `has_shikumi_provider` first; resolvers that need
+    /// to invert can use [`Self::strip_metadata_name`] which already
+    /// filters to the shikumi-provider subset.
+    #[must_use]
+    pub fn metadata_name(self, path: &Path) -> String {
+        format!("{self}: {}", path.display())
+    }
+
+    /// Inverse of [`Self::metadata_name`]: try to recognize `name` as a
+    /// shikumi-built provider's metadata-name and recover the
+    /// `(format, path_str)` pair.
+    ///
+    /// Iterates [`Self::ALL`] in declaration order, restricted to
+    /// variants for which [`Self::has_shikumi_provider`] returns `true`,
+    /// and tries the `"<format>: "` prefix from [`Self::metadata_name`]
+    /// against `name`. The first matching variant wins; the trailing
+    /// substring is returned by reference into `name` so callers don't
+    /// allocate.
+    ///
+    /// Returns `None` for `figment::Metadata::name` values produced by
+    /// figment's built-in YAML/TOML providers (which use `Source::File`
+    /// instead of name-based attribution), for unrelated metadata names,
+    /// and for the empty string. Used by
+    /// [`crate::ShikumiError::failing_source`] to map figment metadata
+    /// back to a [`crate::ConfigSource`] in the recorded chain.
+    #[must_use]
+    pub fn strip_metadata_name(name: &str) -> Option<(Self, &str)> {
+        Self::ALL
+            .iter()
+            .filter(|f| f.has_shikumi_provider())
+            .find_map(|f| {
+                let prefix = format!("{f}: ");
+                name.strip_prefix(&prefix).map(|rest| (*f, rest))
+            })
     }
 }
 
@@ -1747,6 +1835,148 @@ mod tests {
                 by_name != Some(main_name.as_str())
             }),
             "no configured exts ⇒ no XDG/HOME {app}.{{ext}} paths; got {paths:?}"
+        );
+    }
+
+    // ---- Format::ALL / has_shikumi_provider / metadata_name /
+    // ---- strip_metadata_name typed-primitive tests
+
+    #[test]
+    fn format_all_in_declaration_order() {
+        assert_eq!(
+            Format::ALL,
+            &[Format::Yaml, Format::Toml, Format::Lisp, Format::Nix]
+        );
+    }
+
+    #[test]
+    fn format_all_covers_every_variant() {
+        // The closed list must enumerate every variant exactly once.
+        // The match below is the compiler-enforced contract: adding a
+        // variant breaks this test until the new variant is wired into
+        // both `Format::ALL` and this exhaustivity check.
+        for f in [Format::Yaml, Format::Toml, Format::Lisp, Format::Nix] {
+            assert!(
+                Format::ALL.contains(&f),
+                "Format::ALL must contain every variant; missing {f:?}"
+            );
+            // Exhaustive match — adding a variant requires updating
+            // both `Format::ALL` and this arm list.
+            match f {
+                Format::Yaml | Format::Toml | Format::Lisp | Format::Nix => {}
+            }
+        }
+        assert_eq!(Format::ALL.len(), 4);
+    }
+
+    #[test]
+    fn format_has_shikumi_provider_lisp_and_nix_only() {
+        assert!(!Format::Yaml.has_shikumi_provider());
+        assert!(!Format::Toml.has_shikumi_provider());
+        assert!(Format::Lisp.has_shikumi_provider());
+        assert!(Format::Nix.has_shikumi_provider());
+    }
+
+    #[test]
+    fn format_metadata_name_uses_display_token() {
+        // The shape `"<format-display>: <path>"` is uniform across every
+        // variant — `Format::Display` is the single source of truth for
+        // the leading token.
+        for f in Format::ALL {
+            let path = Path::new("/etc/app/app.x");
+            let name = f.metadata_name(path);
+            let expected = format!("{f}: /etc/app/app.x");
+            assert_eq!(
+                name, expected,
+                "metadata_name must use the Display token for {f:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn format_strip_metadata_name_round_trips_for_shikumi_providers() {
+        // Round-trip for every variant where has_shikumi_provider is true:
+        // the prefix the resolver strips matches the prefix the provider emits.
+        for f in Format::ALL.iter().filter(|f| f.has_shikumi_provider()) {
+            let path = Path::new("/srv/cfg/app.cfg");
+            let name = f.metadata_name(path);
+            let (recovered_format, rest) =
+                Format::strip_metadata_name(&name).expect("round-trip must succeed");
+            assert_eq!(
+                recovered_format, *f,
+                "strip must recover the format that emitted the name"
+            );
+            assert_eq!(
+                rest, "/srv/cfg/app.cfg",
+                "strip must surface the trailing path verbatim"
+            );
+        }
+    }
+
+    #[test]
+    fn format_strip_metadata_name_rejects_non_shikumi_provider_prefixes() {
+        // Variants without a shikumi-built provider must not be recognized
+        // by the inverse — even though `metadata_name` produces a
+        // syntactically valid `"<format>: <path>"` for them, the resolver
+        // must not claim them, since their figment metadata uses
+        // `Source::File` instead and is matched by a different rule
+        // (path equality against `metadata.source`).
+        for f in Format::ALL.iter().filter(|f| !f.has_shikumi_provider()) {
+            let name = f.metadata_name(Path::new("/x.cfg"));
+            assert!(
+                Format::strip_metadata_name(&name).is_none(),
+                "{f:?} has no shikumi-built provider; its `metadata_name` \
+                 shape must not be recognized by the inverse resolver"
+            );
+        }
+    }
+
+    #[test]
+    fn format_strip_metadata_name_rejects_unrelated_strings() {
+        // Empty strings, plain paths, env-shaped names, and arbitrary
+        // tokens must all fail to match.
+        for name in [
+            "",
+            "/etc/app/app.yaml",
+            "`MYAPP_` environment variable",
+            "json: /etc/app.json",
+            "lisp /etc/app.lisp", // missing colon
+            "lisp:/etc/app.lisp", // missing space
+        ] {
+            assert!(
+                Format::strip_metadata_name(name).is_none(),
+                "unrelated metadata name `{name}` must not match"
+            );
+        }
+    }
+
+    #[test]
+    fn format_strip_metadata_name_pins_correct_variant() {
+        // The strip must pin the *specific* variant that emitted the
+        // prefix, not just any shikumi-built variant.
+        let lisp_name = Format::Lisp.metadata_name(Path::new("/a.lisp"));
+        let (got_lisp, _) =
+            Format::strip_metadata_name(&lisp_name).expect("lisp prefix must match");
+        assert_eq!(got_lisp, Format::Lisp);
+
+        let nix_name = Format::Nix.metadata_name(Path::new("/a.nix"));
+        let (got_nix, _) = Format::strip_metadata_name(&nix_name).expect("nix prefix must match");
+        assert_eq!(got_nix, Format::Nix);
+    }
+
+    #[test]
+    fn format_strip_metadata_name_returns_borrow_into_input() {
+        // The trailing path is a borrow into `name`, not a fresh
+        // allocation — observable by checking that the returned `&str`
+        // is a sub-slice of the input by pointer arithmetic.
+        let name = Format::Lisp.metadata_name(Path::new("/srv/app.lisp"));
+        let (_, rest) = Format::strip_metadata_name(&name).unwrap();
+        let name_start = name.as_ptr() as usize;
+        let name_end = name_start + name.len();
+        let rest_start = rest.as_ptr() as usize;
+        assert!(
+            rest_start >= name_start && rest_start < name_end,
+            "rest must be a sub-slice of name"
         );
     }
 }

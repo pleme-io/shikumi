@@ -29,6 +29,7 @@ use figment::value::{Dict, Map, Value};
 use figment::{Error as FigmentError, Metadata, Profile, Provider};
 use tatara_lisp::{Atom, Sexp};
 
+use crate::discovery::Format;
 use crate::error::ShikumiError;
 
 /// Figment provider that reads a tatara-lisp config file.
@@ -152,7 +153,7 @@ fn kebab_to_snake(s: &str) -> String {
 
 impl Provider for LispProvider {
     fn metadata(&self) -> Metadata {
-        Metadata::named(format!("lisp: {}", self.path.display()))
+        Metadata::named(Format::Lisp.metadata_name(&self.path))
     }
 
     fn data(&self) -> Result<Map<Profile, Dict>, FigmentError> {
@@ -277,6 +278,29 @@ mod tests {
                 largura_tab: 4,
             }
         );
+    }
+
+    #[test]
+    fn metadata_name_matches_format_primitive() {
+        // The `Provider::metadata` impl must use `Format::Lisp.metadata_name`
+        // verbatim — the cross-call-site invariant the resolver relies on
+        // when stripping the prefix back via `Format::strip_metadata_name`.
+        use figment::Provider;
+
+        let path = std::path::PathBuf::from("/tmp/some/lisp.cfg.lisp");
+        let provider = LispProvider::file(&path);
+        let md = provider.metadata();
+        assert_eq!(
+            md.name.as_ref(),
+            Format::Lisp.metadata_name(&path),
+            "LispProvider metadata name must equal Format::Lisp.metadata_name(path)"
+        );
+        // And the round-trip via the resolver-side primitive surfaces
+        // the same path the provider was constructed from.
+        let (recovered_format, rest) =
+            Format::strip_metadata_name(&md.name).expect("LispProvider name must round-trip");
+        assert_eq!(recovered_format, Format::Lisp);
+        assert_eq!(rest, path.display().to_string());
     }
 
     /// Helper trait for test assertions — figment's Value API is verbose.

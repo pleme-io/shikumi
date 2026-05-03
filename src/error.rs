@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::discovery::Format;
 use crate::source::ConfigSource;
 
 /// Errors produced by shikumi's config discovery, loading, and watching.
@@ -95,10 +96,9 @@ fn display_failing_source(sources: &[ConfigSource], error: &figment::Error) -> S
 /// Resolution rules, applied in order:
 /// 1. If `metadata.source` is a [`figment::Source::File`], match by
 ///    exact path equality against [`ConfigSource::File`] entries.
-/// 2. If `metadata.name` starts with `"nix: "` or `"lisp: "` (the
-///    shapes used by [`crate::NixProvider`] / [`crate::LispProvider`]),
-///    extract the trailing path and match against
-///    [`ConfigSource::File`].
+/// 2. If `metadata.name` matches a shikumi-built provider's
+///    `"<format>: <path>"` shape (per [`Format::strip_metadata_name`]),
+///    extract the trailing path and match against [`ConfigSource::File`].
 /// 3. If `metadata.name` contains `"environment variable"` (figment's
 ///    [`figment::providers::Env`] metadata shape), match against the
 ///    [`ConfigSource::Env`] entry by uppercased prefix when the name
@@ -121,12 +121,10 @@ fn resolve_failing_source<'a>(
     }
 
     let name = md.name.as_ref();
-    for prefix in ["nix: ", "lisp: "] {
-        if let Some(rest) = name.strip_prefix(prefix) {
-            let p = std::path::Path::new(rest);
-            if let Some(hit) = chain.iter().find(|s| s.as_path() == Some(p)) {
-                return Some(hit);
-            }
+    if let Some((_format, rest)) = Format::strip_metadata_name(name) {
+        let p = std::path::Path::new(rest);
+        if let Some(hit) = chain.iter().find(|s| s.as_path() == Some(p)) {
+            return Some(hit);
         }
     }
 

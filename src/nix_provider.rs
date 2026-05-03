@@ -14,6 +14,7 @@ use std::process::Command;
 use figment::value::{Dict, Map, Value};
 use figment::{Error as FigmentError, Metadata, Profile, Provider};
 
+use crate::discovery::Format;
 use crate::error::ShikumiError;
 
 /// Figment provider that evaluates a Nix config file via `nix eval`.
@@ -114,7 +115,7 @@ fn json_to_figment_value(v: &serde_json::Value) -> Value {
 
 impl Provider for NixProvider {
     fn metadata(&self) -> Metadata {
-        Metadata::named(format!("nix: {}", self.path.display()))
+        Metadata::named(Format::Nix.metadata_name(&self.path))
     }
 
     fn data(&self) -> Result<Map<Profile, Dict>, FigmentError> {
@@ -171,5 +172,28 @@ mod tests {
             .unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("nix") || msg.contains("spawning"));
+    }
+
+    #[test]
+    fn metadata_name_matches_format_primitive() {
+        // The `Provider::metadata` impl must use `Format::Nix.metadata_name`
+        // verbatim — the cross-call-site invariant the resolver relies on
+        // when stripping the prefix back via `Format::strip_metadata_name`.
+        use figment::Provider;
+
+        let path = std::path::PathBuf::from("/tmp/some/conf.nix");
+        let provider = NixProvider::file(&path);
+        let md = provider.metadata();
+        assert_eq!(
+            md.name.as_ref(),
+            Format::Nix.metadata_name(&path),
+            "NixProvider metadata name must equal Format::Nix.metadata_name(path)"
+        );
+        // And the round-trip via the resolver-side primitive surfaces
+        // the same path the provider was constructed from.
+        let (recovered_format, rest) =
+            Format::strip_metadata_name(&md.name).expect("NixProvider name must round-trip");
+        assert_eq!(recovered_format, Format::Nix);
+        assert_eq!(rest, path.display().to_string());
     }
 }
