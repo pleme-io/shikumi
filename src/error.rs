@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::discovery::Format;
-use crate::source::{ConfigSource, EnvMetadataTag};
+use crate::source::{ConfigSource, EnvMetadataTag, FigmentSourceTag};
 
 /// Errors produced by shikumi's config discovery, loading, and watching.
 #[derive(thiserror::Error, Debug)]
@@ -94,8 +94,9 @@ fn display_failing_source(sources: &[ConfigSource], error: &figment::Error) -> S
 /// when the metadata cannot be matched to any recorded entry.
 ///
 /// Resolution rules, applied in order:
-/// 1. If `metadata.source` is a [`figment::Source::File`], match by
-///    exact path equality against [`ConfigSource::File`] entries.
+/// 1. If `metadata.source` classifies (per [`FigmentSourceTag::classify`])
+///    as [`FigmentSourceTag::File`], match by exact path equality against
+///    [`ConfigSource::File`] entries.
 /// 2. If `metadata.name` matches a shikumi-built provider's
 ///    `"<format>: <path>"` shape (per [`Format::strip_metadata_name`]),
 ///    extract the trailing path and match against [`ConfigSource::File`].
@@ -105,7 +106,7 @@ fn display_failing_source(sources: &[ConfigSource], error: &figment::Error) -> S
 ///    [`ConfigSource::Env`] entry by uppercased prefix when the tag
 ///    carries one; otherwise return the unique `Env` entry if exactly
 ///    one exists.
-/// 4. If `metadata.source` is a [`figment::Source::Code`] location
+/// 4. If `metadata.source` classifies as [`FigmentSourceTag::Code`]
 ///    (the shape produced by [`figment::providers::Serialized`]),
 ///    match the unique [`ConfigSource::Defaults`] entry if exactly one
 ///    exists.
@@ -114,8 +115,9 @@ fn resolve_failing_source<'a>(
     chain: &'a [ConfigSource],
 ) -> Option<&'a ConfigSource> {
     let md = error.metadata.as_ref()?;
+    let source_tag = md.source.as_ref().and_then(FigmentSourceTag::classify);
 
-    if let Some(p) = md.source.as_ref().and_then(|s| s.file_path())
+    if let Some(FigmentSourceTag::File(p)) = source_tag
         && let Some(hit) = chain.iter().find(|s| s.as_path() == Some(p))
     {
         return Some(hit);
@@ -146,11 +148,7 @@ fn resolve_failing_source<'a>(
         }
     }
 
-    if md
-        .source
-        .as_ref()
-        .is_some_and(|s| s.code_location().is_some())
-    {
+    if matches!(source_tag, Some(FigmentSourceTag::Code(_))) {
         let mut defaults = chain.iter().filter(|s| s.is_defaults());
         if let Some(only) = defaults.next()
             && defaults.next().is_none()

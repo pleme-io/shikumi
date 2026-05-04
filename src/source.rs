@@ -10,6 +10,7 @@
 //! `ConfigMap`, etc.) can land without breaking consumers that match.
 
 use std::fmt;
+use std::panic::Location;
 use std::path::{Path, PathBuf};
 
 /// A single layer in a config provider chain.
@@ -143,6 +144,105 @@ pub enum EnvMetadataTag<'a> {
     /// `environment variable(s)` — `figment::providers::Env::raw()`
     /// shape (no prefix).
     Bare,
+}
+
+/// Borrowed classification of a [`figment::Source`].
+///
+/// figment's `Source` is `#[non_exhaustive]` and is queried via three
+/// `Option`-returning accessors ([`figment::Source::file_path`],
+/// [`figment::Source::code_location`], [`figment::Source::custom`]). This
+/// enum lifts those open-coded probes into one typed dispatch: a single
+/// [`Self::classify`] call takes `&figment::Source` and returns the one
+/// recognized variant (or `None` if figment grew a fourth variant we
+/// don't yet model).
+///
+/// The source axis of figment metadata is the structural mirror of the
+/// name axis ([`crate::Format::strip_metadata_name`] /
+/// [`ConfigSource::strip_env_metadata_name`]): every `figment::Metadata`
+/// carries an optional `name: Cow<'static, str>` and an optional
+/// `source: Option<Source>`. The three primitives partition the
+/// recognized shapes across both axes; resolvers (e.g.
+/// [`crate::ShikumiError::failing_source`]) dispatch on them without
+/// re-implementing figment's Source-side query methods.
+///
+/// All variants borrow into either the input `Source` (`File`, `Custom`)
+/// or into the `'static` panic location figment carries (`Code`), so the
+/// enum is `Copy` and allocation-free.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum FigmentSourceTag<'a> {
+    /// `figment::Source::File(_)` — the borrowed file path. This is the
+    /// shape figment's built-in YAML/TOML providers attach to per-value
+    /// metadata; matched by [`ConfigSource::as_path`] equality in the
+    /// resolver.
+    File(&'a Path),
+    /// `figment::Source::Code(_)` — the source-code location attached by
+    /// [`figment::providers::Serialized`] (the shape behind
+    /// [`crate::ProviderChain::with_defaults`]). Carries figment's
+    /// `&'static Location<'static>` verbatim.
+    Code(&'static Location<'static>),
+    /// `figment::Source::Custom(_)` — the borrowed custom-source string.
+    /// Used by figment-ecosystem providers that can't fit the File/Code
+    /// shape (e.g. HTTP, Vault, in-memory dicts).
+    Custom(&'a str),
+}
+
+impl<'a> FigmentSourceTag<'a> {
+    /// Classify a [`figment::Source`] into its typed shape.
+    ///
+    /// Returns `Some(variant)` for each of figment's three documented
+    /// `Source` variants (`File` / `Code` / `Custom`), with the inner
+    /// data borrowed from `source`. Returns `None` only if figment grew
+    /// a new variant after this enum was last extended; callers should
+    /// treat `None` as "unrecognized source shape" rather than "no
+    /// source attached".
+    ///
+    /// One source of truth for the figment-Source-axis dispatch: the
+    /// resolver in [`crate::ShikumiError::failing_source`] routes its
+    /// `Source::File` / `Source::Code` arms through this primitive
+    /// instead of calling [`figment::Source::file_path`] /
+    /// [`figment::Source::code_location`] in line. If figment changes
+    /// its Source taxonomy (renames a variant, adds `Source::Url`,
+    /// etc.), exactly one site here changes and the
+    /// `figment_source_tag_classifies_*` tests catch the drift before
+    /// it reaches the resolver.
+    #[must_use]
+    pub fn classify(source: &'a figment::Source) -> Option<Self> {
+        if let Some(p) = source.file_path() {
+            return Some(Self::File(p));
+        }
+        if let Some(loc) = source.code_location() {
+            return Some(Self::Code(loc));
+        }
+        if let Some(c) = source.custom() {
+            return Some(Self::Custom(c));
+        }
+        None
+    }
+
+    /// Returns the file path if this tag is a [`Self::File`].
+    #[must_use]
+    pub fn as_file_path(self) -> Option<&'a Path> {
+        match self {
+            Self::File(p) => Some(p),
+            _ => None,
+        }
+    }
+
+    /// Returns `true` for [`Self::Code`].
+    #[must_use]
+    pub fn is_code(self) -> bool {
+        matches!(self, Self::Code(_))
+    }
+
+    /// Returns the custom-source string if this tag is a [`Self::Custom`].
+    #[must_use]
+    pub fn as_custom(self) -> Option<&'a str> {
+        match self {
+            Self::Custom(c) => Some(c),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Display for ConfigSource {
@@ -395,5 +495,145 @@ mod tests {
                 "env tag `{name}` must not be recognized as format tag"
             );
         }
+    }
+
+    // ---- FigmentSourceTag::classify ----
+
+    #[test]
+    fn figment_source_tag_classifies_file_path() {
+        let src = figment::Source::File(PathBuf::from("/etc/app/app.yaml"));
+        let tag = FigmentSourceTag::classify(&src).expect("File source must classify");
+        assert_eq!(tag, FigmentSourceTag::File(Path::new("/etc/app/app.yaml")));
+        assert_eq!(tag.as_file_path(), Some(Path::new("/etc/app/app.yaml")));
+        assert!(!tag.is_code());
+        assert_eq!(tag.as_custom(), None);
+    }
+
+    #[test]
+    fn figment_source_tag_classifies_code_location() {
+        // Source::Code carries a `&'static Location<'static>`; constructing
+        // one via `Location::caller()` works inside `#[track_caller]`-ish
+        // paths but is fiddly outside them. Use the Serialized provider
+        // (which figment tags with `Source::Code`) to obtain a real one.
+        use figment::Provider;
+        let provider = figment::providers::Serialized::defaults(serde_json::json!({"k": "v"}));
+        let md = provider.metadata();
+        let src = md.source.as_ref().expect("Serialized attaches a source");
+        let tag = FigmentSourceTag::classify(src).expect("Code source must classify");
+        assert!(
+            matches!(tag, FigmentSourceTag::Code(_)),
+            "expected Code variant, got {tag:?}"
+        );
+        assert!(tag.is_code());
+        assert_eq!(tag.as_file_path(), None);
+        assert_eq!(tag.as_custom(), None);
+    }
+
+    #[test]
+    fn figment_source_tag_classifies_custom() {
+        let src = figment::Source::Custom("ftp://configs.example.com/app.yaml".to_owned());
+        let tag = FigmentSourceTag::classify(&src).expect("Custom source must classify");
+        assert_eq!(
+            tag,
+            FigmentSourceTag::Custom("ftp://configs.example.com/app.yaml")
+        );
+        assert_eq!(tag.as_custom(), Some("ftp://configs.example.com/app.yaml"));
+        assert!(!tag.is_code());
+        assert_eq!(tag.as_file_path(), None);
+    }
+
+    #[test]
+    fn figment_source_tag_borrows_into_input_for_file() {
+        // The path slice must be a sub-borrow of the input PathBuf, not a
+        // fresh allocation — observable via pointer arithmetic.
+        let src = figment::Source::File(PathBuf::from("/etc/app/app.yaml"));
+        let FigmentSourceTag::File(borrowed) =
+            FigmentSourceTag::classify(&src).expect("File classify")
+        else {
+            panic!("expected File variant");
+        };
+        let figment::Source::File(ref owned) = src else {
+            unreachable!()
+        };
+        let owned_start = owned.as_os_str().as_encoded_bytes().as_ptr() as usize;
+        let owned_end = owned_start + owned.as_os_str().as_encoded_bytes().len();
+        let borrowed_start = borrowed.as_os_str().as_encoded_bytes().as_ptr() as usize;
+        assert!(
+            borrowed_start >= owned_start && borrowed_start < owned_end,
+            "path must borrow into source"
+        );
+    }
+
+    #[test]
+    fn figment_source_tag_borrows_into_input_for_custom() {
+        let src = figment::Source::Custom("vault://kv/app".to_owned());
+        let FigmentSourceTag::Custom(c) =
+            FigmentSourceTag::classify(&src).expect("Custom classify")
+        else {
+            panic!("expected Custom variant");
+        };
+        let figment::Source::Custom(ref s) = src else {
+            unreachable!()
+        };
+        let s_start = s.as_ptr() as usize;
+        let s_end = s_start + s.len();
+        let c_start = c.as_ptr() as usize;
+        assert!(
+            c_start >= s_start && c_start < s_end,
+            "custom slice must borrow into source"
+        );
+    }
+
+    #[test]
+    fn figment_source_tag_classify_round_trips_through_yaml_provider() {
+        // Pin the cross-side contract that figment's YAML file provider
+        // attaches a Source::File which classifies as
+        // FigmentSourceTag::File(<path>). If figment changes the shape it
+        // attaches to file-based providers, this test breaks before the
+        // resolver does.
+        use figment::providers::Format as _;
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("c.yaml");
+        std::fs::write(&file, "k: v\n").unwrap();
+        let figment = figment::Figment::new().merge(figment::providers::Yaml::file(&file));
+        let value: figment::value::Value = figment.find_value("k").unwrap();
+        let tag = figment.get_metadata(value.tag()).unwrap();
+        let src = tag.source.as_ref().expect("Yaml::file attaches a source");
+        let classified = FigmentSourceTag::classify(src).expect("Yaml file source must classify");
+        assert_eq!(classified, FigmentSourceTag::File(file.as_path()));
+    }
+
+    #[test]
+    fn figment_source_tag_classify_round_trips_through_serialized_provider() {
+        // The Serialized provider — which `ProviderChain::with_defaults`
+        // routes through — must attach a Source::Code that classifies
+        // as FigmentSourceTag::Code(_). Pinning this end-to-end ensures
+        // resolve_failing_source's `Code → defaults` arm stays honest.
+        use figment::Provider;
+        let prov = figment::providers::Serialized::defaults(serde_json::json!({"name": "default"}));
+        let md = prov.metadata();
+        let src = md
+            .source
+            .as_ref()
+            .expect("Serialized attaches a Source::Code");
+        let tag = FigmentSourceTag::classify(src).expect("Code source must classify");
+        assert!(tag.is_code(), "Serialized must classify as Code");
+    }
+
+    #[test]
+    fn figment_source_tag_variants_are_disjoint() {
+        // Each Source variant must classify into exactly one
+        // FigmentSourceTag variant — no Source can claim two tags at once.
+        let file_src = figment::Source::File(PathBuf::from("/x"));
+        let custom_src = figment::Source::Custom("c".to_owned());
+
+        let file_tag = FigmentSourceTag::classify(&file_src).unwrap();
+        let custom_tag = FigmentSourceTag::classify(&custom_src).unwrap();
+
+        assert!(file_tag.as_file_path().is_some() && !file_tag.is_code());
+        assert!(file_tag.as_custom().is_none());
+        assert!(custom_tag.as_custom().is_some() && !custom_tag.is_code());
+        assert!(custom_tag.as_file_path().is_none());
     }
 }
