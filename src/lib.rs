@@ -48,7 +48,7 @@ mod store;
 mod watcher;
 
 pub use discovery::{ConfigDiscovery, Format};
-pub use error::ShikumiError;
+pub use error::{AttributionRule, FailingSourceAttribution, ShikumiError};
 #[cfg(feature = "lisp")]
 pub use lisp_provider::{LispProvider, load_from_str as load_lisp_from_str};
 pub use nix_provider::NixProvider;

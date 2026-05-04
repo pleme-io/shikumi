@@ -80,54 +80,144 @@ fn display_field_path(path: &[String]) -> String {
 
 fn display_failing_source(sources: &[ConfigSource], error: &figment::Error) -> String {
     resolve_failing_source(error, sources)
-        .map(|s| format!(" from {s}"))
+        .map(|a| format!(" from {}", a.source))
         .unwrap_or_default()
+}
+
+/// Reason a [`figment::Error`] was attributed to a specific layer in the
+/// recorded [`ConfigSource`] chain by [`resolve_failing_source`].
+///
+/// The resolver dispatches over five distinct rules, applied in order;
+/// the first that matches produces the attribution. Before this enum,
+/// the resolver returned just `Option<&ConfigSource>`, collapsing the
+/// rule that fired into its result.
+///
+/// Lifting the rule into the type lets observers distinguish *exact*
+/// attribution (path / prefix equality) from *fallback* attribution
+/// (uniqueness in the chain), which matters for:
+///
+/// - Structured diagnostics that want to render different prose for
+///   "blamed via file path equality" vs. "blamed via env-prefix
+///   uniqueness fallback".
+/// - Attestation manifests that record per-failure attribution
+///   provenance alongside the chain.
+/// - Tests that pin exactly which rule a scenario exercises (rather
+///   than checking only that *some* layer was attributed).
+///
+/// Variants are `#[non_exhaustive]` so future resolution rules — e.g.
+/// custom-source attribution for [`FigmentSourceTag::Custom`] when a
+/// matching `ConfigSource::External(_)` lands — extend the enum without
+/// breaking exhaustivity at consumer matches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum AttributionRule {
+    /// `metadata.source` classified as [`FigmentSourceTag::File`];
+    /// matched by exact path equality against a [`ConfigSource::File`]
+    /// entry. The shape figment's built-in YAML/TOML providers attach.
+    FileBySource,
+    /// `metadata.name` matched a shikumi-built provider's
+    /// `"<format>: <path>"` shape (per [`Format::strip_metadata_name`]);
+    /// matched by extracted path equality against a
+    /// [`ConfigSource::File`] entry. The shape [`crate::NixProvider`]
+    /// (and [`crate::LispProvider`] when the `lisp` feature is on) attach.
+    FileByMetadataName,
+    /// `metadata.name` was env-tag shaped with a prefix (per
+    /// [`ConfigSource::strip_env_metadata_name`] returning
+    /// [`EnvMetadataTag::Prefixed`]); matched by case-insensitive
+    /// prefix equality against a [`ConfigSource::Env`] entry. The
+    /// shape `figment::providers::Env::prefixed(_)` attaches.
+    EnvByPrefix,
+    /// `metadata.name` was env-tag shaped (prefixed-without-match or
+    /// bare); no prefix equality match in the chain, but exactly one
+    /// [`ConfigSource::Env`] is recorded — attributed to that unique
+    /// entry as a fallback.
+    EnvByUniqueness,
+    /// `metadata.source` classified as [`FigmentSourceTag::Code`] (the
+    /// shape [`figment::providers::Serialized`] attaches, behind
+    /// [`crate::ProviderChain::with_defaults`]), and exactly one
+    /// [`ConfigSource::Defaults`] is recorded in the chain.
+    DefaultsByCodeUniqueness,
+}
+
+/// Typed envelope returned by [`ShikumiError::failing_attribution`]:
+/// the attributed [`ConfigSource`] and the [`AttributionRule`] that
+/// produced the attribution.
+///
+/// The source borrows into the recorded chain so the envelope shares
+/// the error's lifetime; the rule is `Copy`. Pair-struct over the
+/// `(which-layer × why)` axis: the (where × what) failure surface
+/// (chain × field-path) gains a third axis (rule) that pins the
+/// attribution mechanism to one of the five typed cases in
+/// [`AttributionRule`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct FailingSourceAttribution<'a> {
+    /// The recorded [`ConfigSource`] entry blamed for the failure.
+    pub source: &'a ConfigSource,
+    /// The rule under which `source` was attributed.
+    pub rule: AttributionRule,
+}
+
+impl<'a> FailingSourceAttribution<'a> {
+    fn new(source: &'a ConfigSource, rule: AttributionRule) -> Self {
+        Self { source, rule }
+    }
 }
 
 /// Map a figment error's per-value [`figment::Metadata`] back to the
 /// specific [`ConfigSource`] in the recorded chain that produced the
-/// offending value.
+/// offending value, alongside the [`AttributionRule`] that fired.
 ///
-/// Returns a borrowed reference into `chain` so callers share its
-/// lifetime. `None` when figment did not attach metadata (e.g. an
-/// `Error::from(String)` constructed without a provider context), or
-/// when the metadata cannot be matched to any recorded entry.
+/// Returns a [`FailingSourceAttribution`] borrowed into `chain` so
+/// callers share its lifetime. `None` when figment did not attach
+/// metadata (e.g. an `Error::from(String)` constructed without a
+/// provider context), or when the metadata cannot be matched to any
+/// recorded entry under any rule.
 ///
-/// Resolution rules, applied in order:
-/// 1. If `metadata.source` classifies (per [`FigmentSourceTag::classify`])
-///    as [`FigmentSourceTag::File`], match by exact path equality against
-///    [`ConfigSource::File`] entries.
-/// 2. If `metadata.name` matches a shikumi-built provider's
-///    `"<format>: <path>"` shape (per [`Format::strip_metadata_name`]),
-///    extract the trailing path and match against [`ConfigSource::File`].
-/// 3. If `metadata.name` matches figment's
-///    [`figment::providers::Env`] tag shape (per
-///    [`ConfigSource::strip_env_metadata_name`]), match against the
-///    [`ConfigSource::Env`] entry by uppercased prefix when the tag
-///    carries one; otherwise return the unique `Env` entry if exactly
-///    one exists.
-/// 4. If `metadata.source` classifies as [`FigmentSourceTag::Code`]
-///    (the shape produced by [`figment::providers::Serialized`]),
-///    match the unique [`ConfigSource::Defaults`] entry if exactly one
-///    exists.
+/// Resolution rules, applied in order; the first that matches wins:
+/// 1. [`AttributionRule::FileBySource`] — `metadata.source` classifies
+///    (per [`FigmentSourceTag::classify`]) as
+///    [`FigmentSourceTag::File`], and a [`ConfigSource::File`] entry's
+///    path equals it.
+/// 2. [`AttributionRule::FileByMetadataName`] — `metadata.name` matches
+///    a shikumi-built provider's `"<format>: <path>"` shape (per
+///    [`Format::strip_metadata_name`]), and a [`ConfigSource::File`]
+///    entry's path equals the extracted path.
+/// 3. [`AttributionRule::EnvByPrefix`] — `metadata.name` is env-tag
+///    shaped with a prefix (per
+///    [`ConfigSource::strip_env_metadata_name`] returning
+///    [`EnvMetadataTag::Prefixed`]), and a [`ConfigSource::Env`]
+///    entry's prefix matches case-insensitively.
+/// 4. [`AttributionRule::EnvByUniqueness`] — `metadata.name` is env-tag
+///    shaped (prefixed-without-match or bare), no prefix match in the
+///    chain, and exactly one [`ConfigSource::Env`] entry exists.
+/// 5. [`AttributionRule::DefaultsByCodeUniqueness`] — `metadata.source`
+///    classifies as [`FigmentSourceTag::Code`], and exactly one
+///    [`ConfigSource::Defaults`] entry exists.
 fn resolve_failing_source<'a>(
     error: &figment::Error,
     chain: &'a [ConfigSource],
-) -> Option<&'a ConfigSource> {
+) -> Option<FailingSourceAttribution<'a>> {
     let md = error.metadata.as_ref()?;
     let source_tag = md.source.as_ref().and_then(FigmentSourceTag::classify);
 
     if let Some(FigmentSourceTag::File(p)) = source_tag
         && let Some(hit) = chain.iter().find(|s| s.as_path() == Some(p))
     {
-        return Some(hit);
+        return Some(FailingSourceAttribution::new(
+            hit,
+            AttributionRule::FileBySource,
+        ));
     }
 
     let name = md.name.as_ref();
     if let Some((_format, rest)) = Format::strip_metadata_name(name) {
         let p = std::path::Path::new(rest);
         if let Some(hit) = chain.iter().find(|s| s.as_path() == Some(p)) {
-            return Some(hit);
+            return Some(FailingSourceAttribution::new(
+                hit,
+                AttributionRule::FileByMetadataName,
+            ));
         }
     }
 
@@ -138,13 +228,19 @@ fn resolve_failing_source<'a>(
                     .is_some_and(|p| p.eq_ignore_ascii_case(prefix_upper))
             })
         {
-            return Some(hit);
+            return Some(FailingSourceAttribution::new(
+                hit,
+                AttributionRule::EnvByPrefix,
+            ));
         }
         let mut envs = chain.iter().filter(|s| s.is_env());
         if let Some(only) = envs.next()
             && envs.next().is_none()
         {
-            return Some(only);
+            return Some(FailingSourceAttribution::new(
+                only,
+                AttributionRule::EnvByUniqueness,
+            ));
         }
     }
 
@@ -153,7 +249,10 @@ fn resolve_failing_source<'a>(
         if let Some(only) = defaults.next()
             && defaults.next().is_none()
         {
-            return Some(only);
+            return Some(FailingSourceAttribution::new(
+                only,
+                AttributionRule::DefaultsByCodeUniqueness,
+            ));
         }
     }
 
@@ -241,8 +340,34 @@ impl ShikumiError {
     /// constructed `figment::Error::from(string)`); and when the
     /// metadata cannot be matched to any entry in the recorded chain
     /// (callers should fall back to [`Self::sources`]).
+    ///
+    /// Wraps [`Self::failing_attribution`], dropping the
+    /// [`AttributionRule`]; callers that need to distinguish exact
+    /// attribution (path / prefix equality) from fallback attribution
+    /// (uniqueness in the chain) should use the envelope directly.
     #[must_use]
     pub fn failing_source(&self) -> Option<&ConfigSource> {
+        self.failing_attribution().map(|a| a.source)
+    }
+
+    /// Returns the typed attribution envelope — the
+    /// [`ConfigSource`] in the recorded chain blamed for the failure
+    /// and the [`AttributionRule`] that produced the attribution — if
+    /// attribution is possible.
+    ///
+    /// Strict superset of [`Self::failing_source`]: same `None`
+    /// conditions, but on `Some` carries the rule alongside the source.
+    /// Pair the rule with the source to render rule-aware structured
+    /// diagnostics (e.g. mark fallback attributions like
+    /// [`AttributionRule::EnvByUniqueness`] /
+    /// [`AttributionRule::DefaultsByCodeUniqueness`] visibly weaker
+    /// than equality-based ones), or to record per-failure attribution
+    /// provenance in attestation manifests.
+    ///
+    /// Borrowed reference into the recorded chain, so the envelope
+    /// shares this error's lifetime.
+    #[must_use]
+    pub fn failing_attribution(&self) -> Option<FailingSourceAttribution<'_>> {
         match self {
             Self::Extract { sources, error } => resolve_failing_source(error, sources),
             _ => None,
@@ -809,5 +934,237 @@ mod tests {
         );
         // And Display joins them with '.' for the human-readable form.
         assert!(err.to_string().contains("at field `window.size`"));
+    }
+
+    // ---- failing_attribution() / AttributionRule tests ----
+
+    /// Synthesize a `figment::Error` pre-tagged with the given metadata
+    /// name. Used to drive resolver paths that depend on
+    /// `metadata.name`-shape (`FileByMetadataName`, `Env*`) without
+    /// needing a live shikumi-built provider in the test process.
+    fn synthetic_error_with_metadata_name(name: &'static str) -> Box<figment::Error> {
+        let mut e = figment::Error::from("synth".to_owned());
+        e.metadata = Some(figment::Metadata::named(name));
+        Box::new(e)
+    }
+
+    #[test]
+    fn failing_attribution_rule_file_by_source_for_yaml_extract() {
+        // figment's built-in YAML provider attaches Source::File; the
+        // resolver matches by path equality and reports FileBySource.
+        let (dir, err) = extract_error_with_file_path_failure();
+        let attr = err
+            .failing_attribution()
+            .expect("typed file failure must attribute");
+        assert_eq!(attr.rule, AttributionRule::FileBySource);
+        assert_eq!(
+            attr.source.as_path(),
+            Some(dir.path().join("typed.yaml").as_path())
+        );
+    }
+
+    #[test]
+    fn failing_attribution_rule_file_by_metadata_name_for_shikumi_provider() {
+        // shikumi-built providers tag attribution via
+        // `metadata.name = "<format>: <path>"`. The resolver inverts via
+        // `Format::strip_metadata_name` and reports FileByMetadataName.
+        let path = PathBuf::from("/etc/app/app.nix");
+        let name = "nix: /etc/app/app.nix";
+        let chain = vec![ConfigSource::Defaults, ConfigSource::File(path.clone())];
+        let err = ShikumiError::Extract {
+            sources: chain,
+            error: synthetic_error_with_metadata_name(name),
+        };
+        let attr = err
+            .failing_attribution()
+            .expect("shikumi-provider tag must attribute");
+        assert_eq!(attr.rule, AttributionRule::FileByMetadataName);
+        assert_eq!(attr.source.as_path(), Some(path.as_path()));
+    }
+
+    #[test]
+    fn failing_attribution_rule_env_by_prefix_when_chain_has_matching_env() {
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("MYAPP_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+        ];
+        let err = ShikumiError::Extract {
+            sources: chain,
+            error: synthetic_error_with_metadata_name("`MYAPP_` environment variable(s)"),
+        };
+        let attr = err
+            .failing_attribution()
+            .expect("env-prefix tag must attribute");
+        assert_eq!(attr.rule, AttributionRule::EnvByPrefix);
+        assert_eq!(attr.source.as_env_prefix(), Some("MYAPP_"));
+    }
+
+    #[test]
+    fn failing_attribution_rule_env_by_uniqueness_for_unmatched_prefix() {
+        // Tag carries a prefix the chain doesn't record, but exactly one
+        // Env entry exists — fall back to EnvByUniqueness on that entry.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("ONLY_".to_owned()),
+            ConfigSource::File(PathBuf::from("/etc/app.yaml")),
+        ];
+        let err = ShikumiError::Extract {
+            sources: chain,
+            error: synthetic_error_with_metadata_name("`UNRELATED_` environment variable(s)"),
+        };
+        let attr = err
+            .failing_attribution()
+            .expect("unique-env fallback must attribute");
+        assert_eq!(attr.rule, AttributionRule::EnvByUniqueness);
+        assert_eq!(attr.source.as_env_prefix(), Some("ONLY_"));
+    }
+
+    #[test]
+    fn failing_attribution_rule_env_by_uniqueness_for_bare_env_tag() {
+        // Bare env tag (figment's Env::raw shape): no prefix to match;
+        // unique Env entry wins via EnvByUniqueness.
+        let chain = vec![ConfigSource::Env("BARE_".to_owned())];
+        let err = ShikumiError::Extract {
+            sources: chain,
+            error: synthetic_error_with_metadata_name("environment variable(s)"),
+        };
+        let attr = err.failing_attribution().expect("bare-env must attribute");
+        assert_eq!(attr.rule, AttributionRule::EnvByUniqueness);
+        assert_eq!(attr.source.as_env_prefix(), Some("BARE_"));
+    }
+
+    #[test]
+    fn failing_attribution_rule_defaults_by_code_uniqueness_for_serialized() {
+        // figment's Serialized provider attaches Source::Code; the
+        // resolver dispatches to defaults-by-code-uniqueness when
+        // exactly one Defaults layer is recorded.
+        use crate::provider::ProviderChain;
+        use serde::Serialize;
+        #[derive(Serialize)]
+        struct Bad {
+            count: String, // typed mismatch when extracted as Cfg::count: u32
+        }
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let err = ProviderChain::new()
+            .with_defaults(&Bad {
+                count: "not_a_number".into(),
+            })
+            .extract::<Cfg>()
+            .unwrap_err();
+        let attr = err
+            .failing_attribution()
+            .expect("defaults-only failure must attribute");
+        assert_eq!(attr.rule, AttributionRule::DefaultsByCodeUniqueness);
+        assert!(attr.source.is_defaults());
+    }
+
+    #[test]
+    fn failing_attribution_none_for_no_metadata() {
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults, ConfigSource::Env("X_".to_owned())],
+            error: fake_figment_error(),
+        };
+        assert!(err.failing_attribution().is_none());
+    }
+
+    #[test]
+    fn failing_attribution_none_when_chain_lacks_matching_entry() {
+        // metadata.name names a file the chain doesn't carry, and no
+        // env / defaults fallback applies — must be None, not fabricated.
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::File(PathBuf::from("/other.yaml"))],
+            error: synthetic_error_with_metadata_name("nix: /etc/app/app.nix"),
+        };
+        assert!(err.failing_attribution().is_none());
+    }
+
+    #[test]
+    fn failing_attribution_borrows_into_chain() {
+        // The envelope's source must be a sub-borrow of the recorded
+        // chain — not a fresh allocation, not a clone.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("BORROWED_".to_owned()),
+        ];
+        let err = ShikumiError::Extract {
+            sources: chain,
+            error: synthetic_error_with_metadata_name("`BORROWED_` environment variable(s)"),
+        };
+        let ShikumiError::Extract {
+            sources: ref recorded,
+            ..
+        } = err
+        else {
+            unreachable!();
+        };
+        let recorded_ptr = recorded.as_ptr();
+        let attr = err.failing_attribution().expect("attribution");
+        let attr_ptr = std::ptr::from_ref::<ConfigSource>(attr.source);
+        // attr.source must point inside the recorded Vec (specifically,
+        // at the second entry).
+        unsafe {
+            assert_eq!(attr_ptr, recorded_ptr.add(1));
+        }
+    }
+
+    #[test]
+    fn failing_source_agrees_with_failing_attribution_source() {
+        // The legacy `failing_source` helper must equal the envelope's
+        // `.source` field on every attributed Extract.
+        let (_dir, err) = extract_error_with_file_path_failure();
+        let attr = err.failing_attribution().expect("attribution");
+        let legacy = err.failing_source().expect("legacy attribution");
+        assert!(std::ptr::eq(attr.source, legacy));
+    }
+
+    #[test]
+    fn failing_attribution_rule_resolution_order_prefers_file_by_source_over_name() {
+        // If both a Source::File classification and a metadata-name match
+        // could resolve, the source-axis rule wins (it's tried first).
+        // Synthesize a metadata that has *both* a Source::File pointing
+        // at one chain entry and a name pointing at a *different* chain
+        // entry — observe the source-axis rule fires.
+        let path_a = PathBuf::from("/a/app.yaml");
+        let path_b = PathBuf::from("/b/app.nix");
+        let chain = vec![
+            ConfigSource::File(path_a.clone()),
+            ConfigSource::File(path_b.clone()),
+        ];
+        let mut e = figment::Error::from("synth".to_owned());
+        let mut md = figment::Metadata::named("nix: /b/app.nix");
+        md.source = Some(figment::Source::File(path_a.clone()));
+        e.metadata = Some(md);
+        let err = ShikumiError::Extract {
+            sources: chain,
+            error: Box::new(e),
+        };
+        let attr = err.failing_attribution().expect("attribution");
+        assert_eq!(attr.rule, AttributionRule::FileBySource);
+        assert_eq!(attr.source.as_path(), Some(path_a.as_path()));
+    }
+
+    #[test]
+    fn attribution_rule_is_copy_and_hashable() {
+        // The enum is part of the typescape; the trait bounds match the
+        // sibling primitives (FigmentSourceTag, EnvMetadataTag).
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(AttributionRule::FileBySource);
+        set.insert(AttributionRule::FileByMetadataName);
+        set.insert(AttributionRule::EnvByPrefix);
+        set.insert(AttributionRule::EnvByUniqueness);
+        set.insert(AttributionRule::DefaultsByCodeUniqueness);
+        assert_eq!(set.len(), 5);
+        // Copy: rebind without move.
+        let r = AttributionRule::FileBySource;
+        let r2 = r;
+        let r3 = r;
+        assert_eq!(r, r2);
+        assert_eq!(r2, r3);
     }
 }

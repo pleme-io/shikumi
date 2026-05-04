@@ -15,7 +15,7 @@
 
 use std::fmt;
 
-use crate::error::ShikumiError;
+use crate::error::{AttributionRule, ShikumiError};
 use crate::source::ConfigSource;
 
 /// A clone-able summary of the most recent reload failure on a
@@ -56,10 +56,27 @@ pub struct ReloadFailure {
     /// `None` for non-`Extract` failures, for `Extract` failures whose
     /// figment error did not carry per-value `Metadata`, and when the
     /// metadata could not be matched to any entry in the recorded
-    /// chain. Pairs with [`Self::sources`] (full chain) and
-    /// [`Self::field_path`] (offending key): when present, the triple
-    /// pins `(which-layer × which-field)` for the specific failure.
+    /// chain. Pairs with [`Self::sources`] (full chain),
+    /// [`Self::field_path`] (offending key), and
+    /// [`Self::attribution_rule`] (why the layer was blamed): when
+    /// present, the quadruple pins
+    /// `(which-layer × which-field × why)` for the specific failure.
     pub failing_source: Option<ConfigSource>,
+    /// The [`AttributionRule`] under which [`Self::failing_source`]
+    /// was attributed, captured from
+    /// [`crate::ShikumiError::failing_attribution`] at the moment the
+    /// failure was caught. `Some(_)` exactly when
+    /// [`Self::failing_source`] is `Some(_)`; `None` otherwise.
+    ///
+    /// Distinguishes *exact* attribution
+    /// ([`AttributionRule::FileBySource`] /
+    /// [`AttributionRule::FileByMetadataName`] /
+    /// [`AttributionRule::EnvByPrefix`]) from *fallback* attribution
+    /// ([`AttributionRule::EnvByUniqueness`] /
+    /// [`AttributionRule::DefaultsByCodeUniqueness`]) for observers
+    /// that want to weight the two differently in dashboards or
+    /// alerting policies.
+    pub attribution_rule: Option<AttributionRule>,
 }
 
 impl ReloadFailure {
@@ -73,11 +90,13 @@ impl ReloadFailure {
     /// the failure path.
     #[must_use]
     pub fn from_error(err: &ShikumiError) -> Self {
+        let attribution = err.failing_attribution();
         Self {
             message: err.to_string(),
             sources: err.sources().map(<[_]>::to_vec).unwrap_or_default(),
             field_path: err.field_path().map(<[_]>::to_vec).unwrap_or_default(),
-            failing_source: err.failing_source().cloned(),
+            failing_source: attribution.map(|a| a.source.clone()),
+            attribution_rule: attribution.map(|a| a.rule),
         }
     }
 }
@@ -142,6 +161,7 @@ mod tests {
             sources: vec![],
             field_path: vec![],
             failing_source: None,
+            attribution_rule: None,
         };
         assert_eq!(f.to_string(), "broken pipe");
     }
@@ -153,12 +173,14 @@ mod tests {
             sources: vec![ConfigSource::Defaults],
             field_path: vec!["a".to_owned(), "b".to_owned()],
             failing_source: Some(ConfigSource::Defaults),
+            attribution_rule: Some(AttributionRule::DefaultsByCodeUniqueness),
         };
         let g = f.clone();
         assert_eq!(g.message, f.message);
         assert_eq!(g.sources, f.sources);
         assert_eq!(g.field_path, f.field_path);
         assert_eq!(g.failing_source, f.failing_source);
+        assert_eq!(g.attribution_rule, f.attribution_rule);
     }
 
     #[test]
@@ -307,5 +329,81 @@ mod tests {
         };
         let owned = f.failing_source.expect("owned attribution survives drop");
         assert_eq!(owned.as_path(), Some(file.as_path()));
+    }
+
+    // ---- attribution_rule capture tests ----
+
+    #[test]
+    fn from_error_captures_attribution_rule_for_file_by_source() {
+        // Real YAML file extract: figment attaches Source::File, the
+        // resolver fires FileBySource. The rule must propagate to the
+        // ReloadFailure alongside the source.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_rule.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+
+        let f = ReloadFailure::from_error(&err);
+        assert_eq!(f.attribution_rule, Some(AttributionRule::FileBySource));
+        assert!(f.failing_source.is_some());
+    }
+
+    #[test]
+    fn from_error_attribution_rule_some_iff_failing_source_some() {
+        // Invariant: the rule slot is populated exactly when the source
+        // slot is. Across every variant.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        // Attributed: both Some.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("inv.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let attributed = ReloadFailure::from_error(
+            &ProviderChain::new()
+                .with_file(&file)
+                .extract::<Cfg>()
+                .unwrap_err(),
+        );
+        assert_eq!(
+            attributed.failing_source.is_some(),
+            attributed.attribution_rule.is_some()
+        );
+        assert!(attributed.failing_source.is_some());
+
+        // Unattributed Extract: both None.
+        let unattr = ReloadFailure::from_error(&ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults],
+            error: fake_figment_error(),
+        });
+        assert!(unattr.failing_source.is_none());
+        assert!(unattr.attribution_rule.is_none());
+
+        // Non-Extract: both None.
+        let parse = ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned()));
+        assert!(parse.failing_source.is_none());
+        assert!(parse.attribution_rule.is_none());
+    }
+
+    #[test]
+    fn from_error_attribution_rule_none_for_unattributed_extract() {
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults],
+            error: fake_figment_error(),
+        };
+        let f = ReloadFailure::from_error(&err);
+        assert!(f.attribution_rule.is_none());
     }
 }
