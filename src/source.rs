@@ -67,6 +67,82 @@ impl ConfigSource {
     pub fn is_defaults(&self) -> bool {
         matches!(self, Self::Defaults)
     }
+
+    /// Canonical `figment::Metadata::name` shape emitted by
+    /// [`figment::providers::Env`]: `` `PREFIX` environment variable(s) ``
+    /// for prefixed providers, `"environment variable(s)"` for raw env
+    /// (no prefix). Mirrors figment's `Env::metadata` impl one-to-one,
+    /// including the prefix-uppercasing discipline.
+    ///
+    /// Empty `prefix` yields the bare shape; non-empty `prefix` yields
+    /// the backtick-wrapped form with the prefix uppercased to match
+    /// figment's emission.
+    ///
+    /// One source of truth for the env-provider metadata-name shape on
+    /// the shikumi side: providers (figment) emit it, the
+    /// failing-source resolver inverts it via [`Self::strip_env_metadata_name`],
+    /// and tests round-trip both directions through one definition.
+    #[must_use]
+    pub fn env_metadata_name(prefix: &str) -> String {
+        if prefix.is_empty() {
+            "environment variable(s)".to_owned()
+        } else {
+            format!("`{}` environment variable(s)", prefix.to_ascii_uppercase())
+        }
+    }
+
+    /// Inverse of [`Self::env_metadata_name`]: recognize a
+    /// `figment::Metadata::name` as a `figment::providers::Env`-shaped
+    /// tag and recover the (uppercased) prefix when present.
+    ///
+    /// Returns:
+    /// - `Some(EnvMetadataTag::Prefixed(prefix))` for
+    ///   `` `PREFIX` environment variable(s) ``. The returned slice is
+    ///   borrowed into `name` (no allocation) and carries figment's
+    ///   uppercased prefix verbatim — callers matching against a
+    ///   recorded [`ConfigSource::Env`] must compare with
+    ///   [`str::eq_ignore_ascii_case`] since users may pass mixed-case
+    ///   prefixes to [`crate::ProviderChain::with_env`].
+    /// - `Some(EnvMetadataTag::Bare)` for `"environment variable(s)"`
+    ///   (no prefix; figment's `Env::raw()` shape).
+    /// - `None` for any other metadata name (file-path tags from
+    ///   figment's YAML/TOML providers, shikumi-built provider tags
+    ///   recognized by [`crate::Format::strip_metadata_name`], unrelated
+    ///   names, or the empty string).
+    ///
+    /// Used by [`crate::ShikumiError::failing_source`] to map figment
+    /// per-value metadata back to a [`ConfigSource::Env`] entry in the
+    /// recorded chain without re-implementing the figment-side shape.
+    #[must_use]
+    pub fn strip_env_metadata_name(name: &str) -> Option<EnvMetadataTag<'_>> {
+        if !name.contains("environment variable") {
+            return None;
+        }
+        if let Some(rest) = name.strip_prefix('`')
+            && let Some(end) = rest.find('`')
+        {
+            return Some(EnvMetadataTag::Prefixed(&rest[..end]));
+        }
+        Some(EnvMetadataTag::Bare)
+    }
+}
+
+/// Recognized form of [`figment::providers::Env`]'s
+/// `figment::Metadata::name`, as parsed by
+/// [`ConfigSource::strip_env_metadata_name`].
+///
+/// The closed enum makes the env-tag shape space structural: any
+/// figment env metadata name maps to exactly one variant (or to `None`
+/// if it isn't an env tag at all).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum EnvMetadataTag<'a> {
+    /// `` `PREFIX` environment variable(s) `` — figment emitted the
+    /// prefix uppercased; the borrowed slice carries it verbatim.
+    Prefixed(&'a str),
+    /// `environment variable(s)` — `figment::providers::Env::raw()`
+    /// shape (no prefix).
+    Bare,
 }
 
 impl fmt::Display for ConfigSource {
@@ -155,5 +231,169 @@ mod tests {
         let s = ConfigSource::File(PathBuf::from("/a/b.yaml"));
         let c = s.clone();
         assert_eq!(s, c);
+    }
+
+    // ---- env_metadata_name / strip_env_metadata_name ----
+
+    #[test]
+    fn env_metadata_name_empty_prefix_yields_bare_shape() {
+        // Mirrors figment's `Env::raw()` shape (no backtick wrapper).
+        assert_eq!(
+            ConfigSource::env_metadata_name(""),
+            "environment variable(s)"
+        );
+    }
+
+    #[test]
+    fn env_metadata_name_uppercases_prefix_to_match_figment() {
+        // figment uppercases the prefix when emitting metadata; the
+        // constructor must match that discipline so round-trip works
+        // regardless of the casing the user passed to `with_env`.
+        assert_eq!(
+            ConfigSource::env_metadata_name("myapp_"),
+            "`MYAPP_` environment variable(s)"
+        );
+        assert_eq!(
+            ConfigSource::env_metadata_name("MyApp_"),
+            "`MYAPP_` environment variable(s)"
+        );
+        assert_eq!(
+            ConfigSource::env_metadata_name("APP_"),
+            "`APP_` environment variable(s)"
+        );
+    }
+
+    #[test]
+    fn strip_env_metadata_name_recognizes_prefixed_shape() {
+        let tag = ConfigSource::strip_env_metadata_name("`MYAPP_` environment variable(s)");
+        assert_eq!(tag, Some(EnvMetadataTag::Prefixed("MYAPP_")));
+    }
+
+    #[test]
+    fn strip_env_metadata_name_recognizes_bare_shape() {
+        let tag = ConfigSource::strip_env_metadata_name("environment variable(s)");
+        assert_eq!(tag, Some(EnvMetadataTag::Bare));
+    }
+
+    #[test]
+    fn strip_env_metadata_name_accepts_singular_form() {
+        // The recognition contract says `contains("environment variable")`,
+        // so figment's `(s)` parens are optional from the parser's POV.
+        let tag = ConfigSource::strip_env_metadata_name("`X_` environment variable");
+        assert_eq!(tag, Some(EnvMetadataTag::Prefixed("X_")));
+    }
+
+    #[test]
+    fn strip_env_metadata_name_rejects_unrelated_strings() {
+        for name in [
+            "",
+            "/etc/app/app.yaml",
+            "lisp: /etc/app.lisp",
+            "nix: /etc/app.nix",
+            "yaml",
+            "`MYAPP_` something else",
+            "envvar `X_` typo",
+        ] {
+            assert!(
+                ConfigSource::strip_env_metadata_name(name).is_none(),
+                "unrelated metadata name `{name}` must not match env tag"
+            );
+        }
+    }
+
+    #[test]
+    fn env_metadata_name_round_trip_for_prefixed_form() {
+        // The constructor and inverse must compose to identity on the
+        // prefix (modulo case-folding, which figment performs).
+        for prefix in ["MYAPP_", "TOBIRA_", "X_", "FOO_BAR_"] {
+            let name = ConfigSource::env_metadata_name(prefix);
+            let tag = ConfigSource::strip_env_metadata_name(&name)
+                .expect("constructor output must round-trip through inverse");
+            assert_eq!(tag, EnvMetadataTag::Prefixed(prefix));
+        }
+    }
+
+    #[test]
+    fn env_metadata_name_round_trip_for_bare_form() {
+        let name = ConfigSource::env_metadata_name("");
+        let tag = ConfigSource::strip_env_metadata_name(&name).expect("bare must round-trip");
+        assert_eq!(tag, EnvMetadataTag::Bare);
+    }
+
+    #[test]
+    fn strip_env_metadata_name_borrows_into_input() {
+        // The prefix slice must be a sub-borrow of the input, not a
+        // fresh allocation — observable via pointer arithmetic.
+        let name = ConfigSource::env_metadata_name("MYAPP_");
+        let EnvMetadataTag::Prefixed(prefix) =
+            ConfigSource::strip_env_metadata_name(&name).expect("prefixed shape must match")
+        else {
+            panic!("expected prefixed variant");
+        };
+        let name_start = name.as_ptr() as usize;
+        let name_end = name_start + name.len();
+        let prefix_start = prefix.as_ptr() as usize;
+        assert!(
+            prefix_start >= name_start && prefix_start < name_end,
+            "prefix must borrow into input"
+        );
+    }
+
+    #[test]
+    fn strip_env_metadata_name_round_trips_through_figment_emission() {
+        // Pin the contract that figment's `Env` provider emits the
+        // exact shape this primitive recognizes. If figment changes
+        // its emission, this test breaks before the resolver does.
+        use figment::Provider;
+        for prefix in ["MYAPP_", "TOBIRA_", "X_"] {
+            let env = figment::providers::Env::prefixed(prefix);
+            let md = env.metadata();
+            let name: &str = md.name.as_ref();
+            let tag = ConfigSource::strip_env_metadata_name(name)
+                .expect("figment Env metadata-name must match env-tag shape");
+            assert_eq!(tag, EnvMetadataTag::Prefixed(prefix));
+        }
+    }
+
+    #[test]
+    fn env_metadata_name_matches_figment_emission_byte_for_byte() {
+        // Stronger invariant: shikumi's constructor produces the same
+        // bytes figment emits, so the cross-side contract holds at the
+        // level of equality, not just recognition.
+        use figment::Provider;
+        for prefix in ["MYAPP_", "TOBIRA_", "X_"] {
+            let figment_name = figment::providers::Env::prefixed(prefix)
+                .metadata()
+                .name
+                .into_owned();
+            let shikumi_name = ConfigSource::env_metadata_name(prefix);
+            assert_eq!(
+                figment_name, shikumi_name,
+                "shikumi's env_metadata_name must match figment's emission"
+            );
+        }
+    }
+
+    #[test]
+    fn strip_env_metadata_name_disjoint_from_format_strip() {
+        // The two strip-name primitives must partition the metadata-name
+        // space cleanly — a Format tag must never be misrecognized as an
+        // env tag, and vice versa.
+        use crate::discovery::Format;
+
+        for f in Format::ALL.iter().filter(|f| f.has_shikumi_provider()) {
+            let name = f.metadata_name(Path::new("/etc/app.cfg"));
+            assert!(
+                ConfigSource::strip_env_metadata_name(&name).is_none(),
+                "format tag `{name}` must not be recognized as env tag"
+            );
+        }
+        for prefix in ["MYAPP_", ""] {
+            let name = ConfigSource::env_metadata_name(prefix);
+            assert!(
+                Format::strip_metadata_name(&name).is_none(),
+                "env tag `{name}` must not be recognized as format tag"
+            );
+        }
     }
 }

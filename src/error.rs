@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::discovery::Format;
-use crate::source::ConfigSource;
+use crate::source::{ConfigSource, EnvMetadataTag};
 
 /// Errors produced by shikumi's config discovery, loading, and watching.
 #[derive(thiserror::Error, Debug)]
@@ -99,11 +99,12 @@ fn display_failing_source(sources: &[ConfigSource], error: &figment::Error) -> S
 /// 2. If `metadata.name` matches a shikumi-built provider's
 ///    `"<format>: <path>"` shape (per [`Format::strip_metadata_name`]),
 ///    extract the trailing path and match against [`ConfigSource::File`].
-/// 3. If `metadata.name` contains `"environment variable"` (figment's
-///    [`figment::providers::Env`] metadata shape), match against the
-///    [`ConfigSource::Env`] entry by uppercased prefix when the name
-///    carries a backtick-wrapped prefix; otherwise return the unique
-///    `Env` entry if exactly one exists.
+/// 3. If `metadata.name` matches figment's
+///    [`figment::providers::Env`] tag shape (per
+///    [`ConfigSource::strip_env_metadata_name`]), match against the
+///    [`ConfigSource::Env`] entry by uppercased prefix when the tag
+///    carries one; otherwise return the unique `Env` entry if exactly
+///    one exists.
 /// 4. If `metadata.source` is a [`figment::Source::Code`] location
 ///    (the shape produced by [`figment::providers::Serialized`]),
 ///    match the unique [`ConfigSource::Defaults`] entry if exactly one
@@ -128,17 +129,14 @@ fn resolve_failing_source<'a>(
         }
     }
 
-    if name.contains("environment variable") {
-        if let Some(rest) = name.strip_prefix('`')
-            && let Some(end) = rest.find('`')
-        {
-            let prefix_upper = &rest[..end];
-            if let Some(hit) = chain.iter().find(|s| {
+    if let Some(tag) = ConfigSource::strip_env_metadata_name(name) {
+        if let EnvMetadataTag::Prefixed(prefix_upper) = tag
+            && let Some(hit) = chain.iter().find(|s| {
                 s.as_env_prefix()
                     .is_some_and(|p| p.eq_ignore_ascii_case(prefix_upper))
-            }) {
-                return Some(hit);
-            }
+            })
+        {
+            return Some(hit);
         }
         let mut envs = chain.iter().filter(|s| s.is_env());
         if let Some(only) = envs.next()
