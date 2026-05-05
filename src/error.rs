@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
-use crate::discovery::Format;
-use crate::source::{ConfigSource, EnvMetadataTag, FigmentSourceTag};
+use crate::source::{ConfigSource, EnvMetadataTag, FigmentNameTag, FigmentSourceTag};
 
 /// Errors produced by shikumi's config discovery, loading, and watching.
 #[derive(thiserror::Error, Debug)]
@@ -210,37 +209,38 @@ fn resolve_failing_source<'a>(
         ));
     }
 
-    let name = md.name.as_ref();
-    if let Some(tag) = Format::parse_metadata_tag(name)
-        && let Some(hit) = chain.iter().find(|s| s.as_path() == Some(tag.path))
-    {
-        return Some(FailingSourceAttribution::new(
-            hit,
-            AttributionRule::FileByMetadataName,
-        ));
-    }
-
-    if let Some(tag) = ConfigSource::strip_env_metadata_name(name) {
-        if let EnvMetadataTag::Prefixed(prefix_upper) = tag
-            && let Some(hit) = chain.iter().find(|s| {
-                s.as_env_prefix()
-                    .is_some_and(|p| p.eq_ignore_ascii_case(prefix_upper))
-            })
-        {
-            return Some(FailingSourceAttribution::new(
-                hit,
-                AttributionRule::EnvByPrefix,
-            ));
+    match FigmentNameTag::classify(md.name.as_ref()) {
+        Some(FigmentNameTag::Format(tag)) => {
+            if let Some(hit) = chain.iter().find(|s| s.as_path() == Some(tag.path)) {
+                return Some(FailingSourceAttribution::new(
+                    hit,
+                    AttributionRule::FileByMetadataName,
+                ));
+            }
         }
-        let mut envs = chain.iter().filter(|s| s.is_env());
-        if let Some(only) = envs.next()
-            && envs.next().is_none()
-        {
-            return Some(FailingSourceAttribution::new(
-                only,
-                AttributionRule::EnvByUniqueness,
-            ));
+        Some(FigmentNameTag::Env(env_tag)) => {
+            if let EnvMetadataTag::Prefixed(prefix_upper) = env_tag
+                && let Some(hit) = chain.iter().find(|s| {
+                    s.as_env_prefix()
+                        .is_some_and(|p| p.eq_ignore_ascii_case(prefix_upper))
+                })
+            {
+                return Some(FailingSourceAttribution::new(
+                    hit,
+                    AttributionRule::EnvByPrefix,
+                ));
+            }
+            let mut envs = chain.iter().filter(|s| s.is_env());
+            if let Some(only) = envs.next()
+                && envs.next().is_none()
+            {
+                return Some(FailingSourceAttribution::new(
+                    only,
+                    AttributionRule::EnvByUniqueness,
+                ));
+            }
         }
+        None => {}
     }
 
     if matches!(source_tag, Some(FigmentSourceTag::Code(_))) {

@@ -146,6 +146,117 @@ pub enum EnvMetadataTag<'a> {
     Bare,
 }
 
+/// Closed-enum classification of `figment::Metadata::name`.
+///
+/// figment attaches per-value attribution along two axes: the
+/// `figment::Source` axis (parsed by [`FigmentSourceTag::classify`])
+/// and the `figment::Metadata::name` axis (parsed here). Three name
+/// shapes are recognized today, partitioned across two variants:
+///
+/// - `"<format>: <path>"` from a shikumi-built provider (recognized
+///   via [`crate::Format::parse_metadata_tag`]) →
+///   [`Self::Format`].
+/// - `` `PREFIX` environment variable(s) `` from
+///   [`figment::providers::Env::prefixed`] (recognized via
+///   [`ConfigSource::strip_env_metadata_name`] returning
+///   [`EnvMetadataTag::Prefixed`]) → [`Self::Env`].
+/// - `"environment variable(s)"` from
+///   [`figment::providers::Env::raw`] (recognized via the same parser
+///   returning [`EnvMetadataTag::Bare`]) → [`Self::Env`].
+///
+/// The two sub-parsers' recognized inputs are disjoint (pinned by
+/// `strip_env_metadata_name_disjoint_from_format_strip` in this
+/// module), so every `figment::Metadata::name` maps to exactly one
+/// variant or to `None`.
+///
+/// Structural mirror of [`FigmentSourceTag`] on the name axis: the
+/// pair `(FigmentSourceTag, FigmentNameTag)` closes the
+/// figment-metadata coordinate space the failing-source resolver
+/// dispatches over. Together with [`FormatMetadataTag`] (the
+/// `"<format>: <path>"` envelope on the shikumi-provider sub-axis),
+/// [`EnvMetadataTag`] (the env-name sub-axis), and
+/// [`crate::AttributionRule`] (the
+/// `(source × name × chain) → rule` dispatch), the four typed shapes
+/// together close figment's metadata attribution surface.
+///
+/// `Copy` and allocation-free: both inner variants borrow into the
+/// input metadata-name `&str`. `#[non_exhaustive]` so a future
+/// figment provider attaching a third name-axis shape (e.g. a
+/// hypothetical `"http://… config endpoint"` tag) lands as one new
+/// variant without breaking exhaustivity at consumer matches.
+///
+/// [`FormatMetadataTag`]: crate::FormatMetadataTag
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum FigmentNameTag<'a> {
+    /// `"<format>: <path>"` shape — a shikumi-built provider's
+    /// `figment::Metadata::name`. Carries the parsed
+    /// [`crate::FormatMetadataTag`] envelope (format + borrowed path).
+    Format(crate::discovery::FormatMetadataTag<'a>),
+    /// `` `PREFIX` environment variable(s) `` or
+    /// `"environment variable(s)"` — figment's `Env` provider's
+    /// `figment::Metadata::name`. Carries the
+    /// prefixed/bare distinction in [`EnvMetadataTag`].
+    Env(EnvMetadataTag<'a>),
+}
+
+impl<'a> FigmentNameTag<'a> {
+    /// Classify a `figment::Metadata::name` into its typed shape.
+    ///
+    /// Tries the shikumi-provider format-prefix shape first via
+    /// [`crate::Format::parse_metadata_tag`]; on no match, tries the
+    /// figment-Env shape via
+    /// [`ConfigSource::strip_env_metadata_name`]; returns `None` for
+    /// any other shape (file paths from figment's YAML/TOML providers,
+    /// unrelated names, the empty string).
+    ///
+    /// The two sub-parsers are disjoint (pinned by
+    /// `strip_env_metadata_name_disjoint_from_format_strip`), so
+    /// iteration order does not affect correctness; the order matches
+    /// the failing-source resolver's preference.
+    ///
+    /// One source of truth for the figment-name-axis dispatch on
+    /// [`figment::Metadata`]: callers ([`crate::ShikumiError::failing_source`]
+    /// and any future per-value attribution consumer) match on this
+    /// enum instead of calling
+    /// [`crate::Format::parse_metadata_tag`] and
+    /// [`ConfigSource::strip_env_metadata_name`] in sequence. If a
+    /// new figment-recognized name shape lands, exactly one site here
+    /// changes (a new variant + a new branch in `classify`) and the
+    /// resolver's match becomes non-exhaustive at compile time —
+    /// catching unhandled cases before they reach users.
+    #[must_use]
+    pub fn classify(name: &'a str) -> Option<Self> {
+        if let Some(tag) = crate::discovery::Format::parse_metadata_tag(name) {
+            return Some(Self::Format(tag));
+        }
+        if let Some(tag) = ConfigSource::strip_env_metadata_name(name) {
+            return Some(Self::Env(tag));
+        }
+        None
+    }
+
+    /// Returns the inner [`crate::FormatMetadataTag`] if this is the
+    /// [`Self::Format`] variant.
+    #[must_use]
+    pub fn as_format(self) -> Option<crate::discovery::FormatMetadataTag<'a>> {
+        match self {
+            Self::Format(tag) => Some(tag),
+            Self::Env(_) => None,
+        }
+    }
+
+    /// Returns the inner [`EnvMetadataTag`] if this is the
+    /// [`Self::Env`] variant.
+    #[must_use]
+    pub fn as_env(self) -> Option<EnvMetadataTag<'a>> {
+        match self {
+            Self::Env(tag) => Some(tag),
+            Self::Format(_) => None,
+        }
+    }
+}
+
 /// Borrowed classification of a [`figment::Source`].
 ///
 /// figment's `Source` is `#[non_exhaustive]` and is queried via three
@@ -635,5 +746,194 @@ mod tests {
         assert!(file_tag.as_custom().is_none());
         assert!(custom_tag.as_custom().is_some() && !custom_tag.is_code());
         assert!(custom_tag.as_file_path().is_none());
+    }
+
+    // ---- FigmentNameTag::classify ----
+
+    #[test]
+    fn figment_name_tag_classifies_format_metadata_name() {
+        // shikumi-built provider's "<format>: <path>" shape must
+        // route to the Format variant for every Format whose
+        // has_shikumi_provider() is true.
+        use crate::discovery::Format;
+        let path = Path::new("/etc/app/app.cfg");
+        for f in Format::ALL.iter().filter(|f| f.has_shikumi_provider()) {
+            let name = f.metadata_name(path);
+            let tag = FigmentNameTag::classify(&name).expect("format tag must classify");
+            let inner = tag.as_format().expect("expected Format variant");
+            assert_eq!(inner.format, *f);
+            assert_eq!(inner.path, path);
+            assert!(tag.as_env().is_none(), "Format must not also be Env");
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_classifies_env_prefixed() {
+        let name = ConfigSource::env_metadata_name("MYAPP_");
+        let tag = FigmentNameTag::classify(&name).expect("env-prefixed must classify");
+        assert_eq!(tag, FigmentNameTag::Env(EnvMetadataTag::Prefixed("MYAPP_")));
+        assert_eq!(tag.as_env(), Some(EnvMetadataTag::Prefixed("MYAPP_")));
+        assert!(tag.as_format().is_none(), "Env must not also be Format");
+    }
+
+    #[test]
+    fn figment_name_tag_classifies_env_bare() {
+        let name = ConfigSource::env_metadata_name("");
+        let tag = FigmentNameTag::classify(&name).expect("env-bare must classify");
+        assert_eq!(tag, FigmentNameTag::Env(EnvMetadataTag::Bare));
+        assert_eq!(tag.as_env(), Some(EnvMetadataTag::Bare));
+        assert!(tag.as_format().is_none());
+    }
+
+    #[test]
+    fn figment_name_tag_returns_none_for_unrelated() {
+        for name in [
+            "",
+            "/etc/app/app.yaml", // figment Yaml provider's name shape
+            "/var/lib/app.toml",
+            "default",      // figment Serialized's typical name
+            "yaml",         // bare format token, missing colon-space
+            "json: /x.cfg", // recognized format token but Json is not a Format
+            "envvar `X_`",  // env-shaped but missing the literal substring
+        ] {
+            assert!(
+                FigmentNameTag::classify(name).is_none(),
+                "unrelated metadata name `{name}` must not classify"
+            );
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_variants_are_disjoint() {
+        // Every recognized name must classify into exactly one
+        // FigmentNameTag variant — no name can claim both Format and
+        // Env. Mirrors the FigmentSourceTag disjointness invariant on
+        // the source axis, and pins the disjointness contract that
+        // `classify`'s sequential dispatch relies on.
+        use crate::discovery::Format;
+        for f in Format::ALL.iter().filter(|f| f.has_shikumi_provider()) {
+            let name = f.metadata_name(Path::new("/etc/app.cfg"));
+            let tag = FigmentNameTag::classify(&name).expect("format tag classifies");
+            assert!(tag.as_format().is_some());
+            assert!(tag.as_env().is_none());
+        }
+        for prefix in ["MYAPP_", ""] {
+            let name = ConfigSource::env_metadata_name(prefix);
+            let tag = FigmentNameTag::classify(&name).expect("env tag classifies");
+            assert!(tag.as_env().is_some());
+            assert!(tag.as_format().is_none());
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_format_borrows_into_input() {
+        // The path slice inside the Format envelope must be a
+        // sub-borrow of the input metadata-name string — Path::new
+        // preserves the byte borrow.
+        use crate::discovery::Format;
+        let name = Format::Nix.metadata_name(Path::new("/etc/app/app.nix"));
+        let tag = FigmentNameTag::classify(&name).expect("classify");
+        let FigmentNameTag::Format(inner) = tag else {
+            panic!("expected Format variant");
+        };
+        let name_start = name.as_ptr() as usize;
+        let name_end = name_start + name.len();
+        let path_bytes = inner.path.as_os_str().as_encoded_bytes();
+        let path_start = path_bytes.as_ptr() as usize;
+        assert!(
+            path_start >= name_start && path_start < name_end,
+            "Format.path must borrow into input"
+        );
+    }
+
+    #[test]
+    fn figment_name_tag_env_borrows_into_input() {
+        let name = ConfigSource::env_metadata_name("BORROW_");
+        let tag = FigmentNameTag::classify(&name).expect("classify");
+        let FigmentNameTag::Env(EnvMetadataTag::Prefixed(prefix)) = tag else {
+            panic!("expected Env(Prefixed) variant");
+        };
+        let name_start = name.as_ptr() as usize;
+        let name_end = name_start + name.len();
+        let prefix_start = prefix.as_ptr() as usize;
+        assert!(
+            prefix_start >= name_start && prefix_start < name_end,
+            "Env(Prefixed) must borrow into input"
+        );
+    }
+
+    #[test]
+    fn figment_name_tag_round_trips_through_figment_env_emission() {
+        // Pin the cross-side contract: figment's Env provider emits
+        // exactly the shape FigmentNameTag::Env recognizes. If figment
+        // changes its emission, this test breaks before the resolver
+        // does.
+        use figment::Provider;
+        for prefix in ["MYAPP_", "TOBIRA_", "X_"] {
+            let env = figment::providers::Env::prefixed(prefix);
+            let md = env.metadata();
+            let name: &str = md.name.as_ref();
+            let tag = FigmentNameTag::classify(name).expect("figment Env name must classify");
+            assert_eq!(tag, FigmentNameTag::Env(EnvMetadataTag::Prefixed(prefix)));
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_round_trips_through_format_emission() {
+        // The complementary cross-side contract: every shikumi-built
+        // provider variant's emitted metadata-name classifies as
+        // FigmentNameTag::Format with the same format and path.
+        use crate::discovery::Format;
+        for f in Format::ALL.iter().filter(|f| f.has_shikumi_provider()) {
+            let path = Path::new("/etc/app/app.cfg");
+            let name = f.metadata_name(path);
+            let tag = FigmentNameTag::classify(&name).expect("format-emitted name classifies");
+            let inner = tag.as_format().expect("Format variant");
+            assert_eq!(inner.format, *f);
+            assert_eq!(inner.path, path);
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_is_copy_and_hashable() {
+        use std::collections::HashSet;
+        // Copy: rebind without move.
+        let n1 = ConfigSource::env_metadata_name("X_");
+        let t1 = FigmentNameTag::classify(&n1).unwrap();
+        let t2 = t1;
+        let t3 = t1;
+        assert_eq!(t1, t2);
+        assert_eq!(t2, t3);
+
+        // Hash: distinct shapes hash to distinct buckets in a HashSet.
+        let mut set = HashSet::new();
+        let np = ConfigSource::env_metadata_name("MYAPP_");
+        let nb = ConfigSource::env_metadata_name("");
+        let nf = crate::discovery::Format::Nix.metadata_name(Path::new("/a.nix"));
+        set.insert(FigmentNameTag::classify(&np).unwrap());
+        set.insert(FigmentNameTag::classify(&nb).unwrap());
+        set.insert(FigmentNameTag::classify(&nf).unwrap());
+        assert_eq!(set.len(), 3);
+    }
+
+    #[test]
+    fn figment_name_tag_yaml_provider_emission_is_unrecognized() {
+        // figment's built-in Yaml provider attaches the file path as
+        // metadata.name. That shape is not a name-axis tag — it
+        // belongs to the source-axis (Source::File). FigmentNameTag
+        // must report None so the resolver falls through to
+        // source-axis dispatch.
+        use figment::providers::Format as _;
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("c.yaml");
+        std::fs::write(&file, "k: v\n").unwrap();
+        let figment = figment::Figment::new().merge(figment::providers::Yaml::file(&file));
+        let value: figment::value::Value = figment.find_value("k").unwrap();
+        let md = figment.get_metadata(value.tag()).unwrap();
+        let name: &str = md.name.as_ref();
+        assert!(
+            FigmentNameTag::classify(name).is_none(),
+            "Yaml provider's path-shaped name `{name}` must NOT classify as a name-axis tag"
+        );
     }
 }
