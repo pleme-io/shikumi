@@ -47,7 +47,7 @@ mod source;
 mod store;
 mod watcher;
 
-pub use discovery::{ConfigDiscovery, Format};
+pub use discovery::{ConfigDiscovery, Format, FormatMetadataTag};
 pub use error::{AttributionRule, FailingSourceAttribution, ShikumiError};
 #[cfg(feature = "lisp")]
 pub use lisp_provider::{LispProvider, load_from_str as load_lisp_from_str};

@@ -144,6 +144,12 @@ impl Format {
     /// and for the empty string. Used by
     /// [`crate::ShikumiError::failing_source`] to map figment metadata
     /// back to a [`crate::ConfigSource`] in the recorded chain.
+    ///
+    /// Untyped sibling of [`Self::parse_metadata_tag`], which returns the
+    /// same information as a typed [`FormatMetadataTag`] envelope (named
+    /// fields, [`Path`]-typed trailing slice). New code should prefer the
+    /// envelope; this function is retained as the lower-level
+    /// `(Format, &str)` projection.
     #[must_use]
     pub fn strip_metadata_name(name: &str) -> Option<(Self, &str)> {
         Self::ALL
@@ -154,6 +160,72 @@ impl Format {
                 name.strip_prefix(&prefix).map(|rest| (*f, rest))
             })
     }
+
+    /// Typed-envelope inverse of [`Self::metadata_name`]: recognize `name`
+    /// as a shikumi-built provider's `"<format>: <path>"` shape and
+    /// return both the [`Format`] that emitted it and the trailing path
+    /// (as a [`Path`], borrowed into `name`).
+    ///
+    /// Strict superset of [`Self::strip_metadata_name`]: same `Some` /
+    /// `None` conditions and same iteration order, but on `Some` returns
+    /// a [`FormatMetadataTag`] with named fields and a [`Path`]-typed
+    /// trailing slice instead of an `(Self, &str)` positional tuple.
+    /// Callers no longer wrap the trailing slice in [`Path::new`] at
+    /// every site that wants to compare it against a
+    /// [`crate::ConfigSource::File`] entry.
+    ///
+    /// One source of truth for the metadata-name-axis dispatch on the
+    /// shikumi-provider sub-axis; pairs with
+    /// [`crate::ConfigSource::strip_env_metadata_name`] (env-name-axis)
+    /// and [`crate::FigmentSourceTag::classify`] (figment-Source-axis)
+    /// as the third typed primitive on the failing-source attribution
+    /// surface. The four typed shapes (`FormatMetadataTag`,
+    /// `EnvMetadataTag`, `FigmentSourceTag`, `AttributionRule`) close
+    /// the figment-metadata × shikumi-source coordinate space.
+    #[must_use]
+    pub fn parse_metadata_tag(name: &str) -> Option<FormatMetadataTag<'_>> {
+        Self::strip_metadata_name(name).map(|(format, rest)| FormatMetadataTag {
+            format,
+            path: Path::new(rest),
+        })
+    }
+}
+
+/// Recognized form of a shikumi-built provider's
+/// `figment::Metadata::name`, as parsed by [`Format::parse_metadata_tag`].
+///
+/// Pair-struct over the metadata-name-axis on the shikumi-provider
+/// sub-axis: a [`Format`] tag (which provider emitted the name) and a
+/// [`Path`] (the file the provider was reading) borrowed into the
+/// original metadata-name string.
+///
+/// The closed shape — named fields, no positional ambiguity, [`Path`]-
+/// typed instead of raw `&str` — mirrors
+/// [`crate::EnvMetadataTag`] (env-name-axis) and
+/// [`crate::FigmentSourceTag`] (figment-Source-axis), so the three
+/// metadata-axis primitives compose under one typescape discipline.
+///
+/// `Copy` and allocation-free; the path borrow lives for the lifetime
+/// of the input metadata-name string, since [`Path::new`] reinterprets
+/// the bytes without copying them. Marked `#[non_exhaustive]` so a
+/// future enrichment (e.g. a parsed numeric checksum suffix, an
+/// origin-provider tag distinguishing `LispProvider` from `NixProvider`
+/// without re-deriving from `format`) lands as one new field without
+/// breaking pattern-bind sites; the named-field shape (rather than a
+/// positional tuple) is what makes the extension non-breaking on
+/// callers that destructure with `..`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct FormatMetadataTag<'a> {
+    /// The [`Format`] whose shikumi-built provider emitted the
+    /// metadata-name (one of [`Format::Lisp`] / [`Format::Nix`] today;
+    /// every variant for which [`Format::has_shikumi_provider`] is
+    /// `true`).
+    pub format: Format,
+    /// The trailing path the provider was reading — borrowed into the
+    /// input metadata-name `&str`, no allocation. Matched against
+    /// [`crate::ConfigSource::as_path`] in the failing-source resolver.
+    pub path: &'a Path,
 }
 
 impl fmt::Display for Format {
@@ -1978,5 +2050,137 @@ mod tests {
             rest_start >= name_start && rest_start < name_end,
             "rest must be a sub-slice of name"
         );
+    }
+
+    // ---- FormatMetadataTag / parse_metadata_tag tests ----
+
+    #[test]
+    fn parse_metadata_tag_round_trips_for_shikumi_providers() {
+        // For every shikumi-provider variant, the typed envelope recovers
+        // both the format that emitted the name and the trailing path
+        // (already typed as `&Path`, no `Path::new` at the call site).
+        for f in Format::ALL.iter().filter(|f| f.has_shikumi_provider()) {
+            let path = Path::new("/srv/cfg/app.cfg");
+            let name = f.metadata_name(path);
+            let tag = Format::parse_metadata_tag(&name).expect("round-trip must succeed");
+            assert_eq!(
+                tag.format, *f,
+                "envelope must recover the format that emitted the name"
+            );
+            assert_eq!(
+                tag.path, path,
+                "envelope must surface the trailing path verbatim, as &Path"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_metadata_tag_rejects_non_shikumi_provider_prefixes() {
+        // Same `None` contract as `strip_metadata_name`: variants without
+        // a shikumi-built provider must not be recognized — even though
+        // `metadata_name` produces a syntactically valid string for them.
+        for f in Format::ALL.iter().filter(|f| !f.has_shikumi_provider()) {
+            let name = f.metadata_name(Path::new("/x.cfg"));
+            assert!(
+                Format::parse_metadata_tag(&name).is_none(),
+                "{f:?} has no shikumi-built provider; the typed envelope \
+                 must mirror `strip_metadata_name`'s rejection"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_metadata_tag_rejects_unrelated_strings() {
+        for name in [
+            "",
+            "/etc/app/app.yaml",
+            "`MYAPP_` environment variable",
+            "json: /etc/app.json",
+            "lisp /etc/app.lisp", // missing colon
+            "lisp:/etc/app.lisp", // missing space
+        ] {
+            assert!(
+                Format::parse_metadata_tag(name).is_none(),
+                "unrelated metadata name `{name}` must not match the typed envelope"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_metadata_tag_pins_correct_variant() {
+        let lisp_name = Format::Lisp.metadata_name(Path::new("/a.lisp"));
+        let lisp_tag = Format::parse_metadata_tag(&lisp_name).expect("lisp prefix must match");
+        assert_eq!(lisp_tag.format, Format::Lisp);
+        assert_eq!(lisp_tag.path, Path::new("/a.lisp"));
+
+        let nix_name = Format::Nix.metadata_name(Path::new("/a.nix"));
+        let nix_tag = Format::parse_metadata_tag(&nix_name).expect("nix prefix must match");
+        assert_eq!(nix_tag.format, Format::Nix);
+        assert_eq!(nix_tag.path, Path::new("/a.nix"));
+    }
+
+    #[test]
+    fn parse_metadata_tag_path_borrows_into_input() {
+        // The path slice in the envelope must be a sub-borrow of the
+        // input metadata-name string, not a fresh allocation. Verifies
+        // that `Path::new(rest)` preserves the underlying byte borrow.
+        let name = Format::Nix.metadata_name(Path::new("/srv/app.nix"));
+        let tag = Format::parse_metadata_tag(&name).expect("nix prefix must match");
+        let name_start = name.as_ptr() as usize;
+        let name_end = name_start + name.len();
+        let path_start = tag.path.as_os_str().as_encoded_bytes().as_ptr() as usize;
+        assert!(
+            path_start >= name_start && path_start < name_end,
+            "envelope path must borrow into input metadata-name"
+        );
+    }
+
+    #[test]
+    fn parse_metadata_tag_agrees_with_strip_metadata_name() {
+        // Cross-API contract: the envelope's `(format, path)` pair must
+        // match the lower-level tuple `(format, &str)` byte-for-byte
+        // (modulo `Path` vs `&str` typing) on every input that matches.
+        for name in [
+            Format::Lisp.metadata_name(Path::new("/a.lisp")),
+            Format::Nix.metadata_name(Path::new("/etc/app/app.nix")),
+            Format::Lisp.metadata_name(Path::new("/srv/cfg/x.lisp")),
+        ] {
+            let tag = Format::parse_metadata_tag(&name).expect("envelope must match");
+            let (legacy_fmt, legacy_rest) =
+                Format::strip_metadata_name(&name).expect("legacy must match");
+            assert_eq!(tag.format, legacy_fmt, "format must agree across APIs");
+            assert_eq!(
+                tag.path,
+                Path::new(legacy_rest),
+                "path must agree across APIs (envelope is &Path; legacy is &str)"
+            );
+        }
+        // None inputs agree too.
+        for name in ["", "/etc/app.yaml", "envvar `X_` typo"] {
+            assert!(Format::parse_metadata_tag(name).is_none());
+            assert!(Format::strip_metadata_name(name).is_none());
+        }
+    }
+
+    #[test]
+    fn format_metadata_tag_is_copy_and_hashable() {
+        // Trait-bounds parity with the sibling typed primitives
+        // (`EnvMetadataTag`, `FigmentSourceTag`, `AttributionRule`).
+        use std::collections::HashSet;
+        let name_a = Format::Lisp.metadata_name(Path::new("/a.lisp"));
+        let name_b = Format::Nix.metadata_name(Path::new("/b.nix"));
+        let tag_a = Format::parse_metadata_tag(&name_a).unwrap();
+        let tag_b = Format::parse_metadata_tag(&name_b).unwrap();
+        // Copy: rebind without move.
+        let tag_a2 = tag_a;
+        let tag_a3 = tag_a;
+        assert_eq!(tag_a, tag_a2);
+        assert_eq!(tag_a2, tag_a3);
+        // Hash + Eq: distinct envelopes hash distinctly.
+        let mut set = HashSet::new();
+        set.insert(tag_a);
+        set.insert(tag_a); // duplicate
+        set.insert(tag_b);
+        assert_eq!(set.len(), 2);
     }
 }

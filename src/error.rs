@@ -211,14 +211,13 @@ fn resolve_failing_source<'a>(
     }
 
     let name = md.name.as_ref();
-    if let Some((_format, rest)) = Format::strip_metadata_name(name) {
-        let p = std::path::Path::new(rest);
-        if let Some(hit) = chain.iter().find(|s| s.as_path() == Some(p)) {
-            return Some(FailingSourceAttribution::new(
-                hit,
-                AttributionRule::FileByMetadataName,
-            ));
-        }
+    if let Some(tag) = Format::parse_metadata_tag(name)
+        && let Some(hit) = chain.iter().find(|s| s.as_path() == Some(tag.path))
+    {
+        return Some(FailingSourceAttribution::new(
+            hit,
+            AttributionRule::FileByMetadataName,
+        ));
     }
 
     if let Some(tag) = ConfigSource::strip_env_metadata_name(name) {
