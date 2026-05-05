@@ -93,7 +93,9 @@ fn display_failing_source(sources: &[ConfigSource], error: &figment::Error) -> S
 ///
 /// Lifting the rule into the type lets observers distinguish *exact*
 /// attribution (path / prefix equality) from *fallback* attribution
-/// (uniqueness in the chain), which matters for:
+/// (uniqueness in the chain) — a partition formalized by
+/// [`AttributionConfidence`] and recoverable from any rule via
+/// [`Self::confidence`]. The distinction matters for:
 ///
 /// - Structured diagnostics that want to render different prose for
 ///   "blamed via file path equality" vs. "blamed via env-prefix
@@ -138,6 +140,88 @@ pub enum AttributionRule {
     DefaultsByCodeUniqueness,
 }
 
+impl AttributionRule {
+    /// Confidence class of this rule: [`AttributionConfidence::Exact`]
+    /// for equality-based attributions ([`Self::FileBySource`],
+    /// [`Self::FileByMetadataName`], [`Self::EnvByPrefix`]), or
+    /// [`AttributionConfidence::Fallback`] for uniqueness-based
+    /// attributions ([`Self::EnvByUniqueness`],
+    /// [`Self::DefaultsByCodeUniqueness`]).
+    ///
+    /// One source of truth for the exact-vs-fallback partition over
+    /// the rule space. Before this method, the partition was
+    /// re-stated in prose at three doc sites
+    /// ([`Self`], [`ShikumiError::failing_attribution`],
+    /// [`crate::ReloadFailure::attribution_rule`]) and re-derived
+    /// inline by every observer that wanted to weight fallback
+    /// attributions weaker than equality-based ones (dashboards,
+    /// alerting policies, miette diagnostic renderers). Now it
+    /// composes as one method call: `rule.confidence()`.
+    ///
+    /// When a new resolution rule lands as a [`Self`] variant, the
+    /// exhaustive match below forces a confidence assignment in
+    /// lockstep — the typescape pins the partition to one site, and
+    /// the `attribution_rule_confidence_*` tests pin which side each
+    /// rule sits on.
+    #[must_use]
+    pub fn confidence(self) -> AttributionConfidence {
+        match self {
+            Self::FileBySource | Self::FileByMetadataName | Self::EnvByPrefix => {
+                AttributionConfidence::Exact
+            }
+            Self::EnvByUniqueness | Self::DefaultsByCodeUniqueness => {
+                AttributionConfidence::Fallback
+            }
+        }
+    }
+
+    /// Returns `true` if this rule is equality-based; equivalent to
+    /// `self.confidence() == AttributionConfidence::Exact`.
+    #[must_use]
+    pub fn is_exact(self) -> bool {
+        matches!(self.confidence(), AttributionConfidence::Exact)
+    }
+
+    /// Returns `true` if this rule is uniqueness-based; equivalent to
+    /// `self.confidence() == AttributionConfidence::Fallback`.
+    #[must_use]
+    pub fn is_fallback(self) -> bool {
+        matches!(self.confidence(), AttributionConfidence::Fallback)
+    }
+}
+
+/// Confidence class of an [`AttributionRule`].
+///
+/// Closed binary partition over the rule space:
+/// [`AttributionRule::confidence`] is the canonical map. The shape
+/// is named (rather than a `bool` flag) so consumers don't re-invent
+/// `is_exact_attribution: bool` at every observation site, and so
+/// future tertiary classifications (e.g. a `Heuristic` confidence
+/// for resolver paths that combine equality with structural hints)
+/// land as one new variant peer to the existing two.
+///
+/// `Copy + Eq + Hash + #[non_exhaustive]`, matching the typescape
+/// discipline of the sibling primitives [`AttributionRule`],
+/// [`FigmentSourceTag`], and [`crate::FigmentNameTag`]: closed,
+/// allocation-free, extensible without breaking exhaustivity at
+/// consumer matches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum AttributionConfidence {
+    /// Equality-based attribution — `metadata.source` or
+    /// `metadata.name` matched a recorded [`ConfigSource`] by exact
+    /// equality (path, prefix). The substrate has high confidence
+    /// the named layer is the actual source of the offending value.
+    Exact,
+    /// Uniqueness-based attribution — `metadata` did not match any
+    /// recorded layer by equality, but exactly one layer of the
+    /// matching kind exists in the chain, so it is named by
+    /// elimination. The substrate has lower confidence; consumers
+    /// (dashboards, miette diagnostic renderers, alerting policies)
+    /// may want to weight or render this differently.
+    Fallback,
+}
+
 /// Typed envelope returned by [`ShikumiError::failing_attribution`]:
 /// the attributed [`ConfigSource`] and the [`AttributionRule`] that
 /// produced the attribution.
@@ -160,6 +244,15 @@ pub struct FailingSourceAttribution<'a> {
 impl<'a> FailingSourceAttribution<'a> {
     fn new(source: &'a ConfigSource, rule: AttributionRule) -> Self {
         Self { source, rule }
+    }
+
+    /// Confidence class of [`Self::rule`]; convenience over
+    /// [`AttributionRule::confidence`]. One method call answers
+    /// "is the named layer attributed by equality or by elimination?"
+    /// without destructuring the envelope.
+    #[must_use]
+    pub fn confidence(self) -> AttributionConfidence {
+        self.rule.confidence()
     }
 }
 
@@ -1165,5 +1258,127 @@ mod tests {
         let r3 = r;
         assert_eq!(r, r2);
         assert_eq!(r2, r3);
+    }
+
+    // ---- AttributionConfidence / AttributionRule::confidence tests ----
+
+    #[test]
+    fn attribution_rule_confidence_exact_for_equality_rules() {
+        // The three equality-based rules — file-path equality (both
+        // axes) and env-prefix equality — must classify as Exact.
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+        ] {
+            assert_eq!(rule.confidence(), AttributionConfidence::Exact);
+            assert!(rule.is_exact());
+            assert!(!rule.is_fallback());
+        }
+    }
+
+    #[test]
+    fn attribution_rule_confidence_fallback_for_uniqueness_rules() {
+        // The two uniqueness-based rules — env-by-uniqueness and
+        // defaults-by-code-uniqueness — must classify as Fallback.
+        for rule in [
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            assert_eq!(rule.confidence(), AttributionConfidence::Fallback);
+            assert!(rule.is_fallback());
+            assert!(!rule.is_exact());
+        }
+    }
+
+    #[test]
+    fn attribution_rule_confidence_partitions_every_variant() {
+        // Every AttributionRule variant must classify into exactly one
+        // AttributionConfidence variant — no rule may be both exact and
+        // fallback, none may be neither. Pins the partition contract
+        // that the typescape lifts: a future variant added to
+        // AttributionRule forces a confidence assignment in the
+        // exhaustive match (compile-time), and this test pins the
+        // resulting partition (test-time).
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            assert_ne!(
+                rule.is_exact(),
+                rule.is_fallback(),
+                "rule {rule:?} must be exactly one of exact / fallback"
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_confidence_is_copy_and_hashable() {
+        // Typescape bounds parity with sibling primitives.
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(AttributionConfidence::Exact);
+        set.insert(AttributionConfidence::Fallback);
+        set.insert(AttributionConfidence::Exact); // duplicate
+        assert_eq!(set.len(), 2);
+        // Copy: rebind without move.
+        let c = AttributionConfidence::Exact;
+        let c2 = c;
+        let c3 = c;
+        assert_eq!(c, c2);
+        assert_eq!(c2, c3);
+    }
+
+    #[test]
+    fn failing_source_attribution_confidence_mirrors_rule_confidence() {
+        // The envelope's confidence() method must agree with the
+        // rule's, byte-for-byte, on every recognized rule. Pins the
+        // contract that the convenience accessor stays a thin
+        // forwarder.
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            let src = ConfigSource::Defaults;
+            let attr = FailingSourceAttribution::new(&src, rule);
+            assert_eq!(attr.confidence(), rule.confidence());
+        }
+    }
+
+    #[test]
+    fn failing_attribution_confidence_exact_for_yaml_extract() {
+        // End-to-end: a real YAML-file extract failure attributes via
+        // FileBySource (Exact). The envelope's confidence accessor
+        // must surface that without the consumer destructuring the
+        // rule.
+        let (_dir, err) = extract_error_with_file_path_failure();
+        let attr = err.failing_attribution().expect("attribution");
+        assert_eq!(attr.confidence(), AttributionConfidence::Exact);
+        assert!(attr.confidence() == attr.rule.confidence());
+    }
+
+    #[test]
+    fn failing_attribution_confidence_fallback_for_unmatched_env_prefix() {
+        // End-to-end: a synthetic env-prefixed metadata name with no
+        // matching env prefix in the chain falls back to
+        // EnvByUniqueness (Fallback). The envelope reports Fallback.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("ONLY_".to_owned()),
+            ConfigSource::File(PathBuf::from("/etc/app.yaml")),
+        ];
+        let err = ShikumiError::Extract {
+            sources: chain,
+            error: synthetic_error_with_metadata_name("`UNRELATED_` environment variable(s)"),
+        };
+        let attr = err.failing_attribution().expect("attribution");
+        assert_eq!(attr.rule, AttributionRule::EnvByUniqueness);
+        assert_eq!(attr.confidence(), AttributionConfidence::Fallback);
     }
 }

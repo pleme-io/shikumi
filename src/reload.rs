@@ -15,7 +15,7 @@
 
 use std::fmt;
 
-use crate::error::{AttributionRule, ShikumiError};
+use crate::error::{AttributionConfidence, AttributionRule, ShikumiError};
 use crate::source::ConfigSource;
 
 /// A clone-able summary of the most recent reload failure on a
@@ -98,6 +98,24 @@ impl ReloadFailure {
             failing_source: attribution.map(|a| a.source.clone()),
             attribution_rule: attribution.map(|a| a.rule),
         }
+    }
+
+    /// Confidence class of [`Self::attribution_rule`], or `None`
+    /// when no attribution was recorded — strict superset of
+    /// [`Self::attribution_rule`]`.map(AttributionRule::confidence)`,
+    /// surfaced as a typed accessor so observers (dashboards,
+    /// alerting policies) don't re-derive the exact-vs-fallback
+    /// partition at every site.
+    ///
+    /// Returns `Some(_)` exactly when [`Self::attribution_rule`] is
+    /// `Some(_)`; `None` otherwise. Pairs with
+    /// [`Self::failing_source`] (which layer) and
+    /// [`Self::attribution_rule`] (why named) to give observers the
+    /// (which-layer × which-rule × how-confident) attribution
+    /// triple in three closed-enum reads.
+    #[must_use]
+    pub fn attribution_confidence(&self) -> Option<AttributionConfidence> {
+        self.attribution_rule.map(AttributionRule::confidence)
     }
 }
 
@@ -405,5 +423,125 @@ mod tests {
         };
         let f = ReloadFailure::from_error(&err);
         assert!(f.attribution_rule.is_none());
+    }
+
+    // ---- attribution_confidence accessor tests ----
+
+    #[test]
+    fn attribution_confidence_exact_for_real_yaml_extract() {
+        // Real YAML file extract attributes via FileBySource (Exact);
+        // the typed accessor surfaces Exact without callers
+        // destructuring the rule.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_conf_exact.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+
+        let f = ReloadFailure::from_error(&err);
+        assert_eq!(
+            f.attribution_confidence(),
+            Some(AttributionConfidence::Exact)
+        );
+    }
+
+    #[test]
+    fn attribution_confidence_fallback_for_defaults_only_extract() {
+        // A defaults-only extract whose Serialized provider attaches
+        // Source::Code dispatches to DefaultsByCodeUniqueness
+        // (Fallback). The accessor surfaces Fallback.
+        use crate::provider::ProviderChain;
+        use serde::Serialize;
+        #[derive(Serialize)]
+        struct Bad {
+            count: String, // typed mismatch when extracted as Cfg::count: u32
+        }
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let err = ProviderChain::new()
+            .with_defaults(&Bad {
+                count: "not_a_number".into(),
+            })
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f = ReloadFailure::from_error(&err);
+        assert_eq!(
+            f.attribution_rule,
+            Some(AttributionRule::DefaultsByCodeUniqueness)
+        );
+        assert_eq!(
+            f.attribution_confidence(),
+            Some(AttributionConfidence::Fallback)
+        );
+    }
+
+    #[test]
+    fn attribution_confidence_none_for_unattributed_extract() {
+        // No metadata to map → no rule → no confidence. The Some-iff
+        // contract holds across the rule and confidence accessors.
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults],
+            error: fake_figment_error(),
+        };
+        let f = ReloadFailure::from_error(&err);
+        assert!(f.attribution_confidence().is_none());
+        assert!(f.attribution_rule.is_none());
+    }
+
+    #[test]
+    fn attribution_confidence_some_iff_attribution_rule_some() {
+        // Invariant: across every constructed ReloadFailure, the
+        // confidence accessor is populated exactly when the rule slot
+        // is. Pins the strict-superset contract that the accessor is a
+        // pure forwarder over `rule.map(AttributionRule::confidence)`.
+        for f in [
+            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&ShikumiError::Extract {
+                sources: vec![ConfigSource::Defaults],
+                error: fake_figment_error(),
+            }),
+            ReloadFailure::from_error(&ShikumiError::Figment(fake_figment_error())),
+        ] {
+            assert_eq!(
+                f.attribution_rule.is_some(),
+                f.attribution_confidence().is_some()
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_confidence_agrees_with_rule_confidence_pointwise() {
+        // For every constructible attribution scenario, the accessor
+        // result equals attribution_rule.map(AttributionRule::confidence)
+        // — pinning the convenience accessor as a pure projection.
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            // Build a synthetic ReloadFailure carrying just the rule;
+            // the accessor must derive confidence from it directly.
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            };
+            assert_eq!(f.attribution_confidence(), Some(rule.confidence()));
+        }
     }
 }
