@@ -16,7 +16,7 @@
 use std::fmt;
 
 use crate::error::{AttributionConfidence, AttributionRule, ShikumiError};
-use crate::source::ConfigSource;
+use crate::source::{ConfigSource, ConfigSourceKind};
 
 /// A clone-able summary of the most recent reload failure on a
 /// [`crate::ConfigStore`].
@@ -57,10 +57,12 @@ pub struct ReloadFailure {
     /// figment error did not carry per-value `Metadata`, and when the
     /// metadata could not be matched to any entry in the recorded
     /// chain. Pairs with [`Self::sources`] (full chain),
-    /// [`Self::field_path`] (offending key), and
-    /// [`Self::attribution_rule`] (why the layer was blamed): when
-    /// present, the quadruple pins
-    /// `(which-layer × which-field × why)` for the specific failure.
+    /// [`Self::field_path`] (offending key),
+    /// [`Self::attribution_rule`] (why the layer was blamed), and
+    /// [`Self::layer_kind`] (file/env/defaults class of the blamed
+    /// layer): when present, the tuple pins
+    /// `(which-layer × which-field × which-rule × which-kind)` for
+    /// the specific failure.
     pub failing_source: Option<ConfigSource>,
     /// The [`AttributionRule`] under which [`Self::failing_source`]
     /// was attributed, captured from
@@ -109,13 +111,45 @@ impl ReloadFailure {
     ///
     /// Returns `Some(_)` exactly when [`Self::attribution_rule`] is
     /// `Some(_)`; `None` otherwise. Pairs with
-    /// [`Self::failing_source`] (which layer) and
-    /// [`Self::attribution_rule`] (why named) to give observers the
-    /// (which-layer × which-rule × how-confident) attribution
-    /// triple in three closed-enum reads.
+    /// [`Self::failing_source`] (which layer), [`Self::layer_kind`]
+    /// (which kind of layer), and [`Self::attribution_rule`] (why
+    /// named) to give observers the (which-layer × which-kind ×
+    /// which-rule × how-confident) attribution quadruple in four
+    /// closed-enum reads.
     #[must_use]
     pub fn attribution_confidence(&self) -> Option<AttributionConfidence> {
         self.attribution_rule.map(AttributionRule::confidence)
+    }
+
+    /// [`ConfigSourceKind`] of the layer blamed for the failure, or
+    /// `None` when no attribution was recorded — strict superset of
+    /// [`Self::attribution_rule`]`.map(AttributionRule::layer_kind)`,
+    /// surfaced as a typed accessor so observers (dashboards,
+    /// alerting policies, structured-log routers) don't re-derive
+    /// the (file × env × defaults) partition at every site.
+    ///
+    /// Returns `Some(_)` exactly when [`Self::attribution_rule`] is
+    /// `Some(_)` (equivalently: when [`Self::failing_source`] is
+    /// `Some(_)`); `None` otherwise. Equal to
+    /// `self.failing_source.as_ref().map(ConfigSource::kind)` by
+    /// construction — the cross-primitive
+    /// `attr.rule.layer_kind() == attr.source.kind()` invariant from
+    /// [`crate::FailingSourceAttribution`] propagates through
+    /// [`Self::from_error`] into this slot, pinned end-to-end by
+    /// `layer_kind_agrees_with_failing_source_kind_when_attributed`.
+    ///
+    /// Composes with [`Self::attribution_confidence`]: orthogonal
+    /// projections over the rule space along the
+    /// (file × env × defaults) and (exact × fallback) axes
+    /// respectively. Observers reading
+    /// `Arc<ReloadFailure>` from
+    /// [`crate::ConfigStore::last_reload_error`] route on layer-kind
+    /// without destructuring the rule, and weight fallback
+    /// attributions visibly via the confidence accessor — both
+    /// reads land as one closed-enum match each.
+    #[must_use]
+    pub fn layer_kind(&self) -> Option<ConfigSourceKind> {
+        self.attribution_rule.map(AttributionRule::layer_kind)
     }
 }
 
@@ -543,5 +577,212 @@ mod tests {
             };
             assert_eq!(f.attribution_confidence(), Some(rule.confidence()));
         }
+    }
+
+    // ---- layer_kind accessor tests ----
+
+    #[test]
+    fn layer_kind_file_for_real_yaml_extract() {
+        // Real YAML file extract attributes via FileBySource → File;
+        // the typed accessor surfaces File without callers
+        // destructuring the rule or the source.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_kind_file.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+
+        let f = ReloadFailure::from_error(&err);
+        assert_eq!(f.layer_kind(), Some(ConfigSourceKind::File));
+    }
+
+    #[test]
+    fn layer_kind_defaults_for_defaults_only_extract() {
+        // A defaults-only extract whose Serialized provider attaches
+        // Source::Code dispatches to DefaultsByCodeUniqueness → Defaults.
+        // The accessor surfaces Defaults.
+        use crate::provider::ProviderChain;
+        use serde::Serialize;
+        #[derive(Serialize)]
+        struct Bad {
+            count: String, // typed mismatch when extracted as Cfg::count: u32
+        }
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let err = ProviderChain::new()
+            .with_defaults(&Bad {
+                count: "not_a_number".into(),
+            })
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f = ReloadFailure::from_error(&err);
+        assert_eq!(
+            f.attribution_rule,
+            Some(AttributionRule::DefaultsByCodeUniqueness)
+        );
+        assert_eq!(f.layer_kind(), Some(ConfigSourceKind::Defaults));
+    }
+
+    #[test]
+    fn layer_kind_none_for_unattributed_extract() {
+        // No metadata to map → no rule → no layer_kind.
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults],
+            error: fake_figment_error(),
+        };
+        let f = ReloadFailure::from_error(&err);
+        assert!(f.layer_kind().is_none());
+        assert!(f.attribution_rule.is_none());
+    }
+
+    #[test]
+    fn layer_kind_none_for_non_extract_variants() {
+        // Non-figment-bearing variants never carry attribution.
+        for f in [
+            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&ShikumiError::Figment(fake_figment_error())),
+        ] {
+            assert!(f.layer_kind().is_none());
+        }
+    }
+
+    #[test]
+    fn layer_kind_some_iff_attribution_rule_some() {
+        // Invariant: across every constructed ReloadFailure, the
+        // layer_kind accessor is populated exactly when the rule slot
+        // is. Pins the strict-superset contract that the accessor is
+        // a pure forwarder over `rule.map(AttributionRule::layer_kind)`.
+        for f in [
+            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&ShikumiError::Extract {
+                sources: vec![ConfigSource::Defaults],
+                error: fake_figment_error(),
+            }),
+            ReloadFailure::from_error(&ShikumiError::Figment(fake_figment_error())),
+        ] {
+            assert_eq!(f.attribution_rule.is_some(), f.layer_kind().is_some());
+        }
+    }
+
+    #[test]
+    fn layer_kind_agrees_with_rule_layer_kind_pointwise() {
+        // For every constructible attribution scenario, the accessor
+        // result equals attribution_rule.map(AttributionRule::layer_kind)
+        // — pinning the convenience accessor as a pure projection.
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            // Build a synthetic ReloadFailure carrying just the rule;
+            // the accessor must derive layer_kind from it directly.
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            };
+            assert_eq!(f.layer_kind(), Some(rule.layer_kind()));
+        }
+    }
+
+    #[test]
+    fn layer_kind_agrees_with_failing_source_kind_when_attributed() {
+        // Cross-primitive invariant propagates from FailingSourceAttribution
+        // through ReloadFailure: for every attributed reload failure,
+        // f.layer_kind() == f.failing_source.as_ref().map(ConfigSource::kind).
+        // The two formulations must agree byte-for-byte across every
+        // resolver path the rest of this crate exercises.
+        use crate::provider::ProviderChain;
+        use serde::Serialize;
+
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        #[derive(Serialize)]
+        struct Bad {
+            count: String,
+        }
+
+        // FileBySource: figment's YAML provider attaches Source::File.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_kind_inv.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let f_file = ReloadFailure::from_error(
+            &ProviderChain::new()
+                .with_file(&file)
+                .extract::<Cfg>()
+                .unwrap_err(),
+        );
+        assert_eq!(
+            f_file.layer_kind(),
+            f_file.failing_source.as_ref().map(ConfigSource::kind),
+        );
+        assert_eq!(f_file.layer_kind(), Some(ConfigSourceKind::File));
+
+        // DefaultsByCodeUniqueness: Serialized provider attaches Source::Code.
+        let f_def = ReloadFailure::from_error(
+            &ProviderChain::new()
+                .with_defaults(&Bad {
+                    count: "not_a_number".into(),
+                })
+                .extract::<Cfg>()
+                .unwrap_err(),
+        );
+        assert_eq!(
+            f_def.layer_kind(),
+            f_def.failing_source.as_ref().map(ConfigSource::kind),
+        );
+        assert_eq!(f_def.layer_kind(), Some(ConfigSourceKind::Defaults));
+    }
+
+    #[test]
+    fn layer_kind_orthogonal_to_attribution_confidence() {
+        // The layer_kind / attribution_confidence pair are orthogonal
+        // projections over the rule space along the
+        // (file × env × defaults) and (exact × fallback) axes
+        // respectively. Pin the orthogonality by exhibiting at least
+        // three distinct (kind, confidence) pairs across constructible
+        // ReloadFailure scenarios.
+        use std::collections::HashSet;
+        let mut pairs: HashSet<(ConfigSourceKind, AttributionConfidence)> = HashSet::new();
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            };
+            let kind = f.layer_kind().expect("attributed → kind some");
+            let conf = f.attribution_confidence().expect("attributed → conf some");
+            pairs.insert((kind, conf));
+        }
+        assert!(
+            pairs.len() >= 3,
+            "kind × confidence must span ≥3 cells; got: {pairs:?}"
+        );
     }
 }
