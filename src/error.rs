@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use crate::source::{ConfigSource, EnvMetadataTag, FigmentNameTag, FigmentSourceTag};
+use crate::source::{
+    ConfigSource, ConfigSourceKind, EnvMetadataTag, FigmentNameTag, FigmentSourceTag,
+};
 
 /// Errors produced by shikumi's config discovery, loading, and watching.
 #[derive(thiserror::Error, Debug)]
@@ -188,6 +190,44 @@ impl AttributionRule {
     pub fn is_fallback(self) -> bool {
         matches!(self.confidence(), AttributionConfidence::Fallback)
     }
+
+    /// [`ConfigSourceKind`] of the layer this rule attributes to:
+    /// [`ConfigSourceKind::File`] for the file-axis rules
+    /// ([`Self::FileBySource`], [`Self::FileByMetadataName`]),
+    /// [`ConfigSourceKind::Env`] for the env-axis rules
+    /// ([`Self::EnvByPrefix`], [`Self::EnvByUniqueness`]),
+    /// [`ConfigSourceKind::Defaults`] for the defaults-axis rule
+    /// ([`Self::DefaultsByCodeUniqueness`]).
+    ///
+    /// One source of truth for the (rule → layer-kind) projection. The
+    /// information was previously implicit in each rule's name prefix
+    /// (`File*`, `Env*`, `Defaults*`); lifting it to a typed accessor
+    /// pins the "this rule attributes to layer kind X" contract at the
+    /// type level. A future variant added to [`Self`] forces a
+    /// kind assignment in the exhaustive match in lockstep.
+    ///
+    /// Closes the (rule × layer-kind) attribution invariant: for every
+    /// [`FailingSourceAttribution`] the resolver produces,
+    /// `attr.rule.layer_kind() == attr.source.kind()`. The contract is
+    /// pinned by `attribution_rule_layer_kind_agrees_with_source_kind`
+    /// — a structural law that any new resolver path must respect, and
+    /// which observers can rely on without re-deriving the rule-name →
+    /// kind mapping at every call site.
+    ///
+    /// Composes with [`Self::confidence`]: the two accessors are
+    /// orthogonal projections over the rule space — `confidence` along
+    /// the (exact × fallback) axis, `layer_kind` along the
+    /// (file × env × defaults) axis. Together they pin a recognized
+    /// rule's coordinates without consumers destructuring specific
+    /// variants.
+    #[must_use]
+    pub fn layer_kind(self) -> ConfigSourceKind {
+        match self {
+            Self::FileBySource | Self::FileByMetadataName => ConfigSourceKind::File,
+            Self::EnvByPrefix | Self::EnvByUniqueness => ConfigSourceKind::Env,
+            Self::DefaultsByCodeUniqueness => ConfigSourceKind::Defaults,
+        }
+    }
 }
 
 /// Confidence class of an [`AttributionRule`].
@@ -253,6 +293,23 @@ impl<'a> FailingSourceAttribution<'a> {
     #[must_use]
     pub fn confidence(self) -> AttributionConfidence {
         self.rule.confidence()
+    }
+
+    /// [`ConfigSourceKind`] of [`Self::source`]; convenience over
+    /// [`AttributionRule::layer_kind`]. One method call answers "what
+    /// kind of layer was blamed?" — file, env, or defaults — without
+    /// destructuring the envelope.
+    ///
+    /// Equal to `self.source.kind()` by construction (the resolver
+    /// only ever pairs a rule with a source of the matching kind);
+    /// the contract is pinned by
+    /// `attribution_rule_layer_kind_agrees_with_source_kind`. Reading
+    /// it through this accessor (rather than `self.source.kind()`)
+    /// surfaces the same kind as a consequence of the rule, not an
+    /// independent fact about the source.
+    #[must_use]
+    pub fn layer_kind(self) -> ConfigSourceKind {
+        self.rule.layer_kind()
     }
 }
 
@@ -1361,6 +1418,198 @@ mod tests {
         let attr = err.failing_attribution().expect("attribution");
         assert_eq!(attr.confidence(), AttributionConfidence::Exact);
         assert!(attr.confidence() == attr.rule.confidence());
+    }
+
+    // ---- AttributionRule::layer_kind / FailingSourceAttribution::layer_kind ----
+
+    #[test]
+    fn attribution_rule_layer_kind_file_for_file_axis_rules() {
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+        ] {
+            assert_eq!(rule.layer_kind(), ConfigSourceKind::File);
+        }
+    }
+
+    #[test]
+    fn attribution_rule_layer_kind_env_for_env_axis_rules() {
+        for rule in [
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+        ] {
+            assert_eq!(rule.layer_kind(), ConfigSourceKind::Env);
+        }
+    }
+
+    #[test]
+    fn attribution_rule_layer_kind_defaults_for_defaults_axis_rule() {
+        assert_eq!(
+            AttributionRule::DefaultsByCodeUniqueness.layer_kind(),
+            ConfigSourceKind::Defaults,
+        );
+    }
+
+    #[test]
+    fn attribution_rule_layer_kind_partitions_every_variant() {
+        // Every AttributionRule variant must classify into exactly one
+        // ConfigSourceKind. Pins the partition contract that
+        // AttributionRule::layer_kind is a total function over the
+        // rule space; a future variant added to AttributionRule
+        // forces a kind assignment in the exhaustive match
+        // (compile-time), and this test pins the kind choice for each
+        // existing rule (test-time).
+        let cases = [
+            (AttributionRule::FileBySource, ConfigSourceKind::File),
+            (AttributionRule::FileByMetadataName, ConfigSourceKind::File),
+            (AttributionRule::EnvByPrefix, ConfigSourceKind::Env),
+            (AttributionRule::EnvByUniqueness, ConfigSourceKind::Env),
+            (
+                AttributionRule::DefaultsByCodeUniqueness,
+                ConfigSourceKind::Defaults,
+            ),
+        ];
+        for (rule, expected) in cases {
+            assert_eq!(rule.layer_kind(), expected, "rule {rule:?}");
+        }
+    }
+
+    #[test]
+    fn attribution_rule_layer_kind_orthogonal_to_confidence() {
+        // The (layer_kind × confidence) product over the rule space
+        // must cover at least three distinct (kind, conf) pairs — the
+        // two projections are orthogonal axes, not a single
+        // partition. Pins the contract that adding a future variant
+        // to one axis is independent of the other.
+        use std::collections::HashSet;
+        let mut pairs: HashSet<(ConfigSourceKind, AttributionConfidence)> = HashSet::new();
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            pairs.insert((rule.layer_kind(), rule.confidence()));
+        }
+        // Today: (File, Exact), (Env, Exact), (Env, Fallback),
+        // (Defaults, Fallback) — four distinct cells.
+        assert!(
+            pairs.len() >= 3,
+            "kind × confidence must span ≥3 cells; got: {pairs:?}"
+        );
+    }
+
+    #[test]
+    fn failing_source_attribution_layer_kind_mirrors_rule_layer_kind() {
+        // The envelope's layer_kind() must agree with the rule's,
+        // byte-for-byte, on every recognized rule. Pins the contract
+        // that the convenience accessor stays a thin forwarder.
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            let src = ConfigSource::Defaults;
+            let attr = FailingSourceAttribution::new(&src, rule);
+            assert_eq!(attr.layer_kind(), rule.layer_kind());
+        }
+    }
+
+    #[test]
+    fn attribution_rule_layer_kind_agrees_with_source_kind() {
+        // Cross-primitive invariant: for every constructible attributed
+        // Extract, the rule's layer_kind() must equal the attributed
+        // source's kind(). The resolver may only pair a rule with a
+        // source of the matching kind; this test pins that discipline
+        // across every resolver path the rest of this module exercises.
+        use crate::provider::ProviderChain;
+        use serde::Serialize;
+
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+
+        #[derive(Serialize)]
+        struct Bad {
+            count: String,
+        }
+
+        // FileBySource: figment's YAML provider attaches Source::File.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("kind_invariant.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err_file = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let attr_file = err_file.failing_attribution().expect("file attribution");
+        assert_eq!(attr_file.layer_kind(), attr_file.source.kind());
+        assert_eq!(attr_file.layer_kind(), ConfigSourceKind::File);
+
+        // EnvByPrefix: synthetic env-prefixed metadata-name with a
+        // matching Env entry in the chain.
+        let chain_env = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("KIND_INV_".to_owned()),
+        ];
+        let err_env = ShikumiError::Extract {
+            sources: chain_env,
+            error: synthetic_error_with_metadata_name("`KIND_INV_` environment variable(s)"),
+        };
+        let attr_env = err_env.failing_attribution().expect("env attribution");
+        assert_eq!(attr_env.layer_kind(), attr_env.source.kind());
+        assert_eq!(attr_env.layer_kind(), ConfigSourceKind::Env);
+
+        // EnvByUniqueness: env tag with no matching prefix, unique Env
+        // in chain.
+        let chain_unique_env = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("ONLY_".to_owned()),
+            ConfigSource::File(PathBuf::from("/etc/app.yaml")),
+        ];
+        let err_unique = ShikumiError::Extract {
+            sources: chain_unique_env,
+            error: synthetic_error_with_metadata_name("`UNRELATED_` environment variable(s)"),
+        };
+        let attr_unique = err_unique
+            .failing_attribution()
+            .expect("env-uniqueness attribution");
+        assert_eq!(attr_unique.layer_kind(), attr_unique.source.kind());
+        assert_eq!(attr_unique.layer_kind(), ConfigSourceKind::Env);
+
+        // FileByMetadataName: synthetic shikumi-provider tag with a
+        // matching File entry in the chain.
+        let path_meta = PathBuf::from("/etc/app/app.nix");
+        let chain_meta = vec![ConfigSource::File(path_meta.clone())];
+        let err_meta = ShikumiError::Extract {
+            sources: chain_meta,
+            error: synthetic_error_with_metadata_name("nix: /etc/app/app.nix"),
+        };
+        let attr_meta = err_meta
+            .failing_attribution()
+            .expect("file-by-name attribution");
+        assert_eq!(attr_meta.layer_kind(), attr_meta.source.kind());
+        assert_eq!(attr_meta.layer_kind(), ConfigSourceKind::File);
+
+        // DefaultsByCodeUniqueness: figment's Serialized provider
+        // attaches Source::Code; defaults-only chain dispatches to
+        // DefaultsByCodeUniqueness.
+        let err_defaults = ProviderChain::new()
+            .with_defaults(&Bad {
+                count: "not_a_number".into(),
+            })
+            .extract::<Cfg>()
+            .unwrap_err();
+        let attr_defaults = err_defaults
+            .failing_attribution()
+            .expect("defaults attribution");
+        assert_eq!(attr_defaults.layer_kind(), attr_defaults.source.kind());
+        assert_eq!(attr_defaults.layer_kind(), ConfigSourceKind::Defaults);
     }
 
     #[test]

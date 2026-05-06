@@ -54,6 +54,8 @@ pub use lisp_provider::{LispProvider, load_from_str as load_lisp_from_str};
 pub use nix_provider::NixProvider;
 pub use provider::ProviderChain;
 pub use reload::ReloadFailure;
-pub use source::{ConfigSource, EnvMetadataTag, FigmentNameTag, FigmentSourceTag};
+pub use source::{
+    ConfigSource, ConfigSourceKind, EnvMetadataTag, FigmentNameTag, FigmentSourceTag,
+};
 pub use store::ConfigStore;
 pub use watcher::{ConfigWatcher, symlink_target};

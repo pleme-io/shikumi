@@ -69,6 +69,40 @@ impl ConfigSource {
         matches!(self, Self::Defaults)
     }
 
+    /// Data-free discriminant of this [`ConfigSource`]: the kind of
+    /// layer ([`ConfigSourceKind::Defaults`] / [`ConfigSourceKind::Env`]
+    /// / [`ConfigSourceKind::File`]) independent of its specific path
+    /// or prefix.
+    ///
+    /// One source of truth for the kind partition over [`ConfigSource`]:
+    /// observers that need only the layer-kind axis (filtering a chain,
+    /// hashing a layer's class, comparing against
+    /// [`crate::AttributionRule::layer_kind`]) match on this closed
+    /// enum instead of matching three [`Self::is_defaults`] /
+    /// [`Self::is_env`] / [`Self::is_file`] booleans together.
+    ///
+    /// Pairs with [`crate::AttributionRule::layer_kind`] under the
+    /// invariant `attr.rule.layer_kind() == attr.source.kind()` for
+    /// every [`crate::FailingSourceAttribution`] the resolver
+    /// produces — pinned by
+    /// `attribution_rule_layer_kind_agrees_with_source_kind` in
+    /// `error.rs`. Without the kind primitive this contract was
+    /// implicit in the rule names; lifting it makes "the rule and the
+    /// source agree on layer kind" a structural law.
+    ///
+    /// `Copy + Eq + Hash + #[non_exhaustive]`, allocation-free,
+    /// trait-bounds parity with the sibling typescape primitives
+    /// ([`crate::AttributionRule`], [`crate::AttributionConfidence`],
+    /// [`FigmentSourceTag`], [`FigmentNameTag`]).
+    #[must_use]
+    pub fn kind(&self) -> ConfigSourceKind {
+        match self {
+            Self::Defaults => ConfigSourceKind::Defaults,
+            Self::Env(_) => ConfigSourceKind::Env,
+            Self::File(_) => ConfigSourceKind::File,
+        }
+    }
+
     /// Canonical `figment::Metadata::name` shape emitted by
     /// [`figment::providers::Env`]: `` `PREFIX` environment variable(s) ``
     /// for prefixed providers, `"environment variable(s)"` for raw env
@@ -126,6 +160,42 @@ impl ConfigSource {
         }
         Some(EnvMetadataTag::Bare)
     }
+}
+
+/// Data-free discriminant of [`ConfigSource`]: the kind of layer
+/// independent of its inner path or prefix.
+///
+/// Closed three-way partition over the [`ConfigSource`] variant space,
+/// returned by [`ConfigSource::kind`]. The enum exists so consumers
+/// that care only about the kind axis (chain filters, layer-class
+/// hashes, the (rule × layer-kind) attribution invariant) match on one
+/// closed enum instead of matching three
+/// ([`ConfigSource::is_defaults`] / [`ConfigSource::is_env`] /
+/// [`ConfigSource::is_file`]) booleans together.
+///
+/// Paired with [`crate::AttributionRule::layer_kind`] under the
+/// invariant `attr.rule.layer_kind() == attr.source.kind()` for every
+/// [`crate::FailingSourceAttribution`] the resolver produces. Adding a
+/// future [`ConfigSource`] variant (e.g. `Http(_)`, `Vault(_)`,
+/// `ConfigMap(_)`) means adding one [`ConfigSourceKind`] variant in
+/// lockstep — the exhaustive [`ConfigSource::kind`] match forces the
+/// assignment at compile time, and any new [`crate::AttributionRule`]
+/// that attributes to the new layer must declare the same kind in its
+/// [`crate::AttributionRule::layer_kind`] arm.
+///
+/// `Copy + Eq + Hash + #[non_exhaustive]`, allocation-free,
+/// trait-bounds parity with the sibling typescape primitives
+/// ([`crate::AttributionRule`], [`crate::AttributionConfidence`],
+/// [`FigmentSourceTag`], [`FigmentNameTag`], [`EnvMetadataTag`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ConfigSourceKind {
+    /// Maps to [`ConfigSource::Defaults`].
+    Defaults,
+    /// Maps to [`ConfigSource::Env`] regardless of prefix value.
+    Env,
+    /// Maps to [`ConfigSource::File`] regardless of path value.
+    File,
 }
 
 /// Recognized form of [`figment::providers::Env`]'s
@@ -442,6 +512,99 @@ mod tests {
         let s = ConfigSource::File(PathBuf::from("/a/b.yaml"));
         let c = s.clone();
         assert_eq!(s, c);
+    }
+
+    // ---- ConfigSourceKind / ConfigSource::kind ----
+
+    #[test]
+    fn kind_classifies_defaults() {
+        assert_eq!(ConfigSource::Defaults.kind(), ConfigSourceKind::Defaults);
+    }
+
+    #[test]
+    fn kind_classifies_env_regardless_of_prefix() {
+        // Inner prefix does not influence kind — every Env variant maps
+        // to ConfigSourceKind::Env, including the empty-prefix case.
+        for prefix in ["", "MYAPP_", "X_", "very_long_prefix_with_underscores_"] {
+            let s = ConfigSource::Env(prefix.to_owned());
+            assert_eq!(s.kind(), ConfigSourceKind::Env);
+        }
+    }
+
+    #[test]
+    fn kind_classifies_file_regardless_of_path() {
+        // Inner path does not influence kind — every File variant maps
+        // to ConfigSourceKind::File, including bare and deep paths.
+        for path in ["/etc/app.yaml", "rel.toml", "/very/deep/path/cfg.lisp"] {
+            let s = ConfigSource::File(PathBuf::from(path));
+            assert_eq!(s.kind(), ConfigSourceKind::File);
+        }
+    }
+
+    #[test]
+    fn kind_partitions_every_constructible_variant() {
+        // Every ConfigSource maps to exactly one ConfigSourceKind. Pins
+        // the partition contract that ConfigSource::kind is a total
+        // function over the variant space; a new variant added to
+        // ConfigSource forces a kind assignment in the exhaustive
+        // match (compile-time), and this test pins that the partition
+        // is a function (no source maps to two kinds).
+        let cases: [(ConfigSource, ConfigSourceKind); 3] = [
+            (ConfigSource::Defaults, ConfigSourceKind::Defaults),
+            (ConfigSource::Env("X_".to_owned()), ConfigSourceKind::Env),
+            (
+                ConfigSource::File(PathBuf::from("/x")),
+                ConfigSourceKind::File,
+            ),
+        ];
+        for (src, expected) in &cases {
+            assert_eq!(src.kind(), *expected);
+        }
+        // Distinct sources of the same kind collapse to the same kind
+        // (the kind discriminant is data-free).
+        assert_eq!(
+            ConfigSource::Env("A_".to_owned()).kind(),
+            ConfigSource::Env("B_".to_owned()).kind(),
+        );
+        assert_eq!(
+            ConfigSource::File(PathBuf::from("/a")).kind(),
+            ConfigSource::File(PathBuf::from("/b")).kind(),
+        );
+    }
+
+    #[test]
+    fn kind_agrees_with_is_predicates_pointwise() {
+        // The kind() / is_*() pair must agree on every constructible
+        // variant — kind is the closed-enum lift of the three booleans.
+        for src in [
+            ConfigSource::Defaults,
+            ConfigSource::Env("X_".to_owned()),
+            ConfigSource::File(PathBuf::from("/x")),
+        ] {
+            assert_eq!(src.is_defaults(), src.kind() == ConfigSourceKind::Defaults);
+            assert_eq!(src.is_env(), src.kind() == ConfigSourceKind::Env);
+            assert_eq!(src.is_file(), src.kind() == ConfigSourceKind::File);
+        }
+    }
+
+    #[test]
+    fn config_source_kind_is_copy_and_hashable() {
+        // Trait-bounds parity with sibling typescape primitives
+        // (AttributionRule, AttributionConfidence, FigmentSourceTag,
+        // FigmentNameTag, EnvMetadataTag).
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(ConfigSourceKind::Defaults);
+        set.insert(ConfigSourceKind::Env);
+        set.insert(ConfigSourceKind::File);
+        set.insert(ConfigSourceKind::Defaults); // duplicate
+        assert_eq!(set.len(), 3);
+        // Copy: rebind without move.
+        let k = ConfigSourceKind::Env;
+        let k2 = k;
+        let k3 = k;
+        assert_eq!(k, k2);
+        assert_eq!(k2, k3);
     }
 
     // ---- env_metadata_name / strip_env_metadata_name ----
