@@ -48,7 +48,10 @@ mod store;
 mod watcher;
 
 pub use discovery::{ConfigDiscovery, Format, FormatMetadataTag};
-pub use error::{AttributionConfidence, AttributionRule, FailingSourceAttribution, ShikumiError};
+pub use error::{
+    AttributionConfidence, AttributionRule, FailingSourceAttribution, ShikumiError,
+    ShikumiErrorKind,
+};
 #[cfg(feature = "lisp")]
 pub use lisp_provider::{LispProvider, load_from_str as load_lisp_from_str};
 pub use nix_provider::NixProvider;

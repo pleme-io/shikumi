@@ -85,6 +85,59 @@ fn display_failing_source(sources: &[ConfigSource], error: &figment::Error) -> S
         .unwrap_or_default()
 }
 
+/// Closed partition over the [`ShikumiError`] variant space.
+///
+/// Data-free discriminant of [`ShikumiError`]: every error classifies
+/// into exactly one variant of [`ShikumiErrorKind`], recoverable from
+/// any error via [`ShikumiError::kind`]. The closed enum lifts the
+/// kind axis off the data-bearing sum type so consumers route on
+/// kind without destructuring data they don't need — peer typed
+/// projection to [`AttributionConfidence`] (closed binary partition
+/// over [`AttributionRule`]) on the attribution surface.
+///
+/// Before this enum, the existing predicates [`ShikumiError::is_not_found`]
+/// and [`ShikumiError::is_parse`] covered two of the six variants;
+/// observers wanting the other four had to re-derive an `is_*`
+/// predicate or `matches!` against the variant inline. With
+/// [`ShikumiError::kind`] the partition is one method call, returning
+/// a closed-enum value usable in `match`, `HashMap` keys, log labels,
+/// or alerting buckets without the consumer touching the
+/// data-bearing variants.
+///
+/// `Copy + Eq + Hash + #[non_exhaustive]`, matching the typescape
+/// discipline of the sibling closed-enum primitives
+/// ([`AttributionRule`], [`AttributionConfidence`],
+/// [`FigmentSourceTag`], [`crate::FigmentNameTag`],
+/// [`EnvMetadataTag`]): closed, allocation-free, extensible without
+/// breaking exhaustivity at consumer matches when a future
+/// [`ShikumiError`] variant lands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ShikumiErrorKind {
+    /// [`ShikumiError::NotFound`] — discovery exhausted every searched
+    /// location without finding a config file.
+    NotFound,
+    /// [`ShikumiError::Parse`] — a parser (format detection,
+    /// shikumi-built provider, downstream deserializer) reported a
+    /// shape error with prose context but no figment metadata.
+    Parse,
+    /// [`ShikumiError::Watch`] — the file watcher (`notify` crate)
+    /// reported an error setting up or processing watch events.
+    Watch,
+    /// [`ShikumiError::Io`] — a [`std::io::Error`] surfaced from a
+    /// config-file operation.
+    Io,
+    /// [`ShikumiError::Figment`] — a raw [`figment::Error`] reached
+    /// shikumi without an attached [`ConfigSource`] chain (the
+    /// pre-[`ShikumiError::Extract`] code path; see the variant doc).
+    Figment,
+    /// [`ShikumiError::Extract`] — a [`crate::ProviderChain`]
+    /// extraction failed; the recorded [`ConfigSource`] chain and the
+    /// boxed underlying [`figment::Error`] are both available for
+    /// attribution via [`ShikumiError::failing_attribution`].
+    Extract,
+}
+
 /// Reason a [`figment::Error`] was attributed to a specific layer in the
 /// recorded [`ConfigSource`] chain by [`resolve_failing_source`].
 ///
@@ -409,16 +462,54 @@ fn resolve_failing_source<'a>(
 }
 
 impl ShikumiError {
-    /// Returns `true` if this is a `NotFound` error.
+    /// Closed-enum classification of this error's variant — the typed
+    /// kind partition over the [`ShikumiError`] variant space.
+    ///
+    /// One source of truth for the kind axis: consumers route on the
+    /// returned [`ShikumiErrorKind`] (in `match`, `HashMap` keys, log
+    /// labels, alerting buckets) instead of writing per-variant
+    /// `is_*` predicates or open-coded `matches!` against the
+    /// data-bearing sum type. Equivalent to `matches!` on the
+    /// underlying variant — but the closed-enum return value composes
+    /// further (it's `Copy + Eq + Hash`), where a `bool` does not.
+    ///
+    /// Strict superset of [`Self::is_not_found`] and [`Self::is_parse`]:
+    /// `err.is_not_found()` is `err.kind() == ShikumiErrorKind::NotFound`,
+    /// and likewise for `is_parse`. The two predicates remain as
+    /// convenience accessors; new code that needs to distinguish more
+    /// than one kind should prefer this one accessor over a chain of
+    /// predicates.
+    ///
+    /// The implementation is one exhaustive `match`, so a future
+    /// [`ShikumiError`] variant landing forces a corresponding
+    /// [`ShikumiErrorKind`] variant in lockstep at compile time —
+    /// the kind partition stays coherent by construction.
     #[must_use]
-    pub fn is_not_found(&self) -> bool {
-        matches!(self, Self::NotFound { .. })
+    pub fn kind(&self) -> ShikumiErrorKind {
+        match self {
+            Self::NotFound { .. } => ShikumiErrorKind::NotFound,
+            Self::Parse(_) => ShikumiErrorKind::Parse,
+            Self::Watch(_) => ShikumiErrorKind::Watch,
+            Self::Io(_) => ShikumiErrorKind::Io,
+            Self::Figment(_) => ShikumiErrorKind::Figment,
+            Self::Extract { .. } => ShikumiErrorKind::Extract,
+        }
     }
 
-    /// Returns `true` if this is a `Parse` error.
+    /// Returns `true` if this is a `NotFound` error. Convenience over
+    /// [`Self::kind`]; equivalent to
+    /// `self.kind() == ShikumiErrorKind::NotFound`.
+    #[must_use]
+    pub fn is_not_found(&self) -> bool {
+        matches!(self.kind(), ShikumiErrorKind::NotFound)
+    }
+
+    /// Returns `true` if this is a `Parse` error. Convenience over
+    /// [`Self::kind`]; equivalent to
+    /// `self.kind() == ShikumiErrorKind::Parse`.
     #[must_use]
     pub fn is_parse(&self) -> bool {
-        matches!(self, Self::Parse(_))
+        matches!(self.kind(), ShikumiErrorKind::Parse)
     }
 
     /// Returns the list of paths that were tried, if this is a `NotFound` error.
@@ -1629,5 +1720,143 @@ mod tests {
         let attr = err.failing_attribution().expect("attribution");
         assert_eq!(attr.rule, AttributionRule::EnvByUniqueness);
         assert_eq!(attr.confidence(), AttributionConfidence::Fallback);
+    }
+
+    // ---- ShikumiErrorKind / ShikumiError::kind tests ----
+
+    fn one_per_kind() -> Vec<(ShikumiErrorKind, ShikumiError)> {
+        vec![
+            (
+                ShikumiErrorKind::NotFound,
+                ShikumiError::NotFound {
+                    tried: vec![PathBuf::from("/a")],
+                },
+            ),
+            (
+                ShikumiErrorKind::Parse,
+                ShikumiError::Parse("bad".to_owned()),
+            ),
+            (
+                ShikumiErrorKind::Watch,
+                ShikumiError::from(notify::Error::generic("test")),
+            ),
+            (
+                ShikumiErrorKind::Io,
+                ShikumiError::from(std::io::Error::new(std::io::ErrorKind::NotFound, "x")),
+            ),
+            (
+                ShikumiErrorKind::Figment,
+                ShikumiError::Figment(fake_figment_error()),
+            ),
+            (
+                ShikumiErrorKind::Extract,
+                ShikumiError::Extract {
+                    sources: vec![ConfigSource::Defaults],
+                    error: fake_figment_error(),
+                },
+            ),
+        ]
+    }
+
+    #[test]
+    fn kind_classifies_every_variant() {
+        for (expected, err) in one_per_kind() {
+            assert_eq!(
+                err.kind(),
+                expected,
+                "kind() must classify {err:?} as {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn kind_partitions_every_variant() {
+        // Each constructed error classifies into exactly one
+        // ShikumiErrorKind — no error matches two kinds, none matches
+        // none. Pins the partition contract that the typescape lifts:
+        // a future ShikumiError variant forces both an exhaustive-match
+        // assignment in `kind()` (compile-time) and a row in this
+        // table (test-time).
+        let all_kinds = [
+            ShikumiErrorKind::NotFound,
+            ShikumiErrorKind::Parse,
+            ShikumiErrorKind::Watch,
+            ShikumiErrorKind::Io,
+            ShikumiErrorKind::Figment,
+            ShikumiErrorKind::Extract,
+        ];
+        for (expected, err) in one_per_kind() {
+            let matches: Vec<_> = all_kinds.iter().filter(|k| err.kind() == **k).collect();
+            assert_eq!(
+                matches.len(),
+                1,
+                "{err:?} must match exactly one kind (got {matches:?}, expected {expected:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn kind_agrees_with_is_not_found_pointwise() {
+        // Pin the convenience-accessor forwarder contract: across every
+        // variant, `is_not_found()` must agree byte-for-byte with the
+        // typed-kind comparison.
+        for (_, err) in one_per_kind() {
+            assert_eq!(
+                err.is_not_found(),
+                err.kind() == ShikumiErrorKind::NotFound,
+                "is_not_found must agree with kind() for {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn kind_agrees_with_is_parse_pointwise() {
+        for (_, err) in one_per_kind() {
+            assert_eq!(
+                err.is_parse(),
+                err.kind() == ShikumiErrorKind::Parse,
+                "is_parse must agree with kind() for {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_is_copy_and_hashable() {
+        // Typescape bounds parity with the sibling closed-enum
+        // primitives (AttributionRule, AttributionConfidence,
+        // FigmentSourceTag, FigmentNameTag, EnvMetadataTag).
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(ShikumiErrorKind::NotFound);
+        set.insert(ShikumiErrorKind::Parse);
+        set.insert(ShikumiErrorKind::Watch);
+        set.insert(ShikumiErrorKind::Io);
+        set.insert(ShikumiErrorKind::Figment);
+        set.insert(ShikumiErrorKind::Extract);
+        set.insert(ShikumiErrorKind::NotFound); // duplicate — no growth
+        assert_eq!(set.len(), 6, "every kind must hash distinctly");
+
+        // Copy: rebind without move.
+        let k = ShikumiErrorKind::Extract;
+        let k2 = k;
+        let k3 = k;
+        assert_eq!(k, k2);
+        assert_eq!(k2, k3);
+    }
+
+    #[test]
+    fn kind_partitions_distinguish_extract_from_figment() {
+        // The two figment-bearing variants — Extract (with chain) and
+        // Figment (without) — must classify into distinct kinds, even
+        // though they share field-path semantics. Pins the contract
+        // that the kind axis is finer than the figment-bearing axis.
+        let extract = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults],
+            error: fake_figment_error(),
+        };
+        let figment = ShikumiError::Figment(fake_figment_error());
+        assert_eq!(extract.kind(), ShikumiErrorKind::Extract);
+        assert_eq!(figment.kind(), ShikumiErrorKind::Figment);
+        assert_ne!(extract.kind(), figment.kind());
     }
 }
