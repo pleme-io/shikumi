@@ -15,7 +15,7 @@
 
 use std::fmt;
 
-use crate::error::{AttributionConfidence, AttributionRule, ShikumiError};
+use crate::error::{AttributionConfidence, AttributionRule, ShikumiError, ShikumiErrorKind};
 use crate::source::{ConfigSource, ConfigSourceKind};
 
 /// A clone-able summary of the most recent reload failure on a
@@ -35,6 +35,25 @@ pub struct ReloadFailure {
     /// Human-readable display of the underlying error, captured via
     /// [`std::fmt::Display`] at the moment the failure was caught.
     pub message: String,
+    /// Closed-enum kind of the underlying [`ShikumiError`] that caused
+    /// this reload failure, captured from
+    /// [`crate::ShikumiError::kind`] at the moment the failure was
+    /// caught. Total over the [`ReloadFailure`] surface — every captured
+    /// failure has exactly one kind, regardless of whether attribution
+    /// could be resolved.
+    ///
+    /// Surfaces the [`ShikumiErrorKind`] partition on the cross-thread
+    /// observable envelope so consumers reading
+    /// [`crate::ConfigStore::last_reload_error`] can bucket reload
+    /// failures by error class (per-kind alert thresholds, per-kind
+    /// dashboards, per-kind retry policies) with one closed-enum read
+    /// instead of grepping the [`Self::message`] string. Pairs with
+    /// [`Self::attribution_rule`] (rule axis, partial), [`Self::layer_kind`]
+    /// (layer-kind axis, partial), and [`Self::attribution_confidence`]
+    /// (confidence axis, partial) to give observers the full
+    /// (kind × layer-kind × rule × confidence) projection of every
+    /// captured failure as four typed reads.
+    pub kind: ShikumiErrorKind,
     /// Provider chain in merge order at the moment of failure.
     /// Populated for [`crate::ShikumiError::Extract`]; empty for
     /// variants that do not record a chain (see
@@ -95,11 +114,42 @@ impl ReloadFailure {
         let attribution = err.failing_attribution();
         Self {
             message: err.to_string(),
+            kind: err.kind(),
             sources: err.sources().map(<[_]>::to_vec).unwrap_or_default(),
             field_path: err.field_path().map(<[_]>::to_vec).unwrap_or_default(),
             failing_source: attribution.map(|a| a.source.clone()),
             attribution_rule: attribution.map(|a| a.rule),
         }
+    }
+
+    /// [`ShikumiErrorKind`] of the underlying error this failure was
+    /// captured from — convenience accessor over [`Self::kind`] (the
+    /// public field). Total over the [`ReloadFailure`] surface (no
+    /// [`Option`]): every captured failure has exactly one kind, peer to
+    /// the way every [`ShikumiError`] always answers
+    /// [`ShikumiError::kind`].
+    ///
+    /// Surfaces the kind axis on the cross-thread observable envelope so
+    /// observers (dashboards, alerting policies, structured-log routers)
+    /// route on error class without re-deriving from [`Self::message`]
+    /// or destructuring the underlying [`ShikumiError`]. The accessor
+    /// is the structural peer of [`Self::attribution_confidence`] and
+    /// [`Self::layer_kind`] — typed projection over the captured
+    /// failure surface — but its return type is
+    /// [`ShikumiErrorKind`] (not `Option<_>`), because every error has
+    /// a kind even when no attribution can be resolved.
+    ///
+    /// Composes orthogonally with [`Self::layer_kind`] (over the
+    /// (file × env × defaults) axis) and
+    /// [`Self::attribution_confidence`] (over the (exact × fallback)
+    /// axis): together the three accessors close the
+    /// (kind × layer-kind × confidence) projection over the failure
+    /// surface. The kind axis is the only one of the three that is
+    /// always populated; the other two answer
+    /// `None` for non-attributed failures.
+    #[must_use]
+    pub fn kind(&self) -> ShikumiErrorKind {
+        self.kind
     }
 
     /// Confidence class of [`Self::attribution_rule`], or `None`
@@ -210,6 +260,7 @@ mod tests {
     fn display_renders_message() {
         let f = ReloadFailure {
             message: "broken pipe".to_owned(),
+            kind: ShikumiErrorKind::Parse,
             sources: vec![],
             field_path: vec![],
             failing_source: None,
@@ -222,6 +273,7 @@ mod tests {
     fn clone_preserves_data() {
         let f = ReloadFailure {
             message: "bad".to_owned(),
+            kind: ShikumiErrorKind::Extract,
             sources: vec![ConfigSource::Defaults],
             field_path: vec!["a".to_owned(), "b".to_owned()],
             failing_source: Some(ConfigSource::Defaults),
@@ -229,6 +281,7 @@ mod tests {
         };
         let g = f.clone();
         assert_eq!(g.message, f.message);
+        assert_eq!(g.kind, f.kind);
         assert_eq!(g.sources, f.sources);
         assert_eq!(g.field_path, f.field_path);
         assert_eq!(g.failing_source, f.failing_source);
@@ -570,6 +623,7 @@ mod tests {
             // the accessor must derive confidence from it directly.
             let f = ReloadFailure {
                 message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
                 failing_source: Some(ConfigSource::Defaults),
@@ -691,6 +745,7 @@ mod tests {
             // the accessor must derive layer_kind from it directly.
             let f = ReloadFailure {
                 message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
                 failing_source: Some(ConfigSource::Defaults),
@@ -771,6 +826,7 @@ mod tests {
         ] {
             let f = ReloadFailure {
                 message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
                 sources: vec![],
                 field_path: vec![],
                 failing_source: Some(ConfigSource::Defaults),
@@ -784,5 +840,186 @@ mod tests {
             pairs.len() >= 3,
             "kind × confidence must span ≥3 cells; got: {pairs:?}"
         );
+    }
+
+    // ---- ShikumiErrorKind (`kind` field & accessor) tests ----
+
+    fn one_per_kind() -> [(ShikumiError, ShikumiErrorKind); 6] {
+        // Mirrors the `one_per_kind()` table in `error::tests`: one
+        // constructed `ShikumiError` per expected `ShikumiErrorKind`.
+        // The reload-side test surface uses it to drive the
+        // `ReloadFailure::kind` capture across every variant.
+        [
+            (
+                ShikumiError::NotFound {
+                    tried: vec![PathBuf::from("/nf")],
+                },
+                ShikumiErrorKind::NotFound,
+            ),
+            (ShikumiError::Parse("p".to_owned()), ShikumiErrorKind::Parse),
+            (
+                ShikumiError::Watch(notify::Error::generic("w")),
+                ShikumiErrorKind::Watch,
+            ),
+            (
+                ShikumiError::Io(std::io::Error::other("io")),
+                ShikumiErrorKind::Io,
+            ),
+            (
+                ShikumiError::Figment(fake_figment_error()),
+                ShikumiErrorKind::Figment,
+            ),
+            (
+                ShikumiError::Extract {
+                    sources: vec![],
+                    error: fake_figment_error(),
+                },
+                ShikumiErrorKind::Extract,
+            ),
+        ]
+    }
+
+    #[test]
+    fn from_error_captures_kind_for_each_shikumi_error_variant() {
+        // Total over the kind partition: every captured ReloadFailure
+        // mirrors the underlying ShikumiError's kind, on both the field
+        // and the accessor. Pins the typescape contract that
+        // ReloadFailure::kind is a pure projection of
+        // ShikumiError::kind through ReloadFailure::from_error.
+        for (err, expected) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(
+                f.kind, expected,
+                "field must capture underlying kind for `{err:?}`"
+            );
+            assert_eq!(
+                f.kind(),
+                expected,
+                "accessor must mirror field for `{err:?}`"
+            );
+        }
+    }
+
+    #[test]
+    fn kind_accessor_agrees_with_field_pointwise() {
+        // The accessor and the public field must agree on every captured
+        // ReloadFailure — one is a pure forwarder of the other.
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(f.kind(), f.kind);
+        }
+    }
+
+    #[test]
+    fn kind_agrees_with_underlying_error_kind_pointwise() {
+        // f.kind() == err.kind() across every variant. The reload-side
+        // capture is a strict projection of the error-side kind.
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(f.kind(), err.kind(), "kind capture must mirror error");
+        }
+    }
+
+    #[test]
+    fn kind_is_total_no_option_at_capture_site() {
+        // Distinct from the attribution_* accessors (which return
+        // Option<_>), kind is total: every captured ReloadFailure has
+        // exactly one kind, regardless of attribution. Pin the totality
+        // by exercising every variant — including non-Extract ones,
+        // where attribution_rule / failing_source / layer_kind /
+        // attribution_confidence all return None — and asserting
+        // `f.kind()` is well-defined regardless.
+        for (err, expected) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            // Sanity: non-Extract variants have no attribution.
+            if expected != ShikumiErrorKind::Extract {
+                assert!(f.attribution_rule.is_none());
+                assert!(f.failing_source.is_none());
+                assert!(f.layer_kind().is_none());
+                assert!(f.attribution_confidence().is_none());
+            }
+            // Yet kind() always answers.
+            assert_eq!(f.kind(), expected);
+        }
+    }
+
+    #[test]
+    fn kind_partitions_every_captured_reload_failure() {
+        // The kind axis partitions the captured-failure surface into
+        // six disjoint cells. Pin disjointness: across the table, each
+        // kind appears exactly once, and six distinct kinds populate
+        // six distinct hash buckets.
+        use std::collections::HashSet;
+        let mut seen: HashSet<ShikumiErrorKind> = HashSet::new();
+        for (err, expected) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert!(seen.insert(f.kind()), "kind `{expected:?}` not unique");
+        }
+        assert_eq!(seen.len(), 6, "kind partition must cover six cells");
+    }
+
+    #[test]
+    fn kind_extract_propagates_through_real_provider_chain() {
+        // End-to-end through a real ProviderChain extract failure: the
+        // captured kind is Extract, regardless of whether attribution
+        // resolves. Pins the contract that the capture path
+        // (ProviderChain::extract → ShikumiError::Extract →
+        // ReloadFailure::from_error → ReloadFailure::kind) preserves
+        // the kind axis.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_kind_extract.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+
+        let f = ReloadFailure::from_error(&err);
+        assert_eq!(f.kind(), ShikumiErrorKind::Extract);
+        // And attribution still resolves alongside.
+        assert!(f.attribution_rule.is_some());
+    }
+
+    #[test]
+    fn kind_orthogonal_to_attribution_rule() {
+        // The kind axis spans more cells than the attribution axis:
+        // five of the six kinds carry no attribution_rule. Pin
+        // orthogonality by exhibiting (kind, attribution_rule.is_some())
+        // pairs that span ≥2 cells.
+        use std::collections::HashSet;
+        let mut pairs: HashSet<(ShikumiErrorKind, bool)> = HashSet::new();
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            pairs.insert((f.kind(), f.attribution_rule.is_some()));
+        }
+        // Across the table: at least the (Extract, false) cell (no
+        // attribution captured because the fake figment error has no
+        // metadata.source) and one (X, false) cell for non-Extract
+        // variants must appear, demonstrating the kind axis is
+        // not a redundant projection of the attribution axis.
+        assert!(
+            pairs.len() >= 2,
+            "kind × attribution-presence must span ≥2 cells; got: {pairs:?}"
+        );
+    }
+
+    #[test]
+    fn kind_survives_clone_independent_of_originating_error() {
+        // The captured kind is owned (Copy) — it must survive cloning
+        // and outlive the originating ShikumiError, parallel to the
+        // already-pinned `failing_source_owns_clone` invariant.
+        let f = {
+            let err = ShikumiError::Parse("ephemeral".to_owned());
+            ReloadFailure::from_error(&err)
+        };
+        let g = f.clone();
+        assert_eq!(g.kind(), ShikumiErrorKind::Parse);
+        assert_eq!(g.kind(), f.kind());
     }
 }
