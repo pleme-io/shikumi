@@ -15,7 +15,9 @@
 
 use std::fmt;
 
-use crate::error::{AttributionConfidence, AttributionRule, ShikumiError, ShikumiErrorKind};
+use crate::error::{
+    AttributionConfidence, AttributionRule, FieldPathLocalization, ShikumiError, ShikumiErrorKind,
+};
 use crate::source::{ConfigSource, ConfigSourceKind};
 
 /// A clone-able summary of the most recent reload failure on a
@@ -200,6 +202,55 @@ impl ReloadFailure {
     #[must_use]
     pub fn layer_kind(&self) -> Option<ConfigSourceKind> {
         self.attribution_rule.map(AttributionRule::layer_kind)
+    }
+
+    /// Closed-enum classification of this captured failure's
+    /// field-path localization state — the typed tri-state projection
+    /// over the [`Self::field_path`] / [`Self::kind`] pair.
+    ///
+    /// The cross-thread observable form of [`ReloadFailure`] stores
+    /// the offending field path as a flat [`Vec<String>`], collapsing
+    /// the original [`Option<&[String]>`] tri-state of
+    /// [`crate::ShikumiError::field_path`] into bi-state
+    /// (empty / non-empty). Observers reading
+    /// [`crate::ConfigStore::last_reload_error`] previously had to
+    /// consult both [`Self::kind`] (to ask "is this kind even
+    /// figment-bearing?" via
+    /// [`ShikumiErrorKind::is_figment_bearing`]) and
+    /// `Self::field_path.is_empty()` together to recover the original
+    /// tri-state; this accessor lifts the recovery into the type
+    /// system as a closed [`FieldPathLocalization`] enum.
+    ///
+    /// Total over the [`ReloadFailure`] surface — every captured
+    /// failure has exactly one localization classification, peer to
+    /// [`Self::kind`] (which is also total). Pairs with
+    /// [`Self::attribution_confidence`] (confidence axis, partial),
+    /// [`Self::layer_kind`] (layer-kind axis, partial), and
+    /// [`Self::attribution_rule`] (rule axis, partial) to give
+    /// observers the full
+    /// (kind × localization × layer-kind × rule × confidence)
+    /// projection of every captured failure as five typed reads.
+    ///
+    /// Agrees pointwise with
+    /// [`crate::ShikumiError::field_path_localization`] on every
+    /// captured failure: the lossless-capture contract for the
+    /// localization axis is pinned by
+    /// `field_path_localization_agrees_with_underlying_error_pointwise`.
+    /// A future variant landing on [`FieldPathLocalization`] forces a
+    /// classification at every consumer's exhaustive match, in
+    /// lockstep with the partition surfaced on
+    /// [`crate::ShikumiError`].
+    #[must_use]
+    pub fn field_path_localization(&self) -> FieldPathLocalization {
+        if self.kind.is_figment_bearing() {
+            if self.field_path.is_empty() {
+                FieldPathLocalization::FigmentUnlocalized
+            } else {
+                FieldPathLocalization::Localized
+            }
+        } else {
+            FieldPathLocalization::NotApplicable
+        }
     }
 }
 
@@ -1021,5 +1072,238 @@ mod tests {
         let g = f.clone();
         assert_eq!(g.kind(), ShikumiErrorKind::Parse);
         assert_eq!(g.kind(), f.kind());
+    }
+
+    // ---- FieldPathLocalization tests ----
+
+    #[test]
+    fn field_path_localization_localized_for_real_yaml_extract() {
+        // Real YAML file extract failure with figment-localized field:
+        // Localized.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_loc.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f = ReloadFailure::from_error(&err);
+        assert_eq!(
+            f.field_path_localization(),
+            FieldPathLocalization::Localized
+        );
+        // And the field_path slot carries the localized segments.
+        assert!(!f.field_path.is_empty());
+    }
+
+    #[test]
+    fn field_path_localization_unlocalized_for_extract_without_field() {
+        // Bare Figment::new() extraction failure wrapped in Extract:
+        // figment attached no path. FigmentUnlocalized.
+        let err = ShikumiError::Extract {
+            sources: vec![],
+            error: fake_figment_error(),
+        };
+        let f = ReloadFailure::from_error(&err);
+        assert_eq!(
+            f.field_path_localization(),
+            FieldPathLocalization::FigmentUnlocalized
+        );
+        assert!(f.field_path.is_empty());
+    }
+
+    #[test]
+    fn field_path_localization_unlocalized_for_figment_without_field() {
+        // Bare Figment variant: figment-bearing, no localized field.
+        let err = ShikumiError::Figment(fake_figment_error());
+        let f = ReloadFailure::from_error(&err);
+        assert_eq!(
+            f.field_path_localization(),
+            FieldPathLocalization::FigmentUnlocalized
+        );
+    }
+
+    #[test]
+    fn field_path_localization_not_applicable_for_non_figment_variants() {
+        // Parse / NotFound / Watch / Io: NotApplicable. The captured
+        // empty Vec<String> on field_path must not be confused with
+        // "figment couldn't localize"; the typed accessor restores
+        // the distinction.
+        for err in [
+            ShikumiError::Parse("x".to_owned()),
+            ShikumiError::NotFound {
+                tried: vec![PathBuf::from("/a")],
+            },
+            ShikumiError::Watch(notify::Error::generic("w")),
+            ShikumiError::Io(std::io::Error::other("io")),
+        ] {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(
+                f.field_path_localization(),
+                FieldPathLocalization::NotApplicable,
+                "non-figment variant must capture as NotApplicable: {err:?}"
+            );
+            // Sanity: the Vec is empty for these too.
+            assert!(f.field_path.is_empty());
+        }
+    }
+
+    #[test]
+    fn field_path_localization_agrees_with_underlying_error_pointwise() {
+        // Lossless-capture contract: the captured envelope's projection
+        // mirrors the source error's projection byte-for-byte, across
+        // every variant. The tri-state distinction lost in the Vec<String>
+        // representation is recovered by the typed accessor on both
+        // sides — they must agree.
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(
+                f.field_path_localization(),
+                err.field_path_localization(),
+                "captured localization must mirror source localization for {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn field_path_localization_partitions_every_captured_failure() {
+        // The localization axis partitions the captured-failure surface
+        // into exactly the three FieldPathLocalization cells. Across
+        // the standard one_per_kind() table, every captured failure
+        // must classify into exactly one cell, and the table must
+        // populate at least two distinct cells (the table doesn't
+        // include a Localized example, but does cover NotApplicable
+        // and FigmentUnlocalized).
+        use std::collections::HashSet;
+        let mut seen: HashSet<FieldPathLocalization> = HashSet::new();
+        for (err, _) in one_per_kind() {
+            seen.insert(ReloadFailure::from_error(&err).field_path_localization());
+        }
+        assert!(
+            seen.len() >= 2,
+            "one_per_kind table must span ≥2 localization cells; got: {seen:?}"
+        );
+        // Specifically: NotApplicable for the four non-figment kinds,
+        // FigmentUnlocalized for Extract / Figment (the table builds
+        // them without a path).
+        assert!(seen.contains(&FieldPathLocalization::NotApplicable));
+        assert!(seen.contains(&FieldPathLocalization::FigmentUnlocalized));
+    }
+
+    #[test]
+    fn field_path_localization_localized_iff_field_path_non_empty() {
+        // Cross-axis invariant on the captured envelope: Localized
+        // exactly when field_path is non-empty. Pins the contract that
+        // the typed projection and the raw Vec<String> agree on the
+        // localized boundary.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(
+                f.field_path_localization() == FieldPathLocalization::Localized,
+                !f.field_path.is_empty(),
+                "Localized iff field_path non-empty for {err:?}"
+            );
+        }
+        // And for a constructed Localized capture (real YAML extract):
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_loc_iff.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f = ReloadFailure::from_error(&err);
+        assert_eq!(
+            f.field_path_localization() == FieldPathLocalization::Localized,
+            !f.field_path.is_empty(),
+        );
+        assert!(!f.field_path.is_empty());
+    }
+
+    #[test]
+    fn field_path_localization_total_across_kind_axis() {
+        // Distinct from the attribution_* accessors (which return
+        // Option<_>), field_path_localization is total: every captured
+        // ReloadFailure has exactly one localization classification,
+        // regardless of attribution. Mirror of the kind-axis totality
+        // pinned by `kind_is_total_no_option_at_capture_site`.
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            // Always answers; the assignment is exhaustive.
+            let _ = f.field_path_localization();
+        }
+    }
+
+    #[test]
+    fn field_path_localization_survives_clone_independent_of_originating_error() {
+        // The captured localization is derived from owned slots
+        // (kind: Copy + field_path: Vec<String> Clone) — it must survive
+        // cloning and outlive the originating ShikumiError, parallel to
+        // the already-pinned kind-clone and failing-source-owns-clone
+        // invariants.
+        let f = {
+            let err = ShikumiError::Parse("ephemeral".to_owned());
+            ReloadFailure::from_error(&err)
+        };
+        let g = f.clone();
+        assert_eq!(
+            g.field_path_localization(),
+            FieldPathLocalization::NotApplicable
+        );
+        assert_eq!(g.field_path_localization(), f.field_path_localization());
+    }
+
+    #[test]
+    fn field_path_localization_orthogonal_to_kind_axis() {
+        // Across the constructible captured-failure surface, the
+        // (kind × localization) projection must span more than two
+        // cells: the partition is finer than either axis alone. The
+        // one_per_kind() table covers six (kind, localization) pairs,
+        // mostly (Non-figment kind, NotApplicable) and the two
+        // figment-bearing kinds with FigmentUnlocalized; adding a
+        // Localized capture forces a third cell along the localization
+        // axis.
+        use crate::provider::ProviderChain;
+        use std::collections::HashSet;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let mut pairs: HashSet<(ShikumiErrorKind, FieldPathLocalization)> = HashSet::new();
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            pairs.insert((f.kind(), f.field_path_localization()));
+        }
+        // Add a Localized capture to expand the cell count.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_orth.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f = ReloadFailure::from_error(&err);
+        pairs.insert((f.kind(), f.field_path_localization()));
+        // Now: at least the four (non-figment kind, NotApplicable)
+        // cells, the (Extract, FigmentUnlocalized), (Figment,
+        // FigmentUnlocalized), and (Extract, Localized) cells —
+        // ≥ 7 distinct cells across two axes that span 6 × 3 = 18.
+        assert!(
+            pairs.len() >= 5,
+            "kind × localization must span ≥5 cells; got: {pairs:?}"
+        );
     }
 }

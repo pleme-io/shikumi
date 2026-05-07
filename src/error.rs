@@ -138,6 +138,100 @@ pub enum ShikumiErrorKind {
     Extract,
 }
 
+impl ShikumiErrorKind {
+    /// Returns `true` if this kind wraps a [`figment::Error`] —
+    /// [`Self::Extract`] (with a recorded [`ConfigSource`] chain) and
+    /// [`Self::Figment`] (without). The figment-bearing variants are
+    /// the only ones whose [`ShikumiError::field_path`] can possibly
+    /// localize the offending field, because the figment error is
+    /// where the dotted key lives.
+    ///
+    /// One source of truth for the (kind → wraps-figment) projection
+    /// over the kind partition. Before this method, the partition
+    /// was implicit in two sites — the `match` in
+    /// [`ShikumiError::field_path`] (figment-bearing variants → `Some`,
+    /// others → `None`) and the prose in
+    /// [`crate::ReloadFailure::field_path`]'s doc — and required
+    /// observers wanting to distinguish "figment couldn't localize"
+    /// from "this kind doesn't carry figment at all" to re-derive the
+    /// classification by `matches!` against two specific variants.
+    /// Now it composes as one method call: `kind.is_figment_bearing()`.
+    ///
+    /// Composes with [`crate::FieldPathLocalization`]: the typed
+    /// tri-state field-localization partition over the captured-failure
+    /// surface uses this predicate to tell apart its
+    /// [`crate::FieldPathLocalization::FigmentUnlocalized`] (figment
+    /// bearing, but no localized field) and
+    /// [`crate::FieldPathLocalization::NotApplicable`] (kind doesn't
+    /// carry figment) variants. A future kind landing forces a
+    /// classification in the exhaustive match below; the partition
+    /// stays coherent by construction.
+    #[must_use]
+    pub fn is_figment_bearing(self) -> bool {
+        match self {
+            Self::Extract | Self::Figment => true,
+            Self::NotFound | Self::Parse | Self::Watch | Self::Io => false,
+        }
+    }
+}
+
+/// Closed tri-state partition over the field-path-localization axis of
+/// a [`ShikumiError`] / [`crate::ReloadFailure`].
+///
+/// Surfaces the tri-state distinction
+/// [`ShikumiError::field_path`] preserves but
+/// [`crate::ReloadFailure::field_path`] (a plain `Vec<String>`)
+/// collapses: an empty `Vec` on the cross-thread observable form means
+/// either "figment couldn't localize the offending field" *or* "this
+/// error variant doesn't carry figment context at all", and observers
+/// previously had to consult [`Self::kind`] (via
+/// [`ShikumiErrorKind::is_figment_bearing`]) and the `Vec` emptiness
+/// together to recover the original tri-state.
+///
+/// One source of truth for the field-localization axis: consumers
+/// route on the closed enum (in `match`, `HashMap` keys, log labels,
+/// alerting buckets) instead of re-deriving the tri-state at every
+/// observation site. Peer typed projection to [`ShikumiErrorKind`]
+/// (closed partition over the variant axis), [`AttributionRule`]
+/// (closed partition over the why-axis), and [`AttributionConfidence`]
+/// (closed partition over the confidence axis) — same typescape
+/// discipline (closed, allocation-free, exhaustive-match,
+/// `#[non_exhaustive]`).
+///
+/// Pairs with [`ShikumiError::field_path`] for the segments themselves
+/// (when [`Self::Localized`]); the localization axis answers
+/// "*was* the failure localized?" while the field-path slot answers
+/// "*where* was it localized?".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum FieldPathLocalization {
+    /// Figment localized the offending field at a non-empty dotted
+    /// path, recoverable as segments via
+    /// [`ShikumiError::field_path`] /
+    /// [`crate::ReloadFailure::field_path`]. The error is
+    /// figment-bearing
+    /// ([`ShikumiErrorKind::is_figment_bearing`] returns `true`),
+    /// and the wrapped [`figment::Error::path`] has at least one
+    /// segment.
+    Localized,
+    /// The error is figment-bearing
+    /// ([`ShikumiErrorKind::is_figment_bearing`] returns `true`),
+    /// but figment did not attach a non-empty dotted path —
+    /// typically a top-level type mismatch, a deserializer error
+    /// reported without a key context, or a manually constructed
+    /// `figment::Error` lacking metadata.
+    FigmentUnlocalized,
+    /// The error variant does not wrap a [`figment::Error`] at all —
+    /// [`ShikumiError::NotFound`], [`ShikumiError::Parse`],
+    /// [`ShikumiError::Watch`], [`ShikumiError::Io`]
+    /// ([`ShikumiErrorKind::is_figment_bearing`] returns `false`).
+    /// The notion of a per-key field path does not apply to these
+    /// variants; observers should not interpret an empty
+    /// [`crate::ReloadFailure::field_path`] alongside one of these
+    /// kinds as a localization failure.
+    NotApplicable,
+}
+
 /// Reason a [`figment::Error`] was attributed to a specific layer in the
 /// recorded [`ConfigSource`] chain by [`resolve_failing_source`].
 ///
@@ -558,6 +652,41 @@ impl ShikumiError {
         match self {
             Self::Extract { error, .. } | Self::Figment(error) => Some(&error.path),
             _ => None,
+        }
+    }
+
+    /// Closed-enum classification of this error's field-path
+    /// localization state — typed projection over the tri-state
+    /// surfaced by [`Self::field_path`]: `None`,
+    /// `Some(empty)`, `Some(non-empty)`.
+    ///
+    /// One source of truth for the tri-state: consumers route on the
+    /// returned [`FieldPathLocalization`] (in `match`, `HashMap`
+    /// keys, log labels, alerting buckets) instead of re-deriving the
+    /// (`is_some()`, `is_empty()`) decision at every site or pinning
+    /// the figment-bearing variant set inline by
+    /// `matches!(self, Extract { .. } | Figment(_))`. The
+    /// localization axis composes with the kind axis
+    /// ([`Self::kind`] / [`ShikumiErrorKind::is_figment_bearing`]) and
+    /// the field-path slot ([`Self::field_path`]): the kind tells
+    /// you whether figment was even an option, the localization tells
+    /// you whether figment took it, and the field path holds the
+    /// segments when it did.
+    ///
+    /// Mirrored on the cross-thread observable form by
+    /// [`crate::ReloadFailure::field_path_localization`]: the
+    /// captured-failure envelope's projection agrees pointwise with
+    /// the source error's, pinning the lossless-capture contract for
+    /// the localization axis (the `Vec<String>` representation on
+    /// [`crate::ReloadFailure::field_path`] alone collapses
+    /// `Some(empty)` and `None` into the same observable; the typed
+    /// accessor restores the distinction).
+    #[must_use]
+    pub fn field_path_localization(&self) -> FieldPathLocalization {
+        match self.field_path() {
+            Some(path) if !path.is_empty() => FieldPathLocalization::Localized,
+            Some(_) => FieldPathLocalization::FigmentUnlocalized,
+            None => FieldPathLocalization::NotApplicable,
         }
     }
 
@@ -1858,5 +1987,257 @@ mod tests {
         assert_eq!(extract.kind(), ShikumiErrorKind::Extract);
         assert_eq!(figment.kind(), ShikumiErrorKind::Figment);
         assert_ne!(extract.kind(), figment.kind());
+    }
+
+    // ---- ShikumiErrorKind::is_figment_bearing tests ----
+
+    #[test]
+    fn is_figment_bearing_true_for_extract_and_figment() {
+        // The two figment-wrapping kinds: Extract (with chain) and
+        // Figment (without). Pins which kinds the localization axis
+        // can possibly attach to.
+        assert!(ShikumiErrorKind::Extract.is_figment_bearing());
+        assert!(ShikumiErrorKind::Figment.is_figment_bearing());
+    }
+
+    #[test]
+    fn is_figment_bearing_false_for_non_figment_kinds() {
+        for kind in [
+            ShikumiErrorKind::NotFound,
+            ShikumiErrorKind::Parse,
+            ShikumiErrorKind::Watch,
+            ShikumiErrorKind::Io,
+        ] {
+            assert!(!kind.is_figment_bearing(), "{kind:?} must not bear figment");
+        }
+    }
+
+    #[test]
+    fn is_figment_bearing_partitions_every_kind() {
+        // Every ShikumiErrorKind variant must classify into exactly one
+        // figment-bearing cell — no kind may straddle, none may fall
+        // through. Pins the typescape contract that the figment-bearing
+        // axis is total over the kind partition; a future kind landing
+        // forces an assignment in the exhaustive match.
+        let all_kinds = [
+            ShikumiErrorKind::NotFound,
+            ShikumiErrorKind::Parse,
+            ShikumiErrorKind::Watch,
+            ShikumiErrorKind::Io,
+            ShikumiErrorKind::Figment,
+            ShikumiErrorKind::Extract,
+        ];
+        let bearing: Vec<_> = all_kinds
+            .iter()
+            .filter(|k| k.is_figment_bearing())
+            .collect();
+        assert_eq!(
+            bearing.len(),
+            2,
+            "exactly two kinds bear figment; got: {bearing:?}"
+        );
+    }
+
+    #[test]
+    fn is_figment_bearing_agrees_with_field_path_some_pointwise() {
+        // Cross-primitive invariant: a kind is figment-bearing iff the
+        // corresponding ShikumiError variant's field_path() returns
+        // Some(_). The kind-axis predicate must agree with the
+        // variant-axis behaviour byte-for-byte.
+        for (kind, err) in one_per_kind() {
+            assert_eq!(
+                kind.is_figment_bearing(),
+                err.field_path().is_some(),
+                "is_figment_bearing must mirror field_path-some for {kind:?}"
+            );
+        }
+    }
+
+    // ---- FieldPathLocalization / field_path_localization tests ----
+
+    #[test]
+    fn field_path_localization_localized_for_extract_with_typed_field() {
+        // A real Extract failure with a localized typed-mismatch field
+        // classifies as Localized.
+        let err = extract_error_with_typed_field_path();
+        assert_eq!(
+            err.field_path_localization(),
+            FieldPathLocalization::Localized
+        );
+    }
+
+    #[test]
+    fn field_path_localization_unlocalized_for_extract_without_field() {
+        // Bare Figment::new() failure wrapped in Extract: figment
+        // attached no path. The error is figment-bearing but
+        // unlocalized.
+        let err = ShikumiError::Extract {
+            sources: vec![],
+            error: fake_figment_error(),
+        };
+        assert_eq!(
+            err.field_path_localization(),
+            FieldPathLocalization::FigmentUnlocalized
+        );
+    }
+
+    #[test]
+    fn field_path_localization_unlocalized_for_figment_without_field() {
+        // Bare Figment variant: figment-bearing, no localized field.
+        let err = ShikumiError::Figment(fake_figment_error());
+        assert_eq!(
+            err.field_path_localization(),
+            FieldPathLocalization::FigmentUnlocalized
+        );
+    }
+
+    #[test]
+    fn field_path_localization_localized_for_figment_with_field() {
+        // Figment variant carrying a localized path: still Localized,
+        // because the localization axis is on the figment-bearing axis,
+        // not the variant axis.
+        let raw = figment::Error::from("typed".to_owned()).with_path("a.b");
+        let err = ShikumiError::Figment(Box::new(raw));
+        assert_eq!(
+            err.field_path_localization(),
+            FieldPathLocalization::Localized
+        );
+    }
+
+    #[test]
+    fn field_path_localization_not_applicable_for_non_figment_variants() {
+        // The four non-figment-bearing kinds (Parse, NotFound, Watch,
+        // Io) classify as NotApplicable — they don't carry a figment
+        // error at all, so the localization axis simply does not apply.
+        for err in [
+            ShikumiError::Parse("x".to_owned()),
+            ShikumiError::NotFound {
+                tried: vec![PathBuf::from("/a")],
+            },
+            ShikumiError::from(notify::Error::generic("w")),
+            ShikumiError::from(std::io::Error::new(std::io::ErrorKind::NotFound, "x")),
+        ] {
+            assert_eq!(
+                err.field_path_localization(),
+                FieldPathLocalization::NotApplicable,
+                "non-figment variant must classify as NotApplicable: {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn field_path_localization_partitions_every_variant() {
+        // Every constructed error classifies into exactly one
+        // FieldPathLocalization cell — no variant straddles, none falls
+        // through. Pins the partition contract that the typescape
+        // lifts: a future ShikumiError variant forces a classification
+        // in field_path_localization() (compile-time via field_path's
+        // exhaustive match) and a row in this table (test-time).
+        let all_locs = [
+            FieldPathLocalization::Localized,
+            FieldPathLocalization::FigmentUnlocalized,
+            FieldPathLocalization::NotApplicable,
+        ];
+        // Construct one error per (kind × localization) cell that's
+        // currently inhabited.
+        let cases: Vec<(ShikumiError, FieldPathLocalization)> = vec![
+            (
+                ShikumiError::Parse("x".to_owned()),
+                FieldPathLocalization::NotApplicable,
+            ),
+            (
+                ShikumiError::Extract {
+                    sources: vec![],
+                    error: fake_figment_error(),
+                },
+                FieldPathLocalization::FigmentUnlocalized,
+            ),
+            (
+                ShikumiError::Extract {
+                    sources: vec![],
+                    error: Box::new(figment::Error::from("t".to_owned()).with_path("k")),
+                },
+                FieldPathLocalization::Localized,
+            ),
+        ];
+        for (err, expected) in cases {
+            let matches: Vec<_> = all_locs
+                .iter()
+                .filter(|loc| err.field_path_localization() == **loc)
+                .collect();
+            assert_eq!(
+                matches.len(),
+                1,
+                "{err:?} must classify into exactly one cell (got {matches:?}, expected {expected:?})"
+            );
+            assert_eq!(err.field_path_localization(), expected);
+        }
+    }
+
+    #[test]
+    fn field_path_localization_agrees_with_field_path_pointwise() {
+        // Cross-axis invariant: the typed projection mirrors the raw
+        // tri-state of field_path() byte-for-byte. Pins the contract
+        // that field_path_localization() is a pure projection of
+        // field_path() — same partition, lifted to a closed enum.
+        for (_, err) in one_per_kind() {
+            let expected = match err.field_path() {
+                Some(p) if !p.is_empty() => FieldPathLocalization::Localized,
+                Some(_) => FieldPathLocalization::FigmentUnlocalized,
+                None => FieldPathLocalization::NotApplicable,
+            };
+            assert_eq!(
+                err.field_path_localization(),
+                expected,
+                "field_path_localization must mirror field_path() for {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn field_path_localization_is_copy_and_hashable() {
+        // Typescape bounds parity with sibling closed-enum primitives
+        // (ShikumiErrorKind, AttributionRule, AttributionConfidence,
+        // FigmentSourceTag, FigmentNameTag, EnvMetadataTag).
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(FieldPathLocalization::Localized);
+        set.insert(FieldPathLocalization::FigmentUnlocalized);
+        set.insert(FieldPathLocalization::NotApplicable);
+        set.insert(FieldPathLocalization::Localized); // duplicate — no growth
+        assert_eq!(set.len(), 3, "every localization must hash distinctly");
+
+        // Copy: rebind without move.
+        let l = FieldPathLocalization::Localized;
+        let l2 = l;
+        let l3 = l;
+        assert_eq!(l, l2);
+        assert_eq!(l2, l3);
+    }
+
+    #[test]
+    fn field_path_localization_localized_implies_kind_figment_bearing() {
+        // Cross-primitive invariant: when the localization axis says
+        // Localized or FigmentUnlocalized, the kind axis must say
+        // figment-bearing; when NotApplicable, the kind axis must say
+        // not figment-bearing. The two axes are linked by construction.
+        for (_, err) in one_per_kind() {
+            let loc = err.field_path_localization();
+            let bearing = err.kind().is_figment_bearing();
+            match loc {
+                FieldPathLocalization::Localized | FieldPathLocalization::FigmentUnlocalized => {
+                    assert!(
+                        bearing,
+                        "Localized/FigmentUnlocalized → kind must bear figment ({err:?})"
+                    );
+                }
+                FieldPathLocalization::NotApplicable => {
+                    assert!(
+                        !bearing,
+                        "NotApplicable → kind must not bear figment ({err:?})"
+                    );
+                }
+            }
+        }
     }
 }
