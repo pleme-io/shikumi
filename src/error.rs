@@ -375,6 +375,58 @@ impl AttributionRule {
             Self::DefaultsByCodeUniqueness => ConfigSourceKind::Defaults,
         }
     }
+
+    /// [`AttributionAxis`] of this rule: which `figment::Metadata` field
+    /// the resolver consulted to dispatch the attribution.
+    /// [`AttributionAxis::MetadataSource`] for rules driven by figment's
+    /// typed source classification ([`FigmentSourceTag::classify`]):
+    /// [`Self::FileBySource`] (`Source::File`),
+    /// [`Self::DefaultsByCodeUniqueness`] (`Source::Code`).
+    /// [`AttributionAxis::MetadataName`] for rules driven by parsing
+    /// figment's human-readable name string:
+    /// [`Self::FileByMetadataName`] (`"<format>: <path>"`),
+    /// [`Self::EnvByPrefix`] (`` `PREFIX` environment variable(s) ``),
+    /// [`Self::EnvByUniqueness`] (env-shaped name without prefix match).
+    ///
+    /// One source of truth for the (rule → metadata-axis) projection.
+    /// The information was previously implicit in each rule's name
+    /// suffix (`*BySource`, `*ByMetadataName`, `*ByPrefix`,
+    /// `*ByCodeUniqueness`) and in the resolver's branching shape;
+    /// lifting it to a typed accessor pins "this rule consulted
+    /// figment metadata field X" at the type level. A future variant
+    /// added to [`Self`] forces an axis assignment in the exhaustive
+    /// match in lockstep.
+    ///
+    /// Operational distinction: `metadata.source` is figment's typed
+    /// source classification (structural — it survives provider-name
+    /// changes upstream), while `metadata.name` is a human-readable
+    /// provider name parsed by string-matching (brittle — depends on
+    /// the upstream provider continuing to emit a name shape we
+    /// recognize via [`Format::strip_metadata_name`] /
+    /// [`ConfigSource::strip_env_metadata_name`]). Diagnostics,
+    /// dashboards, and attestation manifests that record attribution
+    /// provenance can weight name-axis attributions visibly weaker
+    /// than source-axis ones; consumers route on the closed enum
+    /// instead of inspecting the rule's name.
+    ///
+    /// Composes orthogonally with [`Self::confidence`] (exact × fallback)
+    /// and [`Self::layer_kind`] (file × env × defaults): the three
+    /// projections are independent axes over the rule space, and
+    /// together place a recognized rule at coordinates
+    /// (axis × confidence × layer-kind) without consumers destructuring
+    /// specific variants. The
+    /// `attribution_rule_metadata_axis_orthogonal_to_confidence` and
+    /// `attribution_rule_metadata_axis_orthogonal_to_layer_kind`
+    /// tests pin both orthogonality contracts.
+    #[must_use]
+    pub fn metadata_axis(self) -> AttributionAxis {
+        match self {
+            Self::FileBySource | Self::DefaultsByCodeUniqueness => AttributionAxis::MetadataSource,
+            Self::FileByMetadataName | Self::EnvByPrefix | Self::EnvByUniqueness => {
+                AttributionAxis::MetadataName
+            }
+        }
+    }
 }
 
 /// Confidence class of an [`AttributionRule`].
@@ -407,6 +459,71 @@ pub enum AttributionConfidence {
     /// (dashboards, miette diagnostic renderers, alerting policies)
     /// may want to weight or render this differently.
     Fallback,
+}
+
+/// Figment-metadata field consulted by an [`AttributionRule`].
+///
+/// Closed binary partition over the rule space: every recognized
+/// resolver path dispatches off either `metadata.source` (figment's
+/// typed `Source` classification, recovered via
+/// [`FigmentSourceTag::classify`]) or `metadata.name` (figment's
+/// human-readable provider-name string, parsed by
+/// [`Format::strip_metadata_name`] /
+/// [`ConfigSource::strip_env_metadata_name`]). The shape is named
+/// (rather than a `bool` flag) so consumers don't re-invent
+/// `is_source_axis_attribution: bool` at every observation site, and
+/// so future tertiary classifications (e.g. a `MetadataExtras` axis
+/// for figment providers that surface additional typed fields) land as
+/// one new variant peer to the existing two.
+///
+/// [`AttributionRule::metadata_axis`] is the canonical map. The
+/// projection is orthogonal to both [`AttributionRule::confidence`]
+/// (exact × fallback) and [`AttributionRule::layer_kind`]
+/// (file × env × defaults) — pinned by
+/// `attribution_rule_metadata_axis_orthogonal_to_confidence` and
+/// `attribution_rule_metadata_axis_orthogonal_to_layer_kind`.
+///
+/// Operational distinction:
+///
+/// - [`Self::MetadataSource`] is figment's *typed* source axis
+///   ([`figment::Source::File`], [`figment::Source::Code`],
+///   [`figment::Source::Custom`]). Structurally stable — survives
+///   upstream provider-name churn.
+/// - [`Self::MetadataName`] is figment's *string* provider-name axis
+///   parsed by shape-matching against shikumi-known forms. More
+///   brittle — depends on the upstream provider continuing to emit a
+///   recognized name shape; a renamed figment provider drops out of
+///   resolution silently.
+///
+/// Consumers (diagnostics, dashboards, attestation manifests) that
+/// want to weight name-axis attributions visibly weaker than
+/// source-axis ones route on this closed enum instead of grepping
+/// the rule's name.
+///
+/// `Copy + Eq + Hash + #[non_exhaustive]`, matching the typescape
+/// discipline of the sibling primitives ([`AttributionRule`],
+/// [`AttributionConfidence`], [`ConfigSourceKind`],
+/// [`FigmentSourceTag`], [`FigmentNameTag`]): closed,
+/// allocation-free, extensible without breaking exhaustivity at
+/// consumer matches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum AttributionAxis {
+    /// Resolver dispatched off `metadata.source` — figment's typed
+    /// [`figment::Source`] classification recovered via
+    /// [`FigmentSourceTag::classify`]. Structural; rules in this
+    /// class: [`AttributionRule::FileBySource`],
+    /// [`AttributionRule::DefaultsByCodeUniqueness`].
+    MetadataSource,
+    /// Resolver dispatched off `metadata.name` — figment's
+    /// human-readable provider-name string, recognized by
+    /// shape-matching ([`Format::strip_metadata_name`] /
+    /// [`ConfigSource::strip_env_metadata_name`] /
+    /// [`FigmentNameTag::classify`]). String-shape-dependent; rules
+    /// in this class: [`AttributionRule::FileByMetadataName`],
+    /// [`AttributionRule::EnvByPrefix`],
+    /// [`AttributionRule::EnvByUniqueness`].
+    MetadataName,
 }
 
 /// Typed envelope returned by [`ShikumiError::failing_attribution`]:
@@ -457,6 +574,26 @@ impl<'a> FailingSourceAttribution<'a> {
     #[must_use]
     pub fn layer_kind(self) -> ConfigSourceKind {
         self.rule.layer_kind()
+    }
+
+    /// [`AttributionAxis`] of [`Self::rule`]; convenience over
+    /// [`AttributionRule::metadata_axis`]. One method call answers
+    /// "which figment metadata field drove this attribution?" —
+    /// `metadata.source` (typed source classification, structurally
+    /// stable) or `metadata.name` (human-readable name, parsed by
+    /// shape-matching) — without destructuring the envelope.
+    ///
+    /// Composes with [`Self::confidence`] (exact × fallback) and
+    /// [`Self::layer_kind`] (file × env × defaults): three orthogonal
+    /// projections over the rule space, surfaced as three method
+    /// calls on the envelope. Diagnostics that want to render
+    /// name-axis attributions as more brittle than source-axis ones
+    /// — or attestation manifests that record per-failure attribution
+    /// provenance — route on this closed enum instead of inspecting
+    /// the rule's name.
+    #[must_use]
+    pub fn metadata_axis(self) -> AttributionAxis {
+        self.rule.metadata_axis()
     }
 }
 
@@ -2239,5 +2376,256 @@ mod tests {
                 }
             }
         }
+    }
+
+    // ---- AttributionAxis / AttributionRule::metadata_axis tests ----
+
+    #[test]
+    fn attribution_rule_metadata_axis_metadata_source_for_source_axis_rules() {
+        // The two source-axis rules — typed Source::File classification
+        // and typed Source::Code classification — must classify as
+        // MetadataSource. Pins which rules dispatch off figment's
+        // structural source field rather than parsing its name string.
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            assert_eq!(rule.metadata_axis(), AttributionAxis::MetadataSource);
+        }
+    }
+
+    #[test]
+    fn attribution_rule_metadata_axis_metadata_name_for_name_axis_rules() {
+        // The three name-axis rules — shikumi-provider tag, env-prefix
+        // tag, env-bare/unmatched tag — all dispatch by parsing
+        // figment's metadata.name string, so they classify as
+        // MetadataName.
+        for rule in [
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+        ] {
+            assert_eq!(rule.metadata_axis(), AttributionAxis::MetadataName);
+        }
+    }
+
+    #[test]
+    fn attribution_rule_metadata_axis_partitions_every_variant() {
+        // Every AttributionRule variant must classify into exactly one
+        // AttributionAxis — no rule may be both source-axis and
+        // name-axis, none may be neither. Pins the partition contract
+        // that the typescape lifts: a future variant added to
+        // AttributionRule forces an axis assignment in the exhaustive
+        // match (compile-time), and this test pins the resulting
+        // partition (test-time).
+        let cases = [
+            (
+                AttributionRule::FileBySource,
+                AttributionAxis::MetadataSource,
+            ),
+            (
+                AttributionRule::FileByMetadataName,
+                AttributionAxis::MetadataName,
+            ),
+            (AttributionRule::EnvByPrefix, AttributionAxis::MetadataName),
+            (
+                AttributionRule::EnvByUniqueness,
+                AttributionAxis::MetadataName,
+            ),
+            (
+                AttributionRule::DefaultsByCodeUniqueness,
+                AttributionAxis::MetadataSource,
+            ),
+        ];
+        for (rule, expected) in cases {
+            assert_eq!(rule.metadata_axis(), expected, "rule {rule:?}");
+        }
+    }
+
+    #[test]
+    fn attribution_axis_is_copy_and_hashable() {
+        // Typescape bounds parity with sibling closed-enum primitives
+        // (AttributionRule, AttributionConfidence, ShikumiErrorKind,
+        // FieldPathLocalization, ConfigSourceKind, FigmentSourceTag,
+        // FigmentNameTag, EnvMetadataTag).
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(AttributionAxis::MetadataSource);
+        set.insert(AttributionAxis::MetadataName);
+        set.insert(AttributionAxis::MetadataSource); // duplicate — no growth
+        assert_eq!(set.len(), 2, "every axis must hash distinctly");
+
+        // Copy: rebind without move.
+        let a = AttributionAxis::MetadataSource;
+        let a2 = a;
+        let a3 = a;
+        assert_eq!(a, a2);
+        assert_eq!(a2, a3);
+    }
+
+    #[test]
+    fn attribution_rule_metadata_axis_orthogonal_to_confidence() {
+        // The (metadata_axis × confidence) product over the rule space
+        // must cover at least three distinct cells — the two
+        // projections are orthogonal axes, not a single partition.
+        // Today: (MetadataSource, Exact) — FileBySource;
+        //        (MetadataSource, Fallback) — DefaultsByCodeUniqueness;
+        //        (MetadataName, Exact) — FileByMetadataName, EnvByPrefix;
+        //        (MetadataName, Fallback) — EnvByUniqueness.
+        // Four distinct cells → orthogonal in a non-trivial way.
+        use std::collections::HashSet;
+        let mut pairs: HashSet<(AttributionAxis, AttributionConfidence)> = HashSet::new();
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            pairs.insert((rule.metadata_axis(), rule.confidence()));
+        }
+        assert_eq!(
+            pairs.len(),
+            4,
+            "axis × confidence must span all four cells; got: {pairs:?}"
+        );
+    }
+
+    #[test]
+    fn attribution_rule_metadata_axis_orthogonal_to_layer_kind() {
+        // The (metadata_axis × layer_kind) product over the rule space
+        // must cover at least three distinct cells.
+        // Today: (MetadataSource, File) — FileBySource;
+        //        (MetadataSource, Defaults) — DefaultsByCodeUniqueness;
+        //        (MetadataName, File) — FileByMetadataName;
+        //        (MetadataName, Env) — EnvByPrefix, EnvByUniqueness.
+        // Four cells of the 2 × 3 = 6 product → finer than either axis.
+        use std::collections::HashSet;
+        let mut pairs: HashSet<(AttributionAxis, ConfigSourceKind)> = HashSet::new();
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            pairs.insert((rule.metadata_axis(), rule.layer_kind()));
+        }
+        assert!(
+            pairs.len() >= 3,
+            "axis × layer_kind must span ≥3 cells; got: {pairs:?}"
+        );
+    }
+
+    #[test]
+    fn attribution_rule_metadata_axis_three_axis_product_is_rule_identity() {
+        // Triple (metadata_axis × layer_kind × confidence) over the
+        // rule space must cover ≥5 cells — enough to distinguish every
+        // rule from every other rule. The three projections together
+        // form an injective map from AttributionRule to the (axis ×
+        // kind × confidence) product, modulo the EnvByPrefix /
+        // FileByMetadataName tie on (MetadataName, Exact, _) — those
+        // share the (axis, confidence) coordinates but split on
+        // layer_kind. Pins the contract that the three projections
+        // are jointly a complete coordinate system over the rule
+        // space (no rule has the same triple as another).
+        use std::collections::HashSet;
+        let mut triples: HashSet<(AttributionAxis, ConfigSourceKind, AttributionConfidence)> =
+            HashSet::new();
+        let all_rules = [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ];
+        for rule in all_rules {
+            triples.insert((rule.metadata_axis(), rule.layer_kind(), rule.confidence()));
+        }
+        assert_eq!(
+            triples.len(),
+            all_rules.len(),
+            "triple (axis × kind × confidence) must distinguish every rule; got: {triples:?}"
+        );
+    }
+
+    #[test]
+    fn failing_source_attribution_metadata_axis_mirrors_rule_metadata_axis() {
+        // The envelope's metadata_axis() must agree with the rule's,
+        // byte-for-byte, on every recognized rule. Pins the contract
+        // that the convenience accessor stays a thin forwarder.
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            let src = ConfigSource::Defaults;
+            let attr = FailingSourceAttribution::new(&src, rule);
+            assert_eq!(attr.metadata_axis(), rule.metadata_axis());
+        }
+    }
+
+    #[test]
+    fn failing_attribution_metadata_axis_metadata_source_for_yaml_extract() {
+        // End-to-end: a real YAML-file extract failure attributes via
+        // FileBySource — the resolver dispatched off `metadata.source`
+        // (figment's typed Source::File). The envelope's metadata_axis
+        // accessor must surface MetadataSource without the consumer
+        // destructuring the rule.
+        let (_dir, err) = extract_error_with_file_path_failure();
+        let attr = err.failing_attribution().expect("attribution");
+        assert_eq!(attr.metadata_axis(), AttributionAxis::MetadataSource);
+        assert_eq!(attr.metadata_axis(), attr.rule.metadata_axis());
+    }
+
+    #[test]
+    fn failing_attribution_metadata_axis_metadata_name_for_synthetic_env_prefix() {
+        // End-to-end: a synthetic env-prefixed metadata name with a
+        // matching env prefix in the chain attributes via EnvByPrefix
+        // — name-axis. The envelope reports MetadataName.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("MAXIS_".to_owned()),
+        ];
+        let err = ShikumiError::Extract {
+            sources: chain,
+            error: synthetic_error_with_metadata_name("`MAXIS_` environment variable(s)"),
+        };
+        let attr = err.failing_attribution().expect("attribution");
+        assert_eq!(attr.rule, AttributionRule::EnvByPrefix);
+        assert_eq!(attr.metadata_axis(), AttributionAxis::MetadataName);
+    }
+
+    #[test]
+    fn failing_attribution_metadata_axis_metadata_source_for_defaults_only_extract() {
+        // End-to-end: a defaults-only Serialized extract dispatches
+        // via DefaultsByCodeUniqueness — the resolver inspected
+        // `metadata.source` (figment's typed Source::Code), even
+        // though the rule is uniqueness-based. Pins that the axis
+        // partition is independent of the confidence partition.
+        use crate::provider::ProviderChain;
+        use serde::Serialize;
+        #[derive(Serialize)]
+        struct Bad {
+            count: String,
+        }
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let err = ProviderChain::new()
+            .with_defaults(&Bad {
+                count: "not_a_number".into(),
+            })
+            .extract::<Cfg>()
+            .unwrap_err();
+        let attr = err.failing_attribution().expect("attribution");
+        assert_eq!(attr.rule, AttributionRule::DefaultsByCodeUniqueness);
+        assert_eq!(attr.metadata_axis(), AttributionAxis::MetadataSource);
+        // Confidence is Fallback — pins independence of the two axes.
+        assert_eq!(attr.confidence(), AttributionConfidence::Fallback);
     }
 }

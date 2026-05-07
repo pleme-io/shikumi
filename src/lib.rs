@@ -49,8 +49,8 @@ mod watcher;
 
 pub use discovery::{ConfigDiscovery, Format, FormatMetadataTag};
 pub use error::{
-    AttributionConfidence, AttributionRule, FailingSourceAttribution, FieldPathLocalization,
-    ShikumiError, ShikumiErrorKind,
+    AttributionAxis, AttributionConfidence, AttributionRule, FailingSourceAttribution,
+    FieldPathLocalization, ShikumiError, ShikumiErrorKind,
 };
 #[cfg(feature = "lisp")]
 pub use lisp_provider::{LispProvider, load_from_str as load_lisp_from_str};

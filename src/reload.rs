@@ -16,7 +16,8 @@
 use std::fmt;
 
 use crate::error::{
-    AttributionConfidence, AttributionRule, FieldPathLocalization, ShikumiError, ShikumiErrorKind,
+    AttributionAxis, AttributionConfidence, AttributionRule, FieldPathLocalization, ShikumiError,
+    ShikumiErrorKind,
 };
 use crate::source::{ConfigSource, ConfigSourceKind};
 
@@ -202,6 +203,37 @@ impl ReloadFailure {
     #[must_use]
     pub fn layer_kind(&self) -> Option<ConfigSourceKind> {
         self.attribution_rule.map(AttributionRule::layer_kind)
+    }
+
+    /// [`AttributionAxis`] of the rule that named the blamed layer,
+    /// or `None` when no attribution was recorded — strict superset
+    /// of [`Self::attribution_rule`]`.map(AttributionRule::metadata_axis)`,
+    /// surfaced as a typed accessor so observers (dashboards,
+    /// alerting policies, attestation manifests) don't re-derive the
+    /// (`metadata.source` × `metadata.name`) partition at every
+    /// observation site.
+    ///
+    /// Returns `Some(_)` exactly when [`Self::attribution_rule`] is
+    /// `Some(_)` (equivalently: when [`Self::failing_source`] is
+    /// `Some(_)`); `None` otherwise. Composes with
+    /// [`Self::layer_kind`] (file × env × defaults) and
+    /// [`Self::attribution_confidence`] (exact × fallback) as the
+    /// third orthogonal projection over the rule space, giving
+    /// observers the (axis × layer-kind × confidence) coordinates
+    /// of every attributed failure as three closed-enum reads.
+    ///
+    /// Operationally distinguishes attributions driven by figment's
+    /// typed source classification (structurally stable —
+    /// [`AttributionAxis::MetadataSource`]) from attributions driven
+    /// by parsing figment's human-readable provider-name string
+    /// (string-shape-dependent — [`AttributionAxis::MetadataName`]).
+    /// Observers that want to weight name-axis attributions visibly
+    /// weaker than source-axis ones — peer to weighting
+    /// [`AttributionConfidence::Fallback`] weaker than
+    /// [`AttributionConfidence::Exact`] — read this accessor.
+    #[must_use]
+    pub fn metadata_axis(&self) -> Option<AttributionAxis> {
+        self.attribution_rule.map(AttributionRule::metadata_axis)
     }
 
     /// Closed-enum classification of this captured failure's
@@ -1305,5 +1337,241 @@ mod tests {
             pairs.len() >= 5,
             "kind × localization must span ≥5 cells; got: {pairs:?}"
         );
+    }
+
+    // ---- AttributionAxis (`metadata_axis` accessor) tests ----
+
+    #[test]
+    fn metadata_axis_metadata_source_for_real_yaml_extract() {
+        // Real YAML file extract attributes via FileBySource — the
+        // resolver dispatched off `metadata.source` (figment's typed
+        // Source::File classification). The accessor surfaces
+        // MetadataSource without callers destructuring the rule.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_axis_src.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+
+        let f = ReloadFailure::from_error(&err);
+        assert_eq!(f.metadata_axis(), Some(AttributionAxis::MetadataSource));
+        assert_eq!(f.attribution_rule, Some(AttributionRule::FileBySource));
+    }
+
+    #[test]
+    fn metadata_axis_metadata_source_for_defaults_only_extract() {
+        // Defaults-only Serialized extract dispatches via
+        // DefaultsByCodeUniqueness — the resolver inspected
+        // `metadata.source` (figment's typed Source::Code). The
+        // accessor surfaces MetadataSource even though the
+        // confidence is Fallback — pins independence of the axis and
+        // confidence partitions on the captured envelope.
+        use crate::provider::ProviderChain;
+        use serde::Serialize;
+        #[derive(Serialize)]
+        struct Bad {
+            count: String,
+        }
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let err = ProviderChain::new()
+            .with_defaults(&Bad {
+                count: "not_a_number".into(),
+            })
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f = ReloadFailure::from_error(&err);
+        assert_eq!(
+            f.attribution_rule,
+            Some(AttributionRule::DefaultsByCodeUniqueness)
+        );
+        assert_eq!(f.metadata_axis(), Some(AttributionAxis::MetadataSource));
+        assert_eq!(
+            f.attribution_confidence(),
+            Some(AttributionConfidence::Fallback)
+        );
+    }
+
+    #[test]
+    fn metadata_axis_none_for_unattributed_extract() {
+        // No metadata to map → no rule → no metadata_axis. Pins the
+        // Some-iff-attribution-rule contract on the third axis.
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults],
+            error: fake_figment_error(),
+        };
+        let f = ReloadFailure::from_error(&err);
+        assert!(f.metadata_axis().is_none());
+        assert!(f.attribution_rule.is_none());
+    }
+
+    #[test]
+    fn metadata_axis_none_for_non_extract_variants() {
+        // Non-figment-bearing variants and the bare Figment variant
+        // never carry attribution; the accessor must report None
+        // across them all.
+        for f in [
+            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&ShikumiError::Figment(fake_figment_error())),
+            ReloadFailure::from_error(&ShikumiError::NotFound {
+                tried: vec![PathBuf::from("/a")],
+            }),
+            ReloadFailure::from_error(&ShikumiError::Watch(notify::Error::generic("w"))),
+            ReloadFailure::from_error(&ShikumiError::Io(std::io::Error::other("io"))),
+        ] {
+            assert!(f.metadata_axis().is_none());
+        }
+    }
+
+    #[test]
+    fn metadata_axis_some_iff_attribution_rule_some() {
+        // Invariant: across every constructed ReloadFailure, the
+        // metadata_axis accessor is populated exactly when the rule
+        // slot is. Pins the strict-superset contract that the
+        // accessor is a pure forwarder over
+        // `rule.map(AttributionRule::metadata_axis)`.
+        for f in [
+            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&ShikumiError::Extract {
+                sources: vec![ConfigSource::Defaults],
+                error: fake_figment_error(),
+            }),
+            ReloadFailure::from_error(&ShikumiError::Figment(fake_figment_error())),
+        ] {
+            assert_eq!(f.attribution_rule.is_some(), f.metadata_axis().is_some());
+        }
+    }
+
+    #[test]
+    fn metadata_axis_agrees_with_rule_metadata_axis_pointwise() {
+        // For every constructible attribution scenario, the accessor
+        // result equals attribution_rule.map(AttributionRule::metadata_axis)
+        // — pinning the convenience accessor as a pure projection of
+        // the captured rule.
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            // Build a synthetic ReloadFailure carrying just the rule;
+            // the accessor must derive metadata_axis from it directly.
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            };
+            assert_eq!(f.metadata_axis(), Some(rule.metadata_axis()));
+        }
+    }
+
+    #[test]
+    fn metadata_axis_orthogonal_to_attribution_confidence() {
+        // The metadata_axis × attribution_confidence pair are
+        // orthogonal projections over the rule space along the
+        // (source × name) and (exact × fallback) axes respectively.
+        // Pin orthogonality by exhibiting all four (axis, confidence)
+        // cells across constructible ReloadFailure scenarios.
+        use std::collections::HashSet;
+        let mut pairs: HashSet<(AttributionAxis, AttributionConfidence)> = HashSet::new();
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            };
+            let axis = f.metadata_axis().expect("attributed → axis some");
+            let conf = f.attribution_confidence().expect("attributed → conf some");
+            pairs.insert((axis, conf));
+        }
+        assert_eq!(
+            pairs.len(),
+            4,
+            "axis × confidence must span all four cells; got: {pairs:?}"
+        );
+    }
+
+    #[test]
+    fn metadata_axis_orthogonal_to_layer_kind() {
+        // The metadata_axis × layer_kind pair must span ≥3 cells —
+        // pinning that the axis partition is finer than (or
+        // orthogonal to) the layer-kind partition on the captured
+        // envelope.
+        use std::collections::HashSet;
+        let mut pairs: HashSet<(AttributionAxis, ConfigSourceKind)> = HashSet::new();
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            };
+            let axis = f.metadata_axis().expect("attributed → axis some");
+            let kind = f.layer_kind().expect("attributed → kind some");
+            pairs.insert((axis, kind));
+        }
+        assert!(
+            pairs.len() >= 3,
+            "axis × layer_kind must span ≥3 cells; got: {pairs:?}"
+        );
+    }
+
+    #[test]
+    fn metadata_axis_survives_clone_independent_of_originating_error() {
+        // The captured axis is derived from the captured rule (Copy)
+        // — it must survive cloning and outlive the originating
+        // ShikumiError, parallel to the kind-clone and
+        // failing-source-owns-clone invariants already pinned.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let f = {
+            let dir = tempfile::TempDir::new().unwrap();
+            let file = dir.path().join("rf_axis_clone.yaml");
+            std::fs::write(&file, "count: not_a_number\n").unwrap();
+            let err = ProviderChain::new()
+                .with_file(&file)
+                .extract::<Cfg>()
+                .unwrap_err();
+            ReloadFailure::from_error(&err)
+        };
+        let g = f.clone();
+        assert_eq!(g.metadata_axis(), Some(AttributionAxis::MetadataSource));
+        assert_eq!(g.metadata_axis(), f.metadata_axis());
     }
 }
