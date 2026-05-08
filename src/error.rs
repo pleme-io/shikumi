@@ -705,7 +705,7 @@ pub struct FailingSourceAttribution<'a> {
 }
 
 impl<'a> FailingSourceAttribution<'a> {
-    fn new(source: &'a ConfigSource, rule: AttributionRule) -> Self {
+    pub(crate) fn new(source: &'a ConfigSource, rule: AttributionRule) -> Self {
         Self { source, rule }
     }
 

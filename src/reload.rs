@@ -17,7 +17,7 @@ use std::fmt;
 
 use crate::error::{
     AttributionAxis, AttributionConfidence, AttributionCoordinates, AttributionRule,
-    FieldPathLocalization, ShikumiError, ShikumiErrorKind,
+    FailingSourceAttribution, FieldPathLocalization, ShikumiError, ShikumiErrorKind,
 };
 use crate::source::{ConfigSource, ConfigSourceKind};
 
@@ -271,6 +271,69 @@ impl ReloadFailure {
     #[must_use]
     pub fn coordinates(&self) -> Option<AttributionCoordinates> {
         self.attribution_rule.map(AttributionRule::coordinates)
+    }
+
+    /// Borrowed [`FailingSourceAttribution`] envelope fused from the
+    /// two parallel [`Self::failing_source`] / [`Self::attribution_rule`]
+    /// slots — peer to [`crate::ShikumiError::failing_attribution`] on
+    /// the live error surface, lifted onto the cross-thread observable
+    /// form.
+    ///
+    /// Returns [`Some`] exactly when both slots are populated
+    /// (the [`Some`]-iff-attribution invariant pinned by
+    /// `from_error_attribution_rule_some_iff_failing_source_some`),
+    /// [`None`] otherwise. Reuses the existing borrowed envelope shape
+    /// rather than introducing a new owned counterpart: the source
+    /// borrows into [`Self::failing_source`], the rule is [`Copy`], and
+    /// the envelope shares the captured failure's lifetime.
+    ///
+    /// One source of truth for the (`failing_source` × `attribution_rule`)
+    /// pair on the captured envelope. Before this accessor, observers
+    /// reading [`crate::ConfigStore::last_reload_error`] either read the
+    /// two parallel [`Option`] fields and re-paired them inline (a
+    /// recurring two-line pattern at every site that wanted both
+    /// halves), or read each through one of the four sibling
+    /// projection accessors ([`Self::attribution_confidence`],
+    /// [`Self::layer_kind`], [`Self::metadata_axis`],
+    /// [`Self::coordinates`]) and lost the [`ConfigSource`] half. This
+    /// accessor returns the structurally-coherent pair as one read,
+    /// surfaced through the same envelope shape that
+    /// [`crate::ShikumiError::failing_attribution`] returns on the
+    /// live-error side.
+    ///
+    /// Structurally pins the [`Some`]-iff-attribution invariant: even
+    /// if the two public field slots somehow drifted out of agreement
+    /// (e.g. a future construction site or a deserialized payload
+    /// landed inconsistent halves), this accessor returns [`None`]
+    /// unless both slots are populated — the legal subset of the
+    /// 2 × 2 = 4 product cells of the (`failing_source.is_some()` ×
+    /// `attribution_rule.is_some()`) cube is exactly the diagonal
+    /// (both [`Some`], both [`None`]), and the envelope projection
+    /// collapses any off-diagonal cell back to [`None`]. The contract
+    /// is pinned by `failing_attribution_some_iff_both_halves_populated`.
+    ///
+    /// Mirrors [`crate::ShikumiError::failing_attribution`] pointwise
+    /// on every captured failure: the lossless-capture contract for
+    /// the attribution envelope is pinned by
+    /// `failing_attribution_agrees_with_underlying_error_pointwise`.
+    /// A future field added to [`FailingSourceAttribution`] (e.g. a
+    /// per-attribution span, a confidence weight, a captured
+    /// `figment::Metadata` slice) propagates through this accessor
+    /// once, not through every observation site.
+    ///
+    /// Composes with [`Self::coordinates`]: both are partial
+    /// projections of the same attribution slot, populated under the
+    /// same [`Some`]-iff-attribution discipline. The envelope carries
+    /// the [`ConfigSource`] alongside the [`AttributionRule`];
+    /// [`Self::coordinates`] drops the source and returns the
+    /// (axis × layer-kind × confidence) triple for consumers that
+    /// only need the rule's coordinates.
+    #[must_use]
+    pub fn failing_attribution(&self) -> Option<FailingSourceAttribution<'_>> {
+        match (&self.failing_source, self.attribution_rule) {
+            (Some(source), Some(rule)) => Some(FailingSourceAttribution::new(source, rule)),
+            _ => None,
+        }
     }
 
     /// Closed-enum classification of this captured failure's
@@ -1782,5 +1845,343 @@ mod tests {
             5,
             "every captured rule must occupy a distinct coordinate cell; got: {coords_set:?}"
         );
+    }
+
+    // ---- failing_attribution accessor tests ----
+
+    #[test]
+    fn failing_attribution_for_real_yaml_extract_borrows_source_and_rule() {
+        // End-to-end: a real YAML-file extract failure surfaces both
+        // halves of the attribution as one borrowed envelope read,
+        // peer to ShikumiError::failing_attribution on the live-error
+        // side. The envelope's source borrows into the captured
+        // failing_source slot; the rule is the captured rule.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_attr_envelope.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+
+        let f = ReloadFailure::from_error(&err);
+        let envelope = f.failing_attribution().expect("attributed → envelope some");
+        assert_eq!(envelope.rule, AttributionRule::FileBySource);
+        assert_eq!(envelope.source.as_path(), Some(file.as_path()));
+    }
+
+    #[test]
+    fn failing_attribution_some_iff_both_halves_populated() {
+        // The Some-iff-attribution invariant is structural on the
+        // accessor: the diagonal (both Some / both None) of the
+        // (failing_source × attribution_rule) 2×2 cube produces
+        // Some(envelope) / None respectively, and the two off-diagonal
+        // cells (only one half populated) collapse back to None.
+        // Pins that the envelope projection is the legal subset of the
+        // 4-cell product cube, peer to the way coordinates() and the
+        // three sibling Option-returning forwarders enforce
+        // Some-iff-rule.
+
+        // Both Some: envelope Some.
+        let both = ReloadFailure {
+            message: "synth".to_owned(),
+            kind: ShikumiErrorKind::Extract,
+            sources: vec![],
+            field_path: vec![],
+            failing_source: Some(ConfigSource::Defaults),
+            attribution_rule: Some(AttributionRule::DefaultsByCodeUniqueness),
+        };
+        assert!(both.failing_attribution().is_some());
+
+        // Both None: envelope None.
+        let neither = ReloadFailure {
+            message: "synth".to_owned(),
+            kind: ShikumiErrorKind::Parse,
+            sources: vec![],
+            field_path: vec![],
+            failing_source: None,
+            attribution_rule: None,
+        };
+        assert!(neither.failing_attribution().is_none());
+
+        // Off-diagonal (only source): envelope None — the legal-subset
+        // collapse pins the structural invariant even if a future
+        // construction site lands inconsistent halves.
+        let only_source = ReloadFailure {
+            message: "synth".to_owned(),
+            kind: ShikumiErrorKind::Extract,
+            sources: vec![],
+            field_path: vec![],
+            failing_source: Some(ConfigSource::Defaults),
+            attribution_rule: None,
+        };
+        assert!(only_source.failing_attribution().is_none());
+
+        // Off-diagonal (only rule): envelope None.
+        let only_rule = ReloadFailure {
+            message: "synth".to_owned(),
+            kind: ShikumiErrorKind::Extract,
+            sources: vec![],
+            field_path: vec![],
+            failing_source: None,
+            attribution_rule: Some(AttributionRule::FileBySource),
+        };
+        assert!(only_rule.failing_attribution().is_none());
+    }
+
+    #[test]
+    fn failing_attribution_none_for_unattributed_extract() {
+        // No metadata to map → no attribution captured → envelope None.
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults],
+            error: fake_figment_error(),
+        };
+        let f = ReloadFailure::from_error(&err);
+        assert!(f.failing_attribution().is_none());
+    }
+
+    #[test]
+    fn failing_attribution_none_for_non_extract_variants() {
+        // Non-figment-bearing variants and the bare Figment variant
+        // never carry attribution; the envelope accessor must report
+        // None across them all, peer to the four sibling
+        // Option-returning projection accessors.
+        for f in [
+            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&ShikumiError::Figment(fake_figment_error())),
+            ReloadFailure::from_error(&ShikumiError::NotFound {
+                tried: vec![PathBuf::from("/a")],
+            }),
+            ReloadFailure::from_error(&ShikumiError::Watch(notify::Error::generic("w"))),
+            ReloadFailure::from_error(&ShikumiError::Io(std::io::Error::other("io"))),
+        ] {
+            assert!(f.failing_attribution().is_none());
+        }
+    }
+
+    #[test]
+    fn failing_attribution_envelope_carries_same_halves_as_fields() {
+        // For every captured-from real attributed extract, the envelope's
+        // (source, rule) pair must equal the parallel (failing_source,
+        // attribution_rule) field pair byte-for-byte. Pins the accessor
+        // as a pure projection of the two slots, not a re-derived
+        // computation.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_attr_parity.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f = ReloadFailure::from_error(&err);
+        let envelope = f.failing_attribution().expect("attributed → envelope some");
+        assert_eq!(Some(envelope.rule), f.attribution_rule);
+        assert_eq!(Some(envelope.source), f.failing_source.as_ref());
+    }
+
+    #[test]
+    fn failing_attribution_agrees_with_underlying_error_pointwise() {
+        // Lossless-capture contract for the attribution envelope: the
+        // captured ReloadFailure's failing_attribution() agrees with
+        // the originating ShikumiError's failing_attribution() across
+        // every variant, modulo the lifetime difference (the live
+        // form borrows into the chain, the captured form borrows into
+        // the cloned slots). The (source, rule) pair must match
+        // byte-for-byte on every recognized rule.
+        use crate::provider::ProviderChain;
+        use serde::Serialize;
+
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        #[derive(Serialize)]
+        struct Bad {
+            count: String,
+        }
+
+        // FileBySource path.
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_attr_pointwise.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err_file = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f_file = ReloadFailure::from_error(&err_file);
+        let live = err_file.failing_attribution().expect("live envelope some");
+        let captured = f_file
+            .failing_attribution()
+            .expect("captured envelope some");
+        assert_eq!(live.rule, captured.rule);
+        assert_eq!(live.source, captured.source);
+
+        // DefaultsByCodeUniqueness path.
+        let err_def = ProviderChain::new()
+            .with_defaults(&Bad {
+                count: "not_a_number".into(),
+            })
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f_def = ReloadFailure::from_error(&err_def);
+        let live = err_def.failing_attribution().expect("live envelope some");
+        let captured = f_def.failing_attribution().expect("captured envelope some");
+        assert_eq!(live.rule, captured.rule);
+        assert_eq!(live.source, captured.source);
+
+        // Unattributed Extract: both surfaces must agree on None.
+        let err_unattr = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults],
+            error: fake_figment_error(),
+        };
+        let f_unattr = ReloadFailure::from_error(&err_unattr);
+        assert!(err_unattr.failing_attribution().is_none());
+        assert!(f_unattr.failing_attribution().is_none());
+
+        // Non-Extract variants: both surfaces must agree on None.
+        for err in [
+            ShikumiError::Parse("x".to_owned()),
+            ShikumiError::Figment(fake_figment_error()),
+        ] {
+            let f = ReloadFailure::from_error(&err);
+            assert!(err.failing_attribution().is_none());
+            assert!(f.failing_attribution().is_none());
+        }
+    }
+
+    #[test]
+    fn failing_attribution_envelope_coordinates_match_separate_accessor() {
+        // The envelope's coordinates() must equal the captured
+        // failure's coordinates() on every attributed scenario —
+        // pinning that routing through the envelope vs. the bare
+        // accessor gives the same triple. Composition contract for
+        // the (envelope, coordinates) pair on the captured surface,
+        // peer to the (envelope, coordinates) pair on the live-error
+        // surface.
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            };
+            let envelope = f.failing_attribution().expect("attributed → envelope some");
+            assert_eq!(Some(envelope.coordinates()), f.coordinates());
+            assert_eq!(envelope.confidence(), rule.confidence());
+            assert_eq!(envelope.layer_kind(), rule.layer_kind());
+            assert_eq!(envelope.metadata_axis(), rule.metadata_axis());
+        }
+    }
+
+    #[test]
+    fn failing_attribution_envelope_outlives_originating_error() {
+        // Capture from a borrowed error, drop the error, then borrow
+        // the envelope from the surviving ReloadFailure. The envelope
+        // borrows into the captured failure's owned ConfigSource clone,
+        // so it must remain valid after the originating ShikumiError
+        // is dropped — parallel to the failing_source-owns-clone
+        // invariant already pinned.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_attr_outlives.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let f = {
+            let err = ProviderChain::new()
+                .with_file(&file)
+                .extract::<Cfg>()
+                .unwrap_err();
+            ReloadFailure::from_error(&err)
+        };
+        let envelope = f.failing_attribution().expect("envelope some after drop");
+        assert_eq!(envelope.rule, AttributionRule::FileBySource);
+        assert_eq!(envelope.source.as_path(), Some(file.as_path()));
+    }
+
+    #[test]
+    fn failing_attribution_some_iff_other_attribution_accessors_some() {
+        // Cross-accessor invariant on the captured envelope: the new
+        // failing_attribution() accessor and the four pre-existing
+        // Some-iff-attribution accessors (attribution_confidence /
+        // layer_kind / metadata_axis / coordinates) populate exactly
+        // together. Pins that the envelope accessor lives on the same
+        // diagonal of the attribution-presence cube as its peers, not
+        // a refinement or a relaxation.
+        use crate::provider::ProviderChain;
+        use serde::Serialize;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        #[derive(Serialize)]
+        struct Bad {
+            count: String,
+        }
+
+        // Attributed (FileBySource).
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_attr_diag_file.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let f_file = ReloadFailure::from_error(
+            &ProviderChain::new()
+                .with_file(&file)
+                .extract::<Cfg>()
+                .unwrap_err(),
+        );
+
+        // Attributed (DefaultsByCodeUniqueness).
+        let f_def = ReloadFailure::from_error(
+            &ProviderChain::new()
+                .with_defaults(&Bad {
+                    count: "not_a_number".into(),
+                })
+                .extract::<Cfg>()
+                .unwrap_err(),
+        );
+
+        // Unattributed Extract.
+        let f_unattr = ReloadFailure::from_error(&ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults],
+            error: fake_figment_error(),
+        });
+
+        // Non-Extract.
+        let f_parse = ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned()));
+
+        for f in [&f_file, &f_def, &f_unattr, &f_parse] {
+            let env_some = f.failing_attribution().is_some();
+            assert_eq!(env_some, f.attribution_confidence().is_some());
+            assert_eq!(env_some, f.layer_kind().is_some());
+            assert_eq!(env_some, f.metadata_axis().is_some());
+            assert_eq!(env_some, f.coordinates().is_some());
+            assert_eq!(env_some, f.attribution_rule.is_some());
+            assert_eq!(env_some, f.failing_source.is_some());
+        }
     }
 }
