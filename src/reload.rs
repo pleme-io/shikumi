@@ -16,8 +16,8 @@
 use std::fmt;
 
 use crate::error::{
-    AttributionAxis, AttributionConfidence, AttributionRule, FieldPathLocalization, ShikumiError,
-    ShikumiErrorKind,
+    AttributionAxis, AttributionConfidence, AttributionCoordinates, AttributionRule,
+    FieldPathLocalization, ShikumiError, ShikumiErrorKind,
 };
 use crate::source::{ConfigSource, ConfigSourceKind};
 
@@ -234,6 +234,43 @@ impl ReloadFailure {
     #[must_use]
     pub fn metadata_axis(&self) -> Option<AttributionAxis> {
         self.attribution_rule.map(AttributionRule::metadata_axis)
+    }
+
+    /// Coordinate triple of [`Self::attribution_rule`], or `None` when
+    /// no attribution was recorded — strict superset of the three
+    /// sibling Option-returning accessors
+    /// ([`Self::attribution_confidence`], [`Self::layer_kind`],
+    /// [`Self::metadata_axis`]) collapsed into one
+    /// [`Option<AttributionCoordinates>`] read.
+    ///
+    /// Returns `Some(_)` exactly when [`Self::attribution_rule`] is
+    /// `Some(_)` (equivalently: when [`Self::failing_source`] is
+    /// `Some(_)`); `None` otherwise. The same `Some-iff-attribution`
+    /// discipline as the sibling projections — pinned by
+    /// `coordinates_some_iff_attribution_rule_some`.
+    ///
+    /// One source of truth for the (axis × layer-kind × confidence)
+    /// triple on the cross-thread observable envelope. Before this
+    /// accessor, observers reading
+    /// [`crate::ConfigStore::last_reload_error`] inlined three
+    /// `self.attribution_rule.map(AttributionRule::*)` calls at every
+    /// site — a recurring three-line pattern. The named struct
+    /// [`AttributionCoordinates`] collapses them to one read,
+    /// surfacing the triple as a typescape value (`Copy + Eq + Hash`)
+    /// usable as a `HashMap` key, log label, or attestation-manifest
+    /// payload without consumers re-deriving the triple at every
+    /// observation site.
+    ///
+    /// Pairs with [`AttributionRule::from_coordinates`]: an observer
+    /// that captured the [`AttributionCoordinates`] of a previous
+    /// failure (e.g. into a structured-log line) can re-hydrate the
+    /// originating rule by one method call, recovering the closed-enum
+    /// rule identity from its coordinates without retaining the
+    /// originating [`crate::ShikumiError`]. The bijection is pinned by
+    /// `coordinates_round_trip_through_from_coordinates`.
+    #[must_use]
+    pub fn coordinates(&self) -> Option<AttributionCoordinates> {
+        self.attribution_rule.map(AttributionRule::coordinates)
     }
 
     /// Closed-enum classification of this captured failure's
@@ -1573,5 +1610,177 @@ mod tests {
         let g = f.clone();
         assert_eq!(g.metadata_axis(), Some(AttributionAxis::MetadataSource));
         assert_eq!(g.metadata_axis(), f.metadata_axis());
+    }
+
+    // ---- coordinates accessor tests ----
+
+    #[test]
+    fn coordinates_for_real_yaml_extract_carries_full_triple() {
+        // End-to-end: a real YAML-file extract failure surfaces the
+        // (MetadataSource, File, Exact) triple in one accessor read.
+        // The captured envelope's coordinates() agrees with the three
+        // sibling Option-returning projection accessors.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_coords.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+
+        let f = ReloadFailure::from_error(&err);
+        let coords = f.coordinates().expect("attributed → coordinates some");
+        assert_eq!(coords.axis, AttributionAxis::MetadataSource);
+        assert_eq!(coords.layer_kind, ConfigSourceKind::File);
+        assert_eq!(coords.confidence, AttributionConfidence::Exact);
+    }
+
+    #[test]
+    fn coordinates_some_iff_attribution_rule_some() {
+        // Some-iff-attribution invariant: the coordinates accessor is
+        // populated exactly when the rule slot is, peer to
+        // attribution_confidence / layer_kind / metadata_axis.
+        for f in [
+            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&ShikumiError::Extract {
+                sources: vec![ConfigSource::Defaults],
+                error: fake_figment_error(),
+            }),
+            ReloadFailure::from_error(&ShikumiError::Figment(fake_figment_error())),
+        ] {
+            assert_eq!(f.attribution_rule.is_some(), f.coordinates().is_some());
+        }
+    }
+
+    #[test]
+    fn coordinates_agrees_with_three_projection_accessors_pointwise() {
+        // For every recognized rule, the named-struct lift on the
+        // ReloadFailure side surfaces the same per-axis values as the
+        // three sibling Option-returning forwarders. Pins the
+        // contract that the accessor is a pure projection of
+        // attribution_rule.map(AttributionRule::coordinates), not a
+        // re-derived computation.
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            };
+            let coords = f.coordinates().expect("attributed → coords some");
+            assert_eq!(Some(coords.axis), f.metadata_axis());
+            assert_eq!(Some(coords.layer_kind), f.layer_kind());
+            assert_eq!(Some(coords.confidence), f.attribution_confidence());
+        }
+    }
+
+    #[test]
+    fn coordinates_round_trips_through_from_coordinates() {
+        // The bijection statement on the captured envelope: a captured
+        // ReloadFailure's coordinates round-trip back to the originating
+        // rule via AttributionRule::from_coordinates. Pins the
+        // operational use case — re-hydrating a rule from a captured
+        // structured-log payload of three closed-enum coordinates.
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            };
+            let coords = f.coordinates().expect("coords some");
+            assert_eq!(
+                AttributionRule::from_coordinates(coords),
+                Some(rule),
+                "captured coords for {rule:?} must round-trip"
+            );
+        }
+    }
+
+    #[test]
+    fn coordinates_survives_clone_independent_of_originating_error() {
+        // The captured triple is derived from the captured rule (Copy)
+        // — it must survive cloning and outlive the originating
+        // ShikumiError, parallel to the metadata_axis / layer_kind /
+        // attribution_confidence clone-survival invariants.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let f = {
+            let dir = tempfile::TempDir::new().unwrap();
+            let file = dir.path().join("rf_coords_clone.yaml");
+            std::fs::write(&file, "count: not_a_number\n").unwrap();
+            let err = ProviderChain::new()
+                .with_file(&file)
+                .extract::<Cfg>()
+                .unwrap_err();
+            ReloadFailure::from_error(&err)
+        };
+        let g = f.clone();
+        let expected = AttributionCoordinates {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::File,
+            confidence: AttributionConfidence::Exact,
+        };
+        assert_eq!(g.coordinates(), Some(expected));
+        assert_eq!(g.coordinates(), f.coordinates());
+    }
+
+    #[test]
+    fn coordinates_distinguishes_every_rule_on_synthetic_failures() {
+        // Joint injectivity on the captured envelope: distinct rules
+        // captured into ReloadFailure produce distinct coordinate
+        // triples. Pins the structural-completeness statement on the
+        // cross-thread observable surface, peer to the underlying
+        // AttributionRule joint-injectivity contract.
+        use std::collections::HashSet;
+        let mut coords_set: HashSet<AttributionCoordinates> = HashSet::new();
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            };
+            coords_set.insert(f.coordinates().expect("coords some"));
+        }
+        assert_eq!(
+            coords_set.len(),
+            5,
+            "every captured rule must occupy a distinct coordinate cell; got: {coords_set:?}"
+        );
     }
 }

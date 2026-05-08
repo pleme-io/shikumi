@@ -427,6 +427,165 @@ impl AttributionRule {
             }
         }
     }
+
+    /// Forward unifier of the three orthogonal projections over this
+    /// rule: [`Self::metadata_axis`], [`Self::layer_kind`],
+    /// [`Self::confidence`]. Returns the rule's coordinates as a
+    /// typed [`AttributionCoordinates`] envelope.
+    ///
+    /// One source of truth for the three-axis read on a recognized
+    /// rule. Before this method, observers that wanted the full
+    /// coordinate triple inlined three method calls
+    /// (`(rule.metadata_axis(), rule.layer_kind(), rule.confidence())`)
+    /// at every site; the named struct collapses the three reads into
+    /// one and surfaces the triple as a typescape-eligible value
+    /// (`Copy + Eq + Hash + #[non_exhaustive]`) usable in `match`,
+    /// `HashMap` keys, log labels, alerting buckets, and attestation
+    /// manifest payloads.
+    ///
+    /// Pairs with [`Self::from_coordinates`] as the partial inverse:
+    /// `Self::from_coordinates(self.coordinates()) == Some(self)` for
+    /// every recognized [`Self`] variant — the bijection is pinned by
+    /// `attribution_rule_coordinates_round_trip`. The forward map is
+    /// total over the rule space; the inverse is partial, returning
+    /// `None` for the seven product cells of the
+    /// (axis × layer-kind × confidence) cube no recognized rule
+    /// occupies.
+    ///
+    /// Composes with the captured-failure envelopes — the convenience
+    /// forwarders [`FailingSourceAttribution::coordinates`] and
+    /// [`crate::ReloadFailure::coordinates`] surface the same triple
+    /// off the borrowed and cross-thread observable surfaces, with
+    /// the cross-thread accessor lifted to `Option<_>` to track the
+    /// `Some-iff-attribution` discipline established for the sibling
+    /// projection accessors.
+    #[must_use]
+    pub fn coordinates(self) -> AttributionCoordinates {
+        AttributionCoordinates {
+            axis: self.metadata_axis(),
+            layer_kind: self.layer_kind(),
+            confidence: self.confidence(),
+        }
+    }
+
+    /// Partial inverse of [`Self::coordinates`]: re-hydrate a
+    /// recognized rule from its coordinate triple, or [`None`] for
+    /// unrecognized triples.
+    ///
+    /// The (axis × `layer_kind` × confidence) cube has 2 × 3 × 2 = 12
+    /// product cells; today's rule space occupies 5 of them. The
+    /// inverse map names the five: `(MetadataSource, File, Exact)
+    /// → FileBySource`; `(MetadataName, File, Exact) →
+    /// FileByMetadataName`; `(MetadataName, Env, Exact) → EnvByPrefix`;
+    /// `(MetadataName, Env, Fallback) → EnvByUniqueness`;
+    /// `(MetadataSource, Defaults, Fallback) →
+    /// DefaultsByCodeUniqueness`. Every other cell returns [`None`].
+    ///
+    /// Operational use: an attestation manifest, structured-log replay,
+    /// or cross-process diagnostic that observes the three coordinates
+    /// (e.g. captured into a serialized snapshot) recovers the typed
+    /// rule by one method call instead of re-deriving the dispatch
+    /// inline. Since the rule space and the recognized-cell set are
+    /// pinned at the type level, the inverse stays coherent under
+    /// future variant additions: a new rule landing in a previously
+    /// unrecognized cell forces both an arm in this exhaustive match
+    /// (compile-time, via the `match` over `Self` in
+    /// [`Self::coordinates`]) and a row in the
+    /// `attribution_rule_coordinates_round_trip` and
+    /// `attribution_rule_from_coordinates_recognizes_each_rule` tests
+    /// (test-time).
+    ///
+    /// Strictly stronger than `matches!` against the rule space:
+    /// `from_coordinates` consumes the closed-enum coordinate triple
+    /// (no string parsing, no inline tuple destructuring), so the
+    /// recognized-cell predicate stays one method call regardless of
+    /// how many rules the substrate accumulates.
+    #[must_use]
+    pub fn from_coordinates(coords: AttributionCoordinates) -> Option<Self> {
+        match (coords.axis, coords.layer_kind, coords.confidence) {
+            (
+                AttributionAxis::MetadataSource,
+                ConfigSourceKind::File,
+                AttributionConfidence::Exact,
+            ) => Some(Self::FileBySource),
+            (
+                AttributionAxis::MetadataName,
+                ConfigSourceKind::File,
+                AttributionConfidence::Exact,
+            ) => Some(Self::FileByMetadataName),
+            (
+                AttributionAxis::MetadataName,
+                ConfigSourceKind::Env,
+                AttributionConfidence::Exact,
+            ) => Some(Self::EnvByPrefix),
+            (
+                AttributionAxis::MetadataName,
+                ConfigSourceKind::Env,
+                AttributionConfidence::Fallback,
+            ) => Some(Self::EnvByUniqueness),
+            (
+                AttributionAxis::MetadataSource,
+                ConfigSourceKind::Defaults,
+                AttributionConfidence::Fallback,
+            ) => Some(Self::DefaultsByCodeUniqueness),
+            _ => None,
+        }
+    }
+}
+
+/// Coordinate triple of an [`AttributionRule`] over the three
+/// orthogonal projections [`AttributionAxis`] (which `figment::Metadata`
+/// field drove dispatch), [`ConfigSourceKind`] (which layer class the
+/// rule attributes to), and [`AttributionConfidence`] (equality-based
+/// vs uniqueness-based attribution).
+///
+/// One named typescape value collapsing the three closed-enum reads
+/// into one. The (axis × `layer_kind` × confidence) cube has
+/// 2 × 3 × 2 = 12 product cells; today's rule space occupies 5 of
+/// them. [`AttributionRule::coordinates`] is the total forward map
+/// from the rule space; [`AttributionRule::from_coordinates`] is the
+/// partial inverse, [`Some`] exactly on the five recognized cells.
+///
+/// The struct exists (rather than a bare tuple) so call sites
+/// document which slot is which — `axis` / `layer_kind` /
+/// `confidence` — at the type level rather than relying on positional
+/// destructuring discipline. Consumers route on the named fields in
+/// `match`, `HashMap` keys, structured-log payloads, and attestation
+/// manifests; the `Copy + Eq + Hash + #[non_exhaustive]` bounds match
+/// the sibling closed-enum primitives ([`AttributionRule`],
+/// [`AttributionConfidence`], [`AttributionAxis`],
+/// [`ConfigSourceKind`], [`ShikumiErrorKind`],
+/// [`FieldPathLocalization`]).
+///
+/// Strict superset of the three Option-returning accessors on
+/// [`crate::ReloadFailure`]
+/// ([`crate::ReloadFailure::attribution_confidence`],
+/// [`crate::ReloadFailure::layer_kind`],
+/// [`crate::ReloadFailure::metadata_axis`]):
+/// [`crate::ReloadFailure::coordinates`] returns the triple as one
+/// `Option<AttributionCoordinates>` read, populated exactly when the
+/// captured envelope carries an attribution rule. The same
+/// `Some-iff-attribution` discipline as the sibling projections.
+///
+/// Future fidelity work — adding a fourth axis (e.g. a `figment::Source`
+/// sub-classification beyond `File`/`Code`/`Custom`), or refining one
+/// of the existing axes — extends this struct as one new field plus
+/// one match arm in [`AttributionRule::coordinates`] /
+/// [`AttributionRule::from_coordinates`]; existing consumers that
+/// destructure on the named fields stay coherent under the
+/// `#[non_exhaustive]` discipline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct AttributionCoordinates {
+    /// Which `figment::Metadata` field the resolver dispatched off —
+    /// see [`AttributionAxis`] / [`AttributionRule::metadata_axis`].
+    pub axis: AttributionAxis,
+    /// Which [`ConfigSource`] layer kind the rule attributes to —
+    /// see [`ConfigSourceKind`] / [`AttributionRule::layer_kind`].
+    pub layer_kind: ConfigSourceKind,
+    /// Equality-based or uniqueness-based attribution — see
+    /// [`AttributionConfidence`] / [`AttributionRule::confidence`].
+    pub confidence: AttributionConfidence,
 }
 
 /// Confidence class of an [`AttributionRule`].
@@ -594,6 +753,24 @@ impl<'a> FailingSourceAttribution<'a> {
     #[must_use]
     pub fn metadata_axis(self) -> AttributionAxis {
         self.rule.metadata_axis()
+    }
+
+    /// Coordinate triple of [`Self::rule`]; convenience over
+    /// [`AttributionRule::coordinates`]. One method call returns the
+    /// (axis × layer-kind × confidence) coordinates of the rule that
+    /// fired, without destructuring the envelope or inlining the
+    /// three sibling forwarders ([`Self::metadata_axis`],
+    /// [`Self::layer_kind`], [`Self::confidence`]) at the call site.
+    ///
+    /// Equal by construction to
+    /// `AttributionCoordinates { axis: self.metadata_axis(),
+    /// layer_kind: self.layer_kind(), confidence: self.confidence() }`
+    /// — the convenience forwarder stays a thin lift of the
+    /// underlying rule's coordinate accessor; the contract is pinned
+    /// by `failing_source_attribution_coordinates_mirrors_rule_coordinates`.
+    #[must_use]
+    pub fn coordinates(self) -> AttributionCoordinates {
+        self.rule.coordinates()
     }
 }
 
@@ -2596,6 +2773,317 @@ mod tests {
         let attr = err.failing_attribution().expect("attribution");
         assert_eq!(attr.rule, AttributionRule::EnvByPrefix);
         assert_eq!(attr.metadata_axis(), AttributionAxis::MetadataName);
+    }
+
+    // ---- AttributionCoordinates / AttributionRule::coordinates / from_coordinates ----
+
+    /// The 5 recognized rules paired with their coordinate triples — one
+    /// source of truth for the bijection table consumed by both the
+    /// forward and inverse round-trip tests.
+    fn rule_coordinate_table() -> [(AttributionRule, AttributionCoordinates); 5] {
+        [
+            (
+                AttributionRule::FileBySource,
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataSource,
+                    layer_kind: ConfigSourceKind::File,
+                    confidence: AttributionConfidence::Exact,
+                },
+            ),
+            (
+                AttributionRule::FileByMetadataName,
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataName,
+                    layer_kind: ConfigSourceKind::File,
+                    confidence: AttributionConfidence::Exact,
+                },
+            ),
+            (
+                AttributionRule::EnvByPrefix,
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataName,
+                    layer_kind: ConfigSourceKind::Env,
+                    confidence: AttributionConfidence::Exact,
+                },
+            ),
+            (
+                AttributionRule::EnvByUniqueness,
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataName,
+                    layer_kind: ConfigSourceKind::Env,
+                    confidence: AttributionConfidence::Fallback,
+                },
+            ),
+            (
+                AttributionRule::DefaultsByCodeUniqueness,
+                AttributionCoordinates {
+                    axis: AttributionAxis::MetadataSource,
+                    layer_kind: ConfigSourceKind::Defaults,
+                    confidence: AttributionConfidence::Fallback,
+                },
+            ),
+        ]
+    }
+
+    #[test]
+    fn attribution_rule_coordinates_returns_expected_triple_per_rule() {
+        // Every rule's coordinates() returns the triple pinned by the
+        // canonical table — the forward map is total over the rule
+        // space and stable across changes that don't touch the
+        // (axis, layer_kind, confidence) projections.
+        for (rule, expected) in rule_coordinate_table() {
+            assert_eq!(rule.coordinates(), expected, "rule {rule:?}");
+        }
+    }
+
+    #[test]
+    fn attribution_rule_coordinates_agrees_with_three_projection_accessors() {
+        // The named-struct lift must be byte-for-byte identical with the
+        // tuple of the three sibling projections — the unifier stays a
+        // thin wrapper, never a re-derived computation.
+        for (rule, _) in rule_coordinate_table() {
+            let c = rule.coordinates();
+            assert_eq!(c.axis, rule.metadata_axis());
+            assert_eq!(c.layer_kind, rule.layer_kind());
+            assert_eq!(c.confidence, rule.confidence());
+        }
+    }
+
+    #[test]
+    fn attribution_rule_coordinates_distinguishes_every_rule() {
+        // Joint injectivity: distinct rules give distinct coordinates.
+        // Stronger statement of the
+        // attribution_rule_metadata_axis_three_axis_product_is_rule_identity
+        // claim, but stated in terms of the named struct rather than
+        // the underlying tuple.
+        use std::collections::HashSet;
+        let coords: HashSet<AttributionCoordinates> = rule_coordinate_table()
+            .iter()
+            .map(|(rule, _)| rule.coordinates())
+            .collect();
+        assert_eq!(
+            coords.len(),
+            5,
+            "every rule must occupy a distinct coordinate cell; got: {coords:?}"
+        );
+    }
+
+    #[test]
+    fn attribution_rule_from_coordinates_recognizes_each_rule() {
+        // The inverse map names the five recognized cells. Pins the
+        // partial-bijection table at the type level — a future rule
+        // landing forces a new arm in from_coordinates and a new row
+        // here.
+        for (expected_rule, coords) in rule_coordinate_table() {
+            assert_eq!(
+                AttributionRule::from_coordinates(coords),
+                Some(expected_rule),
+                "from_coordinates must recognize {coords:?} as {expected_rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_from_coordinates_round_trips_with_coordinates() {
+        // The bijection statement: from_coordinates(rule.coordinates())
+        // == Some(rule) for every recognized rule. The forward map is
+        // total over the rule space; the inverse is partial but
+        // populated on every cell the forward map ever produces.
+        for (rule, _) in rule_coordinate_table() {
+            assert_eq!(
+                AttributionRule::from_coordinates(rule.coordinates()),
+                Some(rule),
+                "round-trip must recover rule {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_from_coordinates_returns_none_for_unrecognized_cells() {
+        // The (axis × layer_kind × confidence) cube has 12 cells; 5 are
+        // recognized, 7 are not. The inverse must return None on every
+        // unrecognized cell — no fabricated attributions, no defaults.
+        // Stronger than `is_none() count == 7`: enumerate the exact
+        // unrecognized cells to pin which ones never gain a rule.
+        let recognized: std::collections::HashSet<AttributionCoordinates> =
+            rule_coordinate_table().iter().map(|(_, c)| *c).collect();
+        let mut unrecognized_count = 0usize;
+        for axis in [
+            AttributionAxis::MetadataSource,
+            AttributionAxis::MetadataName,
+        ] {
+            for layer_kind in [
+                ConfigSourceKind::File,
+                ConfigSourceKind::Env,
+                ConfigSourceKind::Defaults,
+            ] {
+                for confidence in [
+                    AttributionConfidence::Exact,
+                    AttributionConfidence::Fallback,
+                ] {
+                    let coords = AttributionCoordinates {
+                        axis,
+                        layer_kind,
+                        confidence,
+                    };
+                    if recognized.contains(&coords) {
+                        continue;
+                    }
+                    unrecognized_count += 1;
+                    assert_eq!(
+                        AttributionRule::from_coordinates(coords),
+                        None,
+                        "unrecognized cell {coords:?} must not resolve to a rule",
+                    );
+                }
+            }
+        }
+        assert_eq!(
+            unrecognized_count, 7,
+            "the 12-cell cube must contain exactly 7 unrecognized cells; got: {unrecognized_count}",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_from_coordinates_rejects_specific_unrecognized_cells() {
+        // Spot-check the four unrecognized cells that the rule space
+        // structurally cannot occupy today: source-axis env attributions
+        // (figment's Env provider attaches name, not source), name-axis
+        // defaults attributions (figment's Serialized provider attaches
+        // source, not a recognized name shape), and the source-axis
+        // file × Fallback / source-axis defaults × Exact diagonal cells.
+        let unrecognized = [
+            // source-axis Env: figment's Env provider doesn't attach a
+            // typed Source for env, so this cell is structurally empty.
+            AttributionCoordinates {
+                axis: AttributionAxis::MetadataSource,
+                layer_kind: ConfigSourceKind::Env,
+                confidence: AttributionConfidence::Exact,
+            },
+            AttributionCoordinates {
+                axis: AttributionAxis::MetadataSource,
+                layer_kind: ConfigSourceKind::Env,
+                confidence: AttributionConfidence::Fallback,
+            },
+            // name-axis Defaults: figment's Serialized provider attaches
+            // Source::Code; no name-axis recognition path for defaults.
+            AttributionCoordinates {
+                axis: AttributionAxis::MetadataName,
+                layer_kind: ConfigSourceKind::Defaults,
+                confidence: AttributionConfidence::Exact,
+            },
+            AttributionCoordinates {
+                axis: AttributionAxis::MetadataName,
+                layer_kind: ConfigSourceKind::Defaults,
+                confidence: AttributionConfidence::Fallback,
+            },
+            // source-axis File × Fallback: FileBySource is Exact-only;
+            // no fallback path on the typed source classification.
+            AttributionCoordinates {
+                axis: AttributionAxis::MetadataSource,
+                layer_kind: ConfigSourceKind::File,
+                confidence: AttributionConfidence::Fallback,
+            },
+            // source-axis Defaults × Exact: DefaultsByCodeUniqueness is
+            // Fallback-only; no equality-based defaults attribution.
+            AttributionCoordinates {
+                axis: AttributionAxis::MetadataSource,
+                layer_kind: ConfigSourceKind::Defaults,
+                confidence: AttributionConfidence::Exact,
+            },
+            // name-axis File × Fallback: FileByMetadataName is
+            // Exact-only; no uniqueness-based file-name attribution.
+            AttributionCoordinates {
+                axis: AttributionAxis::MetadataName,
+                layer_kind: ConfigSourceKind::File,
+                confidence: AttributionConfidence::Fallback,
+            },
+        ];
+        for coords in unrecognized {
+            assert!(
+                AttributionRule::from_coordinates(coords).is_none(),
+                "from_coordinates must reject unrecognized cell {coords:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_coordinates_is_copy_and_hashable() {
+        // Trait-bounds parity with sibling typescape primitives
+        // (AttributionRule, AttributionConfidence, AttributionAxis,
+        // ConfigSourceKind, ShikumiErrorKind, FieldPathLocalization,
+        // FigmentSourceTag, FigmentNameTag, EnvMetadataTag).
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        for (_, coords) in rule_coordinate_table() {
+            set.insert(coords);
+        }
+        assert_eq!(set.len(), 5, "every coordinate triple must hash distinctly");
+
+        // Copy: rebind without move.
+        let c = AttributionCoordinates {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::File,
+            confidence: AttributionConfidence::Exact,
+        };
+        let c2 = c;
+        let c3 = c;
+        assert_eq!(c, c2);
+        assert_eq!(c2, c3);
+    }
+
+    #[test]
+    fn failing_source_attribution_coordinates_mirrors_rule_coordinates() {
+        // The envelope's coordinates() method must agree with the
+        // rule's, byte-for-byte, on every recognized rule. Pins the
+        // contract that the convenience accessor stays a thin
+        // forwarder over AttributionRule::coordinates.
+        for (rule, expected) in rule_coordinate_table() {
+            let src = ConfigSource::Defaults;
+            let attr = FailingSourceAttribution::new(&src, rule);
+            assert_eq!(attr.coordinates(), expected);
+            assert_eq!(attr.coordinates(), rule.coordinates());
+        }
+    }
+
+    #[test]
+    fn failing_source_attribution_coordinates_field_agreement() {
+        // The named-struct lift on the envelope side must surface the
+        // same per-axis values as the three sibling forwarders
+        // (metadata_axis, layer_kind, confidence). The three
+        // accessors and the unified coordinates accessor are a single
+        // typed surface, not three independent reads.
+        for (rule, _) in rule_coordinate_table() {
+            let src = ConfigSource::Defaults;
+            let attr = FailingSourceAttribution::new(&src, rule);
+            let c = attr.coordinates();
+            assert_eq!(c.axis, attr.metadata_axis());
+            assert_eq!(c.layer_kind, attr.layer_kind());
+            assert_eq!(c.confidence, attr.confidence());
+        }
+    }
+
+    #[test]
+    fn failing_attribution_coordinates_for_yaml_extract() {
+        // End-to-end: a real YAML-file extract failure attributes via
+        // FileBySource. The envelope's coordinates accessor surfaces
+        // the (MetadataSource, File, Exact) triple without the
+        // consumer destructuring the rule.
+        let (_dir, err) = extract_error_with_file_path_failure();
+        let attr = err.failing_attribution().expect("attribution");
+        assert_eq!(
+            attr.coordinates(),
+            AttributionCoordinates {
+                axis: AttributionAxis::MetadataSource,
+                layer_kind: ConfigSourceKind::File,
+                confidence: AttributionConfidence::Exact,
+            },
+        );
+        // Round-trip the captured coordinates back to the rule.
+        assert_eq!(
+            AttributionRule::from_coordinates(attr.coordinates()),
+            Some(AttributionRule::FileBySource),
+        );
     }
 
     #[test]
