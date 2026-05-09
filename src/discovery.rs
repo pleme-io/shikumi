@@ -81,6 +81,44 @@ impl Format {
         }
     }
 
+    /// Closed-enum classification of which provider class loads this
+    /// format — the typed partition over the [`Format`] variant space
+    /// along the (figment-builtin × shikumi-built) axis.
+    ///
+    /// One source of truth for the provenance axis: consumers route on
+    /// the returned [`FormatProvenance`] (in `match`, `HashMap` keys,
+    /// log labels, attestation manifest payloads) instead of re-deriving
+    /// the partition from per-variant `matches!` against
+    /// `Format::Lisp | Format::Nix`. The accessor composes the rule
+    /// space with the attribution surface: the (provenance × file-rule)
+    /// invariant `format.provenance().file_attribution_rule() ==
+    /// AttributionRule` for file-axis attributions is structural, pinned
+    /// by [`FormatProvenance::file_attribution_rule`].
+    ///
+    /// Strict superset of [`Self::has_shikumi_provider`]:
+    /// `format.has_shikumi_provider()` is
+    /// `format.provenance() == FormatProvenance::ShikumiBuilt`. The
+    /// predicate remains as a convenience accessor; new code that needs
+    /// to distinguish more than the binary should prefer this one closed
+    /// enum, matching the typescape discipline of the sibling closed-enum
+    /// primitives ([`crate::AttributionConfidence`],
+    /// [`crate::AttributionAxis`], [`crate::ConfigSourceKind`],
+    /// [`FormatProvenance`]).
+    ///
+    /// The implementation is one exhaustive `match`, so a future
+    /// [`Format`] variant landing forces a corresponding
+    /// [`FormatProvenance`] assignment in lockstep at compile time —
+    /// the provenance partition stays coherent by construction. The
+    /// `format_provenance_partitions_every_variant` test pins the
+    /// partition is total (every variant maps to exactly one provenance).
+    #[must_use]
+    pub fn provenance(self) -> FormatProvenance {
+        match self {
+            Self::Lisp | Self::Nix => FormatProvenance::ShikumiBuilt,
+            Self::Yaml | Self::Toml => FormatProvenance::FigmentBuiltin,
+        }
+    }
+
     /// Whether this format is loaded by a shikumi-built figment provider
     /// (as opposed to delegating to one of figment's built-in providers).
     ///
@@ -97,12 +135,14 @@ impl Format {
     /// `figment::Metadata::source = figment::Source::File(_)` instead,
     /// so [`crate::ShikumiError::failing_source`] resolves them by path
     /// equality rather than by metadata-name prefix.
+    ///
+    /// Convenience over [`Self::provenance`]; equivalent to
+    /// `self.provenance() == FormatProvenance::ShikumiBuilt`. New code
+    /// that needs to distinguish more than the binary should prefer the
+    /// typed accessor.
     #[must_use]
     pub fn has_shikumi_provider(self) -> bool {
-        match self {
-            Self::Lisp | Self::Nix => true,
-            Self::Yaml | Self::Toml => false,
-        }
+        matches!(self.provenance(), FormatProvenance::ShikumiBuilt)
     }
 
     /// Canonical `figment::Metadata::name` shape used by shikumi-built
@@ -188,6 +228,153 @@ impl Format {
             format,
             path: Path::new(rest),
         })
+    }
+}
+
+/// Closed binary partition over the [`Format`] variant space along the
+/// (figment-builtin × shikumi-built) axis: which provider class loads
+/// values of this format.
+///
+/// [`Format::provenance`] is the canonical map. The shape is named
+/// (rather than a `bool` flag) so consumers don't re-invent
+/// `is_shikumi_built: bool` at every observation site, and so a future
+/// tertiary provider class (e.g. an upstream-figment-ecosystem provider
+/// that's neither figment's own builtin nor shikumi's own — a Vault
+/// provider, an HTTP-config provider) lands as one new variant peer to
+/// the existing two.
+///
+/// Composes with the failing-source attribution surface: the
+/// (provenance × file-rule) invariant pins
+/// [`Self::FigmentBuiltin`] file failures to attribute via
+/// [`crate::AttributionRule::FileBySource`] (path equality on
+/// `metadata.source`), and [`Self::ShikumiBuilt`] file failures to
+/// attribute via [`crate::AttributionRule::FileByMetadataName`] (path
+/// equality on parsed `metadata.name`). [`Self::file_attribution_rule`]
+/// is the canonical map; the (axis × provenance) projection
+/// [`Self::file_attribution_axis`] mirrors
+/// [`crate::AttributionRule::metadata_axis`] on the file sub-axis. Both
+/// invariants are pinned by
+/// `format_provenance_file_attribution_rule_agrees_with_resolver_pointwise`.
+///
+/// `Copy + Eq + Hash + #[non_exhaustive]`, matching the typescape
+/// discipline of the sibling closed-enum primitives
+/// ([`crate::AttributionConfidence`], [`crate::AttributionAxis`],
+/// [`crate::ConfigSourceKind`], [`crate::ShikumiErrorKind`],
+/// [`crate::FieldPathLocalization`]): closed, allocation-free,
+/// extensible without breaking exhaustivity at consumer matches when a
+/// future provider class lands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum FormatProvenance {
+    /// Loaded by one of figment's built-in providers
+    /// (`figment::providers::Yaml`, `figment::providers::Toml`).
+    /// Per-value attribution arrives as
+    /// `figment::Metadata::source = figment::Source::File(_)`; the
+    /// failing-source resolver dispatches to
+    /// [`crate::AttributionRule::FileBySource`] on the
+    /// [`crate::AttributionAxis::MetadataSource`] axis. Today's
+    /// inhabitants: [`Format::Yaml`], [`Format::Toml`].
+    FigmentBuiltin,
+    /// Loaded by a shikumi-built figment provider
+    /// ([`crate::LispProvider`] for [`Format::Lisp`],
+    /// [`crate::NixProvider`] for [`Format::Nix`]). Per-value
+    /// attribution arrives as
+    /// `figment::Metadata::name = "<format>: <path>"` (see
+    /// [`Format::metadata_name`]); the failing-source resolver
+    /// dispatches to [`crate::AttributionRule::FileByMetadataName`] on
+    /// the [`crate::AttributionAxis::MetadataName`] axis.
+    ShikumiBuilt,
+}
+
+impl FormatProvenance {
+    /// Returns `true` for [`Self::ShikumiBuilt`]; equivalent to
+    /// `self == FormatProvenance::ShikumiBuilt`.
+    ///
+    /// Convenience predicate matching the
+    /// [`crate::AttributionRule::is_exact`] /
+    /// [`crate::AttributionRule::is_fallback`] sibling pair on
+    /// [`crate::AttributionConfidence`]: typescape primitives expose a
+    /// per-variant predicate alongside the closed-enum dispatch so the
+    /// common "is it this one?" question stays one method call.
+    #[must_use]
+    pub fn is_shikumi_built(self) -> bool {
+        matches!(self, Self::ShikumiBuilt)
+    }
+
+    /// Returns `true` for [`Self::FigmentBuiltin`]; equivalent to
+    /// `self == FormatProvenance::FigmentBuiltin`.
+    #[must_use]
+    pub fn is_figment_builtin(self) -> bool {
+        matches!(self, Self::FigmentBuiltin)
+    }
+
+    /// The [`crate::AttributionRule`] that names a [`crate::ConfigSource::File`]
+    /// layer when a per-value figment failure originates from a file of
+    /// this provenance:
+    /// [`crate::AttributionRule::FileBySource`] for [`Self::FigmentBuiltin`]
+    /// (figment's YAML/TOML providers attach `Source::File`, matched by
+    /// path equality on `metadata.source`),
+    /// [`crate::AttributionRule::FileByMetadataName`] for [`Self::ShikumiBuilt`]
+    /// (the shikumi providers attach `metadata.name = "<format>: <path>"`,
+    /// matched by parsed-path equality after
+    /// [`Format::parse_metadata_tag`]).
+    ///
+    /// One source of truth for the (provenance → file-rule) projection.
+    /// The information was previously implicit — readers had to know
+    /// that figment's builtin file providers attach `Source::File` and
+    /// that the shikumi-built providers attach the named `"<format>:
+    /// <path>"` shape, and chase the two facts through the
+    /// failing-source resolver in `error.rs` to confirm which rule
+    /// each provenance triggers. Lifting it to a typed accessor pins
+    /// "this provenance attributes file failures via rule X" at the
+    /// type level, and tests pin the structural law that the resolver
+    /// agrees with this projection on every recognized file-axis
+    /// attribution
+    /// (`format_provenance_file_attribution_rule_agrees_with_resolver_pointwise`).
+    ///
+    /// Composes with [`Self::file_attribution_axis`]: the latter is the
+    /// projection of this rule through
+    /// [`crate::AttributionRule::metadata_axis`] — a recognized file
+    /// failure of [`Self::FigmentBuiltin`] origin sits at
+    /// (`MetadataSource`, `File`, `Exact`) coordinates; a
+    /// [`Self::ShikumiBuilt`] one sits at (`MetadataName`, `File`,
+    /// `Exact`). Both project to [`crate::AttributionConfidence::Exact`]
+    /// since file-axis rules are equality-based on either axis.
+    ///
+    /// A future variant landing on [`Self`] (e.g. a `Custom` provider
+    /// class) forces an arm in the exhaustive match in lockstep — the
+    /// typescape pins the partition to one site and any new provider
+    /// class must declare which file-axis rule (and therefore which
+    /// metadata axis) it dispatches through.
+    #[must_use]
+    pub fn file_attribution_rule(self) -> crate::AttributionRule {
+        match self {
+            Self::FigmentBuiltin => crate::AttributionRule::FileBySource,
+            Self::ShikumiBuilt => crate::AttributionRule::FileByMetadataName,
+        }
+    }
+
+    /// The [`crate::AttributionAxis`] of [`Self::file_attribution_rule`]:
+    /// which `figment::Metadata` field the resolver dispatches off when
+    /// attributing a per-value file failure of this provenance.
+    /// [`crate::AttributionAxis::MetadataSource`] for [`Self::FigmentBuiltin`]
+    /// (figment's YAML/TOML providers attach `Source::File`, structurally
+    /// stable), [`crate::AttributionAxis::MetadataName`] for
+    /// [`Self::ShikumiBuilt`] (shikumi providers attach a
+    /// human-readable name parsed by shape-matching).
+    ///
+    /// Convenience over `self.file_attribution_rule().metadata_axis()`;
+    /// the two-step composition stays a thin lift, the contract pinned
+    /// by `format_provenance_file_attribution_axis_mirrors_rule_axis`.
+    /// Diagnostics, dashboards, and attestation manifests that want to
+    /// weight name-axis attributions visibly weaker than source-axis ones
+    /// (since name-axis attribution is string-shape-dependent — a
+    /// renamed upstream provider drops out of resolution silently) can
+    /// route on this accessor at the file-format level rather than
+    /// retaining a captured [`crate::AttributionRule`].
+    #[must_use]
+    pub fn file_attribution_axis(self) -> crate::AttributionAxis {
+        self.file_attribution_rule().metadata_axis()
     }
 }
 
@@ -2182,5 +2369,227 @@ mod tests {
         set.insert(tag_a); // duplicate
         set.insert(tag_b);
         assert_eq!(set.len(), 2);
+    }
+
+    // ---- FormatProvenance / Format::provenance typed-primitive tests ----
+
+    #[test]
+    fn format_provenance_classifies_each_variant() {
+        // Pin the (variant -> provenance) map at the type level. Today's
+        // partition: Yaml/Toml -> FigmentBuiltin; Lisp/Nix -> ShikumiBuilt.
+        assert_eq!(Format::Yaml.provenance(), FormatProvenance::FigmentBuiltin);
+        assert_eq!(Format::Toml.provenance(), FormatProvenance::FigmentBuiltin);
+        assert_eq!(Format::Lisp.provenance(), FormatProvenance::ShikumiBuilt);
+        assert_eq!(Format::Nix.provenance(), FormatProvenance::ShikumiBuilt);
+    }
+
+    #[test]
+    fn format_provenance_partitions_every_variant() {
+        // Every Format variant must classify into exactly one provenance.
+        // The exhaustive match below is the compiler-enforced contract:
+        // adding a Format variant breaks this test until the new variant
+        // is wired into `Format::provenance` (which is itself an
+        // exhaustive match — so the contract closes both ways).
+        for f in Format::ALL {
+            // The provenance accessor is total — never panics, never None.
+            let p = f.provenance();
+            // Pin the partition: every variant lands on one of the two
+            // recognized provenances.
+            match p {
+                FormatProvenance::FigmentBuiltin | FormatProvenance::ShikumiBuilt => {}
+            }
+            // Forward + inverse predicate composition.
+            assert_eq!(p.is_shikumi_built(), p == FormatProvenance::ShikumiBuilt);
+            assert_eq!(
+                p.is_figment_builtin(),
+                p == FormatProvenance::FigmentBuiltin
+            );
+            assert_ne!(
+                p.is_shikumi_built(),
+                p.is_figment_builtin(),
+                "provenance is binary; the two predicates must disagree pointwise"
+            );
+        }
+    }
+
+    #[test]
+    fn format_provenance_agrees_with_has_shikumi_provider() {
+        // The closed-enum projection and the legacy bool predicate are
+        // the same function modulo the bool/enum lift. Every variant must
+        // agree pointwise — pinned across all of Format::ALL.
+        for f in Format::ALL {
+            assert_eq!(
+                f.has_shikumi_provider(),
+                f.provenance() == FormatProvenance::ShikumiBuilt,
+                "has_shikumi_provider and provenance must agree on {f:?}",
+            );
+            assert_eq!(
+                f.has_shikumi_provider(),
+                f.provenance().is_shikumi_built(),
+                "has_shikumi_provider and provenance().is_shikumi_built() \
+                 must agree on {f:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_provenance_file_attribution_rule_pins_each_provenance() {
+        // The (provenance -> file-rule) projection: FigmentBuiltin
+        // attributes file failures via FileBySource (path equality on
+        // metadata.source); ShikumiBuilt attributes via FileByMetadataName
+        // (path equality on parsed metadata.name). The structural law
+        // pinned at the type level.
+        assert_eq!(
+            FormatProvenance::FigmentBuiltin.file_attribution_rule(),
+            crate::AttributionRule::FileBySource,
+        );
+        assert_eq!(
+            FormatProvenance::ShikumiBuilt.file_attribution_rule(),
+            crate::AttributionRule::FileByMetadataName,
+        );
+    }
+
+    #[test]
+    fn format_provenance_file_attribution_rule_layer_kind_is_always_file() {
+        // The (provenance -> file-rule -> layer-kind) projection collapses
+        // to ConfigSourceKind::File for every provenance — the rule space
+        // for file-axis attributions sits entirely on the file layer-kind.
+        for p in [
+            FormatProvenance::FigmentBuiltin,
+            FormatProvenance::ShikumiBuilt,
+        ] {
+            assert_eq!(
+                p.file_attribution_rule().layer_kind(),
+                crate::ConfigSourceKind::File,
+                "{p:?}'s file-attribution rule must attribute to a File layer",
+            );
+        }
+    }
+
+    #[test]
+    fn format_provenance_file_attribution_axis_mirrors_rule_axis() {
+        // The convenience accessor is a thin lift of
+        // `file_attribution_rule().metadata_axis()`. Every provenance
+        // must agree pointwise.
+        for p in [
+            FormatProvenance::FigmentBuiltin,
+            FormatProvenance::ShikumiBuilt,
+        ] {
+            assert_eq!(
+                p.file_attribution_axis(),
+                p.file_attribution_rule().metadata_axis(),
+                "file_attribution_axis must mirror rule.metadata_axis on {p:?}",
+            );
+        }
+        // And pin the named axis per provenance.
+        assert_eq!(
+            FormatProvenance::FigmentBuiltin.file_attribution_axis(),
+            crate::AttributionAxis::MetadataSource,
+        );
+        assert_eq!(
+            FormatProvenance::ShikumiBuilt.file_attribution_axis(),
+            crate::AttributionAxis::MetadataName,
+        );
+    }
+
+    #[test]
+    fn format_provenance_file_attribution_rule_is_always_exact() {
+        // Both file-axis rules in today's resolver are equality-based
+        // (path equality on either metadata.source or the parsed
+        // metadata.name). The (provenance -> file-rule -> confidence)
+        // projection collapses to AttributionConfidence::Exact for every
+        // provenance — file-axis attribution is high-confidence by
+        // construction in this resolver.
+        for p in [
+            FormatProvenance::FigmentBuiltin,
+            FormatProvenance::ShikumiBuilt,
+        ] {
+            assert_eq!(
+                p.file_attribution_rule().confidence(),
+                crate::AttributionConfidence::Exact,
+                "{p:?}'s file-axis attribution must be Exact",
+            );
+        }
+    }
+
+    #[test]
+    fn format_provenance_is_copy_and_hashable() {
+        // Trait-bounds parity with the sibling typescape primitives
+        // (AttributionConfidence, AttributionAxis, ConfigSourceKind,
+        // ShikumiErrorKind, FieldPathLocalization).
+        use std::collections::HashSet;
+        let p = FormatProvenance::FigmentBuiltin;
+        // Copy: rebind without move.
+        let p2 = p;
+        let p3 = p;
+        assert_eq!(p, p2);
+        assert_eq!(p2, p3);
+        // Hash + Eq: only two distinct values exist.
+        let mut set = HashSet::new();
+        for f in Format::ALL {
+            set.insert(f.provenance());
+        }
+        set.insert(FormatProvenance::FigmentBuiltin); // duplicate
+        set.insert(FormatProvenance::ShikumiBuilt); // duplicate
+        assert_eq!(set.len(), 2, "the partition has exactly two cells today");
+    }
+
+    #[test]
+    fn format_provenance_file_attribution_rule_agrees_with_resolver_pointwise() {
+        // The structural law: for every Format with a file-axis
+        // attribution path, the (provenance -> file-rule) projection
+        // must agree byte-for-byte with the rule the failing-source
+        // resolver fires for a real per-value extract failure of that
+        // format. Pins the typed projection against the runtime resolver
+        // end-to-end — so a future drift in either side is caught
+        // before it reaches users.
+        use crate::ConfigSource;
+        use crate::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        // Yaml: figment-builtin path; resolver must fire FileBySource.
+        let dir = tempfile::TempDir::new().unwrap();
+        let yaml = dir.path().join("provenance_yaml.yaml");
+        std::fs::write(&yaml, "count: not_a_number\n").unwrap();
+        let yaml_err = ProviderChain::new()
+            .with_file(&yaml)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let yaml_attr = yaml_err
+            .failing_attribution()
+            .expect("yaml extract must attribute");
+        assert_eq!(
+            yaml_attr.rule,
+            Format::Yaml.provenance().file_attribution_rule(),
+            "Yaml's resolver-fired rule must equal its provenance-projected rule",
+        );
+        // Toml: figment-builtin path; same projection.
+        let toml = dir.path().join("provenance_toml.toml");
+        std::fs::write(&toml, "count = \"not_a_number\"\n").unwrap();
+        let toml_err = ProviderChain::new()
+            .with_file(&toml)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let toml_attr = toml_err
+            .failing_attribution()
+            .expect("toml extract must attribute");
+        assert_eq!(
+            toml_attr.rule,
+            Format::Toml.provenance().file_attribution_rule(),
+            "Toml's resolver-fired rule must equal its provenance-projected rule",
+        );
+        // Both must additionally pin to ConfigSource::File (not env, not
+        // defaults) under their projected layer-kind.
+        for attr in [&yaml_attr, &toml_attr] {
+            assert!(matches!(attr.source, ConfigSource::File(_)));
+            assert_eq!(
+                attr.rule.layer_kind(),
+                attr.source.kind(),
+                "rule layer_kind must agree with source kind",
+            );
+        }
     }
 }

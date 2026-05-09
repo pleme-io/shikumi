@@ -47,7 +47,7 @@ mod source;
 mod store;
 mod watcher;
 
-pub use discovery::{ConfigDiscovery, Format, FormatMetadataTag};
+pub use discovery::{ConfigDiscovery, Format, FormatMetadataTag, FormatProvenance};
 pub use error::{
     AttributionAxis, AttributionConfidence, AttributionCoordinates, AttributionRule,
     FailingSourceAttribution, FieldPathLocalization, ShikumiError, ShikumiErrorKind,
