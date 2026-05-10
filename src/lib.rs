@@ -58,7 +58,8 @@ pub use nix_provider::NixProvider;
 pub use provider::ProviderChain;
 pub use reload::ReloadFailure;
 pub use source::{
-    ConfigSource, ConfigSourceKind, EnvMetadataTag, FigmentNameTag, FigmentSourceTag,
+    ConfigSource, ConfigSourceKind, EnvMetadataTag, FigmentNameTag, FigmentSourceKind,
+    FigmentSourceTag,
 };
 pub use store::ConfigStore;
 pub use watcher::{ConfigWatcher, symlink_target};
