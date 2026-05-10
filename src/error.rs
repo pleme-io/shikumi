@@ -139,6 +139,46 @@ pub enum ShikumiErrorKind {
 }
 
 impl ShikumiErrorKind {
+    /// Every [`ShikumiErrorKind`] variant, in the same declaration order
+    /// as the [`ShikumiError`] arms in [`ShikumiError::kind`].
+    ///
+    /// The closed list of kinds shikumi recognizes. Iterate to enumerate
+    /// the kind space without listing variants by hand at every consumer
+    /// site — e.g. dashboards initializing per-kind alert thresholds,
+    /// attestation manifests recording the rule space's cardinality,
+    /// tests that must round-trip every kind, partition tests asserting
+    /// disjointness over the whole universe.
+    ///
+    /// One source of truth for the kind enumeration on the
+    /// [`ShikumiErrorKind`] axis: peer to [`crate::Format::ALL`] on the
+    /// [`crate::Format`] axis, the same typescape discipline applied
+    /// across the closed-enum primitive set. Before this constant, the
+    /// kind enumeration was inlined as a `[NotFound, Parse, Watch, Io,
+    /// Figment, Extract]` array literal at every site that needed to
+    /// iterate (the `kind_partitions_every_variant` and
+    /// `is_figment_bearing_partitions_every_kind` tests in
+    /// [`error::tests`]); each duplicated literal had to be manually
+    /// kept in lockstep with the enum's variant set.
+    ///
+    /// Adding a new variant to [`ShikumiErrorKind`] means extending this
+    /// slice in lockstep with the variant itself. The compiler enforces
+    /// nothing here directly, so the
+    /// `shikumi_error_kind_all_covers_every_constructed_variant` test
+    /// pins the contract by asserting that every kind produced by
+    /// [`ShikumiError::kind`] over the construction-table surface
+    /// (`error::tests::one_per_kind`) appears in [`Self::ALL`], and the
+    /// `shikumi_error_kind_all_has_no_duplicates` test pins that the
+    /// constant is a set (no double-listed variant). Together they
+    /// pin the constant to the variant space the typescape recognizes.
+    pub const ALL: &'static [Self] = &[
+        Self::NotFound,
+        Self::Parse,
+        Self::Watch,
+        Self::Io,
+        Self::Figment,
+        Self::Extract,
+    ];
+
     /// Returns `true` if this kind wraps a [`figment::Error`] —
     /// [`Self::Extract`] (with a recorded [`ConfigSource`] chain) and
     /// [`Self::Figment`] (without). The figment-bearing variants are
@@ -2220,16 +2260,11 @@ mod tests {
         // a future ShikumiError variant forces both an exhaustive-match
         // assignment in `kind()` (compile-time) and a row in this
         // table (test-time).
-        let all_kinds = [
-            ShikumiErrorKind::NotFound,
-            ShikumiErrorKind::Parse,
-            ShikumiErrorKind::Watch,
-            ShikumiErrorKind::Io,
-            ShikumiErrorKind::Figment,
-            ShikumiErrorKind::Extract,
-        ];
         for (expected, err) in one_per_kind() {
-            let matches: Vec<_> = all_kinds.iter().filter(|k| err.kind() == **k).collect();
+            let matches: Vec<_> = ShikumiErrorKind::ALL
+                .iter()
+                .filter(|k| err.kind() == **k)
+                .collect();
             assert_eq!(
                 matches.len(),
                 1,
@@ -2287,6 +2322,99 @@ mod tests {
         assert_eq!(k2, k3);
     }
 
+    // ---- ShikumiErrorKind::ALL tests ----
+
+    #[test]
+    fn shikumi_error_kind_all_has_no_duplicates() {
+        // The constant is a set, not a multiset: every variant appears
+        // at most once. Pins the "no double-listed kind" invariant the
+        // typescape relies on so consumers iterating ALL never see a
+        // ghost kind contributing twice to a partition tally.
+        use std::collections::HashSet;
+        let unique: HashSet<ShikumiErrorKind> = ShikumiErrorKind::ALL.iter().copied().collect();
+        assert_eq!(
+            unique.len(),
+            ShikumiErrorKind::ALL.len(),
+            "ShikumiErrorKind::ALL must contain no duplicates",
+        );
+    }
+
+    #[test]
+    fn shikumi_error_kind_all_covers_every_constructed_variant() {
+        // The construction-table surface in `one_per_kind()` covers every
+        // ShikumiError variant once. Pin the contract that every kind
+        // ShikumiError::kind can return appears in ShikumiErrorKind::ALL,
+        // and that ALL contains no extras: the mutual-cover statement
+        // proves ALL is in 1-1 correspondence with the kind partition
+        // surfaced by the variant set.
+        use std::collections::HashSet;
+        let produced: HashSet<ShikumiErrorKind> =
+            one_per_kind().into_iter().map(|(k, _)| k).collect();
+        let listed: HashSet<ShikumiErrorKind> = ShikumiErrorKind::ALL.iter().copied().collect();
+        assert_eq!(
+            produced, listed,
+            "ShikumiErrorKind::ALL must equal the kind set produced by ShikumiError::kind",
+        );
+    }
+
+    #[test]
+    fn shikumi_error_kind_all_cardinality_matches_construction_table() {
+        // Stronger statement of the prior test on the cardinality axis:
+        // ALL.len() must equal the number of constructed-variant rows.
+        // A future ShikumiError variant landing forces both an arm in
+        // `kind()` (compile-time, exhaustive match) and a row in
+        // `one_per_kind()` (test-time); this assertion fails until ALL
+        // is extended in lockstep, catching forgotten ALL updates.
+        assert_eq!(
+            ShikumiErrorKind::ALL.len(),
+            one_per_kind().len(),
+            "ALL.len() must equal one_per_kind().len()",
+        );
+    }
+
+    #[test]
+    fn shikumi_error_kind_all_iterates_in_declaration_order() {
+        // The constant lists variants in the same order as `kind()`'s
+        // exhaustive match arms (NotFound, Parse, Watch, Io, Figment,
+        // Extract). Iteration order is observable — consumers (alerting
+        // policies, dashboards) that rely on a stable ordering for
+        // priority/severity can route on it.
+        assert_eq!(
+            ShikumiErrorKind::ALL,
+            &[
+                ShikumiErrorKind::NotFound,
+                ShikumiErrorKind::Parse,
+                ShikumiErrorKind::Watch,
+                ShikumiErrorKind::Io,
+                ShikumiErrorKind::Figment,
+                ShikumiErrorKind::Extract,
+            ],
+            "ALL must list variants in declaration order",
+        );
+    }
+
+    #[test]
+    fn shikumi_error_kind_all_partitions_figment_bearing_axis() {
+        // ALL composes with is_figment_bearing as the universe over
+        // which the figment-bearing partition is total: exactly two of
+        // the listed kinds bear figment, the rest don't. Stated through
+        // the constant rather than an inline literal.
+        let bearing = ShikumiErrorKind::ALL
+            .iter()
+            .filter(|k| k.is_figment_bearing())
+            .count();
+        let non_bearing = ShikumiErrorKind::ALL
+            .iter()
+            .filter(|k| !k.is_figment_bearing())
+            .count();
+        assert_eq!(bearing, 2, "two ALL variants bear figment");
+        assert_eq!(
+            bearing + non_bearing,
+            ShikumiErrorKind::ALL.len(),
+            "the figment-bearing partition must cover ALL exactly once",
+        );
+    }
+
     #[test]
     fn kind_partitions_distinguish_extract_from_figment() {
         // The two figment-bearing variants — Extract (with chain) and
@@ -2333,15 +2461,7 @@ mod tests {
         // through. Pins the typescape contract that the figment-bearing
         // axis is total over the kind partition; a future kind landing
         // forces an assignment in the exhaustive match.
-        let all_kinds = [
-            ShikumiErrorKind::NotFound,
-            ShikumiErrorKind::Parse,
-            ShikumiErrorKind::Watch,
-            ShikumiErrorKind::Io,
-            ShikumiErrorKind::Figment,
-            ShikumiErrorKind::Extract,
-        ];
-        let bearing: Vec<_> = all_kinds
+        let bearing: Vec<_> = ShikumiErrorKind::ALL
             .iter()
             .filter(|k| k.is_figment_bearing())
             .collect();
