@@ -413,7 +413,7 @@ impl<'a> FigmentSourceTag<'a> {
     /// Returns `true` for [`Self::Code`].
     #[must_use]
     pub fn is_code(self) -> bool {
-        matches!(self, Self::Code(_))
+        matches!(self.kind(), FigmentSourceKind::Code)
     }
 
     /// Returns the custom-source string if this tag is a [`Self::Custom`].
@@ -423,6 +423,135 @@ impl<'a> FigmentSourceTag<'a> {
             Self::Custom(c) => Some(c),
             _ => None,
         }
+    }
+
+    /// Data-free, `'static` discriminant of this [`FigmentSourceTag`]:
+    /// the kind of `figment::Source` ([`FigmentSourceKind::File`] /
+    /// [`FigmentSourceKind::Code`] / [`FigmentSourceKind::Custom`])
+    /// independent of the inner borrowed path / location / string.
+    ///
+    /// One source of truth for the figment-Source-axis kind partition.
+    /// Observers that need only the kind axis (filtering by source class,
+    /// hashing in a `'static` map, recording per-failure source-class in
+    /// an attestation manifest) match on this closed enum instead of
+    /// pattern-matching against [`FigmentSourceTag`] with a borrowed
+    /// lifetime, or chaining [`Self::as_file_path`] / [`Self::is_code`] /
+    /// [`Self::as_custom`] together. The kind is `'static`, so it can
+    /// cross threads, serialize, and persist across observation
+    /// boundaries the borrowed tag cannot.
+    ///
+    /// Mirrors the [`ConfigSource`] → [`ConfigSourceKind`] lift on the
+    /// shikumi-source axis: same typescape discipline (closed,
+    /// allocation-free, `Copy + Eq + Hash + #[non_exhaustive]`,
+    /// exhaustive forward map), applied to figment's `Source` axis. The
+    /// two kind partitions are structurally distinct universes — one
+    /// classifies shikumi's recorded chain layers, the other classifies
+    /// figment's per-value source attribution — but compose under one
+    /// typescape primitive set.
+    ///
+    /// Pairs with [`Self::attribution_axis`]: the projection is constant
+    /// ([`crate::AttributionAxis::MetadataSource`] for every variant)
+    /// since [`FigmentSourceTag`] *is* the typed reading of
+    /// `figment::Metadata::source`. That structural law is pinned by
+    /// `figment_source_tag_attribution_axis_is_always_metadata_source`.
+    /// A future variant landing on [`FigmentSourceTag`] (e.g. a
+    /// `Source::Url` shape if figment grows one) forces a
+    /// [`FigmentSourceKind`] arm in lockstep at compile time, and the
+    /// constant axis projection extends without per-site updates.
+    #[must_use]
+    pub fn kind(self) -> FigmentSourceKind {
+        match self {
+            Self::File(_) => FigmentSourceKind::File,
+            Self::Code(_) => FigmentSourceKind::Code,
+            Self::Custom(_) => FigmentSourceKind::Custom,
+        }
+    }
+
+    /// [`crate::AttributionAxis`] of this tag — constant
+    /// [`crate::AttributionAxis::MetadataSource`] for every variant,
+    /// since [`FigmentSourceTag`] *is* the typed reading of
+    /// `figment::Metadata::source`.
+    ///
+    /// One source of truth for the structural law that every
+    /// figment-Source-axis attribution dispatches off `metadata.source`,
+    /// regardless of which variant fires. The pair
+    /// (figment-side: [`FigmentSourceTag::attribution_axis`],
+    /// resolver-side: [`crate::AttributionRule::metadata_axis`]) cross-checks
+    /// the axis between the two surfaces; consumers reading either side
+    /// see the same axis label without re-deriving the
+    /// (typed-source × name-string) partition. Mirrors
+    /// [`FigmentNameTag`]-shaped attributions, which always sit on
+    /// [`crate::AttributionAxis::MetadataName`] by the same structural
+    /// argument.
+    #[must_use]
+    pub fn attribution_axis(self) -> crate::AttributionAxis {
+        let _ = self.kind();
+        crate::AttributionAxis::MetadataSource
+    }
+}
+
+/// Data-free, `'static` discriminant of [`FigmentSourceTag`]: the kind
+/// of `figment::Source` independent of the inner borrowed path /
+/// location / string.
+///
+/// Closed three-way partition over the [`FigmentSourceTag`] variant
+/// space, returned by [`FigmentSourceTag::kind`]. The enum exists so
+/// consumers that need only the kind axis (filtering by source class,
+/// hashing in a `'static` map, recording per-failure source-class in
+/// an attestation manifest, comparing across thread boundaries) match
+/// on one closed enum instead of pattern-matching against the borrowed
+/// tag or chaining [`FigmentSourceTag::as_file_path`] /
+/// [`FigmentSourceTag::is_code`] / [`FigmentSourceTag::as_custom`]
+/// together.
+///
+/// Mirrors the [`ConfigSource`] → [`ConfigSourceKind`] lift on the
+/// shikumi-source axis: same typescape discipline (closed,
+/// allocation-free, `Copy + Eq + Hash + #[non_exhaustive]`,
+/// exhaustive forward map), applied to figment's `Source` axis.
+///
+/// `'static` and allocation-free — no lifetime parameter, unlike
+/// [`FigmentSourceTag`]. The kind survives any borrow on the
+/// originating `figment::Source` and can therefore cross thread
+/// boundaries, serialize, and live in long-lived structures (the way
+/// [`ConfigSourceKind`] does on the captured cross-thread observable
+/// form of [`crate::ReloadFailure`]).
+///
+/// Adding a future [`FigmentSourceTag`] variant (e.g. a `Source::Url`
+/// shape if figment grows one) means adding one [`FigmentSourceKind`]
+/// variant in lockstep — the exhaustive [`FigmentSourceTag::kind`]
+/// match forces the assignment at compile time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum FigmentSourceKind {
+    /// Maps to [`FigmentSourceTag::File`] regardless of inner path.
+    File,
+    /// Maps to [`FigmentSourceTag::Code`] regardless of inner location.
+    Code,
+    /// Maps to [`FigmentSourceTag::Custom`] regardless of inner string.
+    Custom,
+}
+
+impl FigmentSourceKind {
+    /// Returns `true` for [`Self::File`]; equivalent to
+    /// `self == FigmentSourceKind::File`. Convenience predicate
+    /// matching the [`ConfigSource::is_file`] /
+    /// [`ConfigSource::is_env`] / [`ConfigSource::is_defaults`]
+    /// sibling pattern on the shikumi-source axis.
+    #[must_use]
+    pub fn is_file(self) -> bool {
+        matches!(self, Self::File)
+    }
+
+    /// Returns `true` for [`Self::Code`].
+    #[must_use]
+    pub fn is_code(self) -> bool {
+        matches!(self, Self::Code)
+    }
+
+    /// Returns `true` for [`Self::Custom`].
+    #[must_use]
+    pub fn is_custom(self) -> bool {
+        matches!(self, Self::Custom)
     }
 }
 
@@ -1077,6 +1206,195 @@ mod tests {
         set.insert(FigmentNameTag::classify(&nb).unwrap());
         set.insert(FigmentNameTag::classify(&nf).unwrap());
         assert_eq!(set.len(), 3);
+    }
+
+    // ---- FigmentSourceKind / FigmentSourceTag::kind ----
+
+    #[test]
+    fn figment_source_kind_classifies_each_variant() {
+        // The forward map is exhaustive: every FigmentSourceTag variant
+        // pins to exactly one FigmentSourceKind. Pairs with the
+        // `kind_partitions_every_constructible_variant` style on
+        // ConfigSource → ConfigSourceKind.
+        let file_src = figment::Source::File(PathBuf::from("/etc/app/app.yaml"));
+        let file_tag = FigmentSourceTag::classify(&file_src).unwrap();
+        assert_eq!(file_tag.kind(), FigmentSourceKind::File);
+
+        // Source::Code arrives via the Serialized provider.
+        use figment::Provider;
+        let prov = figment::providers::Serialized::defaults(serde_json::json!({"k": "v"}));
+        let md = prov.metadata();
+        let code_src = md.source.as_ref().unwrap();
+        let code_tag = FigmentSourceTag::classify(code_src).unwrap();
+        assert_eq!(code_tag.kind(), FigmentSourceKind::Code);
+
+        let custom_src = figment::Source::Custom("vault://kv/app".to_owned());
+        let custom_tag = FigmentSourceTag::classify(&custom_src).unwrap();
+        assert_eq!(custom_tag.kind(), FigmentSourceKind::Custom);
+    }
+
+    #[test]
+    fn figment_source_kind_is_data_free() {
+        // Inner data does not influence kind — every File maps to
+        // FigmentSourceKind::File regardless of path; Custom regardless
+        // of string. Mirrors `kind_classifies_file_regardless_of_path`
+        // on the ConfigSource side.
+        for path in ["/a", "/very/long/path/to/cfg.yaml", "rel.toml"] {
+            let src = figment::Source::File(PathBuf::from(path));
+            assert_eq!(
+                FigmentSourceTag::classify(&src).unwrap().kind(),
+                FigmentSourceKind::File,
+            );
+        }
+        for s in ["", "a", "vault://kv/x", "ftp://configs"] {
+            let src = figment::Source::Custom(s.to_owned());
+            assert_eq!(
+                FigmentSourceTag::classify(&src).unwrap().kind(),
+                FigmentSourceKind::Custom,
+            );
+        }
+    }
+
+    #[test]
+    fn figment_source_kind_agrees_with_predicates_pointwise() {
+        // The kind() / is_*() pair must agree on every constructible
+        // tag variant — kind is the closed-enum lift of the open-coded
+        // booleans.
+        use figment::Provider;
+        let file_src = figment::Source::File(PathBuf::from("/x"));
+        let custom_src = figment::Source::Custom("c".to_owned());
+        let prov = figment::providers::Serialized::defaults(serde_json::json!({"k": "v"}));
+        let md = prov.metadata();
+        let code_src = md.source.as_ref().unwrap();
+        for tag in [
+            FigmentSourceTag::classify(&file_src).unwrap(),
+            FigmentSourceTag::classify(code_src).unwrap(),
+            FigmentSourceTag::classify(&custom_src).unwrap(),
+        ] {
+            assert_eq!(tag.is_code(), tag.kind() == FigmentSourceKind::Code);
+            assert_eq!(
+                tag.as_file_path().is_some(),
+                tag.kind() == FigmentSourceKind::File,
+            );
+            assert_eq!(
+                tag.as_custom().is_some(),
+                tag.kind() == FigmentSourceKind::Custom,
+            );
+            // Kind-side predicates agree pointwise with the tag-side
+            // predicates.
+            assert_eq!(tag.kind().is_file(), tag.kind() == FigmentSourceKind::File);
+            assert_eq!(tag.kind().is_code(), tag.kind() == FigmentSourceKind::Code);
+            assert_eq!(
+                tag.kind().is_custom(),
+                tag.kind() == FigmentSourceKind::Custom,
+            );
+        }
+    }
+
+    #[test]
+    fn figment_source_kind_is_static_and_copy_and_hashable() {
+        // The discriminant is `'static` (no lifetime parameter) so it
+        // can cross thread boundaries the borrowed tag cannot. Trait
+        // bounds match the sibling typescape primitives
+        // (ConfigSourceKind, AttributionRule, AttributionConfidence,
+        // AttributionAxis).
+        use std::collections::HashSet;
+        let mut set: HashSet<FigmentSourceKind> = HashSet::new();
+        set.insert(FigmentSourceKind::File);
+        set.insert(FigmentSourceKind::Code);
+        set.insert(FigmentSourceKind::Custom);
+        set.insert(FigmentSourceKind::File); // duplicate
+        assert_eq!(set.len(), 3);
+
+        // Copy: rebind without move.
+        let k = FigmentSourceKind::Code;
+        let k2 = k;
+        let k3 = k;
+        assert_eq!(k, k2);
+        assert_eq!(k2, k3);
+
+        // Send + Sync + 'static — observable by inserting into a static
+        // bound: a HashSet<K> requires K: Hash + Eq, and the set itself
+        // is movable across threads since K has no lifetime.
+        fn assert_static<T: 'static>() {}
+        assert_static::<FigmentSourceKind>();
+    }
+
+    #[test]
+    fn figment_source_kind_partitions_disjointly() {
+        // Each FigmentSourceTag must classify into exactly one
+        // FigmentSourceKind — no tag claims two kinds at once. Mirrors
+        // the disjointness invariants on FigmentSourceTag (the borrowed
+        // form) and ConfigSource (the shikumi-side form).
+        use figment::Provider;
+        let prov = figment::providers::Serialized::defaults(serde_json::json!({"k": "v"}));
+        let md = prov.metadata();
+        let cases: [(FigmentSourceTag<'_>, FigmentSourceKind); 3] = [
+            (
+                FigmentSourceTag::File(Path::new("/x")),
+                FigmentSourceKind::File,
+            ),
+            (
+                FigmentSourceTag::Code(
+                    md.source
+                        .as_ref()
+                        .and_then(figment::Source::code_location)
+                        .unwrap(),
+                ),
+                FigmentSourceKind::Code,
+            ),
+            (FigmentSourceTag::Custom("c"), FigmentSourceKind::Custom),
+        ];
+        for (tag, expected) in cases {
+            assert_eq!(tag.kind(), expected);
+            // Distinct tags of the same kind collapse to the same kind
+            // (the kind discriminant is data-free).
+        }
+        assert_eq!(
+            FigmentSourceTag::File(Path::new("/a")).kind(),
+            FigmentSourceTag::File(Path::new("/b")).kind(),
+        );
+    }
+
+    #[test]
+    fn figment_source_tag_attribution_axis_is_always_metadata_source() {
+        // Structural law: every FigmentSourceTag classification sits on
+        // the metadata.source axis. This is the cross-primitive bridge
+        // between FigmentSourceTag and AttributionAxis — peers with
+        // FigmentNameTag's implicit always-MetadataName placement.
+        use crate::AttributionAxis;
+        use figment::Provider;
+        let file_src = figment::Source::File(PathBuf::from("/etc/app.yaml"));
+        let custom_src = figment::Source::Custom("c".to_owned());
+        let prov = figment::providers::Serialized::defaults(serde_json::json!({"k": "v"}));
+        let md = prov.metadata();
+        let code_src = md.source.as_ref().unwrap();
+
+        for tag in [
+            FigmentSourceTag::classify(&file_src).unwrap(),
+            FigmentSourceTag::classify(code_src).unwrap(),
+            FigmentSourceTag::classify(&custom_src).unwrap(),
+        ] {
+            assert_eq!(tag.attribution_axis(), AttributionAxis::MetadataSource);
+        }
+    }
+
+    #[test]
+    fn figment_source_kind_round_trips_through_classify() {
+        // End-to-end: classify a real figment::Source, project to kind,
+        // and confirm the kind matches the originating Source variant.
+        // Pins the cross-side contract that classify + kind agree with
+        // figment's own variant taxonomy.
+        let file = figment::Source::File(PathBuf::from("/x.yaml"));
+        let custom = figment::Source::Custom("y".to_owned());
+        assert_eq!(
+            FigmentSourceTag::classify(&file).unwrap().kind(),
+            FigmentSourceKind::File,
+        );
+        assert_eq!(
+            FigmentSourceTag::classify(&custom).unwrap().kind(),
+            FigmentSourceKind::Custom,
+        );
     }
 
     #[test]
