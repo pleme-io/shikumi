@@ -330,6 +330,48 @@ pub enum AttributionRule {
 }
 
 impl AttributionRule {
+    /// Every [`AttributionRule`] variant, in declaration order
+    /// ([`Self::FileBySource`], [`Self::FileByMetadataName`],
+    /// [`Self::EnvByPrefix`], [`Self::EnvByUniqueness`],
+    /// [`Self::DefaultsByCodeUniqueness`]).
+    ///
+    /// The closed list of resolution rules shikumi recognizes. Iterate
+    /// to enumerate the rule space without listing variants by hand at
+    /// every consumer site — e.g. dashboards initializing per-rule
+    /// counters, attestation manifests recording the rule space's
+    /// cardinality, tests asserting partition totality across every
+    /// orthogonal axis ([`Self::confidence`], [`Self::layer_kind`],
+    /// [`Self::metadata_axis`]).
+    ///
+    /// One source of truth for the rule enumeration on the
+    /// [`AttributionRule`] axis: peer to [`crate::Format::ALL`] on the
+    /// [`crate::Format`] axis and [`ShikumiErrorKind::ALL`] on the kind
+    /// axis, the same typescape discipline applied across the
+    /// closed-enum primitive set. Before this constant, the rule
+    /// enumeration was inlined as a `[FileBySource, FileByMetadataName,
+    /// EnvByPrefix, EnvByUniqueness, DefaultsByCodeUniqueness]` array
+    /// literal at every site that needed to iterate (every total-axis
+    /// partition test in [`error::tests`]); each duplicated literal had
+    /// to be manually kept in lockstep with the enum's variant set.
+    ///
+    /// Adding a new variant to [`Self`] means extending this slice in
+    /// lockstep with the variant itself. The compiler enforces nothing
+    /// here directly, so the
+    /// `attribution_rule_all_covers_every_recognized_variant` test pins
+    /// the contract by asserting that every rule produced by the
+    /// canonical `rule_coordinate_table()` (the construction-table
+    /// surface) appears in [`Self::ALL`], and the
+    /// `attribution_rule_all_has_no_duplicates` test pins that the
+    /// constant is a set (no double-listed variant). Together they pin
+    /// the constant to the variant space the typescape recognizes.
+    pub const ALL: &'static [Self] = &[
+        Self::FileBySource,
+        Self::FileByMetadataName,
+        Self::EnvByPrefix,
+        Self::EnvByUniqueness,
+        Self::DefaultsByCodeUniqueness,
+    ];
+
     /// Confidence class of this rule: [`AttributionConfidence::Exact`]
     /// for equality-based attributions ([`Self::FileBySource`],
     /// [`Self::FileByMetadataName`], [`Self::EnvByPrefix`]), or
@@ -1882,7 +1924,7 @@ mod tests {
         set.insert(AttributionRule::EnvByPrefix);
         set.insert(AttributionRule::EnvByUniqueness);
         set.insert(AttributionRule::DefaultsByCodeUniqueness);
-        assert_eq!(set.len(), 5);
+        assert_eq!(set.len(), AttributionRule::ALL.len());
         // Copy: rebind without move.
         let r = AttributionRule::FileBySource;
         let r2 = r;
@@ -1931,13 +1973,7 @@ mod tests {
         // AttributionRule forces a confidence assignment in the
         // exhaustive match (compile-time), and this test pins the
         // resulting partition (test-time).
-        for rule in [
-            AttributionRule::FileBySource,
-            AttributionRule::FileByMetadataName,
-            AttributionRule::EnvByPrefix,
-            AttributionRule::EnvByUniqueness,
-            AttributionRule::DefaultsByCodeUniqueness,
-        ] {
+        for rule in AttributionRule::ALL.iter().copied() {
             assert_ne!(
                 rule.is_exact(),
                 rule.is_fallback(),
@@ -1969,13 +2005,7 @@ mod tests {
         // rule's, byte-for-byte, on every recognized rule. Pins the
         // contract that the convenience accessor stays a thin
         // forwarder.
-        for rule in [
-            AttributionRule::FileBySource,
-            AttributionRule::FileByMetadataName,
-            AttributionRule::EnvByPrefix,
-            AttributionRule::EnvByUniqueness,
-            AttributionRule::DefaultsByCodeUniqueness,
-        ] {
+        for rule in AttributionRule::ALL.iter().copied() {
             let src = ConfigSource::Defaults;
             let attr = FailingSourceAttribution::new(&src, rule);
             assert_eq!(attr.confidence(), rule.confidence());
@@ -2057,13 +2087,7 @@ mod tests {
         // to one axis is independent of the other.
         use std::collections::HashSet;
         let mut pairs: HashSet<(ConfigSourceKind, AttributionConfidence)> = HashSet::new();
-        for rule in [
-            AttributionRule::FileBySource,
-            AttributionRule::FileByMetadataName,
-            AttributionRule::EnvByPrefix,
-            AttributionRule::EnvByUniqueness,
-            AttributionRule::DefaultsByCodeUniqueness,
-        ] {
+        for rule in AttributionRule::ALL.iter().copied() {
             pairs.insert((rule.layer_kind(), rule.confidence()));
         }
         // Today: (File, Exact), (Env, Exact), (Env, Fallback),
@@ -2079,13 +2103,7 @@ mod tests {
         // The envelope's layer_kind() must agree with the rule's,
         // byte-for-byte, on every recognized rule. Pins the contract
         // that the convenience accessor stays a thin forwarder.
-        for rule in [
-            AttributionRule::FileBySource,
-            AttributionRule::FileByMetadataName,
-            AttributionRule::EnvByPrefix,
-            AttributionRule::EnvByUniqueness,
-            AttributionRule::DefaultsByCodeUniqueness,
-        ] {
+        for rule in AttributionRule::ALL.iter().copied() {
             let src = ConfigSource::Defaults;
             let attr = FailingSourceAttribution::new(&src, rule);
             assert_eq!(attr.layer_kind(), rule.layer_kind());
@@ -2772,13 +2790,7 @@ mod tests {
         // Four distinct cells → orthogonal in a non-trivial way.
         use std::collections::HashSet;
         let mut pairs: HashSet<(AttributionAxis, AttributionConfidence)> = HashSet::new();
-        for rule in [
-            AttributionRule::FileBySource,
-            AttributionRule::FileByMetadataName,
-            AttributionRule::EnvByPrefix,
-            AttributionRule::EnvByUniqueness,
-            AttributionRule::DefaultsByCodeUniqueness,
-        ] {
+        for rule in AttributionRule::ALL.iter().copied() {
             pairs.insert((rule.metadata_axis(), rule.confidence()));
         }
         assert_eq!(
@@ -2799,13 +2811,7 @@ mod tests {
         // Four cells of the 2 × 3 = 6 product → finer than either axis.
         use std::collections::HashSet;
         let mut pairs: HashSet<(AttributionAxis, ConfigSourceKind)> = HashSet::new();
-        for rule in [
-            AttributionRule::FileBySource,
-            AttributionRule::FileByMetadataName,
-            AttributionRule::EnvByPrefix,
-            AttributionRule::EnvByUniqueness,
-            AttributionRule::DefaultsByCodeUniqueness,
-        ] {
+        for rule in AttributionRule::ALL.iter().copied() {
             pairs.insert((rule.metadata_axis(), rule.layer_kind()));
         }
         assert!(
@@ -2829,19 +2835,12 @@ mod tests {
         use std::collections::HashSet;
         let mut triples: HashSet<(AttributionAxis, ConfigSourceKind, AttributionConfidence)> =
             HashSet::new();
-        let all_rules = [
-            AttributionRule::FileBySource,
-            AttributionRule::FileByMetadataName,
-            AttributionRule::EnvByPrefix,
-            AttributionRule::EnvByUniqueness,
-            AttributionRule::DefaultsByCodeUniqueness,
-        ];
-        for rule in all_rules {
+        for rule in AttributionRule::ALL.iter().copied() {
             triples.insert((rule.metadata_axis(), rule.layer_kind(), rule.confidence()));
         }
         assert_eq!(
             triples.len(),
-            all_rules.len(),
+            AttributionRule::ALL.len(),
             "triple (axis × kind × confidence) must distinguish every rule; got: {triples:?}"
         );
     }
@@ -2851,13 +2850,7 @@ mod tests {
         // The envelope's metadata_axis() must agree with the rule's,
         // byte-for-byte, on every recognized rule. Pins the contract
         // that the convenience accessor stays a thin forwarder.
-        for rule in [
-            AttributionRule::FileBySource,
-            AttributionRule::FileByMetadataName,
-            AttributionRule::EnvByPrefix,
-            AttributionRule::EnvByUniqueness,
-            AttributionRule::DefaultsByCodeUniqueness,
-        ] {
+        for rule in AttributionRule::ALL.iter().copied() {
             let src = ConfigSource::Defaults;
             let attr = FailingSourceAttribution::new(&src, rule);
             assert_eq!(attr.metadata_axis(), rule.metadata_axis());
@@ -2983,7 +2976,7 @@ mod tests {
             .collect();
         assert_eq!(
             coords.len(),
-            5,
+            AttributionRule::ALL.len(),
             "every rule must occupy a distinct coordinate cell; got: {coords:?}"
         );
     }
@@ -3235,5 +3228,177 @@ mod tests {
         assert_eq!(attr.metadata_axis(), AttributionAxis::MetadataSource);
         // Confidence is Fallback — pins independence of the two axes.
         assert_eq!(attr.confidence(), AttributionConfidence::Fallback);
+    }
+
+    // ---- AttributionRule::ALL tests ----
+
+    #[test]
+    fn attribution_rule_all_has_no_duplicates() {
+        // The constant is a set, not a multiset: every variant appears
+        // at most once. Pins the "no double-listed rule" invariant the
+        // typescape relies on so consumers iterating ALL never see a
+        // ghost rule contributing twice to a partition tally over the
+        // confidence / layer_kind / metadata_axis projections.
+        use std::collections::HashSet;
+        let unique: HashSet<AttributionRule> = AttributionRule::ALL.iter().copied().collect();
+        assert_eq!(
+            unique.len(),
+            AttributionRule::ALL.len(),
+            "AttributionRule::ALL must contain no duplicates",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_all_covers_every_recognized_variant() {
+        // The construction-table surface in `rule_coordinate_table()`
+        // covers every AttributionRule variant once (one row per rule).
+        // Pin the contract that every rule produced by the canonical
+        // table appears in AttributionRule::ALL, and that ALL contains
+        // no extras: the mutual-cover statement proves ALL is in 1-1
+        // correspondence with the rule partition surfaced by the
+        // resolver / inverse-bijection table.
+        use std::collections::HashSet;
+        let produced: HashSet<AttributionRule> = rule_coordinate_table()
+            .into_iter()
+            .map(|(r, _)| r)
+            .collect();
+        let listed: HashSet<AttributionRule> = AttributionRule::ALL.iter().copied().collect();
+        assert_eq!(
+            produced, listed,
+            "AttributionRule::ALL must equal the rule set produced by rule_coordinate_table",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_all_cardinality_matches_coordinate_table() {
+        // Stronger statement of the prior test on the cardinality axis:
+        // ALL.len() must equal the number of construction-table rows.
+        // A future AttributionRule variant landing forces both an arm
+        // in `coordinates()` / `from_coordinates()` (compile-time,
+        // exhaustive match) and a row in `rule_coordinate_table()`
+        // (test-time); this assertion fails until ALL is extended in
+        // lockstep, catching forgotten ALL updates.
+        assert_eq!(
+            AttributionRule::ALL.len(),
+            rule_coordinate_table().len(),
+            "ALL.len() must equal rule_coordinate_table().len()",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_all_iterates_in_declaration_order() {
+        // The constant lists variants in the same order as the enum's
+        // declaration arms (FileBySource, FileByMetadataName, EnvByPrefix,
+        // EnvByUniqueness, DefaultsByCodeUniqueness). Iteration order is
+        // observable — consumers (alerting policies, dashboards, miette
+        // diagnostic renderers) that rely on a stable ordering for
+        // priority/severity can route on it.
+        assert_eq!(
+            AttributionRule::ALL,
+            &[
+                AttributionRule::FileBySource,
+                AttributionRule::FileByMetadataName,
+                AttributionRule::EnvByPrefix,
+                AttributionRule::EnvByUniqueness,
+                AttributionRule::DefaultsByCodeUniqueness,
+            ],
+            "ALL must list variants in declaration order",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_all_partitions_confidence_axis() {
+        // ALL composes with confidence() as the universe over which the
+        // exact-vs-fallback partition is total: every listed rule
+        // classifies into exactly one confidence cell, and the two
+        // counts sum to ALL.len(). Stated through the constant rather
+        // than an inline literal — peer to
+        // shikumi_error_kind_all_partitions_figment_bearing_axis on
+        // the kind axis.
+        let exact = AttributionRule::ALL.iter().filter(|r| r.is_exact()).count();
+        let fallback = AttributionRule::ALL
+            .iter()
+            .filter(|r| r.is_fallback())
+            .count();
+        assert_eq!(exact, 3, "three ALL rules are exact");
+        assert_eq!(fallback, 2, "two ALL rules are fallback");
+        assert_eq!(
+            exact + fallback,
+            AttributionRule::ALL.len(),
+            "the confidence partition must cover ALL exactly once",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_all_partitions_layer_kind_axis() {
+        // ALL composes with layer_kind() as the universe over which the
+        // (file × env × defaults) partition is total. The three counts
+        // sum to ALL.len() with no rule unaccounted for.
+        let file = AttributionRule::ALL
+            .iter()
+            .filter(|r| r.layer_kind() == ConfigSourceKind::File)
+            .count();
+        let env = AttributionRule::ALL
+            .iter()
+            .filter(|r| r.layer_kind() == ConfigSourceKind::Env)
+            .count();
+        let defaults = AttributionRule::ALL
+            .iter()
+            .filter(|r| r.layer_kind() == ConfigSourceKind::Defaults)
+            .count();
+        assert_eq!(file, 2, "two ALL rules attribute to File");
+        assert_eq!(env, 2, "two ALL rules attribute to Env");
+        assert_eq!(defaults, 1, "one ALL rule attributes to Defaults");
+        assert_eq!(
+            file + env + defaults,
+            AttributionRule::ALL.len(),
+            "the layer_kind partition must cover ALL exactly once",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_all_partitions_metadata_axis() {
+        // ALL composes with metadata_axis() as the universe over which
+        // the (source × name) partition is total. The two counts sum to
+        // ALL.len() with no rule unaccounted for.
+        let source = AttributionRule::ALL
+            .iter()
+            .filter(|r| r.metadata_axis() == AttributionAxis::MetadataSource)
+            .count();
+        let name = AttributionRule::ALL
+            .iter()
+            .filter(|r| r.metadata_axis() == AttributionAxis::MetadataName)
+            .count();
+        assert_eq!(source, 2, "two ALL rules dispatch off metadata.source");
+        assert_eq!(name, 3, "three ALL rules dispatch off metadata.name");
+        assert_eq!(
+            source + name,
+            AttributionRule::ALL.len(),
+            "the metadata_axis partition must cover ALL exactly once",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_all_layer_kind_agrees_with_attribution_source_kind() {
+        // For every rule in ALL, building a FailingSourceAttribution
+        // from a ConfigSource of the rule's declared layer_kind keeps
+        // the structural law `attr.layer_kind() == attr.source.kind()`
+        // intact. Pins the cross-axis composition over the constant
+        // surface, peer to the existing
+        // attribution_rule_layer_kind_agrees_with_source_kind end-to-end
+        // test on real resolver paths.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let src = match rule.layer_kind() {
+                ConfigSourceKind::File => ConfigSource::File(PathBuf::from("/etc/app.yaml")),
+                ConfigSourceKind::Env => ConfigSource::Env("APP_".to_owned()),
+                ConfigSourceKind::Defaults => ConfigSource::Defaults,
+            };
+            let attr = FailingSourceAttribution::new(&src, rule);
+            assert_eq!(
+                attr.layer_kind(),
+                attr.source.kind(),
+                "rule {rule:?}: layer_kind / source.kind() must agree",
+            );
+        }
     }
 }
