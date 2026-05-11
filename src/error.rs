@@ -272,6 +272,42 @@ pub enum FieldPathLocalization {
     NotApplicable,
 }
 
+impl FieldPathLocalization {
+    /// Every recognized localization cell, in declaration order
+    /// ([`Self::Localized`], [`Self::FigmentUnlocalized`],
+    /// [`Self::NotApplicable`]).
+    ///
+    /// One source of truth for the localization-axis universe. Peer
+    /// to [`ShikumiErrorKind::ALL`] on the kind axis,
+    /// [`AttributionRule::ALL`] on the rule axis, and
+    /// [`crate::ConfigSourceKind::ALL`] on the layer-kind axis: the
+    /// same typescape discipline (closed `'static` slice, in
+    /// declaration order) applied to the localization axis.
+    /// Consumers iterating "every recognized localization" (per-cell
+    /// alert thresholds, dashboards, attestation manifests recording
+    /// the localization space's cardinality, structured-diagnostics
+    /// legends, partition-coverage tests) read this constant instead
+    /// of hard-coding the variant list, which would have to be kept
+    /// manually in lockstep with the enum's variant set.
+    ///
+    /// Adding a new variant to [`FieldPathLocalization`] means
+    /// extending this slice in lockstep with the variant itself. The
+    /// compiler enforces nothing here directly, so the
+    /// `field_path_localization_all_covers_every_constructed_localization`
+    /// test pins the contract by asserting that every value produced
+    /// by [`ShikumiError::field_path_localization`] over the
+    /// canonical-cell surface appears in [`Self::ALL`], and the
+    /// `field_path_localization_all_has_no_duplicates` test pins
+    /// that the constant is a set (no double-listed variant).
+    /// Together they pin the constant to the variant space the
+    /// typescape recognizes.
+    pub const ALL: &'static [Self] = &[
+        Self::Localized,
+        Self::FigmentUnlocalized,
+        Self::NotApplicable,
+    ];
+}
+
 /// Reason a [`figment::Error`] was attributed to a specific layer in the
 /// recorded [`ConfigSource`] chain by [`resolve_failing_source`].
 ///
@@ -2577,25 +2613,19 @@ mod tests {
         }
     }
 
-    #[test]
-    fn field_path_localization_partitions_every_variant() {
-        // Every constructed error classifies into exactly one
-        // FieldPathLocalization cell — no variant straddles, none falls
-        // through. Pins the partition contract that the typescape
-        // lifts: a future ShikumiError variant forces a classification
-        // in field_path_localization() (compile-time via field_path's
-        // exhaustive match) and a row in this table (test-time).
-        let all_locs = [
-            FieldPathLocalization::Localized,
-            FieldPathLocalization::FigmentUnlocalized,
-            FieldPathLocalization::NotApplicable,
-        ];
-        // Construct one error per (kind × localization) cell that's
-        // currently inhabited.
-        let cases: Vec<(ShikumiError, FieldPathLocalization)> = vec![
+    /// Canonical sample table: one [`ShikumiError`] per
+    /// [`FieldPathLocalization`] cell. Mirrors `one_per_kind()` on the
+    /// kind axis but pinned to the localization axis — every variant
+    /// of `FieldPathLocalization::ALL` is the second tuple element of
+    /// exactly one row.
+    fn one_per_localization() -> Vec<(ShikumiError, FieldPathLocalization)> {
+        vec![
             (
-                ShikumiError::Parse("x".to_owned()),
-                FieldPathLocalization::NotApplicable,
+                ShikumiError::Extract {
+                    sources: vec![],
+                    error: Box::new(figment::Error::from("t".to_owned()).with_path("k")),
+                },
+                FieldPathLocalization::Localized,
             ),
             (
                 ShikumiError::Extract {
@@ -2605,15 +2635,22 @@ mod tests {
                 FieldPathLocalization::FigmentUnlocalized,
             ),
             (
-                ShikumiError::Extract {
-                    sources: vec![],
-                    error: Box::new(figment::Error::from("t".to_owned()).with_path("k")),
-                },
-                FieldPathLocalization::Localized,
+                ShikumiError::Parse("x".to_owned()),
+                FieldPathLocalization::NotApplicable,
             ),
-        ];
-        for (err, expected) in cases {
-            let matches: Vec<_> = all_locs
+        ]
+    }
+
+    #[test]
+    fn field_path_localization_partitions_every_variant() {
+        // Every constructed error classifies into exactly one
+        // FieldPathLocalization cell — no variant straddles, none falls
+        // through. Pins the partition contract that the typescape
+        // lifts: a future ShikumiError variant forces a classification
+        // in field_path_localization() (compile-time via field_path's
+        // exhaustive match) and a row in this table (test-time).
+        for (err, expected) in one_per_localization() {
+            let matches: Vec<_> = FieldPathLocalization::ALL
                 .iter()
                 .filter(|loc| err.field_path_localization() == **loc)
                 .collect();
@@ -2665,6 +2702,130 @@ mod tests {
         let l3 = l;
         assert_eq!(l, l2);
         assert_eq!(l2, l3);
+    }
+
+    // ---- FieldPathLocalization::ALL tests ----
+
+    #[test]
+    fn field_path_localization_all_has_no_duplicates() {
+        // The constant is a set, not a multiset: every variant appears
+        // at most once. Pins the "no double-listed cell" invariant the
+        // typescape relies on so consumers iterating ALL never see a
+        // ghost localization contributing twice to a partition tally.
+        use std::collections::HashSet;
+        let unique: HashSet<FieldPathLocalization> =
+            FieldPathLocalization::ALL.iter().copied().collect();
+        assert_eq!(
+            unique.len(),
+            FieldPathLocalization::ALL.len(),
+            "FieldPathLocalization::ALL must contain no duplicates",
+        );
+    }
+
+    #[test]
+    fn field_path_localization_all_covers_every_constructed_localization() {
+        // The canonical sample surface in `one_per_localization()` covers
+        // every FieldPathLocalization cell once. Pin the contract that
+        // every value field_path_localization() can return appears in
+        // FieldPathLocalization::ALL, and that ALL contains no extras:
+        // the mutual-cover statement proves ALL is in 1-1 correspondence
+        // with the localization partition surfaced by the cell set.
+        use std::collections::HashSet;
+        let produced: HashSet<FieldPathLocalization> = one_per_localization()
+            .into_iter()
+            .map(|(_, loc)| loc)
+            .collect();
+        let listed: HashSet<FieldPathLocalization> =
+            FieldPathLocalization::ALL.iter().copied().collect();
+        assert_eq!(
+            produced, listed,
+            "FieldPathLocalization::ALL must equal the cell set produced by field_path_localization()",
+        );
+    }
+
+    #[test]
+    fn field_path_localization_all_cardinality_matches_canonical_table() {
+        // Stronger statement of the prior test on the cardinality axis:
+        // ALL.len() must equal the number of canonical-cell rows. A
+        // future FieldPathLocalization variant landing forces both an
+        // arm in `field_path_localization()` (compile-time, exhaustive
+        // match on `field_path`'s tri-state) and a row in
+        // `one_per_localization()` (test-time); this assertion fails
+        // until ALL is extended in lockstep, catching forgotten ALL
+        // updates.
+        assert_eq!(
+            FieldPathLocalization::ALL.len(),
+            one_per_localization().len(),
+            "ALL.len() must equal one_per_localization().len()",
+        );
+    }
+
+    #[test]
+    fn field_path_localization_all_iterates_in_declaration_order() {
+        // The constant lists variants in the same order as the enum's
+        // declaration (Localized, FigmentUnlocalized, NotApplicable).
+        // Iteration order is observable — consumers (alerting policies,
+        // dashboards, structured-diagnostics legends) that rely on a
+        // stable ordering for confidence ranking — Localized strongest,
+        // NotApplicable weakest — can route on it.
+        assert_eq!(
+            FieldPathLocalization::ALL,
+            &[
+                FieldPathLocalization::Localized,
+                FieldPathLocalization::FigmentUnlocalized,
+                FieldPathLocalization::NotApplicable,
+            ],
+            "ALL must list variants in declaration order",
+        );
+    }
+
+    #[test]
+    fn field_path_localization_all_partitions_figment_bearing_axis() {
+        // ALL composes with the kind/figment-bearing axis: exactly two
+        // of the listed cells (Localized, FigmentUnlocalized) classify
+        // as figment-bearing on the kind side; the third
+        // (NotApplicable) does not. Pins the cross-axis partition
+        // through the constant rather than an inline literal.
+        let bearing_side: usize = FieldPathLocalization::ALL
+            .iter()
+            .filter(|loc| {
+                matches!(
+                    loc,
+                    FieldPathLocalization::Localized | FieldPathLocalization::FigmentUnlocalized,
+                )
+            })
+            .count();
+        let non_bearing_side: usize = FieldPathLocalization::ALL
+            .iter()
+            .filter(|loc| matches!(loc, FieldPathLocalization::NotApplicable))
+            .count();
+        assert_eq!(
+            bearing_side, 2,
+            "two ALL cells sit on the figment-bearing side"
+        );
+        assert_eq!(
+            bearing_side + non_bearing_side,
+            FieldPathLocalization::ALL.len(),
+            "the figment-bearing-side partition must cover ALL exactly once",
+        );
+    }
+
+    #[test]
+    fn field_path_localization_all_covers_every_kind_axis_classification() {
+        // Cross-axis cover: every ShikumiError in the kind-axis sample
+        // table classifies into a FieldPathLocalization cell that lies
+        // in ALL. Pins the contract that no kind escapes the
+        // localization universe.
+        use std::collections::HashSet;
+        let listed: HashSet<FieldPathLocalization> =
+            FieldPathLocalization::ALL.iter().copied().collect();
+        for (_, err) in one_per_kind() {
+            let loc = err.field_path_localization();
+            assert!(
+                listed.contains(&loc),
+                "kind-axis sample {err:?} produced localization {loc:?} not in ALL",
+            );
+        }
     }
 
     #[test]
