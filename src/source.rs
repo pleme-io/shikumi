@@ -198,6 +198,47 @@ pub enum ConfigSourceKind {
     File,
 }
 
+impl ConfigSourceKind {
+    /// Every [`ConfigSourceKind`] variant, in declaration order
+    /// ([`Self::Defaults`], [`Self::Env`], [`Self::File`]).
+    ///
+    /// The closed list of layer kinds shikumi recognizes. Iterate to
+    /// enumerate the layer-kind space without listing variants by hand
+    /// at every consumer site — e.g. dashboards initializing per-kind
+    /// chain counters, attestation manifests recording the layer-kind
+    /// space's cardinality, tests asserting cube-coverage over the
+    /// orthogonal `(axis × layer_kind × confidence)` coordinate space
+    /// in [`crate::AttributionRule::from_coordinates`].
+    ///
+    /// One source of truth for the layer-kind enumeration on the
+    /// [`ConfigSourceKind`] axis: peer to [`crate::Format::ALL`] on the
+    /// [`crate::Format`] axis, [`crate::ShikumiErrorKind::ALL`] on the
+    /// kind axis, and [`crate::AttributionRule::ALL`] on the rule axis
+    /// — the same typescape discipline applied across the closed-enum
+    /// primitive set. Before this constant, the layer-kind enumeration
+    /// was inlined as a `[File, Env, Defaults]` array literal at sites
+    /// that needed to iterate (the cube-coverage loop in
+    /// `attribution_rule_from_coordinates_returns_none_for_unrecognized_cells`,
+    /// the trait-bounds parity check in
+    /// `config_source_kind_is_copy_and_hashable`); each duplicated
+    /// literal had to be manually kept in lockstep with the enum's
+    /// variant set.
+    ///
+    /// Adding a new variant to [`Self`] (e.g. a future `Http`, `Vault`,
+    /// or `ConfigMap` layer kind paired with a new
+    /// [`ConfigSource`] variant) means extending this slice in lockstep
+    /// with the variant itself. The compiler enforces nothing here
+    /// directly, so the
+    /// `config_source_kind_all_covers_every_constructible_variant` test
+    /// pins the contract by asserting that every kind produced by
+    /// [`ConfigSource::kind`] over the canonical sample table appears
+    /// in [`Self::ALL`], and the `config_source_kind_all_has_no_duplicates`
+    /// test pins that the constant is a set (no double-listed variant).
+    /// Together they pin the constant to the variant space the
+    /// typescape recognizes.
+    pub const ALL: &'static [Self] = &[Self::Defaults, Self::Env, Self::File];
+}
+
 /// Recognized form of [`figment::providers::Env`]'s
 /// `figment::Metadata::name`, as parsed by
 /// [`ConfigSource::strip_env_metadata_name`].
@@ -720,20 +761,123 @@ mod tests {
     fn config_source_kind_is_copy_and_hashable() {
         // Trait-bounds parity with sibling typescape primitives
         // (AttributionRule, AttributionConfidence, FigmentSourceTag,
-        // FigmentNameTag, EnvMetadataTag).
+        // FigmentNameTag, EnvMetadataTag). Iterates ConfigSourceKind::ALL
+        // so a future variant landing extends the parity check without
+        // editing this test.
         use std::collections::HashSet;
-        let mut set = HashSet::new();
-        set.insert(ConfigSourceKind::Defaults);
-        set.insert(ConfigSourceKind::Env);
-        set.insert(ConfigSourceKind::File);
+        let mut set: HashSet<ConfigSourceKind> = ConfigSourceKind::ALL.iter().copied().collect();
         set.insert(ConfigSourceKind::Defaults); // duplicate
-        assert_eq!(set.len(), 3);
+        assert_eq!(set.len(), ConfigSourceKind::ALL.len());
         // Copy: rebind without move.
         let k = ConfigSourceKind::Env;
         let k2 = k;
         let k3 = k;
         assert_eq!(k, k2);
         assert_eq!(k2, k3);
+    }
+
+    // ---- ConfigSourceKind::ALL tests ----
+
+    #[test]
+    fn config_source_kind_all_has_no_duplicates() {
+        // The constant is a set, not a multiset: every variant appears
+        // at most once. Pins the "no double-listed kind" invariant the
+        // typescape relies on so consumers iterating ALL never see a
+        // ghost kind contributing twice to a partition tally over the
+        // ConfigSource / AttributionRule layer-kind projection.
+        use std::collections::HashSet;
+        let unique: HashSet<ConfigSourceKind> = ConfigSourceKind::ALL.iter().copied().collect();
+        assert_eq!(
+            unique.len(),
+            ConfigSourceKind::ALL.len(),
+            "ConfigSourceKind::ALL must contain no duplicates",
+        );
+    }
+
+    #[test]
+    fn config_source_kind_all_covers_every_constructible_variant() {
+        // Mutual-cover statement: the canonical sample table covers every
+        // ConfigSourceKind variant exactly once via ConfigSource::kind,
+        // and ALL equals the same set. A future ConfigSource variant
+        // landing forces a kind() arm (compile-time, exhaustive match)
+        // and a sample-table row (here); this test fails until ALL is
+        // extended in lockstep, catching forgotten ALL updates.
+        use std::collections::HashSet;
+        let produced: HashSet<ConfigSourceKind> = [
+            ConfigSource::Defaults,
+            ConfigSource::Env("X_".to_owned()),
+            ConfigSource::File(PathBuf::from("/x")),
+        ]
+        .iter()
+        .map(ConfigSource::kind)
+        .collect();
+        let listed: HashSet<ConfigSourceKind> = ConfigSourceKind::ALL.iter().copied().collect();
+        assert_eq!(
+            produced, listed,
+            "ConfigSourceKind::ALL must equal the kind set produced by ConfigSource::kind",
+        );
+    }
+
+    #[test]
+    fn config_source_kind_all_cardinality_matches_variant_count() {
+        // Stronger statement of the prior test on the cardinality axis:
+        // ALL.len() must equal the variant count of the closed partition
+        // (three: Defaults, Env, File). Stated through the constant
+        // rather than an inline literal so a future variant landing
+        // forces a sample-table row + an ALL entry in lockstep.
+        let produced_count = [
+            ConfigSource::Defaults,
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/x")),
+        ]
+        .iter()
+        .map(ConfigSource::kind)
+        .collect::<std::collections::HashSet<_>>()
+        .len();
+        assert_eq!(
+            ConfigSourceKind::ALL.len(),
+            produced_count,
+            "ALL.len() must equal the canonical kind-partition cardinality",
+        );
+    }
+
+    #[test]
+    fn config_source_kind_all_iterates_in_declaration_order() {
+        // The constant lists variants in the same order as the enum's
+        // declaration arms (Defaults, Env, File). Iteration order is
+        // observable — consumers (alerting policies, dashboards, miette
+        // diagnostic renderers) that rely on a stable ordering for
+        // priority/severity can route on it.
+        assert_eq!(
+            ConfigSourceKind::ALL,
+            &[
+                ConfigSourceKind::Defaults,
+                ConfigSourceKind::Env,
+                ConfigSourceKind::File,
+            ],
+            "ALL must list variants in declaration order",
+        );
+    }
+
+    #[test]
+    fn config_source_kind_all_covers_every_attribution_rule_layer_kind() {
+        // Cross-axis coverage: every AttributionRule's layer_kind() is a
+        // ConfigSourceKind that appears in ALL. Pins the structural
+        // alignment between the rule space's layer-kind projection and
+        // the layer-kind universe — a future rule landing with a
+        // layer_kind that ALL doesn't list fails this test before any
+        // observation site can silently bucket it as "unknown".
+        use std::collections::HashSet;
+        let rule_kinds: HashSet<ConfigSourceKind> = crate::error::AttributionRule::ALL
+            .iter()
+            .map(|r| r.layer_kind())
+            .collect();
+        let listed: HashSet<ConfigSourceKind> = ConfigSourceKind::ALL.iter().copied().collect();
+        assert!(
+            rule_kinds.is_subset(&listed),
+            "every AttributionRule::layer_kind() must appear in ConfigSourceKind::ALL: \
+             rule_kinds={rule_kinds:?}, listed={listed:?}",
+        );
     }
 
     // ---- env_metadata_name / strip_env_metadata_name ----
