@@ -287,6 +287,37 @@ pub enum FormatProvenance {
 }
 
 impl FormatProvenance {
+    /// Every recognized provenance cell, in declaration order
+    /// ([`Self::FigmentBuiltin`], [`Self::ShikumiBuilt`]).
+    ///
+    /// One source of truth for the provenance-axis universe. Peer to
+    /// [`Format::ALL`] on the format axis,
+    /// [`crate::ShikumiErrorKind::ALL`] on the kind axis,
+    /// [`crate::AttributionRule::ALL`] on the rule axis,
+    /// [`crate::ConfigSourceKind::ALL`] on the layer-kind axis, and
+    /// [`crate::FieldPathLocalization::ALL`] on the
+    /// field-path-localization axis: the same typescape discipline
+    /// (closed `'static` slice, in declaration order) applied to the
+    /// provenance axis. Consumers iterating "every recognized
+    /// provenance" (per-cell alert thresholds, dashboards, attestation
+    /// manifests recording the provenance space's cardinality,
+    /// structured-diagnostics legends, partition-coverage tests) read
+    /// this constant instead of hard-coding the variant list, which
+    /// would have to be kept manually in lockstep with the enum's
+    /// variant set.
+    ///
+    /// Adding a new variant to [`FormatProvenance`] means extending
+    /// this slice in lockstep with the variant itself. The compiler
+    /// enforces nothing here directly, so the
+    /// `format_provenance_all_covers_every_provenance_over_format_all`
+    /// test pins the contract by asserting that every value produced
+    /// by [`Format::provenance`] over [`Format::ALL`] appears in
+    /// [`Self::ALL`], and the `format_provenance_all_has_no_duplicates`
+    /// test pins that the constant is a set (no double-listed
+    /// variant). Together they pin the constant to the variant space
+    /// the typescape recognizes.
+    pub const ALL: &'static [Self] = &[Self::FigmentBuiltin, Self::ShikumiBuilt];
+
     /// Returns `true` for [`Self::ShikumiBuilt`]; equivalent to
     /// `self == FormatProvenance::ShikumiBuilt`.
     ///
@@ -2454,10 +2485,7 @@ mod tests {
         // The (provenance -> file-rule -> layer-kind) projection collapses
         // to ConfigSourceKind::File for every provenance — the rule space
         // for file-axis attributions sits entirely on the file layer-kind.
-        for p in [
-            FormatProvenance::FigmentBuiltin,
-            FormatProvenance::ShikumiBuilt,
-        ] {
+        for p in FormatProvenance::ALL.iter().copied() {
             assert_eq!(
                 p.file_attribution_rule().layer_kind(),
                 crate::ConfigSourceKind::File,
@@ -2471,10 +2499,7 @@ mod tests {
         // The convenience accessor is a thin lift of
         // `file_attribution_rule().metadata_axis()`. Every provenance
         // must agree pointwise.
-        for p in [
-            FormatProvenance::FigmentBuiltin,
-            FormatProvenance::ShikumiBuilt,
-        ] {
+        for p in FormatProvenance::ALL.iter().copied() {
             assert_eq!(
                 p.file_attribution_axis(),
                 p.file_attribution_rule().metadata_axis(),
@@ -2500,10 +2525,7 @@ mod tests {
         // projection collapses to AttributionConfidence::Exact for every
         // provenance — file-axis attribution is high-confidence by
         // construction in this resolver.
-        for p in [
-            FormatProvenance::FigmentBuiltin,
-            FormatProvenance::ShikumiBuilt,
-        ] {
+        for p in FormatProvenance::ALL.iter().copied() {
             assert_eq!(
                 p.file_attribution_rule().confidence(),
                 crate::AttributionConfidence::Exact,
@@ -2529,9 +2551,164 @@ mod tests {
         for f in Format::ALL {
             set.insert(f.provenance());
         }
-        set.insert(FormatProvenance::FigmentBuiltin); // duplicate
-        set.insert(FormatProvenance::ShikumiBuilt); // duplicate
-        assert_eq!(set.len(), 2, "the partition has exactly two cells today");
+        for prov in FormatProvenance::ALL.iter().copied() {
+            // duplicate of the same value already inserted via
+            // Format::provenance; pins the set-collapse property.
+            set.insert(prov);
+        }
+        assert_eq!(
+            set.len(),
+            FormatProvenance::ALL.len(),
+            "the partition has exactly FormatProvenance::ALL.len() cells today",
+        );
+    }
+
+    // ---- FormatProvenance::ALL tests ----
+
+    #[test]
+    fn format_provenance_all_has_no_duplicates() {
+        // The constant is a set, not a multiset: every variant appears
+        // at most once. Pins the "no double-listed cell" invariant the
+        // typescape relies on so consumers iterating ALL never see a
+        // ghost provenance contributing twice to a partition tally.
+        use std::collections::HashSet;
+        let unique: HashSet<FormatProvenance> = FormatProvenance::ALL.iter().copied().collect();
+        assert_eq!(
+            unique.len(),
+            FormatProvenance::ALL.len(),
+            "FormatProvenance::ALL must contain no duplicates",
+        );
+    }
+
+    #[test]
+    fn format_provenance_all_covers_every_provenance_over_format_all() {
+        // Cross-axis cover law: every provenance produced by
+        // `Format::provenance` over `Format::ALL` must appear in
+        // `FormatProvenance::ALL`, and `FormatProvenance::ALL` must
+        // contain no extras. The mutual-cover statement proves ALL is
+        // in 1-1 correspondence with the provenance partition the
+        // typescape recognizes — peer to the
+        // `shikumi_error_kind_all_covers_every_constructed_variant`,
+        // `attribution_rule_all_covers_every_recognized_variant`, and
+        // `field_path_localization_all_covers_every_constructed_localization`
+        // mutual-cover assertions on their respective axes.
+        use std::collections::HashSet;
+        let produced: HashSet<FormatProvenance> = Format::ALL
+            .iter()
+            .copied()
+            .map(Format::provenance)
+            .collect();
+        let listed: HashSet<FormatProvenance> = FormatProvenance::ALL.iter().copied().collect();
+        assert_eq!(
+            produced, listed,
+            "FormatProvenance::ALL must equal the provenance set produced by Format::provenance over Format::ALL",
+        );
+    }
+
+    #[test]
+    fn format_provenance_all_cardinality_matches_format_provenance_partition() {
+        // Stronger cardinality statement: the (Format -> provenance)
+        // partition over Format::ALL has exactly FormatProvenance::ALL
+        // distinct cells. A future provenance variant landing forces
+        // both an arm in `Format::provenance` (compile-time, exhaustive
+        // match on the format variant space) and an extension of ALL
+        // (test-time); this assertion fails until ALL is extended in
+        // lockstep, catching forgotten ALL updates.
+        use std::collections::HashSet;
+        let distinct: HashSet<FormatProvenance> = Format::ALL
+            .iter()
+            .copied()
+            .map(Format::provenance)
+            .collect();
+        assert_eq!(
+            FormatProvenance::ALL.len(),
+            distinct.len(),
+            "FormatProvenance::ALL.len() must equal the distinct provenance count over Format::ALL",
+        );
+    }
+
+    #[test]
+    fn format_provenance_all_iterates_in_declaration_order() {
+        // The constant lists variants in the same order as the enum's
+        // declaration (FigmentBuiltin, ShikumiBuilt). Iteration order
+        // is observable — consumers (alerting policies, dashboards,
+        // structured-diagnostics legends) that want a stable ordering
+        // (e.g. source-axis attribution before name-axis attribution
+        // in confidence-ranked reports) can route on it.
+        assert_eq!(
+            FormatProvenance::ALL,
+            &[
+                FormatProvenance::FigmentBuiltin,
+                FormatProvenance::ShikumiBuilt,
+            ],
+            "ALL must list variants in declaration order",
+        );
+    }
+
+    #[test]
+    fn format_provenance_all_predicates_partition_pointwise() {
+        // The is_figment_builtin / is_shikumi_built sibling-predicate
+        // pair partitions ALL — exactly one predicate must hold per
+        // cell, no cell may be both, none may be neither. Pins the
+        // partition contract that a future variant landing must declare
+        // its sibling-predicate side in lockstep.
+        for p in FormatProvenance::ALL.iter().copied() {
+            assert_ne!(
+                p.is_figment_builtin(),
+                p.is_shikumi_built(),
+                "provenance {p:?} must be exactly one of figment-builtin / shikumi-built",
+            );
+        }
+    }
+
+    #[test]
+    fn format_provenance_all_file_attribution_rule_is_injective() {
+        // The (provenance -> file-rule) projection is a bijection over
+        // FormatProvenance::ALL: distinct provenances map to distinct
+        // file-axis attribution rules. Pins the contract that the
+        // resolver's file-axis dispatch table has one rule per
+        // provenance — adding a future provenance variant landing the
+        // same file-rule as an existing one would silently merge
+        // attribution provenance at runtime, and this test fails
+        // before that ships.
+        use std::collections::HashSet;
+        let rules: HashSet<crate::AttributionRule> = FormatProvenance::ALL
+            .iter()
+            .copied()
+            .map(FormatProvenance::file_attribution_rule)
+            .collect();
+        assert_eq!(
+            rules.len(),
+            FormatProvenance::ALL.len(),
+            "file_attribution_rule must be injective over FormatProvenance::ALL",
+        );
+    }
+
+    #[test]
+    fn format_provenance_all_file_attribution_axis_spans_both_metadata_axes() {
+        // The (provenance -> file-axis) projection over
+        // FormatProvenance::ALL spans both MetadataSource (from
+        // FigmentBuiltin) and MetadataName (from ShikumiBuilt). Pins
+        // the structural law that the typed provenance partition is
+        // not collapsed onto a single metadata axis — diagnostics that
+        // weight name-axis attribution as more brittle than source-axis
+        // attribution can rely on both axes appearing in the provenance
+        // surface. Durable under future variant growth: this is a
+        // ≥-style coverage statement, not an injectivity claim.
+        use std::collections::HashSet;
+        let axes: HashSet<crate::AttributionAxis> = FormatProvenance::ALL
+            .iter()
+            .copied()
+            .map(FormatProvenance::file_attribution_axis)
+            .collect();
+        assert!(
+            axes.contains(&crate::AttributionAxis::MetadataSource),
+            "FormatProvenance::ALL must produce a MetadataSource file-axis attribution"
+        );
+        assert!(
+            axes.contains(&crate::AttributionAxis::MetadataName),
+            "FormatProvenance::ALL must produce a MetadataName file-axis attribution"
+        );
     }
 
     #[test]
