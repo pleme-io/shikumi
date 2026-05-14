@@ -803,6 +803,49 @@ pub enum AttributionAxis {
     MetadataName,
 }
 
+impl AttributionAxis {
+    /// Every [`AttributionAxis`] variant, in declaration order
+    /// ([`Self::MetadataSource`], [`Self::MetadataName`]).
+    ///
+    /// The closed list of figment-metadata fields shikumi's resolver
+    /// dispatches off. Iterate to enumerate the axis space without
+    /// listing variants by hand at every consumer site — e.g.
+    /// dashboards initializing per-axis counters (weighting name-axis
+    /// attributions visibly weaker than source-axis ones), attestation
+    /// manifests recording the axis space's cardinality, structured-
+    /// diagnostics legends rendering different prose per axis, or
+    /// product-cube enumerations crossing the axis with
+    /// [`ConfigSourceKind::ALL`] and the confidence axis.
+    ///
+    /// One source of truth for the axis enumeration on the
+    /// [`AttributionAxis`] axis: peer to [`crate::Format::ALL`] on the
+    /// format axis, [`ShikumiErrorKind::ALL`] on the kind axis,
+    /// [`AttributionRule::ALL`] on the rule axis,
+    /// [`ConfigSourceKind::ALL`] on the layer-kind axis,
+    /// [`FieldPathLocalization::ALL`] on the field-path-localization
+    /// axis, and [`crate::FormatProvenance::ALL`] on the format-
+    /// provenance axis — the same typescape discipline (closed
+    /// `'static` slice, in declaration order) applied to the metadata
+    /// axis. Before this constant, the axis enumeration was inlined as
+    /// a `[MetadataSource, MetadataName]` array literal at every site
+    /// that needed to iterate (the 12-cell cube cover test in
+    /// [`error::tests`]); each duplicated literal had to be manually
+    /// kept in lockstep with the enum's variant set.
+    ///
+    /// Adding a new variant to [`Self`] (e.g. a `MetadataExtras` axis
+    /// if figment grows additional typed metadata fields) means
+    /// extending this slice in lockstep with the variant itself. The
+    /// compiler enforces nothing here directly, so the
+    /// `attribution_axis_all_covers_every_rule_axis` test pins the
+    /// contract by asserting that every axis produced by
+    /// [`AttributionRule::metadata_axis`] over [`AttributionRule::ALL`]
+    /// appears in [`Self::ALL`], and the
+    /// `attribution_axis_all_has_no_duplicates` test pins that the
+    /// constant is a set (no double-listed variant). Together they pin
+    /// the constant to the variant space the typescape recognizes.
+    pub const ALL: &'static [Self] = &[Self::MetadataSource, Self::MetadataName];
+}
+
 /// Typed envelope returned by [`ShikumiError::failing_attribution`]:
 /// the attributed [`ConfigSource`] and the [`AttributionRule`] that
 /// produced the attribution.
@@ -2926,10 +2969,15 @@ mod tests {
         // FigmentNameTag, EnvMetadataTag).
         use std::collections::HashSet;
         let mut set = HashSet::new();
-        set.insert(AttributionAxis::MetadataSource);
-        set.insert(AttributionAxis::MetadataName);
+        for axis in AttributionAxis::ALL.iter().copied() {
+            set.insert(axis);
+        }
         set.insert(AttributionAxis::MetadataSource); // duplicate — no growth
-        assert_eq!(set.len(), 2, "every axis must hash distinctly");
+        assert_eq!(
+            set.len(),
+            AttributionAxis::ALL.len(),
+            "every axis must hash distinctly"
+        );
 
         // Copy: rebind without move.
         let a = AttributionAxis::MetadataSource;
@@ -2937,6 +2985,128 @@ mod tests {
         let a3 = a;
         assert_eq!(a, a2);
         assert_eq!(a2, a3);
+    }
+
+    #[test]
+    fn attribution_axis_all_has_no_duplicates() {
+        // AttributionAxis::ALL must be a set — no variant listed twice.
+        // Pins the duplication-free property of the constant against
+        // accidental double-listing on future variant additions.
+        use std::collections::HashSet;
+        let set: HashSet<AttributionAxis> = AttributionAxis::ALL.iter().copied().collect();
+        assert_eq!(
+            set.len(),
+            AttributionAxis::ALL.len(),
+            "AttributionAxis::ALL must list every variant exactly once; got duplicates in {:?}",
+            AttributionAxis::ALL,
+        );
+    }
+
+    #[test]
+    fn attribution_axis_all_covers_every_rule_axis() {
+        // Every axis produced by AttributionRule::metadata_axis over the
+        // canonical rule-axis surface (AttributionRule::ALL) must appear
+        // in AttributionAxis::ALL — pins the cover law that
+        // AttributionAxis::ALL is at least as large as the image of
+        // (rule → axis) over the typescape's rule space. Strictly
+        // stronger than checking each rule's axis in isolation: this
+        // pins the constant against silently dropping an axis a future
+        // AttributionRule variant could reach.
+        use std::collections::HashSet;
+        let produced: HashSet<AttributionAxis> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .map(AttributionRule::metadata_axis)
+            .collect();
+        let declared: HashSet<AttributionAxis> = AttributionAxis::ALL.iter().copied().collect();
+        assert!(
+            produced.is_subset(&declared),
+            "every axis reached by AttributionRule::metadata_axis must lie in \
+             AttributionAxis::ALL; produced: {produced:?}, declared: {declared:?}",
+        );
+    }
+
+    #[test]
+    fn attribution_axis_all_equals_rule_axis_image() {
+        // Tighter than the subset cover: AttributionAxis::ALL must equal
+        // the image set of AttributionRule::metadata_axis over
+        // AttributionRule::ALL. No declared axis lacks a rule reaching
+        // it today — every variant in ALL is exercised by the rule
+        // space. A future axis that lands without a corresponding rule
+        // (or vice versa) fails this test in lockstep.
+        use std::collections::HashSet;
+        let produced: HashSet<AttributionAxis> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .map(AttributionRule::metadata_axis)
+            .collect();
+        let declared: HashSet<AttributionAxis> = AttributionAxis::ALL.iter().copied().collect();
+        assert_eq!(
+            produced, declared,
+            "AttributionAxis::ALL must equal the image of (rule → axis); \
+             produced: {produced:?}, declared: {declared:?}",
+        );
+    }
+
+    #[test]
+    fn attribution_axis_all_cardinality_matches_partition() {
+        // AttributionAxis::ALL.len() must equal the number of distinct
+        // axes produced by AttributionRule::metadata_axis over the
+        // canonical rule-axis surface. Pins the cardinality contract
+        // between the declared universe and the partition over the
+        // rule space.
+        use std::collections::HashSet;
+        let distinct: HashSet<AttributionAxis> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .map(AttributionRule::metadata_axis)
+            .collect();
+        assert_eq!(
+            AttributionAxis::ALL.len(),
+            distinct.len(),
+            "AttributionAxis::ALL.len() ({}) must match the partition cardinality ({})",
+            AttributionAxis::ALL.len(),
+            distinct.len(),
+        );
+    }
+
+    #[test]
+    fn attribution_axis_all_lists_variants_in_declaration_order() {
+        // Pins the declaration order: MetadataSource before
+        // MetadataName. The constant doubles as a stable ordering for
+        // diagnostics legends and attestation manifests; reordering
+        // would silently shuffle external consumers' iteration order.
+        assert_eq!(
+            AttributionAxis::ALL,
+            &[
+                AttributionAxis::MetadataSource,
+                AttributionAxis::MetadataName
+            ],
+            "AttributionAxis::ALL must list variants in declaration order",
+        );
+    }
+
+    #[test]
+    fn attribution_axis_all_covers_failing_source_attribution_axes() {
+        // Cross-axis cover: every axis surfaced by
+        // FailingSourceAttribution::metadata_axis over the rule space
+        // must lie in AttributionAxis::ALL. Pins the contract that the
+        // captured-failure envelope's axis accessor stays a thin
+        // forwarder over the rule's axis (no envelope-specific axis
+        // ever escapes the declared universe).
+        use std::collections::HashSet;
+        let src = ConfigSource::Defaults;
+        let observed: HashSet<AttributionAxis> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .map(|rule| FailingSourceAttribution::new(&src, rule).metadata_axis())
+            .collect();
+        let declared: HashSet<AttributionAxis> = AttributionAxis::ALL.iter().copied().collect();
+        assert!(
+            observed.is_subset(&declared),
+            "every axis surfaced by FailingSourceAttribution::metadata_axis must lie in \
+             AttributionAxis::ALL; observed: {observed:?}, declared: {declared:?}",
+        );
     }
 
     #[test]
@@ -3182,15 +3352,8 @@ mod tests {
         let recognized: std::collections::HashSet<AttributionCoordinates> =
             rule_coordinate_table().iter().map(|(_, c)| *c).collect();
         let mut unrecognized_count = 0usize;
-        for axis in [
-            AttributionAxis::MetadataSource,
-            AttributionAxis::MetadataName,
-        ] {
-            for layer_kind in [
-                ConfigSourceKind::File,
-                ConfigSourceKind::Env,
-                ConfigSourceKind::Defaults,
-            ] {
+        for axis in AttributionAxis::ALL.iter().copied() {
+            for layer_kind in ConfigSourceKind::ALL.iter().copied() {
                 for confidence in [
                     AttributionConfidence::Exact,
                     AttributionConfidence::Fallback,
