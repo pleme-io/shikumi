@@ -573,6 +573,53 @@ pub enum FigmentSourceKind {
 }
 
 impl FigmentSourceKind {
+    /// Every [`FigmentSourceKind`] variant, in declaration order
+    /// ([`Self::File`], [`Self::Code`], [`Self::Custom`]).
+    ///
+    /// The closed list of `figment::Source` kinds shikumi recognizes.
+    /// Iterate to enumerate the figment-Source-axis kind space without
+    /// listing variants by hand at every consumer site — e.g.
+    /// dashboards initializing per-kind counters (weighting `Custom`
+    /// attributions visibly weaker than `File`/`Code` ones since
+    /// `Source::Custom` is a free-form string), attestation manifests
+    /// recording the figment-Source-axis kind space's cardinality,
+    /// structured-diagnostics legends rendering different prose per
+    /// class, or partition-coverage tests asserting disjointness across
+    /// the figment-side classification.
+    ///
+    /// One source of truth for the kind enumeration on the
+    /// [`FigmentSourceKind`] axis: peer to [`crate::Format::ALL`] on
+    /// the format axis, [`crate::ShikumiErrorKind::ALL`] on the kind
+    /// axis, [`crate::AttributionRule::ALL`] on the rule axis,
+    /// [`ConfigSourceKind::ALL`] on the shikumi-side layer-kind axis,
+    /// [`crate::FieldPathLocalization::ALL`] on the
+    /// field-path-localization axis,
+    /// [`crate::FormatProvenance::ALL`] on the format-provenance
+    /// axis, [`crate::AttributionAxis::ALL`] on the metadata axis,
+    /// and [`crate::AttributionConfidence::ALL`] on the confidence
+    /// axis — the same typescape discipline (closed `'static` slice,
+    /// in declaration order) applied to figment's `Source`-axis kind.
+    /// Before this constant, the kind enumeration was inlined as a
+    /// `[File, Code, Custom]` array literal at sites that needed to
+    /// iterate (the `figment_source_kind_is_static_and_copy_and_hashable`
+    /// test inserted each variant by hand; the
+    /// `figment_source_kind_partitions_disjointly` test built a
+    /// `[(Tag, Kind); 3]` table inline); each duplicated literal had to
+    /// be manually kept in lockstep with the enum's variant set.
+    ///
+    /// Adding a new variant to [`Self`] (e.g. a future `Url` kind in
+    /// lockstep with a hypothetical `FigmentSourceTag::Url` if figment
+    /// grows one) means extending this slice in lockstep with the
+    /// variant itself. The compiler enforces nothing here directly,
+    /// so the `figment_source_kind_all_covers_every_constructible_tag`
+    /// test pins the contract by asserting that every kind produced by
+    /// [`FigmentSourceTag::kind`] over the canonical sample table
+    /// appears in [`Self::ALL`], and the
+    /// `figment_source_kind_all_has_no_duplicates` test pins that the
+    /// constant is a set (no double-listed variant). Together they pin
+    /// the constant to the variant space the typescape recognizes.
+    pub const ALL: &'static [Self] = &[Self::File, Self::Code, Self::Custom];
+
     /// Returns `true` for [`Self::File`]; equivalent to
     /// `self == FigmentSourceKind::File`. Convenience predicate
     /// matching the [`ConfigSource::is_file`] /
@@ -1444,11 +1491,11 @@ mod tests {
         // AttributionAxis).
         use std::collections::HashSet;
         let mut set: HashSet<FigmentSourceKind> = HashSet::new();
-        set.insert(FigmentSourceKind::File);
-        set.insert(FigmentSourceKind::Code);
-        set.insert(FigmentSourceKind::Custom);
+        for k in FigmentSourceKind::ALL.iter().copied() {
+            set.insert(k);
+        }
         set.insert(FigmentSourceKind::File); // duplicate
-        assert_eq!(set.len(), 3);
+        assert_eq!(set.len(), FigmentSourceKind::ALL.len());
 
         // Copy: rebind without move.
         let k = FigmentSourceKind::Code;
@@ -1538,6 +1585,209 @@ mod tests {
         assert_eq!(
             FigmentSourceTag::classify(&custom).unwrap().kind(),
             FigmentSourceKind::Custom,
+        );
+    }
+
+    // ---- FigmentSourceKind::ALL cover / partition / order ----
+
+    /// Canonical sample table covering every `FigmentSourceTag` variant
+    /// once, with the kind each must classify into. Sources for the
+    /// `figment_source_kind_all_*` cover/partition tests below — peer
+    /// to the inline `[(Tag, Kind); 3]` cases in
+    /// `figment_source_kind_partitions_disjointly`.
+    fn canonical_figment_source_kind_samples() -> Vec<(figment::Source, FigmentSourceKind)> {
+        use figment::Provider;
+        let prov = figment::providers::Serialized::defaults(serde_json::json!({"k": "v"}));
+        let code_src = prov.metadata().source.expect("Serialized attaches Source");
+        vec![
+            (
+                figment::Source::File(PathBuf::from("/etc/app/app.yaml")),
+                FigmentSourceKind::File,
+            ),
+            (code_src, FigmentSourceKind::Code),
+            (
+                figment::Source::Custom("vault://kv/app".to_owned()),
+                FigmentSourceKind::Custom,
+            ),
+        ]
+    }
+
+    #[test]
+    fn figment_source_kind_all_has_no_duplicates() {
+        // The constant must be a set — no variant listed twice. Pins
+        // the typescape discipline shared with `Format::ALL`,
+        // `ShikumiErrorKind::ALL`, `AttributionRule::ALL`,
+        // `ConfigSourceKind::ALL`, `FieldPathLocalization::ALL`,
+        // `FormatProvenance::ALL`, `AttributionAxis::ALL`, and
+        // `AttributionConfidence::ALL`: the closed-enum `ALL` constant
+        // is a deduplicated `'static` slice.
+        use std::collections::HashSet;
+        let set: HashSet<FigmentSourceKind> = FigmentSourceKind::ALL.iter().copied().collect();
+        assert_eq!(
+            set.len(),
+            FigmentSourceKind::ALL.len(),
+            "FigmentSourceKind::ALL must contain no duplicates; got: {:?}",
+            FigmentSourceKind::ALL,
+        );
+    }
+
+    #[test]
+    fn figment_source_kind_all_covers_every_constructible_tag() {
+        // Subset cover: every kind produced by FigmentSourceTag::kind
+        // over the canonical sample table must lie in
+        // FigmentSourceKind::ALL. Pins the cross-axis cover law: the
+        // tag space cannot manufacture a kind outside the declared kind
+        // enumeration. A future tag variant that adds a new kind class
+        // must extend FigmentSourceKind and its ALL in the same commit;
+        // otherwise this test fails.
+        use std::collections::HashSet;
+        let declared: HashSet<FigmentSourceKind> = FigmentSourceKind::ALL.iter().copied().collect();
+        let observed: HashSet<FigmentSourceKind> = canonical_figment_source_kind_samples()
+            .iter()
+            .map(|(src, _)| FigmentSourceTag::classify(src).unwrap().kind())
+            .collect();
+        assert!(
+            observed.is_subset(&declared),
+            "FigmentSourceTag::kind image must lie in FigmentSourceKind::ALL; \
+             observed: {observed:?}, declared: {declared:?}",
+        );
+    }
+
+    #[test]
+    fn figment_source_kind_all_equals_tag_kind_image() {
+        // Tight equality (stronger than subset cover): every variant
+        // in FigmentSourceKind::ALL must be witnessed by at least one
+        // tag's kind() — no orphan variant in the declared kind space
+        // lacks a producing tag. Today the three kind variants are all
+        // reached (File by Source::File, Code by Source::Code via the
+        // Serialized provider, Custom by Source::Custom); this test
+        // pins that contract.
+        use std::collections::HashSet;
+        let declared: HashSet<FigmentSourceKind> = FigmentSourceKind::ALL.iter().copied().collect();
+        let observed: HashSet<FigmentSourceKind> = canonical_figment_source_kind_samples()
+            .iter()
+            .map(|(src, _)| FigmentSourceTag::classify(src).unwrap().kind())
+            .collect();
+        assert_eq!(
+            observed, declared,
+            "FigmentSourceTag::kind image must equal FigmentSourceKind::ALL",
+        );
+    }
+
+    #[test]
+    fn figment_source_kind_all_cardinality_matches_partition() {
+        // The constant's cardinality must equal the number of distinct
+        // kind cells produced by the tag space — pins that ALL is
+        // sized to the partition, not to a stale hand-typed count. A
+        // future variant added to FigmentSourceKind without a tag that
+        // witnesses it (or vice versa) breaks this equality.
+        use std::collections::HashSet;
+        let cells: HashSet<FigmentSourceKind> = canonical_figment_source_kind_samples()
+            .iter()
+            .map(|(src, _)| FigmentSourceTag::classify(src).unwrap().kind())
+            .collect();
+        assert_eq!(
+            FigmentSourceKind::ALL.len(),
+            cells.len(),
+            "FigmentSourceKind::ALL cardinality must match partition cell count",
+        );
+    }
+
+    #[test]
+    fn figment_source_kind_all_declaration_order_is_file_code_custom() {
+        // Pin declaration order. Consumers (diagnostics legends,
+        // attestation manifests, dashboard column orderings) that
+        // iterate ALL get a stable order; reordering the slice is a
+        // breaking change that must show up here.
+        assert_eq!(
+            FigmentSourceKind::ALL,
+            &[
+                FigmentSourceKind::File,
+                FigmentSourceKind::Code,
+                FigmentSourceKind::Custom,
+            ],
+        );
+    }
+
+    #[test]
+    fn figment_source_kind_all_partition_is_file_xor_code_xor_custom() {
+        // Boolean partition: `is_file` / `is_code` / `is_custom` over a
+        // tag sliced by each kind cell must agree with the cell's
+        // identity. Pins that FigmentSourceKind::ALL is a partition of
+        // the tag space's kind image — every tag lands in exactly one
+        // cell, and the boolean accessors agree pointwise.
+        let samples = canonical_figment_source_kind_samples();
+        for kind in FigmentSourceKind::ALL.iter().copied() {
+            let witnessing_src = samples
+                .iter()
+                .find(|(src, _)| FigmentSourceTag::classify(src).unwrap().kind() == kind)
+                .map(|(src, _)| src)
+                .expect("every kind cell must be witnessed by some tag");
+            let tag = FigmentSourceTag::classify(witnessing_src).unwrap();
+            match kind {
+                FigmentSourceKind::File => {
+                    assert!(tag.kind().is_file());
+                    assert!(!tag.kind().is_code());
+                    assert!(!tag.kind().is_custom());
+                }
+                FigmentSourceKind::Code => {
+                    assert!(tag.kind().is_code());
+                    assert!(!tag.kind().is_file());
+                    assert!(!tag.kind().is_custom());
+                }
+                FigmentSourceKind::Custom => {
+                    assert!(tag.kind().is_custom());
+                    assert!(!tag.kind().is_file());
+                    assert!(!tag.kind().is_code());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn figment_source_kind_all_iterates_in_declaration_order() {
+        // Sanity: iteration over ALL yields variants in the same order
+        // as the slice literal. Peer to `config_source_kind_all_iterates_in_declaration_order`
+        // on the shikumi-side kind axis.
+        let collected: Vec<FigmentSourceKind> = FigmentSourceKind::ALL.to_vec();
+        assert_eq!(
+            collected,
+            vec![
+                FigmentSourceKind::File,
+                FigmentSourceKind::Code,
+                FigmentSourceKind::Custom,
+            ],
+        );
+    }
+
+    #[test]
+    fn figment_source_kind_all_attribution_axis_image_is_metadata_source() {
+        // Cross-primitive cover law: every kind in FigmentSourceKind::ALL
+        // — when projected back through a witnessing tag's
+        // `attribution_axis()` — must lie on AttributionAxis::MetadataSource.
+        // Pins the structural law `figment_source_tag_attribution_axis_is_always_metadata_source`
+        // from the perspective of the kind axis: the figment-Source-axis
+        // kind partition is a sub-partition of the metadata.source
+        // attribution axis. Mirrors how `AttributionConfidence::ALL`
+        // pins its image in `failing_source_attribution_confidence_image_lies_in_all`.
+        use crate::AttributionAxis;
+        use std::collections::HashSet;
+        let samples = canonical_figment_source_kind_samples();
+        let observed: HashSet<AttributionAxis> = FigmentSourceKind::ALL
+            .iter()
+            .copied()
+            .map(|kind| {
+                let (src, _) = samples
+                    .iter()
+                    .find(|(src, _)| FigmentSourceTag::classify(src).unwrap().kind() == kind)
+                    .expect("every kind cell must be witnessed");
+                FigmentSourceTag::classify(src).unwrap().attribution_axis()
+            })
+            .collect();
+        assert_eq!(
+            observed,
+            HashSet::from([AttributionAxis::MetadataSource]),
+            "every FigmentSourceKind variant projects to AttributionAxis::MetadataSource",
         );
     }
 
