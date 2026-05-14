@@ -738,6 +738,56 @@ pub enum AttributionConfidence {
     Fallback,
 }
 
+impl AttributionConfidence {
+    /// Every [`AttributionConfidence`] variant, in declaration order
+    /// ([`Self::Exact`], [`Self::Fallback`]).
+    ///
+    /// The closed list of confidence classes shikumi's attribution
+    /// resolver assigns to a recognized [`AttributionRule`]. Iterate
+    /// to enumerate the confidence space without listing variants by
+    /// hand at every consumer site — e.g. alerting policies
+    /// initializing per-confidence thresholds (weighting `Fallback`
+    /// attributions visibly weaker than `Exact` ones), attestation
+    /// manifests recording the confidence space's cardinality,
+    /// structured-diagnostics legends rendering different prose per
+    /// class, or product-cube enumerations crossing the confidence
+    /// axis with [`AttributionAxis::ALL`] and [`ConfigSourceKind::ALL`]
+    /// (the 12-cell `axis × layer_kind × confidence` cube that
+    /// [`AttributionRule::from_coordinates`] partitions).
+    ///
+    /// One source of truth for the axis enumeration on the
+    /// [`AttributionConfidence`] axis: peer to [`crate::Format::ALL`]
+    /// on the format axis, [`ShikumiErrorKind::ALL`] on the kind
+    /// axis, [`AttributionRule::ALL`] on the rule axis,
+    /// [`ConfigSourceKind::ALL`] on the layer-kind axis,
+    /// [`FieldPathLocalization::ALL`] on the field-path-localization
+    /// axis, [`crate::FormatProvenance::ALL`] on the format-provenance
+    /// axis, and [`AttributionAxis::ALL`] on the metadata axis — the
+    /// same typescape discipline (closed `'static` slice, in
+    /// declaration order) applied to the confidence axis. Before this
+    /// constant, the confidence enumeration was inlined as an
+    /// `[Exact, Fallback]` array literal at every site that needed to
+    /// iterate (the 12-cell cube cover test in [`error::tests`]) or
+    /// hand-counted (`assert_eq!(set.len(), 2)` in
+    /// `attribution_confidence_is_copy_and_hashable`); each
+    /// duplicated literal had to be manually kept in lockstep with
+    /// the enum's variant set.
+    ///
+    /// Adding a new variant to [`Self`] (e.g. a `Heuristic` class for
+    /// resolver paths that combine equality with structural hints)
+    /// means extending this slice in lockstep with the variant
+    /// itself. The compiler enforces nothing here directly, so the
+    /// `attribution_confidence_all_covers_every_rule_confidence` test
+    /// pins the contract by asserting that every confidence produced
+    /// by [`AttributionRule::confidence`] over [`AttributionRule::ALL`]
+    /// appears in [`Self::ALL`], and the
+    /// `attribution_confidence_all_has_no_duplicates` test pins that
+    /// the constant is a set (no double-listed variant). Together
+    /// they pin the constant to the variant space the typescape
+    /// recognizes.
+    pub const ALL: &'static [Self] = &[Self::Exact, Self::Fallback];
+}
+
 /// Figment-metadata field consulted by an [`AttributionRule`].
 ///
 /// Closed binary partition over the rule space: every recognized
@@ -2066,10 +2116,11 @@ mod tests {
         // Typescape bounds parity with sibling primitives.
         use std::collections::HashSet;
         let mut set = HashSet::new();
-        set.insert(AttributionConfidence::Exact);
-        set.insert(AttributionConfidence::Fallback);
+        for c in AttributionConfidence::ALL.iter().copied() {
+            set.insert(c);
+        }
         set.insert(AttributionConfidence::Exact); // duplicate
-        assert_eq!(set.len(), 2);
+        assert_eq!(set.len(), AttributionConfidence::ALL.len());
         // Copy: rebind without move.
         let c = AttributionConfidence::Exact;
         let c2 = c;
@@ -2101,6 +2152,163 @@ mod tests {
         let attr = err.failing_attribution().expect("attribution");
         assert_eq!(attr.confidence(), AttributionConfidence::Exact);
         assert!(attr.confidence() == attr.rule.confidence());
+    }
+
+    // ---- AttributionConfidence::ALL cover / partition / order ----
+
+    #[test]
+    fn attribution_confidence_all_has_no_duplicates() {
+        // The constant must be a set — no variant listed twice. Pins
+        // the typescape discipline shared with `Format::ALL`,
+        // `ShikumiErrorKind::ALL`, `AttributionRule::ALL`,
+        // `ConfigSourceKind::ALL`, `FieldPathLocalization::ALL`,
+        // `FormatProvenance::ALL`, and `AttributionAxis::ALL`: the
+        // closed-enum `ALL` constant is a deduplicated `'static`
+        // slice.
+        use std::collections::HashSet;
+        let set: HashSet<AttributionConfidence> =
+            AttributionConfidence::ALL.iter().copied().collect();
+        assert_eq!(
+            set.len(),
+            AttributionConfidence::ALL.len(),
+            "AttributionConfidence::ALL must contain no duplicates; got: {:?}",
+            AttributionConfidence::ALL,
+        );
+    }
+
+    #[test]
+    fn attribution_confidence_all_covers_every_rule_confidence() {
+        // Every confidence produced by AttributionRule::confidence
+        // over AttributionRule::ALL must lie in
+        // AttributionConfidence::ALL. Pins the cross-axis cover law:
+        // the rule space cannot manufacture a confidence outside the
+        // declared confidence enumeration. A future rule that adds a
+        // new confidence class must extend AttributionConfidence and
+        // its ALL in the same commit; otherwise this test fails.
+        use std::collections::HashSet;
+        let declared: HashSet<AttributionConfidence> =
+            AttributionConfidence::ALL.iter().copied().collect();
+        let observed: HashSet<AttributionConfidence> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .map(AttributionRule::confidence)
+            .collect();
+        assert!(
+            observed.is_subset(&declared),
+            "AttributionRule::confidence image must lie in AttributionConfidence::ALL; \
+             observed: {observed:?}, declared: {declared:?}",
+        );
+    }
+
+    #[test]
+    fn attribution_confidence_all_equals_rule_confidence_image() {
+        // Tight equality (stronger than subset cover): every variant
+        // in AttributionConfidence::ALL must be witnessed by at least
+        // one rule's confidence() — no orphan variant in the
+        // declared confidence space lacks a producing rule. Today the
+        // two confidence variants are both reached (Exact by the
+        // three equality rules, Fallback by the two uniqueness
+        // rules); this test pins that contract.
+        use std::collections::HashSet;
+        let declared: HashSet<AttributionConfidence> =
+            AttributionConfidence::ALL.iter().copied().collect();
+        let observed: HashSet<AttributionConfidence> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .map(AttributionRule::confidence)
+            .collect();
+        assert_eq!(
+            observed, declared,
+            "AttributionRule::confidence image must equal AttributionConfidence::ALL",
+        );
+    }
+
+    #[test]
+    fn attribution_confidence_all_cardinality_matches_partition() {
+        // The constant's cardinality must equal the number of
+        // distinct confidence cells produced by the rule space —
+        // pins that ALL is sized to the partition, not to a stale
+        // hand-typed count. A future variant added to
+        // AttributionConfidence without a rule that witnesses it
+        // (or vice versa) breaks this equality.
+        use std::collections::HashSet;
+        let cells: HashSet<AttributionConfidence> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .map(AttributionRule::confidence)
+            .collect();
+        assert_eq!(
+            AttributionConfidence::ALL.len(),
+            cells.len(),
+            "AttributionConfidence::ALL cardinality must match partition cell count",
+        );
+    }
+
+    #[test]
+    fn attribution_confidence_all_declaration_order_is_exact_then_fallback() {
+        // Pin declaration order. Consumers (diagnostics legends,
+        // attestation manifests, dashboard column orderings) that
+        // iterate ALL get a stable order; reordering the slice is a
+        // breaking change that must show up here.
+        assert_eq!(
+            AttributionConfidence::ALL,
+            &[
+                AttributionConfidence::Exact,
+                AttributionConfidence::Fallback,
+            ],
+        );
+    }
+
+    #[test]
+    fn attribution_confidence_all_partition_is_exact_xor_fallback() {
+        // Boolean partition: `is_exact` and `is_fallback` over a rule
+        // sliced by each confidence cell must agree with the cell's
+        // identity. Pins that AttributionConfidence::ALL is a
+        // partition of the rule space's confidence image — every
+        // rule lands in exactly one cell, and the boolean accessors
+        // agree.
+        for confidence in AttributionConfidence::ALL.iter().copied() {
+            let witnessing_rule = AttributionRule::ALL
+                .iter()
+                .copied()
+                .find(|rule| rule.confidence() == confidence)
+                .expect("every confidence cell must be witnessed by some rule");
+            match confidence {
+                AttributionConfidence::Exact => {
+                    assert!(witnessing_rule.is_exact());
+                    assert!(!witnessing_rule.is_fallback());
+                }
+                AttributionConfidence::Fallback => {
+                    assert!(witnessing_rule.is_fallback());
+                    assert!(!witnessing_rule.is_exact());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn failing_source_attribution_confidence_image_lies_in_all() {
+        // Cross-envelope cover law: every confidence surfaced by
+        // FailingSourceAttribution::confidence over the rule space
+        // must lie in AttributionConfidence::ALL. Pins that the
+        // envelope's accessor cannot manufacture a confidence outside
+        // the declared confidence enumeration — peer to the
+        // analogous law `failing_source_attribution_metadata_axis_*`
+        // for AttributionAxis::ALL.
+        use std::collections::HashSet;
+        let src = ConfigSource::Defaults;
+        let observed: HashSet<AttributionConfidence> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .map(|rule| FailingSourceAttribution::new(&src, rule).confidence())
+            .collect();
+        let declared: HashSet<AttributionConfidence> =
+            AttributionConfidence::ALL.iter().copied().collect();
+        assert!(
+            observed.is_subset(&declared),
+            "every confidence surfaced by FailingSourceAttribution::confidence must lie in \
+             AttributionConfidence::ALL; observed: {observed:?}, declared: {declared:?}",
+        );
     }
 
     // ---- AttributionRule::layer_kind / FailingSourceAttribution::layer_kind ----
@@ -3354,10 +3562,7 @@ mod tests {
         let mut unrecognized_count = 0usize;
         for axis in AttributionAxis::ALL.iter().copied() {
             for layer_kind in ConfigSourceKind::ALL.iter().copied() {
-                for confidence in [
-                    AttributionConfidence::Exact,
-                    AttributionConfidence::Fallback,
-                ] {
+                for confidence in AttributionConfidence::ALL.iter().copied() {
                     let coords = AttributionCoordinates {
                         axis,
                         layer_kind,
