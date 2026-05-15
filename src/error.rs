@@ -706,6 +706,127 @@ pub struct AttributionCoordinates {
     pub confidence: AttributionConfidence,
 }
 
+impl AttributionCoordinates {
+    /// Every cell of the `axis × layer_kind × confidence` product
+    /// cube — the structural composition of [`AttributionAxis::ALL`]
+    /// (2 cells), [`ConfigSourceKind::ALL`] (3 cells), and
+    /// [`AttributionConfidence::ALL`] (2 cells) into the
+    /// `2 × 3 × 2 = 12`-cell coordinate space, in lexicographic order
+    /// over the three sibling slices (axis outermost, `layer_kind`
+    /// middle, confidence innermost).
+    ///
+    /// One named typescape value collapsing the three-axis product
+    /// enumeration into one constant. Before this lift, every consumer
+    /// that wanted the cube — the
+    /// `attribution_rule_from_coordinates_returns_none_for_unrecognized_cells`
+    /// cube-cover test, future per-cell dashboards, attestation
+    /// manifests recording the coordinate space's cardinality,
+    /// structured-diagnostics legends rendering different prose per
+    /// cell — had to inline a triple-nested
+    /// `for axis in AttributionAxis::ALL { for layer_kind in
+    /// ConfigSourceKind::ALL { for confidence in
+    /// AttributionConfidence::ALL { … } } }` loop and re-derive the
+    /// product on the fly. Iterate [`Self::ALL`] instead.
+    ///
+    /// This is the first product-axis `ALL` constant on the typescape
+    /// primitive set — peer to the nine sibling per-axis closed-enum
+    /// `ALL` constants ([`crate::Format::ALL`],
+    /// [`ShikumiErrorKind::ALL`], [`AttributionRule::ALL`],
+    /// [`ConfigSourceKind::ALL`], [`FieldPathLocalization::ALL`],
+    /// [`crate::FormatProvenance::ALL`], [`AttributionAxis::ALL`],
+    /// [`AttributionConfidence::ALL`],
+    /// [`crate::FigmentSourceKind::ALL`]) but lifted on a structural
+    /// composition of three of them rather than on a single axis.
+    /// The same typescape discipline (closed `'static` slice, in
+    /// declaration order, `Copy + Eq + Hash + #[non_exhaustive]`
+    /// element type) applied to the product cube.
+    ///
+    /// Cardinality is pinned by the
+    /// `attribution_coordinates_all_cardinality_matches_product_of_axes`
+    /// test against
+    /// `AttributionAxis::ALL.len() * ConfigSourceKind::ALL.len() *
+    /// AttributionConfidence::ALL.len()`, so any new variant on any
+    /// of the three sibling axes forces an extension of this slice
+    /// in lockstep with the variant itself. The
+    /// `attribution_coordinates_all_equals_axes_cartesian_product`
+    /// test pins tight equality against the inline triple-nested
+    /// product over the sibling `ALL` constants — `Self::ALL` is the
+    /// product, not a subset and not a superset.
+    ///
+    /// The partition into recognized and unrecognized cells is the
+    /// 5 + 7 split pinned by [`AttributionRule::from_coordinates`]:
+    /// 5 cells (`AttributionRule::ALL.len()`) map to a [`Some`] rule;
+    /// 7 cells map to [`None`]. The
+    /// `attribution_coordinates_all_recognized_image_equals_rule_coordinates`
+    /// test pins the recognized half as the exact image of
+    /// [`AttributionRule::coordinates`] over [`AttributionRule::ALL`],
+    /// and the
+    /// `attribution_coordinates_all_partitions_into_recognized_and_unrecognized`
+    /// test pins the cardinality split.
+    pub const ALL: &'static [Self] = &[
+        Self {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::Defaults,
+            confidence: AttributionConfidence::Exact,
+        },
+        Self {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::Defaults,
+            confidence: AttributionConfidence::Fallback,
+        },
+        Self {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::Env,
+            confidence: AttributionConfidence::Exact,
+        },
+        Self {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::Env,
+            confidence: AttributionConfidence::Fallback,
+        },
+        Self {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::File,
+            confidence: AttributionConfidence::Exact,
+        },
+        Self {
+            axis: AttributionAxis::MetadataSource,
+            layer_kind: ConfigSourceKind::File,
+            confidence: AttributionConfidence::Fallback,
+        },
+        Self {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::Defaults,
+            confidence: AttributionConfidence::Exact,
+        },
+        Self {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::Defaults,
+            confidence: AttributionConfidence::Fallback,
+        },
+        Self {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::Env,
+            confidence: AttributionConfidence::Exact,
+        },
+        Self {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::Env,
+            confidence: AttributionConfidence::Fallback,
+        },
+        Self {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::File,
+            confidence: AttributionConfidence::Exact,
+        },
+        Self {
+            axis: AttributionAxis::MetadataName,
+            layer_kind: ConfigSourceKind::File,
+            confidence: AttributionConfidence::Fallback,
+        },
+    ];
+}
+
 /// Confidence class of an [`AttributionRule`].
 ///
 /// Closed binary partition over the rule space:
@@ -3557,28 +3678,25 @@ mod tests {
         // unrecognized cell — no fabricated attributions, no defaults.
         // Stronger than `is_none() count == 7`: enumerate the exact
         // unrecognized cells to pin which ones never gain a rule.
+        //
+        // Iterates the named product cube `AttributionCoordinates::ALL`
+        // rather than re-deriving the triple-nested product inline; the
+        // `attribution_coordinates_all_equals_axes_cartesian_product`
+        // test pins that the constant is byte-for-byte the cartesian
+        // product of the three sibling axis `ALL` slices.
         let recognized: std::collections::HashSet<AttributionCoordinates> =
             rule_coordinate_table().iter().map(|(_, c)| *c).collect();
         let mut unrecognized_count = 0usize;
-        for axis in AttributionAxis::ALL.iter().copied() {
-            for layer_kind in ConfigSourceKind::ALL.iter().copied() {
-                for confidence in AttributionConfidence::ALL.iter().copied() {
-                    let coords = AttributionCoordinates {
-                        axis,
-                        layer_kind,
-                        confidence,
-                    };
-                    if recognized.contains(&coords) {
-                        continue;
-                    }
-                    unrecognized_count += 1;
-                    assert_eq!(
-                        AttributionRule::from_coordinates(coords),
-                        None,
-                        "unrecognized cell {coords:?} must not resolve to a rule",
-                    );
-                }
+        for coords in AttributionCoordinates::ALL.iter().copied() {
+            if recognized.contains(&coords) {
+                continue;
             }
+            unrecognized_count += 1;
+            assert_eq!(
+                AttributionRule::from_coordinates(coords),
+                None,
+                "unrecognized cell {coords:?} must not resolve to a rule",
+            );
         }
         assert_eq!(
             unrecognized_count, 7,
@@ -3672,6 +3790,211 @@ mod tests {
         let c3 = c;
         assert_eq!(c, c2);
         assert_eq!(c2, c3);
+    }
+
+    // ---- AttributionCoordinates::ALL cover / partition / order ----
+    //
+    // First product-axis `ALL` lift on the typescape primitive set:
+    // structural composition of `AttributionAxis::ALL` (2 cells),
+    // `ConfigSourceKind::ALL` (3 cells), and `AttributionConfidence::ALL`
+    // (2 cells) into a single 12-element `&'static [Self]`. Peers the
+    // nine sibling per-axis `ALL` constants on a product axis rather
+    // than on a single axis.
+
+    #[test]
+    fn attribution_coordinates_all_has_no_duplicates() {
+        // The constant is a set, not a multiset — every cell appears
+        // exactly once. Peer to the per-axis `*_all_has_no_duplicates`
+        // invariants for sibling primitives.
+        use std::collections::HashSet;
+        let set: HashSet<AttributionCoordinates> =
+            AttributionCoordinates::ALL.iter().copied().collect();
+        assert_eq!(
+            set.len(),
+            AttributionCoordinates::ALL.len(),
+            "AttributionCoordinates::ALL must contain no duplicates; got: {:?}",
+            AttributionCoordinates::ALL,
+        );
+    }
+
+    #[test]
+    fn attribution_coordinates_all_cardinality_matches_product_of_axes() {
+        // The cube cardinality must equal the product of the three
+        // sibling axis `ALL` cardinalities. A new variant on any of
+        // the three axes forces an extension of `AttributionCoordinates::ALL`
+        // in lockstep — this test reads the product cardinality on
+        // the fly from the sibling constants, so the contract stays
+        // coherent regardless of which axis grows.
+        assert_eq!(
+            AttributionCoordinates::ALL.len(),
+            AttributionAxis::ALL.len()
+                * ConfigSourceKind::ALL.len()
+                * AttributionConfidence::ALL.len(),
+            "AttributionCoordinates::ALL cardinality must equal \
+             AttributionAxis::ALL.len() * ConfigSourceKind::ALL.len() * \
+             AttributionConfidence::ALL.len()",
+        );
+        // Today: 2 × 3 × 2 = 12. Pin the concrete current value too,
+        // so a future axis growth shows up as two failing assertions
+        // (the product law and the literal-12 invariant) rather than
+        // a silent rebalance.
+        assert_eq!(
+            AttributionCoordinates::ALL.len(),
+            12,
+            "AttributionCoordinates::ALL cardinality must be 12 today; \
+             got: {}",
+            AttributionCoordinates::ALL.len(),
+        );
+    }
+
+    #[test]
+    fn attribution_coordinates_all_equals_axes_cartesian_product() {
+        // Tight equality (not just subset cover): the constant is the
+        // exact image of the triple-nested cartesian product over the
+        // three sibling axis `ALL` slices. Pins that `Self::ALL` is
+        // the product — every product cell appears, every appearing
+        // cell is a product cell, no extras and no omissions.
+        use std::collections::HashSet;
+        let declared: HashSet<AttributionCoordinates> =
+            AttributionCoordinates::ALL.iter().copied().collect();
+        let mut product: HashSet<AttributionCoordinates> = HashSet::new();
+        for axis in AttributionAxis::ALL.iter().copied() {
+            for layer_kind in ConfigSourceKind::ALL.iter().copied() {
+                for confidence in AttributionConfidence::ALL.iter().copied() {
+                    product.insert(AttributionCoordinates {
+                        axis,
+                        layer_kind,
+                        confidence,
+                    });
+                }
+            }
+        }
+        assert_eq!(
+            declared, product,
+            "AttributionCoordinates::ALL must equal the cartesian product \
+             of AttributionAxis::ALL × ConfigSourceKind::ALL × \
+             AttributionConfidence::ALL; declared: {declared:?}, \
+             product: {product:?}",
+        );
+    }
+
+    #[test]
+    fn attribution_coordinates_all_iterates_in_lexicographic_order() {
+        // Declaration order is lexicographic over the three sibling
+        // axis `ALL` slices: axis outermost, layer_kind middle,
+        // confidence innermost. Pins the iteration order so that
+        // consumers depending on a stable enumeration (e.g. fixture
+        // tables in downstream tests, attestation manifests recording
+        // the cube in canonical order) stay coherent.
+        let mut expected: Vec<AttributionCoordinates> = Vec::new();
+        for axis in AttributionAxis::ALL.iter().copied() {
+            for layer_kind in ConfigSourceKind::ALL.iter().copied() {
+                for confidence in AttributionConfidence::ALL.iter().copied() {
+                    expected.push(AttributionCoordinates {
+                        axis,
+                        layer_kind,
+                        confidence,
+                    });
+                }
+            }
+        }
+        assert_eq!(
+            AttributionCoordinates::ALL.to_vec(),
+            expected,
+            "AttributionCoordinates::ALL must list cells in lexicographic \
+             order over (AttributionAxis::ALL, ConfigSourceKind::ALL, \
+             AttributionConfidence::ALL)",
+        );
+    }
+
+    #[test]
+    fn attribution_coordinates_all_partitions_into_recognized_and_unrecognized() {
+        // The 12-cell cube splits into 5 recognized cells (one per
+        // `AttributionRule`) and 7 unrecognized cells. The two
+        // populations are disjoint and cover `Self::ALL` — pins the
+        // partition cardinalities against the sibling rule space.
+        let recognized = AttributionCoordinates::ALL
+            .iter()
+            .copied()
+            .filter(|c| AttributionRule::from_coordinates(*c).is_some())
+            .count();
+        let unrecognized = AttributionCoordinates::ALL
+            .iter()
+            .copied()
+            .filter(|c| AttributionRule::from_coordinates(*c).is_none())
+            .count();
+        assert_eq!(
+            recognized,
+            AttributionRule::ALL.len(),
+            "recognized-cell count must equal AttributionRule::ALL cardinality",
+        );
+        assert_eq!(
+            unrecognized,
+            AttributionCoordinates::ALL.len() - AttributionRule::ALL.len(),
+            "unrecognized-cell count must equal cube cardinality minus \
+             AttributionRule::ALL cardinality",
+        );
+        // Together they cover ALL — no cell is both recognized and
+        // unrecognized, and no cell falls outside the partition.
+        assert_eq!(
+            recognized + unrecognized,
+            AttributionCoordinates::ALL.len(),
+            "the recognized + unrecognized partition must cover \
+             AttributionCoordinates::ALL exactly",
+        );
+    }
+
+    #[test]
+    fn attribution_coordinates_all_recognized_image_equals_rule_coordinates() {
+        // The recognized half of `AttributionCoordinates::ALL` —
+        // those cells `c` where `AttributionRule::from_coordinates(c)`
+        // is `Some(_)` — must equal the exact image of
+        // `AttributionRule::coordinates` over `AttributionRule::ALL`.
+        // Stronger than the cardinality match in the partition test:
+        // pins which specific cells are recognized, not just how many.
+        use std::collections::HashSet;
+        let recognized_in_cube: HashSet<AttributionCoordinates> = AttributionCoordinates::ALL
+            .iter()
+            .copied()
+            .filter(|c| AttributionRule::from_coordinates(*c).is_some())
+            .collect();
+        let rule_image: HashSet<AttributionCoordinates> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .map(AttributionRule::coordinates)
+            .collect();
+        assert_eq!(
+            recognized_in_cube, rule_image,
+            "recognized cells of AttributionCoordinates::ALL must equal \
+             the image of AttributionRule::coordinates over AttributionRule::ALL",
+        );
+    }
+
+    #[test]
+    fn attribution_coordinates_all_round_trips_through_from_coordinates_on_recognized_cells() {
+        // For every recognized cell `c` in `Self::ALL`, the inverse
+        // map `from_coordinates(c)` returns a rule `r` such that
+        // `r.coordinates() == c`. The named-struct lift is a bijection
+        // on the 5 recognized cells; iterating the product cube is
+        // the canonical way to enumerate them.
+        let mut round_tripped = 0usize;
+        for coords in AttributionCoordinates::ALL.iter().copied() {
+            if let Some(rule) = AttributionRule::from_coordinates(coords) {
+                assert_eq!(
+                    rule.coordinates(),
+                    coords,
+                    "recognized cell {coords:?} must round-trip via \
+                     from_coordinates -> coordinates",
+                );
+                round_tripped += 1;
+            }
+        }
+        assert_eq!(
+            round_tripped,
+            AttributionRule::ALL.len(),
+            "exactly AttributionRule::ALL.len() cells must round-trip; \
+             got: {round_tripped}",
+        );
     }
 
     #[test]
