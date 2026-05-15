@@ -119,6 +119,43 @@ impl Format {
         }
     }
 
+    /// Forward unifier of the two orthogonal projections over this
+    /// format: [`Self`] (the format itself) and [`Self::provenance`]
+    /// (the provider class that loads it). Returns the format's
+    /// coordinates as a typed [`FormatCoordinates`] envelope.
+    ///
+    /// One source of truth for the (format, provenance) cell read.
+    /// Before this method, observers that wanted the full coordinate
+    /// pair inlined two reads (`(format, format.provenance())`) at
+    /// every site; the named struct collapses the two reads into one
+    /// and surfaces the pair as a typescape-eligible value
+    /// (`Copy + Eq + Hash + #[non_exhaustive]`) usable in `match`,
+    /// `HashMap` keys, log labels, alerting buckets, and attestation
+    /// manifest payloads.
+    ///
+    /// Pairs with [`FormatCoordinates::format_or_none`] as the partial
+    /// inverse: `FormatCoordinates::format_or_none(self.format_coordinates())
+    /// == Some(self)` for every [`Format`] variant — the bijection on
+    /// the recognized half is pinned by
+    /// `format_coordinates_round_trip_through_format_or_none_on_recognized_cells`.
+    /// The forward map is total over the format space; the inverse is
+    /// partial, returning [`None`] for the four product cells of the
+    /// (format × provenance) cube where the cell's provenance
+    /// disagrees with the format's declared one.
+    ///
+    /// Peer to [`crate::AttributionRule::coordinates`]: same forward-
+    /// total / inverse-partial discipline lifted on a different sibling
+    /// pair. The substrate now has two product-axis envelope shapes
+    /// over the typescape primitive set, both following the same
+    /// forward-total / inverse-partial round-trip law.
+    #[must_use]
+    pub fn format_coordinates(self) -> FormatCoordinates {
+        FormatCoordinates {
+            format: self,
+            provenance: self.provenance(),
+        }
+    }
+
     /// Whether this format is loaded by a shikumi-built figment provider
     /// (as opposed to delegating to one of figment's built-in providers).
     ///
@@ -406,6 +443,176 @@ impl FormatProvenance {
     #[must_use]
     pub fn file_attribution_axis(self) -> crate::AttributionAxis {
         self.file_attribution_rule().metadata_axis()
+    }
+}
+
+/// Coordinate pair of a [`Format`] over the two orthogonal projections
+/// [`Format`] (which on-disk format) and [`FormatProvenance`] (which
+/// provider class loads it).
+///
+/// One named typescape value collapsing the two closed-enum reads into
+/// one. The (`format` × `provenance`) cube has 4 × 2 = 8 product cells;
+/// today's format space occupies exactly 4 of them (one per [`Format`]
+/// variant, paired with the [`FormatProvenance`] declared by
+/// [`Format::provenance`]). [`Format::format_coordinates`] is the total
+/// forward map from the format space; [`Self::format_or_none`] is the
+/// partial inverse, [`Some`] exactly on the four recognized cells.
+///
+/// Second product-axis named struct on the typescape primitive set,
+/// peer to [`crate::AttributionCoordinates`] (the first), but lifted on
+/// a different sibling pair (`Format × FormatProvenance` instead of
+/// `AttributionAxis × ConfigSourceKind × AttributionConfidence`). Same
+/// typescape discipline: named fields collapse the per-axis reads into
+/// one envelope value (`Copy + Eq + Hash + #[non_exhaustive]`) usable
+/// in `match`, `HashMap` keys, log labels, alerting buckets, and
+/// attestation manifest payloads.
+///
+/// The struct exists (rather than a bare tuple) so call sites document
+/// which slot is which — `format` / `provenance` — at the type level
+/// rather than relying on positional destructuring discipline. The
+/// `Copy + Eq + Hash + #[non_exhaustive]` bounds match the sibling
+/// closed-enum primitives ([`crate::AttributionRule`],
+/// [`crate::AttributionConfidence`], [`crate::AttributionAxis`],
+/// [`crate::ConfigSourceKind`], [`crate::ShikumiErrorKind`],
+/// [`crate::FieldPathLocalization`]) and the sibling product-axis
+/// envelope [`crate::AttributionCoordinates`].
+///
+/// Future fidelity work — adding a third axis (e.g. a runtime
+/// `loader_health` slot beyond `Format`/`FormatProvenance`) — extends
+/// this struct as one new field plus one match arm in
+/// [`Format::format_coordinates`] / [`Self::format_or_none`]; existing
+/// consumers that destructure on the named fields stay coherent under
+/// the `#[non_exhaustive]` discipline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct FormatCoordinates {
+    /// Which on-disk format the cell describes — see [`Format`] /
+    /// [`Format::format_coordinates`].
+    pub format: Format,
+    /// Which provider class loads that format — see
+    /// [`FormatProvenance`] / [`Format::provenance`].
+    pub provenance: FormatProvenance,
+}
+
+impl FormatCoordinates {
+    /// Every cell of the `format × provenance` product cube — the
+    /// structural composition of [`Format::ALL`] (4 cells) and
+    /// [`FormatProvenance::ALL`] (2 cells) into the `4 × 2 = 8`-cell
+    /// coordinate space, in lexicographic order over the two sibling
+    /// slices (format outermost, provenance innermost).
+    ///
+    /// One named typescape value collapsing the two-axis product
+    /// enumeration into one constant. Before this lift, every consumer
+    /// that wanted the cube — partition tests over the
+    /// (format × provenance) plane, future per-cell dashboards,
+    /// attestation manifests recording the coordinate space's
+    /// cardinality, structured-diagnostics legends rendering different
+    /// prose per cell — had to inline a doubly-nested
+    /// `for format in Format::ALL { for provenance in
+    /// FormatProvenance::ALL { … } }` loop and re-derive the product
+    /// on the fly. Iterate [`Self::ALL`] instead.
+    ///
+    /// Second product-axis `ALL` constant on the typescape primitive
+    /// set — peer to [`crate::AttributionCoordinates::ALL`] (the
+    /// first), but lifted on a different sibling pair (`Format ×
+    /// FormatProvenance` instead of
+    /// `AttributionAxis × ConfigSourceKind × AttributionConfidence`).
+    /// Same typescape discipline (closed `'static` slice, in
+    /// declaration order, `Copy + Eq + Hash + #[non_exhaustive]`
+    /// element type) applied to the format-axis product cube.
+    ///
+    /// Cardinality is pinned by the
+    /// `format_coordinates_all_cardinality_matches_product_of_axes`
+    /// test against `Format::ALL.len() * FormatProvenance::ALL.len()`,
+    /// so any new variant on either sibling axis forces an extension
+    /// of this slice in lockstep with the variant itself. The
+    /// `format_coordinates_all_equals_axes_cartesian_product` test
+    /// pins tight equality against the inline doubly-nested product
+    /// over the sibling `ALL` constants — `Self::ALL` is the product,
+    /// not a subset and not a superset.
+    ///
+    /// The partition into recognized and unrecognized cells is the
+    /// 4 + 4 split pinned by [`Self::format_or_none`]: 4 cells
+    /// (`Format::ALL.len()`) map to a [`Some`] format; 4 cells map to
+    /// [`None`]. The
+    /// `format_coordinates_all_recognized_image_equals_format_coordinates`
+    /// test pins the recognized half as the exact image of
+    /// [`Format::format_coordinates`] over [`Format::ALL`], and the
+    /// `format_coordinates_all_partitions_into_recognized_and_unrecognized`
+    /// test pins the cardinality split.
+    pub const ALL: &'static [Self] = &[
+        Self {
+            format: Format::Yaml,
+            provenance: FormatProvenance::FigmentBuiltin,
+        },
+        Self {
+            format: Format::Yaml,
+            provenance: FormatProvenance::ShikumiBuilt,
+        },
+        Self {
+            format: Format::Toml,
+            provenance: FormatProvenance::FigmentBuiltin,
+        },
+        Self {
+            format: Format::Toml,
+            provenance: FormatProvenance::ShikumiBuilt,
+        },
+        Self {
+            format: Format::Lisp,
+            provenance: FormatProvenance::FigmentBuiltin,
+        },
+        Self {
+            format: Format::Lisp,
+            provenance: FormatProvenance::ShikumiBuilt,
+        },
+        Self {
+            format: Format::Nix,
+            provenance: FormatProvenance::FigmentBuiltin,
+        },
+        Self {
+            format: Format::Nix,
+            provenance: FormatProvenance::ShikumiBuilt,
+        },
+    ];
+
+    /// Partial inverse of [`Format::format_coordinates`]: re-hydrate a
+    /// recognized format from its (format, provenance) cell, or
+    /// [`None`] for unrecognized cells where the cell's `provenance`
+    /// disagrees with `cell.format.provenance()`.
+    ///
+    /// The (format × provenance) cube has 4 × 2 = 8 product cells;
+    /// today's format space occupies exactly 4 of them (the diagonal
+    /// `format.provenance() == provenance`). The inverse map names the
+    /// four recognized cells as their `format` slot and returns
+    /// [`None`] on the other four (where `provenance` disagrees with
+    /// the format's declared provider class).
+    ///
+    /// Operational use: an attestation manifest, structured-log replay,
+    /// or cross-process diagnostic that observes the (format,
+    /// provenance) coordinates (e.g. captured into a serialized
+    /// snapshot) recovers the typed format by one method call instead
+    /// of re-deriving the dispatch inline. Since [`Format::ALL`] and
+    /// the recognized-cell set are pinned at the type level, the
+    /// inverse stays coherent under future variant additions: a new
+    /// format landing forces both an arm in [`Format::provenance`]
+    /// (compile-time, exhaustive match on the format variant space)
+    /// and a row in the
+    /// `format_coordinates_round_trip_through_format_or_none_on_recognized_cells`
+    /// and `format_coordinates_format_or_none_returns_none_for_unrecognized_cells`
+    /// tests (test-time).
+    ///
+    /// Strictly stronger than `matches!` against the format space:
+    /// `format_or_none` consumes the closed-enum coordinate pair (no
+    /// inline tuple destructuring), so the recognized-cell predicate
+    /// stays one method call regardless of how many formats the
+    /// substrate accumulates.
+    #[must_use]
+    pub fn format_or_none(self) -> Option<Format> {
+        if self.format.provenance() == self.provenance {
+            Some(self.format)
+        } else {
+            None
+        }
     }
 }
 
@@ -2768,5 +2975,238 @@ mod tests {
                 "rule layer_kind must agree with source kind",
             );
         }
+    }
+
+    // ---- FormatCoordinates / Format::format_coordinates / format_or_none ----
+
+    #[test]
+    fn format_coordinates_classifies_each_variant() {
+        // Pin the (Format -> FormatCoordinates) forward map at the
+        // type level. Today's image: each Format pairs with its
+        // declared provenance via Format::provenance.
+        for f in Format::ALL.iter().copied() {
+            assert_eq!(
+                f.format_coordinates(),
+                FormatCoordinates {
+                    format: f,
+                    provenance: f.provenance(),
+                },
+                "format_coordinates must equal (format, format.provenance()) on {f:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_round_trip() {
+        // The bijection statement on the recognized half:
+        // FormatCoordinates::format_or_none(format.format_coordinates())
+        // == Some(format) for every Format. Pins the forward-total /
+        // inverse-partial round-trip law against the format space.
+        for f in Format::ALL.iter().copied() {
+            assert_eq!(
+                f.format_coordinates().format_or_none(),
+                Some(f),
+                "format_coordinates -> format_or_none round-trip must recover {f:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_format_or_none_returns_none_for_unrecognized_cells() {
+        // The 4 + 4 partition of the 8-cell cube: cells where
+        // `cell.provenance == cell.format.provenance()` round-trip to
+        // Some; the other 4 (where the cell's provenance disagrees
+        // with the format's declared one) return None. Iterates the
+        // named product cube `FormatCoordinates::ALL` so a future
+        // variant on either sibling axis cannot silently widen the
+        // unrecognized half.
+        for cell in FormatCoordinates::ALL.iter().copied() {
+            let recognized = cell.format.provenance() == cell.provenance;
+            assert_eq!(
+                cell.format_or_none().is_some(),
+                recognized,
+                "format_or_none must be Some iff cell.provenance matches \
+                 cell.format.provenance() on {cell:?}",
+            );
+        }
+    }
+
+    // ---- FormatCoordinates::ALL cover / partition / order ----
+
+    #[test]
+    fn format_coordinates_all_has_no_duplicates() {
+        // The constant is a set, not a multiset: every cell appears
+        // at most once. Pins the "no double-listed cell" invariant the
+        // typescape relies on so consumers iterating ALL never see a
+        // ghost cell contributing twice to a partition tally.
+        use std::collections::HashSet;
+        let unique: HashSet<FormatCoordinates> = FormatCoordinates::ALL.iter().copied().collect();
+        assert_eq!(
+            unique.len(),
+            FormatCoordinates::ALL.len(),
+            "FormatCoordinates::ALL must contain no duplicates; got: {:?}",
+            FormatCoordinates::ALL,
+        );
+    }
+
+    #[test]
+    fn format_coordinates_all_cardinality_matches_product_of_axes() {
+        // Cardinality is a product of two sibling axis cardinalities,
+        // not a literal integer. Any new variant on either Format or
+        // FormatProvenance forces an extension of FormatCoordinates::ALL
+        // through this assertion, not through hand-counting.
+        assert_eq!(
+            FormatCoordinates::ALL.len(),
+            Format::ALL.len() * FormatProvenance::ALL.len(),
+            "FormatCoordinates::ALL cardinality must equal \
+             Format::ALL.len() * FormatProvenance::ALL.len()",
+        );
+        // Pin today's concrete cardinality — 4 × 2 = 8 — so a future
+        // axis growth that updates the product still requires updating
+        // this literal explicitly.
+        assert_eq!(
+            FormatCoordinates::ALL.len(),
+            8,
+            "FormatCoordinates::ALL cardinality must be 8 today; \
+             update both this literal and the cells if axes grow",
+        );
+    }
+
+    #[test]
+    fn format_coordinates_all_equals_axes_cartesian_product() {
+        // Tight equality (not subset) against the inline doubly-nested
+        // cartesian product over the sibling ALL slices.
+        // FormatCoordinates::ALL IS the product, no extras and no
+        // omissions.
+        use std::collections::HashSet;
+        let declared: HashSet<FormatCoordinates> = FormatCoordinates::ALL.iter().copied().collect();
+        let mut product: HashSet<FormatCoordinates> = HashSet::new();
+        for format in Format::ALL.iter().copied() {
+            for provenance in FormatProvenance::ALL.iter().copied() {
+                product.insert(FormatCoordinates { format, provenance });
+            }
+        }
+        assert_eq!(
+            declared, product,
+            "FormatCoordinates::ALL must equal the cartesian product \
+             Format::ALL × FormatProvenance::ALL exactly (no extras, no omissions)",
+        );
+    }
+
+    #[test]
+    fn format_coordinates_all_iterates_in_lexicographic_order() {
+        // Iteration order is observable: format outermost,
+        // provenance innermost. Consumers depending on a stable
+        // canonical enumeration (fixture tables, attestation manifests,
+        // structured-diagnostics legends) stay coherent.
+        let mut expected: Vec<FormatCoordinates> = Vec::new();
+        for format in Format::ALL.iter().copied() {
+            for provenance in FormatProvenance::ALL.iter().copied() {
+                expected.push(FormatCoordinates { format, provenance });
+            }
+        }
+        assert_eq!(
+            FormatCoordinates::ALL.to_vec(),
+            expected,
+            "FormatCoordinates::ALL must list cells in lexicographic \
+             order (format outer, provenance inner)",
+        );
+    }
+
+    #[test]
+    fn format_coordinates_all_partitions_into_recognized_and_unrecognized() {
+        // The 4 + 4 partition of FormatCoordinates::ALL against
+        // FormatCoordinates::format_or_none: 4 cells map to Some
+        // (one per Format), 4 map to None, the partition covers
+        // FormatCoordinates::ALL exactly.
+        let recognized = FormatCoordinates::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.format_or_none().is_some())
+            .count();
+        let unrecognized = FormatCoordinates::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.format_or_none().is_none())
+            .count();
+        assert_eq!(
+            recognized,
+            Format::ALL.len(),
+            "recognized cell count must equal Format::ALL.len()",
+        );
+        assert_eq!(
+            unrecognized,
+            FormatCoordinates::ALL.len() - Format::ALL.len(),
+            "unrecognized cell count must equal the cube complement",
+        );
+        assert_eq!(
+            recognized + unrecognized,
+            FormatCoordinates::ALL.len(),
+            "the partition must cover the cube exactly",
+        );
+    }
+
+    #[test]
+    fn format_coordinates_all_recognized_image_equals_format_coordinates() {
+        // Stronger than the cardinality split: the recognized half
+        // is the exact image of Format::format_coordinates over
+        // Format::ALL — which specific cells (not just how many) are
+        // recognized.
+        use std::collections::HashSet;
+        let image: HashSet<FormatCoordinates> = Format::ALL
+            .iter()
+            .copied()
+            .map(Format::format_coordinates)
+            .collect();
+        let recognized: HashSet<FormatCoordinates> = FormatCoordinates::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.format_or_none().is_some())
+            .collect();
+        assert_eq!(
+            image, recognized,
+            "the recognized image of FormatCoordinates::ALL must equal \
+             the image of Format::format_coordinates over Format::ALL",
+        );
+    }
+
+    #[test]
+    fn format_coordinates_all_round_trips_through_format_or_none_on_recognized_cells() {
+        // For every recognized cell c in FormatCoordinates::ALL,
+        // c.format_coordinates_after_format_or_none() == c. The
+        // bijection statement on the 4-cell recognized subset,
+        // enumerated by iterating the product cube.
+        for cell in FormatCoordinates::ALL.iter().copied() {
+            if let Some(format) = cell.format_or_none() {
+                assert_eq!(
+                    format.format_coordinates(),
+                    cell,
+                    "format_or_none -> format_coordinates round-trip \
+                     must recover the recognized cell {cell:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn format_coordinates_is_copy_and_hashable() {
+        // Trait-bounds parity with the sibling typescape primitives
+        // (AttributionCoordinates, AttributionConfidence,
+        // AttributionAxis, ConfigSourceKind, ShikumiErrorKind,
+        // FieldPathLocalization, FormatProvenance).
+        use std::collections::HashSet;
+        let c = FormatCoordinates {
+            format: Format::Yaml,
+            provenance: FormatProvenance::FigmentBuiltin,
+        };
+        // Copy: rebind without move.
+        let c2 = c;
+        let c3 = c;
+        assert_eq!(c, c2);
+        assert_eq!(c2, c3);
+        // Hash + Eq: cube has FormatCoordinates::ALL.len() distinct
+        // cells.
+        let set: HashSet<FormatCoordinates> = FormatCoordinates::ALL.iter().copied().collect();
+        assert_eq!(set.len(), FormatCoordinates::ALL.len());
     }
 }
