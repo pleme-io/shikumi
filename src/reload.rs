@@ -17,7 +17,8 @@ use std::fmt;
 
 use crate::error::{
     AttributionAxis, AttributionConfidence, AttributionCoordinates, AttributionRule,
-    FailingSourceAttribution, FieldPathLocalization, ShikumiError, ShikumiErrorKind,
+    ErrorLocalizationCoordinates, FailingSourceAttribution, FieldPathLocalization, ShikumiError,
+    ShikumiErrorKind,
 };
 use crate::source::{ConfigSource, ConfigSourceKind};
 
@@ -382,6 +383,41 @@ impl ReloadFailure {
             }
         } else {
             FieldPathLocalization::NotApplicable
+        }
+    }
+
+    /// Coordinate pair over the two orthogonal closed-enum
+    /// projections every captured failure carries on the error-path-
+    /// fidelity surface — [`Self::kind`] (which variant) and
+    /// [`Self::field_path_localization`] (figment-attached or not).
+    ///
+    /// Total over the [`ReloadFailure`] surface — every captured
+    /// failure has exactly one coordinate cell in the 18-cell
+    /// product cube [`ErrorLocalizationCoordinates::ALL`], and the
+    /// produced cell always satisfies
+    /// [`ErrorLocalizationCoordinates::is_realizable`] (pinned by
+    /// `error_localization_coordinates_returns_realizable_cell` over
+    /// the captured-failure surface).
+    ///
+    /// Cross-thread mirror of
+    /// [`ShikumiError::error_localization_coordinates`]: the
+    /// captured envelope's coordinates agree pointwise with the
+    /// underlying error's, pinning the lossless-capture contract for
+    /// the (kind × localization) coordinate plane on the
+    /// cross-thread observable form. Pinned by
+    /// `error_localization_coordinates_agrees_with_underlying_error_pointwise`.
+    ///
+    /// Strict superset of the two sibling accessors
+    /// ([`Self::kind`], [`Self::field_path_localization`]): the
+    /// coordinate carries both as one `Copy` value, usable in
+    /// `match`, `HashMap` keys, structured-log payloads, and
+    /// attestation manifests without re-reading the two projections
+    /// separately.
+    #[must_use]
+    pub fn error_localization_coordinates(&self) -> ErrorLocalizationCoordinates {
+        ErrorLocalizationCoordinates {
+            kind: self.kind(),
+            localization: self.field_path_localization(),
         }
     }
 }
@@ -2182,6 +2218,70 @@ mod tests {
             assert_eq!(env_some, f.coordinates().is_some());
             assert_eq!(env_some, f.attribution_rule.is_some());
             assert_eq!(env_some, f.failing_source.is_some());
+        }
+    }
+
+    // ---- error_localization_coordinates tests ----
+
+    #[test]
+    fn error_localization_coordinates_agrees_with_underlying_error_pointwise() {
+        // Lossless-capture contract for the (kind × localization)
+        // coordinate plane on the cross-thread observable form: the
+        // captured envelope's coordinate cell mirrors the source
+        // error's cell byte-for-byte across every variant. Together
+        // with `kind_agrees_with_underlying_error_pointwise` and
+        // `field_path_localization_agrees_with_underlying_error_pointwise`,
+        // this pins agreement on each named slot AND on the
+        // collapsed pair, so a future variant landing must keep all
+        // three projections in lockstep.
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(
+                f.error_localization_coordinates(),
+                err.error_localization_coordinates(),
+                "captured coordinates must mirror source coordinates for {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn error_localization_coordinates_returns_realizable_cell() {
+        // Every captured failure maps to a realizable cell in the
+        // 18-cell product cube. Pins the forward-total /
+        // image-realizable contract on the cross-thread observable
+        // form: the accessor never produces an unrealizable cell, no
+        // matter which underlying variant was captured.
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            let cell = f.error_localization_coordinates();
+            assert!(
+                cell.is_realizable(),
+                "captured cell must be realizable (got {cell:?} from {err:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn error_localization_coordinates_mirrors_sibling_accessors_on_capture() {
+        // The captured coordinate accessor is a thin lift over the
+        // two sibling accessors (kind, field_path_localization) on
+        // the envelope: the produced cell's named fields must agree
+        // byte-for-byte with the two separate reads on the same
+        // envelope. Pins the lossless-decomposition contract on the
+        // cross-thread observable form.
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            let cell = f.error_localization_coordinates();
+            assert_eq!(
+                cell.kind,
+                f.kind(),
+                "captured coordinate.kind must agree with f.kind() for {err:?}",
+            );
+            assert_eq!(
+                cell.localization,
+                f.field_path_localization(),
+                "captured coordinate.localization must agree with f.field_path_localization() for {err:?}",
+            );
         }
     }
 }
