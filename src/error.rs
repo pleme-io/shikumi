@@ -956,6 +956,64 @@ impl AttributionCoordinates {
             confidence: AttributionConfidence::Fallback,
         },
     ];
+
+    /// Realizability predicate over the 12-cell product cube: returns
+    /// `true` exactly on the 5 cells some recognized [`AttributionRule`]
+    /// occupies, and `false` on the remaining 7 cells.
+    ///
+    /// Equivalent to `AttributionRule::from_coordinates(self).is_some()`
+    /// — the closed-enum lift of the partial-inverse-is-Some test on
+    /// this cube. Observers that only need the Boolean membership ("is
+    /// this cell observable from a recognized rule?") no longer reach
+    /// for the partial inverse and discard its [`Some`] payload; the
+    /// predicate is one method call regardless of how the rule space
+    /// dispatch is currently shaped.
+    ///
+    /// One source of truth for the realizability test on the
+    /// (`axis × layer_kind × confidence`) cube. Before this method,
+    /// every site that wanted "is this a recognized cell?" inlined
+    /// `AttributionRule::from_coordinates(coords).is_some()` (or its
+    /// negation `.is_none()`) at the call site — the realizability /
+    /// recognized-cell partition was reachable only through the
+    /// partial inverse. The named predicate collapses that to a typed
+    /// accessor on the cube, matching the realizability-predicate
+    /// discipline already established by
+    /// [`ErrorLocalizationCoordinates::is_realizable`] (the
+    /// kind × localization cube) and
+    /// [`AttributionSourceKindCoordinates::is_realizable`] (the
+    /// figment-source-kind × layer-kind cube). The substrate now
+    /// exposes a uniform `is_realizable()` predicate on three of its
+    /// four product cubes; the fourth ([`crate::FormatCoordinates`])
+    /// is the natural follow-up.
+    ///
+    /// Operational use: an attestation manifest, structured-log
+    /// replay, or cross-process diagnostic that observes the
+    /// (axis, `layer_kind`, confidence) coordinates recovers the
+    /// realizability classification — "is this cell a valid
+    /// observation of a recognized [`AttributionRule`], or a cross-
+    /// axis consistency violation no recognized rule occupies" — by
+    /// one method call instead of re-deriving the dispatch from the
+    /// partial inverse inline. Future variants land coherently: a new
+    /// [`AttributionRule`] landing in a previously unrecognized cell
+    /// extends the realizable image, forces an arm in
+    /// [`AttributionRule::from_coordinates`] (compile-time), and
+    /// forces an extension of the realizable-image expectation in
+    /// `attribution_coordinates_is_realizable_image_equals_rule_image`
+    /// (test-time) — all three stay in lockstep.
+    ///
+    /// Peer to [`ErrorLocalizationCoordinates::is_realizable`] and
+    /// [`AttributionSourceKindCoordinates::is_realizable`]: same
+    /// `Copy`-by-value receiver, same Boolean shape, same membership-
+    /// over-the-recognized-image semantics. The implementation on
+    /// this cube delegates to the partial inverse (the forward map is
+    /// injective on the recognized half, so realizability is exactly
+    /// the partial inverse's [`Some`] domain); on the other two cubes
+    /// the predicate is a direct pattern match because the forward
+    /// map is non-injective or partial.
+    #[must_use]
+    pub fn is_realizable(self) -> bool {
+        AttributionRule::from_coordinates(self).is_some()
+    }
 }
 
 /// Coordinate pair over the two orthogonal closed-enum projections
@@ -4872,6 +4930,120 @@ mod tests {
             "exactly AttributionRule::ALL.len() cells must round-trip; \
              got: {round_tripped}",
         );
+    }
+
+    #[test]
+    fn attribution_coordinates_is_realizable_agrees_with_from_coordinates_some() {
+        // Pins the realizability invariant pointwise on every cell of
+        // the cube:
+        //   is_realizable iff AttributionRule::from_coordinates is Some.
+        // The two definitions agree on all 12 cells.
+        for cell in AttributionCoordinates::ALL.iter().copied() {
+            let expected = AttributionRule::from_coordinates(cell).is_some();
+            assert_eq!(
+                cell.is_realizable(),
+                expected,
+                "cell {cell:?}: is_realizable must equal from_coordinates(_).is_some()",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_coordinates_realizable_partitions_into_5_realizable_and_7_unrealizable() {
+        // Pins the 5 + 7 cardinality split:
+        // - 5 realizable cells, one per recognized AttributionRule
+        //   (FileBySource, FileByMetadataName, EnvByPrefix,
+        //   EnvByUniqueness, DefaultsByCodeUniqueness).
+        // - 7 unrealizable cells covering every (axis, layer_kind,
+        //   confidence) combination no recognized rule occupies.
+        // A future AttributionRule landing in a previously unrecognized
+        // cell extends the realizable image, shrinking the unrealizable
+        // count and growing the realizable count in lockstep.
+        let realizable = AttributionCoordinates::ALL
+            .iter()
+            .filter(|c| c.is_realizable())
+            .count();
+        let unrealizable = AttributionCoordinates::ALL
+            .iter()
+            .filter(|c| !c.is_realizable())
+            .count();
+        assert_eq!(
+            realizable,
+            AttributionRule::ALL.len(),
+            "realizable cells must equal AttributionRule::ALL cardinality",
+        );
+        assert_eq!(
+            unrealizable,
+            AttributionCoordinates::ALL.len() - AttributionRule::ALL.len(),
+            "unrealizable cells must equal cube cardinality minus rule cardinality",
+        );
+        assert_eq!(
+            realizable + unrealizable,
+            AttributionCoordinates::ALL.len(),
+            "realizable + unrealizable must cover ALL exactly once",
+        );
+        // Pin the concrete current values too — the partition is 5 + 7
+        // today; future rule additions move both counts in lockstep.
+        assert_eq!(realizable, 5);
+        assert_eq!(unrealizable, 7);
+    }
+
+    #[test]
+    fn attribution_coordinates_is_realizable_image_equals_rule_image() {
+        // The realizable half of ALL is the exact image of
+        // AttributionRule::coordinates over the rule space. Pins which
+        // specific cells (not just how many) are observable from a
+        // recognized AttributionRule — a tighter contract than the
+        // cardinality split. Future rules land coherently: a new rule
+        // extends the image and forces an expansion of the realizable
+        // subset in lockstep.
+        use std::collections::HashSet;
+        let observed: HashSet<AttributionCoordinates> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .map(AttributionRule::coordinates)
+            .collect();
+        let realizable: HashSet<AttributionCoordinates> = AttributionCoordinates::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.is_realizable())
+            .collect();
+        assert_eq!(
+            observed, realizable,
+            "observed image over AttributionRule::ALL must equal the realizable cells",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_coordinates_always_lies_on_realizable_cell() {
+        // Forward-total / image-realizable contract: every cell
+        // produced by AttributionRule::coordinates must satisfy
+        // is_realizable. The forward map never escapes into the
+        // unrealizable half of the cube, no matter which rule is
+        // queried.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert!(
+                rule.coordinates().is_realizable(),
+                "rule {rule:?}: coordinates() must produce a realizable cell",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_coordinates_unrealizable_cells_have_no_inverse() {
+        // Symmetric of the forward-total contract: every unrealizable
+        // cell has no inverse rule. Closes the partial-inverse / Boolean-
+        // predicate equivalence in the unrealizable direction:
+        // `!c.is_realizable() iff AttributionRule::from_coordinates(c)
+        // .is_none()`. Pointwise verification across the 12-cell cube.
+        for cell in AttributionCoordinates::ALL.iter().copied() {
+            if !cell.is_realizable() {
+                assert!(
+                    AttributionRule::from_coordinates(cell).is_none(),
+                    "unrealizable cell {cell:?}: from_coordinates must be None",
+                );
+            }
+        }
     }
 
     #[test]
