@@ -20,7 +20,7 @@ use crate::error::{
     ErrorLocalizationCoordinates, FailingSourceAttribution, FieldPathLocalization, ShikumiError,
     ShikumiErrorKind,
 };
-use crate::source::{ConfigSource, ConfigSourceKind};
+use crate::source::{ConfigSource, ConfigSourceKind, FigmentSourceKind};
 
 /// A clone-able summary of the most recent reload failure on a
 /// [`crate::ConfigStore`].
@@ -235,6 +235,48 @@ impl ReloadFailure {
     #[must_use]
     pub fn metadata_axis(&self) -> Option<AttributionAxis> {
         self.attribution_rule.map(AttributionRule::metadata_axis)
+    }
+
+    /// [`FigmentSourceKind`] structurally pinned by
+    /// [`Self::attribution_rule`], or `None` when no attribution was
+    /// recorded *or* when the recorded attribution is name-axis
+    /// (where the rule's identity does not constrain
+    /// `figment::Metadata::source`) — strict superset of
+    /// [`Self::attribution_rule`]`.and_then(AttributionRule::figment_source_kind)`,
+    /// surfaced as a typed accessor so observers (dashboards,
+    /// alerting policies, attestation manifests) don't re-derive the
+    /// (`Source::File` × `Source::Code` × `Source::Custom` × no-rule
+    /// × name-axis) partition at every observation site.
+    ///
+    /// Two-stage `None` discipline: (1) `None` when no attribution
+    /// was recorded ([`Self::attribution_rule`] is [`None`]),
+    /// (2) `None` when the recorded attribution is name-axis
+    /// ([`Self::metadata_axis`] is
+    /// [`Some(AttributionAxis::MetadataName)`]) — neither path pins a
+    /// figment-Source-axis cell. Source-axis attributions
+    /// ([`AttributionRule::FileBySource`] →
+    /// [`Some(FigmentSourceKind::File)`],
+    /// [`AttributionRule::DefaultsByCodeUniqueness`] →
+    /// [`Some(FigmentSourceKind::Code)`]) surface a [`Some`] cell
+    /// directly. Operationally distinguishes "no provenance at all"
+    /// from "name-axis provenance whose figment Source kind was not
+    /// retained" — observers cannot recover figment's `Source`
+    /// classification off the cross-thread envelope, but they can
+    /// route on whether the attribution rule already pinned it.
+    ///
+    /// Composes with [`Self::metadata_axis`] as a refinement on the
+    /// source-axis cells: when `Some`, the projection is
+    /// [`Some`] exactly when [`Self::metadata_axis`] returns
+    /// [`Some(AttributionAxis::MetadataSource)`]. Pinned by
+    /// `figment_source_kind_some_iff_metadata_axis_metadata_source`.
+    /// Composes with [`Self::layer_kind`] as a partial diagonal: when
+    /// `Some`, `(figment_source_kind, layer_kind) ∈ {(File, File),
+    /// (Code, Defaults)}` — pinned by
+    /// `figment_source_kind_agrees_with_layer_kind_pointwise_when_some`.
+    #[must_use]
+    pub fn figment_source_kind(&self) -> Option<FigmentSourceKind> {
+        self.attribution_rule
+            .and_then(AttributionRule::figment_source_kind)
     }
 
     /// Coordinate triple of [`Self::attribution_rule`], or `None` when
@@ -1682,6 +1724,235 @@ mod tests {
             pairs.len() >= 3,
             "axis × layer_kind must span ≥3 cells; got: {pairs:?}"
         );
+    }
+
+    // ---- figment_source_kind accessor tests ----
+
+    #[test]
+    fn figment_source_kind_some_for_real_yaml_extract() {
+        // A real YAML-file extract failure attributes via FileBySource,
+        // whose identity already pins FigmentSourceKind::File.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_fsk.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f = ReloadFailure::from_error(&err);
+        assert_eq!(f.attribution_rule, Some(AttributionRule::FileBySource));
+        assert_eq!(f.figment_source_kind(), Some(FigmentSourceKind::File));
+    }
+
+    #[test]
+    fn figment_source_kind_some_for_defaults_only_extract() {
+        // A defaults-only extract attributes via DefaultsByCodeUniqueness,
+        // whose identity already pins FigmentSourceKind::Code.
+        use crate::provider::ProviderChain;
+        use serde::Serialize;
+        #[derive(Serialize)]
+        struct Bad {
+            count: String,
+        }
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let err = ProviderChain::new()
+            .with_defaults(&Bad {
+                count: "not_a_number".into(),
+            })
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f = ReloadFailure::from_error(&err);
+        assert_eq!(
+            f.attribution_rule,
+            Some(AttributionRule::DefaultsByCodeUniqueness),
+        );
+        assert_eq!(f.figment_source_kind(), Some(FigmentSourceKind::Code));
+    }
+
+    #[test]
+    fn figment_source_kind_none_for_unattributed_extract() {
+        // No metadata to map → no rule → no figment_source_kind.
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults],
+            error: fake_figment_error(),
+        };
+        let f = ReloadFailure::from_error(&err);
+        assert!(f.attribution_rule.is_none());
+        assert!(f.figment_source_kind().is_none());
+    }
+
+    #[test]
+    fn figment_source_kind_none_for_non_extract_variants() {
+        // Non-figment-bearing variants and bare Figment never carry
+        // attribution → never carry a figment_source_kind.
+        for f in [
+            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&ShikumiError::Figment(fake_figment_error())),
+        ] {
+            assert!(f.figment_source_kind().is_none());
+        }
+    }
+
+    #[test]
+    fn figment_source_kind_none_for_name_axis_attribution() {
+        // Name-axis attributions (FileByMetadataName, EnvByPrefix,
+        // EnvByUniqueness) carry an attribution_rule but their
+        // identity does not pin a figment-Source-axis cell — the
+        // accessor returns None even when the rule slot is Some.
+        // Pins the two-stage None discipline documented on the
+        // accessor.
+        for rule in [
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+        ] {
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            };
+            assert!(f.attribution_rule.is_some(), "rule {rule:?}");
+            assert!(
+                f.figment_source_kind().is_none(),
+                "rule {rule:?}: name-axis attribution must yield None figment_source_kind",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_source_kind_agrees_with_rule_figment_source_kind_pointwise() {
+        // For every constructible rule scenario, the accessor result
+        // equals attribution_rule.and_then(AttributionRule::figment_source_kind)
+        // — pinning the convenience accessor as a pure projection.
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::FileByMetadataName,
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            };
+            assert_eq!(f.figment_source_kind(), rule.figment_source_kind());
+        }
+    }
+
+    #[test]
+    fn figment_source_kind_some_iff_metadata_axis_metadata_source() {
+        // Composition law on the cross-thread envelope: when an
+        // attribution is recorded, figment_source_kind is Some
+        // exactly when metadata_axis is Some(MetadataSource). When no
+        // attribution is recorded, both are None and the
+        // biconditional still holds vacuously. Pins the same
+        // refinement as the AttributionRule-side law, surfaced
+        // through the captured envelope.
+        let scenarios: Vec<ReloadFailure> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .map(|rule| ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            })
+            .chain(std::iter::once(ReloadFailure::from_error(
+                &ShikumiError::Parse("x".to_owned()),
+            )))
+            .collect();
+        for f in scenarios {
+            assert_eq!(
+                f.figment_source_kind().is_some(),
+                f.metadata_axis() == Some(AttributionAxis::MetadataSource),
+                "envelope {:?}: figment_source_kind.is_some() must equal \
+                 (metadata_axis == Some(MetadataSource))",
+                f.attribution_rule,
+            );
+        }
+    }
+
+    #[test]
+    fn figment_source_kind_agrees_with_layer_kind_pointwise_when_some() {
+        // Structural diagonal on the cross-thread envelope: when
+        // figment_source_kind is Some, the (figment-source-kind,
+        // layer-kind) pair lies on the structural diagonal pinned by
+        // the resolver — (File, File) for FileBySource, (Code,
+        // Defaults) for DefaultsByCodeUniqueness. The two source-axis
+        // rules' identities already name both halves of their joint
+        // (figment-source × shikumi-layer) coordinate cell; the
+        // accessor surfaces both halves coherently.
+        let cases = [
+            (
+                AttributionRule::FileBySource,
+                FigmentSourceKind::File,
+                ConfigSourceKind::File,
+            ),
+            (
+                AttributionRule::DefaultsByCodeUniqueness,
+                FigmentSourceKind::Code,
+                ConfigSourceKind::Defaults,
+            ),
+        ];
+        for (rule, fk, ck) in cases {
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            };
+            assert_eq!(f.figment_source_kind(), Some(fk), "rule {rule:?}");
+            assert_eq!(f.layer_kind(), Some(ck), "rule {rule:?}");
+        }
+    }
+
+    #[test]
+    fn figment_source_kind_survives_clone_independent_of_originating_error() {
+        // The captured figment_source_kind is derived from the
+        // captured rule (Copy) — it must survive cloning and outlive
+        // the originating ShikumiError, parallel to the
+        // metadata-axis-clone and layer-kind-clone invariants
+        // already pinned on the cross-thread envelope.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let f = {
+            let dir = tempfile::TempDir::new().unwrap();
+            let file = dir.path().join("rf_fsk_clone.yaml");
+            std::fs::write(&file, "count: not_a_number\n").unwrap();
+            let err = ProviderChain::new()
+                .with_file(&file)
+                .extract::<Cfg>()
+                .unwrap_err();
+            ReloadFailure::from_error(&err)
+        };
+        let g = f.clone();
+        assert_eq!(g.figment_source_kind(), Some(FigmentSourceKind::File));
+        assert_eq!(g.figment_source_kind(), f.figment_source_kind());
     }
 
     #[test]
