@@ -620,6 +620,63 @@ impl AttributionRule {
         }
     }
 
+    /// Forward partial unifier of the two source-axis projections
+    /// over this rule: [`Self::figment_source_kind`] (partial) and
+    /// [`Self::layer_kind`] (total). Returns the rule's joint cell on
+    /// the (figment-Source-axis kind × shikumi-layer-kind) plane as
+    /// a typed [`AttributionSourceKindCoordinates`] envelope.
+    ///
+    /// Some-iff-MetadataSource discipline: returns [`Some`] exactly
+    /// when [`Self::figment_source_kind`] returns [`Some`]
+    /// (equivalently, when [`Self::metadata_axis`] returns
+    /// [`AttributionAxis::MetadataSource`]). Source-axis rules pin
+    /// both halves of their joint cell:
+    /// [`Self::FileBySource`] → `(File, File)`,
+    /// [`Self::DefaultsByCodeUniqueness`] → `(Code, Defaults)`.
+    /// Name-axis rules pin only [`Self::layer_kind`]; their
+    /// figment-Source-axis half is unconstrained, so the joint cell
+    /// is [`None`].
+    ///
+    /// One source of truth for the (figment-Source-axis kind ×
+    /// shikumi-layer-kind) joint cell on a recognized rule. Before
+    /// this method, observers that wanted the structural diagonal —
+    /// per-cell dashboards routing on the joint cell, attestation
+    /// manifests recording the source-axis rule subset's image,
+    /// structured-diagnostics legends rendering distinct prose per
+    /// joint cell — inlined a two-step
+    /// `self.figment_source_kind().map(|fk| (fk, self.layer_kind()))`
+    /// projection at every site. The named struct collapses the two
+    /// reads (one partial, one total) into one [`Option<_>`] read,
+    /// surfacing the joint cell as a typescape-eligible value
+    /// (`Copy + Eq + Hash + #[non_exhaustive]`) usable in `match`,
+    /// `HashMap` keys, log labels, alerting buckets, and attestation
+    /// manifest payloads.
+    ///
+    /// Pairs with [`AttributionSourceKindCoordinates::is_realizable`]
+    /// as the membership-predicate discipline: every [`Some`] return
+    /// of this accessor produces a cell satisfying
+    /// `is_realizable`. Peer to
+    /// [`crate::ShikumiError::error_localization_coordinates`] /
+    /// [`ErrorLocalizationCoordinates::is_realizable`] on the third
+    /// product cube — both are total-or-partial forward maps whose
+    /// image is the recognized subset of the cube.
+    ///
+    /// Composes with the captured-failure envelopes — the convenience
+    /// forwarders
+    /// [`FailingSourceAttribution::attribution_source_kind_coordinates`]
+    /// and [`crate::ReloadFailure::attribution_source_kind_coordinates`]
+    /// surface the same joint cell off the borrowed and cross-thread
+    /// observable surfaces, with the cross-thread accessor lifted to
+    /// the same `Some-iff-source-axis-attribution` discipline.
+    #[must_use]
+    pub fn attribution_source_kind_coordinates(self) -> Option<AttributionSourceKindCoordinates> {
+        self.figment_source_kind()
+            .map(|figment_source_kind| AttributionSourceKindCoordinates {
+                figment_source_kind,
+                layer_kind: self.layer_kind(),
+            })
+    }
+
     /// Forward unifier of the three orthogonal projections over this
     /// rule: [`Self::metadata_axis`], [`Self::layer_kind`],
     /// [`Self::confidence`]. Returns the rule's coordinates as a
@@ -1144,6 +1201,229 @@ impl ErrorLocalizationCoordinates {
     }
 }
 
+/// Coordinate pair over the two orthogonal closed-enum projections
+/// every source-axis [`AttributionRule`] pins on its joint
+/// (figment-Source-axis kind × shikumi-layer-kind) cell:
+/// [`FigmentSourceKind`] (which [`figment::Source`] class the rule's
+/// identity already names) and [`ConfigSourceKind`] (which
+/// [`ConfigSource`] layer class the rule attributes to).
+///
+/// One named typescape value collapsing the two closed-enum reads
+/// into one. The (`figment_source_kind × layer_kind`) plane has
+/// `FigmentSourceKind::ALL.len()` × `ConfigSourceKind::ALL.len()`
+/// = 3 × 3 = 9 product cells; today's source-axis rule subset
+/// occupies 2 of them — the "realizable" cells in the partition
+/// pinned by [`Self::is_realizable`]:
+///
+/// - [`AttributionRule::FileBySource`] →
+///   `(FigmentSourceKind::File, ConfigSourceKind::File)`.
+/// - [`AttributionRule::DefaultsByCodeUniqueness`] →
+///   `(FigmentSourceKind::Code, ConfigSourceKind::Defaults)`.
+///
+/// The other 7 cells are unrealizable today by construction — no
+/// recognized [`AttributionRule`] dispatches off the
+/// (`FigmentSourceKind::Custom`, _) row, no recognized rule pairs
+/// `FigmentSourceKind::File` with [`ConfigSourceKind::Env`] or
+/// [`ConfigSourceKind::Defaults`], and no recognized rule pairs
+/// `FigmentSourceKind::Code` with [`ConfigSourceKind::File`] or
+/// [`ConfigSourceKind::Env`]. The realizability invariant is "lies
+/// on the structural diagonal of source-axis rules":
+/// `(figment_source_kind, layer_kind) ∈ {(File, File),
+/// (Code, Defaults)}`, pinned by [`Self::is_realizable`] and
+/// verified pointwise across the rule space by
+/// `attribution_source_kind_coordinates_realizable_image_equals_rule_image`.
+///
+/// Fourth product-axis `ALL` constant on the typescape primitive
+/// set, peer to [`AttributionCoordinates::ALL`] (the first, 12-cell
+/// `axis × layer_kind × confidence` cube),
+/// [`crate::FormatCoordinates::ALL`] (the second, 8-cell
+/// `format × provenance` cube), and
+/// [`ErrorLocalizationCoordinates::ALL`] (the third, 18-cell
+/// `kind × localization` cube), but lifted on a different sibling
+/// pair (`FigmentSourceKind × ConfigSourceKind`). The same typescape
+/// discipline applies: closed `'static` slice, in declaration order,
+/// `Copy + Eq + Hash + #[non_exhaustive]` element type, cardinality
+/// pinned as a product of the constituent axis cardinalities, and a
+/// forward-partial / membership-predicate pair —
+/// [`AttributionRule::attribution_source_kind_coordinates`] (and
+/// the convenience forwarders
+/// [`FailingSourceAttribution::attribution_source_kind_coordinates`]
+/// / [`crate::ReloadFailure::attribution_source_kind_coordinates`])
+/// is the forward partial map (`None` for name-axis rules);
+/// [`Self::is_realizable`] is the membership predicate over the
+/// recognized 2-cell subset.
+///
+/// Composes [`AttributionRule::figment_source_kind`] (the partial
+/// projection onto the figment-Source-axis kind) with
+/// [`AttributionRule::layer_kind`] (the total projection onto the
+/// shikumi-layer-kind) into one [`Copy`] joint cell. Operationally
+/// distinguishes the realizable image of the source-axis rule
+/// subset from the cross-axis consistency violations
+/// (e.g. `(File, Defaults)`, `(Code, File)`, `(Custom, *)`) that no
+/// recognized rule can occupy. Future custom-source rules (named in
+/// the [`AttributionRule`] docstring as the natural extension when a
+/// [`ConfigSource`] variant lands matching figment's
+/// `Source::Custom`) extend this image in lockstep with the rule
+/// space.
+///
+/// The struct exists (rather than a bare tuple) so call sites
+/// document which slot is which — `figment_source_kind` /
+/// `layer_kind` — at the type level rather than relying on positional
+/// destructuring discipline. Consumers route on the named fields in
+/// `match`, `HashMap` keys, structured-log payloads, and attestation
+/// manifests; the `Copy + Eq + Hash + #[non_exhaustive]` bounds
+/// match the sibling product-cube structs
+/// ([`AttributionCoordinates`], [`crate::FormatCoordinates`],
+/// [`ErrorLocalizationCoordinates`]) and the underlying axis
+/// primitives ([`FigmentSourceKind`], [`ConfigSourceKind`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct AttributionSourceKindCoordinates {
+    /// Which [`figment::Source`]-axis kind the source-axis rule's
+    /// identity already pins — see [`FigmentSourceKind`] /
+    /// [`AttributionRule::figment_source_kind`].
+    pub figment_source_kind: FigmentSourceKind,
+    /// Which [`ConfigSource`] layer kind the rule attributes to —
+    /// see [`ConfigSourceKind`] / [`AttributionRule::layer_kind`].
+    pub layer_kind: ConfigSourceKind,
+}
+
+impl AttributionSourceKindCoordinates {
+    /// Every cell of the `figment_source_kind × layer_kind` product
+    /// cube — the structural composition of [`FigmentSourceKind::ALL`]
+    /// (3 cells) and [`ConfigSourceKind::ALL`] (3 cells) into the
+    /// `3 × 3 = 9`-cell coordinate space, in lexicographic order
+    /// over the two sibling slices (`figment_source_kind` outermost,
+    /// `layer_kind` innermost).
+    ///
+    /// Fourth product-axis `ALL` constant on the typescape primitive
+    /// set — peer to [`AttributionCoordinates::ALL`] (the first,
+    /// 12-cell `axis × layer_kind × confidence` cube),
+    /// [`crate::FormatCoordinates::ALL`] (the second, 8-cell
+    /// `format × provenance` cube), and
+    /// [`ErrorLocalizationCoordinates::ALL`] (the third, 18-cell
+    /// `kind × localization` cube), but lifted on a different
+    /// sibling pair (`FigmentSourceKind × ConfigSourceKind`). Same
+    /// typescape discipline (closed `'static` slice, in declaration
+    /// order, `Copy + Eq + Hash + #[non_exhaustive]` element type)
+    /// applied to the attribution-source-kind product cube.
+    ///
+    /// Cardinality is pinned by
+    /// `attribution_source_kind_coordinates_all_cardinality_matches_product_of_axes`
+    /// against
+    /// `FigmentSourceKind::ALL.len() * ConfigSourceKind::ALL.len()`,
+    /// so any new variant on either sibling axis forces an extension
+    /// of this slice in lockstep with the variant itself. The
+    /// `attribution_source_kind_coordinates_all_equals_axes_cartesian_product`
+    /// test pins tight equality against the inline doubly-nested
+    /// product over the sibling `ALL` constants — `Self::ALL` is the
+    /// product, not a subset and not a superset.
+    ///
+    /// The partition into realizable and unrealizable cells is the
+    /// 2 + 7 split pinned by [`Self::is_realizable`]: 2 cells lie on
+    /// the structural diagonal of source-axis rules (`(File, File)`
+    /// from [`AttributionRule::FileBySource`] and `(Code, Defaults)`
+    /// from [`AttributionRule::DefaultsByCodeUniqueness`]); the other
+    /// 7 cells are unrealizable today. The
+    /// `attribution_source_kind_coordinates_realizable_image_equals_rule_image`
+    /// test pins the realizable half as the exact image of
+    /// [`AttributionRule::attribution_source_kind_coordinates`] over
+    /// [`AttributionRule::ALL`], and the
+    /// `attribution_source_kind_coordinates_realizable_partitions_into_2_realizable_and_7_unrealizable`
+    /// test pins the cardinality split.
+    pub const ALL: &'static [Self] = &[
+        Self {
+            figment_source_kind: FigmentSourceKind::File,
+            layer_kind: ConfigSourceKind::Defaults,
+        },
+        Self {
+            figment_source_kind: FigmentSourceKind::File,
+            layer_kind: ConfigSourceKind::Env,
+        },
+        Self {
+            figment_source_kind: FigmentSourceKind::File,
+            layer_kind: ConfigSourceKind::File,
+        },
+        Self {
+            figment_source_kind: FigmentSourceKind::Code,
+            layer_kind: ConfigSourceKind::Defaults,
+        },
+        Self {
+            figment_source_kind: FigmentSourceKind::Code,
+            layer_kind: ConfigSourceKind::Env,
+        },
+        Self {
+            figment_source_kind: FigmentSourceKind::Code,
+            layer_kind: ConfigSourceKind::File,
+        },
+        Self {
+            figment_source_kind: FigmentSourceKind::Custom,
+            layer_kind: ConfigSourceKind::Defaults,
+        },
+        Self {
+            figment_source_kind: FigmentSourceKind::Custom,
+            layer_kind: ConfigSourceKind::Env,
+        },
+        Self {
+            figment_source_kind: FigmentSourceKind::Custom,
+            layer_kind: ConfigSourceKind::File,
+        },
+    ];
+
+    /// Realizability predicate over the 9-cell product cube: returns
+    /// `true` exactly on the 2 cells that can be produced by
+    /// [`AttributionRule::attribution_source_kind_coordinates`] (or
+    /// its captured-failure mirrors
+    /// [`FailingSourceAttribution::attribution_source_kind_coordinates`]
+    /// and [`crate::ReloadFailure::attribution_source_kind_coordinates`])
+    /// on some recognized [`AttributionRule`] variant, and `false`
+    /// on the remaining 7 cells.
+    ///
+    /// The invariant is the structural diagonal of source-axis
+    /// rules:
+    /// `(figment_source_kind, layer_kind) ∈ {(File, File),
+    /// (Code, Defaults)}`. Proven by enumeration over the rule space:
+    /// [`AttributionRule::FileBySource`] is the only source-axis rule
+    /// that dispatches off [`figment::Source::File`] and pairs with
+    /// [`ConfigSource::File`] (so its joint cell is `(File, File)`);
+    /// [`AttributionRule::DefaultsByCodeUniqueness`] is the only
+    /// source-axis rule that dispatches off [`figment::Source::Code`]
+    /// and pairs with [`ConfigSource::Defaults`] (so its joint cell
+    /// is `(Code, Defaults)`). Name-axis rules don't pin a
+    /// `figment_source_kind` at all and are absent from this image.
+    ///
+    /// Operational use: an attestation manifest, structured-log
+    /// replay, or cross-process diagnostic that observes the
+    /// (`figment_source_kind`, `layer_kind`) coordinates recovers
+    /// the realizability classification — "is this cell a valid
+    /// observation of a recognized source-axis rule, or a cross-axis
+    /// consistency violation" — by one method call instead of
+    /// re-deriving the consistency check inline. Future custom-source
+    /// rules land coherently: a new [`AttributionRule`] variant that
+    /// dispatches off [`figment::Source::Custom`] extends the
+    /// recognized image, forces an exhaustive-match arm in
+    /// [`AttributionRule::attribution_source_kind_coordinates`]
+    /// (compile-time), and forces an extension of the
+    /// `attribution_source_kind_coordinates_realizable_image_equals_rule_image`
+    /// expectation (test-time) — all three stay in lockstep.
+    ///
+    /// Peer to [`ErrorLocalizationCoordinates::is_realizable`] (the
+    /// realizability predicate over the third product cube): both
+    /// are membership predicates on a non-injective forward map's
+    /// image. Pairs with the partial-inverse discipline of
+    /// [`AttributionRule::from_coordinates`] /
+    /// [`crate::FormatCoordinates::format_or_none`] on the cubes
+    /// where the forward map is injective.
+    #[must_use]
+    pub fn is_realizable(self) -> bool {
+        matches!(
+            (self.figment_source_kind, self.layer_kind),
+            (FigmentSourceKind::File, ConfigSourceKind::File)
+                | (FigmentSourceKind::Code, ConfigSourceKind::Defaults)
+        )
+    }
+}
+
 /// Confidence class of an [`AttributionRule`].
 ///
 /// Closed binary partition over the rule space:
@@ -1425,6 +1705,25 @@ impl<'a> FailingSourceAttribution<'a> {
     #[must_use]
     pub fn figment_source_kind(self) -> Option<FigmentSourceKind> {
         self.rule.figment_source_kind()
+    }
+
+    /// Joint (figment-Source-axis kind × shikumi-layer-kind) cell of
+    /// [`Self::rule`]; convenience over
+    /// [`AttributionRule::attribution_source_kind_coordinates`]. One
+    /// method call returns the source-axis rule's joint cell — the
+    /// figment-Source-axis kind paired with the shikumi-layer kind —
+    /// without destructuring the envelope or inlining the two sibling
+    /// reads ([`Self::figment_source_kind`], [`Self::layer_kind`]) at
+    /// the call site.
+    ///
+    /// Some-iff-MetadataSource discipline shared with
+    /// [`AttributionRule::attribution_source_kind_coordinates`]: the
+    /// joint cell is [`Some`] exactly when [`Self::metadata_axis`]
+    /// returns [`AttributionAxis::MetadataSource`]. Pinned by
+    /// `failing_source_attribution_attribution_source_kind_coordinates_mirrors_rule`.
+    #[must_use]
+    pub fn attribution_source_kind_coordinates(self) -> Option<AttributionSourceKindCoordinates> {
+        self.rule.attribution_source_kind_coordinates()
     }
 
     /// Coordinate triple of [`Self::rule`]; convenience over
@@ -5081,5 +5380,353 @@ mod tests {
         let c3 = c;
         assert_eq!(c, c2);
         assert_eq!(c2, c3);
+    }
+
+    // ---- AttributionSourceKindCoordinates::ALL cover / partition / realizability ----
+
+    #[test]
+    fn attribution_source_kind_coordinates_all_has_no_duplicates() {
+        // Pins that the constant is a set, not a multiset — every
+        // cell appears at most once. Mirrors the
+        // `_all_has_no_duplicates` discipline on every sibling
+        // product-cube `ALL` (AttributionCoordinates,
+        // FormatCoordinates, ErrorLocalizationCoordinates).
+        use std::collections::HashSet;
+        let unique: HashSet<AttributionSourceKindCoordinates> =
+            AttributionSourceKindCoordinates::ALL
+                .iter()
+                .copied()
+                .collect();
+        assert_eq!(
+            unique.len(),
+            AttributionSourceKindCoordinates::ALL.len(),
+            "AttributionSourceKindCoordinates::ALL must contain no duplicates; got: {:?}",
+            AttributionSourceKindCoordinates::ALL,
+        );
+    }
+
+    #[test]
+    fn attribution_source_kind_coordinates_all_cardinality_matches_product_of_axes() {
+        // Pins the product-cube cardinality contract as a function of
+        // the constituent axis cardinalities rather than a literal
+        // integer: any new variant on either sibling axis
+        // (FigmentSourceKind::ALL or ConfigSourceKind::ALL) forces an
+        // extension of Self::ALL in lockstep through this assertion.
+        // Also pins the concrete current value (9) so an unintentional
+        // churn on either axis is caught even when the product math
+        // still works out.
+        assert_eq!(
+            AttributionSourceKindCoordinates::ALL.len(),
+            FigmentSourceKind::ALL.len() * ConfigSourceKind::ALL.len(),
+            "ALL must equal the cartesian product cardinality",
+        );
+        assert_eq!(
+            AttributionSourceKindCoordinates::ALL.len(),
+            9,
+            "ALL must have 3 * 3 = 9 cells today",
+        );
+    }
+
+    #[test]
+    fn attribution_source_kind_coordinates_all_equals_axes_cartesian_product() {
+        // Tight equality (not subset) against the inline doubly-nested
+        // product over the sibling ALL slices: Self::ALL IS the
+        // cartesian product, no extras and no omissions. A future
+        // variant on either sibling axis (figment_source_kind or
+        // layer_kind) forces both an entry in the constant and a
+        // corresponding cell appearing here through the inline product
+        // enumeration.
+        use std::collections::HashSet;
+        let mut expected: HashSet<AttributionSourceKindCoordinates> = HashSet::new();
+        for figment_source_kind in FigmentSourceKind::ALL.iter().copied() {
+            for layer_kind in ConfigSourceKind::ALL.iter().copied() {
+                expected.insert(AttributionSourceKindCoordinates {
+                    figment_source_kind,
+                    layer_kind,
+                });
+            }
+        }
+        let listed: HashSet<AttributionSourceKindCoordinates> =
+            AttributionSourceKindCoordinates::ALL
+                .iter()
+                .copied()
+                .collect();
+        assert_eq!(
+            listed, expected,
+            "ALL must be the exact cartesian product of the sibling ALL slices",
+        );
+    }
+
+    #[test]
+    fn attribution_source_kind_coordinates_all_iterates_in_lexicographic_order() {
+        // Pins iteration order figment_source_kind-outer /
+        // layer_kind-inner — the doubly-nested product enumeration
+        // over the sibling ALL slices in lexicographic order.
+        // Consumers (dashboards, attestation manifests) that rely on
+        // a stable iteration order for deterministic output read the
+        // canonical order from this constant.
+        let mut expected: Vec<AttributionSourceKindCoordinates> = Vec::new();
+        for figment_source_kind in FigmentSourceKind::ALL.iter().copied() {
+            for layer_kind in ConfigSourceKind::ALL.iter().copied() {
+                expected.push(AttributionSourceKindCoordinates {
+                    figment_source_kind,
+                    layer_kind,
+                });
+            }
+        }
+        let listed: Vec<AttributionSourceKindCoordinates> =
+            AttributionSourceKindCoordinates::ALL.to_vec();
+        assert_eq!(
+            listed, expected,
+            "ALL must iterate in figment_source_kind-outer / layer_kind-inner lexicographic order",
+        );
+    }
+
+    #[test]
+    fn attribution_source_kind_coordinates_is_realizable_matches_diagonal() {
+        // Pins the realizability invariant pointwise on every cell of
+        // the cube:
+        //   is_realizable iff
+        //   (figment_source_kind, layer_kind) ∈ {(File, File), (Code, Defaults)}.
+        // The two definitions agree on all 9 cells.
+        for cell in AttributionSourceKindCoordinates::ALL.iter().copied() {
+            let expected = matches!(
+                (cell.figment_source_kind, cell.layer_kind),
+                (FigmentSourceKind::File, ConfigSourceKind::File)
+                    | (FigmentSourceKind::Code, ConfigSourceKind::Defaults)
+            );
+            assert_eq!(
+                cell.is_realizable(),
+                expected,
+                "cell {cell:?}: is_realizable must equal the source-axis diagonal law",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_source_kind_coordinates_realizable_partitions_into_2_realizable_and_7_unrealizable()
+     {
+        // Pins the 2 + 7 cardinality split:
+        // - 2 realizable cells on the structural diagonal of source-
+        //   axis rules: (File, File) from FileBySource and
+        //   (Code, Defaults) from DefaultsByCodeUniqueness.
+        // - 7 unrealizable cells covering every other combination:
+        //   (File, Defaults), (File, Env), (Code, Env), (Code, File),
+        //   (Custom, Defaults), (Custom, Env), (Custom, File).
+        // A future custom-source rule lands as a new realizable cell
+        // whose realizability is forced by the diagonal law,
+        // extending the realizable image and shrinking the
+        // unrealizable count in lockstep.
+        let realizable = AttributionSourceKindCoordinates::ALL
+            .iter()
+            .filter(|c| c.is_realizable())
+            .count();
+        let unrealizable = AttributionSourceKindCoordinates::ALL
+            .iter()
+            .filter(|c| !c.is_realizable())
+            .count();
+        assert_eq!(realizable, 2, "realizable cells must be 2");
+        assert_eq!(unrealizable, 7, "unrealizable cells must be 7");
+        assert_eq!(
+            realizable + unrealizable,
+            AttributionSourceKindCoordinates::ALL.len(),
+            "realizable + unrealizable must cover ALL exactly once",
+        );
+    }
+
+    #[test]
+    fn attribution_source_kind_coordinates_realizable_image_equals_rule_image() {
+        // The realizable half of ALL is the exact image of
+        // AttributionRule::attribution_source_kind_coordinates over
+        // the rule space. Pins which specific cells (not just how
+        // many) are observable from a recognized AttributionRule —
+        // a tighter contract than the cardinality split. Future
+        // custom-source rules land coherently: a new rule extends
+        // the image and forces an expansion of the realizable subset
+        // in lockstep.
+        use std::collections::HashSet;
+        let observed: HashSet<AttributionSourceKindCoordinates> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter_map(AttributionRule::attribution_source_kind_coordinates)
+            .collect();
+        let realizable: HashSet<AttributionSourceKindCoordinates> =
+            AttributionSourceKindCoordinates::ALL
+                .iter()
+                .copied()
+                .filter(|c| c.is_realizable())
+                .collect();
+        assert_eq!(
+            observed, realizable,
+            "observed image over AttributionRule::ALL must equal the realizable cells",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_attribution_source_kind_coordinates_returns_realizable_cell_when_some() {
+        // Forward-partial / image-realizable contract: every Some
+        // return from AttributionRule::attribution_source_kind_coordinates
+        // must satisfy is_realizable. The accessor never produces an
+        // unrealizable cell, no matter which rule is queried.
+        for rule in AttributionRule::ALL.iter().copied() {
+            if let Some(cell) = rule.attribution_source_kind_coordinates() {
+                assert!(
+                    cell.is_realizable(),
+                    "rule {rule:?} mapped to non-realizable cell {cell:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn attribution_rule_attribution_source_kind_coordinates_some_iff_metadata_axis_source() {
+        // Composition law on AttributionRule: the partial joint cell
+        // projection is Some exactly when metadata_axis is
+        // MetadataSource. Stronger than per-variant arms — enumerates
+        // the entire rule space against the biconditional.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.attribution_source_kind_coordinates().is_some(),
+                rule.metadata_axis() == AttributionAxis::MetadataSource,
+                "rule {rule:?}: attribution_source_kind_coordinates.is_some() must equal \
+                 (metadata_axis == MetadataSource)",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_attribution_source_kind_coordinates_mirrors_paired_projections() {
+        // The joint-cell accessor must agree byte-for-byte with the
+        // inline pairing of the two sibling projections:
+        // - figment_source_kind() → cell.figment_source_kind
+        // - layer_kind()          → cell.layer_kind
+        // Pins the lossless-decomposition contract: consumers using
+        // either the joint cell or the two reads separately see the
+        // same data.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let joint = rule.attribution_source_kind_coordinates();
+            let paired = rule.figment_source_kind().map(|figment_source_kind| {
+                AttributionSourceKindCoordinates {
+                    figment_source_kind,
+                    layer_kind: rule.layer_kind(),
+                }
+            });
+            assert_eq!(
+                joint, paired,
+                "rule {rule:?}: joint accessor must equal the paired projections",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_attribution_source_kind_coordinates_pins_known_rules() {
+        // Per-variant pinning table: source-axis rules already name
+        // both halves of their joint cell, name-axis rules name
+        // neither.
+        let cases: [(AttributionRule, Option<AttributionSourceKindCoordinates>); 5] = [
+            (
+                AttributionRule::FileBySource,
+                Some(AttributionSourceKindCoordinates {
+                    figment_source_kind: FigmentSourceKind::File,
+                    layer_kind: ConfigSourceKind::File,
+                }),
+            ),
+            (
+                AttributionRule::DefaultsByCodeUniqueness,
+                Some(AttributionSourceKindCoordinates {
+                    figment_source_kind: FigmentSourceKind::Code,
+                    layer_kind: ConfigSourceKind::Defaults,
+                }),
+            ),
+            (AttributionRule::FileByMetadataName, None),
+            (AttributionRule::EnvByPrefix, None),
+            (AttributionRule::EnvByUniqueness, None),
+        ];
+        for (rule, expected) in cases {
+            assert_eq!(
+                rule.attribution_source_kind_coordinates(),
+                expected,
+                "rule {rule:?}: attribution_source_kind_coordinates pin",
+            );
+        }
+    }
+
+    #[test]
+    fn failing_source_attribution_attribution_source_kind_coordinates_mirrors_rule() {
+        // The envelope's accessor must agree with the rule's,
+        // byte-for-byte, on every recognized rule. Pins the
+        // convenience accessor as a thin forwarder over
+        // AttributionRule::attribution_source_kind_coordinates.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let src = ConfigSource::Defaults;
+            let attr = FailingSourceAttribution::new(&src, rule);
+            assert_eq!(
+                attr.attribution_source_kind_coordinates(),
+                rule.attribution_source_kind_coordinates(),
+                "envelope for rule {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_source_kind_coordinates_is_copy_and_hashable() {
+        // Typescape bounds parity with the sibling product-cube
+        // structs (AttributionCoordinates, FormatCoordinates,
+        // ErrorLocalizationCoordinates) and the underlying axis
+        // primitives (FigmentSourceKind, ConfigSourceKind).
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(AttributionSourceKindCoordinates {
+            figment_source_kind: FigmentSourceKind::File,
+            layer_kind: ConfigSourceKind::File,
+        });
+        set.insert(AttributionSourceKindCoordinates {
+            figment_source_kind: FigmentSourceKind::Code,
+            layer_kind: ConfigSourceKind::Defaults,
+        });
+        // Duplicate insertion — no growth.
+        set.insert(AttributionSourceKindCoordinates {
+            figment_source_kind: FigmentSourceKind::File,
+            layer_kind: ConfigSourceKind::File,
+        });
+        assert_eq!(set.len(), 2, "every coordinate must hash distinctly");
+
+        // Copy: rebind without move.
+        let c = AttributionSourceKindCoordinates {
+            figment_source_kind: FigmentSourceKind::Custom,
+            layer_kind: ConfigSourceKind::Env,
+        };
+        let c2 = c;
+        let c3 = c;
+        assert_eq!(c, c2);
+        assert_eq!(c2, c3);
+    }
+
+    #[test]
+    fn attribution_source_kind_coordinates_realizable_image_lies_in_attribution_source_kind_coordinates_all()
+     {
+        // Cross-primitive cover law: every realizable cell observed
+        // from AttributionRule lies in
+        // AttributionSourceKindCoordinates::ALL. Pins the contract
+        // that the rule's partial-projection image stays a sub-image
+        // of the declared product cube — no rule-specific joint cell
+        // ever escapes the typescape's declared product axis.
+        use std::collections::HashSet;
+        let observed: HashSet<AttributionSourceKindCoordinates> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter_map(AttributionRule::attribution_source_kind_coordinates)
+            .collect();
+        let declared: HashSet<AttributionSourceKindCoordinates> =
+            AttributionSourceKindCoordinates::ALL
+                .iter()
+                .copied()
+                .collect();
+        assert!(
+            observed.is_subset(&declared),
+            "image of attribution_source_kind_coordinates must lie in \
+             AttributionSourceKindCoordinates::ALL; observed: {observed:?}, \
+             declared: {declared:?}",
+        );
     }
 }
