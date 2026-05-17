@@ -680,6 +680,14 @@ impl FormatCoordinates {
     }
 }
 
+impl crate::ProductCube for FormatCoordinates {
+    const ALL: &'static [Self] = Self::ALL;
+
+    fn is_realizable(self) -> bool {
+        Self::is_realizable(self)
+    }
+}
+
 /// Recognized form of a shikumi-built provider's
 /// `figment::Metadata::name`, as parsed by [`Format::parse_metadata_tag`].
 ///

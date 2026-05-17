@@ -1484,6 +1484,30 @@ impl AttributionSourceKindCoordinates {
     }
 }
 
+impl crate::ProductCube for AttributionCoordinates {
+    const ALL: &'static [Self] = Self::ALL;
+
+    fn is_realizable(self) -> bool {
+        Self::is_realizable(self)
+    }
+}
+
+impl crate::ProductCube for ErrorLocalizationCoordinates {
+    const ALL: &'static [Self] = Self::ALL;
+
+    fn is_realizable(self) -> bool {
+        Self::is_realizable(self)
+    }
+}
+
+impl crate::ProductCube for AttributionSourceKindCoordinates {
+    const ALL: &'static [Self] = Self::ALL;
+
+    fn is_realizable(self) -> bool {
+        Self::is_realizable(self)
+    }
+}
+
 /// Confidence class of an [`AttributionRule`].
 ///
 /// Closed binary partition over the rule space:

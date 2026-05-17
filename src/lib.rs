@@ -33,6 +33,7 @@
 //! println!("width: {:?}", config.window_width);
 //! ```
 
+mod cube;
 mod discovery;
 mod error;
 #[cfg(feature = "lisp")]
@@ -47,6 +48,9 @@ mod source;
 mod store;
 mod watcher;
 
+pub use cube::{
+    ProductCube, realizable_count, realizable_iter, unrealizable_count, unrealizable_iter,
+};
 pub use discovery::{
     ConfigDiscovery, Format, FormatCoordinates, FormatMetadataTag, FormatProvenance,
 };
