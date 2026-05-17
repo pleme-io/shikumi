@@ -1492,6 +1492,14 @@ impl crate::ProductCube for AttributionCoordinates {
     }
 }
 
+impl crate::PartialInverseCube for AttributionCoordinates {
+    type Image = AttributionRule;
+
+    fn invert(self) -> Option<AttributionRule> {
+        AttributionRule::from_coordinates(self)
+    }
+}
+
 impl crate::ProductCube for ErrorLocalizationCoordinates {
     const ALL: &'static [Self] = Self::ALL;
 

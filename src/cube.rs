@@ -150,6 +150,95 @@ pub fn unrealizable_count<C: ProductCube>() -> usize {
     unrealizable_iter::<C>().count()
 }
 
+/// Closed discipline trait for the [`ProductCube`] subset whose
+/// forward map from the recognized-image type into the cube is
+/// injective, so the cube carries a partial inverse back into the
+/// image: `invert(cell) = Some(image)` exactly on the realizable
+/// cells, `None` on the cross-axis consistency-violation complement.
+///
+/// Two cubes satisfy this sub-discipline today:
+///
+/// - [`crate::FormatCoordinates`] —
+///   [`crate::FormatCoordinates::format_or_none`] is the partial
+///   inverse of [`crate::Format::format_coordinates`].
+/// - [`crate::AttributionCoordinates`] —
+///   [`crate::AttributionRule::from_coordinates`] is the partial
+///   inverse of [`crate::AttributionRule::coordinates`].
+///
+/// The other two cubes on the typescape primitive set —
+/// [`crate::ErrorLocalizationCoordinates`] and
+/// [`crate::AttributionSourceKindCoordinates`] — carry an
+/// `is_realizable` predicate but no partial inverse: their forward
+/// maps are non-injective or their realizable image is not in
+/// one-to-one correspondence with a single typescape value (the error-
+/// localization image collapses many `(kind, localization)` pairs onto
+/// the same `(kind, observable-failure)` observation, and the
+/// source-axis-kind image collapses pairs of source-axis rules onto
+/// the same `(figment_source_kind, layer_kind)` joint cell only when
+/// the rule space stays at its current two-element source-axis
+/// subset).
+///
+/// The trait binds [`Self::Image`] to the recognized-image type
+/// (`Copy + Eq + Hash + 'static + Debug` matching the typescape-axis
+/// primitives) so generic helpers ([`realizable_images`]) can iterate
+/// the image without naming the concrete cube type. The required
+/// invariant — pinned by the test
+/// [`tests::partial_inverse_some_iff_is_realizable`] across all
+/// implementors — is
+/// `cell.invert().is_some() == ProductCube::is_realizable(cell)`,
+/// closing the structural agreement between the partial-inverse-
+/// `Some` domain and the realizability predicate that today's two
+/// implementors satisfy by hand-discipline.
+///
+/// A third (or fourth) implementor landing — a future
+/// `(figment_source_kind × axis × confidence)` refinement cube with a
+/// bijection to a source-axis rule subset, or a `(format ×
+/// name_style)` discovery refinement cube with a bijection to a typed
+/// discovery-key envelope — picks up the discipline and the generic
+/// helpers at the `impl PartialInverseCube` declaration, with the
+/// invariant enforced by the same trait-uniform test reaching every
+/// implementor pointwise.
+pub trait PartialInverseCube: ProductCube {
+    /// The recognized-image type — the typescape value the partial
+    /// inverse re-hydrates on realizable cells (`Format` for
+    /// [`crate::FormatCoordinates`], `AttributionRule` for
+    /// [`crate::AttributionCoordinates`]).
+    ///
+    /// `Copy + Eq + Hash + 'static`: matches the typescape-axis
+    /// primitive discipline so generic image consumers route by value
+    /// without lifetime gymnastics. `Debug` is included so generic
+    /// invariant tests can `assert_eq!` against image values without
+    /// per-implementor harness boilerplate.
+    type Image: Copy + Eq + std::fmt::Debug + 'static;
+
+    /// Partial inverse: `Some(image)` for realizable cells, `None`
+    /// for the cross-axis consistency-violation complement.
+    ///
+    /// Mirror of the inherent partial-inverse method every implementor
+    /// already exposes
+    /// ([`crate::FormatCoordinates::format_or_none`],
+    /// [`crate::AttributionRule::from_coordinates`]). The trait
+    /// re-export lets generic helpers ([`realizable_images`]) reach
+    /// the inverse without naming the concrete cube or image type.
+    fn invert(self) -> Option<Self::Image>;
+}
+
+/// Iterate the realized images of a [`PartialInverseCube`] — the
+/// `Some` outputs of [`PartialInverseCube::invert`] over [`ProductCube::ALL`],
+/// in cube-declaration order.
+///
+/// Generic in the cube type so a future
+/// [`PartialInverseCube`] implementor inherits the helper at its
+/// `impl PartialInverseCube` declaration. The output cardinality
+/// equals [`realizable_count::<C>()`][realizable_count] by the
+/// `invert().is_some() == is_realizable()` invariant the trait pins.
+pub fn realizable_images<C: PartialInverseCube>() -> impl Iterator<Item = C::Image> {
+    C::ALL
+        .iter()
+        .copied()
+        .filter_map(PartialInverseCube::invert)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,5 +467,89 @@ mod tests {
         assert!(!<AttributionCoordinates as ProductCube>::ALL.is_empty());
         assert!(!<ErrorLocalizationCoordinates as ProductCube>::ALL.is_empty());
         assert!(!<AttributionSourceKindCoordinates as ProductCube>::ALL.is_empty());
+    }
+
+    // ---- PartialInverseCube invariants ----
+    //
+    // The trait invariant — `cell.invert().is_some() ==
+    // ProductCube::is_realizable(cell)` for every cell of every
+    // implementor — is asserted by one trait-uniform helper reaching
+    // each implementor pointwise. A third (or fourth) implementor
+    // landing picks up the invariant test by adding one call to the
+    // helper, not by re-deriving the loop body inline.
+
+    fn assert_partial_inverse_some_iff_is_realizable<C>()
+    where
+        C: PartialInverseCube + std::fmt::Debug,
+    {
+        for cell in <C as ProductCube>::ALL.iter().copied() {
+            assert_eq!(
+                cell.invert().is_some(),
+                ProductCube::is_realizable(cell),
+                "cell {cell:?}: invert().is_some() must equal is_realizable()",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_partial_inverse_some_iff_is_realizable() {
+        assert_partial_inverse_some_iff_is_realizable::<FormatCoordinates>();
+    }
+
+    #[test]
+    fn attribution_coordinates_partial_inverse_some_iff_is_realizable() {
+        assert_partial_inverse_some_iff_is_realizable::<AttributionCoordinates>();
+    }
+
+    #[test]
+    fn format_coordinates_realizable_images_cardinality_matches_realizable_count() {
+        // The generic realizable_images iterator has the same
+        // cardinality as the realizable-cell count — proven by the
+        // trait invariant invert().is_some() == is_realizable() that
+        // assert_partial_inverse_some_iff_is_realizable pins.
+        assert_eq!(
+            realizable_images::<FormatCoordinates>().count(),
+            realizable_count::<FormatCoordinates>(),
+        );
+    }
+
+    #[test]
+    fn attribution_coordinates_realizable_images_cardinality_matches_realizable_count() {
+        assert_eq!(
+            realizable_images::<AttributionCoordinates>().count(),
+            realizable_count::<AttributionCoordinates>(),
+        );
+    }
+
+    #[test]
+    fn format_coordinates_realizable_images_equals_format_all() {
+        // For an injective forward map (Format::format_coordinates is
+        // injective on Format::ALL), the realizable-images iterator
+        // produces every Format exactly once. Pins that the partial
+        // inverse covers Format::ALL pointwise.
+        use std::collections::HashSet;
+        let images: HashSet<crate::Format> = realizable_images::<FormatCoordinates>().collect();
+        let expected: HashSet<crate::Format> = crate::Format::ALL.iter().copied().collect();
+        assert_eq!(
+            images, expected,
+            "realizable_images::<FormatCoordinates>() must equal Format::ALL as a set",
+        );
+    }
+
+    #[test]
+    fn attribution_coordinates_realizable_images_equals_rule_all() {
+        // Same discipline for the AttributionCoordinates cube:
+        // AttributionRule::coordinates is injective on
+        // AttributionRule::ALL, so the realizable-images iterator
+        // produces every AttributionRule exactly once.
+        use std::collections::HashSet;
+        let images: HashSet<crate::AttributionRule> =
+            realizable_images::<AttributionCoordinates>().collect();
+        let expected: HashSet<crate::AttributionRule> =
+            crate::AttributionRule::ALL.iter().copied().collect();
+        assert_eq!(
+            images, expected,
+            "realizable_images::<AttributionCoordinates>() must equal AttributionRule::ALL as a set",
+        );
     }
 }

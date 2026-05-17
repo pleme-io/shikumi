@@ -688,6 +688,14 @@ impl crate::ProductCube for FormatCoordinates {
     }
 }
 
+impl crate::PartialInverseCube for FormatCoordinates {
+    type Image = Format;
+
+    fn invert(self) -> Option<Format> {
+        self.format_or_none()
+    }
+}
+
 /// Recognized form of a shikumi-built provider's
 /// `figment::Metadata::name`, as parsed by [`Format::parse_metadata_tag`].
 ///
