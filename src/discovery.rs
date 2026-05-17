@@ -614,6 +614,70 @@ impl FormatCoordinates {
             None
         }
     }
+
+    /// Realizability predicate over the 8-cell product cube: returns
+    /// `true` exactly on the 4 cells some recognized [`Format`]
+    /// occupies (the diagonal `format.provenance() == provenance`),
+    /// and `false` on the remaining 4 cells (where the cell's
+    /// provenance disagrees with the format's declared provider class).
+    ///
+    /// Equivalent to `FormatCoordinates::format_or_none(self).is_some()`
+    /// — the closed-enum lift of the partial-inverse-is-Some test on
+    /// this cube. Observers that only need the Boolean membership ("is
+    /// this cell observable from a recognized format?") no longer
+    /// reach for the partial inverse and discard its [`Some`] payload;
+    /// the predicate is one method call regardless of how the format
+    /// space dispatch is currently shaped.
+    ///
+    /// One source of truth for the realizability test on the
+    /// (`format × provenance`) cube. Before this method, every site
+    /// that wanted "is this a recognized cell?" inlined
+    /// `cell.format_or_none().is_some()` (or its negation
+    /// `.is_none()`) at the call site — the realizability /
+    /// recognized-cell partition was reachable only through the
+    /// partial inverse. The named predicate collapses that to a typed
+    /// accessor on the cube, matching the realizability-predicate
+    /// discipline already established by
+    /// [`crate::AttributionCoordinates::is_realizable`] (the
+    /// `axis × layer_kind × confidence` cube),
+    /// [`crate::ErrorLocalizationCoordinates::is_realizable`] (the
+    /// `kind × localization` cube), and
+    /// [`crate::AttributionSourceKindCoordinates::is_realizable`] (the
+    /// `figment_source_kind × layer_kind` cube). With this lift the
+    /// substrate exposes a uniform `is_realizable()` predicate on all
+    /// four product cubes of the typescape primitive set — the four-
+    /// cube symmetry is now closed under one Boolean interface.
+    ///
+    /// Operational use: an attestation manifest, structured-log
+    /// replay, or cross-process diagnostic that observes the
+    /// (format, provenance) coordinates recovers the realizability
+    /// classification — "is this cell a valid observation of a
+    /// recognized [`Format`], or a cross-axis consistency violation
+    /// no recognized format occupies" — by one method call instead of
+    /// re-deriving the dispatch from the partial inverse inline.
+    /// Future variants land coherently: a new [`Format`] landing in a
+    /// previously unrecognized cell extends the realizable image,
+    /// forces an arm in [`Format::provenance`] (compile-time), and
+    /// forces an extension of the realizable-image expectation in
+    /// `format_coordinates_is_realizable_image_equals_format_image`
+    /// (test-time) — all three stay in lockstep.
+    ///
+    /// Peer to [`crate::AttributionCoordinates::is_realizable`]: same
+    /// `Copy`-by-value receiver, same Boolean shape, same membership-
+    /// over-the-recognized-image semantics. Both cubes have injective
+    /// forward maps on the recognized half, so realizability on each
+    /// is exactly the partial inverse's [`Some`] domain and the
+    /// implementation delegates accordingly; the other two sibling
+    /// cubes ([`crate::ErrorLocalizationCoordinates`],
+    /// [`crate::AttributionSourceKindCoordinates`]) use direct
+    /// pattern matches because their forward maps are non-injective
+    /// or partial. The same membership-over-the-recognized-image
+    /// contract holds across all four cubes regardless of the
+    /// underlying mechanism.
+    #[must_use]
+    pub fn is_realizable(self) -> bool {
+        self.format_or_none().is_some()
+    }
 }
 
 /// Recognized form of a shikumi-built provider's
@@ -3208,5 +3272,122 @@ mod tests {
         // cells.
         let set: HashSet<FormatCoordinates> = FormatCoordinates::ALL.iter().copied().collect();
         assert_eq!(set.len(), FormatCoordinates::ALL.len());
+    }
+
+    // ---- FormatCoordinates::is_realizable ----
+
+    #[test]
+    fn format_coordinates_is_realizable_agrees_with_format_or_none_some() {
+        // Pins the realizability invariant pointwise on every cell of
+        // the cube:
+        //   is_realizable iff FormatCoordinates::format_or_none is Some.
+        // The two definitions agree on all 8 cells.
+        for cell in FormatCoordinates::ALL.iter().copied() {
+            let expected = cell.format_or_none().is_some();
+            assert_eq!(
+                cell.is_realizable(),
+                expected,
+                "cell {cell:?}: is_realizable must equal format_or_none().is_some()",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_realizable_partitions_into_4_realizable_and_4_unrealizable() {
+        // Pins the 4 + 4 cardinality split:
+        // - 4 realizable cells, one per recognized Format
+        //   (Yaml, Toml, Lisp, Nix), each paired with its declared
+        //   provenance via Format::provenance.
+        // - 4 unrealizable cells covering every (format, provenance)
+        //   combination where provenance disagrees with the format's
+        //   declared provider class.
+        // A future Format landing or a future FormatProvenance variant
+        // moves both counts in lockstep through this assertion.
+        let realizable = FormatCoordinates::ALL
+            .iter()
+            .filter(|c| c.is_realizable())
+            .count();
+        let unrealizable = FormatCoordinates::ALL
+            .iter()
+            .filter(|c| !c.is_realizable())
+            .count();
+        assert_eq!(
+            realizable,
+            Format::ALL.len(),
+            "realizable cells must equal Format::ALL cardinality",
+        );
+        assert_eq!(
+            unrealizable,
+            FormatCoordinates::ALL.len() - Format::ALL.len(),
+            "unrealizable cells must equal cube cardinality minus format cardinality",
+        );
+        assert_eq!(
+            realizable + unrealizable,
+            FormatCoordinates::ALL.len(),
+            "realizable + unrealizable must cover ALL exactly once",
+        );
+        // Pin the concrete current values too — the partition is 4 + 4
+        // today; future format additions or provenance additions move
+        // both counts in lockstep.
+        assert_eq!(realizable, 4);
+        assert_eq!(unrealizable, 4);
+    }
+
+    #[test]
+    fn format_coordinates_is_realizable_image_equals_format_image() {
+        // The realizable half of ALL is the exact image of
+        // Format::format_coordinates over the format space. Pins which
+        // specific cells (not just how many) are observable from a
+        // recognized Format — a tighter contract than the cardinality
+        // split. Future formats land coherently: a new format extends
+        // the image and forces an expansion of the realizable subset
+        // in lockstep.
+        use std::collections::HashSet;
+        let observed: HashSet<FormatCoordinates> = Format::ALL
+            .iter()
+            .copied()
+            .map(Format::format_coordinates)
+            .collect();
+        let realizable: HashSet<FormatCoordinates> = FormatCoordinates::ALL
+            .iter()
+            .copied()
+            .filter(|c| c.is_realizable())
+            .collect();
+        assert_eq!(
+            observed, realizable,
+            "observed image over Format::ALL must equal the realizable cells",
+        );
+    }
+
+    #[test]
+    fn format_format_coordinates_always_lies_on_realizable_cell() {
+        // Forward-total / image-realizable contract: every cell
+        // produced by Format::format_coordinates must satisfy
+        // is_realizable. The forward map never escapes into the
+        // unrealizable half of the cube, no matter which format is
+        // queried.
+        for format in Format::ALL.iter().copied() {
+            assert!(
+                format.format_coordinates().is_realizable(),
+                "format {format:?}: format_coordinates() must produce a realizable cell",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_unrealizable_cells_have_no_inverse() {
+        // Symmetric of the forward-total contract: every unrealizable
+        // cell has no inverse format. Closes the partial-inverse /
+        // Boolean-predicate equivalence in the unrealizable direction:
+        // `!c.is_realizable() iff c.format_or_none().is_none()`.
+        // Pointwise verification across the 8-cell cube.
+        for cell in FormatCoordinates::ALL.iter().copied() {
+            if !cell.is_realizable() {
+                assert!(
+                    cell.format_or_none().is_none(),
+                    "unrealizable cell {cell:?}: format_or_none must be None",
+                );
+            }
+        }
     }
 }

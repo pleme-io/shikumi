@@ -981,10 +981,12 @@ impl AttributionCoordinates {
     /// [`ErrorLocalizationCoordinates::is_realizable`] (the
     /// kind × localization cube) and
     /// [`AttributionSourceKindCoordinates::is_realizable`] (the
-    /// figment-source-kind × layer-kind cube). The substrate now
-    /// exposes a uniform `is_realizable()` predicate on three of its
-    /// four product cubes; the fourth ([`crate::FormatCoordinates`])
-    /// is the natural follow-up.
+    /// figment-source-kind × layer-kind cube). With the
+    /// [`crate::FormatCoordinates::is_realizable`] lift on the fourth
+    /// (format × provenance) cube, the substrate now exposes a
+    /// uniform `is_realizable()` predicate on all four product cubes
+    /// of the typescape primitive set — the four-cube symmetry is
+    /// closed under one Boolean interface.
     ///
     /// Operational use: an attestation manifest, structured-log
     /// replay, or cross-process diagnostic that observes the
