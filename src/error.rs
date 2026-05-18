@@ -1520,6 +1520,10 @@ impl crate::PartialInverseCube for AttributionCoordinates {
     fn invert(self) -> Option<AttributionRule> {
         AttributionRule::from_coordinates(self)
     }
+
+    fn forward(image: AttributionRule) -> Self {
+        image.coordinates()
+    }
 }
 
 impl crate::ClosedAxis for ErrorLocalizationCoordinates {

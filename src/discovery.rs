@@ -704,6 +704,10 @@ impl crate::PartialInverseCube for FormatCoordinates {
     fn invert(self) -> Option<Format> {
         self.format_or_none()
     }
+
+    fn forward(image: Format) -> Self {
+        image.format_coordinates()
+    }
 }
 
 /// Recognized form of a shikumi-built provider's

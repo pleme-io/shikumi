@@ -254,37 +254,54 @@ pub fn unrealizable_count<C: ProductCube>() -> usize {
 /// subset).
 ///
 /// The trait binds [`Self::Image`] to the recognized-image type
-/// (`Copy + Eq + Hash + 'static + Debug` matching the typescape-axis
-/// primitives) so generic helpers ([`realizable_images`]) can iterate
-/// the image without naming the concrete cube type. The required
-/// invariant — pinned by the test
-/// [`tests::partial_inverse_some_iff_is_realizable`] across all
-/// implementors — is
-/// `cell.invert().is_some() == ProductCube::is_realizable(cell)`,
-/// closing the structural agreement between the partial-inverse-
-/// `Some` domain and the realizability predicate that today's two
-/// implementors satisfy by hand-discipline.
+/// — itself a [`ClosedAxis`] on the typescape primitive set
+/// (`Format` for [`crate::FormatCoordinates`], `AttributionRule` for
+/// [`crate::AttributionCoordinates`]) — so generic helpers
+/// ([`realizable_images`], [`forward_iter`]) can iterate the image
+/// without naming the concrete cube type, and generic bijection tests
+/// reach `Self::Image::ALL` through the [`ClosedAxis`] discipline the
+/// image type already satisfies. `Debug` is added so generic
+/// invariant helpers can `assert_eq!` against image values without
+/// per-implementor harness boilerplate.
+///
+/// Two structural invariants — pinned by trait-uniform tests reaching
+/// every implementor pointwise:
+///
+/// 1. **`invert`-realizability agreement** —
+///    `cell.invert().is_some() == ProductCube::is_realizable(cell)`,
+///    pinned by [`tests::partial_inverse_some_iff_is_realizable`].
+/// 2. **`forward`-`invert` bijection on the recognized half** —
+///    `Self::forward(image).invert() == Some(image)` for every
+///    `image: Self::Image`, and dually
+///    `forward(invert(cell).unwrap()) == cell` for every realizable
+///    cell; pinned by the round-trip helpers in the test module.
+///    Equivalently, the forward image of `Self::Image::ALL` under
+///    [`Self::forward`] equals `realizable_iter::<Self>()` as a set,
+///    pinned by
+///    [`tests::forward_image_of_image_all_equals_realizable_iter`].
 ///
 /// A third (or fourth) implementor landing — a future
 /// `(figment_source_kind × axis × confidence)` refinement cube with a
 /// bijection to a source-axis rule subset, or a `(format ×
 /// name_style)` discovery refinement cube with a bijection to a typed
-/// discovery-key envelope — picks up the discipline and the generic
-/// helpers at the `impl PartialInverseCube` declaration, with the
-/// invariant enforced by the same trait-uniform test reaching every
-/// implementor pointwise.
+/// discovery-key envelope — picks up both invariants and the generic
+/// helpers ([`realizable_images`], [`forward_iter`]) at the
+/// `impl PartialInverseCube` declaration, with the invariants enforced
+/// by the same trait-uniform tests reaching every implementor pointwise.
 pub trait PartialInverseCube: ProductCube {
     /// The recognized-image type — the typescape value the partial
     /// inverse re-hydrates on realizable cells (`Format` for
     /// [`crate::FormatCoordinates`], `AttributionRule` for
     /// [`crate::AttributionCoordinates`]).
     ///
-    /// `Copy + Eq + Hash + 'static`: matches the typescape-axis
-    /// primitive discipline so generic image consumers route by value
-    /// without lifetime gymnastics. `Debug` is included so generic
-    /// invariant tests can `assert_eq!` against image values without
-    /// per-implementor harness boilerplate.
-    type Image: Copy + Eq + std::fmt::Debug + 'static;
+    /// Bound to [`ClosedAxis`] so the image is itself a typescape
+    /// primitive — generic helpers reach `Self::Image::ALL` through
+    /// the same trait discipline the cube does, and the bijection
+    /// invariant (forward image of `Image::ALL` equals realizable
+    /// cells) is stated in trait-uniform language. `Debug` is added so
+    /// generic invariant tests can `assert_eq!` against image values
+    /// without per-implementor harness boilerplate.
+    type Image: ClosedAxis + std::fmt::Debug;
 
     /// Partial inverse: `Some(image)` for realizable cells, `None`
     /// for the cross-axis consistency-violation complement.
@@ -296,6 +313,31 @@ pub trait PartialInverseCube: ProductCube {
     /// re-export lets generic helpers ([`realizable_images`]) reach
     /// the inverse without naming the concrete cube or image type.
     fn invert(self) -> Option<Self::Image>;
+
+    /// Forward (total) map from [`Self::Image`] into the cube — the
+    /// dual of [`Self::invert`] on the recognized half. Mirror of the
+    /// inherent image→cube method every implementor already exposes
+    /// ([`crate::Format::format_coordinates`],
+    /// [`crate::AttributionRule::coordinates`]).
+    ///
+    /// Total over `Self::Image`: every image lands on a realizable
+    /// cell of the cube (pinned by the per-implementor
+    /// `*_forward_always_lands_on_realizable_cell` tests). The pair
+    /// (`forward`, `invert`) closes the bijection discipline on the
+    /// recognized half of the cube — `invert(forward(image)) ==
+    /// Some(image)` for every image, and dually
+    /// `forward(invert(cell).unwrap()) == cell` for every realizable
+    /// cell; both round-trip laws are pinned by trait-uniform tests
+    /// reaching each implementor pointwise.
+    ///
+    /// One named entry point for the image→cube morphism, regardless
+    /// of how the implementor names the inherent method. Before this
+    /// lift, generic code that wanted the forward map had to name the
+    /// concrete inherent method (`Format::format_coordinates`,
+    /// `AttributionRule::coordinates`); the trait re-export lets the
+    /// [`forward_iter`] generic helper and the bijection invariant
+    /// tests dispatch over the cube type parameter alone.
+    fn forward(image: Self::Image) -> Self;
 }
 
 /// Iterate the realized images of a [`PartialInverseCube`] — the
@@ -312,6 +354,32 @@ pub fn realizable_images<C: PartialInverseCube>() -> impl Iterator<Item = C::Ima
         .iter()
         .copied()
         .filter_map(PartialInverseCube::invert)
+}
+
+/// Iterate the forward image of every image under
+/// [`PartialInverseCube::forward`] — `C::Image::ALL.iter().copied()
+/// .map(C::forward)` collapsed to one named helper.
+///
+/// The output is a length-`Image::ALL.len()` sequence of realizable
+/// cells (the forward map is total over the image space and lands on
+/// realizable cells, pinned per implementor by
+/// `*_forward_always_lands_on_realizable_cell`). As a set the output
+/// equals `realizable_iter::<C>()`, pinned generically by
+/// [`tests::forward_image_of_image_all_equals_realizable_iter`].
+///
+/// Generic in the cube type so a future [`PartialInverseCube`]
+/// implementor inherits the helper at its `impl PartialInverseCube`
+/// declaration. Consolidates the inline
+/// `Image::ALL.iter().copied().map(Image::<inherent_forward>)`
+/// pattern that appeared at the `*_realizable_image_equals_*_image`
+/// test site on each cube (two such inline `.map` sites today; future
+/// cubes pick up the helper at the trait impl rather than re-deriving
+/// the map inline).
+pub fn forward_iter<C: PartialInverseCube>() -> impl Iterator<Item = C> {
+    <C::Image as ClosedAxis>::ALL
+        .iter()
+        .copied()
+        .map(C::forward)
 }
 
 #[cfg(test)]
@@ -598,36 +666,34 @@ mod tests {
         );
     }
 
-    #[test]
-    fn format_coordinates_realizable_images_equals_format_all() {
-        // For an injective forward map (Format::format_coordinates is
-        // injective on Format::ALL), the realizable-images iterator
-        // produces every Format exactly once. Pins that the partial
-        // inverse covers Format::ALL pointwise.
+    fn assert_realizable_images_equals_image_all<C>()
+    where
+        C: PartialInverseCube + std::fmt::Debug,
+    {
+        // For an injective forward map (each implementor's inherent
+        // `Image::<forward>` is injective on `Image::ALL`), the
+        // realizable-images iterator produces every image exactly
+        // once. Pins that the partial inverse covers Image::ALL
+        // pointwise — generic over the cube type so today's two
+        // PartialInverseCube implementors and any future implementor
+        // share one helper instead of duplicating the body per cube.
         use std::collections::HashSet;
-        let images: HashSet<crate::Format> = realizable_images::<FormatCoordinates>().collect();
-        let expected: HashSet<crate::Format> = crate::Format::ALL.iter().copied().collect();
+        let images: HashSet<C::Image> = realizable_images::<C>().collect();
+        let expected: HashSet<C::Image> = <C::Image as ClosedAxis>::ALL.iter().copied().collect();
         assert_eq!(
             images, expected,
-            "realizable_images::<FormatCoordinates>() must equal Format::ALL as a set",
+            "realizable_images must equal Image::ALL as a set",
         );
     }
 
     #[test]
+    fn format_coordinates_realizable_images_equals_format_all() {
+        assert_realizable_images_equals_image_all::<FormatCoordinates>();
+    }
+
+    #[test]
     fn attribution_coordinates_realizable_images_equals_rule_all() {
-        // Same discipline for the AttributionCoordinates cube:
-        // AttributionRule::coordinates is injective on
-        // AttributionRule::ALL, so the realizable-images iterator
-        // produces every AttributionRule exactly once.
-        use std::collections::HashSet;
-        let images: HashSet<crate::AttributionRule> =
-            realizable_images::<AttributionCoordinates>().collect();
-        let expected: HashSet<crate::AttributionRule> =
-            crate::AttributionRule::ALL.iter().copied().collect();
-        assert_eq!(
-            images, expected,
-            "realizable_images::<AttributionCoordinates>() must equal AttributionRule::ALL as a set",
-        );
+        assert_realizable_images_equals_image_all::<AttributionCoordinates>();
     }
 
     // ---- ClosedAxis invariants reach all thirteen implementors ----
@@ -813,5 +879,146 @@ mod tests {
         assert_axis_iter_recovers_partition::<AttributionCoordinates>();
         assert_axis_iter_recovers_partition::<ErrorLocalizationCoordinates>();
         assert_axis_iter_recovers_partition::<AttributionSourceKindCoordinates>();
+    }
+
+    // ---- PartialInverseCube forward/invert bijection invariants ----
+    //
+    // The (forward, invert) pair closes a bijection on the recognized
+    // half of the cube. Three trait-uniform invariants reach every
+    // implementor pointwise:
+    //
+    //   (a) forward always lands on a realizable cell;
+    //   (b) invert(forward(image)) == Some(image) for every image
+    //       (round-trip from the image side);
+    //   (c) forward(invert(cell).unwrap()) == cell for every realizable
+    //       cell (round-trip from the cube side).
+    //
+    // Equivalently, the forward image of `Image::ALL` under `forward`
+    // equals `realizable_iter::<Self>()` as a set — pinned by
+    // `forward_image_of_image_all_equals_realizable_iter`. A third
+    // PartialInverseCube implementor picks up all three invariants by
+    // adding one call to each helper at the trait-uniform site.
+
+    fn assert_forward_always_lands_on_realizable<C>()
+    where
+        C: PartialInverseCube + std::fmt::Debug,
+    {
+        for image in <C::Image as ClosedAxis>::ALL.iter().copied() {
+            let cell = C::forward(image);
+            assert!(
+                ProductCube::is_realizable(cell),
+                "image {image:?}: forward must land on a realizable cell of the cube",
+            );
+        }
+    }
+
+    fn assert_round_trip_invert_after_forward<C>()
+    where
+        C: PartialInverseCube + std::fmt::Debug,
+    {
+        for image in <C::Image as ClosedAxis>::ALL.iter().copied() {
+            let recovered = C::forward(image).invert();
+            assert_eq!(
+                recovered,
+                Some(image),
+                "image {image:?}: invert(forward(image)) must equal Some(image)",
+            );
+        }
+    }
+
+    fn assert_round_trip_forward_after_invert<C>()
+    where
+        C: PartialInverseCube + std::fmt::Debug,
+    {
+        for cell in realizable_iter::<C>() {
+            let image = cell
+                .invert()
+                .expect("realizable_iter must yield only invert-Some cells");
+            let recovered = C::forward(image);
+            assert_eq!(
+                recovered, cell,
+                "cell {cell:?}: forward(invert(cell).unwrap()) must equal cell",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_forward_always_lands_on_realizable_cell() {
+        assert_forward_always_lands_on_realizable::<FormatCoordinates>();
+    }
+
+    #[test]
+    fn attribution_coordinates_forward_always_lands_on_realizable_cell() {
+        assert_forward_always_lands_on_realizable::<AttributionCoordinates>();
+    }
+
+    #[test]
+    fn format_coordinates_round_trip_invert_after_forward() {
+        assert_round_trip_invert_after_forward::<FormatCoordinates>();
+    }
+
+    #[test]
+    fn attribution_coordinates_round_trip_invert_after_forward() {
+        assert_round_trip_invert_after_forward::<AttributionCoordinates>();
+    }
+
+    #[test]
+    fn format_coordinates_round_trip_forward_after_invert() {
+        assert_round_trip_forward_after_invert::<FormatCoordinates>();
+    }
+
+    #[test]
+    fn attribution_coordinates_round_trip_forward_after_invert() {
+        assert_round_trip_forward_after_invert::<AttributionCoordinates>();
+    }
+
+    #[test]
+    fn forward_image_of_image_all_equals_realizable_iter() {
+        // Pin that for any PartialInverseCube implementor, the forward
+        // image of Image::ALL under `forward` equals `realizable_iter`
+        // as a set. This is the trait-uniform statement of the
+        // bijection on the recognized half: forward is total onto the
+        // realizable cells, and invert is total onto the image. The
+        // helper reaches both today's implementors at once; a third
+        // implementor picks it up with one new call.
+        fn assert_forward_image_equals_realizable<C>()
+        where
+            C: PartialInverseCube + std::fmt::Debug,
+        {
+            use std::collections::HashSet;
+            let from_forward: HashSet<C> = forward_iter::<C>().collect();
+            let from_realizable: HashSet<C> = realizable_iter::<C>().collect();
+            assert_eq!(
+                from_forward, from_realizable,
+                "forward_iter must equal realizable_iter as a set",
+            );
+        }
+        assert_forward_image_equals_realizable::<FormatCoordinates>();
+        assert_forward_image_equals_realizable::<AttributionCoordinates>();
+    }
+
+    #[test]
+    fn forward_iter_cardinality_equals_image_all_cardinality() {
+        // forward_iter::<C>() iterates Image::ALL once with no filter,
+        // so its length equals the image axis cardinality. By the
+        // bijection invariant, that also equals realizable_count::<C>().
+        // Two readings of the same number pinned in lockstep across
+        // every implementor.
+        assert_eq!(
+            forward_iter::<FormatCoordinates>().count(),
+            axis_cardinality::<<FormatCoordinates as PartialInverseCube>::Image>(),
+        );
+        assert_eq!(
+            forward_iter::<FormatCoordinates>().count(),
+            realizable_count::<FormatCoordinates>(),
+        );
+        assert_eq!(
+            forward_iter::<AttributionCoordinates>().count(),
+            axis_cardinality::<<AttributionCoordinates as PartialInverseCube>::Image>(),
+        );
+        assert_eq!(
+            forward_iter::<AttributionCoordinates>().count(),
+            realizable_count::<AttributionCoordinates>(),
+        );
     }
 }
