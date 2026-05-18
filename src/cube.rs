@@ -129,6 +129,69 @@ pub fn axis_cardinality<A: ClosedAxis>() -> usize {
     A::ALL.len()
 }
 
+/// Structural ordinal of a [`ClosedAxis`] value — the position of
+/// `value` in `A::ALL`, in declaration order.
+///
+/// Dual of [`axis_iter`]: where [`axis_iter`] is the forward map
+/// `ordinal → value` (`A::ALL[i] = value`), [`axis_ordinal`] is the
+/// inverse `value → ordinal` (`A::ALL.iter().position(value)`). The two
+/// directions close a structural bijection between every
+/// [`ClosedAxis`] implementor and the prefix `0..axis_cardinality::<A>()`
+/// of the natural numbers — a stable, deterministic embedding of every
+/// typescape primitive into a dense integer range.
+///
+/// **Totality** — the [`ClosedAxis`] discipline pins that `A::ALL`
+/// enumerates every value of the axis in declaration order, so every
+/// `value: A` has a unique position in the slice. The helper returns
+/// `usize` (not `Option<usize>`) because the discipline guarantees
+/// totality; a `None` return would witness a discipline violation
+/// (`A::ALL` missing a value the type system says exists). The
+/// fallback `unreachable!` exists only to satisfy the compiler — it
+/// would fire if a future `impl ClosedAxis` lied about `ALL`, in
+/// which case the per-axis `axis_ordinal_round_trips_*` invariant
+/// would also fail at the trait-uniform test site.
+///
+/// **Injectivity** — `A::ALL` carries no duplicates (every existing
+/// implementor's per-axis `*_all_has_no_duplicates` test pins this
+/// pointwise, and the trait-uniform
+/// [`tests::axis_ordinal_injective_for_every_closed_axis_implementor`]
+/// re-states it once across all 13 implementors), so distinct values
+/// land at distinct positions. The ordinal is a structural injection
+/// `A → ℕ` whose image equals `0..axis_cardinality::<A>()` as a set —
+/// the canonical dense embedding of the axis.
+///
+/// **Round-trip law** — `A::ALL[axis_ordinal(v)] == v` for every
+/// `v: A`, and dually `axis_ordinal(A::ALL[i]) == i` for every
+/// `i < axis_cardinality::<A>()`. Both directions pinned by the
+/// trait-uniform tests reaching every implementor.
+///
+/// **Consumers** — dense bitsets / arrays sized by
+/// [`axis_cardinality::<A>()`][axis_cardinality] index through the
+/// ordinal without a `HashMap<A, usize>` per call site; canonical
+/// attestation manifests (THEORY.md §III.1.8 module manifests, §V.3
+/// three-pillar attestation) hash typescape cells in stable
+/// declaration order pinned by the ordinal; future cube-cover
+/// dashboards order rows by the ordinal of each axis cell instead of
+/// re-deriving the position lookup inline.
+///
+/// # Panics
+///
+/// Panics — via `unreachable!` — only if a `ClosedAxis` implementor
+/// violates the discipline by omitting a reachable value from
+/// `Self::ALL`. The trait-uniform `axis_ordinal_round_trips_*` tests
+/// would fail at the same site; in practice this branch is unreachable
+/// for any well-formed implementor.
+#[must_use]
+pub fn axis_ordinal<A: ClosedAxis>(value: A) -> usize {
+    match A::ALL.iter().position(|&v| v == value) {
+        Some(i) => i,
+        None => unreachable!(
+            "ClosedAxis::ALL must contain every value of the axis (discipline violation: \
+             `Self::ALL` omitted a reachable value)",
+        ),
+    }
+}
+
 /// Closed discipline trait every typescape product cube satisfies — a
 /// refinement of [`ClosedAxis`] that additionally pins the
 /// realizability predicate over the recognized-image cells.
@@ -848,6 +911,132 @@ mod tests {
         assert_axis_cardinality_matches_trait_all::<AttributionCoordinates>(12);
         assert_axis_cardinality_matches_trait_all::<ErrorLocalizationCoordinates>(18);
         assert_axis_cardinality_matches_trait_all::<AttributionSourceKindCoordinates>(9);
+    }
+
+    // ---- axis_ordinal closes the dense-embedding round-trip ----
+    //
+    // `axis_ordinal::<A>(v)` is the dual of `axis_iter::<A>()`:
+    // iteration yields `A::ALL[i]`; ordinal recovers `i` from the value.
+    // Two trait-uniform invariants reach every implementor pointwise:
+    //
+    //   (a) round-trip — `A::ALL[axis_ordinal(v)] == v` for every
+    //       `v: A`, and dually `axis_ordinal(A::ALL[i]) == i` for every
+    //       `i < axis_cardinality::<A>()`;
+    //   (b) injectivity — distinct values land at distinct ordinals,
+    //       equivalently the ordinal image equals
+    //       `0..axis_cardinality::<A>()` as a set (no duplicates in
+    //       `A::ALL`).
+    //
+    // A tenth axis primitive or fifth product cube landing picks up
+    // both invariants by adding one line to each helper-bundle test.
+
+    fn assert_axis_ordinal_round_trips<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Forward law: `A::ALL[axis_ordinal(v)] == v` for every
+        // `v: A`. Iterates A::ALL once, recomputes the ordinal of
+        // each value, and re-indexes A::ALL with it.
+        for (i, value) in A::ALL.iter().copied().enumerate() {
+            let ordinal = axis_ordinal::<A>(value);
+            assert_eq!(
+                ordinal, i,
+                "axis_ordinal(A::ALL[{i}]) must equal {i}; got {ordinal}",
+            );
+            assert_eq!(
+                A::ALL[ordinal],
+                value,
+                "A::ALL[axis_ordinal(v)] must equal v for v = A::ALL[{i}]",
+            );
+        }
+    }
+
+    fn assert_axis_ordinal_injective<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Injectivity: distinct values land at distinct ordinals.
+        // Equivalently, the ordinal image over A::ALL equals
+        // `0..axis_cardinality::<A>()` as a set — the canonical dense
+        // embedding of the axis into the natural-number prefix. Pins
+        // the no-duplicates discipline on A::ALL uniformly across all
+        // implementors at one site (replaces the per-axis
+        // `*_all_has_no_duplicates` invariant at the trait level
+        // without removing the per-axis tests).
+        use std::collections::HashSet;
+        let ordinals: HashSet<usize> = axis_iter::<A>().map(axis_ordinal::<A>).collect();
+        let expected: HashSet<usize> = (0..axis_cardinality::<A>()).collect();
+        assert_eq!(
+            ordinals, expected,
+            "axis_ordinal image over A::ALL must equal 0..axis_cardinality::<A>() as a set",
+        );
+    }
+
+    #[test]
+    fn axis_ordinal_round_trips_for_every_closed_axis_implementor() {
+        // Nine closed-enum axis primitives.
+        assert_axis_ordinal_round_trips::<Format>();
+        assert_axis_ordinal_round_trips::<FormatProvenance>();
+        assert_axis_ordinal_round_trips::<ConfigSourceKind>();
+        assert_axis_ordinal_round_trips::<FigmentSourceKind>();
+        assert_axis_ordinal_round_trips::<ShikumiErrorKind>();
+        assert_axis_ordinal_round_trips::<FieldPathLocalization>();
+        assert_axis_ordinal_round_trips::<AttributionRule>();
+        assert_axis_ordinal_round_trips::<AttributionConfidence>();
+        assert_axis_ordinal_round_trips::<AttributionAxis>();
+        // Four product cubes.
+        assert_axis_ordinal_round_trips::<FormatCoordinates>();
+        assert_axis_ordinal_round_trips::<AttributionCoordinates>();
+        assert_axis_ordinal_round_trips::<ErrorLocalizationCoordinates>();
+        assert_axis_ordinal_round_trips::<AttributionSourceKindCoordinates>();
+    }
+
+    #[test]
+    fn axis_ordinal_injective_for_every_closed_axis_implementor() {
+        // Nine closed-enum axis primitives.
+        assert_axis_ordinal_injective::<Format>();
+        assert_axis_ordinal_injective::<FormatProvenance>();
+        assert_axis_ordinal_injective::<ConfigSourceKind>();
+        assert_axis_ordinal_injective::<FigmentSourceKind>();
+        assert_axis_ordinal_injective::<ShikumiErrorKind>();
+        assert_axis_ordinal_injective::<FieldPathLocalization>();
+        assert_axis_ordinal_injective::<AttributionRule>();
+        assert_axis_ordinal_injective::<AttributionConfidence>();
+        assert_axis_ordinal_injective::<AttributionAxis>();
+        // Four product cubes.
+        assert_axis_ordinal_injective::<FormatCoordinates>();
+        assert_axis_ordinal_injective::<AttributionCoordinates>();
+        assert_axis_ordinal_injective::<ErrorLocalizationCoordinates>();
+        assert_axis_ordinal_injective::<AttributionSourceKindCoordinates>();
+    }
+
+    #[test]
+    fn axis_ordinal_pins_first_and_last_positions_for_every_implementor() {
+        // For every ClosedAxis implementor, the first value of
+        // `A::ALL` lands at ordinal 0 and the last lands at
+        // `axis_cardinality::<A>() - 1`. Pins the endpoints of the
+        // dense embedding so a future re-ordering of `::ALL` (the
+        // declaration-order discipline) is caught at the
+        // first/last call site, not only by the round-trip law.
+        fn assert_endpoints<A: ClosedAxis>() {
+            let n = axis_cardinality::<A>();
+            assert!(n > 0, "ClosedAxis::ALL must be non-empty");
+            assert_eq!(axis_ordinal::<A>(A::ALL[0]), 0);
+            assert_eq!(axis_ordinal::<A>(A::ALL[n - 1]), n - 1);
+        }
+        assert_endpoints::<Format>();
+        assert_endpoints::<FormatProvenance>();
+        assert_endpoints::<ConfigSourceKind>();
+        assert_endpoints::<FigmentSourceKind>();
+        assert_endpoints::<ShikumiErrorKind>();
+        assert_endpoints::<FieldPathLocalization>();
+        assert_endpoints::<AttributionRule>();
+        assert_endpoints::<AttributionConfidence>();
+        assert_endpoints::<AttributionAxis>();
+        assert_endpoints::<FormatCoordinates>();
+        assert_endpoints::<AttributionCoordinates>();
+        assert_endpoints::<ErrorLocalizationCoordinates>();
+        assert_endpoints::<AttributionSourceKindCoordinates>();
     }
 
     #[test]
