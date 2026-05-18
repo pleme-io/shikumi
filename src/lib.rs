@@ -49,8 +49,8 @@ mod store;
 mod watcher;
 
 pub use cube::{
-    PartialInverseCube, ProductCube, realizable_count, realizable_images, realizable_iter,
-    unrealizable_count, unrealizable_iter,
+    ClosedAxis, PartialInverseCube, ProductCube, axis_cardinality, axis_iter, realizable_count,
+    realizable_images, realizable_iter, unrealizable_count, unrealizable_iter,
 };
 pub use discovery::{
     ConfigDiscovery, Format, FormatCoordinates, FormatMetadataTag, FormatProvenance,

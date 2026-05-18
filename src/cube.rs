@@ -1,31 +1,44 @@
-//! Product-cube discipline trait — closes the realizability surface
-//! across the four typescape product cubes
-//! ([`crate::FormatCoordinates`], [`crate::AttributionCoordinates`],
+//! Closed-axis and product-cube discipline traits — close the
+//! `const ALL: &'static [Self]` enumeration discipline (axis-level) and
+//! the realizability surface (cube-level) across the typescape
+//! primitive set under two trait interfaces.
+//!
+//! Every closed-axis primitive on the typescape primitive set — the
+//! nine `#[non_exhaustive]` enums [`crate::Format`],
+//! [`crate::FormatProvenance`], [`crate::ConfigSourceKind`],
+//! [`crate::FigmentSourceKind`], [`crate::ShikumiErrorKind`],
+//! [`crate::FieldPathLocalization`], [`crate::AttributionRule`],
+//! [`crate::AttributionConfidence`], [`crate::AttributionAxis`] — and
+//! the four product-cube structs [`crate::FormatCoordinates`],
+//! [`crate::AttributionCoordinates`],
 //! [`crate::ErrorLocalizationCoordinates`],
-//! [`crate::AttributionSourceKindCoordinates`]) under one trait
-//! interface.
+//! [`crate::AttributionSourceKindCoordinates`] expose a closed
+//! `Self::ALL: &'static [Self]` slice enumerating every value, in
+//! declaration order, with cardinality pinned at the type level. The
+//! [`ClosedAxis`] trait closes that discipline structurally: a tenth
+//! axis primitive landing on the typescape primitive set is required by
+//! the compiler to provide `const ALL` once it
+//! `impl ClosedAxis for NewAxis { … }`, and the generic helpers
+//! [`axis_iter`] / [`axis_cardinality`] are inherited at the impl
+//! declaration without re-writing the per-axis
+//! `<Axis>::ALL.iter().copied()` / `<Axis>::ALL.len()` pattern at every
+//! consumer (98+ inlined `::ALL.iter().copied()` sites and 378+ inlined
+//! `<Axis>::ALL` references across the crate today).
 //!
-//! Every product cube on the typescape primitive set shares two
-//! structural invariants by hand-discipline:
-//!
-//! 1. A closed `Self::ALL: &'static [Self]` slice enumerating every
-//!    cell of the product space, in declaration order, with cardinality
-//!    pinned as the product of the constituent axis cardinalities.
-//! 2. A `fn is_realizable(self) -> bool` membership predicate over the
-//!    subset of cells some recognized typescape value occupies, with
-//!    the realizable cells partitioning `ALL` into the recognized image
-//!    and the cross-axis consistency-violation complement.
-//!
-//! Both invariants are unified here as one [`ProductCube`] trait. Each
-//! cube implements the trait by re-exporting its inherent `ALL`
-//! constant and its inherent `is_realizable` method through the trait
-//! interface. A fifth product cube landing on the typescape primitive
-//! set (e.g. a future `(figment_source_kind × axis × confidence)` cube
-//! refining the source-axis attribution rule space, or a
-//! `(format × name_style)` cube refining the discovery axis) is
-//! required by the compiler to provide both invariants once it
-//! `impl ProductCube for NewCube { … }` — the discipline becomes
-//! structural rather than convention-by-naming.
+//! Every product cube additionally exposes a
+//! `fn is_realizable(self) -> bool` membership predicate over the subset
+//! of cells some recognized typescape value occupies, with the
+//! realizable cells partitioning `ALL` into the recognized image and
+//! the cross-axis consistency-violation complement. The
+//! [`ProductCube`]: [`ClosedAxis`] sub-trait closes that discipline
+//! structurally on top of the axis-level discipline: a fifth product
+//! cube landing on the typescape (e.g. a future
+//! `(figment_source_kind × axis × confidence)` cube refining the
+//! source-axis attribution rule space, or a `(format × name_style)`
+//! cube refining the discovery axis) is required by the compiler to
+//! provide `is_realizable` once it `impl ProductCube for NewCube { … }`
+//! — the discipline becomes structural rather than
+//! convention-by-naming.
 //!
 //! Generic helpers [`realizable_iter`] / [`unrealizable_iter`] /
 //! [`realizable_count`] / [`unrealizable_count`] consolidate the
@@ -38,13 +51,93 @@
 
 use std::hash::Hash;
 
-/// Closed discipline trait every typescape product cube satisfies.
+/// Closed discipline trait every typescape closed-axis primitive and
+/// every typescape product cube satisfies.
+///
+/// A closed axis is any `Copy + Eq + Hash + 'static` type — typically a
+/// `#[non_exhaustive]` enum or a struct over closed-enum fields — that
+/// exposes a closed `Self::ALL: &'static [Self]` slice enumerating
+/// every value, in declaration order. The slice cardinality is pinned
+/// at the type level (the variant count for an enum, the Cartesian
+/// product of the constituent axis cardinalities for a product cube).
+///
+/// Implementors today: the nine closed-enum axis primitives on the
+/// typescape primitive set ([`crate::Format`],
+/// [`crate::FormatProvenance`], [`crate::ConfigSourceKind`],
+/// [`crate::FigmentSourceKind`], [`crate::ShikumiErrorKind`],
+/// [`crate::FieldPathLocalization`], [`crate::AttributionRule`],
+/// [`crate::AttributionConfidence`], [`crate::AttributionAxis`]) plus
+/// the four product cubes ([`crate::FormatCoordinates`],
+/// [`crate::AttributionCoordinates`],
+/// [`crate::ErrorLocalizationCoordinates`],
+/// [`crate::AttributionSourceKindCoordinates`]). All thirteen plug
+/// into [`axis_iter`] / [`axis_cardinality`] uniformly.
+///
+/// The trait bounds (`Copy + Eq + Hash + 'static`) match the hand-
+/// disciplined `derive`-set on every existing implementor
+/// (`Debug, Clone, Copy, PartialEq, Eq, Hash` on each closed enum;
+/// the same set plus `#[non_exhaustive]` on each cube struct), so the
+/// abstraction is zero-overhead: generic helpers re-use the same
+/// `Copy`-by-value receiver pattern as the per-axis inherent methods.
+///
+/// `Sized` is implied by the `'static` bound; the `'static` bound is
+/// required by `const ALL: &'static [Self]`. The trait is intentionally
+/// not object-safe (`const` items) — consumers route generically over
+/// the axis type parameter, not over `dyn ClosedAxis` trait objects.
+pub trait ClosedAxis: Copy + Eq + Hash + 'static {
+    /// Every value of the closed-axis primitive (or every cell of the
+    /// product cube), in declaration order over the inherent
+    /// `Self::ALL` constant.
+    ///
+    /// Mirror of the inherent `Self::ALL` constant every implementor
+    /// already exposes. The trait re-export lets generic helpers
+    /// ([`axis_iter`], [`axis_cardinality`], [`realizable_iter`],
+    /// [`realizable_count`], future cube-cover dashboards) reach the
+    /// constant without naming the concrete axis type — the per-axis
+    /// `*_trait_all_matches_inherent_all` tests pin the two slices to
+    /// the same contents pointwise.
+    const ALL: &'static [Self];
+}
+
+/// Iterate every value of a [`ClosedAxis`] — `A::ALL.iter().copied()`
+/// collapsed to one named helper.
+///
+/// Consolidates the `A::ALL.iter().copied()` pattern that appears at
+/// 98+ sites across the crate (per-axis cover/partition tests,
+/// cube-coverage loops, dashboard initializers, attestation manifest
+/// builders). Generic in the axis type so the helper is inherited
+/// uniformly across the closed-axis discipline.
+pub fn axis_iter<A: ClosedAxis>() -> impl Iterator<Item = A> {
+    A::ALL.iter().copied()
+}
+
+/// Cardinality of a [`ClosedAxis`] — `A::ALL.len()` collapsed to one
+/// named helper.
+///
+/// Today's axis cardinalities — 4 ([`crate::Format`]),
+/// 2 ([`crate::FormatProvenance`]), 3 ([`crate::ConfigSourceKind`]),
+/// 3 ([`crate::FigmentSourceKind`]), 6 ([`crate::ShikumiErrorKind`]),
+/// 3 ([`crate::FieldPathLocalization`]), 5 ([`crate::AttributionRule`]),
+/// 2 ([`crate::AttributionConfidence`]),
+/// 2 ([`crate::AttributionAxis`]) — and today's cube cardinalities — 8
+/// ([`crate::FormatCoordinates`]), 12 ([`crate::AttributionCoordinates`]),
+/// 18 ([`crate::ErrorLocalizationCoordinates`]),
+/// 9 ([`crate::AttributionSourceKindCoordinates`]) — reachable as one
+/// method call across all thirteen implementors uniformly.
+#[must_use]
+pub fn axis_cardinality<A: ClosedAxis>() -> usize {
+    A::ALL.len()
+}
+
+/// Closed discipline trait every typescape product cube satisfies — a
+/// refinement of [`ClosedAxis`] that additionally pins the
+/// realizability predicate over the recognized-image cells.
 ///
 /// A product cube is a `Copy + Eq + Hash + #[non_exhaustive]` struct
 /// whose fields are typescape axis primitives (each itself a closed
-/// `#[non_exhaustive]` enum with its own `::ALL` constant), enumerating
-/// every cell of the structural Cartesian product over the axis
-/// constituent enums.
+/// `#[non_exhaustive]` enum with its own `::ALL` constant via
+/// [`ClosedAxis`]), enumerating every cell of the structural Cartesian
+/// product over the axis constituent enums.
 ///
 /// Implementors:
 ///
@@ -60,28 +153,10 @@ use std::hash::Hash;
 ///   `FigmentSourceKind × ConfigSourceKind` (3 × 3 = 9 cells,
 ///   2 realizable).
 ///
-/// The trait bounds (`Copy + Eq + Hash + 'static`) match the hand-
-/// disciplined `derive`-set on every existing implementor, so the
-/// abstraction is zero-overhead: generic helpers re-use the same
-/// `Copy`-by-value receiver pattern as the per-cube inherent methods.
-///
-/// `Sized` is implied by the `Self`-by-value trait methods; the
-/// `'static` bound is required by `const ALL: &'static [Self]`. The
-/// trait is intentionally not object-safe (`const` items + `Self`-by-
-/// value method) — consumers route generically over the cube type
-/// parameter, not over `dyn ProductCube` trait objects.
-pub trait ProductCube: Copy + Eq + Hash + 'static {
-    /// Every cell of the product cube, in declaration order over the
-    /// constituent axis `::ALL` slices (outermost axis outermost).
-    ///
-    /// Mirror of the inherent `Self::ALL` constant every implementor
-    /// already exposes. The trait re-export lets generic helpers
-    /// (`realizable_iter`, `realizable_count`, future cube-cover
-    /// dashboards) reach the constant without naming the concrete cube
-    /// type — the per-cube `inherent_all_matches_trait_all` tests pin
-    /// the two slices to the same contents pointwise.
-    const ALL: &'static [Self];
-
+/// The trait is intentionally not object-safe (`Self`-by-value method)
+/// — consumers route generically over the cube type parameter, not
+/// over `dyn ProductCube` trait objects.
+pub trait ProductCube: ClosedAxis {
     /// Realizability predicate: `true` exactly on the cells some
     /// recognized typescape value occupies, `false` on the cross-axis
     /// consistency-violation complement.
@@ -224,7 +299,7 @@ pub trait PartialInverseCube: ProductCube {
 }
 
 /// Iterate the realized images of a [`PartialInverseCube`] — the
-/// `Some` outputs of [`PartialInverseCube::invert`] over [`ProductCube::ALL`],
+/// `Some` outputs of [`PartialInverseCube::invert`] over [`ClosedAxis::ALL`],
 /// in cube-declaration order.
 ///
 /// Generic in the cube type so a future
@@ -249,19 +324,21 @@ mod tests {
 
     // ---- Trait re-exports match inherent constants/methods pointwise ----
 
-    fn assert_trait_matches_inherent<C>(inherent_all: &[C])
+    fn assert_trait_matches_inherent<A>(inherent_all: &[A])
     where
-        C: ProductCube + std::fmt::Debug,
+        A: ClosedAxis + std::fmt::Debug,
     {
         // The trait ALL is the same slice (by content, in the same
         // order) as the inherent ALL — pointwise equality across the
-        // whole cube.
+        // whole axis. Reaches every ClosedAxis implementor uniformly:
+        // the nine closed-enum axis primitives and the four product
+        // cubes.
         assert_eq!(
-            <C as ProductCube>::ALL.len(),
+            <A as ClosedAxis>::ALL.len(),
             inherent_all.len(),
             "trait ALL cardinality must equal inherent ALL cardinality",
         );
-        for (i, (trait_cell, inherent_cell)) in <C as ProductCube>::ALL
+        for (i, (trait_cell, inherent_cell)) in <A as ClosedAxis>::ALL
             .iter()
             .zip(inherent_all.iter())
             .enumerate()
@@ -463,10 +540,10 @@ mod tests {
         // trait bound on the future generic consumer would fail to
         // compile, which is the structural enforcement of the
         // discipline.
-        assert!(!<FormatCoordinates as ProductCube>::ALL.is_empty());
-        assert!(!<AttributionCoordinates as ProductCube>::ALL.is_empty());
-        assert!(!<ErrorLocalizationCoordinates as ProductCube>::ALL.is_empty());
-        assert!(!<AttributionSourceKindCoordinates as ProductCube>::ALL.is_empty());
+        assert!(!<FormatCoordinates as ClosedAxis>::ALL.is_empty());
+        assert!(!<AttributionCoordinates as ClosedAxis>::ALL.is_empty());
+        assert!(!<ErrorLocalizationCoordinates as ClosedAxis>::ALL.is_empty());
+        assert!(!<AttributionSourceKindCoordinates as ClosedAxis>::ALL.is_empty());
     }
 
     // ---- PartialInverseCube invariants ----
@@ -482,7 +559,7 @@ mod tests {
     where
         C: PartialInverseCube + std::fmt::Debug,
     {
-        for cell in <C as ProductCube>::ALL.iter().copied() {
+        for cell in <C as ClosedAxis>::ALL.iter().copied() {
             assert_eq!(
                 cell.invert().is_some(),
                 ProductCube::is_realizable(cell),
@@ -551,5 +628,190 @@ mod tests {
             images, expected,
             "realizable_images::<AttributionCoordinates>() must equal AttributionRule::ALL as a set",
         );
+    }
+
+    // ---- ClosedAxis invariants reach all thirteen implementors ----
+    //
+    // The nine closed-enum axis primitives plus the four product cubes
+    // plug into the same trait. One trait-uniform helper, one
+    // generic-helper agreement check, and one cardinality check pin
+    // the discipline pointwise on every implementor.
+
+    use crate::{
+        AttributionAxis, AttributionConfidence, AttributionRule, ConfigSourceKind,
+        FieldPathLocalization, FigmentSourceKind, Format, FormatProvenance, ShikumiErrorKind,
+    };
+
+    fn assert_axis_iter_matches_trait_all<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // axis_iter::<A>() is the named lift of A::ALL.iter().copied();
+        // pin the two produce the same sequence in the same order. The
+        // helper consolidates the 98+ inline `::ALL.iter().copied()`
+        // sites the crate carries across cover / partition / cube-
+        // coverage tests.
+        let iter_collected: Vec<A> = axis_iter::<A>().collect();
+        let all_collected: Vec<A> = <A as ClosedAxis>::ALL.to_vec();
+        assert_eq!(
+            iter_collected.len(),
+            all_collected.len(),
+            "axis_iter cardinality must equal trait ALL cardinality",
+        );
+        for (i, (from_iter, from_all)) in
+            iter_collected.iter().zip(all_collected.iter()).enumerate()
+        {
+            assert_eq!(
+                from_iter, from_all,
+                "axis_iter[{i}] must equal trait ALL[{i}]",
+            );
+        }
+    }
+
+    fn assert_axis_cardinality_matches_trait_all<A>(expected: usize)
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // axis_cardinality::<A>() is the named lift of A::ALL.len();
+        // pin agreement with the trait constant slice length and with
+        // the today-pinned variant count so a future variant landing
+        // (a tenth typescape axis primitive variant on any of the nine
+        // enums, or a fifth cell axis on any of the four cubes) moves
+        // the expected count in lockstep.
+        assert_eq!(
+            axis_cardinality::<A>(),
+            <A as ClosedAxis>::ALL.len(),
+            "axis_cardinality must equal trait ALL slice length",
+        );
+        assert_eq!(
+            axis_cardinality::<A>(),
+            expected,
+            "axis_cardinality must equal today's pinned variant count",
+        );
+    }
+
+    // ---- The nine closed-enum axis primitives ----
+
+    #[test]
+    fn format_trait_all_matches_inherent_all() {
+        assert_trait_matches_inherent::<Format>(Format::ALL);
+    }
+
+    #[test]
+    fn format_provenance_trait_all_matches_inherent_all() {
+        assert_trait_matches_inherent::<FormatProvenance>(FormatProvenance::ALL);
+    }
+
+    #[test]
+    fn config_source_kind_trait_all_matches_inherent_all() {
+        assert_trait_matches_inherent::<ConfigSourceKind>(ConfigSourceKind::ALL);
+    }
+
+    #[test]
+    fn figment_source_kind_trait_all_matches_inherent_all() {
+        assert_trait_matches_inherent::<FigmentSourceKind>(FigmentSourceKind::ALL);
+    }
+
+    #[test]
+    fn shikumi_error_kind_trait_all_matches_inherent_all() {
+        assert_trait_matches_inherent::<ShikumiErrorKind>(ShikumiErrorKind::ALL);
+    }
+
+    #[test]
+    fn field_path_localization_trait_all_matches_inherent_all() {
+        assert_trait_matches_inherent::<FieldPathLocalization>(FieldPathLocalization::ALL);
+    }
+
+    #[test]
+    fn attribution_rule_trait_all_matches_inherent_all() {
+        assert_trait_matches_inherent::<AttributionRule>(AttributionRule::ALL);
+    }
+
+    #[test]
+    fn attribution_confidence_trait_all_matches_inherent_all() {
+        assert_trait_matches_inherent::<AttributionConfidence>(AttributionConfidence::ALL);
+    }
+
+    #[test]
+    fn attribution_axis_trait_all_matches_inherent_all() {
+        assert_trait_matches_inherent::<AttributionAxis>(AttributionAxis::ALL);
+    }
+
+    // ---- axis_iter agrees with trait ALL for every implementor ----
+
+    #[test]
+    fn axis_iter_matches_trait_all_for_every_closed_enum_axis() {
+        assert_axis_iter_matches_trait_all::<Format>();
+        assert_axis_iter_matches_trait_all::<FormatProvenance>();
+        assert_axis_iter_matches_trait_all::<ConfigSourceKind>();
+        assert_axis_iter_matches_trait_all::<FigmentSourceKind>();
+        assert_axis_iter_matches_trait_all::<ShikumiErrorKind>();
+        assert_axis_iter_matches_trait_all::<FieldPathLocalization>();
+        assert_axis_iter_matches_trait_all::<AttributionRule>();
+        assert_axis_iter_matches_trait_all::<AttributionConfidence>();
+        assert_axis_iter_matches_trait_all::<AttributionAxis>();
+    }
+
+    #[test]
+    fn axis_iter_matches_trait_all_for_every_product_cube() {
+        assert_axis_iter_matches_trait_all::<FormatCoordinates>();
+        assert_axis_iter_matches_trait_all::<AttributionCoordinates>();
+        assert_axis_iter_matches_trait_all::<ErrorLocalizationCoordinates>();
+        assert_axis_iter_matches_trait_all::<AttributionSourceKindCoordinates>();
+    }
+
+    // ---- axis_cardinality pins today's variant / cell counts ----
+
+    #[test]
+    fn axis_cardinality_pins_todays_counts_across_thirteen_implementors() {
+        // Nine closed-enum axis primitives. A new variant landing on
+        // any of these enums extends the expected count in lockstep.
+        assert_axis_cardinality_matches_trait_all::<Format>(4);
+        assert_axis_cardinality_matches_trait_all::<FormatProvenance>(2);
+        assert_axis_cardinality_matches_trait_all::<ConfigSourceKind>(3);
+        assert_axis_cardinality_matches_trait_all::<FigmentSourceKind>(3);
+        assert_axis_cardinality_matches_trait_all::<ShikumiErrorKind>(6);
+        assert_axis_cardinality_matches_trait_all::<FieldPathLocalization>(3);
+        assert_axis_cardinality_matches_trait_all::<AttributionRule>(5);
+        assert_axis_cardinality_matches_trait_all::<AttributionConfidence>(2);
+        assert_axis_cardinality_matches_trait_all::<AttributionAxis>(2);
+        // Four product cubes. A new cell-axis landing on any cube
+        // extends the expected count by the product of the new axis's
+        // cardinality with the cube's prior cardinality.
+        assert_axis_cardinality_matches_trait_all::<FormatCoordinates>(8);
+        assert_axis_cardinality_matches_trait_all::<AttributionCoordinates>(12);
+        assert_axis_cardinality_matches_trait_all::<ErrorLocalizationCoordinates>(18);
+        assert_axis_cardinality_matches_trait_all::<AttributionSourceKindCoordinates>(9);
+    }
+
+    #[test]
+    fn axis_iter_for_product_cube_agrees_with_realizable_plus_unrealizable() {
+        // For any ProductCube, axis_iter::<C>() is the disjoint union
+        // of realizable_iter::<C>() and unrealizable_iter::<C>() in the
+        // declaration-order interleaving the underlying ClosedAxis::ALL
+        // pins. The realizability filter cuts ALL into the two halves,
+        // and axis_iter recovers the whole.
+        fn assert_axis_iter_recovers_partition<C>()
+        where
+            C: ProductCube + std::fmt::Debug,
+        {
+            use std::collections::HashSet;
+            let whole: HashSet<C> = axis_iter::<C>().collect();
+            let realizable: HashSet<C> = realizable_iter::<C>().collect();
+            let unrealizable: HashSet<C> = unrealizable_iter::<C>().collect();
+            assert!(
+                realizable.is_disjoint(&unrealizable),
+                "realizable and unrealizable halves must be disjoint",
+            );
+            let recovered: HashSet<C> = realizable.union(&unrealizable).copied().collect();
+            assert_eq!(
+                whole, recovered,
+                "axis_iter must equal realizable ∪ unrealizable as a set",
+            );
+        }
+        assert_axis_iter_recovers_partition::<FormatCoordinates>();
+        assert_axis_iter_recovers_partition::<AttributionCoordinates>();
+        assert_axis_iter_recovers_partition::<ErrorLocalizationCoordinates>();
+        assert_axis_iter_recovers_partition::<AttributionSourceKindCoordinates>();
     }
 }

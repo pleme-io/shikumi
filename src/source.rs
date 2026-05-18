@@ -239,6 +239,10 @@ impl ConfigSourceKind {
     pub const ALL: &'static [Self] = &[Self::Defaults, Self::Env, Self::File];
 }
 
+impl crate::ClosedAxis for ConfigSourceKind {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
 /// Recognized form of [`figment::providers::Env`]'s
 /// `figment::Metadata::name`, as parsed by
 /// [`ConfigSource::strip_env_metadata_name`].
@@ -641,6 +645,10 @@ impl FigmentSourceKind {
     pub fn is_custom(self) -> bool {
         matches!(self, Self::Custom)
     }
+}
+
+impl crate::ClosedAxis for FigmentSourceKind {
+    const ALL: &'static [Self] = Self::ALL;
 }
 
 impl fmt::Display for ConfigSource {

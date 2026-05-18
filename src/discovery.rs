@@ -680,9 +680,19 @@ impl FormatCoordinates {
     }
 }
 
-impl crate::ProductCube for FormatCoordinates {
+impl crate::ClosedAxis for Format {
     const ALL: &'static [Self] = Self::ALL;
+}
 
+impl crate::ClosedAxis for FormatProvenance {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxis for FormatCoordinates {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ProductCube for FormatCoordinates {
     fn is_realizable(self) -> bool {
         Self::is_realizable(self)
     }

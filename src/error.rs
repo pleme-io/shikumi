@@ -1484,9 +1484,31 @@ impl AttributionSourceKindCoordinates {
     }
 }
 
-impl crate::ProductCube for AttributionCoordinates {
+impl crate::ClosedAxis for ShikumiErrorKind {
     const ALL: &'static [Self] = Self::ALL;
+}
 
+impl crate::ClosedAxis for FieldPathLocalization {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxis for AttributionRule {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxis for AttributionConfidence {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxis for AttributionAxis {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxis for AttributionCoordinates {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ProductCube for AttributionCoordinates {
     fn is_realizable(self) -> bool {
         Self::is_realizable(self)
     }
@@ -1500,17 +1522,21 @@ impl crate::PartialInverseCube for AttributionCoordinates {
     }
 }
 
-impl crate::ProductCube for ErrorLocalizationCoordinates {
+impl crate::ClosedAxis for ErrorLocalizationCoordinates {
     const ALL: &'static [Self] = Self::ALL;
+}
 
+impl crate::ProductCube for ErrorLocalizationCoordinates {
     fn is_realizable(self) -> bool {
         Self::is_realizable(self)
     }
 }
 
-impl crate::ProductCube for AttributionSourceKindCoordinates {
+impl crate::ClosedAxis for AttributionSourceKindCoordinates {
     const ALL: &'static [Self] = Self::ALL;
+}
 
+impl crate::ProductCube for AttributionSourceKindCoordinates {
     fn is_realizable(self) -> bool {
         Self::is_realizable(self)
     }
