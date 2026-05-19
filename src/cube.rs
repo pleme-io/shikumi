@@ -622,9 +622,100 @@ pub fn forward_iter<C: PartialInverseCube>() -> impl Iterator<Item = C> {
 mod tests {
     use super::*;
     use crate::{
-        AttributionCoordinates, AttributionSourceKindCoordinates, ErrorLocalizationCoordinates,
-        FormatCoordinates,
+        AttributionAxis, AttributionConfidence, AttributionCoordinates, AttributionRule,
+        AttributionSourceKindCoordinates, ConfigSourceKind, ErrorLocalizationCoordinates,
+        FieldPathLocalization, FigmentSourceKind, Format, FormatCoordinates, FormatProvenance,
+        ShikumiErrorKind,
     };
+
+    // ---- Implementor-list macros ----
+    //
+    // The shikumi typescape has one declared, stable set of
+    // [`ClosedAxis`] implementors today — nine closed-enum axis
+    // primitives ([`Format`], [`FormatProvenance`], [`ConfigSourceKind`],
+    // [`FigmentSourceKind`], [`ShikumiErrorKind`],
+    // [`FieldPathLocalization`], [`AttributionRule`],
+    // [`AttributionConfidence`], [`AttributionAxis`]) and four product
+    // cubes ([`FormatCoordinates`], [`AttributionCoordinates`],
+    // [`ErrorLocalizationCoordinates`], [`AttributionSourceKindCoordinates`]).
+    // Two of the cubes additionally satisfy [`PartialInverseCube`]
+    // ([`FormatCoordinates`], [`AttributionCoordinates`]).
+    //
+    // These three lists previously appeared inlined at every
+    // trait-uniform `for every implementor` test site (more than ten
+    // sites today across the `axis_iter`, `axis_cardinality`,
+    // `axis_ordinal`, `axis_at`, `realizable_*`, and `forward_*`
+    // helpers); each duplicated list had to be manually kept in
+    // lockstep with the typescape's implementor set, so a tenth axis
+    // primitive or fifth cube landing meant editing every site by
+    // hand. Lifting them into three callback macros — one per
+    // trait-implementor set — keeps the lists at one site each:
+    // a future axis primitive lands as one new arm in
+    // [`for_each_closed_axis_primitive`], picks up every trait-uniform
+    // invariant test by macro expansion, and the per-test inline
+    // listing disappears. The macros expand at every call site to the
+    // same `cb!(TypeName);` sequence the inline listings carried, so
+    // the runtime behavior is identical and the compiler still type-
+    // checks each expanded `assert_*::<TypeName>()` call against the
+    // trait bound.
+    //
+    // The macros are deliberately scoped to the test module —
+    // implementor-list discipline is a test-time concern (no runtime
+    // code dispatches over the list since [`ClosedAxis`] is not
+    // object-safe). The `for_each_closed_axis_implementor` superset
+    // macro composes the two ClosedAxis-implementor sets (nine
+    // primitive enums + four cubes) so a "reach every implementor"
+    // test can list one macro call instead of two.
+
+    /// Invokes `$cb!(TypeName)` for each [`ClosedAxis`] axis-primitive
+    /// enum — the nine closed-enum axis primitives the typescape
+    /// recognizes today, in declaration order.
+    macro_rules! for_each_closed_axis_primitive {
+        ($cb:ident) => {
+            $cb!(Format);
+            $cb!(FormatProvenance);
+            $cb!(ConfigSourceKind);
+            $cb!(FigmentSourceKind);
+            $cb!(ShikumiErrorKind);
+            $cb!(FieldPathLocalization);
+            $cb!(AttributionRule);
+            $cb!(AttributionConfidence);
+            $cb!(AttributionAxis);
+        };
+    }
+
+    /// Invokes `$cb!(TypeName)` for each [`ProductCube`] implementor —
+    /// the four product cubes the typescape recognizes today, in
+    /// declaration order.
+    macro_rules! for_each_product_cube {
+        ($cb:ident) => {
+            $cb!(FormatCoordinates);
+            $cb!(AttributionCoordinates);
+            $cb!(ErrorLocalizationCoordinates);
+            $cb!(AttributionSourceKindCoordinates);
+        };
+    }
+
+    /// Invokes `$cb!(TypeName)` for each [`PartialInverseCube`]
+    /// implementor — the two cubes whose forward map carries an
+    /// inverse on the recognized half, in declaration order.
+    macro_rules! for_each_partial_inverse_cube {
+        ($cb:ident) => {
+            $cb!(FormatCoordinates);
+            $cb!(AttributionCoordinates);
+        };
+    }
+
+    /// Invokes `$cb!(TypeName)` for each [`ClosedAxis`] implementor —
+    /// the nine axis primitives plus the four product cubes, thirteen
+    /// in total, in declaration order. Composes
+    /// [`for_each_closed_axis_primitive`] with [`for_each_product_cube`].
+    macro_rules! for_each_closed_axis_implementor {
+        ($cb:ident) => {
+            for_each_closed_axis_primitive!($cb);
+            for_each_product_cube!($cb);
+        };
+    }
 
     // ---- Trait re-exports match inherent constants/methods pointwise ----
 
@@ -939,11 +1030,6 @@ mod tests {
     // generic-helper agreement check, and one cardinality check pin
     // the discipline pointwise on every implementor.
 
-    use crate::{
-        AttributionAxis, AttributionConfidence, AttributionRule, ConfigSourceKind,
-        FieldPathLocalization, FigmentSourceKind, Format, FormatProvenance, ShikumiErrorKind,
-    };
-
     fn assert_axis_iter_matches_trait_all<A>()
     where
         A: ClosedAxis + std::fmt::Debug,
@@ -1043,23 +1129,22 @@ mod tests {
 
     #[test]
     fn axis_iter_matches_trait_all_for_every_closed_enum_axis() {
-        assert_axis_iter_matches_trait_all::<Format>();
-        assert_axis_iter_matches_trait_all::<FormatProvenance>();
-        assert_axis_iter_matches_trait_all::<ConfigSourceKind>();
-        assert_axis_iter_matches_trait_all::<FigmentSourceKind>();
-        assert_axis_iter_matches_trait_all::<ShikumiErrorKind>();
-        assert_axis_iter_matches_trait_all::<FieldPathLocalization>();
-        assert_axis_iter_matches_trait_all::<AttributionRule>();
-        assert_axis_iter_matches_trait_all::<AttributionConfidence>();
-        assert_axis_iter_matches_trait_all::<AttributionAxis>();
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_axis_iter_matches_trait_all::<$ty>();
+            };
+        }
+        for_each_closed_axis_primitive!(check);
     }
 
     #[test]
     fn axis_iter_matches_trait_all_for_every_product_cube() {
-        assert_axis_iter_matches_trait_all::<FormatCoordinates>();
-        assert_axis_iter_matches_trait_all::<AttributionCoordinates>();
-        assert_axis_iter_matches_trait_all::<ErrorLocalizationCoordinates>();
-        assert_axis_iter_matches_trait_all::<AttributionSourceKindCoordinates>();
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_axis_iter_matches_trait_all::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
     }
 
     // ---- axis_cardinality pins today's variant / cell counts ----
@@ -1147,40 +1232,22 @@ mod tests {
 
     #[test]
     fn axis_ordinal_round_trips_for_every_closed_axis_implementor() {
-        // Nine closed-enum axis primitives.
-        assert_axis_ordinal_round_trips::<Format>();
-        assert_axis_ordinal_round_trips::<FormatProvenance>();
-        assert_axis_ordinal_round_trips::<ConfigSourceKind>();
-        assert_axis_ordinal_round_trips::<FigmentSourceKind>();
-        assert_axis_ordinal_round_trips::<ShikumiErrorKind>();
-        assert_axis_ordinal_round_trips::<FieldPathLocalization>();
-        assert_axis_ordinal_round_trips::<AttributionRule>();
-        assert_axis_ordinal_round_trips::<AttributionConfidence>();
-        assert_axis_ordinal_round_trips::<AttributionAxis>();
-        // Four product cubes.
-        assert_axis_ordinal_round_trips::<FormatCoordinates>();
-        assert_axis_ordinal_round_trips::<AttributionCoordinates>();
-        assert_axis_ordinal_round_trips::<ErrorLocalizationCoordinates>();
-        assert_axis_ordinal_round_trips::<AttributionSourceKindCoordinates>();
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_axis_ordinal_round_trips::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
     }
 
     #[test]
     fn axis_ordinal_injective_for_every_closed_axis_implementor() {
-        // Nine closed-enum axis primitives.
-        assert_axis_ordinal_injective::<Format>();
-        assert_axis_ordinal_injective::<FormatProvenance>();
-        assert_axis_ordinal_injective::<ConfigSourceKind>();
-        assert_axis_ordinal_injective::<FigmentSourceKind>();
-        assert_axis_ordinal_injective::<ShikumiErrorKind>();
-        assert_axis_ordinal_injective::<FieldPathLocalization>();
-        assert_axis_ordinal_injective::<AttributionRule>();
-        assert_axis_ordinal_injective::<AttributionConfidence>();
-        assert_axis_ordinal_injective::<AttributionAxis>();
-        // Four product cubes.
-        assert_axis_ordinal_injective::<FormatCoordinates>();
-        assert_axis_ordinal_injective::<AttributionCoordinates>();
-        assert_axis_ordinal_injective::<ErrorLocalizationCoordinates>();
-        assert_axis_ordinal_injective::<AttributionSourceKindCoordinates>();
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_axis_ordinal_injective::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
     }
 
     #[test]
@@ -1197,19 +1264,12 @@ mod tests {
             assert_eq!(axis_ordinal::<A>(A::ALL[0]), 0);
             assert_eq!(axis_ordinal::<A>(A::ALL[n - 1]), n - 1);
         }
-        assert_endpoints::<Format>();
-        assert_endpoints::<FormatProvenance>();
-        assert_endpoints::<ConfigSourceKind>();
-        assert_endpoints::<FigmentSourceKind>();
-        assert_endpoints::<ShikumiErrorKind>();
-        assert_endpoints::<FieldPathLocalization>();
-        assert_endpoints::<AttributionRule>();
-        assert_endpoints::<AttributionConfidence>();
-        assert_endpoints::<AttributionAxis>();
-        assert_endpoints::<FormatCoordinates>();
-        assert_endpoints::<AttributionCoordinates>();
-        assert_endpoints::<ErrorLocalizationCoordinates>();
-        assert_endpoints::<AttributionSourceKindCoordinates>();
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_endpoints::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
     }
 
     // ---- axis_at closes the safe forward direction of the
@@ -1292,59 +1352,32 @@ mod tests {
 
     #[test]
     fn axis_at_round_trips_value_side_for_every_closed_axis_implementor() {
-        // Nine closed-enum axis primitives.
-        assert_axis_at_round_trips_value_side::<Format>();
-        assert_axis_at_round_trips_value_side::<FormatProvenance>();
-        assert_axis_at_round_trips_value_side::<ConfigSourceKind>();
-        assert_axis_at_round_trips_value_side::<FigmentSourceKind>();
-        assert_axis_at_round_trips_value_side::<ShikumiErrorKind>();
-        assert_axis_at_round_trips_value_side::<FieldPathLocalization>();
-        assert_axis_at_round_trips_value_side::<AttributionRule>();
-        assert_axis_at_round_trips_value_side::<AttributionConfidence>();
-        assert_axis_at_round_trips_value_side::<AttributionAxis>();
-        // Four product cubes.
-        assert_axis_at_round_trips_value_side::<FormatCoordinates>();
-        assert_axis_at_round_trips_value_side::<AttributionCoordinates>();
-        assert_axis_at_round_trips_value_side::<ErrorLocalizationCoordinates>();
-        assert_axis_at_round_trips_value_side::<AttributionSourceKindCoordinates>();
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_axis_at_round_trips_value_side::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
     }
 
     #[test]
     fn axis_at_round_trips_ordinal_side_for_every_closed_axis_implementor() {
-        // Nine closed-enum axis primitives.
-        assert_axis_at_round_trips_ordinal_side::<Format>();
-        assert_axis_at_round_trips_ordinal_side::<FormatProvenance>();
-        assert_axis_at_round_trips_ordinal_side::<ConfigSourceKind>();
-        assert_axis_at_round_trips_ordinal_side::<FigmentSourceKind>();
-        assert_axis_at_round_trips_ordinal_side::<ShikumiErrorKind>();
-        assert_axis_at_round_trips_ordinal_side::<FieldPathLocalization>();
-        assert_axis_at_round_trips_ordinal_side::<AttributionRule>();
-        assert_axis_at_round_trips_ordinal_side::<AttributionConfidence>();
-        assert_axis_at_round_trips_ordinal_side::<AttributionAxis>();
-        // Four product cubes.
-        assert_axis_at_round_trips_ordinal_side::<FormatCoordinates>();
-        assert_axis_at_round_trips_ordinal_side::<AttributionCoordinates>();
-        assert_axis_at_round_trips_ordinal_side::<ErrorLocalizationCoordinates>();
-        assert_axis_at_round_trips_ordinal_side::<AttributionSourceKindCoordinates>();
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_axis_at_round_trips_ordinal_side::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
     }
 
     #[test]
     fn axis_at_returns_none_on_out_of_range_for_every_closed_axis_implementor() {
-        // Nine closed-enum axis primitives.
-        assert_axis_at_none_on_out_of_range::<Format>();
-        assert_axis_at_none_on_out_of_range::<FormatProvenance>();
-        assert_axis_at_none_on_out_of_range::<ConfigSourceKind>();
-        assert_axis_at_none_on_out_of_range::<FigmentSourceKind>();
-        assert_axis_at_none_on_out_of_range::<ShikumiErrorKind>();
-        assert_axis_at_none_on_out_of_range::<FieldPathLocalization>();
-        assert_axis_at_none_on_out_of_range::<AttributionRule>();
-        assert_axis_at_none_on_out_of_range::<AttributionConfidence>();
-        assert_axis_at_none_on_out_of_range::<AttributionAxis>();
-        // Four product cubes.
-        assert_axis_at_none_on_out_of_range::<FormatCoordinates>();
-        assert_axis_at_none_on_out_of_range::<AttributionCoordinates>();
-        assert_axis_at_none_on_out_of_range::<ErrorLocalizationCoordinates>();
-        assert_axis_at_none_on_out_of_range::<AttributionSourceKindCoordinates>();
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_axis_at_none_on_out_of_range::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
     }
 
     #[test]
@@ -1367,19 +1400,12 @@ mod tests {
                 );
             }
         }
-        assert_pointwise::<Format>();
-        assert_pointwise::<FormatProvenance>();
-        assert_pointwise::<ConfigSourceKind>();
-        assert_pointwise::<FigmentSourceKind>();
-        assert_pointwise::<ShikumiErrorKind>();
-        assert_pointwise::<FieldPathLocalization>();
-        assert_pointwise::<AttributionRule>();
-        assert_pointwise::<AttributionConfidence>();
-        assert_pointwise::<AttributionAxis>();
-        assert_pointwise::<FormatCoordinates>();
-        assert_pointwise::<AttributionCoordinates>();
-        assert_pointwise::<ErrorLocalizationCoordinates>();
-        assert_pointwise::<AttributionSourceKindCoordinates>();
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_pointwise::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
     }
 
     #[test]
@@ -1407,10 +1433,12 @@ mod tests {
                 "axis_iter must equal realizable ∪ unrealizable as a set",
             );
         }
-        assert_axis_iter_recovers_partition::<FormatCoordinates>();
-        assert_axis_iter_recovers_partition::<AttributionCoordinates>();
-        assert_axis_iter_recovers_partition::<ErrorLocalizationCoordinates>();
-        assert_axis_iter_recovers_partition::<AttributionSourceKindCoordinates>();
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_axis_iter_recovers_partition::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
     }
 
     // ---- realizable_ordinal / realizable_at close the dense bijection
@@ -1574,51 +1602,62 @@ mod tests {
 
     #[test]
     fn realizable_ordinal_some_iff_is_realizable() {
-        assert_realizable_ordinal_some_iff_is_realizable::<FormatCoordinates>();
-        assert_realizable_ordinal_some_iff_is_realizable::<AttributionCoordinates>();
-        assert_realizable_ordinal_some_iff_is_realizable::<ErrorLocalizationCoordinates>();
-        assert_realizable_ordinal_some_iff_is_realizable::<AttributionSourceKindCoordinates>();
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_realizable_ordinal_some_iff_is_realizable::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
     }
 
     #[test]
     fn realizable_at_some_iff_in_realizable_prefix() {
-        assert_realizable_at_some_iff_in_realizable_prefix::<FormatCoordinates>();
-        assert_realizable_at_some_iff_in_realizable_prefix::<AttributionCoordinates>();
-        assert_realizable_at_some_iff_in_realizable_prefix::<ErrorLocalizationCoordinates>();
-        assert_realizable_at_some_iff_in_realizable_prefix::<AttributionSourceKindCoordinates>();
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_realizable_at_some_iff_in_realizable_prefix::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
     }
 
     #[test]
     fn realizable_round_trips_cell_side() {
-        assert_realizable_round_trips_cell_side::<FormatCoordinates>();
-        assert_realizable_round_trips_cell_side::<AttributionCoordinates>();
-        assert_realizable_round_trips_cell_side::<ErrorLocalizationCoordinates>();
-        assert_realizable_round_trips_cell_side::<AttributionSourceKindCoordinates>();
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_realizable_round_trips_cell_side::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
     }
 
     #[test]
     fn realizable_round_trips_ordinal_side() {
-        assert_realizable_round_trips_ordinal_side::<FormatCoordinates>();
-        assert_realizable_round_trips_ordinal_side::<AttributionCoordinates>();
-        assert_realizable_round_trips_ordinal_side::<ErrorLocalizationCoordinates>();
-        assert_realizable_round_trips_ordinal_side::<AttributionSourceKindCoordinates>();
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_realizable_round_trips_ordinal_side::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
     }
 
     #[test]
     fn realizable_at_image_is_realizable() {
-        assert_realizable_at_image_is_realizable::<FormatCoordinates>();
-        assert_realizable_at_image_is_realizable::<AttributionCoordinates>();
-        assert_realizable_at_image_is_realizable::<ErrorLocalizationCoordinates>();
-        assert_realizable_at_image_is_realizable::<AttributionSourceKindCoordinates>();
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_realizable_at_image_is_realizable::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
     }
 
     #[test]
     fn realizable_ordinal_image_equals_realizable_prefix() {
-        assert_realizable_ordinal_image_equals_realizable_prefix::<FormatCoordinates>();
-        assert_realizable_ordinal_image_equals_realizable_prefix::<AttributionCoordinates>();
-        assert_realizable_ordinal_image_equals_realizable_prefix::<ErrorLocalizationCoordinates>();
-        assert_realizable_ordinal_image_equals_realizable_prefix::<AttributionSourceKindCoordinates>(
-        );
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_realizable_ordinal_image_equals_realizable_prefix::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
     }
 
     #[test]
@@ -1800,8 +1839,12 @@ mod tests {
                 "forward_iter must equal realizable_iter as a set",
             );
         }
-        assert_forward_image_equals_realizable::<FormatCoordinates>();
-        assert_forward_image_equals_realizable::<AttributionCoordinates>();
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_forward_image_equals_realizable::<$ty>();
+            };
+        }
+        for_each_partial_inverse_cube!(check);
     }
 
     #[test]
@@ -1811,21 +1854,142 @@ mod tests {
         // bijection invariant, that also equals realizable_count::<C>().
         // Two readings of the same number pinned in lockstep across
         // every implementor.
+        fn assert_cardinalities_agree<C: PartialInverseCube>() {
+            assert_eq!(
+                forward_iter::<C>().count(),
+                axis_cardinality::<<C as PartialInverseCube>::Image>(),
+            );
+            assert_eq!(forward_iter::<C>().count(), realizable_count::<C>());
+        }
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_cardinalities_agree::<$ty>();
+            };
+        }
+        for_each_partial_inverse_cube!(check);
+    }
+
+    // ---- Implementor-list macro cardinalities ----
+    //
+    // The three implementor-list macros (`for_each_closed_axis_primitive`,
+    // `for_each_product_cube`, `for_each_partial_inverse_cube`) are the
+    // single source of truth for the trait-implementor sets in the
+    // `for every implementor` tests. Pin today's cardinality on each
+    // macro so a future axis primitive or product cube landing forces
+    // the macro arm in lockstep — a `for_each_*` invocation that
+    // doesn't include a newly-added implementor will fail the
+    // cardinality check here, surfacing the discipline violation
+    // before any silent dropouts at the trait-uniform test sites.
+
+    #[test]
+    fn for_each_closed_axis_primitive_macro_covers_nine_axes() {
+        // Pin that the macro expands to exactly nine arms — the nine
+        // closed-enum axis primitives the typescape recognizes today.
+        // A tenth axis primitive landing extends the macro in lockstep
+        // with the `impl ClosedAxis` declaration; this assertion fails
+        // until the macro arm lands.
+        let mut count = 0usize;
+        macro_rules! tally {
+            ($ty:ident) => {
+                count += 1;
+            };
+        }
+        for_each_closed_axis_primitive!(tally);
         assert_eq!(
-            forward_iter::<FormatCoordinates>().count(),
-            axis_cardinality::<<FormatCoordinates as PartialInverseCube>::Image>(),
+            count, 9,
+            "for_each_closed_axis_primitive! must expand to nine arms",
         );
+    }
+
+    #[test]
+    fn for_each_product_cube_macro_covers_four_cubes() {
+        // Pin that the macro expands to exactly four arms — the four
+        // product cubes the typescape recognizes today. A fifth cube
+        // landing extends the macro in lockstep with the `impl
+        // ProductCube` declaration; this assertion fails until the
+        // macro arm lands.
+        let mut count = 0usize;
+        macro_rules! tally {
+            ($ty:ident) => {
+                count += 1;
+            };
+        }
+        for_each_product_cube!(tally);
+        assert_eq!(count, 4, "for_each_product_cube! must expand to four arms");
+    }
+
+    #[test]
+    fn for_each_partial_inverse_cube_macro_covers_two_cubes() {
+        // Pin that the macro expands to exactly two arms — the two
+        // cubes whose forward map carries an inverse on the recognized
+        // half. A third PartialInverseCube implementor landing extends
+        // the macro in lockstep with the `impl PartialInverseCube`
+        // declaration; this assertion fails until the macro arm lands.
+        let mut count = 0usize;
+        macro_rules! tally {
+            ($ty:ident) => {
+                count += 1;
+            };
+        }
+        for_each_partial_inverse_cube!(tally);
         assert_eq!(
-            forward_iter::<FormatCoordinates>().count(),
-            realizable_count::<FormatCoordinates>(),
+            count, 2,
+            "for_each_partial_inverse_cube! must expand to two arms",
         );
+    }
+
+    #[test]
+    fn for_each_closed_axis_implementor_macro_covers_thirteen_types() {
+        // Pin that the superset macro expands to exactly thirteen arms
+        // — the nine axis primitives plus the four product cubes. A
+        // tenth axis primitive OR a fifth cube landing extends the
+        // composed macro in lockstep through one of its two component
+        // macros; this assertion fails until the arm lands.
+        let mut count = 0usize;
+        macro_rules! tally {
+            ($ty:ident) => {
+                count += 1;
+            };
+        }
+        for_each_closed_axis_implementor!(tally);
         assert_eq!(
-            forward_iter::<AttributionCoordinates>().count(),
-            axis_cardinality::<<AttributionCoordinates as PartialInverseCube>::Image>(),
+            count, 13,
+            "for_each_closed_axis_implementor! must expand to thirteen arms (9 axes + 4 cubes)",
         );
+    }
+
+    #[test]
+    fn for_each_closed_axis_implementor_expands_to_distinct_closed_axis_types() {
+        // Pin that every type the macro yields satisfies the trait
+        // bound it advertises (ClosedAxis) and that the expansion
+        // produces no duplicates. Distinctness is pinned via
+        // axis_cardinality summed across the implementors — the sum
+        // matches the today-pinned 47 (9 axes: 4+2+3+3+6+3+5+2+2 = 30,
+        // plus 4 cubes: 8+12+18+9 = 47 total) only when the macro
+        // emits each implementor exactly once. A duplicated arm would
+        // double-count one cardinality; a missing arm would
+        // under-count. The sum is a checksum over the macro's image.
+        fn axis_card<A: ClosedAxis>() -> usize {
+            axis_cardinality::<A>()
+        }
+        let mut total = 0usize;
+        macro_rules! add {
+            ($ty:ident) => {
+                total += axis_card::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(add);
+        // 9-axis sum: Format=4, FormatProvenance=2, ConfigSourceKind=3,
+        // FigmentSourceKind=3, ShikumiErrorKind=6, FieldPathLocalization=3,
+        // AttributionRule=5, AttributionConfidence=2, AttributionAxis=2
+        // → 30.
+        // 4-cube sum: FormatCoordinates=8, AttributionCoordinates=12,
+        // ErrorLocalizationCoordinates=18, AttributionSourceKindCoordinates=9
+        // → 47. Grand total 30+47 = 77.
         assert_eq!(
-            forward_iter::<AttributionCoordinates>().count(),
-            realizable_count::<AttributionCoordinates>(),
+            total, 77,
+            "macro must emit each implementor exactly once \
+             (today's axis_cardinality checksum is 77)",
         );
     }
 }
