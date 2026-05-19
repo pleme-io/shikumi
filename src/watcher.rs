@@ -35,7 +35,12 @@ pub fn symlink_target(path: &Path) -> Option<PathBuf> {
 /// In both cases, the original path is also watched so parent directory
 /// changes (renames, recreations) are detected.
 pub struct ConfigWatcher {
-    _watcher: Box<dyn Watcher>,
+    // Send + Sync bounds so ConfigStore (which holds an Option<ConfigWatcher>)
+    // is itself Send + Sync. Consumers that move the store into a background
+    // thread (tear-config's spawn_watcher closure, mado's MCP set_config) rely
+    // on this. notify::RecommendedWatcher and PollWatcher are both Send + Sync;
+    // the trait-object loses those auto-traits without the explicit bound.
+    _watcher: Box<dyn Watcher + Send + Sync>,
 }
 
 impl ConfigWatcher {
@@ -57,7 +62,7 @@ impl ConfigWatcher {
 
         let symlink = symlink_target(path);
 
-        let mut watcher: Box<dyn Watcher> = if let Some(ref target) = symlink {
+        let mut watcher: Box<dyn Watcher + Send + Sync> = if let Some(ref target) = symlink {
             let poll_setup = setup.with_follow_symlinks(true);
             let mut w = notify::PollWatcher::new(handler, poll_setup)?;
             debug!("watching symlink target {} for changes", target.display());
