@@ -192,6 +192,60 @@ pub fn axis_ordinal<A: ClosedAxis>(value: A) -> usize {
     }
 }
 
+/// Structural ordinal lookup for a [`ClosedAxis`] — the value at
+/// position `ordinal` in `A::ALL`, or [`None`] if the index is
+/// out-of-range.
+///
+/// Safe forward dual of [`axis_ordinal`]: where [`axis_ordinal`] is
+/// the total inverse `value → ordinal` over the closed axis, [`axis_at`]
+/// is the partial forward `ordinal → Option<value>` over `usize`,
+/// returning [`Some`] exactly on the prefix `0..axis_cardinality::<A>()`
+/// and [`None`] outside it.
+///
+/// The pair ([`axis_ordinal`], [`axis_at`]) closes the bijection
+/// between every [`ClosedAxis`] implementor and the natural-number
+/// prefix `0..axis_cardinality::<A>()` in both directions, with
+/// out-of-range indices reported as [`None`] rather than panicking on
+/// the slice index. Where [`axis_iter`] streams `A::ALL` in
+/// declaration order (the total forward map keyed implicitly by
+/// position), [`axis_at`] is the same map keyed explicitly by a
+/// caller-provided index — a content-addressable lookup that hands
+/// the `ordinal` axis to the caller without re-deriving
+/// `A::ALL.get(ordinal).copied()` at every consumer.
+///
+/// **Bijection laws** — pinned by trait-uniform tests reaching every
+/// implementor pointwise:
+///
+/// 1. **Round-trip from the value side** —
+///    `axis_at::<A>(axis_ordinal::<A>(v)) == Some(v)` for every
+///    `v: A`. The ordinal-then-lookup composition is the identity on
+///    `A`.
+/// 2. **Round-trip from the ordinal side** —
+///    `axis_at::<A>(i).map(axis_ordinal::<A>) == Some(i)` for every
+///    `i < axis_cardinality::<A>()`. The lookup-then-ordinal
+///    composition is the identity on the in-range prefix.
+/// 3. **Partiality on out-of-range** —
+///    `axis_at::<A>(i).is_none()` for every
+///    `i >= axis_cardinality::<A>()`. The forward map is total over
+///    the prefix and undefined outside it; the [`Option`] return
+///    surfaces the partiality at the type level instead of by
+///    convention.
+///
+/// **Consumers** — deserializing attestation manifests
+/// (THEORY.md §III.1.8 module manifests, §V.3 three-pillar
+/// attestation) that carry typescape cells by stable declaration
+/// ordinal recover the typed value via [`axis_at`] without an
+/// `A::ALL.get(i).copied()` inline at every loader site. Dense
+/// arrays sized by [`axis_cardinality::<A>()`][axis_cardinality]
+/// look up the typed value at a given position safely. Future
+/// cube-cover dashboards that render rows keyed by ordinal index
+/// recover the row's typescape cell through one named helper rather
+/// than re-deriving the slice-`get` per renderer.
+#[must_use]
+pub fn axis_at<A: ClosedAxis>(ordinal: usize) -> Option<A> {
+    A::ALL.get(ordinal).copied()
+}
+
 /// Closed discipline trait every typescape product cube satisfies — a
 /// refinement of [`ClosedAxis`] that additionally pins the
 /// realizability predicate over the recognized-image cells.
@@ -1037,6 +1091,176 @@ mod tests {
         assert_endpoints::<AttributionCoordinates>();
         assert_endpoints::<ErrorLocalizationCoordinates>();
         assert_endpoints::<AttributionSourceKindCoordinates>();
+    }
+
+    // ---- axis_at closes the safe forward direction of the
+    // ---- (axis_ordinal, axis_at) bijection ----
+    //
+    // `axis_at::<A>(i)` is the safe forward dual of `axis_ordinal::<A>`:
+    // where `axis_ordinal` is the total inverse `value → ordinal` over
+    // the closed axis, `axis_at` is the partial forward
+    // `ordinal → Option<value>` over `usize`, returning `Some` on the
+    // prefix `0..axis_cardinality::<A>()` and `None` outside it. Three
+    // trait-uniform invariants reach every implementor pointwise:
+    //
+    //   (a) round-trip from the value side —
+    //       `axis_at(axis_ordinal(v)) == Some(v)` for every `v: A`;
+    //   (b) round-trip from the ordinal side —
+    //       `axis_at(i).map(axis_ordinal) == Some(i)` for every
+    //       `i < axis_cardinality::<A>()`;
+    //   (c) partiality on out-of-range —
+    //       `axis_at(i).is_none()` for every
+    //       `i >= axis_cardinality::<A>()`.
+    //
+    // Together (a)+(b)+(c) state the bijection between every
+    // ClosedAxis implementor and the prefix `0..axis_cardinality::<A>()`
+    // of the natural numbers, with the partiality at the OOB boundary
+    // surfaced at the type level via the `Option` return rather than
+    // by `A::ALL[i]` panicking on the slice index. A tenth axis
+    // primitive or fifth product cube landing picks up all three
+    // invariants by adding one line to each helper-bundle test.
+
+    fn assert_axis_at_round_trips_value_side<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every value of A, ordinal-then-lookup recovers the value.
+        // The composition `axis_at ∘ axis_ordinal` is the identity on A.
+        for value in axis_iter::<A>() {
+            let ordinal = axis_ordinal::<A>(value);
+            assert_eq!(
+                axis_at::<A>(ordinal),
+                Some(value),
+                "axis_at(axis_ordinal({value:?})) must equal Some({value:?})",
+            );
+        }
+    }
+
+    fn assert_axis_at_round_trips_ordinal_side<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every in-range ordinal, lookup-then-ordinal recovers the
+        // ordinal. The composition `axis_ordinal ∘ axis_at` is the
+        // identity on the prefix `0..axis_cardinality::<A>()`.
+        for i in 0..axis_cardinality::<A>() {
+            let recovered = axis_at::<A>(i).map(axis_ordinal::<A>);
+            assert_eq!(
+                recovered,
+                Some(i),
+                "axis_at({i}).map(axis_ordinal) must equal Some({i}) for in-range ordinal",
+            );
+        }
+    }
+
+    fn assert_axis_at_none_on_out_of_range<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every out-of-range ordinal, the forward map returns None.
+        // Pins the partiality boundary: axis_at is defined exactly on
+        // the prefix `0..axis_cardinality::<A>()`. Checks the immediate
+        // boundary (n, n+1) plus a comfortable margin (n+7) and the
+        // `usize::MAX` extreme to catch any silent saturation.
+        let n = axis_cardinality::<A>();
+        for i in [n, n + 1, n + 7, usize::MAX] {
+            assert!(
+                axis_at::<A>(i).is_none(),
+                "axis_at({i}) must be None for ordinal >= axis_cardinality (n = {n})",
+            );
+        }
+    }
+
+    #[test]
+    fn axis_at_round_trips_value_side_for_every_closed_axis_implementor() {
+        // Nine closed-enum axis primitives.
+        assert_axis_at_round_trips_value_side::<Format>();
+        assert_axis_at_round_trips_value_side::<FormatProvenance>();
+        assert_axis_at_round_trips_value_side::<ConfigSourceKind>();
+        assert_axis_at_round_trips_value_side::<FigmentSourceKind>();
+        assert_axis_at_round_trips_value_side::<ShikumiErrorKind>();
+        assert_axis_at_round_trips_value_side::<FieldPathLocalization>();
+        assert_axis_at_round_trips_value_side::<AttributionRule>();
+        assert_axis_at_round_trips_value_side::<AttributionConfidence>();
+        assert_axis_at_round_trips_value_side::<AttributionAxis>();
+        // Four product cubes.
+        assert_axis_at_round_trips_value_side::<FormatCoordinates>();
+        assert_axis_at_round_trips_value_side::<AttributionCoordinates>();
+        assert_axis_at_round_trips_value_side::<ErrorLocalizationCoordinates>();
+        assert_axis_at_round_trips_value_side::<AttributionSourceKindCoordinates>();
+    }
+
+    #[test]
+    fn axis_at_round_trips_ordinal_side_for_every_closed_axis_implementor() {
+        // Nine closed-enum axis primitives.
+        assert_axis_at_round_trips_ordinal_side::<Format>();
+        assert_axis_at_round_trips_ordinal_side::<FormatProvenance>();
+        assert_axis_at_round_trips_ordinal_side::<ConfigSourceKind>();
+        assert_axis_at_round_trips_ordinal_side::<FigmentSourceKind>();
+        assert_axis_at_round_trips_ordinal_side::<ShikumiErrorKind>();
+        assert_axis_at_round_trips_ordinal_side::<FieldPathLocalization>();
+        assert_axis_at_round_trips_ordinal_side::<AttributionRule>();
+        assert_axis_at_round_trips_ordinal_side::<AttributionConfidence>();
+        assert_axis_at_round_trips_ordinal_side::<AttributionAxis>();
+        // Four product cubes.
+        assert_axis_at_round_trips_ordinal_side::<FormatCoordinates>();
+        assert_axis_at_round_trips_ordinal_side::<AttributionCoordinates>();
+        assert_axis_at_round_trips_ordinal_side::<ErrorLocalizationCoordinates>();
+        assert_axis_at_round_trips_ordinal_side::<AttributionSourceKindCoordinates>();
+    }
+
+    #[test]
+    fn axis_at_returns_none_on_out_of_range_for_every_closed_axis_implementor() {
+        // Nine closed-enum axis primitives.
+        assert_axis_at_none_on_out_of_range::<Format>();
+        assert_axis_at_none_on_out_of_range::<FormatProvenance>();
+        assert_axis_at_none_on_out_of_range::<ConfigSourceKind>();
+        assert_axis_at_none_on_out_of_range::<FigmentSourceKind>();
+        assert_axis_at_none_on_out_of_range::<ShikumiErrorKind>();
+        assert_axis_at_none_on_out_of_range::<FieldPathLocalization>();
+        assert_axis_at_none_on_out_of_range::<AttributionRule>();
+        assert_axis_at_none_on_out_of_range::<AttributionConfidence>();
+        assert_axis_at_none_on_out_of_range::<AttributionAxis>();
+        // Four product cubes.
+        assert_axis_at_none_on_out_of_range::<FormatCoordinates>();
+        assert_axis_at_none_on_out_of_range::<AttributionCoordinates>();
+        assert_axis_at_none_on_out_of_range::<ErrorLocalizationCoordinates>();
+        assert_axis_at_none_on_out_of_range::<AttributionSourceKindCoordinates>();
+    }
+
+    #[test]
+    fn axis_at_agrees_with_axis_iter_pointwise_for_every_implementor() {
+        // `axis_at::<A>(i)` and the `i`-th element of `axis_iter::<A>()`
+        // must agree pointwise. Pins that `axis_at` indexes through the
+        // same declaration-order surface that `axis_iter` streams; a
+        // future re-ordering of `::ALL` would fail here as well as in
+        // the round-trip tests, but at the per-position site rather
+        // than only at the bijection level.
+        fn assert_pointwise<A>()
+        where
+            A: ClosedAxis + std::fmt::Debug,
+        {
+            for (i, from_iter) in axis_iter::<A>().enumerate() {
+                assert_eq!(
+                    axis_at::<A>(i),
+                    Some(from_iter),
+                    "axis_at({i}) must equal Some(axis_iter[{i}]) = Some({from_iter:?})",
+                );
+            }
+        }
+        assert_pointwise::<Format>();
+        assert_pointwise::<FormatProvenance>();
+        assert_pointwise::<ConfigSourceKind>();
+        assert_pointwise::<FigmentSourceKind>();
+        assert_pointwise::<ShikumiErrorKind>();
+        assert_pointwise::<FieldPathLocalization>();
+        assert_pointwise::<AttributionRule>();
+        assert_pointwise::<AttributionConfidence>();
+        assert_pointwise::<AttributionAxis>();
+        assert_pointwise::<FormatCoordinates>();
+        assert_pointwise::<AttributionCoordinates>();
+        assert_pointwise::<ErrorLocalizationCoordinates>();
+        assert_pointwise::<AttributionSourceKindCoordinates>();
     }
 
     #[test]
