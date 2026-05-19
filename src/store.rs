@@ -167,6 +167,26 @@ where
         }
     }
 
+    /// Replace the current snapshot with a caller-provided value
+    /// in one atomic step. Same bookkeeping as [`Self::reload`]:
+    /// generation counter bumps, last-publish stamp refreshes,
+    /// last-reload-error clears. Bypasses the file → parse path
+    /// so callers can push runtime-derived configs (RPC overrides,
+    /// programmatic theme switches, daemon-side `SetConfig`
+    /// pushes).
+    ///
+    /// Use cases:
+    /// - Tear's `Request::SetConfig(yaml)` RPC: parse the YAML
+    ///   into a `TearConfig`, then `replace()` so every attached
+    ///   client (mado, the daemon's notify watcher subscribers)
+    ///   sees the new value via the same shared `Arc<ArcSwap<T>>`.
+    /// - Mado's MCP `config_set` tool: same pattern.
+    /// - Programmatic theme toggling (light/dark) without writing
+    ///   the file to disk.
+    pub fn replace(&self, value: T) {
+        self.observatory.record_success(&self.inner, value);
+    }
+
     /// The path this store was loaded from.
     ///
     /// For [`Self::load_merged`], this is the highest-priority (last)
@@ -506,6 +526,57 @@ mod tests {
         let config = store.get();
         assert_eq!(config.name.as_deref(), Some("world"));
         assert_eq!(config.count, Some(7));
+    }
+
+    #[test]
+    fn replace_swaps_atomically_without_touching_disk() {
+        // ConfigStore::replace(value) accepts a runtime-derived
+        // value (e.g. parsed from an RPC payload) and atomically
+        // swaps it into the inner ArcSwap. Same bookkeeping as
+        // reload() — generation counter bumps, last_publish_at
+        // refreshes — but no file IO.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("rep.yaml");
+        fs::write(&file, "name: from-disk\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_REPLACE_TEST_").unwrap();
+        assert_eq!(store.get().name.as_deref(), Some("from-disk"));
+        let gen_before = store.generation();
+
+        // RPC-style replace: caller hand-crafts the new value.
+        store.replace(TestConfig {
+            name: Some("from-rpc".into()),
+            count: Some(99),
+        });
+        assert_eq!(store.get().name.as_deref(), Some("from-rpc"));
+        assert_eq!(store.get().count, Some(99));
+        // Generation bumps so subscribers polling on it see the
+        // change.
+        assert!(store.generation() > gen_before, "generation didn't bump");
+
+        // Disk content is unchanged — replace() doesn't write.
+        let on_disk = fs::read_to_string(&file).unwrap();
+        assert_eq!(on_disk, "name: from-disk\n");
+    }
+
+    #[test]
+    fn replace_visible_via_shared_arc_swap() {
+        // Pattern that tear-config + mado MCP both use: hold the
+        // Arc<ArcSwap<T>> from shared(), call store.replace(),
+        // observe the new value through the Arc.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("rep2.yaml");
+        fs::write(&file, "name: orig\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load(&file, "SHIKUMI_REPLACE_SHARE_TEST_").unwrap();
+        let shared = store.shared();
+
+        store.replace(TestConfig {
+            name: Some("replaced".into()),
+            count: None,
+        });
+        let observed = shared.load();
+        assert_eq!(observed.name.as_deref(), Some("replaced"));
     }
 
     #[test]
