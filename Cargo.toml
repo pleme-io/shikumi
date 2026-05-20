@@ -59,6 +59,10 @@ figment = { version = "0.10", features = ["env", "yaml", "toml"] }
 notify = "8.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+# Used by shikumi::tiered::ConfigDiff for structural YAML diffing
+# in TieredConfig::diff_against's default impl. Must be a non-dev
+# dep because tiered.rs is lib code that consumers compile against.
+serde_yaml = "0.9"
 thiserror = "2.0"
 tracing = "0.1"
 # Object-safe async trait — needed for SecretClient in secret_client.rs.
