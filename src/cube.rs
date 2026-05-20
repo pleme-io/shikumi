@@ -591,6 +591,80 @@ pub fn unrealizable_at<C: ProductCube>(ordinal: usize) -> Option<C> {
     unrealizable_iter::<C>().nth(ordinal)
 }
 
+/// Typed witness of which half of a [`ProductCube`] a cell occupies —
+/// the recognized-image realizable surface or the cross-axis
+/// consistency-violation unrealizable complement. The variant tag of
+/// [`PartitionOrdinal`] lifted into its own closed-axis typescape
+/// primitive.
+///
+/// Two variants, in declaration order:
+///
+/// - [`PartitionFace::Realizable`] — the cube's recognized-image half;
+///   `ProductCube::is_realizable(cell) == true`.
+/// - [`PartitionFace::Unrealizable`] — the cube's cross-axis
+///   consistency-violation complement;
+///   `ProductCube::is_realizable(cell) == false`.
+///
+/// [`PartitionOrdinal`] carries a [`PartitionFace`] tag plus a dense
+/// inner ordinal on that face; [`PartitionOrdinal::face`] projects the
+/// tag without unpacking the inner ordinal. A consumer that only needs
+/// "which half does this cell sit on?" — a face-keyed observability
+/// counter, a manifest field discriminating recognized cells from
+/// consistency-violation cells without addressing the specific cell —
+/// carries a [`PartitionFace`] (one byte, [`Copy`]) rather than the
+/// full [`PartitionOrdinal`] (the variant tag plus the dense
+/// inner-ordinal `usize`) at every slot. The tag is in lockstep with
+/// the cube's [`ProductCube::is_realizable`] predicate pointwise —
+/// pinned by [`tests::partition_ordinal_face_agrees_with_is_realizable`]
+/// over every cell of every cube via [`for_each_product_cube`].
+///
+/// [`PartitionFace`] is itself a [`ClosedAxis`] primitive (the tenth on
+/// the typescape) — exposes `Self::ALL = &[Realizable, Unrealizable]`
+/// and inherits the [`axis_iter`], [`axis_cardinality`], [`axis_ordinal`],
+/// [`axis_at`] generic helpers at the trait-impl declaration. A
+/// face-keyed dashboard row iterates the two faces uniformly through
+/// [`axis_iter::<PartitionFace>()`][axis_iter] rather than re-deriving
+/// `[Realizable, Unrealizable]` inline at every renderer.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PartitionFace {
+    /// The cube's recognized-image realizable surface — cells some
+    /// typescape value occupies. Matches
+    /// [`ProductCube::is_realizable`] returning `true`.
+    Realizable,
+    /// The cube's cross-axis consistency-violation complement — cells
+    /// no typescape value occupies. Matches
+    /// [`ProductCube::is_realizable`] returning `false`.
+    Unrealizable,
+}
+
+impl PartitionFace {
+    /// Every [`PartitionFace`] value, in declaration order.
+    ///
+    /// Mirror of the [`ClosedAxis::ALL`] trait constant; consumers
+    /// reach the same slice through either path. Length 2 — pinned by
+    /// [`tests::partition_face_all_has_two_entries`] and by the
+    /// [`for_each_closed_axis_primitive`] macro cardinality checksum.
+    pub const ALL: &'static [Self] = &[Self::Realizable, Self::Unrealizable];
+
+    /// `true` exactly on [`PartitionFace::Realizable`].
+    ///
+    /// The face-level dual of [`ProductCube::is_realizable`]: where
+    /// the cube method classifies a cell on a specific cube, this
+    /// method classifies the face tag itself, regardless of which cube
+    /// the face was produced from. Pinned in lockstep with the cube
+    /// predicate by
+    /// [`tests::partition_ordinal_face_agrees_with_is_realizable`].
+    #[must_use]
+    pub const fn is_realizable(self) -> bool {
+        matches!(self, Self::Realizable)
+    }
+}
+
+impl ClosedAxis for PartitionFace {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
 /// Typed witness of which half of a [`ProductCube`] a cell occupies,
 /// carrying the dense ordinal on that half.
 ///
@@ -629,6 +703,55 @@ pub enum PartitionOrdinal {
     /// complement; carries the dense ordinal in the prefix
     /// `0..unrealizable_count::<C>()`.
     Unrealizable(usize),
+}
+
+impl PartitionOrdinal {
+    /// Project the variant tag of a [`PartitionOrdinal`] into the
+    /// typed [`PartitionFace`] primitive — `Realizable(_) → Realizable`,
+    /// `Unrealizable(_) → Unrealizable`.
+    ///
+    /// One named projection of the two-arm `match` that was previously
+    /// inlined at every consumer that needed only the face tag without
+    /// the dense inner ordinal. Total over [`PartitionOrdinal`]: every
+    /// value lands on exactly one [`PartitionFace`] (no [`Option`]
+    /// wrapper). Pinned in lockstep with
+    /// [`ProductCube::is_realizable`] over every cell of every cube by
+    /// [`tests::partition_ordinal_face_agrees_with_is_realizable`].
+    ///
+    /// **Consumers** — a face-keyed observability counter
+    /// (`HashMap<PartitionFace, usize>`) records the face of a captured
+    /// cube cell through one call; a manifest field that distinguishes
+    /// the realizable image from the consistency-violation complement
+    /// at the face level (without addressing the specific cell)
+    /// carries one [`PartitionFace`] byte rather than the full
+    /// [`PartitionOrdinal`] (variant tag + dense inner ordinal).
+    #[must_use]
+    pub const fn face(self) -> PartitionFace {
+        match self {
+            Self::Realizable(_) => PartitionFace::Realizable,
+            Self::Unrealizable(_) => PartitionFace::Unrealizable,
+        }
+    }
+
+    /// Project the inner dense ordinal of a [`PartitionOrdinal`] —
+    /// `Realizable(i) → i`, `Unrealizable(i) → i`.
+    ///
+    /// One named projection of the two-arm `match` that was previously
+    /// inlined at every consumer that needed only the dense inner
+    /// ordinal without the face tag. The returned `usize` lies in
+    /// `0..realizable_count::<C>()` on a [`PartitionFace::Realizable`]
+    /// face and `0..unrealizable_count::<C>()` on a
+    /// [`PartitionFace::Unrealizable`] face — the face is implicit in
+    /// the variant the projection forgets. Consumers that carry the
+    /// face tag separately (e.g. as a [`PartitionFace`]-keyed
+    /// dashboard column) reach the inner ordinal through this
+    /// projection without re-pattern-matching.
+    #[must_use]
+    pub const fn face_ordinal(self) -> usize {
+        match self {
+            Self::Realizable(i) | Self::Unrealizable(i) => i,
+        }
+    }
 }
 
 /// Typed partition ordinal of a [`ProductCube`] cell — fuses
@@ -962,8 +1085,11 @@ mod tests {
     // test can list one macro call instead of two.
 
     /// Invokes `$cb!(TypeName)` for each [`ClosedAxis`] axis-primitive
-    /// enum — the nine closed-enum axis primitives the typescape
-    /// recognizes today, in declaration order.
+    /// enum — the ten closed-enum axis primitives the typescape
+    /// recognizes today, in declaration order. [`PartitionFace`] sits
+    /// at the tail as the cube-derived axis (the variant-tag projection
+    /// of [`PartitionOrdinal`]), while the leading nine are the
+    /// per-axis-of-the-cube primitives.
     macro_rules! for_each_closed_axis_primitive {
         ($cb:ident) => {
             $cb!(Format);
@@ -975,6 +1101,7 @@ mod tests {
             $cb!(AttributionRule);
             $cb!(AttributionConfidence);
             $cb!(AttributionAxis);
+            $cb!(PartitionFace);
         };
     }
 
@@ -1419,6 +1546,19 @@ mod tests {
         assert_trait_matches_inherent::<AttributionAxis>(AttributionAxis::ALL);
     }
 
+    #[test]
+    fn partition_face_trait_all_matches_inherent_all() {
+        // PartitionFace is the tenth closed-axis primitive — the
+        // variant-tag projection of `PartitionOrdinal`. The trait
+        // `ALL` slice is the inherent `ALL` slice (pointwise equal,
+        // same declaration order: Realizable, Unrealizable). A future
+        // variant landing on `PartitionFace` extends both slices in
+        // lockstep, but no expansion is anticipated: the two-element
+        // {realizable, unrealizable} partition is structural to
+        // `ProductCube::is_realizable`.
+        assert_trait_matches_inherent::<PartitionFace>(PartitionFace::ALL);
+    }
+
     // ---- axis_iter agrees with trait ALL for every implementor ----
 
     #[test]
@@ -1444,8 +1584,8 @@ mod tests {
     // ---- axis_cardinality pins today's variant / cell counts ----
 
     #[test]
-    fn axis_cardinality_pins_todays_counts_across_thirteen_implementors() {
-        // Nine closed-enum axis primitives. A new variant landing on
+    fn axis_cardinality_pins_todays_counts_across_fourteen_implementors() {
+        // Ten closed-enum axis primitives. A new variant landing on
         // any of these enums extends the expected count in lockstep.
         assert_axis_cardinality_matches_trait_all::<Format>(4);
         assert_axis_cardinality_matches_trait_all::<FormatProvenance>(2);
@@ -1456,6 +1596,7 @@ mod tests {
         assert_axis_cardinality_matches_trait_all::<AttributionRule>(5);
         assert_axis_cardinality_matches_trait_all::<AttributionConfidence>(2);
         assert_axis_cardinality_matches_trait_all::<AttributionAxis>(2);
+        assert_axis_cardinality_matches_trait_all::<PartitionFace>(2);
         // Four product cubes. A new cell-axis landing on any cube
         // extends the expected count by the product of the new axis's
         // cardinality with the cube's prior cardinality.
@@ -2666,6 +2807,185 @@ mod tests {
         );
     }
 
+    // ---- PartitionFace algebra and PartitionOrdinal projections ----
+    //
+    // `PartitionFace` is the tenth closed-axis primitive — the
+    // variant-tag projection of `PartitionOrdinal`. Three invariants
+    // pin its algebra:
+    //
+    //   (a) `PartitionFace::ALL = [Realizable, Unrealizable]` (two
+    //       entries, in declaration order; mirrored by the trait `ALL`
+    //       via the `partition_face_trait_all_matches_inherent_all`
+    //       test above);
+    //   (b) `PartitionFace::is_realizable` matches the variant pointwise
+    //       on the two-element axis;
+    //   (c) trait-uniform over every cube: for every cell,
+    //       `partition_ordinal::<C>(cell).face().is_realizable() ==
+    //       ProductCube::is_realizable(cell)`. The face tag and the
+    //       cube predicate are in lockstep on every cell of every
+    //       cube — pinned by the helper through `for_each_product_cube!`.
+    //
+    // `PartitionOrdinal::face_ordinal` is the dual projection: forgets
+    // the face tag, recovers the inner dense ordinal. A round-trip
+    // invariant — `PartitionOrdinal::Realizable(i).face_ordinal() == i`
+    // and dually for `Unrealizable` — is pinned by the synthetic
+    // round-trip helper across every in-range dense ordinal on every
+    // face of every cube via `for_each_product_cube!`.
+
+    #[test]
+    fn partition_face_all_has_two_entries() {
+        // Pin the typescape's tenth axis primitive's cardinality at
+        // two: Realizable + Unrealizable, in declaration order. A
+        // third face landing (which is not anticipated — the
+        // partition is XOR-complementary by construction) would
+        // require extending `PartitionOrdinal` with a matching variant
+        // and `ProductCube::is_realizable` from `bool` to a ternary
+        // predicate, both of which are structural changes that fail
+        // this assertion first.
+        assert_eq!(PartitionFace::ALL.len(), 2);
+        assert_eq!(PartitionFace::ALL[0], PartitionFace::Realizable);
+        assert_eq!(PartitionFace::ALL[1], PartitionFace::Unrealizable);
+    }
+
+    #[test]
+    fn partition_face_is_realizable_matches_variant() {
+        // `PartitionFace::is_realizable` returns `true` exactly on
+        // `Realizable`. The face-level predicate decouples "which half"
+        // from "which cube" — a consumer that carries a face tag
+        // without the cube type parameter classifies it through this
+        // method without re-pattern-matching.
+        assert!(PartitionFace::Realizable.is_realizable());
+        assert!(!PartitionFace::Unrealizable.is_realizable());
+    }
+
+    fn assert_partition_ordinal_face_agrees_with_is_realizable<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // The face tag projected from `partition_ordinal(cell)` is in
+        // lockstep with `ProductCube::is_realizable(cell)` on every
+        // cell of every cube. The cube predicate, the variant tag, and
+        // `PartitionFace::is_realizable` are three readings of the same
+        // bit — pinned pointwise here through one trait-uniform
+        // helper.
+        for cell in <C as ClosedAxis>::ALL.iter().copied() {
+            let face = partition_ordinal::<C>(cell).face();
+            assert_eq!(
+                face.is_realizable(),
+                ProductCube::is_realizable(cell),
+                "cell {cell:?}: partition_ordinal(cell).face().is_realizable() must equal \
+                 ProductCube::is_realizable(cell)",
+            );
+            // Face tag and variant agree at the construction level:
+            // realizable cells produce a `Realizable` tag, unrealizable
+            // cells produce an `Unrealizable` tag.
+            let expected = if ProductCube::is_realizable(cell) {
+                PartitionFace::Realizable
+            } else {
+                PartitionFace::Unrealizable
+            };
+            assert_eq!(
+                face, expected,
+                "cell {cell:?}: face tag must match is_realizable-derived expected face",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_face_agrees_with_is_realizable() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_partition_ordinal_face_agrees_with_is_realizable::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    fn assert_partition_ordinal_face_ordinal_round_trips<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // Round-trip on the dense-ordinal projection: for every
+        // in-range dense ordinal on each face, the synthetic
+        // `PartitionOrdinal` recovers the same dense ordinal through
+        // `face_ordinal`. The face-tag projection forgets the inner
+        // ordinal; the face-ordinal projection forgets the face tag;
+        // together they are the two halves of the typed disjoint-union
+        // encoding.
+        for i in 0..realizable_count::<C>() {
+            let p = PartitionOrdinal::Realizable(i);
+            assert_eq!(
+                p.face(),
+                PartitionFace::Realizable,
+                "Realizable({i}): face must be Realizable",
+            );
+            assert_eq!(
+                p.face_ordinal(),
+                i,
+                "Realizable({i}): face_ordinal must be {i}"
+            );
+        }
+        for i in 0..unrealizable_count::<C>() {
+            let p = PartitionOrdinal::Unrealizable(i);
+            assert_eq!(
+                p.face(),
+                PartitionFace::Unrealizable,
+                "Unrealizable({i}): face must be Unrealizable",
+            );
+            assert_eq!(
+                p.face_ordinal(),
+                i,
+                "Unrealizable({i}): face_ordinal must be {i}",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_face_ordinal_round_trips_across_every_cube() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_partition_ordinal_face_ordinal_round_trips::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    fn assert_partition_ordinal_recomposes_from_face_and_ordinal<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // For every cell of every cube, the typed-disjoint-union
+        // encoding (`partition_ordinal(cell)`) is reconstructible from
+        // its two projections (`face` and `face_ordinal`). The two
+        // projections form a faithful encoding: no information loss
+        // when the face tag and the dense inner ordinal are carried
+        // separately, then recombined through the matching variant
+        // constructor.
+        for cell in <C as ClosedAxis>::ALL.iter().copied() {
+            let p = partition_ordinal::<C>(cell);
+            let face = p.face();
+            let ordinal = p.face_ordinal();
+            let recombined = match face {
+                PartitionFace::Realizable => PartitionOrdinal::Realizable(ordinal),
+                PartitionFace::Unrealizable => PartitionOrdinal::Unrealizable(ordinal),
+            };
+            assert_eq!(
+                recombined, p,
+                "cell {cell:?}: recombining (face, face_ordinal) must equal partition_ordinal(cell)",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_recomposes_from_face_and_ordinal_across_every_cube() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_partition_ordinal_recomposes_from_face_and_ordinal::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
     // ---- PartialInverseCube forward/invert bijection invariants ----
     //
     // The (forward, invert) pair closes a bijection on the recognized
@@ -2821,12 +3141,14 @@ mod tests {
     // before any silent dropouts at the trait-uniform test sites.
 
     #[test]
-    fn for_each_closed_axis_primitive_macro_covers_nine_axes() {
-        // Pin that the macro expands to exactly nine arms — the nine
-        // closed-enum axis primitives the typescape recognizes today.
-        // A tenth axis primitive landing extends the macro in lockstep
-        // with the `impl ClosedAxis` declaration; this assertion fails
-        // until the macro arm lands.
+    fn for_each_closed_axis_primitive_macro_covers_ten_axes() {
+        // Pin that the macro expands to exactly ten arms — the ten
+        // closed-enum axis primitives the typescape recognizes today
+        // (the nine per-axis-of-the-cube primitives plus
+        // `PartitionFace`, the variant-tag projection of
+        // `PartitionOrdinal`). An eleventh axis primitive landing
+        // extends the macro in lockstep with the `impl ClosedAxis`
+        // declaration; this assertion fails until the macro arm lands.
         let mut count = 0usize;
         macro_rules! tally {
             ($ty:ident) => {
@@ -2835,8 +3157,8 @@ mod tests {
         }
         for_each_closed_axis_primitive!(tally);
         assert_eq!(
-            count, 9,
-            "for_each_closed_axis_primitive! must expand to nine arms",
+            count, 10,
+            "for_each_closed_axis_primitive! must expand to ten arms",
         );
     }
 
@@ -2878,10 +3200,10 @@ mod tests {
     }
 
     #[test]
-    fn for_each_closed_axis_implementor_macro_covers_thirteen_types() {
-        // Pin that the superset macro expands to exactly thirteen arms
-        // — the nine axis primitives plus the four product cubes. A
-        // tenth axis primitive OR a fifth cube landing extends the
+    fn for_each_closed_axis_implementor_macro_covers_fourteen_types() {
+        // Pin that the superset macro expands to exactly fourteen arms
+        // — the ten axis primitives plus the four product cubes. An
+        // eleventh axis primitive OR a fifth cube landing extends the
         // composed macro in lockstep through one of its two component
         // macros; this assertion fails until the arm lands.
         let mut count = 0usize;
@@ -2892,8 +3214,8 @@ mod tests {
         }
         for_each_closed_axis_implementor!(tally);
         assert_eq!(
-            count, 13,
-            "for_each_closed_axis_implementor! must expand to thirteen arms (9 axes + 4 cubes)",
+            count, 14,
+            "for_each_closed_axis_implementor! must expand to fourteen arms (10 axes + 4 cubes)",
         );
     }
 
@@ -2903,9 +3225,8 @@ mod tests {
         // bound it advertises (ClosedAxis) and that the expansion
         // produces no duplicates. Distinctness is pinned via
         // axis_cardinality summed across the implementors — the sum
-        // matches the today-pinned 47 (9 axes: 4+2+3+3+6+3+5+2+2 = 30,
-        // plus 4 cubes: 8+12+18+9 = 47 total) only when the macro
-        // emits each implementor exactly once. A duplicated arm would
+        // matches the today-pinned 79 only when the macro emits each
+        // implementor exactly once. A duplicated arm would
         // double-count one cardinality; a missing arm would
         // under-count. The sum is a checksum over the macro's image.
         fn axis_card<A: ClosedAxis>() -> usize {
@@ -2918,17 +3239,17 @@ mod tests {
             };
         }
         for_each_closed_axis_implementor!(add);
-        // 9-axis sum: Format=4, FormatProvenance=2, ConfigSourceKind=3,
+        // 10-axis sum: Format=4, FormatProvenance=2, ConfigSourceKind=3,
         // FigmentSourceKind=3, ShikumiErrorKind=6, FieldPathLocalization=3,
-        // AttributionRule=5, AttributionConfidence=2, AttributionAxis=2
-        // → 30.
+        // AttributionRule=5, AttributionConfidence=2, AttributionAxis=2,
+        // PartitionFace=2 → 32.
         // 4-cube sum: FormatCoordinates=8, AttributionCoordinates=12,
         // ErrorLocalizationCoordinates=18, AttributionSourceKindCoordinates=9
-        // → 47. Grand total 30+47 = 77.
+        // → 47. Grand total 32+47 = 79.
         assert_eq!(
-            total, 77,
+            total, 79,
             "macro must emit each implementor exactly once \
-             (today's axis_cardinality checksum is 77)",
+             (today's axis_cardinality checksum is 79)",
         );
     }
 }

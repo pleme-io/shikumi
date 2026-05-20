@@ -49,10 +49,11 @@ mod store;
 mod watcher;
 
 pub use cube::{
-    ClosedAxis, PartialInverseCube, PartitionOrdinal, ProductCube, at_partition_ordinal, axis_at,
-    axis_cardinality, axis_iter, axis_ordinal, forward_iter, partition_ordinal, realizable_at,
-    realizable_count, realizable_images, realizable_iter, realizable_ordinal, unrealizable_at,
-    unrealizable_count, unrealizable_iter, unrealizable_ordinal,
+    ClosedAxis, PartialInverseCube, PartitionFace, PartitionOrdinal, ProductCube,
+    at_partition_ordinal, axis_at, axis_cardinality, axis_iter, axis_ordinal, forward_iter,
+    partition_ordinal, realizable_at, realizable_count, realizable_images, realizable_iter,
+    realizable_ordinal, unrealizable_at, unrealizable_count, unrealizable_iter,
+    unrealizable_ordinal,
 };
 pub use discovery::{
     ConfigDiscovery, Format, FormatCoordinates, FormatMetadataTag, FormatProvenance,
