@@ -591,6 +591,170 @@ pub fn unrealizable_at<C: ProductCube>(ordinal: usize) -> Option<C> {
     unrealizable_iter::<C>().nth(ordinal)
 }
 
+/// Typed witness of which half of a [`ProductCube`] a cell occupies,
+/// carrying the dense ordinal on that half.
+///
+/// Every cell of every [`ProductCube`] falls into exactly one variant —
+/// `Realizable(i)` with `i < realizable_count::<C>()` on the recognized
+/// surface, or `Unrealizable(i)` with `i < unrealizable_count::<C>()`
+/// on the cross-axis consistency-violation complement. The two halves
+/// are XOR-complementary (pinned by
+/// [`tests::realizable_and_unrealizable_ordinals_partition_cube`]), so
+/// the enum is a typed encoding of that partition: one value per cell,
+/// no ambiguity about which face the dense ordinal addresses.
+///
+/// This is the cube-level disjoint-union counterpart of [`axis_ordinal`]
+/// — where [`axis_ordinal`] returns one dense `usize` over the full
+/// cube `ALL` slice (interleaving realizable and unrealizable cells),
+/// `PartitionOrdinal` returns a typed variant tagged with which face
+/// the cell sits on, plus the dense ordinal restricted to that face
+/// only. The encoding wastes no slot on the opposite half: a future
+/// observability counter sized by [`realizable_count::<C>()`][realizable_count]
+/// or [`unrealizable_count::<C>()`][unrealizable_count] picks the
+/// correct dimension via the variant tag at runtime, without separate
+/// dense-half encoders at every call site.
+///
+/// Built and decoded uniformly across every [`ProductCube`] implementor
+/// through [`partition_ordinal`] and [`at_partition_ordinal`]; a fifth
+/// product cube landing on the typescape inherits both helpers at the
+/// `impl ProductCube` declaration without re-deriving the
+/// `if is_realizable(cell) { Realizable(...) } else { Unrealizable(...) }`
+/// branch at every call site.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PartitionOrdinal {
+    /// Cell sits on the recognized-image realizable surface; carries
+    /// the dense ordinal in the prefix `0..realizable_count::<C>()`.
+    Realizable(usize),
+    /// Cell sits on the cross-axis consistency-violation unrealizable
+    /// complement; carries the dense ordinal in the prefix
+    /// `0..unrealizable_count::<C>()`.
+    Unrealizable(usize),
+}
+
+/// Typed partition ordinal of a [`ProductCube`] cell — fuses
+/// ([`realizable_ordinal`], [`unrealizable_ordinal`]) into one total
+/// helper returning a [`PartitionOrdinal`] variant tagged with which
+/// face of the cube the cell sits on.
+///
+/// Total over `C::ALL`: every cell of every product cube has a defined
+/// partition ordinal (no [`Option`] wrapper at the return type), because
+/// the XOR-complementary partition discipline pins that exactly one of
+/// [`realizable_ordinal`] / [`unrealizable_ordinal`] returns [`Some`]
+/// on every cell. The variant tag distinguishes the two faces; the
+/// inner `usize` is the dense ordinal restricted to that face.
+///
+/// **Variant agreement** — pinned by
+/// [`tests::partition_ordinal_variant_agrees_with_is_realizable`]:
+/// `partition_ordinal::<C>(cell)` returns
+/// [`PartitionOrdinal::Realizable`] exactly on realizable cells and
+/// [`PartitionOrdinal::Unrealizable`] exactly on unrealizable cells.
+///
+/// **Inner ordinal agreement** — pinned by
+/// [`tests::partition_ordinal_inner_matches_dense_ordinal`]: the
+/// inner `usize` on each variant equals the corresponding dense ordinal
+/// from [`realizable_ordinal`] or [`unrealizable_ordinal`] pointwise.
+///
+/// **Round-trip with [`at_partition_ordinal`]** — pinned by
+/// [`tests::partition_ordinal_round_trips_cell_side`]:
+/// `at_partition_ordinal::<C>(partition_ordinal::<C>(cell)) == Some(cell)`
+/// for every cell of every cube — the cube-level dual of the
+/// ([`axis_ordinal`], [`axis_at`]) round-trip, but on the typed
+/// disjoint-union encoding rather than the interleaved full-cube
+/// ordinal.
+///
+/// **Consumers** — a future single-slot observability counter or
+/// error-path field carrying "the cube cell address" stores one
+/// [`PartitionOrdinal`] value instead of two separate
+/// `Option<usize>` fields (one per face). Decoders take the typed
+/// enum and produce the cell through one named helper. Manifest
+/// serializers (THEORY.md §III.1.8 module manifests, §V.3
+/// three-pillar attestation) that distinguish the realizable image
+/// from the consistency-violation complement at the address level
+/// carry the variant tag and the dense ordinal in lockstep without
+/// re-deriving the predicate.
+///
+/// # Panics
+///
+/// Panics — via `.expect(...)` on the inner dense-ordinal lookup —
+/// only if a [`ProductCube`] implementor violates the discipline by
+/// returning `is_realizable(cell) == true` for a cell on which
+/// [`realizable_ordinal`] returns [`None`], or dually
+/// `is_realizable(cell) == false` for a cell on which
+/// [`unrealizable_ordinal`] returns [`None`]. The XOR-complementary
+/// partition discipline pins that exactly one of the two dense
+/// ordinals is [`Some`] on every cell, and the variant agreement
+/// invariant ([`tests::partition_ordinal_variant_agrees_with_is_realizable`])
+/// pins that the predicate-driven branch selects the side that
+/// returns [`Some`]; in practice both branches are reachable only
+/// when the implementor lies about `is_realizable`, which the
+/// trait-uniform tests would catch at the same site.
+#[must_use]
+pub fn partition_ordinal<C: ProductCube>(cell: C) -> PartitionOrdinal {
+    if ProductCube::is_realizable(cell) {
+        PartitionOrdinal::Realizable(
+            realizable_ordinal::<C>(cell).expect(
+                "ProductCube discipline: is_realizable(cell) => realizable_ordinal is Some",
+            ),
+        )
+    } else {
+        PartitionOrdinal::Unrealizable(
+            unrealizable_ordinal::<C>(cell).expect(
+                "ProductCube discipline: !is_realizable(cell) => unrealizable_ordinal is Some",
+            ),
+        )
+    }
+}
+
+/// Decode a [`PartitionOrdinal`] into the cell it addresses on a
+/// [`ProductCube`] — fuses ([`realizable_at`], [`unrealizable_at`])
+/// into one helper routed by the variant tag.
+///
+/// Safe forward dual of [`partition_ordinal`]: where
+/// [`partition_ordinal`] is the total inverse `cell → PartitionOrdinal`
+/// over the cube, [`at_partition_ordinal`] is the partial forward
+/// `PartitionOrdinal → Option<cell>` over the typed disjoint-union
+/// encoding, returning [`Some`] exactly when the inner `usize` falls
+/// in-range on the face the variant tag selects and [`None`] when the
+/// inner `usize` exceeds the face's count.
+///
+/// **Bijection laws** — pinned by trait-uniform tests reaching every
+/// implementor pointwise:
+///
+/// 1. **Round-trip from the cell side** —
+///    `at_partition_ordinal::<C>(partition_ordinal::<C>(cell)) == Some(cell)`
+///    for every cell of every cube. The
+///    `partition_ordinal`-then-`at_partition_ordinal` composition is
+///    the identity on `C::ALL`.
+/// 2. **Round-trip from the partition-ordinal side** —
+///    `at_partition_ordinal::<C>(p).map(partition_ordinal::<C>) == Some(p)`
+///    for every in-range `p: PartitionOrdinal`. The
+///    `at_partition_ordinal`-then-`partition_ordinal` composition is
+///    the identity on the in-range domain.
+/// 3. **Partiality on out-of-range** —
+///    `at_partition_ordinal::<C>(PartitionOrdinal::Realizable(i)).is_none()`
+///    for `i >= realizable_count::<C>()` and dually
+///    `at_partition_ordinal::<C>(PartitionOrdinal::Unrealizable(i)).is_none()`
+///    for `i >= unrealizable_count::<C>()`. The forward map is defined
+///    over each variant's restricted prefix and undefined outside it.
+/// 4. **Image realizability matches the variant tag** —
+///    `at_partition_ordinal::<C>(PartitionOrdinal::Realizable(i)).map(is_realizable) == Some(true)`
+///    for in-range `i`, and dually for [`PartitionOrdinal::Unrealizable`]
+///    with `Some(false)`. The forward map's variant tag and the
+///    cell's realizability are in lockstep.
+///
+/// **Consumers** — manifest decoders, error-path consumers, and
+/// observability dashboards recover the typed cell from a
+/// [`PartitionOrdinal`] address through one named helper rather than
+/// branching on the variant and calling [`realizable_at`] /
+/// [`unrealizable_at`] inline at every site.
+#[must_use]
+pub fn at_partition_ordinal<C: ProductCube>(p: PartitionOrdinal) -> Option<C> {
+    match p {
+        PartitionOrdinal::Realizable(i) => realizable_at::<C>(i),
+        PartitionOrdinal::Unrealizable(i) => unrealizable_at::<C>(i),
+    }
+}
+
 /// Closed discipline trait for the [`ProductCube`] subset whose
 /// forward map from the recognized-image type into the cube is
 /// injective, so the cube carries a partial inverse back into the
@@ -2186,6 +2350,319 @@ mod tests {
         assert_eq!(
             unrealizable_ordinal::<FormatCoordinates>(yaml_figment),
             None,
+        );
+    }
+
+    // ---- PartitionOrdinal fuses (realizable_ordinal, unrealizable_ordinal)
+    // ---- into a single typed witness over the cube's full surface ----
+    //
+    // The pair (partition_ordinal, at_partition_ordinal) is the typed-
+    // disjoint-union counterpart to (axis_ordinal, axis_at): where the
+    // axis-level pair carries one dense `usize` over the full cube
+    // `ALL` slice (interleaving realizable and unrealizable cells),
+    // PartitionOrdinal carries a typed variant tag plus the dense
+    // ordinal restricted to the variant's face. Every cell of every
+    // cube has a defined PartitionOrdinal (totality), the variant
+    // agrees with is_realizable pointwise (variant agreement), and
+    // the inner usize equals the corresponding dense-half ordinal
+    // pointwise (inner agreement). Four trait-uniform invariants reach
+    // every implementor pointwise:
+    //
+    //   (a) variant agreement — `partition_ordinal(cell)` is
+    //       Realizable(_) iff is_realizable(cell);
+    //   (b) inner-ordinal agreement — the inner usize on each variant
+    //       equals the corresponding realizable_/unrealizable_ordinal
+    //       pointwise;
+    //   (c) round-trip from the cell side —
+    //       at_partition_ordinal(partition_ordinal(cell)) == Some(cell)
+    //       for every cell of the cube;
+    //   (d) round-trip from the partition-ordinal side —
+    //       at_partition_ordinal(p).map(partition_ordinal) == Some(p)
+    //       for every in-range p (Realizable(i) with i < realizable_count
+    //       or Unrealizable(i) with i < unrealizable_count), plus the
+    //       partiality boundary (out-of-range p returns None on the
+    //       forward map).
+    //
+    // A fifth product cube landing picks up all four invariants by
+    // adding one line to each helper-bundle test through the
+    // `for_each_product_cube!` macro.
+
+    fn assert_partition_ordinal_variant_agrees_with_is_realizable<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // For every cell, the PartitionOrdinal variant agrees with the
+        // realizability predicate: Realizable iff is_realizable, dually
+        // Unrealizable iff !is_realizable. Pins the typed-partition
+        // discipline: the variant tag and the predicate are in lockstep
+        // pointwise, no cell can be tagged with the wrong face.
+        for cell in axis_iter::<C>() {
+            match partition_ordinal::<C>(cell) {
+                PartitionOrdinal::Realizable(_) => assert!(
+                    ProductCube::is_realizable(cell),
+                    "cell {cell:?}: partition_ordinal returned Realizable but is_realizable is false",
+                ),
+                PartitionOrdinal::Unrealizable(_) => assert!(
+                    !ProductCube::is_realizable(cell),
+                    "cell {cell:?}: partition_ordinal returned Unrealizable but is_realizable is true",
+                ),
+            }
+        }
+    }
+
+    fn assert_partition_ordinal_inner_matches_dense_ordinal<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // For every cell, the inner usize on each PartitionOrdinal
+        // variant equals the corresponding dense-half ordinal pointwise.
+        // Pins that the fused helper produces the same number the
+        // dense-half helpers do — no silent off-by-one or face-swap
+        // between the constituent ordinals and the merged encoding.
+        for cell in axis_iter::<C>() {
+            match partition_ordinal::<C>(cell) {
+                PartitionOrdinal::Realizable(i) => assert_eq!(
+                    Some(i),
+                    realizable_ordinal::<C>(cell),
+                    "cell {cell:?}: PartitionOrdinal::Realizable({i}) must equal realizable_ordinal",
+                ),
+                PartitionOrdinal::Unrealizable(i) => assert_eq!(
+                    Some(i),
+                    unrealizable_ordinal::<C>(cell),
+                    "cell {cell:?}: PartitionOrdinal::Unrealizable({i}) must equal unrealizable_ordinal",
+                ),
+            }
+        }
+    }
+
+    fn assert_partition_ordinal_round_trips_cell_side<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // For every cell of the cube, partition_ordinal-then-
+        // at_partition_ordinal recovers the cell. The composition
+        // `at_partition_ordinal ∘ partition_ordinal` is the identity on
+        // `C::ALL` — the typed-disjoint-union analog of `axis_at ∘
+        // axis_ordinal` being the identity on A. Reaches every cell of
+        // every cube (not just the realizable surface or the
+        // unrealizable complement separately, but the full cube
+        // uniformly), so a fifth cube landing inherits totality with
+        // one line in `for_each_product_cube!`.
+        for cell in axis_iter::<C>() {
+            let p = partition_ordinal::<C>(cell);
+            assert_eq!(
+                at_partition_ordinal::<C>(p),
+                Some(cell),
+                "cell {cell:?}: at_partition_ordinal(partition_ordinal(cell)) must equal Some(cell)",
+            );
+        }
+    }
+
+    fn assert_partition_ordinal_round_trips_ordinal_side<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // For every in-range PartitionOrdinal, at_partition_ordinal-
+        // then-partition_ordinal recovers the partition ordinal. The
+        // composition `partition_ordinal ∘ at_partition_ordinal` is the
+        // identity on the in-range domain — covering Realizable(i) with
+        // i < realizable_count AND Unrealizable(i) with i <
+        // unrealizable_count, exercising both faces of the bijection at
+        // one site. Out-of-range partition ordinals are checked
+        // separately in the partiality test.
+        for i in 0..realizable_count::<C>() {
+            let p = PartitionOrdinal::Realizable(i);
+            let recovered = at_partition_ordinal::<C>(p).map(partition_ordinal::<C>);
+            assert_eq!(
+                recovered,
+                Some(p),
+                "at_partition_ordinal(Realizable({i})).map(partition_ordinal) must equal Some(Realizable({i}))",
+            );
+        }
+        for i in 0..unrealizable_count::<C>() {
+            let p = PartitionOrdinal::Unrealizable(i);
+            let recovered = at_partition_ordinal::<C>(p).map(partition_ordinal::<C>);
+            assert_eq!(
+                recovered,
+                Some(p),
+                "at_partition_ordinal(Unrealizable({i})).map(partition_ordinal) must equal Some(Unrealizable({i}))",
+            );
+        }
+    }
+
+    fn assert_at_partition_ordinal_none_on_out_of_range<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // For every out-of-range PartitionOrdinal (Realizable(i) with
+        // i >= realizable_count, or Unrealizable(i) with i >=
+        // unrealizable_count), the forward map returns None. The
+        // boundary check exercises the immediate boundary (n, n+1), a
+        // comfortable margin (n+7), and the `usize::MAX` extreme to
+        // catch any silent saturation on either face. Pins that the
+        // forward map is defined precisely on each variant's restricted
+        // prefix and the Option return surfaces the partiality at the
+        // type level rather than by convention.
+        let nr = realizable_count::<C>();
+        for i in [nr, nr + 1, nr + 7, usize::MAX] {
+            assert!(
+                at_partition_ordinal::<C>(PartitionOrdinal::Realizable(i)).is_none(),
+                "at_partition_ordinal(Realizable({i})) must be None for ordinal >= realizable_count (n = {nr})",
+            );
+        }
+        let nu = unrealizable_count::<C>();
+        for i in [nu, nu + 1, nu + 7, usize::MAX] {
+            assert!(
+                at_partition_ordinal::<C>(PartitionOrdinal::Unrealizable(i)).is_none(),
+                "at_partition_ordinal(Unrealizable({i})) must be None for ordinal >= unrealizable_count (n = {nu})",
+            );
+        }
+    }
+
+    fn assert_at_partition_ordinal_image_matches_variant_tag<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // For every in-range PartitionOrdinal, the cell the forward map
+        // lands on has realizability matching the variant tag:
+        // Realizable(i) lands on an is_realizable=true cell;
+        // Unrealizable(i) lands on an is_realizable=false cell. Pins
+        // that the variant tag and the cell's realizability are in
+        // lockstep — the typed-partition encoding cannot smuggle an
+        // unrealizable cell behind a Realizable tag, nor vice versa.
+        for i in 0..realizable_count::<C>() {
+            let cell = at_partition_ordinal::<C>(PartitionOrdinal::Realizable(i))
+                .expect("in-range Realizable(i) must yield Some by partiality invariant");
+            assert!(
+                ProductCube::is_realizable(cell),
+                "at_partition_ordinal(Realizable({i})) = {cell:?} must satisfy is_realizable",
+            );
+        }
+        for i in 0..unrealizable_count::<C>() {
+            let cell = at_partition_ordinal::<C>(PartitionOrdinal::Unrealizable(i))
+                .expect("in-range Unrealizable(i) must yield Some by partiality invariant");
+            assert!(
+                !ProductCube::is_realizable(cell),
+                "at_partition_ordinal(Unrealizable({i})) = {cell:?} must NOT satisfy is_realizable",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_variant_agrees_with_is_realizable() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_partition_ordinal_variant_agrees_with_is_realizable::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn partition_ordinal_inner_matches_dense_ordinal() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_partition_ordinal_inner_matches_dense_ordinal::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn partition_ordinal_round_trips_cell_side() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_partition_ordinal_round_trips_cell_side::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn partition_ordinal_round_trips_ordinal_side() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_partition_ordinal_round_trips_ordinal_side::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn at_partition_ordinal_none_on_out_of_range() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_at_partition_ordinal_none_on_out_of_range::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn at_partition_ordinal_image_matches_variant_tag() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_at_partition_ordinal_image_matches_variant_tag::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn partition_ordinal_pins_format_coordinates_dense_ordinals() {
+        // Concrete-position pin on FormatCoordinates: the 8 cells of
+        // ALL split into 4 realizable (at full-cube ordinals 0, 2, 5,
+        // 7; dense realizable ordinals 0, 1, 2, 3) and 4 unrealizable
+        // (at full-cube ordinals 1, 3, 4, 6; dense unrealizable
+        // ordinals 0, 1, 2, 3). The PartitionOrdinal encoding pins
+        // each cell's variant tag and dense ordinal in one helper —
+        // the symmetric concrete-position pin to the realizable and
+        // unrealizable counterparts above, but on the merged typed-
+        // disjoint-union encoding rather than the per-face Option<usize>
+        // halves.
+        use crate::{FormatCoordinates, FormatProvenance};
+        let yaml_figment = FormatCoordinates {
+            format: Format::Yaml,
+            provenance: FormatProvenance::FigmentBuiltin,
+        };
+        let yaml_shikumi = FormatCoordinates {
+            format: Format::Yaml,
+            provenance: FormatProvenance::ShikumiBuilt,
+        };
+        let nix_shikumi = FormatCoordinates {
+            format: Format::Nix,
+            provenance: FormatProvenance::ShikumiBuilt,
+        };
+        let nix_figment = FormatCoordinates {
+            format: Format::Nix,
+            provenance: FormatProvenance::FigmentBuiltin,
+        };
+        // Realizable side — variant tag matches is_realizable.
+        assert_eq!(
+            partition_ordinal::<FormatCoordinates>(yaml_figment),
+            PartitionOrdinal::Realizable(0),
+        );
+        assert_eq!(
+            partition_ordinal::<FormatCoordinates>(nix_shikumi),
+            PartitionOrdinal::Realizable(3),
+        );
+        // Unrealizable side — variant tag matches !is_realizable.
+        assert_eq!(
+            partition_ordinal::<FormatCoordinates>(yaml_shikumi),
+            PartitionOrdinal::Unrealizable(0),
+        );
+        assert_eq!(
+            partition_ordinal::<FormatCoordinates>(nix_figment),
+            PartitionOrdinal::Unrealizable(3),
+        );
+        // Round-trip witness on one cell from each face.
+        assert_eq!(
+            at_partition_ordinal::<FormatCoordinates>(PartitionOrdinal::Realizable(0)),
+            Some(yaml_figment),
+        );
+        assert_eq!(
+            at_partition_ordinal::<FormatCoordinates>(PartitionOrdinal::Unrealizable(3)),
+            Some(nix_figment),
         );
     }
 
