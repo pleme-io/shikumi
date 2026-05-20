@@ -1,5 +1,44 @@
-//! Tiered configuration — the fleet-wide pattern every shikumi-typed
-//! group implements.
+//! Tiered configuration — **the shikumi configuration prime directive**.
+//!
+//! Every typed configuration shikumi loads MUST implement
+//! [`TieredConfig`]. The bare/discovered/prescribed-default tier
+//! model is as load-bearing as shikumi's existing YAML+env+nix
+//! discovery — the two compose, they don't replace each other.
+//!
+//! # Operator workflow (the contract every app exposes)
+//!
+//! ```text
+//! <app> config-show bare          # zero-opinion floor
+//! <app> config-show discovered    # bare + runtime auto-detect
+//! <app> config-show default       # bare + prescribed defaults + discovered
+//! diff <(<app> config-show bare) <(<app> config-show default)
+//! ```
+//!
+//! The same env-var convention applies fleet-wide:
+//!
+//! ```text
+//! MADO_TIER=bare mado             # explicit tier override at launch
+//! FROST_TIER=discovered frost     # autodetect-only, no prescribed opinions
+//! ```
+//!
+//! # The runtime path
+//!
+//! ```rust,ignore
+//! use shikumi::{ConfigStore, ConfigTier, TieredConfig};
+//!
+//! // Resolve the tier from env (defaults to Default if unset/invalid).
+//! let tier = ConfigTier::from_env("MADO_TIER");
+//! let store = ConfigStore::for_app("mado");
+//! let cfg: MadoConfig = store.load_tier(tier)?;
+//! ```
+//!
+//! `load_tier` composes the right tier:
+//! * `Bare`       → `T::bare()`
+//! * `Discovered` → `T::discovered()`
+//! * `Default`    → `T::prescribed_default()` (then overlay the
+//!                   operator's YAML if present — the standard
+//!                   shikumi YAML+env+nix path layers on top)
+//! * `Custom`     → load explicit path, layered on `prescribed_default()`
 //!
 //! # The model
 //!
@@ -54,6 +93,85 @@
 //!    test.
 
 use serde::{de::DeserializeOwned, Serialize};
+use std::env;
+
+// ── ConfigTier — operator-facing enum picking which baseline to load
+
+/// Which tier of a `TieredConfig` to materialize at app startup.
+///
+/// Apps resolve via [`ConfigTier::from_env`] (default convention:
+/// `<APP>_TIER` env var) or via an explicit CLI flag. The four
+/// variants mirror the `TieredConfig` trait methods:
+///
+/// * `Bare`       — zero-opinion floor (every field at empty/zero).
+/// * `Discovered` — bare + runtime auto-detect outputs.
+/// * `Default`    — bare + discovered + prescribed_default (the
+///                  ~90% case; what `Default::default()` returns).
+/// * `Custom(path)` — load YAML from `path` overlaid on
+///                  `prescribed_default()`. Equivalent to the
+///                  standard shikumi YAML discovery path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigTier {
+    Bare,
+    Discovered,
+    #[allow(clippy::module_name_repetitions)]
+    Default,
+    Custom(std::path::PathBuf),
+}
+
+impl Default for ConfigTier {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
+impl ConfigTier {
+    /// Resolve the tier from an env var, falling back to
+    /// `ConfigTier::Default` when unset / unparseable.
+    ///
+    /// Recognized values (case-insensitive):
+    ///   * `"bare"` → Bare
+    ///   * `"discovered"` → Discovered
+    ///   * `"default"` → Default
+    ///   * any other non-empty string → Custom(value as path)
+    #[must_use]
+    pub fn from_env(env_var: &str) -> Self {
+        let Ok(raw) = env::var(env_var) else {
+            return Self::default();
+        };
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "" => Self::default(),
+            "bare" => Self::Bare,
+            "discovered" => Self::Discovered,
+            "default" => Self::Default,
+            other => Self::Custom(std::path::PathBuf::from(other)),
+        }
+    }
+
+    /// Resolve from an explicit string (e.g. a CLI flag value).
+    /// Same matching rules as [`ConfigTier::from_env`].
+    #[must_use]
+    pub fn from_str_or_default(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "" | "default" => Self::Default,
+            "bare" => Self::Bare,
+            "discovered" => Self::Discovered,
+            other => Self::Custom(std::path::PathBuf::from(other)),
+        }
+    }
+
+    /// Operator-facing tier name (`"bare"` / `"discovered"` /
+    /// `"default"` / `"custom"`) — used in logs + telemetry.
+    #[must_use]
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Bare => "bare",
+            Self::Discovered => "discovered",
+            Self::Default => "default",
+            Self::Custom(_) => "custom",
+        }
+    }
+}
 
 /// Trait every shikumi-typed config implements to participate in the
 /// fleet-wide tier model. See module docs for the full operator
@@ -80,6 +198,57 @@ pub trait TieredConfig: Sized + Clone + Serialize + DeserializeOwned {
     /// finer-grained per-field merge semantics override.
     fn extend(self, _base: &Self) -> Self {
         self
+    }
+
+    /// Materialize `self` from a tier selector — the operator-facing
+    /// entry point. Wraps the tier methods + env-var resolution +
+    /// optional YAML overlay into one call site every fleet app
+    /// uses identically.
+    ///
+    /// `Bare`/`Discovered`/`Default` resolve to the corresponding
+    /// trait method. `Custom(path)` attempts to deserialize YAML
+    /// at `path` and overlay it on `prescribed_default()`; falls
+    /// back to `prescribed_default()` if the file is missing or
+    /// malformed (warns via tracing).
+    fn resolve_tier(tier: ConfigTier) -> Self {
+        match tier {
+            ConfigTier::Bare => Self::bare(),
+            ConfigTier::Discovered => Self::discovered(),
+            ConfigTier::Default => Self::prescribed_default(),
+            ConfigTier::Custom(path) => {
+                let base = Self::prescribed_default();
+                match std::fs::read_to_string(&path) {
+                    Ok(s) => match serde_yaml::from_str::<Self>(&s) {
+                        Ok(overlay) => overlay.extend(&base),
+                        Err(e) => {
+                            tracing::warn!(
+                                target: "shikumi::tiered",
+                                error = %e,
+                                path = %path.display(),
+                                "custom tier YAML failed to deserialize — falling back to prescribed_default"
+                            );
+                            base
+                        }
+                    },
+                    Err(e) => {
+                        tracing::warn!(
+                            target: "shikumi::tiered",
+                            error = %e,
+                            path = %path.display(),
+                            "custom tier YAML not readable — falling back to prescribed_default"
+                        );
+                        base
+                    }
+                }
+            }
+        }
+    }
+
+    /// Convenience: resolve the tier from an env var (default
+    /// `<APP>_TIER`) AND materialize the config in one call.
+    /// The fleet-wide canonical entry point at app startup.
+    fn resolve_from_env(env_var: &str) -> Self {
+        Self::resolve_tier(ConfigTier::from_env(env_var))
     }
 
     /// Diff `self` against `baseline`. Default: serialize both to
@@ -277,5 +446,82 @@ mod tests {
         let p = Toy::prescribed_default();
         let merged = p.clone().extend(&b);
         assert_eq!(merged, p);
+    }
+
+    // ── ConfigTier + resolve_tier coverage ──────────────────────
+
+    #[test]
+    fn config_tier_default_is_default_variant() {
+        assert_eq!(ConfigTier::default(), ConfigTier::Default);
+    }
+
+    #[test]
+    fn config_tier_from_str_recognizes_named_tiers() {
+        assert_eq!(ConfigTier::from_str_or_default("bare"), ConfigTier::Bare);
+        assert_eq!(
+            ConfigTier::from_str_or_default("DISCOVERED"),
+            ConfigTier::Discovered
+        );
+        assert_eq!(ConfigTier::from_str_or_default("default"), ConfigTier::Default);
+        assert_eq!(ConfigTier::from_str_or_default(""), ConfigTier::Default);
+        match ConfigTier::from_str_or_default("/etc/foo.yaml") {
+            ConfigTier::Custom(p) => {
+                assert_eq!(p, std::path::PathBuf::from("/etc/foo.yaml"));
+            }
+            other => panic!("expected Custom, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn config_tier_names_are_stable() {
+        assert_eq!(ConfigTier::Bare.name(), "bare");
+        assert_eq!(ConfigTier::Discovered.name(), "discovered");
+        assert_eq!(ConfigTier::Default.name(), "default");
+        assert_eq!(
+            ConfigTier::Custom(std::path::PathBuf::from("/x")).name(),
+            "custom"
+        );
+    }
+
+    #[test]
+    fn config_tier_from_env_resolves_correctly() {
+        let key = "SHIKUMI_TIERED_TEST_TIER_X";
+        // Set to "bare", verify resolution.
+        // SAFETY: tests run single-threaded per test by default;
+        // we restore + clear the env var on every branch.
+        unsafe {
+            std::env::set_var(key, "bare");
+        }
+        assert_eq!(ConfigTier::from_env(key), ConfigTier::Bare);
+        unsafe {
+            std::env::set_var(key, "");
+        }
+        assert_eq!(ConfigTier::from_env(key), ConfigTier::Default);
+        unsafe {
+            std::env::remove_var(key);
+        }
+        assert_eq!(ConfigTier::from_env(key), ConfigTier::Default);
+    }
+
+    #[test]
+    fn resolve_tier_dispatches_to_each_method() {
+        assert_eq!(Toy::resolve_tier(ConfigTier::Bare), Toy::bare());
+        assert_eq!(
+            Toy::resolve_tier(ConfigTier::Discovered),
+            Toy::discovered()
+        );
+        assert_eq!(
+            Toy::resolve_tier(ConfigTier::Default),
+            Toy::prescribed_default()
+        );
+    }
+
+    #[test]
+    fn resolve_tier_custom_missing_file_falls_back_to_default() {
+        let phantom = std::path::PathBuf::from(
+            "/nonexistent/path/shikumi-tier-fallback-test.yaml",
+        );
+        let resolved = Toy::resolve_tier(ConfigTier::Custom(phantom));
+        assert_eq!(resolved, Toy::prescribed_default());
     }
 }

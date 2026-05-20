@@ -74,5 +74,5 @@ pub use source::{
     FigmentSourceTag,
 };
 pub use store::ConfigStore;
-pub use tiered::{ConfigDiff, DiffLine, TieredConfig};
+pub use tiered::{ConfigDiff, ConfigTier, DiffLine, TieredConfig};
 pub use watcher::{ConfigWatcher, symlink_target};
