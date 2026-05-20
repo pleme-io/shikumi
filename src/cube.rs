@@ -461,6 +461,136 @@ pub fn realizable_at<C: ProductCube>(ordinal: usize) -> Option<C> {
     realizable_iter::<C>().nth(ordinal)
 }
 
+/// Dense ordinal of a [`ProductCube`] cell over the unrealizable
+/// complement — the position of `cell` in [`unrealizable_iter::<C>()`],
+/// or [`None`] on the recognized-image realizable surface.
+///
+/// Symmetric dual of [`realizable_ordinal`]: where
+/// [`realizable_ordinal`] is the partial inverse
+/// `cell → Option<ordinal>` over the cube with image
+/// `0..realizable_count::<C>()` on realizable cells and [`None`] on the
+/// unrealizable complement, [`unrealizable_ordinal`] is the same
+/// partial inverse over the opposite half of the cube — `Some(ordinal)`
+/// with image `0..unrealizable_count::<C>()` on the cross-axis
+/// consistency-violation cells and [`None`] on the realizable surface.
+/// The unrealizable surface is the complement of the recognized image —
+/// the cells no typescape value occupies — and the dense ordinal indexes
+/// that half in declaration order over the underlying [`ClosedAxis::ALL`]
+/// slice, skipping the interleaved realizable cells.
+///
+/// Concretely, [`crate::FormatCoordinates::ALL`] lays its 8 cells in
+/// lex order over (`format × provenance`); the 4 unrealizable cells sit
+/// at full-cube indices 1, 3, 4, 6 (the ones where
+/// `provenance != format.provenance()`). [`axis_ordinal`] returns 1, 3,
+/// 4, 6 on those cells (the position in `FormatCoordinates::ALL`);
+/// [`unrealizable_ordinal`] returns 0, 1, 2, 3 (the dense position in
+/// `unrealizable_iter::<FormatCoordinates>()`).
+///
+/// **Partiality on the value side** —
+/// `unrealizable_ordinal::<C>(cell).is_some() == !ProductCube::is_realizable(cell)`,
+/// pinned by [`tests::unrealizable_ordinal_some_iff_not_is_realizable`].
+/// The dense ordinal is defined exactly on the unrealizable complement;
+/// realizable cells return [`None`] uniformly. Together with
+/// [`realizable_ordinal`], the two ordinals partition the cube cleanly:
+/// every cell has exactly one defined ordinal (either dense-realizable
+/// or dense-unrealizable, never both), pinned by
+/// [`tests::realizable_and_unrealizable_ordinals_partition_cube`].
+///
+/// **Image equals the unrealizable prefix** — the ordinal image over
+/// the unrealizable complement equals `0..unrealizable_count::<C>()`
+/// as a set, pinned by
+/// [`tests::unrealizable_ordinal_image_equals_unrealizable_prefix`].
+/// The embedding is a dense injection onto the natural-number prefix.
+///
+/// **Round-trip with [`unrealizable_at`]** —
+/// `unrealizable_at::<C>(unrealizable_ordinal::<C>(cell).unwrap()) == Some(cell)`
+/// for every unrealizable cell, pinned by
+/// [`tests::unrealizable_round_trips_cell_side`]. The pair
+/// ([`unrealizable_ordinal`], [`unrealizable_at`]) closes the partial
+/// bijection between the unrealizable complement and the natural-number
+/// prefix `0..unrealizable_count::<C>()`, mirroring the realizable-half
+/// bijection on the cube's opposite face.
+///
+/// **Consumers** — error-path messaging that reports cross-axis
+/// consistency violations by stable dense violation-ordinal (e.g.
+/// "consistency violation #N of M for cube C") indexes through the
+/// ordinal without an inline
+/// `unrealizable_iter::<C>().position(|c| c == cell)` per call site;
+/// dense observability counters sized by
+/// [`unrealizable_count::<C>()`][unrealizable_count] (one slot per
+/// consistency-violation cell, rather than [`axis_cardinality::<C>()`][axis_cardinality]
+/// slots that waste one per realizable cell) index through the dense
+/// ordinal; future cube-cover dashboards that render the complement
+/// half symmetrically with the realizable half reach the position
+/// through one helper rather than re-deriving the iterator-`position`
+/// per renderer.
+#[must_use]
+pub fn unrealizable_ordinal<C: ProductCube>(cell: C) -> Option<usize> {
+    unrealizable_iter::<C>().position(|c| c == cell)
+}
+
+/// Dense ordinal lookup over the unrealizable complement of a
+/// [`ProductCube`] — the unrealizable cell at position `ordinal` in
+/// [`unrealizable_iter::<C>()`], or [`None`] if the index is
+/// out-of-range.
+///
+/// Safe forward dual of [`unrealizable_ordinal`] and symmetric dual of
+/// [`realizable_at`]: where [`unrealizable_ordinal`] is the partial
+/// inverse `cell → Option<ordinal>` over the cube (`Some` exactly on
+/// the unrealizable complement, [`None`] on the realizable surface),
+/// [`unrealizable_at`] is the partial forward
+/// `ordinal → Option<cell>` over `usize`, returning [`Some`] exactly
+/// on the prefix `0..unrealizable_count::<C>()` and [`None`] outside
+/// it. The pair ([`unrealizable_ordinal`], [`unrealizable_at`]) closes
+/// the bijection between the unrealizable complement and the
+/// natural-number prefix in both directions, mirroring the
+/// ([`realizable_ordinal`], [`realizable_at`]) pair on the cube's
+/// opposite face. Together the two pairs close the cube's surface
+/// algebra symmetrically: every full-cube cell has exactly one defined
+/// dense ordinal (realizable or unrealizable, never both), and every
+/// in-range dense ordinal on either side lands on a cell of the
+/// matching realizability.
+///
+/// **Bijection laws** — pinned by trait-uniform tests reaching every
+/// implementor pointwise:
+///
+/// 1. **Round-trip from the cell side** —
+///    `unrealizable_at::<C>(unrealizable_ordinal::<C>(cell).unwrap()) == Some(cell)`
+///    for every unrealizable `cell: C`. The ordinal-then-lookup
+///    composition is the identity on the unrealizable complement.
+/// 2. **Round-trip from the ordinal side** —
+///    `unrealizable_at::<C>(i).and_then(unrealizable_ordinal::<C>) == Some(i)`
+///    for every `i < unrealizable_count::<C>()`. The
+///    lookup-then-ordinal composition is the identity on the in-range
+///    prefix.
+/// 3. **Partiality on out-of-range** —
+///    `unrealizable_at::<C>(i).is_none()` for every
+///    `i >= unrealizable_count::<C>()`. The forward map is total over
+///    the prefix and undefined outside it; the [`Option`] return
+///    surfaces the partiality at the type level instead of by
+///    convention.
+/// 4. **Image is unrealizable** —
+///    `unrealizable_at::<C>(i).map(ProductCube::is_realizable) == Some(false)`
+///    for every in-range `i`. The forward map lands on the
+///    unrealizable complement by construction — the dual of the
+///    realizable-image invariant on [`realizable_at`].
+///
+/// **Consumers** — error-path messaging that decodes a captured
+/// dense violation-ordinal back into the typed
+/// `(axis, layer_kind, confidence)` (or analogous) cell — e.g. a
+/// reload-failure observability slot stamped with the dense ordinal
+/// of the consistency violation hit — recovers the typed cell via
+/// [`unrealizable_at`] without an
+/// `unrealizable_iter::<C>().nth(i)` inline at every decoder site.
+/// Dense observability arrays sized by
+/// [`unrealizable_count::<C>()`][unrealizable_count] (one slot per
+/// violation cell, indexed by dense ordinal) look up the typed cell at
+/// a given position safely.
+#[must_use]
+pub fn unrealizable_at<C: ProductCube>(ordinal: usize) -> Option<C> {
+    unrealizable_iter::<C>().nth(ordinal)
+}
+
 /// Closed discipline trait for the [`ProductCube`] subset whose
 /// forward map from the recognized-image type into the cube is
 /// injective, so the cube carries a partial inverse back into the
@@ -1725,6 +1855,338 @@ mod tests {
         // between axis_ordinal (total over `ALL`) and realizable_ordinal
         // (partial over the realizable surface).
         assert_eq!(axis_ordinal::<FormatCoordinates>(yaml_shikumi), 1);
+    }
+
+    // ---- unrealizable_ordinal / unrealizable_at close the dense
+    // ---- bijection between the unrealizable complement and
+    // ---- 0..unrealizable_count ----
+    //
+    // The pair (unrealizable_ordinal, unrealizable_at) is the symmetric
+    // dual of (realizable_ordinal, realizable_at) on the cube's opposite
+    // face — a dense embedding of the consistency-violation complement
+    // into the natural-number prefix `0..unrealizable_count::<C>()`.
+    // Together the two pairs partition the cube cleanly: every
+    // full-cube cell has exactly one defined dense ordinal (realizable
+    // or unrealizable, never both), and every in-range dense ordinal
+    // on either side lands on a cell of the matching realizability.
+    // Four trait-uniform invariants reach every implementor pointwise:
+    //
+    //   (a) unrealizable_ordinal partiality —
+    //       `unrealizable_ordinal(cell).is_some() == !is_realizable(cell)`;
+    //   (b) unrealizable_at partiality —
+    //       `unrealizable_at(i).is_some() == (i < unrealizable_count)`;
+    //   (c) round-trip — `unrealizable_at(unrealizable_ordinal(c).unwrap()) == Some(c)`
+    //       for every unrealizable cell, and dually
+    //       `unrealizable_at(i).and_then(unrealizable_ordinal) == Some(i)`
+    //       for every in-range ordinal;
+    //   (d) image unrealizability — every `unrealizable_at(i)` for
+    //       in-range `i` returns Some(cell) with is_realizable(cell)
+    //       false.
+    //
+    // A fifth product cube landing picks up all four invariants by
+    // adding one line to each helper-bundle test through the
+    // `for_each_product_cube!` macro.
+
+    fn assert_unrealizable_ordinal_some_iff_not_is_realizable<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // For every cell of the cube, the dense unrealizable ordinal is
+        // Some exactly when the cell is NOT realizable. The ordinal is
+        // defined precisely on the unrealizable complement; the
+        // realizable surface uniformly returns None. The Boolean dual
+        // of `realizable_ordinal_some_iff_is_realizable` — pins that
+        // the dense embedding's domain equals the unrealizable
+        // complement, not a different subset.
+        for cell in axis_iter::<C>() {
+            assert_eq!(
+                unrealizable_ordinal::<C>(cell).is_some(),
+                !ProductCube::is_realizable(cell),
+                "cell {cell:?}: unrealizable_ordinal(...).is_some() must equal !is_realizable(...)",
+            );
+        }
+    }
+
+    fn assert_unrealizable_at_some_iff_in_unrealizable_prefix<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // For every in-range ordinal `i < unrealizable_count::<C>()`,
+        // the dense lookup returns Some; for every out-of-range
+        // ordinal, it returns None. The boundary check exercises the
+        // immediate boundary (`n`, `n+1`), a comfortable margin
+        // (`n+7`), and the `usize::MAX` extreme to catch any silent
+        // saturation — mirrors `realizable_at_some_iff_in_realizable_prefix`
+        // on the opposite face of the cube.
+        let n = unrealizable_count::<C>();
+        for i in 0..n {
+            assert!(
+                unrealizable_at::<C>(i).is_some(),
+                "unrealizable_at({i}) must be Some for in-range ordinal (n = {n})",
+            );
+        }
+        for i in [n, n + 1, n + 7, usize::MAX] {
+            assert!(
+                unrealizable_at::<C>(i).is_none(),
+                "unrealizable_at({i}) must be None for ordinal >= unrealizable_count (n = {n})",
+            );
+        }
+    }
+
+    fn assert_unrealizable_round_trips_cell_side<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // For every unrealizable cell `c`, ordinal-then-lookup recovers
+        // the cell: `unrealizable_at(unrealizable_ordinal(c).unwrap())
+        // == Some(c)`. The composition `unrealizable_at ∘
+        // unrealizable_ordinal` is the identity on the unrealizable
+        // complement — the symmetric dual of `realizable_at ∘
+        // realizable_ordinal` being the identity on the realizable
+        // surface.
+        for cell in unrealizable_iter::<C>() {
+            let ordinal = unrealizable_ordinal::<C>(cell)
+                .expect("unrealizable_iter must yield only ordinal-Some cells");
+            assert_eq!(
+                unrealizable_at::<C>(ordinal),
+                Some(cell),
+                "unrealizable_at(unrealizable_ordinal({cell:?}).unwrap()) must equal Some({cell:?})",
+            );
+        }
+    }
+
+    fn assert_unrealizable_round_trips_ordinal_side<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // For every in-range ordinal `i < unrealizable_count::<C>()`,
+        // lookup-then-ordinal recovers the ordinal:
+        // `unrealizable_at(i).and_then(unrealizable_ordinal) ==
+        // Some(i)`. The composition `unrealizable_ordinal ∘
+        // unrealizable_at` is the identity on the in-range prefix —
+        // the symmetric dual of `realizable_ordinal ∘ realizable_at`
+        // being the identity on `0..realizable_count::<C>()`.
+        for i in 0..unrealizable_count::<C>() {
+            let recovered = unrealizable_at::<C>(i).and_then(unrealizable_ordinal::<C>);
+            assert_eq!(
+                recovered,
+                Some(i),
+                "unrealizable_at({i}).and_then(unrealizable_ordinal) must equal Some({i})",
+            );
+        }
+    }
+
+    fn assert_unrealizable_at_image_is_unrealizable<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // For every in-range ordinal `i`, the dense lookup lands on an
+        // unrealizable cell: `unrealizable_at(i).map(is_realizable) ==
+        // Some(false)`. Pins that the forward map's image is the
+        // unrealizable complement, not the full cube `ALL`. The
+        // Boolean dual of `realizable_at_image_is_realizable` — stated
+        // separately from the partiality invariant so a future helper
+        // change that accidentally exposes realizable cells in the
+        // in-range prefix would fail here as well as in the round-trip
+        // law.
+        for i in 0..unrealizable_count::<C>() {
+            let cell = unrealizable_at::<C>(i)
+                .expect("in-range unrealizable_at must yield Some by partiality invariant");
+            assert!(
+                !ProductCube::is_realizable(cell),
+                "unrealizable_at({i}) = {cell:?} must NOT satisfy is_realizable",
+            );
+        }
+    }
+
+    fn assert_unrealizable_ordinal_image_equals_unrealizable_prefix<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // The ordinal image over the unrealizable complement equals
+        // `0..unrealizable_count::<C>()` as a set. Equivalent to the
+        // injectivity statement: distinct unrealizable cells land at
+        // distinct ordinals, and the dense embedding is a bijection
+        // (not merely an injection) onto the prefix. Pins that
+        // `unrealizable_iter::<C>()` carries no duplicates — the cube-
+        // level dual of the no-duplicates invariant on `A::ALL` and
+        // the symmetric dual of `realizable_ordinal_image_equals_realizable_prefix`
+        // on the opposite face.
+        use std::collections::HashSet;
+        let ordinals: HashSet<usize> = unrealizable_iter::<C>()
+            .map(|c| {
+                unrealizable_ordinal::<C>(c)
+                    .expect("unrealizable_iter must yield only ordinal-Some cells")
+            })
+            .collect();
+        let expected: HashSet<usize> = (0..unrealizable_count::<C>()).collect();
+        assert_eq!(
+            ordinals, expected,
+            "unrealizable_ordinal image over unrealizable_iter must equal 0..unrealizable_count as a set",
+        );
+    }
+
+    #[test]
+    fn unrealizable_ordinal_some_iff_not_is_realizable() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_unrealizable_ordinal_some_iff_not_is_realizable::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn unrealizable_at_some_iff_in_unrealizable_prefix() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_unrealizable_at_some_iff_in_unrealizable_prefix::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn unrealizable_round_trips_cell_side() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_unrealizable_round_trips_cell_side::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn unrealizable_round_trips_ordinal_side() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_unrealizable_round_trips_ordinal_side::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn unrealizable_at_image_is_unrealizable() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_unrealizable_at_image_is_unrealizable::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn unrealizable_ordinal_image_equals_unrealizable_prefix() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_unrealizable_ordinal_image_equals_unrealizable_prefix::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn realizable_and_unrealizable_ordinals_partition_cube() {
+        // The two dense-ordinal pairs (realizable_ordinal, realizable_at)
+        // and (unrealizable_ordinal, unrealizable_at) close the cube's
+        // surface algebra symmetrically: every full-cube cell has
+        // exactly one defined dense ordinal — `realizable_ordinal` is
+        // Some on the realizable surface and None on the unrealizable
+        // complement, while `unrealizable_ordinal` is None on the
+        // realizable surface and Some on the unrealizable complement.
+        // The two `Option<usize>` values are XOR-complementary on every
+        // cell of every cube. Pins the symmetric-partition discipline
+        // at the per-cell level — a future helper change that flipped
+        // either ordinal's partiality or that double-counted any cell
+        // would fail here as well as in the per-half tests.
+        fn assert_xor_complementary<C>()
+        where
+            C: ProductCube + std::fmt::Debug,
+        {
+            for cell in axis_iter::<C>() {
+                let r = realizable_ordinal::<C>(cell).is_some();
+                let u = unrealizable_ordinal::<C>(cell).is_some();
+                assert!(
+                    r ^ u,
+                    "cell {cell:?}: exactly one of realizable_ordinal / unrealizable_ordinal \
+                     must be Some (got realizable={r}, unrealizable={u})",
+                );
+            }
+        }
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_xor_complementary::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn unrealizable_ordinal_pins_format_coordinates_dense_ordinals() {
+        // FormatCoordinates::ALL lays the 8 cells in lex order over
+        // (format × provenance); the 4 unrealizable cells sit at
+        // full-cube indices 1, 3, 4, 6 (the ones where
+        // `provenance != format.provenance()`).
+        // axis_ordinal returns those positions in the full-cube slice;
+        // unrealizable_ordinal returns the dense positions 0, 1, 2, 3
+        // in unrealizable_iter, skipping the interleaved realizable
+        // cells. Symmetric concrete-position pin to the realizable
+        // counterpart above — caught at the per-position level if a
+        // future re-ordering of `FormatCoordinates::ALL` or change to
+        // `is_realizable` shifts the unrealizable interleaving.
+        use crate::{FormatCoordinates, FormatProvenance};
+        let yaml_shikumi = FormatCoordinates {
+            format: Format::Yaml,
+            provenance: FormatProvenance::ShikumiBuilt,
+        };
+        let toml_shikumi = FormatCoordinates {
+            format: Format::Toml,
+            provenance: FormatProvenance::ShikumiBuilt,
+        };
+        let lisp_figment = FormatCoordinates {
+            format: Format::Lisp,
+            provenance: FormatProvenance::FigmentBuiltin,
+        };
+        let nix_figment = FormatCoordinates {
+            format: Format::Nix,
+            provenance: FormatProvenance::FigmentBuiltin,
+        };
+        assert_eq!(
+            unrealizable_ordinal::<FormatCoordinates>(yaml_shikumi),
+            Some(0),
+        );
+        assert_eq!(
+            unrealizable_ordinal::<FormatCoordinates>(toml_shikumi),
+            Some(1),
+        );
+        assert_eq!(
+            unrealizable_ordinal::<FormatCoordinates>(lisp_figment),
+            Some(2),
+        );
+        assert_eq!(
+            unrealizable_ordinal::<FormatCoordinates>(nix_figment),
+            Some(3),
+        );
+        // axis_ordinal pins the full-cube positions on the same cells;
+        // the gap (1,3,4,6) versus the dense unrealizable ordinals
+        // (0,1,2,3) is exactly the interleaving the dense embedding
+        // collapses on the opposite face.
+        assert_eq!(axis_ordinal::<FormatCoordinates>(yaml_shikumi), 1);
+        assert_eq!(axis_ordinal::<FormatCoordinates>(toml_shikumi), 3);
+        assert_eq!(axis_ordinal::<FormatCoordinates>(lisp_figment), 4);
+        assert_eq!(axis_ordinal::<FormatCoordinates>(nix_figment), 6);
+        // Realizable cells return None on the unrealizable ordinal —
+        // pinned for one mid-cube realizable cell as the symmetric
+        // dual of the realizable-side partiality witness.
+        let yaml_figment = FormatCoordinates {
+            format: Format::Yaml,
+            provenance: FormatProvenance::FigmentBuiltin,
+        };
+        assert_eq!(
+            unrealizable_ordinal::<FormatCoordinates>(yaml_figment),
+            None,
+        );
     }
 
     // ---- PartialInverseCube forward/invert bijection invariants ----
