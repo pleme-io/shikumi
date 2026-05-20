@@ -46,6 +46,7 @@ pub mod secret;
 pub mod secret_client;
 mod source;
 mod store;
+pub mod tiered;
 mod watcher;
 
 pub use cube::{
@@ -73,4 +74,5 @@ pub use source::{
     FigmentSourceTag,
 };
 pub use store::ConfigStore;
+pub use tiered::{ConfigDiff, DiffLine, TieredConfig};
 pub use watcher::{ConfigWatcher, symlink_target};
