@@ -23,6 +23,12 @@ default = []
 # need Lisp configs opt in explicitly.
 lisp = ["dep:tatara-lisp"]
 
+# clap-based `<app> config-show <tier>` subcommand. The Pillar 12 dual
+# of TieredConfig: one factory every consumer pulls in to eliminate
+# hand-rolled config-show CLIs. Adds a `clap::Args` struct that runs
+# `C::resolve_tier(...)` and emits YAML/JSON or diff between tiers.
+cli = ["dep:clap"]
+
 # Native HTTP client for Akeyless Vault via the akeyless-api SDK (604
 # endpoints, 1334 types, generated from the Akeyless OpenAPI spec).
 # Enables `resolve_akeyless_native` alongside the existing CLI-based
@@ -78,6 +84,8 @@ tokio = { version = "1", features = ["rt"], optional = true }
 # pulling openssl into the closure; the features match shikumi's
 # deployment story (statically linked Nix binaries).
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
+# Feature-gated for the `cli` feature — clap Args for ConfigShowCommand.
+clap = { version = "4", features = ["derive"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"

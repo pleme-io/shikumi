@@ -33,6 +33,8 @@
 //! println!("width: {:?}", config.window_width);
 //! ```
 
+#[cfg(feature = "cli")]
+pub mod cli;
 mod cube;
 mod discovery;
 mod error;
