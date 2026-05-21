@@ -1040,9 +1040,9 @@ mod tests {
     use super::*;
     use crate::{
         AttributionAxis, AttributionConfidence, AttributionCoordinates, AttributionRule,
-        AttributionSourceKindCoordinates, ConfigSourceKind, ErrorLocalizationCoordinates,
-        FieldPathLocalization, FigmentSourceKind, Format, FormatCoordinates, FormatProvenance,
-        ShikumiErrorKind,
+        AttributionSourceKindCoordinates, ConfigSourceKind, ConfigTierKind,
+        ErrorLocalizationCoordinates, FieldPathLocalization, FigmentSourceKind, Format,
+        FormatCoordinates, FormatProvenance, ShikumiErrorKind,
     };
 
     // ---- Implementor-list macros ----
@@ -1085,11 +1085,11 @@ mod tests {
     // test can list one macro call instead of two.
 
     /// Invokes `$cb!(TypeName)` for each [`ClosedAxis`] axis-primitive
-    /// enum — the ten closed-enum axis primitives the typescape
-    /// recognizes today, in declaration order. [`PartitionFace`] sits
-    /// at the tail as the cube-derived axis (the variant-tag projection
-    /// of [`PartitionOrdinal`]), while the leading nine are the
-    /// per-axis-of-the-cube primitives.
+    /// enum — the eleven closed-enum axis primitives the typescape
+    /// recognizes today, in declaration order. [`PartitionFace`] and
+    /// [`ConfigTierKind`] sit at the tail as variant-tag projections
+    /// (of [`PartitionOrdinal`] and [`crate::ConfigTier`] respectively),
+    /// while the leading nine are the per-axis-of-the-cube primitives.
     macro_rules! for_each_closed_axis_primitive {
         ($cb:ident) => {
             $cb!(Format);
@@ -1102,6 +1102,7 @@ mod tests {
             $cb!(AttributionConfidence);
             $cb!(AttributionAxis);
             $cb!(PartitionFace);
+            $cb!(ConfigTierKind);
         };
     }
 
@@ -3141,14 +3142,16 @@ mod tests {
     // before any silent dropouts at the trait-uniform test sites.
 
     #[test]
-    fn for_each_closed_axis_primitive_macro_covers_ten_axes() {
-        // Pin that the macro expands to exactly ten arms — the ten
-        // closed-enum axis primitives the typescape recognizes today
-        // (the nine per-axis-of-the-cube primitives plus
-        // `PartitionFace`, the variant-tag projection of
-        // `PartitionOrdinal`). An eleventh axis primitive landing
-        // extends the macro in lockstep with the `impl ClosedAxis`
-        // declaration; this assertion fails until the macro arm lands.
+    fn for_each_closed_axis_primitive_macro_covers_eleven_axes() {
+        // Pin that the macro expands to exactly eleven arms — the
+        // eleven closed-enum axis primitives the typescape
+        // recognizes today (the nine per-axis-of-the-cube primitives
+        // plus `PartitionFace`, the variant-tag projection of
+        // `PartitionOrdinal`, plus `ConfigTierKind`, the variant-tag
+        // projection of `crate::ConfigTier`). A twelfth axis
+        // primitive landing extends the macro in lockstep with the
+        // `impl ClosedAxis` declaration; this assertion fails until
+        // the macro arm lands.
         let mut count = 0usize;
         macro_rules! tally {
             ($ty:ident) => {
@@ -3157,8 +3160,8 @@ mod tests {
         }
         for_each_closed_axis_primitive!(tally);
         assert_eq!(
-            count, 10,
-            "for_each_closed_axis_primitive! must expand to ten arms",
+            count, 11,
+            "for_each_closed_axis_primitive! must expand to eleven arms",
         );
     }
 
@@ -3200,12 +3203,13 @@ mod tests {
     }
 
     #[test]
-    fn for_each_closed_axis_implementor_macro_covers_fourteen_types() {
-        // Pin that the superset macro expands to exactly fourteen arms
-        // — the ten axis primitives plus the four product cubes. An
-        // eleventh axis primitive OR a fifth cube landing extends the
-        // composed macro in lockstep through one of its two component
-        // macros; this assertion fails until the arm lands.
+    fn for_each_closed_axis_implementor_macro_covers_fifteen_types() {
+        // Pin that the superset macro expands to exactly fifteen arms
+        // — the eleven axis primitives plus the four product cubes.
+        // A twelfth axis primitive OR a fifth cube landing extends
+        // the composed macro in lockstep through one of its two
+        // component macros; this assertion fails until the arm
+        // lands.
         let mut count = 0usize;
         macro_rules! tally {
             ($ty:ident) => {
@@ -3214,8 +3218,8 @@ mod tests {
         }
         for_each_closed_axis_implementor!(tally);
         assert_eq!(
-            count, 14,
-            "for_each_closed_axis_implementor! must expand to fourteen arms (10 axes + 4 cubes)",
+            count, 15,
+            "for_each_closed_axis_implementor! must expand to fifteen arms (11 axes + 4 cubes)",
         );
     }
 
@@ -3239,17 +3243,17 @@ mod tests {
             };
         }
         for_each_closed_axis_implementor!(add);
-        // 10-axis sum: Format=4, FormatProvenance=2, ConfigSourceKind=3,
+        // 11-axis sum: Format=4, FormatProvenance=2, ConfigSourceKind=3,
         // FigmentSourceKind=3, ShikumiErrorKind=6, FieldPathLocalization=3,
         // AttributionRule=5, AttributionConfidence=2, AttributionAxis=2,
-        // PartitionFace=2 → 32.
+        // PartitionFace=2, ConfigTierKind=4 → 36.
         // 4-cube sum: FormatCoordinates=8, AttributionCoordinates=12,
         // ErrorLocalizationCoordinates=18, AttributionSourceKindCoordinates=9
-        // → 47. Grand total 32+47 = 79.
+        // → 47. Grand total 36+47 = 83.
         assert_eq!(
-            total, 79,
+            total, 83,
             "macro must emit each implementor exactly once \
-             (today's axis_cardinality checksum is 79)",
+             (today's axis_cardinality checksum is 83)",
         );
     }
 }

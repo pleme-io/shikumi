@@ -92,8 +92,112 @@
 //!    config field without thinking about its bare value fails the
 //!    test.
 
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::env;
+
+// ── ConfigTierKind — variant-tag projection of ConfigTier
+
+/// Typed variant tag of [`ConfigTier`] — `Bare | Discovered | Default
+/// | Custom` lifted into a [`crate::ClosedAxis`] primitive without
+/// the `Custom` variant's [`std::path::PathBuf`] payload.
+///
+/// Stands in the same relation to [`ConfigTier`] as
+/// [`crate::PartitionFace`] does to [`crate::PartitionOrdinal`]: the
+/// variant tag carried as its own [`Copy`] + [`Hash`] typescape
+/// primitive, projectable from the full enum through one named
+/// accessor ([`ConfigTier::kind`]).
+///
+/// **Single source of truth for the four operator-facing tier
+/// names.** Both [`as_str`][Self::as_str] (rendering) and
+/// [`from_str`][Self::from_str] (parsing) route through this enum,
+/// so the strings `"bare"`, `"discovered"`, `"default"`, `"custom"`
+/// appear at exactly one site — adding a fifth tier (if the model
+/// grows) extends the strings in lockstep with the variants instead
+/// of touching three duplicated `match` blocks.
+///
+/// Consumers that only need "which tier did the operator ask for?"
+/// without the `Custom` path (telemetry counters, dashboards keyed by
+/// tier, structured-log fields) carry a [`ConfigTierKind`] (one byte,
+/// [`Copy`]) rather than the full [`ConfigTier`] (variant tag plus a
+/// heap-allocated [`std::path::PathBuf`]). Reaches every closed-axis
+/// discipline the typescape closes uniformly — [`crate::axis_iter`],
+/// [`crate::axis_cardinality`], [`crate::axis_ordinal`],
+/// [`crate::axis_at`] — at the trait impl declaration.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ConfigTierKind {
+    /// Zero-opinion floor.
+    Bare,
+    /// `bare()` + runtime auto-detect outputs.
+    Discovered,
+    /// `bare()` + discovered + `prescribed_default()` — the ~90%
+    /// case.
+    #[allow(clippy::module_name_repetitions)]
+    Default,
+    /// YAML overlay at a caller-supplied path on top of
+    /// `prescribed_default()`.
+    Custom,
+}
+
+impl ConfigTierKind {
+    /// Every [`ConfigTierKind`] value, in declaration order — the
+    /// inherent mirror of [`crate::ClosedAxis::ALL`].
+    pub const ALL: &'static [Self] = &[Self::Bare, Self::Discovered, Self::Default, Self::Custom];
+
+    /// Canonical operator-facing lowercase name of the tier kind.
+    ///
+    /// The single source of truth for the four tier names; both
+    /// [`ConfigTier::name`] (rendering) and
+    /// [`ConfigTier::from_str_or_default`] / [`ConfigTier::from_env`]
+    /// (parsing) route through this method via [`Self::from_str`].
+    /// `as_str` round-trips with [`from_str`][Self::from_str] on
+    /// every variant — pinned by
+    /// [`tests::config_tier_kind_from_str_round_trips_with_as_str`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Bare => "bare",
+            Self::Discovered => "discovered",
+            Self::Default => "default",
+            Self::Custom => "custom",
+        }
+    }
+
+    /// Case-insensitive parse of the four canonical tier-kind
+    /// strings. Returns [`None`] for any other input — the caller
+    /// decides what to do with unrecognized strings (e.g.
+    /// [`ConfigTier::from_str_or_default`] treats them as
+    /// path-shaped `Custom(PathBuf)` payloads).
+    ///
+    /// The trim discipline is the caller's responsibility; this
+    /// method matches on the input verbatim after ASCII-lowercasing
+    /// so `"Bare"`, `"BARE"`, `"bare"` all parse to [`Self::Bare`].
+    /// Empty string returns [`None`] (it's neither a canonical tag
+    /// nor a valid path).
+    ///
+    /// `from_str` returns [`Option`] rather than implementing
+    /// [`std::str::FromStr`] (which would force a `Result<_, Err>`
+    /// shape and an error-type ceremony for the no-error case where
+    /// "not a canonical name" is the only failure mode the caller
+    /// cares about).
+    #[allow(clippy::should_implement_trait)]
+    #[must_use]
+    pub fn from_str(s: &str) -> Option<Self> {
+        // No trim — the caller (ConfigTier::from_str_or_default)
+        // owns the trim policy, so the empty-string boundary stays
+        // unambiguous. ASCII-only lowercasing matches the existing
+        // behavior of from_str_or_default / from_env (which
+        // lowercased via `.to_ascii_lowercase()`).
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|kind| kind.as_str().eq_ignore_ascii_case(s))
+    }
+}
+
+impl crate::ClosedAxis for ConfigTierKind {
+    const ALL: &'static [Self] = Self::ALL;
+}
 
 // ── ConfigTier — operator-facing enum picking which baseline to load
 
@@ -110,6 +214,10 @@ use std::env;
 /// * `Custom(path)` — load YAML from `path` overlaid on
 ///                  `prescribed_default()`. Equivalent to the
 ///                  standard shikumi YAML discovery path.
+///
+/// The variant-tag projection — "which tier kind did the operator
+/// ask for, ignoring any `Custom` path payload?" — is exposed as the
+/// typed [`ConfigTierKind`] primitive through [`Self::kind`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigTier {
     Bare,
@@ -136,39 +244,66 @@ impl ConfigTier {
     ///   * any other non-empty string → Custom(value as path)
     #[must_use]
     pub fn from_env(env_var: &str) -> Self {
-        let Ok(raw) = env::var(env_var) else {
-            return Self::default();
-        };
-        match raw.trim().to_ascii_lowercase().as_str() {
-            "" => Self::default(),
-            "bare" => Self::Bare,
-            "discovered" => Self::Discovered,
-            "default" => Self::Default,
-            other => Self::Custom(std::path::PathBuf::from(other)),
-        }
+        // Missing var → default. Present var goes through the same
+        // parse path as the explicit-string entry point, so the two
+        // helpers stay in lockstep at one site.
+        env::var(env_var)
+            .map(|raw| Self::from_str_or_default(&raw))
+            .unwrap_or_default()
     }
 
     /// Resolve from an explicit string (e.g. a CLI flag value).
     /// Same matching rules as [`ConfigTier::from_env`].
     #[must_use]
     pub fn from_str_or_default(s: &str) -> Self {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "" | "default" => Self::Default,
-            "bare" => Self::Bare,
-            "discovered" => Self::Discovered,
-            other => Self::Custom(std::path::PathBuf::from(other)),
+        // Trim + lowercase once; dispatch through ConfigTierKind so
+        // the four canonical tier-name strings live at one site
+        // (ConfigTierKind::as_str). The `Custom` kind is encoded
+        // here with a string payload — when the operator types the
+        // literal word "custom" with no path, it still falls into
+        // the path-shaped Custom arm to match prior behavior.
+        let normalized = s.trim().to_ascii_lowercase();
+        if normalized.is_empty() {
+            return Self::default();
+        }
+        match ConfigTierKind::from_str(&normalized) {
+            Some(ConfigTierKind::Bare) => Self::Bare,
+            Some(ConfigTierKind::Discovered) => Self::Discovered,
+            Some(ConfigTierKind::Default) => Self::Default,
+            Some(ConfigTierKind::Custom) | None => {
+                Self::Custom(std::path::PathBuf::from(normalized))
+            }
         }
     }
 
     /// Operator-facing tier name (`"bare"` / `"discovered"` /
     /// `"default"` / `"custom"`) — used in logs + telemetry.
+    ///
+    /// Delegates to [`ConfigTierKind::as_str`] via [`Self::kind`],
+    /// keeping the four tier names at one source of truth.
     #[must_use]
     pub fn name(&self) -> &'static str {
+        self.kind().as_str()
+    }
+
+    /// Typed variant-tag projection — every [`ConfigTier`] value
+    /// lands on exactly one [`ConfigTierKind`], with the `Custom`
+    /// path payload forgotten.
+    ///
+    /// The cube-axis analog of [`crate::PartitionOrdinal::face`] for
+    /// [`crate::PartitionFace`]: a consumer that only needs "which
+    /// tier kind did the operator ask for?" — without the
+    /// `Custom(PathBuf)` payload — carries one byte via this
+    /// projection rather than re-pattern-matching the enum at every
+    /// site. Pinned in lockstep with [`Self::name`] by
+    /// [`tests::config_tier_kind_matches_config_tier_name`].
+    #[must_use]
+    pub const fn kind(&self) -> ConfigTierKind {
         match self {
-            Self::Bare => "bare",
-            Self::Discovered => "discovered",
-            Self::Default => "default",
-            Self::Custom(_) => "custom",
+            Self::Bare => ConfigTierKind::Bare,
+            Self::Discovered => ConfigTierKind::Discovered,
+            Self::Default => ConfigTierKind::Default,
+            Self::Custom(_) => ConfigTierKind::Custom,
         }
     }
 }
@@ -462,7 +597,10 @@ mod tests {
             ConfigTier::from_str_or_default("DISCOVERED"),
             ConfigTier::Discovered
         );
-        assert_eq!(ConfigTier::from_str_or_default("default"), ConfigTier::Default);
+        assert_eq!(
+            ConfigTier::from_str_or_default("default"),
+            ConfigTier::Default
+        );
         assert_eq!(ConfigTier::from_str_or_default(""), ConfigTier::Default);
         match ConfigTier::from_str_or_default("/etc/foo.yaml") {
             ConfigTier::Custom(p) => {
@@ -506,10 +644,7 @@ mod tests {
     #[test]
     fn resolve_tier_dispatches_to_each_method() {
         assert_eq!(Toy::resolve_tier(ConfigTier::Bare), Toy::bare());
-        assert_eq!(
-            Toy::resolve_tier(ConfigTier::Discovered),
-            Toy::discovered()
-        );
+        assert_eq!(Toy::resolve_tier(ConfigTier::Discovered), Toy::discovered());
         assert_eq!(
             Toy::resolve_tier(ConfigTier::Default),
             Toy::prescribed_default()
@@ -518,10 +653,172 @@ mod tests {
 
     #[test]
     fn resolve_tier_custom_missing_file_falls_back_to_default() {
-        let phantom = std::path::PathBuf::from(
-            "/nonexistent/path/shikumi-tier-fallback-test.yaml",
-        );
+        let phantom = std::path::PathBuf::from("/nonexistent/path/shikumi-tier-fallback-test.yaml");
         let resolved = Toy::resolve_tier(ConfigTier::Custom(phantom));
         assert_eq!(resolved, Toy::prescribed_default());
+    }
+
+    // ── ConfigTierKind + ConfigTier::kind coverage ──────────────
+
+    #[test]
+    fn config_tier_kind_all_has_four_entries() {
+        // Pin today's tier-kind cardinality. A fifth tier kind
+        // landing forces the ::ALL slice in lockstep with the
+        // enum, and the `for_each_closed_axis_primitive!` macro
+        // cardinality checksum in `cube::tests` (axis_cardinality
+        // sum) catches the drift before silent dropouts at the
+        // trait-uniform test sites.
+        assert_eq!(ConfigTierKind::ALL.len(), 4);
+        assert_eq!(ConfigTierKind::ALL[0], ConfigTierKind::Bare);
+        assert_eq!(ConfigTierKind::ALL[1], ConfigTierKind::Discovered);
+        assert_eq!(ConfigTierKind::ALL[2], ConfigTierKind::Default);
+        assert_eq!(ConfigTierKind::ALL[3], ConfigTierKind::Custom);
+    }
+
+    #[test]
+    fn config_tier_kind_trait_all_matches_inherent_all() {
+        // Mirror of the per-axis trait/inherent agreement test:
+        // <ConfigTierKind as ClosedAxis>::ALL is the same slice as
+        // ConfigTierKind::ALL pointwise in declaration order.
+        assert_eq!(
+            <ConfigTierKind as crate::ClosedAxis>::ALL.len(),
+            ConfigTierKind::ALL.len(),
+        );
+        for (i, (trait_kind, inherent_kind)) in <ConfigTierKind as crate::ClosedAxis>::ALL
+            .iter()
+            .zip(ConfigTierKind::ALL.iter())
+            .enumerate()
+        {
+            assert_eq!(
+                trait_kind, inherent_kind,
+                "trait ALL[{i}] must equal inherent ALL[{i}]",
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_kind_as_str_yields_canonical_lowercase_names() {
+        assert_eq!(ConfigTierKind::Bare.as_str(), "bare");
+        assert_eq!(ConfigTierKind::Discovered.as_str(), "discovered");
+        assert_eq!(ConfigTierKind::Default.as_str(), "default");
+        assert_eq!(ConfigTierKind::Custom.as_str(), "custom");
+    }
+
+    #[test]
+    fn config_tier_kind_from_str_round_trips_with_as_str() {
+        // Round-trip law: `from_str(kind.as_str()) == Some(kind)`
+        // for every kind. Pinned over the full ::ALL slice so a
+        // fifth tier kind inherits the law automatically.
+        for &kind in ConfigTierKind::ALL {
+            assert_eq!(
+                ConfigTierKind::from_str(kind.as_str()),
+                Some(kind),
+                "round-trip failed for kind {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_tier_kind_from_str_is_case_insensitive() {
+        assert_eq!(ConfigTierKind::from_str("BARE"), Some(ConfigTierKind::Bare),);
+        assert_eq!(
+            ConfigTierKind::from_str("Discovered"),
+            Some(ConfigTierKind::Discovered),
+        );
+        assert_eq!(
+            ConfigTierKind::from_str("DeFaUlT"),
+            Some(ConfigTierKind::Default),
+        );
+        assert_eq!(
+            ConfigTierKind::from_str("CUSTOM"),
+            Some(ConfigTierKind::Custom),
+        );
+    }
+
+    #[test]
+    fn config_tier_kind_from_str_returns_none_on_unknown() {
+        assert_eq!(ConfigTierKind::from_str(""), None);
+        assert_eq!(ConfigTierKind::from_str("nonexistent"), None);
+        assert_eq!(ConfigTierKind::from_str("/etc/foo.yaml"), None);
+        // No trim — the caller owns trim policy.
+        assert_eq!(ConfigTierKind::from_str(" bare "), None);
+    }
+
+    #[test]
+    fn config_tier_kind_projection_matches_config_tier_name() {
+        // The kind projection and the ConfigTier::name() lookup
+        // must agree pointwise — both are routed through
+        // ConfigTierKind::as_str. Pins the duplication budget at
+        // zero: the four tier-name strings live at one site
+        // (ConfigTierKind::as_str).
+        let pairs: [(ConfigTier, ConfigTierKind); 4] = [
+            (ConfigTier::Bare, ConfigTierKind::Bare),
+            (ConfigTier::Discovered, ConfigTierKind::Discovered),
+            (ConfigTier::Default, ConfigTierKind::Default),
+            (
+                ConfigTier::Custom(std::path::PathBuf::from("/x")),
+                ConfigTierKind::Custom,
+            ),
+        ];
+        for (tier, expected_kind) in pairs {
+            assert_eq!(tier.kind(), expected_kind);
+            assert_eq!(tier.name(), expected_kind.as_str());
+        }
+    }
+
+    #[test]
+    fn config_tier_from_env_still_lowercases_unknown_paths() {
+        // Behavior preservation: prior implementation lowercased
+        // unrecognized strings before wrapping them in Custom.
+        // This pin catches any future drift away from that
+        // (somewhat surprising) behavior — kept so that the lift
+        // is purely structural and doesn't change semantics.
+        let key = "SHIKUMI_TIERED_TEST_TIER_PATH";
+        unsafe {
+            std::env::set_var(key, "/Foo/Bar.YAML");
+        }
+        let tier = ConfigTier::from_env(key);
+        match tier {
+            ConfigTier::Custom(p) => assert_eq!(
+                p,
+                std::path::PathBuf::from("/foo/bar.yaml"),
+                "from_env preserves the pre-lift lowercase behavior",
+            ),
+            other => panic!("expected Custom, got {other:?}"),
+        }
+        unsafe {
+            std::env::remove_var(key);
+        }
+    }
+
+    #[test]
+    fn config_tier_from_str_or_default_via_kind_dispatch() {
+        // Smoke pin on the refactored dispatch — same matching
+        // rules as before, now routed through ConfigTierKind.
+        assert_eq!(ConfigTier::from_str_or_default("bare"), ConfigTier::Bare);
+        assert_eq!(
+            ConfigTier::from_str_or_default("DISCOVERED"),
+            ConfigTier::Discovered,
+        );
+        assert_eq!(
+            ConfigTier::from_str_or_default("default"),
+            ConfigTier::Default,
+        );
+        assert_eq!(ConfigTier::from_str_or_default(""), ConfigTier::Default,);
+        // "custom" with no path → Custom(PathBuf::from("custom"))
+        // (the literal string becomes the path). Preserves the
+        // pre-lift fall-through behavior.
+        match ConfigTier::from_str_or_default("custom") {
+            ConfigTier::Custom(p) => {
+                assert_eq!(p, std::path::PathBuf::from("custom"));
+            }
+            other => panic!("expected Custom, got {other:?}"),
+        }
+        match ConfigTier::from_str_or_default("/etc/foo.yaml") {
+            ConfigTier::Custom(p) => {
+                assert_eq!(p, std::path::PathBuf::from("/etc/foo.yaml"));
+            }
+            other => panic!("expected Custom, got {other:?}"),
+        }
     }
 }
