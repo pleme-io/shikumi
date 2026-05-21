@@ -180,23 +180,27 @@ impl ConfigTierKind {
     /// shape and an error-type ceremony for the no-error case where
     /// "not a canonical name" is the only failure mode the caller
     /// cares about).
+    ///
+    /// Inherent mirror of [`crate::ClosedAxisLabel::from_canonical_str`];
+    /// delegates to the trait default so the parse body lives at one
+    /// site (the trait default impl in [`crate::cube`]) and the
+    /// trait-uniform round-trip law reaches `ConfigTierKind` through
+    /// the [`crate::ClosedAxisLabel`] discipline.
     #[allow(clippy::should_implement_trait)]
     #[must_use]
     pub fn from_str(s: &str) -> Option<Self> {
-        // No trim — the caller (ConfigTier::from_str_or_default)
-        // owns the trim policy, so the empty-string boundary stays
-        // unambiguous. ASCII-only lowercasing matches the existing
-        // behavior of from_str_or_default / from_env (which
-        // lowercased via `.to_ascii_lowercase()`).
-        Self::ALL
-            .iter()
-            .copied()
-            .find(|kind| kind.as_str().eq_ignore_ascii_case(s))
+        <Self as crate::ClosedAxisLabel>::from_canonical_str(s)
     }
 }
 
 impl crate::ClosedAxis for ConfigTierKind {
     const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxisLabel for ConfigTierKind {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
 }
 
 // ── ConfigTier — operator-facing enum picking which baseline to load

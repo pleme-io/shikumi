@@ -74,7 +74,10 @@ pub enum SecretError {
     /// The backend does not support this operation (e.g. SOPS doesn't
     /// do `list`; shell commands don't do `put`).
     #[error("{backend} does not support {operation}")]
-    Unsupported { backend: &'static str, operation: &'static str },
+    Unsupported {
+        backend: &'static str,
+        operation: &'static str,
+    },
 
     /// Transport / network / serialization error.
     #[error("backend error: {0}")]
@@ -234,11 +237,7 @@ pub trait SecretClient: Send + Sync {
     }
 
     /// Fetch a specific historical version of the secret.
-    async fn get_version(
-        &self,
-        _name: &str,
-        _version: &str,
-    ) -> Result<String, SecretError> {
+    async fn get_version(&self, _name: &str, _version: &str) -> Result<String, SecretError> {
         Err(SecretError::Unsupported {
             backend: self.backend_name(),
             operation: "get_version",
@@ -320,9 +319,12 @@ impl SecretClient for MemClient {
         let versions = store.get(name).ok_or_else(|| SecretError::NotFound {
             name: name.to_owned(),
         })?;
-        let value = versions.last().cloned().ok_or_else(|| SecretError::NotFound {
-            name: name.to_owned(),
-        })?;
+        let value = versions
+            .last()
+            .cloned()
+            .ok_or_else(|| SecretError::NotFound {
+                name: name.to_owned(),
+            })?;
         let metadata = SecretMetadata {
             version: Some(versions.len().to_string()),
             updated_at: None,
@@ -381,15 +383,9 @@ impl SecretClient for MemClient {
         Ok(())
     }
 
-    async fn get_version(
-        &self,
-        name: &str,
-        version: &str,
-    ) -> Result<String, SecretError> {
+    async fn get_version(&self, name: &str, version: &str) -> Result<String, SecretError> {
         let n: usize = version.parse().map_err(|_| {
-            SecretError::Backend(format!(
-                "mem version must be an integer, got {version:?}"
-            ))
+            SecretError::Backend(format!("mem version must be an integer, got {version:?}"))
         })?;
         if n == 0 {
             return Err(SecretError::Backend(
@@ -400,13 +396,12 @@ impl SecretClient for MemClient {
         let versions = store.get(name).ok_or_else(|| SecretError::NotFound {
             name: name.to_owned(),
         })?;
-        versions
-            .get(n - 1)
-            .cloned()
-            .ok_or_else(|| SecretError::Backend(format!(
+        versions.get(n - 1).cloned().ok_or_else(|| {
+            SecretError::Backend(format!(
                 "mem has {} versions for {name}, version {n} out of range",
                 versions.len()
-            )))
+            ))
+        })
     }
 }
 
@@ -453,7 +448,10 @@ impl CommandClient {
     {
         Self {
             template: None,
-            name_map: iter.into_iter().map(|(k, v)| (k.into(), v.into())).collect(),
+            name_map: iter
+                .into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
         }
     }
 }
@@ -564,8 +562,7 @@ impl SecretClient for AkeylessClient {
             value: value.to_owned(),
             ..Default::default()
         };
-        let update_result =
-            akeyless_api::apis::v2_api::update_secret_val(&cfg, update).await;
+        let update_result = akeyless_api::apis::v2_api::update_secret_val(&cfg, update).await;
         match update_result {
             Ok(_) => Ok(()),
             Err(err) => {
@@ -583,9 +580,7 @@ impl SecretClient for AkeylessClient {
                     akeyless_api::apis::v2_api::create_secret(&cfg, create)
                         .await
                         .map_err(|e| {
-                            SecretError::Backend(format!(
-                                "akeyless create-secret({name}): {e}"
-                            ))
+                            SecretError::Backend(format!("akeyless create-secret({name}): {e}"))
                         })?;
                     Ok(())
                 } else {
@@ -620,17 +615,11 @@ impl SecretClient for AkeylessClient {
         };
         akeyless_api::apis::v2_api::rotate_secret(&cfg, request)
             .await
-            .map_err(|e| {
-                SecretError::Backend(format!("akeyless rotate-secret({name}): {e}"))
-            })?;
+            .map_err(|e| SecretError::Backend(format!("akeyless rotate-secret({name}): {e}")))?;
         Ok(())
     }
 
-    async fn get_version(
-        &self,
-        name: &str,
-        version: &str,
-    ) -> Result<String, SecretError> {
+    async fn get_version(&self, name: &str, version: &str) -> Result<String, SecretError> {
         let cfg = self.auth.configuration();
         let version_num: i32 = version.parse().map_err(|_| {
             SecretError::Backend(format!(
@@ -719,14 +708,11 @@ impl SecretClient for AwsClient {
             .await
             .map_err(|e| SecretError::Backend(format!("aws get-secret-value({name}): {e}")))?;
 
-        let value = response
-            .secret_string()
-            .map(str::to_owned)
-            .ok_or_else(|| {
-                SecretError::Backend(format!(
-                    "aws secret {name} has no SecretString (binary-only)"
-                ))
-            })?;
+        let value = response.secret_string().map(str::to_owned).ok_or_else(|| {
+            SecretError::Backend(format!(
+                "aws secret {name} has no SecretString (binary-only)"
+            ))
+        })?;
 
         let mut metadata = SecretMetadata::default();
         if let Some(version) = response.version_id() {
@@ -739,10 +725,9 @@ impl SecretClient for AwsClient {
             metadata.updated_at = Some(format!("{}", created.secs()));
         }
         if !response.version_stages().is_empty() {
-            metadata.tags.insert(
-                "stages".into(),
-                response.version_stages().join(","),
-            );
+            metadata
+                .tags
+                .insert("stages".into(), response.version_stages().join(","));
         }
         Ok(Secret { value, metadata })
     }
@@ -755,9 +740,10 @@ impl SecretClient for AwsClient {
             if let Some(t) = &next_token {
                 req = req.next_token(t);
             }
-            let resp = req.send().await.map_err(|e| {
-                SecretError::Backend(format!("aws list-secrets: {e}"))
-            })?;
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| SecretError::Backend(format!("aws list-secrets: {e}")))?;
             for entry in resp.secret_list() {
                 if let Some(n) = entry.name() {
                     if prefix.is_none_or(|p| n.starts_with(p)) {
@@ -788,9 +774,7 @@ impl SecretClient for AwsClient {
             Err(err) => {
                 // ResourceNotFoundException → fall through to create.
                 let err_str = format!("{err}");
-                if err_str.contains("ResourceNotFoundException")
-                    || err_str.contains("not found")
-                {
+                if err_str.contains("ResourceNotFoundException") || err_str.contains("not found") {
                     self.client
                         .create_secret()
                         .name(name)
@@ -798,9 +782,7 @@ impl SecretClient for AwsClient {
                         .send()
                         .await
                         .map_err(|e| {
-                            SecretError::Backend(format!(
-                                "aws create-secret({name}): {e}"
-                            ))
+                            SecretError::Backend(format!("aws create-secret({name}): {e}"))
                         })?;
                     Ok(())
                 } else {
@@ -836,11 +818,7 @@ impl SecretClient for AwsClient {
         Ok(())
     }
 
-    async fn get_version(
-        &self,
-        name: &str,
-        version: &str,
-    ) -> Result<String, SecretError> {
+    async fn get_version(&self, name: &str, version: &str) -> Result<String, SecretError> {
         let response = self
             .client
             .get_secret_value()
@@ -849,14 +827,10 @@ impl SecretClient for AwsClient {
             .send()
             .await
             .map_err(|e| {
-                SecretError::Backend(format!(
-                    "aws get-secret-value({name}, v={version}): {e}"
-                ))
+                SecretError::Backend(format!("aws get-secret-value({name}, v={version}): {e}"))
             })?;
         response.secret_string().map(str::to_owned).ok_or_else(|| {
-            SecretError::Backend(format!(
-                "aws secret {name} v{version} has no SecretString"
-            ))
+            SecretError::Backend(format!("aws secret {name} v{version} has no SecretString"))
         })
     }
 }
@@ -969,11 +943,7 @@ impl OpConnectClient {
 
         items
             .into_iter()
-            .find_map(|item| {
-                item.get("id")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_owned)
-            })
+            .find_map(|item| item.get("id").and_then(|v| v.as_str()).map(str::to_owned))
             .ok_or_else(|| SecretError::NotFound {
                 name: name.to_owned(),
             })
@@ -1006,9 +976,10 @@ impl OpConnectClient {
             .await
             .map_err(|e| SecretError::Backend(format!("op get item({name}) parse: {e}")))?;
 
-        let fields = item.get("fields").and_then(|v| v.as_array()).ok_or_else(|| {
-            SecretError::Backend(format!("op item {name} has no fields array"))
-        })?;
+        let fields = item
+            .get("fields")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| SecretError::Backend(format!("op item {name} has no fields array")))?;
         fields
             .iter()
             .find_map(|f| {
@@ -1102,10 +1073,7 @@ impl SecretClient for OpConnectClient {
         });
         let response = match existing {
             Ok(id) => {
-                let url = format!(
-                    "{}/v1/vaults/{}/items/{}",
-                    self.base_url, self.vault_id, id
-                );
+                let url = format!("{}/v1/vaults/{}/items/{}", self.base_url, self.vault_id, id);
                 self.http
                     .put(&url)
                     .header("Authorization", self.auth_header())
@@ -1137,10 +1105,7 @@ impl SecretClient for OpConnectClient {
 
     async fn delete(&self, name: &str) -> Result<(), SecretError> {
         let id = self.resolve_item_id(name).await?;
-        let url = format!(
-            "{}/v1/vaults/{}/items/{}",
-            self.base_url, self.vault_id, id
-        );
+        let url = format!("{}/v1/vaults/{}/items/{}", self.base_url, self.vault_id, id);
         let response = self
             .http
             .delete(&url)
@@ -1386,16 +1351,17 @@ impl SecretClient for VaultClient {
         let path = prefix.unwrap_or("").trim_start_matches('/');
         let url = self.metadata_url(path);
         let response = self
-            .apply_headers(self.http.request(reqwest::Method::from_bytes(b"LIST").unwrap(), &url))
+            .apply_headers(
+                self.http
+                    .request(reqwest::Method::from_bytes(b"LIST").unwrap(), &url),
+            )
             .send()
             .await
             .map_err(|e| SecretError::Backend(format!("vault list: {e}")))?;
 
         match response.status() {
             reqwest::StatusCode::NOT_FOUND => Ok(Vec::new()),
-            s if !s.is_success() => Err(SecretError::Backend(format!(
-                "vault list: HTTP {s}"
-            ))),
+            s if !s.is_success() => Err(SecretError::Backend(format!("vault list: HTTP {s}"))),
             _ => {
                 let body: serde_json::Value = response
                     .json()
@@ -1573,11 +1539,17 @@ impl GcpSecretClient {
 
     /// Rotate the OAuth2 token (GCP access tokens expire in ~1 hour).
     pub fn set_token(&self, token: impl Into<String>) {
-        *self.token.write().expect("GcpSecretClient token lock poisoned") = token.into();
+        *self
+            .token
+            .write()
+            .expect("GcpSecretClient token lock poisoned") = token.into();
     }
 
     fn auth_header(&self) -> String {
-        let guard = self.token.read().expect("GcpSecretClient token lock poisoned");
+        let guard = self
+            .token
+            .read()
+            .expect("GcpSecretClient token lock poisoned");
         format!("Bearer {}", *guard)
     }
 
@@ -1651,9 +1623,7 @@ impl SecretClient for GcpSecretClient {
                     message: format!("gcp get({name}): {}", response.status()),
                 })
             }
-            s if !s.is_success() => Err(SecretError::Backend(format!(
-                "gcp get({name}): HTTP {s}"
-            ))),
+            s if !s.is_success() => Err(SecretError::Backend(format!("gcp get({name}): HTTP {s}"))),
             _ => {
                 let body: serde_json::Value = response
                     .json()
@@ -1696,9 +1666,7 @@ impl SecretClient for GcpSecretClient {
 
             if let Some(secrets) = body.get("secrets").and_then(|v| v.as_array()) {
                 for secret in secrets {
-                    if let Some(resource_name) =
-                        secret.get("name").and_then(|v| v.as_str())
-                    {
+                    if let Some(resource_name) = secret.get("name").and_then(|v| v.as_str()) {
                         // Strip the projects/*/secrets/ prefix to get the short name.
                         if let Some(short) =
                             resource_name.rsplit_once('/').map(|(_, n)| n.to_owned())
@@ -1817,9 +1785,7 @@ impl SecretClient for GcpSecretClient {
             .header("Authorization", self.auth_header())
             .send()
             .await
-            .map_err(|e| {
-                SecretError::Backend(format!("gcp get({name}, v={version}): {e}"))
-            })?;
+            .map_err(|e| SecretError::Backend(format!("gcp get({name}, v={version}): {e}")))?;
         match response.status() {
             reqwest::StatusCode::NOT_FOUND => Err(SecretError::NotFound {
                 name: name.to_owned(),
@@ -1842,8 +1808,7 @@ impl SecretClient for GcpSecretClient {
 fn base64_encode(bytes: &[u8]) -> String {
     // RFC 4648 section 4 (standard) base64 — GCP Secret Manager uses
     // standard base64 (padded) for the payload.data field.
-    const ALPHABET: &[u8] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     let mut chunks = bytes.chunks_exact(3);
     for chunk in &mut chunks {
@@ -1954,11 +1919,7 @@ mod tests {
 
     #[tokio::test]
     async fn mem_client_list_with_prefix() {
-        let client = MemClient::with_seed([
-            ("prod/jwt", "1"),
-            ("prod/api", "2"),
-            ("dev/jwt", "3"),
-        ]);
+        let client = MemClient::with_seed([("prod/jwt", "1"), ("prod/api", "2"), ("dev/jwt", "3")]);
         let mut names = client.list(Some("prod/")).await.unwrap();
         names.sort();
         assert_eq!(names, vec!["prod/api", "prod/jwt"]);
@@ -2075,15 +2036,24 @@ mod tests {
         let client = CommandClient::with_get_template("echo {name}");
         assert!(matches!(
             client.put("k", "v").await,
-            Err(SecretError::Unsupported { operation: "put", .. })
+            Err(SecretError::Unsupported {
+                operation: "put",
+                ..
+            })
         ));
         assert!(matches!(
             client.delete("k").await,
-            Err(SecretError::Unsupported { operation: "delete", .. })
+            Err(SecretError::Unsupported {
+                operation: "delete",
+                ..
+            })
         ));
         assert!(matches!(
             client.list(None).await,
-            Err(SecretError::Unsupported { operation: "list", .. })
+            Err(SecretError::Unsupported {
+                operation: "list",
+                ..
+            })
         ));
     }
 
@@ -2117,9 +2087,7 @@ mod tests {
 
     #[test]
     fn secret_error_not_retryable_by_default() {
-        let err = SecretError::NotFound {
-            name: "x".into(),
-        };
+        let err = SecretError::NotFound { name: "x".into() };
         assert!(!err.is_retryable());
     }
 
@@ -2253,10 +2221,7 @@ mod tests {
         assert_eq!(base64_decode("Zm9v").unwrap(), b"foo");
         // Longer
         assert_eq!(base64_encode(b"hello world"), "aGVsbG8gd29ybGQ=");
-        assert_eq!(
-            base64_decode("aGVsbG8gd29ybGQ=").unwrap(),
-            b"hello world"
-        );
+        assert_eq!(base64_decode("aGVsbG8gd29ybGQ=").unwrap(), b"hello world");
         // Binary-ish bytes (GCP payloads are sometimes non-UTF8)
         let bin: Vec<u8> = (0..=255).collect();
         assert_eq!(base64_decode(&base64_encode(&bin)).unwrap(), bin);

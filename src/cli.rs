@@ -178,10 +178,16 @@ mod tests {
 
     impl TieredConfig for FixtureConfig {
         fn bare() -> Self {
-            Self { port: 0, log_level: String::new() }
+            Self {
+                port: 0,
+                log_level: String::new(),
+            }
         }
         fn prescribed_default() -> Self {
-            Self { port: 8080, log_level: "info".into() }
+            Self {
+                port: 8080,
+                log_level: "info".into(),
+            }
         }
     }
 

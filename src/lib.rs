@@ -52,7 +52,7 @@ pub mod tiered;
 mod watcher;
 
 pub use cube::{
-    ClosedAxis, PartialInverseCube, PartitionFace, PartitionOrdinal, ProductCube,
+    ClosedAxis, ClosedAxisLabel, PartialInverseCube, PartitionFace, PartitionOrdinal, ProductCube,
     at_partition_ordinal, axis_at, axis_cardinality, axis_iter, axis_ordinal, forward_iter,
     partition_ordinal, realizable_at, realizable_count, realizable_images, realizable_iter,
     realizable_ordinal, unrealizable_at, unrealizable_count, unrealizable_iter,

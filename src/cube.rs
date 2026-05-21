@@ -246,6 +246,123 @@ pub fn axis_at<A: ClosedAxis>(ordinal: usize) -> Option<A> {
     A::ALL.get(ordinal).copied()
 }
 
+/// Closed labeling discipline trait — adds the canonical operator-facing
+/// string label on top of [`ClosedAxis`].
+///
+/// Every typescape primitive that carries a canonical operator-facing
+/// name (the string an operator types on the CLI, reads in a log line,
+/// keys a dashboard column by) implements this trait. The trait is a
+/// strict refinement of [`ClosedAxis`]: implementors close both the
+/// `Self::ALL` enumeration discipline and the `(label → value)` /
+/// `(value → label)` discipline through one trait, with the round-trip
+/// law structural rather than per-primitive convention.
+///
+/// Implementors today: [`PartitionFace`] (the variant-tag projection of
+/// [`PartitionOrdinal`]) and [`crate::ConfigTierKind`] (the variant-tag
+/// projection of [`crate::ConfigTier`]). The two primitives share the
+/// same shape — `#[non_exhaustive] #[derive(Debug, Clone, Copy,
+/// PartialEq, Eq, Hash)]`, [`ClosedAxis`] over `Self::ALL`,
+/// operator-facing lowercase canonical name — and the trait closes the
+/// labeling discipline across both uniformly.
+///
+/// **Round-trip law** — for every `v: Self`,
+/// `Self::from_canonical_str(v.as_str()) == Some(v)`. Pinned by the
+/// trait-uniform [`tests::closed_axis_label_round_trips_for_every_implementor`]
+/// test, which reaches every implementor through the
+/// [`for_each_closed_axis_label_implementor`] macro.
+///
+/// **Case insensitivity** — for every `v: Self`,
+/// `Self::from_canonical_str(v.as_str().to_ascii_uppercase()) == Some(v)`.
+/// The default [`Self::from_canonical_str`] uses
+/// [`str::eq_ignore_ascii_case`], so the law is structural in the
+/// default impl; implementors that override [`from_canonical_str`]
+/// (none today) re-state the law via the same trait-uniform test.
+///
+/// **Distinctness** — `a.as_str() != b.as_str()` for `a != b: Self`.
+/// The labels are an injection from the axis into the canonical-name
+/// space; a duplicated label would collapse two variants to one parse
+/// result. Pinned by
+/// [`tests::closed_axis_label_as_str_distinct_for_every_implementor`].
+///
+/// **Non-emptiness** — `!v.as_str().is_empty()` for every `v: Self`.
+/// The empty string is reserved for "missing label" at the consumer
+/// boundary (e.g. an unset env var, an unfilled struct field) and must
+/// never collide with a canonical name. Pinned by
+/// [`tests::closed_axis_label_as_str_nonempty_for_every_implementor`].
+///
+/// **Empty parse** — `Self::from_canonical_str("") == None` for every
+/// implementor. Composes with non-emptiness: the empty string can never
+/// be a canonical label, so the parse rejects it uniformly. Pinned by
+/// [`tests::closed_axis_label_rejects_empty_string_for_every_implementor`].
+///
+/// Future implementors (lift sites): every closed-axis primitive that
+/// today exposes an inline string mapping —
+/// [`crate::Format::Display`] / [`crate::Format::FromStr`]
+/// (yaml/toml/lisp/nix at three sites), [`crate::ShikumiErrorKind`]
+/// (no operator-facing name today; would gain one through this trait),
+/// [`crate::ConfigSourceKind`], [`crate::FigmentSourceKind`],
+/// [`crate::AttributionRule`], [`crate::AttributionConfidence`],
+/// [`crate::AttributionAxis`], [`crate::FieldPathLocalization`],
+/// [`crate::FormatProvenance`] — picks up the round-trip law + every
+/// trait-uniform invariant test by adding one
+/// `impl ClosedAxisLabel for X { fn as_str(self) -> &'static str { … } }`
+/// declaration plus one arm to [`for_each_closed_axis_label_implementor`].
+/// The default [`Self::from_canonical_str`] suffices on every
+/// canonical-name-only parse; primitives that accept aliases (e.g.
+/// [`crate::Format::FromStr`] which accepts `"yml"`/`"lsp"`/`"el"`)
+/// keep their richer [`std::str::FromStr`] in addition to the
+/// canonical-only trait parse.
+pub trait ClosedAxisLabel: ClosedAxis {
+    /// Canonical operator-facing lowercase name of the axis value.
+    ///
+    /// The single source of truth for the value's string label —
+    /// renderers, log formatters, structured-diagnostic legends, CLI
+    /// help text, and parse helpers all route through this one method.
+    /// `&'static str` so the label is allocation-free at every call
+    /// site; no heap allocations for the rendering path.
+    ///
+    /// Implementors typically return a lowercase ASCII string matching
+    /// the operator-facing convention (the same form an operator would
+    /// type into an env var or CLI flag); [`Self::from_canonical_str`]
+    /// is case-insensitive over ASCII, so the rendering vs. parsing
+    /// asymmetry stays on the parse side only.
+    fn as_str(self) -> &'static str;
+
+    /// Case-insensitive ASCII parse of the canonical name produced by
+    /// [`Self::as_str`]. Returns [`None`] for any other input.
+    ///
+    /// The default impl is a linear scan of [`ClosedAxis::ALL`] matching
+    /// pointwise via [`str::eq_ignore_ascii_case`]. The implementation
+    /// is structural: adding a variant only extends [`Self::as_str`];
+    /// the parse picks the new variant up automatically through
+    /// [`ClosedAxis::ALL`]. Implementors override only when the parse
+    /// surface diverges from the rendering surface (e.g. when the
+    /// canonical name has aliases on the parse side — none of the
+    /// trait's current implementors do).
+    ///
+    /// `from_canonical_str` returns [`Option`] rather than implementing
+    /// [`std::str::FromStr`] (which would force a `Result<_, Err>` shape
+    /// and an error-type ceremony for the no-error case where "not a
+    /// canonical name" is the only failure mode the caller cares about).
+    /// Primitives that need a [`std::str::FromStr`] impl with a typed
+    /// error (e.g. [`crate::Format`]) keep their inherent impl in
+    /// addition; the trait parse stays focused on the round-trip-with-
+    /// [`as_str`][Self::as_str] case.
+    ///
+    /// **Round-trip law** —
+    /// `Self::from_canonical_str(v.as_str()) == Some(v)` for every
+    /// `v: Self`. Pinned by
+    /// [`tests::closed_axis_label_round_trips_for_every_implementor`].
+    /// The default impl satisfies the law by construction over the
+    /// [`ClosedAxis`] discipline.
+    fn from_canonical_str(s: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|v| v.as_str().eq_ignore_ascii_case(s))
+    }
+}
+
 /// Closed discipline trait every typescape product cube satisfies — a
 /// refinement of [`ClosedAxis`] that additionally pins the
 /// realizability predicate over the recognized-image cells.
@@ -659,10 +776,41 @@ impl PartitionFace {
     pub const fn is_realizable(self) -> bool {
         matches!(self, Self::Realizable)
     }
+
+    /// Canonical operator-facing lowercase name of the face —
+    /// `"realizable"` or `"unrealizable"`.
+    ///
+    /// The single source of truth for the face-label strings on the
+    /// [`PartitionFace`] axis. Inherent mirror of the [`ClosedAxisLabel`]
+    /// trait method; the trait impl delegates here so both routes (the
+    /// inherent `face.as_str()` and the trait-generic
+    /// `<PartitionFace as ClosedAxisLabel>::as_str(face)`) return the
+    /// same `&'static str` pointwise — pinned by
+    /// [`tests::closed_axis_label_round_trips_for_every_implementor`]
+    /// over the [`ClosedAxisLabel::from_canonical_str`] round-trip law.
+    ///
+    /// Used by face-keyed dashboard headers, structured-log fields
+    /// recording which half of a [`ProductCube`] a captured cell sits
+    /// on, and operator-facing CLI emissions of
+    /// `partition_face_iter` rendering output without inlining the two
+    /// strings `"realizable"`/`"unrealizable"` at each renderer.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Realizable => "realizable",
+            Self::Unrealizable => "unrealizable",
+        }
+    }
 }
 
 impl ClosedAxis for PartitionFace {
     const ALL: &'static [Self] = Self::ALL;
+}
+
+impl ClosedAxisLabel for PartitionFace {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
 }
 
 /// Typed witness of which half of a [`ProductCube`] a cell occupies,
@@ -1136,6 +1284,25 @@ mod tests {
         ($cb:ident) => {
             for_each_closed_axis_primitive!($cb);
             for_each_product_cube!($cb);
+        };
+    }
+
+    /// Invokes `$cb!(TypeName)` for each [`ClosedAxisLabel`]
+    /// implementor — the two closed-axis primitives that carry a
+    /// canonical operator-facing string label today
+    /// ([`PartitionFace`], [`ConfigTierKind`]), in declaration order.
+    ///
+    /// A third [`ClosedAxisLabel`] implementor landing on the
+    /// typescape (e.g. a future `Format::as_str` lift, a future
+    /// `ShikumiErrorKind::as_str` lift) extends the macro in lockstep
+    /// with the `impl ClosedAxisLabel` declaration; the pin in
+    /// [`tests::for_each_closed_axis_label_implementor_macro_covers_two_implementors`]
+    /// catches the discipline violation before silent dropouts at the
+    /// five trait-uniform `closed_axis_label_*` test sites below.
+    macro_rules! for_each_closed_axis_label_implementor {
+        ($cb:ident) => {
+            $cb!(PartitionFace);
+            $cb!(ConfigTierKind);
         };
     }
 
@@ -3255,5 +3422,220 @@ mod tests {
             "macro must emit each implementor exactly once \
              (today's axis_cardinality checksum is 83)",
         );
+    }
+
+    // ---- ClosedAxisLabel — trait-uniform invariants over every implementor ----
+    //
+    // The five invariants the labeling discipline pins (round-trip law,
+    // case insensitivity, distinctness, non-emptiness, empty-string
+    // rejection) each appear once below, with the per-implementor loop
+    // dispatched through `for_each_closed_axis_label_implementor!`. A
+    // third [`ClosedAxisLabel`] implementor landing extends every
+    // invariant in lockstep by adding one arm to the macro — no
+    // per-test edits required.
+
+    fn assert_round_trips_through_canonical_str<L>()
+    where
+        L: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // Round-trip law: `L::from_canonical_str(v.as_str()) == Some(v)`
+        // for every `v: L`. The default `from_canonical_str` impl
+        // satisfies this by construction over `ClosedAxis::ALL`;
+        // implementors that override `from_canonical_str` are still
+        // pinned here. Iterates `L::ALL` (every value of the axis) and
+        // re-parses the rendered label, asserting the parse recovers
+        // the original value pointwise.
+        for value in L::ALL.iter().copied() {
+            let rendered = value.as_str();
+            let parsed = <L as ClosedAxisLabel>::from_canonical_str(rendered);
+            assert_eq!(
+                parsed,
+                Some(value),
+                "round-trip failed for {value:?}: as_str={rendered:?} did not parse back to Some({value:?})",
+            );
+        }
+    }
+
+    fn assert_round_trips_case_insensitively<L>()
+    where
+        L: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // Case-insensitivity law: the rendered label uppercased parses
+        // back to the same value. The default `from_canonical_str` uses
+        // `eq_ignore_ascii_case`, so the law is structural on the
+        // default impl; the pin re-states it once across every
+        // implementor so override impls (none today) still satisfy it.
+        for value in L::ALL.iter().copied() {
+            let rendered_upper = value.as_str().to_ascii_uppercase();
+            let parsed = <L as ClosedAxisLabel>::from_canonical_str(&rendered_upper);
+            assert_eq!(
+                parsed,
+                Some(value),
+                "case-insensitive round-trip failed for {value:?}: uppercase {rendered_upper:?} did not parse back",
+            );
+        }
+    }
+
+    fn assert_labels_pairwise_distinct<L>()
+    where
+        L: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // Distinctness law: `a.as_str() != b.as_str()` for `a != b: L`.
+        // Pinned via a quadratic walk over `L::ALL × L::ALL` —
+        // cardinalities are tiny (≤6 today), so the quadratic cost is
+        // negligible.
+        let labels: Vec<(L, &'static str)> =
+            L::ALL.iter().copied().map(|v| (v, v.as_str())).collect();
+        for (i, (a, label_a)) in labels.iter().enumerate() {
+            for (b, label_b) in labels.iter().skip(i + 1) {
+                assert_ne!(
+                    label_a, label_b,
+                    "distinct values {a:?} and {b:?} must have distinct labels (both produced {label_a:?})",
+                );
+            }
+        }
+    }
+
+    fn assert_labels_nonempty<L>()
+    where
+        L: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // Non-emptiness law: `!v.as_str().is_empty()` for every `v: L`.
+        // Composes with the empty-parse-rejection law: the empty
+        // string can never collide with a canonical label.
+        for value in L::ALL.iter().copied() {
+            let rendered = value.as_str();
+            assert!(
+                !rendered.is_empty(),
+                "as_str must never return empty for {value:?}",
+            );
+        }
+    }
+
+    fn assert_rejects_empty_string<L>()
+    where
+        L: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // Empty-parse-rejection law: `L::from_canonical_str("") == None`
+        // for every implementor. Composes with non-emptiness above:
+        // because no canonical label is empty, the parse rejects "" by
+        // construction. The pin holds the trait default impl honest
+        // (and any override) at one site.
+        assert_eq!(
+            <L as ClosedAxisLabel>::from_canonical_str(""),
+            None,
+            "from_canonical_str(\"\") must be None",
+        );
+    }
+
+    #[test]
+    fn closed_axis_label_round_trips_for_every_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_round_trips_through_canonical_str::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn closed_axis_label_round_trips_case_insensitively_for_every_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_round_trips_case_insensitively::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn closed_axis_label_as_str_distinct_for_every_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_labels_pairwise_distinct::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn closed_axis_label_as_str_nonempty_for_every_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_labels_nonempty::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn closed_axis_label_rejects_empty_string_for_every_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_rejects_empty_string::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn for_each_closed_axis_label_implementor_macro_covers_two_implementors() {
+        // Pin that the macro expands to exactly two arms — the two
+        // [`ClosedAxisLabel`] implementors the typescape recognizes
+        // today ([`PartitionFace`] and [`ConfigTierKind`]). A third
+        // implementor landing (e.g. a future `Format::as_str` lift)
+        // extends the macro in lockstep with the
+        // `impl ClosedAxisLabel` declaration; this assertion fails
+        // until the macro arm lands.
+        let mut count = 0usize;
+        macro_rules! tally {
+            ($ty:ident) => {
+                count += 1;
+            };
+        }
+        for_each_closed_axis_label_implementor!(tally);
+        assert_eq!(
+            count, 2,
+            "for_each_closed_axis_label_implementor! must expand to two arms",
+        );
+    }
+
+    #[test]
+    fn for_each_closed_axis_label_implementor_expands_to_distinct_label_axes() {
+        // Pin that every type the macro yields satisfies the trait
+        // bound it advertises (ClosedAxisLabel) and that the expansion
+        // produces no duplicates. Distinctness is pinned via the same
+        // axis_cardinality checksum pattern used for the superset
+        // ClosedAxis macro: PartitionFace=2 + ConfigTierKind=4 = 6.
+        // A duplicated arm would double-count one cardinality; a
+        // missing arm would under-count.
+        fn axis_card<L: ClosedAxisLabel>() -> usize {
+            axis_cardinality::<L>()
+        }
+        let mut total = 0usize;
+        macro_rules! add {
+            ($ty:ident) => {
+                total += axis_card::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(add);
+        assert_eq!(
+            total, 6,
+            "macro must emit each ClosedAxisLabel implementor exactly once \
+             (today's axis_cardinality checksum is 6: PartitionFace=2 + ConfigTierKind=4)",
+        );
+    }
+
+    #[test]
+    fn partition_face_as_str_yields_canonical_lowercase_names() {
+        // Concrete-position pin on PartitionFace::as_str: the two
+        // canonical labels at one site. The trait-uniform round-trip
+        // test above pins the labels equal pairwise under
+        // from_canonical_str, but this test pins the literal string
+        // values themselves so a future rename (e.g. capitalizing
+        // "Realizable") would fail here before drifting through the
+        // round-trip law.
+        assert_eq!(PartitionFace::Realizable.as_str(), "realizable");
+        assert_eq!(PartitionFace::Unrealizable.as_str(), "unrealizable");
     }
 }

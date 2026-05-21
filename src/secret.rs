@@ -212,9 +212,7 @@ pub fn resolve(source: &SecretSource) -> Result<String, ShikumiError> {
         SecretSource::Backend(SecretBackend::Vault(VaultRef::Field { path, field })) => {
             resolve_vault(path, field)
         }
-        SecretSource::Backend(SecretBackend::AwsSecret(secret_id)) => {
-            resolve_aws_secret(secret_id)
-        }
+        SecretSource::Backend(SecretBackend::AwsSecret(secret_id)) => resolve_aws_secret(secret_id),
         SecretSource::Backend(SecretBackend::GcpSecret(name)) => resolve_gcp_secret(name),
     }
 }
@@ -582,19 +580,16 @@ pub async fn resolve_akeyless_native(
             "akeyless response for {name} was not a JSON object: {response}"
         ))
     })?;
-    let value = obj
-        .get(name)
-        .ok_or_else(|| {
-            ShikumiError::Parse(format!(
-                "akeyless response missing key {name:?}: {response}"
-            ))
-        })?;
-    value
-        .as_str()
-        .map(|s| s.to_owned())
-        .ok_or_else(|| {
-            ShikumiError::Parse(format!("akeyless value for {name} was not a string: {value}"))
-        })
+    let value = obj.get(name).ok_or_else(|| {
+        ShikumiError::Parse(format!(
+            "akeyless response missing key {name:?}: {response}"
+        ))
+    })?;
+    value.as_str().map(|s| s.to_owned()).ok_or_else(|| {
+        ShikumiError::Parse(format!(
+            "akeyless value for {name} was not a string: {value}"
+        ))
+    })
 }
 
 /// Auto-select native or CLI based on the `akeyless-native` feature +
@@ -743,10 +738,7 @@ pub fn resolve_or_command(
 
 /// Convert an `Output` into a `Result<String, ShikumiError>` with a
 /// consistent error shape across all backends.
-fn capture_stdout(
-    label: &str,
-    output: &std::process::Output,
-) -> Result<String, ShikumiError> {
+fn capture_stdout(label: &str, output: &std::process::Output) -> Result<String, ShikumiError> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(ShikumiError::Parse(format!(
@@ -810,7 +802,10 @@ mod tests {
         let err = resolve_command("echo oops >&2; exit 17").unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("oops"), "stderr should appear in error: {msg}");
-        assert!(msg.contains("17") || msg.contains("exit"), "exit status in error: {msg}");
+        assert!(
+            msg.contains("17") || msg.contains("exit"),
+            "exit status in error: {msg}"
+        );
     }
 
     #[test]
@@ -847,8 +842,14 @@ mod tests {
     fn resolve_or_command_errors_when_neither_set() {
         let err = resolve_or_command(None, None, "jwt_secret").unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("jwt_secret"), "error should name the missing field");
-        assert!(msg.contains("jwt_secret_command"), "error should suggest the _command fallback");
+        assert!(
+            msg.contains("jwt_secret"),
+            "error should name the missing field"
+        );
+        assert!(
+            msg.contains("jwt_secret_command"),
+            "error should suggest the _command fallback"
+        );
     }
 
     #[test]
@@ -909,8 +910,7 @@ mod tests {
 
     #[test]
     fn secret_source_parses_sops_file_shorthand() {
-        let source: SecretSource =
-            serde_yaml::from_str("sops: secrets/prod.yaml").unwrap();
+        let source: SecretSource = serde_yaml::from_str("sops: secrets/prod.yaml").unwrap();
         match source {
             SecretSource::Backend(SecretBackend::Sops(SopsRef::File(p))) => {
                 assert_eq!(p.to_str().unwrap(), "secrets/prod.yaml");
@@ -1050,8 +1050,7 @@ mod tests {
 
     #[test]
     fn secret_source_parses_vault_bare_path() {
-        let source: SecretSource =
-            serde_yaml::from_str("vault: secret/data/prod/app").unwrap();
+        let source: SecretSource = serde_yaml::from_str("vault: secret/data/prod/app").unwrap();
         match source {
             SecretSource::Backend(SecretBackend::Vault(VaultRef::Path(p))) => {
                 assert_eq!(p, "secret/data/prod/app");
@@ -1075,8 +1074,7 @@ mod tests {
 
     #[test]
     fn secret_source_parses_aws_secret() {
-        let source: SecretSource =
-            serde_yaml::from_str("aws_secret: prod/hanabi/jwt").unwrap();
+        let source: SecretSource = serde_yaml::from_str("aws_secret: prod/hanabi/jwt").unwrap();
         match source {
             SecretSource::Backend(SecretBackend::AwsSecret(id)) => {
                 assert_eq!(id, "prod/hanabi/jwt");
@@ -1152,18 +1150,17 @@ mod tests {
     fn resolve_dispatches_vault_missing_cli() {
         // Without vault on PATH, we should get an error (Io or Parse
         // depending on environment), NOT a panic or hang.
-        let source = SecretSource::Backend(SecretBackend::Vault(
-            VaultRef::Path("secret/nonexistent-shikumi-test".into()),
-        ));
+        let source = SecretSource::Backend(SecretBackend::Vault(VaultRef::Path(
+            "secret/nonexistent-shikumi-test".into(),
+        )));
         let result = resolve(&source);
         assert!(result.is_err());
     }
 
     #[test]
     fn resolve_dispatches_aws_missing_cli() {
-        let source = SecretSource::Backend(SecretBackend::AwsSecret(
-            "shikumi-test-nonexistent".into(),
-        ));
+        let source =
+            SecretSource::Backend(SecretBackend::AwsSecret("shikumi-test-nonexistent".into()));
         let result = resolve(&source);
         assert!(result.is_err());
     }
