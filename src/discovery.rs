@@ -81,6 +81,32 @@ impl Format {
         }
     }
 
+    /// Canonical operator-facing lowercase name of the format —
+    /// `"yaml"`, `"toml"`, `"lisp"`, or `"nix"`.
+    ///
+    /// The single source of truth for the format-label strings on the
+    /// [`Format`] axis. Inherent mirror of the [`crate::ClosedAxisLabel`]
+    /// trait method; [`fmt::Display`] and [`Self::extensions`]'s first
+    /// entry both delegate here so the canonical name lives at one site
+    /// instead of being re-stated at three (the prior `Display` match,
+    /// the `extensions()` first-entry, and the `FromStr` canonical
+    /// branches).
+    ///
+    /// `FromStr` continues to accept the alias extensions
+    /// (`"yml"`/`"lsp"`/`"el"`) and `from_extension` continues to
+    /// enumerate every recognized extension; the canonical name is the
+    /// `extensions()[0]` of each format, pinned by
+    /// `format_extensions_first_entry_matches_as_str`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Yaml => "yaml",
+            Self::Toml => "toml",
+            Self::Lisp => "lisp",
+            Self::Nix => "nix",
+        }
+    }
+
     /// Closed-enum classification of which provider class loads this
     /// format — the typed partition over the [`Format`] variant space
     /// along the (figment-builtin × shikumi-built) axis.
@@ -684,6 +710,12 @@ impl crate::ClosedAxis for Format {
     const ALL: &'static [Self] = Self::ALL;
 }
 
+impl crate::ClosedAxisLabel for Format {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
+}
+
 impl crate::ClosedAxis for FormatProvenance {
     const ALL: &'static [Self] = Self::ALL;
 }
@@ -749,12 +781,7 @@ pub struct FormatMetadataTag<'a> {
 
 impl fmt::Display for Format {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Yaml => f.write_str("yaml"),
-            Self::Toml => f.write_str("toml"),
-            Self::Lisp => f.write_str("lisp"),
-            Self::Nix => f.write_str("nix"),
-        }
+        f.write_str(self.as_str())
     }
 }
 
@@ -2466,6 +2493,100 @@ mod tests {
         assert!(!Format::Toml.has_shikumi_provider());
         assert!(Format::Lisp.has_shikumi_provider());
         assert!(Format::Nix.has_shikumi_provider());
+    }
+
+    #[test]
+    fn format_as_str_yields_canonical_lowercase_names() {
+        // Concrete-position pin on Format::as_str: the four canonical
+        // labels at one site. The trait-uniform round-trip test in
+        // cube::tests pins the labels equal pairwise under
+        // from_canonical_str, but this test pins the literal string
+        // values themselves so a future rename (e.g. capitalizing
+        // "Yaml") would fail here before drifting through the
+        // round-trip law.
+        assert_eq!(Format::Yaml.as_str(), "yaml");
+        assert_eq!(Format::Toml.as_str(), "toml");
+        assert_eq!(Format::Lisp.as_str(), "lisp");
+        assert_eq!(Format::Nix.as_str(), "nix");
+    }
+
+    #[test]
+    fn format_display_matches_as_str() {
+        // Pin that Display delegates to as_str pointwise across every
+        // variant. The Display impl used to carry a duplicated 4-arm
+        // match emitting the same four strings; the lift collapses the
+        // body to `f.write_str(self.as_str())`, and this test pins the
+        // collapse so a future drift between the two surfaces fails
+        // here before propagating to every consumer that renders
+        // `{format}` via Display.
+        for f in Format::ALL.iter().copied() {
+            assert_eq!(
+                f.to_string(),
+                f.as_str(),
+                "Display must agree with as_str for {f:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_extensions_first_entry_matches_as_str() {
+        // Pin that the canonical extension (first entry of
+        // `extensions()`) equals the canonical operator-facing name
+        // (`as_str()`) pointwise across every variant. The two surfaces
+        // happen to coincide today (`extensions()[0]` and `as_str()`
+        // both emit `"yaml"`/`"toml"`/`"lisp"`/`"nix"`); pinning the
+        // invariant catches any future drift between them — e.g. a
+        // future rename of the canonical name that forgets to bump the
+        // extensions slice, or vice versa.
+        for f in Format::ALL.iter().copied() {
+            let extensions = f.extensions();
+            assert!(
+                !extensions.is_empty(),
+                "extensions() must never be empty for {f:?}",
+            );
+            assert_eq!(
+                extensions[0],
+                f.as_str(),
+                "extensions()[0] must equal as_str() for {f:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_from_canonical_str_round_trips_through_trait() {
+        // Pin the trait-default `from_canonical_str` parse on Format:
+        // each canonical name parses back to its variant. Distinct from
+        // the existing `format_from_str_case_insensitive` (which
+        // covers the richer `FromStr` impl that also accepts aliases
+        // like `"yml"`/`"lsp"`/`"el"`): this pin reaches the
+        // canonical-only trait parse that the ClosedAxisLabel default
+        // impl provides.
+        use crate::ClosedAxisLabel;
+        for f in Format::ALL.iter().copied() {
+            assert_eq!(
+                <Format as ClosedAxisLabel>::from_canonical_str(f.as_str()),
+                Some(f),
+                "trait from_canonical_str must round-trip for {f:?}",
+            );
+        }
+        // Alias `"yml"` parses through `FromStr` but not through the
+        // canonical-only trait parse (which only accepts the canonical
+        // name `"yaml"`). The two surfaces are deliberately distinct.
+        assert_eq!(
+            <Format as ClosedAxisLabel>::from_canonical_str("yml"),
+            None,
+            "from_canonical_str must reject alias `yml` (FromStr accepts it; the trait does not)",
+        );
+        assert_eq!(
+            <Format as ClosedAxisLabel>::from_canonical_str("lsp"),
+            None,
+            "from_canonical_str must reject alias `lsp`",
+        );
+        assert_eq!(
+            <Format as ClosedAxisLabel>::from_canonical_str("el"),
+            None,
+            "from_canonical_str must reject alias `el`",
+        );
     }
 
     #[test]
