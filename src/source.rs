@@ -237,10 +237,50 @@ impl ConfigSourceKind {
     /// Together they pin the constant to the variant space the
     /// typescape recognizes.
     pub const ALL: &'static [Self] = &[Self::Defaults, Self::Env, Self::File];
+
+    /// Canonical operator-facing lowercase name of the layer kind —
+    /// `"defaults"`, `"env"`, or `"file"`.
+    ///
+    /// The single source of truth for the layer-kind label strings on
+    /// the [`ConfigSourceKind`] axis. Inherent mirror of the
+    /// [`crate::ClosedAxisLabel`] trait method; the trait impl
+    /// delegates here so the canonical names live at one site instead
+    /// of being re-stated at every operator-facing surface (a future
+    /// structured-log field naming the failing layer's class, a CLI
+    /// flag filtering attributions by layer kind, an attestation
+    /// manifest recording the layer-kind histogram of loaded values).
+    /// The strings match the variant identifiers in ASCII-lowercase
+    /// form — the same form an operator would type into an env var or
+    /// CLI flag.
+    ///
+    /// Pairs with [`crate::ClosedAxisLabel::from_canonical_str`] via
+    /// the trait-default linear-scan parse; the round-trip law
+    /// `Self::from_canonical_str(v.as_str()) == Some(v)` is pinned for
+    /// every variant uniformly by the trait-uniform
+    /// `closed_axis_label_round_trips_for_every_implementor` test in
+    /// `cube::tests`. The concrete-position pin at
+    /// `config_source_kind_as_str_yields_canonical_lowercase_names`
+    /// holds the literal strings stable so a future rename
+    /// (e.g. capitalizing `"Env"`, prefixing `"layer-env"`) fails at
+    /// that site before drifting through the round-trip law.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Defaults => "defaults",
+            Self::Env => "env",
+            Self::File => "file",
+        }
+    }
 }
 
 impl crate::ClosedAxis for ConfigSourceKind {
     const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxisLabel for ConfigSourceKind {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
 }
 
 /// Recognized form of [`figment::providers::Env`]'s
@@ -911,6 +951,74 @@ mod tests {
                 ConfigSourceKind::File,
             ],
             "ALL must list variants in declaration order",
+        );
+    }
+
+    #[test]
+    fn config_source_kind_as_str_yields_canonical_lowercase_names() {
+        // Concrete-position pin on ConfigSourceKind::as_str. The
+        // trait-uniform round-trip test in cube::tests pins labels
+        // equal pairwise under from_canonical_str, but this test pins
+        // the literal string values themselves so a future rename
+        // (e.g. capitalizing "Env", prefixing "layer-env", switching
+        // "defaults" to "default" — colliding with ConfigTierKind's
+        // "default" label across axes) fails here before drifting
+        // through the trait-uniform round-trip law and the
+        // operator-facing rendering surface.
+        assert_eq!(ConfigSourceKind::Defaults.as_str(), "defaults");
+        assert_eq!(ConfigSourceKind::Env.as_str(), "env");
+        assert_eq!(ConfigSourceKind::File.as_str(), "file");
+    }
+
+    #[test]
+    fn config_source_kind_from_canonical_str_round_trips_through_trait() {
+        // Pin the trait-default `from_canonical_str` parse on
+        // ConfigSourceKind: each canonical lowercase name parses back
+        // to its variant via the ClosedAxisLabel default impl. The
+        // canonical-only trait parse is the round-trip dual of
+        // `as_str`; this pin sits at the ConfigSourceKind site so a
+        // future override of `from_canonical_str` (none today) is
+        // still held to the law. Composes with the cross-axis
+        // distinctness pin in
+        // `config_source_kind_as_str_yields_canonical_lowercase_names`:
+        // the three canonical names ("defaults", "env", "file") are
+        // disjoint from the four ConfigTierKind labels ("bare",
+        // "discovered", "default", "custom"), so an operator-facing
+        // surface that routes a string label through both parsers
+        // sequentially returns at most one Some(_), never both.
+        use crate::ClosedAxisLabel;
+        for k in ConfigSourceKind::ALL.iter().copied() {
+            assert_eq!(
+                <ConfigSourceKind as ClosedAxisLabel>::from_canonical_str(k.as_str()),
+                Some(k),
+                "trait from_canonical_str must round-trip for {k:?}",
+            );
+        }
+        // Case-insensitive parse: the default impl uses
+        // `eq_ignore_ascii_case`, so mixed-case forms an operator
+        // might type in an env var or CLI flag reach the same variant.
+        assert_eq!(
+            <ConfigSourceKind as ClosedAxisLabel>::from_canonical_str("DEFAULTS"),
+            Some(ConfigSourceKind::Defaults),
+        );
+        assert_eq!(
+            <ConfigSourceKind as ClosedAxisLabel>::from_canonical_str("Env"),
+            Some(ConfigSourceKind::Env),
+        );
+        assert_eq!(
+            <ConfigSourceKind as ClosedAxisLabel>::from_canonical_str("FILE"),
+            Some(ConfigSourceKind::File),
+        );
+        // Unrecognized strings return None — the parse is closed over
+        // `ConfigSourceKind::ALL` and rejects anything else, including
+        // the singular form of "defaults" (a one-character drift).
+        assert_eq!(
+            <ConfigSourceKind as ClosedAxisLabel>::from_canonical_str("default"),
+            None,
+        );
+        assert_eq!(
+            <ConfigSourceKind as ClosedAxisLabel>::from_canonical_str("http"),
+            None,
         );
     }
 
