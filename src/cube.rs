@@ -301,9 +301,9 @@ pub fn axis_at<A: ClosedAxis>(ordinal: usize) -> Option<A> {
 /// (no operator-facing name today; would gain one through this trait),
 /// [`crate::ConfigSourceKind`], [`crate::FigmentSourceKind`],
 /// [`crate::AttributionRule`], [`crate::AttributionConfidence`],
-/// [`crate::AttributionAxis`], [`crate::FieldPathLocalization`],
-/// [`crate::FormatProvenance`] — picks up the round-trip law + every
-/// trait-uniform invariant test by adding one
+/// [`crate::AttributionAxis`], [`crate::FieldPathLocalization`] —
+/// picks up the round-trip law + every trait-uniform invariant test
+/// by adding one
 /// `impl ClosedAxisLabel for X { fn as_str(self) -> &'static str { … } }`
 /// declaration plus one arm to [`for_each_closed_axis_label_implementor`].
 /// The default [`Self::from_canonical_str`] suffices on every
@@ -1287,21 +1287,23 @@ mod tests {
     }
 
     /// Invokes `$cb!(TypeName)` for each [`ClosedAxisLabel`]
-    /// implementor — the three closed-axis primitives that carry a
+    /// implementor — the four closed-axis primitives that carry a
     /// canonical operator-facing string label today
-    /// ([`PartitionFace`], [`ConfigTierKind`], [`Format`]), in
-    /// declaration order. The two variant-tag projections sit at the
-    /// head ([`PartitionFace`] of [`PartitionOrdinal`], [`ConfigTierKind`]
-    /// of [`crate::ConfigTier`]); the leading non-projection primitive
-    /// ([`Format`], operator-facing config file format) closes the
-    /// labeling discipline on the format axis through the trait.
+    /// ([`PartitionFace`], [`ConfigTierKind`], [`Format`],
+    /// [`FormatProvenance`]), in declaration order. The two
+    /// variant-tag projections sit at the head ([`PartitionFace`] of
+    /// [`PartitionOrdinal`], [`ConfigTierKind`] of [`crate::ConfigTier`]);
+    /// the two non-projection primitives ([`Format`], operator-facing
+    /// config file format; [`FormatProvenance`], which provider class
+    /// loads the format) close the labeling discipline on their
+    /// respective axes through the trait.
     ///
-    /// A fourth [`ClosedAxisLabel`] implementor landing on the
+    /// A fifth [`ClosedAxisLabel`] implementor landing on the
     /// typescape (e.g. a future `ShikumiErrorKind::as_str` lift, a
     /// future `ConfigSourceKind::as_str` lift) extends the macro in
     /// lockstep with the `impl ClosedAxisLabel` declaration; the pin
     /// in
-    /// [`tests::for_each_closed_axis_label_implementor_macro_covers_three_implementors`]
+    /// [`tests::for_each_closed_axis_label_implementor_macro_covers_four_implementors`]
     /// catches the discipline violation before silent dropouts at the
     /// five trait-uniform `closed_axis_label_*` test sites below.
     macro_rules! for_each_closed_axis_label_implementor {
@@ -1309,6 +1311,7 @@ mod tests {
             $cb!(PartitionFace);
             $cb!(ConfigTierKind);
             $cb!(Format);
+            $cb!(FormatProvenance);
         };
     }
 
@@ -3585,12 +3588,12 @@ mod tests {
     }
 
     #[test]
-    fn for_each_closed_axis_label_implementor_macro_covers_three_implementors() {
-        // Pin that the macro expands to exactly three arms — the three
+    fn for_each_closed_axis_label_implementor_macro_covers_four_implementors() {
+        // Pin that the macro expands to exactly four arms — the four
         // [`ClosedAxisLabel`] implementors the typescape recognizes
-        // today ([`PartitionFace`], [`ConfigTierKind`], [`Format`]). A
-        // fourth implementor landing (e.g. a future
-        // `ShikumiErrorKind::as_str` lift) extends the macro in
+        // today ([`PartitionFace`], [`ConfigTierKind`], [`Format`],
+        // [`FormatProvenance`]). A fifth implementor landing (e.g. a
+        // future `ShikumiErrorKind::as_str` lift) extends the macro in
         // lockstep with the `impl ClosedAxisLabel` declaration; this
         // assertion fails until the macro arm lands.
         let mut count = 0usize;
@@ -3601,8 +3604,8 @@ mod tests {
         }
         for_each_closed_axis_label_implementor!(tally);
         assert_eq!(
-            count, 3,
-            "for_each_closed_axis_label_implementor! must expand to three arms",
+            count, 4,
+            "for_each_closed_axis_label_implementor! must expand to four arms",
         );
     }
 
@@ -3613,8 +3616,8 @@ mod tests {
         // produces no duplicates. Distinctness is pinned via the same
         // axis_cardinality checksum pattern used for the superset
         // ClosedAxis macro:
-        // PartitionFace=2 + ConfigTierKind=4 + Format=4 = 10.
-        // A duplicated arm would double-count one cardinality; a
+        // PartitionFace=2 + ConfigTierKind=4 + Format=4 + FormatProvenance=2
+        // = 12. A duplicated arm would double-count one cardinality; a
         // missing arm would under-count.
         fn axis_card<L: ClosedAxisLabel>() -> usize {
             axis_cardinality::<L>()
@@ -3627,10 +3630,10 @@ mod tests {
         }
         for_each_closed_axis_label_implementor!(add);
         assert_eq!(
-            total, 10,
+            total, 12,
             "macro must emit each ClosedAxisLabel implementor exactly once \
-             (today's axis_cardinality checksum is 10: \
-             PartitionFace=2 + ConfigTierKind=4 + Format=4)",
+             (today's axis_cardinality checksum is 12: \
+             PartitionFace=2 + ConfigTierKind=4 + Format=4 + FormatProvenance=2)",
         );
     }
 

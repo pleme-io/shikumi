@@ -470,6 +470,35 @@ impl FormatProvenance {
     pub fn file_attribution_axis(self) -> crate::AttributionAxis {
         self.file_attribution_rule().metadata_axis()
     }
+
+    /// Canonical operator-facing lowercase name of the provenance —
+    /// `"figment-builtin"` for [`Self::FigmentBuiltin`], `"shikumi-built"`
+    /// for [`Self::ShikumiBuilt`].
+    ///
+    /// The single source of truth for the provenance-label strings on
+    /// the [`FormatProvenance`] axis. Inherent mirror of the
+    /// [`crate::ClosedAxisLabel`] trait method; the two canonical
+    /// strings previously appeared only in doc-prose
+    /// (`(figment-builtin × shikumi-built) axis`) — lifting them to a
+    /// typed accessor pins the labels at one site so structured-log
+    /// fields, attestation manifests recording provenance histograms,
+    /// CLI flags that surface "which provider class loaded this value",
+    /// and trait-uniform `ClosedAxisLabel` consumers reach the
+    /// canonical name through one method call.
+    ///
+    /// Kebab-case so a future tertiary provider class (e.g. an
+    /// upstream-figment-ecosystem provider that's neither figment's own
+    /// builtin nor shikumi's own) lands a canonical name following the
+    /// same convention; the existing two names are compound nouns whose
+    /// punctuation belongs at the type level (operator-facing string)
+    /// rather than at the call site.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::FigmentBuiltin => "figment-builtin",
+            Self::ShikumiBuilt => "shikumi-built",
+        }
+    }
 }
 
 /// Coordinate pair of a [`Format`] over the two orthogonal projections
@@ -718,6 +747,12 @@ impl crate::ClosedAxisLabel for Format {
 
 impl crate::ClosedAxis for FormatProvenance {
     const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxisLabel for FormatProvenance {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
 }
 
 impl crate::ClosedAxis for FormatCoordinates {
@@ -3190,6 +3225,56 @@ mod tests {
                 "rule layer_kind must agree with source kind",
             );
         }
+    }
+
+    #[test]
+    fn format_provenance_as_str_yields_canonical_kebab_case_names() {
+        // Concrete-position pin on FormatProvenance::as_str. The
+        // trait-uniform round-trip test in cube::tests pins labels
+        // equal pairwise under from_canonical_str, but this test pins
+        // the literal string values themselves so a future rename
+        // (e.g. dropping the hyphen or capitalizing) fails here before
+        // drifting through the trait-uniform round-trip law and the
+        // operator-facing rendering surface.
+        assert_eq!(FormatProvenance::FigmentBuiltin.as_str(), "figment-builtin",);
+        assert_eq!(FormatProvenance::ShikumiBuilt.as_str(), "shikumi-built");
+    }
+
+    #[test]
+    fn format_provenance_from_canonical_str_round_trips_through_trait() {
+        // Pin the trait-default `from_canonical_str` parse on
+        // FormatProvenance: each canonical kebab-case name parses back
+        // to its variant via the ClosedAxisLabel default impl. The
+        // canonical-only trait parse is the round-trip dual of
+        // `as_str`; this pin sits at the FormatProvenance site so a
+        // future override of `from_canonical_str` (none today) is
+        // still held to the law.
+        use crate::ClosedAxisLabel;
+        for p in FormatProvenance::ALL.iter().copied() {
+            assert_eq!(
+                <FormatProvenance as ClosedAxisLabel>::from_canonical_str(p.as_str()),
+                Some(p),
+                "trait from_canonical_str must round-trip for {p:?}",
+            );
+        }
+        // The compound names must round-trip case-insensitively (the
+        // default parse uses `eq_ignore_ascii_case`); mixed-case forms
+        // an operator might type in an env var or CLI flag reach the
+        // same variant.
+        assert_eq!(
+            <FormatProvenance as ClosedAxisLabel>::from_canonical_str("Figment-Builtin"),
+            Some(FormatProvenance::FigmentBuiltin),
+        );
+        assert_eq!(
+            <FormatProvenance as ClosedAxisLabel>::from_canonical_str("SHIKUMI-BUILT"),
+            Some(FormatProvenance::ShikumiBuilt),
+        );
+        // An unrecognized string returns None — the parse is closed
+        // over `FormatProvenance::ALL` and rejects anything else.
+        assert_eq!(
+            <FormatProvenance as ClosedAxisLabel>::from_canonical_str("custom"),
+            None,
+        );
     }
 
     // ---- FormatCoordinates / Format::format_coordinates / format_or_none ----
