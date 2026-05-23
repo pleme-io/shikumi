@@ -685,10 +685,65 @@ impl FigmentSourceKind {
     pub fn is_custom(self) -> bool {
         matches!(self, Self::Custom)
     }
+
+    /// Canonical operator-facing lowercase name of the figment-Source
+    /// kind — `"file"`, `"code"`, or `"custom"`.
+    ///
+    /// The single source of truth for the figment-Source-axis kind
+    /// label strings on the [`FigmentSourceKind`] axis. Inherent mirror
+    /// of the [`crate::ClosedAxisLabel`] trait method; the trait impl
+    /// delegates here so the canonical names live at one site instead
+    /// of being re-stated at every operator-facing surface (a future
+    /// structured-log field naming the figment-Source-axis kind of a
+    /// failing attribution, a CLI flag filtering attributions by
+    /// figment-Source-axis kind, an attestation manifest recording the
+    /// figment-Source-axis kind histogram of loaded values). The
+    /// strings match the variant identifiers in ASCII-lowercase form —
+    /// the same form an operator would type into an env var or CLI
+    /// flag.
+    ///
+    /// The label space coincides with [`ConfigSourceKind::as_str`] on
+    /// the `"file"` cell — [`Self::File`] and
+    /// [`ConfigSourceKind::File`] both render as `"file"`, by design:
+    /// the shikumi-side file layer typically loads through a figment
+    /// File-source provider, so the operator-facing label is the same
+    /// concept viewed from the two sides of the resolution boundary
+    /// ([`crate::AttributionSourceKindCoordinates`] joins the two
+    /// axes as the (figment-source-kind × shikumi-layer-kind) cube).
+    /// The other two cells (`"code"`, `"custom"`) are unique to the
+    /// figment-Source axis. The trait-uniform distinctness law
+    /// (`closed_axis_label_as_str_distinct_for_every_implementor`)
+    /// pins distinctness within an axis only; cross-axis label
+    /// coincidence is structural, not a discipline violation.
+    ///
+    /// Pairs with [`crate::ClosedAxisLabel::from_canonical_str`] via
+    /// the trait-default linear-scan parse; the round-trip law
+    /// `Self::from_canonical_str(v.as_str()) == Some(v)` is pinned for
+    /// every variant uniformly by the trait-uniform
+    /// `closed_axis_label_round_trips_for_every_implementor` test in
+    /// `cube::tests`. The concrete-position pin at
+    /// `figment_source_kind_as_str_yields_canonical_lowercase_names`
+    /// holds the literal strings stable so a future rename
+    /// (e.g. capitalizing `"Code"`, prefixing `"figment-file"`) fails
+    /// at that site before drifting through the round-trip law.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::File => "file",
+            Self::Code => "code",
+            Self::Custom => "custom",
+        }
+    }
 }
 
 impl crate::ClosedAxis for FigmentSourceKind {
     const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxisLabel for FigmentSourceKind {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
 }
 
 impl fmt::Display for ConfigSource {
@@ -1873,6 +1928,69 @@ mod tests {
                 FigmentSourceKind::Code,
                 FigmentSourceKind::Custom,
             ],
+        );
+    }
+
+    #[test]
+    fn figment_source_kind_as_str_yields_canonical_lowercase_names() {
+        // Concrete-position pin on FigmentSourceKind::as_str. The
+        // trait-uniform round-trip test in cube::tests pins labels
+        // equal pairwise under from_canonical_str, but this test pins
+        // the literal string values themselves so a future rename
+        // (e.g. capitalizing "Code", prefixing "figment-file",
+        // switching "custom" to "raw") fails here before drifting
+        // through the trait-uniform round-trip law and the
+        // operator-facing rendering surface. The `"file"` label
+        // intentionally coincides with `ConfigSourceKind::File`'s
+        // label by typescape design: the two axes meet at the
+        // shikumi-file-layer ↔ figment-File-source resolution
+        // boundary, joined as a cube cell in
+        // `AttributionSourceKindCoordinates`.
+        assert_eq!(FigmentSourceKind::File.as_str(), "file");
+        assert_eq!(FigmentSourceKind::Code.as_str(), "code");
+        assert_eq!(FigmentSourceKind::Custom.as_str(), "custom");
+    }
+
+    #[test]
+    fn figment_source_kind_from_canonical_str_round_trips_through_trait() {
+        // Pin the trait-default `from_canonical_str` parse on
+        // FigmentSourceKind: each canonical lowercase name parses back
+        // to its variant via the ClosedAxisLabel default impl. The
+        // canonical-only trait parse is the round-trip dual of
+        // `as_str`; this pin sits at the FigmentSourceKind site so a
+        // future override of `from_canonical_str` (none today) is
+        // still held to the law. Mixed-case forms an operator might
+        // type in an env var or CLI flag (`"File"`, `"CODE"`,
+        // `"Custom"`) round-trip case-insensitively. Unrecognized
+        // strings — including `"code "` (trailing whitespace) and
+        // `"fil"` (a one-character drift from `"file"`) — reject.
+        use crate::ClosedAxisLabel;
+        for k in FigmentSourceKind::ALL.iter().copied() {
+            assert_eq!(
+                <FigmentSourceKind as ClosedAxisLabel>::from_canonical_str(k.as_str()),
+                Some(k),
+                "trait from_canonical_str must round-trip for {k:?}",
+            );
+        }
+        assert_eq!(
+            <FigmentSourceKind as ClosedAxisLabel>::from_canonical_str("File"),
+            Some(FigmentSourceKind::File),
+        );
+        assert_eq!(
+            <FigmentSourceKind as ClosedAxisLabel>::from_canonical_str("CODE"),
+            Some(FigmentSourceKind::Code),
+        );
+        assert_eq!(
+            <FigmentSourceKind as ClosedAxisLabel>::from_canonical_str("Custom"),
+            Some(FigmentSourceKind::Custom),
+        );
+        assert_eq!(
+            <FigmentSourceKind as ClosedAxisLabel>::from_canonical_str("code "),
+            None,
+        );
+        assert_eq!(
+            <FigmentSourceKind as ClosedAxisLabel>::from_canonical_str("fil"),
+            None,
         );
     }
 
