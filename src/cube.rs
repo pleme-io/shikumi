@@ -263,14 +263,16 @@ pub fn axis_at<A: ClosedAxis>(ordinal: usize) -> Option<A> {
 /// operator-facing config file format axis — yaml/toml/lisp/nix),
 /// [`crate::FormatProvenance`] (which provider class loads the format
 /// — figment-builtin/shikumi-built), [`crate::ConfigSourceKind`] (the
-/// kind axis of the resolved figment layer — defaults/env/file), and
+/// kind axis of the resolved figment layer — defaults/env/file),
 /// [`crate::FigmentSourceKind`] (the kind axis of the underlying
-/// [`figment::Source`] — file/code/custom). The six primitives share
-/// the same shape — `#[non_exhaustive] #[derive(Debug, Clone, Copy,
-/// PartialEq, Eq, Hash)]`, [`ClosedAxis`] over `Self::ALL`,
-/// operator-facing lowercase or kebab-case canonical name — and the
-/// trait closes the labeling discipline across all six uniformly. The
-/// canonical implementor list lives in the
+/// [`figment::Source`] — file/code/custom), and
+/// [`crate::AttributionConfidence`] (the equality-vs-uniqueness
+/// confidence class of the resolver attribution — exact/fallback).
+/// The seven primitives share the same shape — `#[non_exhaustive]
+/// #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]`, [`ClosedAxis`]
+/// over `Self::ALL`, operator-facing lowercase or kebab-case canonical
+/// name — and the trait closes the labeling discipline across all
+/// seven uniformly. The canonical implementor list lives in the
 /// `for_each_closed_axis_label_implementor!` callback macro
 /// (`cube::tests`) so every trait-uniform invariant test reaches the
 /// implementor set by macro expansion rather than by repeated inline
@@ -309,10 +311,9 @@ pub fn axis_at<A: ClosedAxis>(ordinal: usize) -> Option<A> {
 /// Future implementors (lift sites): every closed-axis primitive that
 /// today exposes an inline string mapping — [`crate::ShikumiErrorKind`]
 /// (no operator-facing name today; would gain one through this trait),
-/// [`crate::AttributionRule`], [`crate::AttributionConfidence`],
-/// [`crate::AttributionAxis`], [`crate::FieldPathLocalization`] —
-/// picks up the round-trip law + every trait-uniform invariant test
-/// by adding one
+/// [`crate::AttributionRule`], [`crate::AttributionAxis`],
+/// [`crate::FieldPathLocalization`] — picks up the round-trip law +
+/// every trait-uniform invariant test by adding one
 /// `impl ClosedAxisLabel for X { fn as_str(self) -> &'static str { … } }`
 /// declaration plus one arm to [`for_each_closed_axis_label_implementor`].
 /// The default [`Self::from_canonical_str`] suffices on every
@@ -1296,27 +1297,29 @@ mod tests {
     }
 
     /// Invokes `$cb!(TypeName)` for each [`ClosedAxisLabel`]
-    /// implementor — the six closed-axis primitives that carry a
+    /// implementor — the seven closed-axis primitives that carry a
     /// canonical operator-facing string label today
     /// ([`PartitionFace`], [`ConfigTierKind`], [`Format`],
     /// [`FormatProvenance`], [`ConfigSourceKind`],
-    /// [`FigmentSourceKind`]), in declaration order. The two
-    /// variant-tag projections sit at the head ([`PartitionFace`] of
-    /// [`PartitionOrdinal`], [`ConfigTierKind`] of
-    /// [`crate::ConfigTier`]); the four non-projection primitives
-    /// ([`Format`], operator-facing config file format;
-    /// [`FormatProvenance`], which provider class loads the format;
-    /// [`ConfigSourceKind`], the kind axis of the resolved figment
-    /// layer; [`FigmentSourceKind`], the kind axis of the underlying
-    /// `figment::Source`) close the labeling discipline on their
-    /// respective axes through the trait.
+    /// [`FigmentSourceKind`], [`AttributionConfidence`]), in
+    /// declaration order. The two variant-tag projections sit at the
+    /// head ([`PartitionFace`] of [`PartitionOrdinal`],
+    /// [`ConfigTierKind`] of [`crate::ConfigTier`]); the five
+    /// non-projection primitives ([`Format`], operator-facing config
+    /// file format; [`FormatProvenance`], which provider class loads
+    /// the format; [`ConfigSourceKind`], the kind axis of the
+    /// resolved figment layer; [`FigmentSourceKind`], the kind axis
+    /// of the underlying `figment::Source`; [`AttributionConfidence`],
+    /// the equality-vs-uniqueness confidence class of the resolver
+    /// attribution) close the labeling discipline on their respective
+    /// axes through the trait.
     ///
-    /// A seventh [`ClosedAxisLabel`] implementor landing on the
+    /// An eighth [`ClosedAxisLabel`] implementor landing on the
     /// typescape (e.g. a future `ShikumiErrorKind::as_str` lift, a
     /// future `AttributionRule::as_str` lift) extends the macro in
     /// lockstep with the `impl ClosedAxisLabel` declaration; the pin
     /// in
-    /// [`tests::for_each_closed_axis_label_implementor_macro_covers_six_implementors`]
+    /// [`tests::for_each_closed_axis_label_implementor_macro_covers_seven_implementors`]
     /// catches the discipline violation before silent dropouts at the
     /// five trait-uniform `closed_axis_label_*` test sites below.
     macro_rules! for_each_closed_axis_label_implementor {
@@ -1327,6 +1330,7 @@ mod tests {
             $cb!(FormatProvenance);
             $cb!(ConfigSourceKind);
             $cb!(FigmentSourceKind);
+            $cb!(AttributionConfidence);
         };
     }
 
@@ -3603,15 +3607,16 @@ mod tests {
     }
 
     #[test]
-    fn for_each_closed_axis_label_implementor_macro_covers_six_implementors() {
-        // Pin that the macro expands to exactly six arms — the six
+    fn for_each_closed_axis_label_implementor_macro_covers_seven_implementors() {
+        // Pin that the macro expands to exactly seven arms — the seven
         // [`ClosedAxisLabel`] implementors the typescape recognizes
         // today ([`PartitionFace`], [`ConfigTierKind`], [`Format`],
         // [`FormatProvenance`], [`ConfigSourceKind`],
-        // [`FigmentSourceKind`]). A seventh implementor landing
-        // (e.g. a future `ShikumiErrorKind::as_str` lift) extends the
-        // macro in lockstep with the `impl ClosedAxisLabel`
-        // declaration; this assertion fails until the macro arm lands.
+        // [`FigmentSourceKind`], [`AttributionConfidence`]). An eighth
+        // implementor landing (e.g. a future `ShikumiErrorKind::as_str`
+        // lift) extends the macro in lockstep with the
+        // `impl ClosedAxisLabel` declaration; this assertion fails
+        // until the macro arm lands.
         let mut count = 0usize;
         macro_rules! tally {
             ($ty:ident) => {
@@ -3620,8 +3625,8 @@ mod tests {
         }
         for_each_closed_axis_label_implementor!(tally);
         assert_eq!(
-            count, 6,
-            "for_each_closed_axis_label_implementor! must expand to six arms",
+            count, 7,
+            "for_each_closed_axis_label_implementor! must expand to seven arms",
         );
     }
 
@@ -3633,9 +3638,9 @@ mod tests {
         // axis_cardinality checksum pattern used for the superset
         // ClosedAxis macro:
         // PartitionFace=2 + ConfigTierKind=4 + Format=4 + FormatProvenance=2
-        // + ConfigSourceKind=3 + FigmentSourceKind=3 = 18. A duplicated
-        // arm would double-count one cardinality; a missing arm would
-        // under-count.
+        // + ConfigSourceKind=3 + FigmentSourceKind=3 + AttributionConfidence=2
+        // = 20. A duplicated arm would double-count one cardinality;
+        // a missing arm would under-count.
         fn axis_card<L: ClosedAxisLabel>() -> usize {
             axis_cardinality::<L>()
         }
@@ -3647,11 +3652,11 @@ mod tests {
         }
         for_each_closed_axis_label_implementor!(add);
         assert_eq!(
-            total, 18,
+            total, 20,
             "macro must emit each ClosedAxisLabel implementor exactly once \
-             (today's axis_cardinality checksum is 18: \
+             (today's axis_cardinality checksum is 20: \
              PartitionFace=2 + ConfigTierKind=4 + Format=4 + FormatProvenance=2 \
-             + ConfigSourceKind=3 + FigmentSourceKind=3)",
+             + ConfigSourceKind=3 + FigmentSourceKind=3 + AttributionConfidence=2)",
         );
     }
 

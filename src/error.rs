@@ -1626,6 +1626,56 @@ impl AttributionConfidence {
     /// they pin the constant to the variant space the typescape
     /// recognizes.
     pub const ALL: &'static [Self] = &[Self::Exact, Self::Fallback];
+
+    /// Canonical operator-facing lowercase name of the confidence
+    /// class — [`Self::Exact`] renders as `"exact"`,
+    /// [`Self::Fallback`] renders as `"fallback"`.
+    ///
+    /// Single source of truth for the two canonical strings that
+    /// previously appeared only inline at the per-variant `match`
+    /// site of [`AttributionRule::confidence`] (where the variant
+    /// identifier doubles as a structural tag, not as an
+    /// operator-facing label) and in doc-prose; no typed accessor
+    /// surfaced the operator-facing label, so a future structured-
+    /// log field naming the failing attribution's confidence class,
+    /// a CLI flag filtering attributions by confidence
+    /// (`--filter-confidence=fallback`), an attestation manifest
+    /// recording the confidence histogram of resolved failures, or
+    /// a dashboard cell rendering the
+    /// `(axis × layer-kind × confidence)` cube
+    /// ([`AttributionCoordinates`]) keyed by canonical labels on
+    /// each axis would each have re-derived the string mapping
+    /// inline at the consumer site with no structural guarantee of
+    /// agreement.
+    ///
+    /// `&'static str` so the label is allocation-free at every call
+    /// site; `const fn` so the labels are usable in const contexts
+    /// (static slice initializers, match arms over a const cube).
+    ///
+    /// Pairs with [`crate::ClosedAxisLabel::from_canonical_str`] via
+    /// the trait-default linear-scan parse; the round-trip law
+    /// `Self::from_canonical_str(v.as_str()) == Some(v)` is pinned
+    /// for every variant uniformly by the trait-uniform
+    /// `closed_axis_label_round_trips_for_every_implementor` test
+    /// in `cube::tests`. The concrete-position pin at
+    /// `attribution_confidence_as_str_yields_canonical_lowercase_names`
+    /// holds the literal strings stable so a future rename
+    /// (e.g. capitalizing `"Exact"`, switching `"fallback"` to
+    /// `"unique"`) fails at that site before drifting through the
+    /// round-trip law.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::Fallback => "fallback",
+        }
+    }
+}
+
+impl crate::ClosedAxisLabel for AttributionConfidence {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
 }
 
 /// Figment-metadata field consulted by an [`AttributionRule`].
@@ -3201,6 +3251,61 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn attribution_confidence_as_str_yields_canonical_lowercase_names() {
+        // Concrete-position pin on AttributionConfidence::as_str. The
+        // trait-uniform round-trip test in cube::tests pins labels
+        // equal pairwise under from_canonical_str, but this test pins
+        // the literal string values themselves so a future rename
+        // (e.g. capitalizing "Exact", switching "fallback" to
+        // "unique", prefixing "confidence-exact") fails here before
+        // drifting through the trait-uniform round-trip law and the
+        // operator-facing rendering surface. The two single-word
+        // labels follow the lowercase convention shared with
+        // ConfigSourceKind / FigmentSourceKind on the kind axes.
+        assert_eq!(AttributionConfidence::Exact.as_str(), "exact");
+        assert_eq!(AttributionConfidence::Fallback.as_str(), "fallback");
+    }
+
+    #[test]
+    fn attribution_confidence_from_canonical_str_round_trips_through_trait() {
+        // Pin the trait-default `from_canonical_str` parse on
+        // AttributionConfidence: each canonical lowercase name parses
+        // back to its variant via the ClosedAxisLabel default impl.
+        // The canonical-only trait parse is the round-trip dual of
+        // `as_str`; this pin sits at the AttributionConfidence site
+        // so a future override of `from_canonical_str` (none today)
+        // is still held to the law. Mixed-case forms an operator
+        // might type in an env var or CLI flag (`"Exact"`,
+        // `"FALLBACK"`) round-trip case-insensitively. Unrecognized
+        // strings — including `"exact "` (trailing whitespace) and
+        // `"fall"` (a prefix drift from `"fallback"`) — reject.
+        use crate::ClosedAxisLabel;
+        for c in AttributionConfidence::ALL.iter().copied() {
+            assert_eq!(
+                <AttributionConfidence as ClosedAxisLabel>::from_canonical_str(c.as_str()),
+                Some(c),
+                "trait from_canonical_str must round-trip for {c:?}",
+            );
+        }
+        assert_eq!(
+            <AttributionConfidence as ClosedAxisLabel>::from_canonical_str("Exact"),
+            Some(AttributionConfidence::Exact),
+        );
+        assert_eq!(
+            <AttributionConfidence as ClosedAxisLabel>::from_canonical_str("FALLBACK"),
+            Some(AttributionConfidence::Fallback),
+        );
+        assert_eq!(
+            <AttributionConfidence as ClosedAxisLabel>::from_canonical_str("exact "),
+            None,
+        );
+        assert_eq!(
+            <AttributionConfidence as ClosedAxisLabel>::from_canonical_str("fall"),
+            None,
+        );
     }
 
     #[test]
