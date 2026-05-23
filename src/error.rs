@@ -1784,6 +1784,69 @@ impl AttributionAxis {
     /// constant is a set (no double-listed variant). Together they pin
     /// the constant to the variant space the typescape recognizes.
     pub const ALL: &'static [Self] = &[Self::MetadataSource, Self::MetadataName];
+
+    /// Canonical operator-facing kebab-case name of the metadata axis —
+    /// [`Self::MetadataSource`] renders as `"metadata-source"`,
+    /// [`Self::MetadataName`] renders as `"metadata-name"`.
+    ///
+    /// Single source of truth for the two canonical strings that
+    /// previously appeared only inline at the per-variant `match` site
+    /// of [`AttributionRule::metadata_axis`] (where the variant
+    /// identifier doubles as a structural tag, not as an
+    /// operator-facing label) and in doc-prose; no typed accessor
+    /// surfaced the operator-facing label, so a future structured-log
+    /// field naming the failing attribution's metadata axis, a CLI
+    /// flag filtering attributions by axis
+    /// (`--filter-axis=metadata-name`), an attestation manifest
+    /// recording the per-axis histogram of resolved failures, or a
+    /// dashboard cell rendering the
+    /// `(axis × layer-kind × confidence)` cube
+    /// ([`AttributionCoordinates`]) keyed by canonical labels on every
+    /// axis would each have re-derived the string mapping inline at
+    /// the consumer site with no structural guarantee of agreement.
+    ///
+    /// Kebab-case (rather than single-word lowercase) because the
+    /// variant identifiers are compound nouns whose punctuation
+    /// belongs at the type level (operator-facing string) rather than
+    /// at the call site — the same convention shared with
+    /// [`crate::FormatProvenance::as_str`]
+    /// (`"figment-builtin"` / `"shikumi-built"`). Distinguishing
+    /// `"metadata-source"` from `"source"` (the
+    /// [`ConfigSourceKind`] / [`FigmentSourceKind`] kind-axis prefix)
+    /// keeps the operator-facing axis namespace flat: a structured
+    /// log field carrying the canonical name disambiguates "which
+    /// `figment::Metadata` field drove this attribution?" from "what
+    /// kind of layer was blamed?" by string identity.
+    ///
+    /// `&'static str` so the label is allocation-free at every call
+    /// site; `const fn` so the labels are usable in const contexts
+    /// (static slice initializers, match arms over a const cube).
+    ///
+    /// Pairs with [`crate::ClosedAxisLabel::from_canonical_str`] via
+    /// the trait-default linear-scan parse; the round-trip law
+    /// `Self::from_canonical_str(v.as_str()) == Some(v)` is pinned for
+    /// every variant uniformly by the trait-uniform
+    /// `closed_axis_label_round_trips_for_every_implementor` test in
+    /// `cube::tests`. The concrete-position pin at
+    /// `attribution_axis_as_str_yields_canonical_kebab_case_names`
+    /// holds the literal strings stable so a future rename
+    /// (e.g. capitalizing `"MetadataSource"`, switching
+    /// `"metadata-name"` to `"name"`, dropping the `"metadata-"`
+    /// prefix) fails at that site before drifting through the
+    /// round-trip law.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::MetadataSource => "metadata-source",
+            Self::MetadataName => "metadata-name",
+        }
+    }
+}
+
+impl crate::ClosedAxisLabel for AttributionAxis {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
 }
 
 /// Typed envelope returned by [`ShikumiError::failing_attribution`]:
@@ -3304,6 +3367,74 @@ mod tests {
         );
         assert_eq!(
             <AttributionConfidence as ClosedAxisLabel>::from_canonical_str("fall"),
+            None,
+        );
+    }
+
+    #[test]
+    fn attribution_axis_as_str_yields_canonical_kebab_case_names() {
+        // Concrete-position pin on AttributionAxis::as_str. The
+        // trait-uniform round-trip test in cube::tests pins labels
+        // equal pairwise under from_canonical_str, but this test pins
+        // the literal string values themselves so a future rename
+        // (e.g. capitalizing "MetadataSource", switching
+        // "metadata-name" to "name", dropping the "metadata-" prefix,
+        // collapsing the hyphen to "metadatasource") fails here before
+        // drifting through the trait-uniform round-trip law and the
+        // operator-facing rendering surface. The two compound-noun
+        // labels follow the kebab-case convention shared with
+        // FormatProvenance ("figment-builtin"/"shikumi-built") — the
+        // hyphen separates the metadata-namespace prefix from the
+        // axis-name suffix, distinguishing the canonical names from
+        // the kind-axis prefix ("source") shared by ConfigSourceKind
+        // and FigmentSourceKind.
+        assert_eq!(AttributionAxis::MetadataSource.as_str(), "metadata-source");
+        assert_eq!(AttributionAxis::MetadataName.as_str(), "metadata-name");
+    }
+
+    #[test]
+    fn attribution_axis_from_canonical_str_round_trips_through_trait() {
+        // Pin the trait-default `from_canonical_str` parse on
+        // AttributionAxis: each canonical kebab-case name parses back
+        // to its variant via the ClosedAxisLabel default impl. The
+        // canonical-only trait parse is the round-trip dual of
+        // `as_str`; this pin sits at the AttributionAxis site so a
+        // future override of `from_canonical_str` (none today) is
+        // still held to the law. Mixed-case forms an operator might
+        // type in an env var or CLI flag (`"Metadata-Source"`,
+        // `"METADATA-NAME"`) round-trip case-insensitively.
+        // Unrecognized strings — including `"metadata-source "`
+        // (trailing whitespace), `"source"` (the bare kind-axis
+        // prefix shared with ConfigSourceKind / FigmentSourceKind,
+        // structurally distinct from the metadata-axis label), and
+        // `"metadata_source"` (underscore instead of hyphen) —
+        // reject.
+        use crate::ClosedAxisLabel;
+        for axis in AttributionAxis::ALL.iter().copied() {
+            assert_eq!(
+                <AttributionAxis as ClosedAxisLabel>::from_canonical_str(axis.as_str()),
+                Some(axis),
+                "trait from_canonical_str must round-trip for {axis:?}",
+            );
+        }
+        assert_eq!(
+            <AttributionAxis as ClosedAxisLabel>::from_canonical_str("Metadata-Source"),
+            Some(AttributionAxis::MetadataSource),
+        );
+        assert_eq!(
+            <AttributionAxis as ClosedAxisLabel>::from_canonical_str("METADATA-NAME"),
+            Some(AttributionAxis::MetadataName),
+        );
+        assert_eq!(
+            <AttributionAxis as ClosedAxisLabel>::from_canonical_str("metadata-source "),
+            None,
+        );
+        assert_eq!(
+            <AttributionAxis as ClosedAxisLabel>::from_canonical_str("source"),
+            None,
+        );
+        assert_eq!(
+            <AttributionAxis as ClosedAxisLabel>::from_canonical_str("metadata_source"),
             None,
         );
     }
