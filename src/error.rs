@@ -377,6 +377,69 @@ impl FieldPathLocalization {
         Self::FigmentUnlocalized,
         Self::NotApplicable,
     ];
+
+    /// Canonical operator-facing lowercase name of the localization cell —
+    /// [`Self::Localized`] renders as `"localized"`,
+    /// [`Self::FigmentUnlocalized`] renders as `"figment-unlocalized"`,
+    /// [`Self::NotApplicable`] renders as `"not-applicable"`.
+    ///
+    /// Single source of truth for the three canonical strings on the
+    /// field-localization axis. Before this lift the cells carried only
+    /// their variant identifier (a structural tag, not an
+    /// operator-facing label), so a future structured-log field naming
+    /// the surfaced localization, a CLI flag filtering captured failures
+    /// by localization (`--filter-localization=figment-unlocalized`),
+    /// a miette structured-diagnostic legend keying per-cell severity, an
+    /// alerting bucket histogramming the localization partition over the
+    /// captured-failure surface, an attestation manifest recording the
+    /// localization histogram, or a dashboard cell rendering the
+    /// `(kind × localization)` cube ([`ErrorLocalizationCoordinates`])
+    /// keyed by canonical labels on every axis would each have
+    /// re-derived the string mapping inline at the consumer site with
+    /// no structural guarantee of agreement.
+    ///
+    /// Kebab-case for the two compound-noun variants
+    /// ([`Self::FigmentUnlocalized`] → `"figment-unlocalized"`,
+    /// [`Self::NotApplicable`] → `"not-applicable"`) — the same
+    /// convention shared with [`ShikumiErrorKind::as_str`]
+    /// (`"not-found"`), [`crate::FormatProvenance::as_str`]
+    /// (`"figment-builtin"` / `"shikumi-built"`), and
+    /// [`crate::AttributionAxis::as_str`] (`"metadata-source"` /
+    /// `"metadata-name"`): compound-noun variant identifiers route the
+    /// punctuation at the type level (operator-facing string) rather
+    /// than at the call site. The remaining single-word variant
+    /// ([`Self::Localized`] → `"localized"`) renders as its lowercase
+    /// identifier, matching the single-word lowercase convention shared
+    /// with [`crate::ConfigSourceKind::as_str`] (`"defaults"` / `"env"`
+    /// / `"file"`), [`crate::FigmentSourceKind::as_str`] (`"file"` /
+    /// `"code"` / `"custom"`), [`crate::Format::as_str`] (`"yaml"` /
+    /// `"toml"` / `"lisp"` / `"nix"`), and
+    /// [`AttributionConfidence::as_str`] (`"exact"` / `"fallback"`).
+    ///
+    /// `&'static str` so the label is allocation-free at every call
+    /// site; `const fn` so the labels are usable in const contexts
+    /// (static slice initializers, match arms over a const cube).
+    ///
+    /// Pairs with [`crate::ClosedAxisLabel::from_canonical_str`] via
+    /// the trait-default linear-scan parse; the round-trip law
+    /// `Self::from_canonical_str(v.as_str()) == Some(v)` is pinned
+    /// for every variant uniformly by the trait-uniform
+    /// `closed_axis_label_round_trips_for_every_implementor` test in
+    /// `cube::tests`. The concrete-position pin at
+    /// `field_path_localization_as_str_yields_canonical_lowercase_names`
+    /// holds the literal strings stable so a future rename
+    /// (e.g. capitalizing `"Localized"`, switching `"not-applicable"`
+    /// to `"n-a"`, collapsing `"figment-unlocalized"` to
+    /// `"figmentunlocalized"`) fails at that site before drifting
+    /// through the trait-uniform round-trip law.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Localized => "localized",
+            Self::FigmentUnlocalized => "figment-unlocalized",
+            Self::NotApplicable => "not-applicable",
+        }
+    }
 }
 
 /// Reason a [`figment::Error`] was attributed to a specific layer in the
@@ -1566,6 +1629,12 @@ impl crate::ClosedAxisLabel for ShikumiErrorKind {
 
 impl crate::ClosedAxis for FieldPathLocalization {
     const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxisLabel for FieldPathLocalization {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
 }
 
 impl crate::ClosedAxis for AttributionRule {
@@ -3587,6 +3656,85 @@ mod tests {
         );
         assert_eq!(
             <ShikumiErrorKind as ClosedAxisLabel>::from_canonical_str("err"),
+            None,
+        );
+    }
+
+    #[test]
+    fn field_path_localization_as_str_yields_canonical_lowercase_names() {
+        // Concrete-position pin on FieldPathLocalization::as_str. The
+        // trait-uniform round-trip test in cube::tests pins labels
+        // equal pairwise under from_canonical_str, but this test pins
+        // the literal string values themselves so a future rename
+        // (e.g. capitalizing "Localized", switching "not-applicable"
+        // to "n-a", collapsing "figment-unlocalized" to
+        // "figmentunlocalized") fails here before drifting through the
+        // trait-uniform round-trip law and the operator-facing
+        // rendering surface. The two compound-noun variants
+        // (FigmentUnlocalized, NotApplicable) follow the kebab-case
+        // convention shared with ShikumiErrorKind ("not-found"),
+        // FormatProvenance ("figment-builtin"/"shikumi-built"), and
+        // AttributionAxis ("metadata-source"/"metadata-name"); the
+        // remaining single-word variant (Localized) follows the
+        // lowercase convention shared with ConfigSourceKind,
+        // FigmentSourceKind, Format, and AttributionConfidence.
+        assert_eq!(FieldPathLocalization::Localized.as_str(), "localized");
+        assert_eq!(
+            FieldPathLocalization::FigmentUnlocalized.as_str(),
+            "figment-unlocalized",
+        );
+        assert_eq!(
+            FieldPathLocalization::NotApplicable.as_str(),
+            "not-applicable",
+        );
+    }
+
+    #[test]
+    fn field_path_localization_from_canonical_str_round_trips_through_trait() {
+        // Pin the trait-default `from_canonical_str` parse on
+        // FieldPathLocalization: each canonical name parses back to
+        // its variant via the ClosedAxisLabel default impl. The
+        // canonical-only trait parse is the round-trip dual of
+        // `as_str`; this pin sits at the FieldPathLocalization site
+        // so a future override of `from_canonical_str` (none today)
+        // is still held to the law. Mixed-case forms an operator
+        // might type in an env var or CLI flag (`"Localized"`,
+        // `"FIGMENT-UNLOCALIZED"`, `"Not-Applicable"`) round-trip
+        // case-insensitively. Unrecognized strings — including
+        // `"figmentunlocalized"` (collapsed without hyphen,
+        // structurally distinct from the canonical kebab form),
+        // `"localized "` (trailing whitespace), and `"unlocalized"`
+        // (an unrecognized prefix-suffix collision) — reject.
+        use crate::ClosedAxisLabel;
+        for loc in FieldPathLocalization::ALL.iter().copied() {
+            assert_eq!(
+                <FieldPathLocalization as ClosedAxisLabel>::from_canonical_str(loc.as_str()),
+                Some(loc),
+                "trait from_canonical_str must round-trip for {loc:?}",
+            );
+        }
+        assert_eq!(
+            <FieldPathLocalization as ClosedAxisLabel>::from_canonical_str("Localized"),
+            Some(FieldPathLocalization::Localized),
+        );
+        assert_eq!(
+            <FieldPathLocalization as ClosedAxisLabel>::from_canonical_str("FIGMENT-UNLOCALIZED"),
+            Some(FieldPathLocalization::FigmentUnlocalized),
+        );
+        assert_eq!(
+            <FieldPathLocalization as ClosedAxisLabel>::from_canonical_str("Not-Applicable"),
+            Some(FieldPathLocalization::NotApplicable),
+        );
+        assert_eq!(
+            <FieldPathLocalization as ClosedAxisLabel>::from_canonical_str("figmentunlocalized"),
+            None,
+        );
+        assert_eq!(
+            <FieldPathLocalization as ClosedAxisLabel>::from_canonical_str("localized "),
+            None,
+        );
+        assert_eq!(
+            <FieldPathLocalization as ClosedAxisLabel>::from_canonical_str("unlocalized"),
             None,
         );
     }

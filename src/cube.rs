@@ -270,13 +270,21 @@ pub fn axis_at<A: ClosedAxis>(ordinal: usize) -> Option<A> {
 /// confidence class of the resolver attribution — exact/fallback),
 /// [`crate::AttributionAxis`] (the `figment::Metadata` field that
 /// drove the resolver attribution — metadata-source/metadata-name),
-/// and [`crate::ShikumiErrorKind`] (the data-free discriminant of
-/// [`crate::ShikumiError`] — not-found/parse/watch/io/figment/extract).
-/// The nine primitives share the same shape — `#[non_exhaustive]
-/// #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]`, [`ClosedAxis`]
-/// over `Self::ALL`, operator-facing lowercase or kebab-case canonical
-/// name — and the trait closes the labeling discipline across all
-/// nine uniformly. The canonical implementor list lives in the
+/// [`crate::ShikumiErrorKind`] (the data-free discriminant of
+/// [`crate::ShikumiError`] — not-found/parse/watch/io/figment/extract),
+/// and [`crate::FieldPathLocalization`] (the tri-state
+/// figment-field-path localization axis of a [`crate::ShikumiError`]
+/// — localized/figment-unlocalized/not-applicable). The ten primitives
+/// share the same shape — `#[non_exhaustive] #[derive(Debug, Clone,
+/// Copy, PartialEq, Eq, Hash)]`, [`ClosedAxis`] over `Self::ALL`,
+/// operator-facing lowercase or kebab-case canonical name — and the
+/// trait closes the labeling discipline across all ten uniformly. The
+/// two error-side primitives ([`crate::ShikumiErrorKind`],
+/// [`crate::FieldPathLocalization`]) close the labeling discipline on
+/// both axes of the 18-cell [`crate::ErrorLocalizationCoordinates`]
+/// cube; every cell of that cube is now nameable through the trait
+/// without re-deriving a string mapping at any cube-renderer site.
+/// The canonical implementor list lives in the
 /// `for_each_closed_axis_label_implementor!` callback macro
 /// (`cube::tests`) so every trait-uniform invariant test reaches the
 /// implementor set by macro expansion rather than by repeated inline
@@ -313,10 +321,11 @@ pub fn axis_at<A: ClosedAxis>(ordinal: usize) -> Option<A> {
 /// [`tests::closed_axis_label_rejects_empty_string_for_every_implementor`].
 ///
 /// Future implementors (lift sites): every closed-axis primitive that
-/// today exposes an inline string mapping —
-/// [`crate::AttributionRule`], [`crate::FieldPathLocalization`] —
-/// picks up the round-trip law +
-/// every trait-uniform invariant test by adding one
+/// today exposes an inline string mapping — [`crate::AttributionRule`]
+/// is the natural next candidate (the 5-cell rule axis), after which
+/// every axis of every product cube on the typescape labels through
+/// the trait. The lift picks up the round-trip law + every
+/// trait-uniform invariant test by adding one
 /// `impl ClosedAxisLabel for X { fn as_str(self) -> &'static str { … } }`
 /// declaration plus one arm to [`for_each_closed_axis_label_implementor`].
 /// The default [`Self::from_canonical_str`] suffices on every
@@ -1300,33 +1309,45 @@ mod tests {
     }
 
     /// Invokes `$cb!(TypeName)` for each [`ClosedAxisLabel`]
-    /// implementor — the nine closed-axis primitives that carry a
+    /// implementor — the ten closed-axis primitives that carry a
     /// canonical operator-facing string label today
     /// ([`PartitionFace`], [`ConfigTierKind`], [`Format`],
     /// [`FormatProvenance`], [`ConfigSourceKind`],
     /// [`FigmentSourceKind`], [`AttributionConfidence`],
-    /// [`AttributionAxis`], [`crate::ShikumiErrorKind`]), in
-    /// declaration order. The two variant-tag projections sit at the
-    /// head ([`PartitionFace`] of [`PartitionOrdinal`],
-    /// [`ConfigTierKind`] of [`crate::ConfigTier`]); the seven
-    /// non-projection primitives ([`Format`], operator-facing config
-    /// file format; [`FormatProvenance`], which provider class loads
-    /// the format; [`ConfigSourceKind`], the kind axis of the
-    /// resolved figment layer; [`FigmentSourceKind`], the kind axis
-    /// of the underlying `figment::Source`; [`AttributionConfidence`],
-    /// the equality-vs-uniqueness confidence class of the resolver
+    /// [`AttributionAxis`], [`crate::ShikumiErrorKind`],
+    /// [`crate::FieldPathLocalization`]), in declaration order. The
+    /// two variant-tag projections sit at the head ([`PartitionFace`]
+    /// of [`PartitionOrdinal`], [`ConfigTierKind`] of
+    /// [`crate::ConfigTier`]); the eight non-projection primitives
+    /// ([`Format`], operator-facing config file format;
+    /// [`FormatProvenance`], which provider class loads the format;
+    /// [`ConfigSourceKind`], the kind axis of the resolved figment
+    /// layer; [`FigmentSourceKind`], the kind axis of the underlying
+    /// `figment::Source`; [`AttributionConfidence`], the
+    /// equality-vs-uniqueness confidence class of the resolver
     /// attribution; [`AttributionAxis`], which `figment::Metadata`
     /// field drove the resolver attribution; [`crate::ShikumiErrorKind`],
-    /// the data-free discriminant of [`crate::ShikumiError`]) close
-    /// the labeling discipline on their respective axes through the
-    /// trait.
+    /// the data-free discriminant of [`crate::ShikumiError`];
+    /// [`crate::FieldPathLocalization`], the tri-state
+    /// figment-field-path localization axis of a
+    /// [`crate::ShikumiError`]) close the labeling discipline on their
+    /// respective axes through the trait. The two error-side primitives
+    /// ([`crate::ShikumiErrorKind`],
+    /// [`crate::FieldPathLocalization`]) close the labeling discipline
+    /// on both axes of the 18-cell
+    /// [`crate::ErrorLocalizationCoordinates`] cube — every cell is
+    /// now nameable through the trait without re-deriving a string
+    /// mapping at any cube-renderer site.
     ///
-    /// A tenth [`ClosedAxisLabel`] implementor landing on the
-    /// typescape (e.g. a future `AttributionRule::as_str` lift, a
-    /// future `FieldPathLocalization::as_str` lift) extends the
+    /// An eleventh [`ClosedAxisLabel`] implementor landing on the
+    /// typescape (e.g. a future `AttributionRule::as_str` lift, which
+    /// would close the labeling discipline on the second axis of the
+    /// 12-cell [`crate::AttributionCoordinates`] cube and the first
+    /// axis of the 9-cell
+    /// [`crate::AttributionSourceKindCoordinates`] cube) extends the
     /// macro in lockstep with the `impl ClosedAxisLabel` declaration;
     /// the pin in
-    /// [`tests::for_each_closed_axis_label_implementor_macro_covers_nine_implementors`]
+    /// [`tests::for_each_closed_axis_label_implementor_macro_covers_ten_implementors`]
     /// catches the discipline violation before silent dropouts at the
     /// five trait-uniform `closed_axis_label_*` test sites below.
     macro_rules! for_each_closed_axis_label_implementor {
@@ -1340,6 +1361,7 @@ mod tests {
             $cb!(AttributionConfidence);
             $cb!(AttributionAxis);
             $cb!(ShikumiErrorKind);
+            $cb!(FieldPathLocalization);
         };
     }
 
@@ -3616,18 +3638,17 @@ mod tests {
     }
 
     #[test]
-    fn for_each_closed_axis_label_implementor_macro_covers_nine_implementors() {
-        // Pin that the macro expands to exactly nine arms — the nine
+    fn for_each_closed_axis_label_implementor_macro_covers_ten_implementors() {
+        // Pin that the macro expands to exactly ten arms — the ten
         // [`ClosedAxisLabel`] implementors the typescape recognizes
         // today ([`PartitionFace`], [`ConfigTierKind`], [`Format`],
         // [`FormatProvenance`], [`ConfigSourceKind`],
         // [`FigmentSourceKind`], [`AttributionConfidence`],
-        // [`AttributionAxis`], [`ShikumiErrorKind`]). A tenth
-        // implementor landing (e.g. a future
-        // `AttributionRule::as_str` lift, a future
-        // `FieldPathLocalization::as_str` lift) extends the macro in
-        // lockstep with the `impl ClosedAxisLabel` declaration; this
-        // assertion fails until the macro arm lands.
+        // [`AttributionAxis`], [`ShikumiErrorKind`],
+        // [`FieldPathLocalization`]). An eleventh implementor landing
+        // (e.g. a future `AttributionRule::as_str` lift) extends the
+        // macro in lockstep with the `impl ClosedAxisLabel`
+        // declaration; this assertion fails until the macro arm lands.
         let mut count = 0usize;
         macro_rules! tally {
             ($ty:ident) => {
@@ -3636,8 +3657,8 @@ mod tests {
         }
         for_each_closed_axis_label_implementor!(tally);
         assert_eq!(
-            count, 9,
-            "for_each_closed_axis_label_implementor! must expand to nine arms",
+            count, 10,
+            "for_each_closed_axis_label_implementor! must expand to ten arms",
         );
     }
 
@@ -3650,9 +3671,9 @@ mod tests {
         // ClosedAxis macro:
         // PartitionFace=2 + ConfigTierKind=4 + Format=4 + FormatProvenance=2
         // + ConfigSourceKind=3 + FigmentSourceKind=3 + AttributionConfidence=2
-        // + AttributionAxis=2 + ShikumiErrorKind=6 = 28. A duplicated
-        // arm would double-count one cardinality; a missing arm would
-        // under-count.
+        // + AttributionAxis=2 + ShikumiErrorKind=6 + FieldPathLocalization=3
+        // = 31. A duplicated arm would double-count one cardinality;
+        // a missing arm would under-count.
         fn axis_card<L: ClosedAxisLabel>() -> usize {
             axis_cardinality::<L>()
         }
@@ -3664,12 +3685,12 @@ mod tests {
         }
         for_each_closed_axis_label_implementor!(add);
         assert_eq!(
-            total, 28,
+            total, 31,
             "macro must emit each ClosedAxisLabel implementor exactly once \
-             (today's axis_cardinality checksum is 28: \
+             (today's axis_cardinality checksum is 31: \
              PartitionFace=2 + ConfigTierKind=4 + Format=4 + FormatProvenance=2 \
              + ConfigSourceKind=3 + FigmentSourceKind=3 + AttributionConfidence=2 \
-             + AttributionAxis=2 + ShikumiErrorKind=6)",
+             + AttributionAxis=2 + ShikumiErrorKind=6 + FieldPathLocalization=3)",
         );
     }
 
