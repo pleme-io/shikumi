@@ -542,6 +542,78 @@ impl AttributionRule {
         Self::DefaultsByCodeUniqueness,
     ];
 
+    /// Canonical operator-facing lowercase name of the attribution rule —
+    /// [`Self::FileBySource`] renders as `"file-by-source"`,
+    /// [`Self::FileByMetadataName`] as `"file-by-metadata-name"`,
+    /// [`Self::EnvByPrefix`] as `"env-by-prefix"`,
+    /// [`Self::EnvByUniqueness`] as `"env-by-uniqueness"`,
+    /// [`Self::DefaultsByCodeUniqueness`] as
+    /// `"defaults-by-code-uniqueness"`.
+    ///
+    /// Single source of truth for the five canonical strings that
+    /// previously had no typed accessor — the rule axis carried the
+    /// variant identifier (a structural tag) but no operator-facing
+    /// label, so a future structured-log field naming the surfaced
+    /// rule, a CLI flag filtering captured failures by rule
+    /// (`--filter-rule=env-by-prefix`), a miette structured-diagnostic
+    /// legend keying per-rule provenance, an alerting bucket
+    /// histogramming the rule partition over the captured-failure
+    /// surface, an attestation manifest recording the rule histogram, or
+    /// a dashboard cell rendering the
+    /// `(metadata-axis × layer-kind × confidence)` cube
+    /// ([`AttributionCoordinates`]) or the
+    /// `(figment-source × layer-kind)` cube
+    /// ([`AttributionSourceKindCoordinates`]) keyed by canonical
+    /// labels on every axis would each have re-derived the string
+    /// mapping inline at the consumer site with no structural
+    /// guarantee of agreement.
+    ///
+    /// Kebab-case for every variant — all five are compound-noun
+    /// identifiers (`<source-axis>-by-<dispatch>`); the type-name
+    /// segmentation `<X>By<Y>` routes the punctuation at the type level
+    /// (operator-facing string) rather than at the call site. Compound
+    /// kebab convention shared with [`ShikumiErrorKind::as_str`]
+    /// (`"not-found"`), [`FieldPathLocalization::as_str`]
+    /// (`"figment-unlocalized"` / `"not-applicable"`),
+    /// [`crate::FormatProvenance::as_str`] (`"figment-builtin"` /
+    /// `"shikumi-built"`), and [`crate::AttributionAxis::as_str`]
+    /// (`"metadata-source"` / `"metadata-name"`). The kebab segments
+    /// align with the rule's typed projections: the leading segment
+    /// names the [`ConfigSourceKind`] the rule attributes to via
+    /// [`Self::layer_kind`] (`file` / `env` / `defaults`), and the
+    /// trailing segments name the dispatch shape the resolver consulted
+    /// (`source` for `metadata.source` typed classification,
+    /// `metadata-name` / `prefix` / `uniqueness` / `code-uniqueness`
+    /// for the name-axis dispatches).
+    ///
+    /// `&'static str` so the label is allocation-free at every call
+    /// site; `const fn` so the labels are usable in const contexts
+    /// (static slice initializers, match arms over a const cube).
+    ///
+    /// Pairs with [`crate::ClosedAxisLabel::from_canonical_str`] via
+    /// the trait-default linear-scan parse; the round-trip law
+    /// `Self::from_canonical_str(v.as_str()) == Some(v)` is pinned
+    /// for every variant uniformly by the trait-uniform
+    /// `closed_axis_label_round_trips_for_every_implementor` test in
+    /// `cube::tests`. The concrete-position pin at
+    /// `attribution_rule_as_str_yields_canonical_lowercase_names`
+    /// holds the literal strings stable so a future rename
+    /// (e.g. dropping the `-by-` infix on `EnvByPrefix` to
+    /// `"env-prefix"`, collapsing `"defaults-by-code-uniqueness"` to
+    /// `"defaults"`, capitalizing the type-segment names) fails at
+    /// that site before drifting through the trait-uniform round-trip
+    /// law.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::FileBySource => "file-by-source",
+            Self::FileByMetadataName => "file-by-metadata-name",
+            Self::EnvByPrefix => "env-by-prefix",
+            Self::EnvByUniqueness => "env-by-uniqueness",
+            Self::DefaultsByCodeUniqueness => "defaults-by-code-uniqueness",
+        }
+    }
+
     /// Confidence class of this rule: [`AttributionConfidence::Exact`]
     /// for equality-based attributions ([`Self::FileBySource`],
     /// [`Self::FileByMetadataName`], [`Self::EnvByPrefix`]), or
@@ -1639,6 +1711,12 @@ impl crate::ClosedAxisLabel for FieldPathLocalization {
 
 impl crate::ClosedAxis for AttributionRule {
     const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxisLabel for AttributionRule {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
 }
 
 impl crate::ClosedAxis for AttributionConfidence {
@@ -3735,6 +3813,91 @@ mod tests {
         );
         assert_eq!(
             <FieldPathLocalization as ClosedAxisLabel>::from_canonical_str("unlocalized"),
+            None,
+        );
+    }
+
+    #[test]
+    fn attribution_rule_as_str_yields_canonical_lowercase_names() {
+        // Concrete-position pin on AttributionRule::as_str. The
+        // trait-uniform round-trip test in cube::tests pins labels
+        // equal pairwise under from_canonical_str, but this test pins
+        // the literal string values themselves so a future rename
+        // (e.g. dropping the `-by-` infix on `EnvByPrefix` to
+        // `"env-prefix"`, collapsing `"defaults-by-code-uniqueness"` to
+        // `"defaults"`, capitalizing the type-segment names) fails
+        // here before drifting through the trait-uniform round-trip
+        // law and the operator-facing rendering surface. All five
+        // variants follow the kebab-case convention shared with
+        // ShikumiErrorKind ("not-found"), FieldPathLocalization
+        // ("figment-unlocalized"/"not-applicable"), FormatProvenance
+        // ("figment-builtin"/"shikumi-built"), and AttributionAxis
+        // ("metadata-source"/"metadata-name"); the kebab segments
+        // align with the rule's typed projections (`layer_kind` →
+        // leading segment, `metadata_axis` / dispatch shape → trailing
+        // segments).
+        assert_eq!(AttributionRule::FileBySource.as_str(), "file-by-source");
+        assert_eq!(
+            AttributionRule::FileByMetadataName.as_str(),
+            "file-by-metadata-name",
+        );
+        assert_eq!(AttributionRule::EnvByPrefix.as_str(), "env-by-prefix");
+        assert_eq!(
+            AttributionRule::EnvByUniqueness.as_str(),
+            "env-by-uniqueness",
+        );
+        assert_eq!(
+            AttributionRule::DefaultsByCodeUniqueness.as_str(),
+            "defaults-by-code-uniqueness",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_from_canonical_str_round_trips_through_trait() {
+        // Pin the trait-default `from_canonical_str` parse on
+        // AttributionRule: each canonical name parses back to its
+        // variant via the ClosedAxisLabel default impl. The
+        // canonical-only trait parse is the round-trip dual of
+        // `as_str`; this pin sits at the AttributionRule site so a
+        // future override of `from_canonical_str` (none today) is
+        // still held to the law. Mixed-case forms an operator might
+        // type in an env var or CLI flag (`"File-By-Source"`,
+        // `"ENV-BY-PREFIX"`, `"Defaults-By-Code-Uniqueness"`)
+        // round-trip case-insensitively. Unrecognized strings —
+        // including `"filebysource"` (collapsed without hyphens,
+        // structurally distinct from the canonical kebab form),
+        // `"file-by-source "` (trailing whitespace), and
+        // `"file-by"` (an unrecognized prefix) — reject.
+        use crate::ClosedAxisLabel;
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                <AttributionRule as ClosedAxisLabel>::from_canonical_str(rule.as_str()),
+                Some(rule),
+                "trait from_canonical_str must round-trip for {rule:?}",
+            );
+        }
+        assert_eq!(
+            <AttributionRule as ClosedAxisLabel>::from_canonical_str("File-By-Source"),
+            Some(AttributionRule::FileBySource),
+        );
+        assert_eq!(
+            <AttributionRule as ClosedAxisLabel>::from_canonical_str("ENV-BY-PREFIX"),
+            Some(AttributionRule::EnvByPrefix),
+        );
+        assert_eq!(
+            <AttributionRule as ClosedAxisLabel>::from_canonical_str("Defaults-By-Code-Uniqueness"),
+            Some(AttributionRule::DefaultsByCodeUniqueness),
+        );
+        assert_eq!(
+            <AttributionRule as ClosedAxisLabel>::from_canonical_str("filebysource"),
+            None,
+        );
+        assert_eq!(
+            <AttributionRule as ClosedAxisLabel>::from_canonical_str("file-by-source "),
+            None,
+        );
+        assert_eq!(
+            <AttributionRule as ClosedAxisLabel>::from_canonical_str("file-by"),
             None,
         );
     }
