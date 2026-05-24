@@ -214,6 +214,76 @@ impl ShikumiErrorKind {
             Self::NotFound | Self::Parse | Self::Watch | Self::Io => false,
         }
     }
+
+    /// Canonical operator-facing lowercase name of the error kind —
+    /// [`Self::NotFound`] renders as `"not-found"`, [`Self::Parse`] as
+    /// `"parse"`, [`Self::Watch`] as `"watch"`, [`Self::Io`] as
+    /// `"io"`, [`Self::Figment`] as `"figment"`, [`Self::Extract`] as
+    /// `"extract"`.
+    ///
+    /// Single source of truth for the six canonical strings that
+    /// previously had no typed accessor — the kind axis carried the
+    /// variant identifier (a structural tag) but no operator-facing
+    /// label, so a future structured-log field naming the surfaced
+    /// kind, a CLI flag filtering captured failures by kind
+    /// (`--filter-kind=parse`), a miette structured-diagnostic legend
+    /// keying per-kind severity, an alerting bucket histogramming the
+    /// kind partition over the captured-failure surface, an
+    /// attestation manifest recording the kind histogram, or a
+    /// dashboard cell rendering the `(kind × localization)` cube
+    /// ([`ErrorLocalizationCoordinates`]) keyed by canonical labels
+    /// on every axis would each have re-derived the string mapping
+    /// inline at the consumer site with no structural guarantee of
+    /// agreement.
+    ///
+    /// Kebab-case for the compound-noun variant [`Self::NotFound`]
+    /// (`"not-found"`) — the same convention shared with
+    /// [`crate::FormatProvenance::as_str`] (`"figment-builtin"` /
+    /// `"shikumi-built"`) and [`crate::AttributionAxis::as_str`]
+    /// (`"metadata-source"` / `"metadata-name"`): compound-noun
+    /// variant identifiers route the punctuation at the type level
+    /// (operator-facing string) rather than at the call site. The
+    /// remaining five single-word variants render as their lowercase
+    /// identifier ([`Self::Parse`] → `"parse"`, [`Self::Watch`] →
+    /// `"watch"`, [`Self::Io`] → `"io"`, [`Self::Figment`] →
+    /// `"figment"`, [`Self::Extract`] → `"extract"`), matching the
+    /// single-word lowercase convention shared with
+    /// [`crate::ConfigSourceKind::as_str`] (`"defaults"` / `"env"` /
+    /// `"file"`), [`crate::FigmentSourceKind::as_str`] (`"file"` /
+    /// `"code"` / `"custom"`), [`crate::Format::as_str`] (`"yaml"` /
+    /// `"toml"` / `"lisp"` / `"nix"`), and
+    /// [`AttributionConfidence::as_str`] (`"exact"` / `"fallback"`).
+    /// The bare `"io"` (rather than `"i-o"` or `"input-output"`) is
+    /// the canonical Rust-ecosystem rendering shared with
+    /// [`std::io`] and the [`std::io::Error`] this kind wraps.
+    ///
+    /// `&'static str` so the label is allocation-free at every call
+    /// site; `const fn` so the labels are usable in const contexts
+    /// (static slice initializers, match arms over a const cube).
+    ///
+    /// Pairs with [`crate::ClosedAxisLabel::from_canonical_str`] via
+    /// the trait-default linear-scan parse; the round-trip law
+    /// `Self::from_canonical_str(v.as_str()) == Some(v)` is pinned
+    /// for every variant uniformly by the trait-uniform
+    /// `closed_axis_label_round_trips_for_every_implementor` test in
+    /// `cube::tests`. The concrete-position pin at
+    /// `shikumi_error_kind_as_str_yields_canonical_lowercase_names`
+    /// holds the literal strings stable so a future rename
+    /// (e.g. capitalizing `"NotFound"`, switching `"figment"` to
+    /// `"raw-figment"`, dropping the `"not-"` prefix on
+    /// [`Self::NotFound`]) fails at that site before drifting through
+    /// the round-trip law.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NotFound => "not-found",
+            Self::Parse => "parse",
+            Self::Watch => "watch",
+            Self::Io => "io",
+            Self::Figment => "figment",
+            Self::Extract => "extract",
+        }
+    }
 }
 
 /// Closed tri-state partition over the field-path-localization axis of
@@ -1486,6 +1556,12 @@ impl AttributionSourceKindCoordinates {
 
 impl crate::ClosedAxis for ShikumiErrorKind {
     const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxisLabel for ShikumiErrorKind {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
 }
 
 impl crate::ClosedAxis for FieldPathLocalization {
@@ -3435,6 +3511,82 @@ mod tests {
         );
         assert_eq!(
             <AttributionAxis as ClosedAxisLabel>::from_canonical_str("metadata_source"),
+            None,
+        );
+    }
+
+    #[test]
+    fn shikumi_error_kind_as_str_yields_canonical_lowercase_names() {
+        // Concrete-position pin on ShikumiErrorKind::as_str. The
+        // trait-uniform round-trip test in cube::tests pins labels
+        // equal pairwise under from_canonical_str, but this test pins
+        // the literal string values themselves so a future rename
+        // (e.g. capitalizing "NotFound", switching "figment" to
+        // "raw-figment", dropping the "not-" prefix on
+        // ShikumiErrorKind::NotFound, collapsing "not-found" to
+        // "notfound") fails here before drifting through the
+        // trait-uniform round-trip law and the operator-facing
+        // rendering surface. The single compound-noun variant
+        // (ShikumiErrorKind::NotFound) follows the kebab-case
+        // convention shared with FormatProvenance
+        // ("figment-builtin"/"shikumi-built") and AttributionAxis
+        // ("metadata-source"/"metadata-name"); the remaining five
+        // single-word variants follow the lowercase convention shared
+        // with ConfigSourceKind, FigmentSourceKind, Format, and
+        // AttributionConfidence.
+        assert_eq!(ShikumiErrorKind::NotFound.as_str(), "not-found");
+        assert_eq!(ShikumiErrorKind::Parse.as_str(), "parse");
+        assert_eq!(ShikumiErrorKind::Watch.as_str(), "watch");
+        assert_eq!(ShikumiErrorKind::Io.as_str(), "io");
+        assert_eq!(ShikumiErrorKind::Figment.as_str(), "figment");
+        assert_eq!(ShikumiErrorKind::Extract.as_str(), "extract");
+    }
+
+    #[test]
+    fn shikumi_error_kind_from_canonical_str_round_trips_through_trait() {
+        // Pin the trait-default `from_canonical_str` parse on
+        // ShikumiErrorKind: each canonical name parses back to its
+        // variant via the ClosedAxisLabel default impl. The
+        // canonical-only trait parse is the round-trip dual of
+        // `as_str`; this pin sits at the ShikumiErrorKind site so a
+        // future override of `from_canonical_str` (none today) is
+        // still held to the law. Mixed-case forms an operator might
+        // type in an env var or CLI flag (`"Not-Found"`, `"PARSE"`,
+        // `"IO"`) round-trip case-insensitively. Unrecognized strings
+        // — including `"notfound"` (collapsed without hyphen,
+        // structurally distinct from the canonical kebab form),
+        // `"parse "` (trailing whitespace), and `"err"` (an
+        // unrecognized prefix) — reject.
+        use crate::ClosedAxisLabel;
+        for kind in ShikumiErrorKind::ALL.iter().copied() {
+            assert_eq!(
+                <ShikumiErrorKind as ClosedAxisLabel>::from_canonical_str(kind.as_str()),
+                Some(kind),
+                "trait from_canonical_str must round-trip for {kind:?}",
+            );
+        }
+        assert_eq!(
+            <ShikumiErrorKind as ClosedAxisLabel>::from_canonical_str("Not-Found"),
+            Some(ShikumiErrorKind::NotFound),
+        );
+        assert_eq!(
+            <ShikumiErrorKind as ClosedAxisLabel>::from_canonical_str("PARSE"),
+            Some(ShikumiErrorKind::Parse),
+        );
+        assert_eq!(
+            <ShikumiErrorKind as ClosedAxisLabel>::from_canonical_str("IO"),
+            Some(ShikumiErrorKind::Io),
+        );
+        assert_eq!(
+            <ShikumiErrorKind as ClosedAxisLabel>::from_canonical_str("notfound"),
+            None,
+        );
+        assert_eq!(
+            <ShikumiErrorKind as ClosedAxisLabel>::from_canonical_str("parse "),
+            None,
+        );
+        assert_eq!(
+            <ShikumiErrorKind as ClosedAxisLabel>::from_canonical_str("err"),
             None,
         );
     }
