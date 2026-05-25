@@ -18,7 +18,7 @@ use std::fmt;
 use crate::error::{
     AttributionAxis, AttributionConfidence, AttributionCoordinates, AttributionRule,
     AttributionSourceKindCoordinates, ErrorLocalizationCoordinates, FailingSourceAttribution,
-    FieldPathLocalization, ShikumiError, ShikumiErrorKind,
+    FieldPathLocalization, ShikumiError, ShikumiErrorKind, dotted_field_path,
 };
 use crate::source::{ConfigSource, ConfigSourceKind, FigmentSourceKind};
 
@@ -470,6 +470,34 @@ impl ReloadFailure {
         } else {
             FieldPathLocalization::NotApplicable
         }
+    }
+
+    /// The captured offending field path rendered as a single
+    /// `.`-joined dotted key — the operator-facing form of
+    /// [`Self::field_path`].
+    ///
+    /// Cross-thread mirror of [`crate::ShikumiError::field_path_dotted`],
+    /// routed through the same `dotted_field_path` join so the live
+    /// error and the captured envelope name the offending field with
+    /// byte-identical strings. Total over the [`ReloadFailure`] surface
+    /// (returns `String`, not `Option`): the flat [`Vec<String>`]
+    /// representation of [`Self::field_path`] already collapsed the
+    /// underlying `None` (non-figment) and `Some("")` (figment-but-
+    /// unlocalized) tri-state into one empty observable, so both render
+    /// as `""` here — the same collapse the field itself documents. The
+    /// distinction is recoverable through [`Self::field_path_localization`].
+    ///
+    /// Agrees pointwise with the underlying error: for any
+    /// [`crate::ShikumiError`] `e`,
+    /// `ReloadFailure::from_error(&e).field_path_dotted()` equals
+    /// `e.field_path_dotted().unwrap_or_default()` — pinned by
+    /// `field_path_dotted_agrees_with_underlying_error_pointwise`.
+    /// Lets an observer reading [`crate::ConfigStore::last_reload_error`]
+    /// render the offending field without re-joining
+    /// `Self::field_path` at the consumer site.
+    #[must_use]
+    pub fn field_path_dotted(&self) -> String {
+        dotted_field_path(&self.field_path)
     }
 
     /// Coordinate pair over the two orthogonal closed-enum
@@ -1423,6 +1451,59 @@ mod tests {
                 "captured localization must mirror source localization for {err:?}"
             );
         }
+    }
+
+    #[test]
+    fn field_path_dotted_agrees_with_underlying_error_pointwise() {
+        // Lossless-capture contract for the dotted rendering: the
+        // captured envelope's dotted field path equals the source
+        // error's, modulo the documented None -> "" collapse the
+        // Vec<String> representation imposes. Both sides route through
+        // the same `dotted_field_path` join, so they cannot drift.
+        for (err, _) in one_per_kind() {
+            let f = ReloadFailure::from_error(&err);
+            assert_eq!(
+                f.field_path_dotted(),
+                err.field_path_dotted().unwrap_or_default(),
+                "captured dotted path must mirror source for {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn field_path_dotted_renders_nested_localized_capture() {
+        // A real nested-key extraction failure captures into a dotted
+        // observable an operator can read directly off
+        // last_reload_error, without re-joining field_path.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Inner {
+            #[allow(dead_code)]
+            padding: u32,
+        }
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            options: Inner,
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_dotted_nested.yaml");
+        std::fs::write(&file, "options:\n  padding: not_a_number\n").unwrap();
+        let err = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f = ReloadFailure::from_error(&err);
+        assert_eq!(f.field_path_dotted(), "options.padding");
+        assert_eq!(f.field_path_dotted(), err.field_path_dotted().unwrap());
+    }
+
+    #[test]
+    fn field_path_dotted_empty_for_non_figment_capture() {
+        let err = ShikumiError::Parse("x".to_owned());
+        let f = ReloadFailure::from_error(&err);
+        assert_eq!(f.field_path_dotted(), "");
+        assert!(err.field_path_dotted().is_none());
     }
 
     #[test]

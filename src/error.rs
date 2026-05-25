@@ -76,8 +76,22 @@ fn display_field_path(path: &[String]) -> String {
     if path.is_empty() {
         String::new()
     } else {
-        format!(" at field `{}`", path.join("."))
+        format!(" at field `{}`", dotted_field_path(path))
     }
+}
+
+/// Render a figment field-path segment slice as a single `.`-joined
+/// dotted key.
+///
+/// One source of truth for the operator-facing rendering of an offending
+/// field path. Shared by the [`ShikumiError::Extract`] `Display` impl
+/// (`display_field_path`), the programmatic [`ShikumiError::field_path_dotted`]
+/// accessor, and the cross-thread [`crate::ReloadFailure::field_path_dotted`]
+/// mirror — so the live error, its rendered display segment, and its
+/// captured envelope name the offending field with byte-identical
+/// strings and can never drift on the separator.
+pub(crate) fn dotted_field_path(path: &[String]) -> String {
+    path.join(".")
 }
 
 fn display_failing_source(sources: &[ConfigSource], error: &figment::Error) -> String {
@@ -2398,6 +2412,37 @@ impl ShikumiError {
         }
     }
 
+    /// The offending field path rendered as a single `.`-joined dotted
+    /// key — the operator-facing form of [`Self::field_path`].
+    ///
+    /// Tri-state mirror of [`Self::field_path`], preserving the same
+    /// `None` / `Some(empty)` / `Some(non-empty)` distinction at the
+    /// rendered-string layer:
+    /// - `None` for variants that do not wrap a figment error
+    ///   ([`Self::Parse`], [`Self::NotFound`], [`Self::Watch`],
+    ///   [`Self::Io`]) — figment never had a field to localize.
+    /// - `Some("")` when figment did not localize the offending field
+    ///   (a top-level type mismatch, or an error reported without a key
+    ///   context) — distinct from `None`, matching the empty-slice arm
+    ///   of [`Self::field_path`].
+    /// - `Some("options.padding")` when figment localized a nested key.
+    ///
+    /// Routes through the same [`dotted_field_path`] join the
+    /// [`Self::Extract`] `Display` impl uses, so a consumer building its
+    /// own diagnostic (miette label, structured-log field, attestation
+    /// manifest entry) renders the offending field byte-identically to
+    /// the embedded display segment — no per-site `path.join(".")`. Pairs
+    /// with [`Self::failing_source`] (which layer) and
+    /// [`Self::field_path`] (raw segments) to complete the programmatic
+    /// (which-field × which-layer) error-path-fidelity surface.
+    ///
+    /// Mirrored on the cross-thread observable form by
+    /// [`crate::ReloadFailure::field_path_dotted`].
+    #[must_use]
+    pub fn field_path_dotted(&self) -> Option<String> {
+        self.field_path().map(dotted_field_path)
+    }
+
     /// Closed-enum classification of this error's field-path
     /// localization state — typed projection over the tri-state
     /// surfaced by [`Self::field_path`]: `None`,
@@ -2847,6 +2892,98 @@ mod tests {
         assert!(
             msg.contains("at field `count`"),
             "rendered error must cite the failing field; got: {msg}"
+        );
+    }
+
+    /// Build a real extraction failure whose offending key is nested two
+    /// levels deep, so figment localizes a multi-segment path
+    /// (`["options", "padding"]`) and the `.`-join is exercised.
+    fn extract_error_with_nested_field_path() -> ShikumiError {
+        use crate::provider::ProviderChain;
+        use serde::Deserialize;
+
+        #[derive(Deserialize, Debug)]
+        struct Inner {
+            #[allow(dead_code)]
+            padding: u32,
+        }
+        #[derive(Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            options: Inner,
+        }
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("nested.yaml");
+        std::fs::write(&file, "options:\n  padding: not_a_number\n").unwrap();
+        let err = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        drop(dir);
+        err
+    }
+
+    // ---- field_path_dotted() tests ----
+
+    #[test]
+    fn field_path_dotted_none_for_non_figment_variants() {
+        assert!(
+            ShikumiError::Parse("x".to_owned())
+                .field_path_dotted()
+                .is_none()
+        );
+        assert!(
+            ShikumiError::NotFound {
+                tried: vec![PathBuf::from("/a")]
+            }
+            .field_path_dotted()
+            .is_none()
+        );
+        let io = std::io::Error::new(std::io::ErrorKind::NotFound, "x");
+        let io_err: ShikumiError = io.into();
+        assert!(io_err.field_path_dotted().is_none());
+    }
+
+    #[test]
+    fn field_path_dotted_some_empty_for_unlocalized_extract() {
+        // Figment-bearing but no localized field → Some("") (distinct
+        // from the None of non-figment variants), mirroring the
+        // Some(&[]) arm of field_path().
+        let err = ShikumiError::Extract {
+            sources: vec![],
+            error: fake_figment_error(),
+        };
+        assert_eq!(err.field_path_dotted().as_deref(), Some(""));
+    }
+
+    #[test]
+    fn field_path_dotted_joins_single_segment() {
+        let err = extract_error_with_typed_field_path();
+        assert_eq!(err.field_path_dotted().as_deref(), Some("count"));
+    }
+
+    #[test]
+    fn field_path_dotted_joins_nested_segments_with_dot() {
+        let err = extract_error_with_nested_field_path();
+        assert_eq!(
+            err.field_path_dotted().as_deref(),
+            Some("options.padding"),
+            "nested key must render dotted"
+        );
+    }
+
+    #[test]
+    fn field_path_dotted_matches_embedded_display_segment() {
+        // The programmatic accessor and the Display impl share one join
+        // helper — the rendered " at field `...`" segment must quote
+        // exactly the dotted string the accessor returns.
+        let err = extract_error_with_nested_field_path();
+        let dotted = err.field_path_dotted().expect("localized");
+        let msg = err.to_string();
+        assert!(
+            msg.contains(&format!("at field `{dotted}`")),
+            "display segment must quote the accessor's dotted path; got: {msg}"
         );
     }
 
