@@ -398,6 +398,66 @@ pub trait ClosedAxisLabel: ClosedAxis {
     }
 }
 
+/// Canonical operator-facing label of a [`ClosedAxisLabel`] value —
+/// [`ClosedAxisLabel::as_str`] reached as a free function generic over
+/// the axis type.
+///
+/// Mirror of [`realizable_count`]/[`axis_cardinality`]: the trait method
+/// reached through a named helper so generic code routes over the label
+/// surface without naming the [`ClosedAxisLabel`] trait at the call site.
+/// Where [`axis_label`] resolves a typed axis value to its canonical
+/// name, [`axis_from_label`] is its partial inverse over the
+/// canonical-name space; the pair closes the label bijection on the
+/// recognized-name image the same way [`axis_ordinal`]/[`axis_at`] close
+/// the ordinal bijection on the natural-number prefix.
+///
+/// **Agreement** — `axis_label(v) == v.as_str()` for every `v: L`,
+/// pinned by the trait-uniform
+/// [`tests::axis_label_free_fn_matches_trait_as_str_for_every_implementor`]
+/// across every [`ClosedAxisLabel`] implementor. The free function adds
+/// no behavior; it only relocates the call to a generic, trait-name-free
+/// site.
+///
+/// **Consumers** — structured-diagnostic legends, log formatters, and
+/// cube-cover dashboards that already route over a `ClosedAxis` /
+/// `ProductCube` type parameter via [`axis_iter`] / [`realizable_iter`]
+/// name the same cell's canonical label through [`axis_label`] without
+/// adding a `where L: ClosedAxisLabel` import of the trait method into
+/// the call site — the label join stays at the free-function layer with
+/// the rest of the typescape vocabulary.
+#[must_use]
+pub fn axis_label<L: ClosedAxisLabel>(value: L) -> &'static str {
+    value.as_str()
+}
+
+/// Parse a [`ClosedAxisLabel`] value from its canonical operator-facing
+/// label — [`ClosedAxisLabel::from_canonical_str`] reached as a free
+/// function generic over the axis type.
+///
+/// Partial inverse of [`axis_label`] over the canonical-name space:
+/// returns [`Some`] exactly on a case-insensitive match against some
+/// `v.as_str()`, [`None`] on every other input (including the empty
+/// string — no canonical label is empty). Stands to [`axis_label`] as
+/// [`axis_at`] stands to [`axis_ordinal`]: the safe, partial direction of
+/// the bijection surfaced as a free function so deserializers of
+/// attestation manifests (THEORY.md §III.1.8 module manifests, §V.3
+/// three-pillar attestation) that carry typescape cells by canonical
+/// name recover the typed value without naming the [`ClosedAxisLabel`]
+/// trait at the loader site.
+///
+/// **Agreement** — `axis_from_label::<L>(s) == L::from_canonical_str(s)`
+/// for every `s`, pinned by the trait-uniform
+/// [`tests::axis_from_label_free_fn_matches_trait_for_every_implementor`].
+///
+/// **Round-trip law** — `axis_from_label::<L>(axis_label(v)) == Some(v)`
+/// for every `v: L` — the free-function form of the
+/// [`ClosedAxisLabel`] round-trip law, pinned by
+/// [`tests::axis_label_free_fn_round_trips_for_every_implementor`].
+#[must_use]
+pub fn axis_from_label<L: ClosedAxisLabel>(s: &str) -> Option<L> {
+    L::from_canonical_str(s)
+}
+
 /// Closed discipline trait every typescape product cube satisfies — a
 /// refinement of [`ClosedAxis`] that additionally pins the
 /// realizability predicate over the recognized-image cells.
@@ -3722,5 +3782,105 @@ mod tests {
         // round-trip law.
         assert_eq!(PartitionFace::Realizable.as_str(), "realizable");
         assert_eq!(PartitionFace::Unrealizable.as_str(), "unrealizable");
+    }
+
+    // ---- axis_label / axis_from_label — free-fn mirrors of the
+    // ClosedAxisLabel trait methods ----
+    //
+    // The two free functions add no behavior over the trait methods; the
+    // tests below pin that they agree with the trait methods pointwise
+    // (so a future divergence is caught at one site) and re-state the
+    // round-trip law at the free-function layer. Each test dispatches
+    // through `for_each_closed_axis_label_implementor!`, so a future
+    // implementor inherits all three by adding one macro arm.
+
+    fn assert_axis_label_free_fn_matches_trait<L>()
+    where
+        L: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // `axis_label(v) == v.as_str()` for every `v: L`.
+        for value in L::ALL.iter().copied() {
+            assert_eq!(
+                axis_label(value),
+                value.as_str(),
+                "axis_label free fn must agree with ClosedAxisLabel::as_str for {value:?}",
+            );
+        }
+    }
+
+    fn assert_axis_from_label_free_fn_matches_trait<L>()
+    where
+        L: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // `axis_from_label::<L>(s) == L::from_canonical_str(s)` over the
+        // canonical labels, their uppercase form (the case-insensitive
+        // path), and two guaranteed-miss probes (the empty string and a
+        // sentinel that no canonical label can equal).
+        for value in L::ALL.iter().copied() {
+            let rendered = value.as_str();
+            assert_eq!(
+                axis_from_label::<L>(rendered),
+                <L as ClosedAxisLabel>::from_canonical_str(rendered),
+                "axis_from_label must agree with from_canonical_str on {rendered:?}",
+            );
+            let upper = rendered.to_ascii_uppercase();
+            assert_eq!(
+                axis_from_label::<L>(&upper),
+                <L as ClosedAxisLabel>::from_canonical_str(&upper),
+                "axis_from_label must agree with from_canonical_str on {upper:?}",
+            );
+        }
+        for probe in ["", "\u{0}not-a-canonical-label\u{0}"] {
+            assert_eq!(
+                axis_from_label::<L>(probe),
+                <L as ClosedAxisLabel>::from_canonical_str(probe),
+                "axis_from_label must agree with from_canonical_str on non-label {probe:?}",
+            );
+        }
+    }
+
+    fn assert_axis_label_free_fn_round_trips<L>()
+    where
+        L: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // Free-function form of the round-trip law:
+        // `axis_from_label(axis_label(v)) == Some(v)`.
+        for value in L::ALL.iter().copied() {
+            assert_eq!(
+                axis_from_label::<L>(axis_label(value)),
+                Some(value),
+                "free-fn round-trip failed for {value:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn axis_label_free_fn_matches_trait_as_str_for_every_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_axis_label_free_fn_matches_trait::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn axis_from_label_free_fn_matches_trait_for_every_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_axis_from_label_free_fn_matches_trait::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn axis_label_free_fn_round_trips_for_every_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_axis_label_free_fn_round_trips::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
     }
 }
