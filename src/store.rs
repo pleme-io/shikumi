@@ -31,7 +31,6 @@ use crate::watcher::{ConfigWatcher, symlink_target};
 pub struct ConfigStore<T> {
     inner: Arc<ArcSwap<T>>,
     path: PathBuf,
-    env_prefix: String,
     sources: Vec<ConfigSource>,
     observatory: ReloadObservatory,
     _watcher: Option<ConfigWatcher>,
@@ -55,7 +54,6 @@ where
         Ok(Self {
             inner: Arc::new(ArcSwap::from_pointee(config)),
             path: path.to_owned(),
-            env_prefix: env_prefix.to_owned(),
             sources,
             observatory: ReloadObservatory::new(),
             _watcher: None,
@@ -127,7 +125,6 @@ where
         Ok(Self {
             inner,
             path: path.to_owned(),
-            env_prefix: env_prefix.to_owned(),
             sources,
             observatory,
             _watcher: Some(watcher),
@@ -145,6 +142,14 @@ where
 
     /// Manually reload the config from disk.
     ///
+    /// Replays the full recorded [provider chain](Self::sources) — every
+    /// file layer plus the env layer, in the original merge order — so a
+    /// store built with [`Self::load_merged`] re-merges *all* of its
+    /// files, not just the highest-priority one. The recorded
+    /// [`ConfigSource`] chain is the single source of truth for what to
+    /// re-read; reload re-projects from it rather than reconstructing the
+    /// chain from the bare primary path.
+    ///
     /// On success, increments the [generation counter](Self::generation)
     /// after the new value is published, and clears any prior
     /// [last reload error](Self::last_reload_error). On failure, the
@@ -155,7 +160,7 @@ where
     ///
     /// Returns `ShikumiError` if the file cannot be parsed.
     pub fn reload(&self) -> Result<(), ShikumiError> {
-        match Self::load_from_path(&self.path, &self.env_prefix) {
+        match Self::load_from_sources(&self.sources) {
             Ok((new, _)) => {
                 self.observatory.record_success(&self.inner, new);
                 Ok(())
@@ -458,7 +463,6 @@ where
         Ok(Self {
             inner: Arc::new(ArcSwap::from_pointee(config)),
             path: primary_path,
-            env_prefix: env_prefix.to_owned(),
             sources,
             observatory: ReloadObservatory::new(),
             _watcher: None,
@@ -483,6 +487,32 @@ where
             .iter()
             .fold(ProviderChain::new(), |chain, path| chain.with_file(path))
             .with_env(env_prefix)
+            .extract_with_sources()
+    }
+
+    /// Rebuild and extract a [`ProviderChain`] by replaying a recorded
+    /// [`ConfigSource`] chain in its stored order.
+    ///
+    /// The recorded chain *is* the construction recipe: `[File.., Env]`
+    /// for [`Self::load_merged`], `[Env, File]` for [`Self::load`]. Folding
+    /// it back through the same `with_file` / `with_env` builders
+    /// reproduces the exact layered merge that first built the store —
+    /// including every file in a merged chain, which reloading from the
+    /// single primary path would silently drop.
+    ///
+    /// `ConfigSource::Defaults` is skipped: store constructors never
+    /// record it (serde defaults are the implicit base layer, never an
+    /// explicit `with_defaults` value), and the base value isn't retained
+    /// to re-inject. Skipping leaves the serde-default base intact, which
+    /// matches the original load.
+    fn load_from_sources(sources: &[ConfigSource]) -> Result<(T, Vec<ConfigSource>), ShikumiError> {
+        sources
+            .iter()
+            .fold(ProviderChain::new(), |chain, source| match source {
+                ConfigSource::File(path) => chain.with_file(path),
+                ConfigSource::Env(prefix) => chain.with_env(prefix),
+                ConfigSource::Defaults => chain,
+            })
             .extract_with_sources()
     }
 }
@@ -968,6 +998,62 @@ mod tests {
         // Env is last layer, so it wins over files
         assert_eq!(config.name.as_deref(), Some("from_env"));
         assert_eq!(config.count, Some(10));
+    }
+
+    #[test]
+    fn reload_re_merges_all_paths_for_load_merged() {
+        // reload() must replay the full recorded chain. The lower-priority
+        // `base` file supplies `count`; the higher-priority `over` file
+        // overrides `name` only. A reload that rebuilt from the single
+        // primary path (the last file, over.yaml) would drop `base`
+        // entirely and lose `count`.
+        let dir = TempDir::new().unwrap();
+        let base = dir.path().join("base.yaml");
+        let over = dir.path().join("over.yaml");
+        fs::write(&base, "name: base\ncount: 1\n").unwrap();
+        fs::write(&over, "name: over\n").unwrap();
+
+        let store = ConfigStore::<TestConfig>::load_merged(
+            &[base.clone(), over.clone()],
+            "SHIKUMI_RELOAD_REMERGE_",
+        )
+        .unwrap();
+        assert_eq!(store.get().name.as_deref(), Some("over"));
+        assert_eq!(store.get().count, Some(1));
+
+        // Mutate the lower-priority layer, then reload.
+        fs::write(&base, "name: base\ncount: 99\n").unwrap();
+        store.reload().unwrap();
+
+        // The full chain re-merges: base.count is re-read, and over.name
+        // still wins the merge.
+        assert_eq!(store.get().count, Some(99));
+        assert_eq!(store.get().name.as_deref(), Some("over"));
+        assert!(store.generation() >= 1);
+    }
+
+    #[test]
+    fn reload_preserves_env_layer_for_load_merged() {
+        // The Env layer is recovered from the recorded source chain, not
+        // from a stored prefix field: reload must keep env winning over
+        // every file while still re-reading the file layers.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("m.yaml");
+        fs::write(&file, "name: file\ncount: 1\n").unwrap();
+
+        unsafe { std::env::set_var("SHIKUMI_RELOAD_ENVKEEP_NAME", "from_env") };
+        let store =
+            ConfigStore::<TestConfig>::load_merged(&[file.clone()], "SHIKUMI_RELOAD_ENVKEEP_")
+                .unwrap();
+        assert_eq!(store.get().name.as_deref(), Some("from_env"));
+
+        fs::write(&file, "name: file2\ncount: 2\n").unwrap();
+        store.reload().unwrap();
+        unsafe { std::env::remove_var("SHIKUMI_RELOAD_ENVKEEP_NAME") };
+
+        // Env still wins after reload; the file's `count` is re-read.
+        assert_eq!(store.get().name.as_deref(), Some("from_env"));
+        assert_eq!(store.get().count, Some(2));
     }
 
     #[test]
