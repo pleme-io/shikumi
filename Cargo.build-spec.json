@@ -216,7 +216,7 @@
           "features": [],
           "uses_default_features": false,
           "optional": false,
-          "target": "cfg(target_os = \"hermit\")"
+          "target": "cfg(unix)"
         }
       ],
       "runtime_dependencies": [
@@ -227,7 +227,7 @@
           "features": [],
           "uses_default_features": false,
           "optional": false,
-          "target": "cfg(target_os = \"hermit\")"
+          "target": "cfg(unix)"
         }
       ],
       "build_dependencies": [],
@@ -706,7 +706,7 @@
           "features": [],
           "uses_default_features": true,
           "optional": false,
-          "target": null
+          "target": "cfg(target_os = \"macos\")"
         },
         {
           "name": "libc",
@@ -762,7 +762,7 @@
           "features": [],
           "uses_default_features": true,
           "optional": false,
-          "target": null
+          "target": "cfg(target_os = \"macos\")"
         },
         {
           "name": "libc",
@@ -1949,32 +1949,12 @@
           "target": null
         },
         {
-          "name": "tempfile",
-          "package_key": "tempfile-3.26.0",
-          "kind": "normal",
-          "features": [],
-          "uses_default_features": true,
-          "optional": false,
-          "target": null
-        },
-        {
           "name": "thiserror",
           "package_key": "thiserror-2.0.18",
           "kind": "normal",
           "features": [],
           "uses_default_features": true,
           "optional": false,
-          "target": null
-        },
-        {
-          "name": "tokio",
-          "package_key": "tokio-1.50.0",
-          "kind": "normal",
-          "features": [
-            "rt"
-          ],
-          "uses_default_features": true,
-          "optional": true,
           "target": null
         },
         {
@@ -2058,32 +2038,12 @@
           "target": null
         },
         {
-          "name": "tempfile",
-          "package_key": "tempfile-3.26.0",
-          "kind": "normal",
-          "features": [],
-          "uses_default_features": true,
-          "optional": false,
-          "target": null
-        },
-        {
           "name": "thiserror",
           "package_key": "thiserror-2.0.18",
           "kind": "normal",
           "features": [],
           "uses_default_features": true,
           "optional": false,
-          "target": null
-        },
-        {
-          "name": "tokio",
-          "package_key": "tokio-1.50.0",
-          "kind": "normal",
-          "features": [
-            "rt"
-          ],
-          "uses_default_features": true,
-          "optional": true,
           "target": null
         },
         {
