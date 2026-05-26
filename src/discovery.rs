@@ -81,6 +81,30 @@ impl Format {
         }
     }
 
+    /// Infer format from a path's file extension.
+    ///
+    /// The single source of truth for the `(path → Format)` detection
+    /// triple — `path.extension().and_then(OsStr::to_str)
+    /// .and_then(Format::from_extension)` — that
+    /// [`crate::ProviderChain::with_file`] and the [`TryFrom<&Path>`] impl
+    /// previously open-coded independently. Returns `None` when the path
+    /// has no extension or an unrecognized one; [`TryFrom<&Path>`] wraps
+    /// the `None` in a [`ShikumiError::Parse`], and `with_file` falls back
+    /// to the TOML provider on `None`.
+    ///
+    /// Infallible counterpart of the [`TryFrom<&Path>`] impl, which is now
+    /// the `ok_or_else` wrapper around this. Any future consumer that needs
+    /// the extension-declared format of a path (e.g.
+    /// [`crate::ConfigSource::file_format`]) routes through this one site,
+    /// so a new [`Format`] variant becomes recognizable everywhere by
+    /// extending [`Self::from_extension`] alone.
+    #[must_use]
+    pub fn from_path(path: &Path) -> Option<Self> {
+        path.extension()
+            .and_then(|e| e.to_str())
+            .and_then(Self::from_extension)
+    }
+
     /// Canonical operator-facing lowercase name of the format —
     /// `"yaml"`, `"toml"`, `"lisp"`, or `"nix"`.
     ///
@@ -824,15 +848,12 @@ impl TryFrom<&Path> for Format {
     type Error = ShikumiError;
 
     fn try_from(path: &Path) -> Result<Self, Self::Error> {
-        path.extension()
-            .and_then(|e| e.to_str())
-            .and_then(Self::from_extension)
-            .ok_or_else(|| {
-                ShikumiError::Parse(format!(
-                    "cannot determine config format from path: {}",
-                    path.display()
-                ))
-            })
+        Self::from_path(path).ok_or_else(|| {
+            ShikumiError::Parse(format!(
+                "cannot determine config format from path: {}",
+                path.display()
+            ))
+        })
     }
 }
 
@@ -1288,6 +1309,53 @@ mod tests {
         );
         assert!(Format::try_from(Path::new("config.json")).is_err());
         assert!(Format::try_from(Path::new("no_extension")).is_err());
+    }
+
+    #[test]
+    fn format_from_path_recognizes_every_extension() {
+        assert_eq!(Format::from_path(Path::new("app.yaml")), Some(Format::Yaml));
+        assert_eq!(Format::from_path(Path::new("app.yml")), Some(Format::Yaml));
+        assert_eq!(Format::from_path(Path::new("app.toml")), Some(Format::Toml));
+        assert_eq!(Format::from_path(Path::new("app.lisp")), Some(Format::Lisp));
+        assert_eq!(Format::from_path(Path::new("app.lsp")), Some(Format::Lisp));
+        assert_eq!(Format::from_path(Path::new("app.el")), Some(Format::Lisp));
+        assert_eq!(Format::from_path(Path::new("app.nix")), Some(Format::Nix));
+    }
+
+    #[test]
+    fn format_from_path_none_for_unknown_or_absent_extension() {
+        assert_eq!(Format::from_path(Path::new("app.json")), None);
+        assert_eq!(Format::from_path(Path::new("app.conf")), None);
+        assert_eq!(Format::from_path(Path::new("no_extension")), None);
+        // A dotfile with no extension (`.app`) has no `OsStr` extension.
+        assert_eq!(Format::from_path(Path::new(".app")), None);
+    }
+
+    #[test]
+    fn format_from_path_respects_full_path() {
+        // The detection keys on the final component's extension, not the
+        // directory chain — a `.toml` parent dir does not shadow a
+        // `.yaml` leaf.
+        assert_eq!(
+            Format::from_path(Path::new("/etc/app.toml/app.yaml")),
+            Some(Format::Yaml)
+        );
+    }
+
+    #[test]
+    fn format_try_from_path_agrees_with_from_path() {
+        // `try_from` is the `ok_or_else` wrapper around `from_path`: it
+        // succeeds exactly when `from_path` is `Some`, with the same value.
+        for path in [
+            "a.yaml", "a.yml", "a.toml", "a.lisp", "a.lsp", "a.el", "a.nix", "a.json", "noext",
+        ] {
+            let p = Path::new(path);
+            assert_eq!(
+                Format::from_path(p),
+                Format::try_from(p).ok(),
+                "path: {path}"
+            );
+        }
     }
 
     #[test]

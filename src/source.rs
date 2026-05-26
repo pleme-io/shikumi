@@ -103,6 +103,31 @@ impl ConfigSource {
         }
     }
 
+    /// The [`crate::discovery::Format`] declared by this source's file
+    /// extension, if this is a [`Self::File`] with a recognized extension.
+    ///
+    /// Returns `None` for [`Self::Defaults`] / [`Self::Env`] sources. A
+    /// `File` whose extension is unrecognized or absent also yields `None`
+    /// — [`crate::ProviderChain::with_file`] parses such files with the
+    /// conservative TOML fallback, so a `None` on a `File` source means
+    /// "the extension did not declare a format", not "no file". Use
+    /// [`Self::is_file`] / [`Self::as_path`] to distinguish.
+    ///
+    /// Routes through [`crate::discovery::Format::from_path`], the single
+    /// `(path → Format)` detection site that `with_file` also uses, so the
+    /// recorded provenance chain reports exactly the format the loader
+    /// detected — a consumer reading "which format parsed this layer?" off
+    /// the chain never re-derives the extension triple, and reload (which
+    /// replays this chain) and the original load agree on format by
+    /// construction.
+    #[must_use]
+    pub fn file_format(&self) -> Option<crate::discovery::Format> {
+        match self {
+            Self::File(path) => crate::discovery::Format::from_path(path),
+            _ => None,
+        }
+    }
+
     /// Canonical `figment::Metadata::name` shape emitted by
     /// [`figment::providers::Env`]: `` `PREFIX` environment variable(s) ``
     /// for prefixed providers, `"environment variable(s)"` for raw env
@@ -789,6 +814,65 @@ mod tests {
         assert_eq!(f.as_path(), Some(Path::new("/x.yaml")));
         assert_eq!(ConfigSource::Defaults.as_path(), None);
         assert_eq!(ConfigSource::Env("X_".to_owned()).as_path(), None);
+    }
+
+    #[test]
+    fn file_format_reports_extension_format_for_file_only() {
+        use crate::discovery::Format;
+        assert_eq!(
+            ConfigSource::File(PathBuf::from("/etc/app/app.yaml")).file_format(),
+            Some(Format::Yaml)
+        );
+        assert_eq!(
+            ConfigSource::File(PathBuf::from("app.yml")).file_format(),
+            Some(Format::Yaml)
+        );
+        assert_eq!(
+            ConfigSource::File(PathBuf::from("app.toml")).file_format(),
+            Some(Format::Toml)
+        );
+        assert_eq!(
+            ConfigSource::File(PathBuf::from("app.lisp")).file_format(),
+            Some(Format::Lisp)
+        );
+        assert_eq!(
+            ConfigSource::File(PathBuf::from("app.nix")).file_format(),
+            Some(Format::Nix)
+        );
+        // Non-File sources have no file format.
+        assert_eq!(ConfigSource::Defaults.file_format(), None);
+        assert_eq!(ConfigSource::Env("APP_".to_owned()).file_format(), None);
+    }
+
+    #[test]
+    fn file_format_none_for_unrecognized_or_extensionless_file() {
+        // A `File` with an unknown extension yields `None` even though
+        // `with_file` would parse it via the TOML fallback — `None` here
+        // means "extension declared no format", distinguished from a
+        // non-File source by `is_file`.
+        let unknown = ConfigSource::File(PathBuf::from("app.conf"));
+        assert_eq!(unknown.file_format(), None);
+        assert!(unknown.is_file());
+
+        let no_ext = ConfigSource::File(PathBuf::from("app"));
+        assert_eq!(no_ext.file_format(), None);
+        assert!(no_ext.is_file());
+    }
+
+    #[test]
+    fn file_format_agrees_with_format_from_path_pointwise() {
+        // The accessor is exactly `Format::from_path` on the recorded path
+        // for `File` sources, and `None` otherwise.
+        for path in [
+            "c.yaml", "c.yml", "c.toml", "c.lisp", "c.el", "c.nix", "c.json", "c",
+        ] {
+            let src = ConfigSource::File(PathBuf::from(path));
+            assert_eq!(
+                src.file_format(),
+                crate::discovery::Format::from_path(Path::new(path)),
+                "path: {path}"
+            );
+        }
     }
 
     #[test]

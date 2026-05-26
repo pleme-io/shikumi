@@ -60,17 +60,13 @@ impl ProviderChain {
     /// Merge a config file, auto-detecting format by extension.
     ///
     /// - `.yaml` / `.yml` → YAML provider
-    /// - `.yaml` / `.yml` → YAML provider
     /// - `.toml` → TOML provider
     /// - `.lisp` / `.lsp` / `.el` → Tatara-lisp provider ([`crate::LispProvider`])
     /// - `.nix` → Nix provider ([`crate::NixProvider`], shells out to `nix eval`)
     /// - anything else → TOML provider (conservative fallback)
     #[must_use]
     pub fn with_file(mut self, path: &Path) -> Self {
-        let format = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .and_then(Format::from_extension);
+        let format = Format::from_path(path);
 
         match format {
             Some(Format::Yaml) => {
