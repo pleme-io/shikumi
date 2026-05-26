@@ -500,19 +500,17 @@ where
     /// including every file in a merged chain, which reloading from the
     /// single primary path would silently drop.
     ///
-    /// `ConfigSource::Defaults` is skipped: store constructors never
-    /// record it (serde defaults are the implicit base layer, never an
-    /// explicit `with_defaults` value), and the base value isn't retained
-    /// to re-inject. Skipping leaves the serde-default base intact, which
-    /// matches the original load.
+    /// Each recorded source is replayed through
+    /// [`ProviderChain::with_source`], the per-layer inverse of the
+    /// `with_*` builders. `ConfigSource::Defaults` is the identity there:
+    /// store constructors never record it (serde defaults are the implicit
+    /// base layer, never an explicit `with_defaults` value), and the base
+    /// value isn't retained to re-inject. Skipping leaves the serde-default
+    /// base intact, which matches the original load.
     fn load_from_sources(sources: &[ConfigSource]) -> Result<(T, Vec<ConfigSource>), ShikumiError> {
         sources
             .iter()
-            .fold(ProviderChain::new(), |chain, source| match source {
-                ConfigSource::File(path) => chain.with_file(path),
-                ConfigSource::Env(prefix) => chain.with_env(prefix),
-                ConfigSource::Defaults => chain,
-            })
+            .fold(ProviderChain::new(), ProviderChain::with_source)
             .extract_with_sources()
     }
 }

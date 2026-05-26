@@ -101,6 +101,41 @@ impl ProviderChain {
         self
     }
 
+    /// Replay one recorded [`ConfigSource`] back into the chain.
+    ///
+    /// This is the structural inverse of the `with_*` builders: where
+    /// [`Self::with_file`] / [`Self::with_env`] each *record* a
+    /// [`ConfigSource`] as a side effect of merging a layer, `with_source`
+    /// *reads one back* and re-applies the matching builder. It is the
+    /// per-layer primitive behind store reload —
+    /// [`crate::ConfigStore::reload`] folds its recorded chain (the
+    /// construction recipe) through this method to reproduce the exact
+    /// layered merge that first built the store, rather than rebuilding
+    /// from a single primary path (which would silently drop every other
+    /// file in a merged chain).
+    ///
+    /// Co-locating the inverse with the forward builders keeps the
+    /// record↔replay correspondence at one site. The `match` is exhaustive
+    /// in-crate (`#[non_exhaustive]` relaxes exhaustivity only for
+    /// downstream crates), so a future [`ConfigSource`] variant cannot be
+    /// added without teaching its replay here, in the same file as the
+    /// builder that records it — closing the seam that once let reload drop
+    /// layers, now as a compile-time obligation rather than a convention.
+    ///
+    /// [`ConfigSource::Defaults`] is the identity: the serde-default base
+    /// layer is implicit and its serialized value is not retained on the
+    /// recorded chain, so there is nothing to re-inject. Replaying a chain
+    /// that carries no explicit defaults value leaves that base intact,
+    /// which matches the original load.
+    #[must_use]
+    pub fn with_source(self, source: &ConfigSource) -> Self {
+        match source {
+            ConfigSource::File(path) => self.with_file(path),
+            ConfigSource::Env(prefix) => self.with_env(prefix),
+            ConfigSource::Defaults => self,
+        }
+    }
+
     /// Recorded sources in merge order (lowest priority first).
     ///
     /// Each `with_*` builder call appends one [`ConfigSource`] entry. The
@@ -638,5 +673,112 @@ mod tests {
         assert_eq!(config.name.as_deref(), Some("from_file"));
         // count: env overrides default (file doesn't set count)
         assert_eq!(config.count, Some(77));
+    }
+
+    #[test]
+    fn with_source_file_records_and_loads() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("replay.yaml");
+        fs::write(&file, "name: replayed\ncount: 3\n").unwrap();
+
+        let chain = ProviderChain::new().with_source(&ConfigSource::File(file.clone()));
+        assert_eq!(chain.sources(), &[ConfigSource::File(file.clone())]);
+
+        let config: TestConfig = chain.extract().unwrap();
+        assert_eq!(config.name.as_deref(), Some("replayed"));
+        assert_eq!(config.count, Some(3));
+    }
+
+    #[test]
+    fn with_source_env_records_env_layer() {
+        let chain = ProviderChain::new().with_source(&ConfigSource::Env("REPLAY_ENV_".to_owned()));
+        assert_eq!(
+            chain.sources(),
+            &[ConfigSource::Env("REPLAY_ENV_".to_owned())]
+        );
+    }
+
+    #[test]
+    fn with_source_defaults_is_identity() {
+        // Defaults carries no reconstructable value, so replaying it is the
+        // identity: no layer merged, nothing recorded.
+        let chain = ProviderChain::new().with_source(&ConfigSource::Defaults);
+        assert!(
+            chain.sources().is_empty(),
+            "Defaults must replay as the identity"
+        );
+    }
+
+    #[test]
+    fn with_source_agrees_with_with_file_pointwise() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("agree.yaml");
+        fs::write(&file, "name: agree\ncount: 5\n").unwrap();
+
+        let via_builder = ProviderChain::new().with_file(&file);
+        let via_source = ProviderChain::new().with_source(&ConfigSource::File(file.clone()));
+        assert_eq!(via_builder.sources(), via_source.sources());
+
+        let a: TestConfig = via_builder.extract().unwrap();
+        let b: TestConfig = via_source.extract().unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn with_source_agrees_with_with_env_pointwise() {
+        let prefix = "SHIKUMI_REPLAY_AGREE_";
+        let via_builder = ProviderChain::new().with_env(prefix);
+        let via_source = ProviderChain::new().with_source(&ConfigSource::Env(prefix.to_owned()));
+        assert_eq!(via_builder.sources(), via_source.sources());
+    }
+
+    #[test]
+    fn with_source_exhaustive_over_every_kind() {
+        use crate::ConfigSourceKind;
+        for kind in ConfigSourceKind::ALL.iter().copied() {
+            let (source, expected): (ConfigSource, Vec<ConfigSource>) = match kind {
+                ConfigSourceKind::Defaults => (ConfigSource::Defaults, vec![]),
+                ConfigSourceKind::Env => {
+                    let s = ConfigSource::Env("K_".to_owned());
+                    (s.clone(), vec![s])
+                }
+                ConfigSourceKind::File => {
+                    let s = ConfigSource::File("/tmp/k.toml".into());
+                    (s.clone(), vec![s])
+                }
+            };
+            let chain = ProviderChain::new().with_source(&source);
+            assert_eq!(
+                chain.sources(),
+                expected.as_slice(),
+                "with_source replay for {kind:?} must match the matching builder's record"
+            );
+        }
+    }
+
+    #[test]
+    fn replay_round_trips_recorded_chain() {
+        // The reload-fidelity property at the ProviderChain level: read a
+        // recorded chain back through with_source and the rebuilt chain
+        // reproduces both the merge order and the extracted value.
+        let dir = TempDir::new().unwrap();
+        let lo = dir.path().join("lo.yaml");
+        let hi = dir.path().join("hi.toml");
+        fs::write(&lo, "name: low\ncount: 1\n").unwrap();
+        fs::write(&hi, "count = 2\n").unwrap();
+
+        let original = ProviderChain::new().with_file(&lo).with_file(&hi);
+        let recipe = original.sources().to_vec();
+        let original_value: TestConfig = original.extract().unwrap();
+
+        let rebuilt = recipe
+            .iter()
+            .fold(ProviderChain::new(), ProviderChain::with_source);
+        assert_eq!(rebuilt.sources(), recipe.as_slice());
+
+        let rebuilt_value: TestConfig = rebuilt.extract().unwrap();
+        assert_eq!(rebuilt_value, original_value);
+        assert_eq!(rebuilt_value.name.as_deref(), Some("low"));
+        assert_eq!(rebuilt_value.count, Some(2));
     }
 }
