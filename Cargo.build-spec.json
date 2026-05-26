@@ -22,6 +22,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "rustversion",
@@ -59,6 +60,7 @@
       },
       "features": [],
       "proc_macro": true,
+      "build_script": null,
       "dependencies": [
         {
           "name": "proc_macro2",
@@ -155,6 +157,7 @@
         "std"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -172,6 +175,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -189,6 +193,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -208,6 +213,7 @@
         "std"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "libc",
@@ -249,6 +255,7 @@
         "std"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -273,6 +280,7 @@
         "yaml"
       ],
       "proc_macro": false,
+      "build_script": "build.rs",
       "dependencies": [
         {
           "name": "pear",
@@ -401,6 +409,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "libc",
@@ -438,6 +447,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": "build.rs",
       "dependencies": [
         {
           "name": "cfg_if",
@@ -500,6 +510,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -521,6 +532,7 @@
         "std"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "equivalent",
@@ -594,6 +606,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -611,6 +624,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -631,6 +645,7 @@
         "std"
       ],
       "proc_macro": false,
+      "build_script": "build.rs",
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -648,6 +663,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -668,6 +684,7 @@
         "std"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -689,6 +706,7 @@
         "macos_fsevent"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "bitflags",
@@ -829,6 +847,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "bitflags",
@@ -871,6 +890,7 @@
         "std"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -892,6 +912,7 @@
         "yansi"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "inlinable_string",
@@ -965,6 +986,7 @@
       },
       "features": [],
       "proc_macro": true,
+      "build_script": null,
       "dependencies": [
         {
           "name": "proc_macro2",
@@ -1077,6 +1099,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -1097,6 +1120,7 @@
         "proc-macro"
       ],
       "proc_macro": false,
+      "build_script": "build.rs",
       "dependencies": [
         {
           "name": "unicode_ident",
@@ -1145,6 +1169,7 @@
         "yansi"
       ],
       "proc_macro": false,
+      "build_script": "build.rs",
       "dependencies": [
         {
           "name": "proc_macro2",
@@ -1265,6 +1290,7 @@
         "proc-macro"
       ],
       "proc_macro": false,
+      "build_script": "build.rs",
       "dependencies": [
         {
           "name": "proc_macro2",
@@ -1314,6 +1340,7 @@
         "std"
       ],
       "proc_macro": false,
+      "build_script": "build.rs",
       "dependencies": [
         {
           "name": "bitflags",
@@ -1394,6 +1421,7 @@
       },
       "features": [],
       "proc_macro": true,
+      "build_script": "build/build.rs",
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -1411,6 +1439,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -1428,6 +1457,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -1451,6 +1481,7 @@
         "std"
       ],
       "proc_macro": false,
+      "build_script": "build.rs",
       "dependencies": [
         {
           "name": "serde_core",
@@ -1514,6 +1545,7 @@
         "std"
       ],
       "proc_macro": false,
+      "build_script": "build.rs",
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -1533,6 +1565,7 @@
         "default"
       ],
       "proc_macro": true,
+      "build_script": null,
       "dependencies": [
         {
           "name": "proc_macro2",
@@ -1632,6 +1665,7 @@
         "std"
       ],
       "proc_macro": false,
+      "build_script": "build.rs",
       "dependencies": [
         {
           "name": "itoa",
@@ -1725,6 +1759,7 @@
         "serde"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "serde",
@@ -1762,6 +1797,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "indexmap",
@@ -1878,6 +1914,7 @@
         "default"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "arc_swap",
@@ -2094,6 +2131,7 @@
         "visit-mut"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "proc_macro2",
@@ -2183,6 +2221,7 @@
         "getrandom"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "fastrand",
@@ -2285,6 +2324,7 @@
         "std"
       ],
       "proc_macro": false,
+      "build_script": "build.rs",
       "dependencies": [
         {
           "name": "thiserror_impl",
@@ -2329,6 +2369,7 @@
       },
       "features": [],
       "proc_macro": true,
+      "build_script": null,
       "dependencies": [
         {
           "name": "proc_macro2",
@@ -2414,6 +2455,7 @@
         "tokio-macros"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "pin_project_lite",
@@ -2482,6 +2524,7 @@
       },
       "features": [],
       "proc_macro": true,
+      "build_script": null,
       "dependencies": [
         {
           "name": "proc_macro2",
@@ -2570,6 +2613,7 @@
         "parse"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "serde",
@@ -2675,6 +2719,7 @@
         "serde"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "serde",
@@ -2716,6 +2761,7 @@
         "serde"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "indexmap",
@@ -2855,6 +2901,7 @@
         "std"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -2877,6 +2924,7 @@
         "tracing-attributes"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "pin_project_lite",
@@ -2969,6 +3017,7 @@
       },
       "features": [],
       "proc_macro": true,
+      "build_script": null,
       "dependencies": [
         {
           "name": "proc_macro2",
@@ -3068,6 +3117,7 @@
         "std"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "once_cell",
@@ -3108,6 +3158,7 @@
         "default"
       ],
       "proc_macro": false,
+      "build_script": "build.rs",
       "dependencies": [
         {
           "name": "version_check",
@@ -3145,6 +3196,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -3162,6 +3214,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -3179,6 +3232,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -3196,6 +3250,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "same_file",
@@ -3244,6 +3299,7 @@
         "std"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [
         {
           "name": "memchr",
@@ -3285,6 +3341,7 @@
         "std"
       ],
       "proc_macro": false,
+      "build_script": null,
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
@@ -3302,6 +3359,7 @@
       },
       "features": [],
       "proc_macro": false,
+      "build_script": "build.rs",
       "dependencies": [],
       "runtime_dependencies": [],
       "build_dependencies": [],
