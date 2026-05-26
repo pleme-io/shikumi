@@ -308,6 +308,65 @@ impl crate::ClosedAxisLabel for ConfigSourceKind {
     }
 }
 
+/// Chain-level provenance queries over a recorded [`ConfigSource`] chain.
+///
+/// The recorded chain — the `&[ConfigSource]` returned by
+/// [`crate::ConfigStore::sources`] / [`crate::ProviderChain::sources`] and
+/// replayed verbatim on every [`crate::ConfigStore::reload`] — is the
+/// executable recipe that built a store. This trait turns "which layer in
+/// the recipe …?" questions into named queries over the slice, so the
+/// answer is read off the typed provenance rather than re-derived by an
+/// open-coded `iter().find` / `iter().filter` at every consumer.
+///
+/// One source of truth for the chain-walk discipline: the failing-source
+/// resolver behind [`crate::ShikumiError::failing_source`] previously
+/// open-coded "find the [`ConfigSource::File`] whose path equals P" twice
+/// (once per file-attribution rule) and "the sole layer of kind K" twice
+/// (the env- and defaults-uniqueness rules); both collapse to one
+/// [`Self::find_file`] / [`Self::unique_of_kind`] site here. Future
+/// consumers reading the recipe — an attestation manifest grouping layers
+/// by kind, a diagnostic dump locating the file layer behind a value, a
+/// new uniqueness-keyed attribution rule for a future [`ConfigSource`]
+/// variant — key on these queries instead of re-walking the slice.
+///
+/// Implemented for `[ConfigSource]`, so it applies to any `&[ConfigSource]`
+/// (a borrowed `Vec`, a stored chain slice) by deref.
+pub trait ConfigSourceChain {
+    /// The first [`ConfigSource::File`] entry whose path equals `path`,
+    /// or `None` if no file layer in the chain was loaded from `path`.
+    ///
+    /// Matches only [`ConfigSource::File`] layers — [`ConfigSource::Env`]
+    /// and [`ConfigSource::Defaults`] carry no path and never match. The
+    /// comparison is exact-path (per [`ConfigSource::as_path`]); it does
+    /// not canonicalize, so a caller comparing against a discovery result
+    /// should pass the same path shape the chain recorded.
+    fn find_file(&self, path: &Path) -> Option<&ConfigSource>;
+
+    /// The sole chain entry whose [`ConfigSource::kind`] equals `kind`,
+    /// or `None` if the chain holds zero or more than one such layer.
+    ///
+    /// Returns `Some` only on a *unique* match: this is the
+    /// "exactly one layer of this kind" query the failing-source resolver
+    /// uses to attribute an unprefixed env value to the chain's sole
+    /// [`ConfigSourceKind::Env`] layer, or a code-sourced value to its
+    /// sole [`ConfigSourceKind::Defaults`] layer. Keyed on the typed
+    /// [`ConfigSourceKind`] discriminant, so a future variant participates
+    /// without touching this method.
+    fn unique_of_kind(&self, kind: ConfigSourceKind) -> Option<&ConfigSource>;
+}
+
+impl ConfigSourceChain for [ConfigSource] {
+    fn find_file(&self, path: &Path) -> Option<&ConfigSource> {
+        self.iter().find(|s| s.as_path() == Some(path))
+    }
+
+    fn unique_of_kind(&self, kind: ConfigSourceKind) -> Option<&ConfigSource> {
+        let mut matches = self.iter().filter(|s| s.kind() == kind);
+        let first = matches.next()?;
+        matches.next().is_none().then_some(first)
+    }
+}
+
 /// Recognized form of [`figment::providers::Env`]'s
 /// `figment::Metadata::name`, as parsed by
 /// [`ConfigSource::strip_env_metadata_name`].
@@ -916,6 +975,117 @@ mod tests {
         let s = ConfigSource::File(PathBuf::from("/a/b.yaml"));
         let c = s.clone();
         assert_eq!(s, c);
+    }
+
+    // ---- ConfigSourceChain (chain-level provenance queries) ----
+
+    fn sample_chain() -> Vec<ConfigSource> {
+        vec![
+            ConfigSource::File(PathBuf::from("/etc/app/app.yaml")),
+            ConfigSource::File(PathBuf::from("/home/u/.config/app/app.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+        ]
+    }
+
+    #[test]
+    fn find_file_returns_matching_file_entry() {
+        let chain = sample_chain();
+        let hit = chain
+            .find_file(Path::new("/home/u/.config/app/app.yaml"))
+            .expect("a file layer was loaded from that path");
+        assert_eq!(
+            hit.as_path(),
+            Some(Path::new("/home/u/.config/app/app.yaml"))
+        );
+    }
+
+    #[test]
+    fn find_file_none_for_unrecorded_path() {
+        let chain = sample_chain();
+        assert!(chain.find_file(Path::new("/nope.yaml")).is_none());
+    }
+
+    #[test]
+    fn find_file_ignores_non_file_layers() {
+        // A path that no File layer carries; Env/Defaults must never match
+        // even though the chain has those layers.
+        let chain = [ConfigSource::Defaults, ConfigSource::Env("E_".to_owned())];
+        assert!(chain.find_file(Path::new("/etc/app/app.yaml")).is_none());
+    }
+
+    #[test]
+    fn find_file_agrees_with_open_coded_walk_pointwise() {
+        let chain = sample_chain();
+        for probe in [
+            Path::new("/etc/app/app.yaml"),
+            Path::new("/home/u/.config/app/app.yaml"),
+            Path::new("/missing.toml"),
+        ] {
+            let lifted = chain.find_file(probe);
+            let manual = chain.iter().find(|s| s.as_path() == Some(probe));
+            assert_eq!(
+                lifted, manual,
+                "find_file must match the walk for {probe:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn unique_of_kind_returns_sole_layer() {
+        let chain = [
+            ConfigSource::Defaults,
+            ConfigSource::Env("ONLY_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let env = chain
+            .unique_of_kind(ConfigSourceKind::Env)
+            .expect("exactly one env layer");
+        assert_eq!(env.as_env_prefix(), Some("ONLY_"));
+        let defaults = chain
+            .unique_of_kind(ConfigSourceKind::Defaults)
+            .expect("exactly one defaults layer");
+        assert!(defaults.is_defaults());
+    }
+
+    #[test]
+    fn unique_of_kind_none_when_ambiguous() {
+        // Two File layers → File is not unique.
+        let chain = sample_chain();
+        assert!(chain.unique_of_kind(ConfigSourceKind::File).is_none());
+    }
+
+    #[test]
+    fn unique_of_kind_none_when_absent() {
+        // Chain with no defaults layer.
+        let chain = sample_chain();
+        assert!(chain.unique_of_kind(ConfigSourceKind::Defaults).is_none());
+    }
+
+    #[test]
+    fn unique_of_kind_agrees_with_open_coded_uniqueness() {
+        // Pin equivalence to the filter+next+next().is_none() pattern the
+        // failing-source resolver used to inline, over every kind and over
+        // chains with 0, 1, and 2 layers of the probed kind.
+        let chains = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Env("A_".to_owned()),
+                ConfigSource::Env("B_".to_owned()),
+            ],
+        ];
+        for chain in &chains {
+            for kind in ConfigSourceKind::ALL.iter().copied() {
+                let lifted = chain.unique_of_kind(kind);
+                let mut hits = chain.iter().filter(|s| s.kind() == kind);
+                let manual = hits.next().filter(|_| hits.next().is_none());
+                assert_eq!(
+                    lifted, manual,
+                    "unique_of_kind({kind:?}) must match the open-coded uniqueness walk"
+                );
+            }
+        }
     }
 
     // ---- ConfigSourceKind / ConfigSource::kind ----

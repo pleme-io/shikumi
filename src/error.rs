@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use crate::source::{
-    ConfigSource, ConfigSourceKind, EnvMetadataTag, FigmentNameTag, FigmentSourceKind,
-    FigmentSourceTag,
+    ConfigSource, ConfigSourceChain, ConfigSourceKind, EnvMetadataTag, FigmentNameTag,
+    FigmentSourceKind, FigmentSourceTag,
 };
 
 /// Errors produced by shikumi's config discovery, loading, and watching.
@@ -2255,7 +2255,7 @@ fn resolve_failing_source<'a>(
     let source_tag = md.source.as_ref().and_then(FigmentSourceTag::classify);
 
     if let Some(FigmentSourceTag::File(p)) = source_tag
-        && let Some(hit) = chain.iter().find(|s| s.as_path() == Some(p))
+        && let Some(hit) = chain.find_file(p)
     {
         return Some(FailingSourceAttribution::new(
             hit,
@@ -2265,7 +2265,7 @@ fn resolve_failing_source<'a>(
 
     match FigmentNameTag::classify(md.name.as_ref()) {
         Some(FigmentNameTag::Format(tag)) => {
-            if let Some(hit) = chain.iter().find(|s| s.as_path() == Some(tag.path)) {
+            if let Some(hit) = chain.find_file(tag.path) {
                 return Some(FailingSourceAttribution::new(
                     hit,
                     AttributionRule::FileByMetadataName,
@@ -2284,10 +2284,7 @@ fn resolve_failing_source<'a>(
                     AttributionRule::EnvByPrefix,
                 ));
             }
-            let mut envs = chain.iter().filter(|s| s.is_env());
-            if let Some(only) = envs.next()
-                && envs.next().is_none()
-            {
+            if let Some(only) = chain.unique_of_kind(ConfigSourceKind::Env) {
                 return Some(FailingSourceAttribution::new(
                     only,
                     AttributionRule::EnvByUniqueness,
@@ -2297,16 +2294,13 @@ fn resolve_failing_source<'a>(
         None => {}
     }
 
-    if matches!(source_tag, Some(FigmentSourceTag::Code(_))) {
-        let mut defaults = chain.iter().filter(|s| s.is_defaults());
-        if let Some(only) = defaults.next()
-            && defaults.next().is_none()
-        {
-            return Some(FailingSourceAttribution::new(
-                only,
-                AttributionRule::DefaultsByCodeUniqueness,
-            ));
-        }
+    if matches!(source_tag, Some(FigmentSourceTag::Code(_)))
+        && let Some(only) = chain.unique_of_kind(ConfigSourceKind::Defaults)
+    {
+        return Some(FailingSourceAttribution::new(
+            only,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ));
     }
 
     None

@@ -72,8 +72,8 @@ pub use nix_provider::NixProvider;
 pub use provider::ProviderChain;
 pub use reload::ReloadFailure;
 pub use source::{
-    ConfigSource, ConfigSourceKind, EnvMetadataTag, FigmentNameTag, FigmentSourceKind,
-    FigmentSourceTag,
+    ConfigSource, ConfigSourceChain, ConfigSourceKind, EnvMetadataTag, FigmentNameTag,
+    FigmentSourceKind, FigmentSourceTag,
 };
 pub use store::ConfigStore;
 pub use tiered::{ConfigDiff, ConfigTier, ConfigTierKind, DiffLine, TieredConfig};
