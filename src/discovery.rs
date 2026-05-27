@@ -69,10 +69,23 @@ impl Format {
 
     /// Infer format from a file extension string.
     ///
-    /// Returns `None` for unrecognized extensions.
+    /// ASCII-case-insensitive: `"YAML"`, `"Yml"`, and `"yaml"` all map to
+    /// [`Self::Yaml`]. Returns `None` for unrecognized extensions.
+    ///
+    /// The single source of truth for the `(extension-token → Format)`
+    /// alias algebra. [`FromStr`] is the `ok_or_else` error-wrapping shell
+    /// over this map — exactly as [`TryFrom<&Path>`] is the `ok_or_else`
+    /// shell over [`Self::from_path`] — so the alias arms
+    /// (`"yml"`/`"lsp"`/`"el"`) live at one site instead of being
+    /// re-encoded by the string parser. Case-insensitivity matters on the
+    /// nix-darwin deployment target, whose default filesystem is
+    /// case-insensitive: an env-override path like `Config.YAML` reaches
+    /// [`Self::from_path`] with an uppercase extension and must still
+    /// resolve to YAML rather than falling through to the conservative
+    /// TOML fallback in [`crate::ProviderChain::with_file`].
     #[must_use]
     pub fn from_extension(ext: &str) -> Option<Self> {
-        match ext {
+        match ext.to_ascii_lowercase().as_str() {
             "yaml" | "yml" => Some(Self::Yaml),
             "toml" => Some(Self::Toml),
             "lisp" | "lsp" | "el" => Some(Self::Lisp),
@@ -112,13 +125,11 @@ impl Format {
     /// [`Format`] axis. Inherent mirror of the [`crate::ClosedAxisLabel`]
     /// trait method; [`fmt::Display`] and [`Self::extensions`]'s first
     /// entry both delegate here so the canonical name lives at one site
-    /// instead of being re-stated at three (the prior `Display` match,
-    /// the `extensions()` first-entry, and the `FromStr` canonical
-    /// branches).
+    /// instead of being re-stated.
     ///
-    /// `FromStr` continues to accept the alias extensions
-    /// (`"yml"`/`"lsp"`/`"el"`) and `from_extension` continues to
-    /// enumerate every recognized extension; the canonical name is the
+    /// `FromStr` accepts the alias extensions (`"yml"`/`"lsp"`/`"el"`) by
+    /// delegating to [`Self::from_extension`], which enumerates every
+    /// recognized extension case-insensitively; the canonical name is the
     /// `extensions()[0]` of each format, pinned by
     /// `format_extensions_first_entry_matches_as_str`.
     #[must_use]
@@ -861,13 +872,8 @@ impl FromStr for Format {
     type Err = ShikumiError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_ascii_lowercase().as_str() {
-            "yaml" | "yml" => Ok(Self::Yaml),
-            "toml" => Ok(Self::Toml),
-            "lisp" | "lsp" | "el" => Ok(Self::Lisp),
-            "nix" => Ok(Self::Nix),
-            _ => Err(ShikumiError::Parse(format!("unknown config format: {s}"))),
-        }
+        Self::from_extension(s)
+            .ok_or_else(|| ShikumiError::Parse(format!("unknown config format: {s}")))
     }
 }
 
@@ -1311,6 +1317,58 @@ mod tests {
         assert_eq!(Format::from_extension("toml"), Some(Format::Toml));
         assert_eq!(Format::from_extension("json"), None);
         assert_eq!(Format::from_extension(""), None);
+    }
+
+    #[test]
+    fn format_from_extension_is_case_insensitive() {
+        // The `(extension-token -> Format)` map matches ASCII-case-
+        // insensitively, mirroring the long-standing `FromStr` behavior:
+        // every recognized extension, in any case, resolves to its format.
+        assert_eq!(Format::from_extension("YAML"), Some(Format::Yaml));
+        assert_eq!(Format::from_extension("Yml"), Some(Format::Yaml));
+        assert_eq!(Format::from_extension("TOML"), Some(Format::Toml));
+        assert_eq!(Format::from_extension("LISP"), Some(Format::Lisp));
+        assert_eq!(Format::from_extension("Lsp"), Some(Format::Lisp));
+        assert_eq!(Format::from_extension("EL"), Some(Format::Lisp));
+        assert_eq!(Format::from_extension("Nix"), Some(Format::Nix));
+        // Unrecognized tokens stay None regardless of case.
+        assert_eq!(Format::from_extension("JSON"), None);
+    }
+
+    #[test]
+    fn format_from_path_case_insensitive_extension() {
+        // On the nix-darwin deployment target the default filesystem is
+        // case-insensitive, so an env-override path can surface an
+        // uppercase extension. Detection must resolve it rather than fall
+        // through to the conservative TOML fallback in `with_file`.
+        assert_eq!(
+            Format::from_path(Path::new("Config.YAML")),
+            Some(Format::Yaml)
+        );
+        assert_eq!(Format::from_path(Path::new("app.YML")), Some(Format::Yaml));
+        assert_eq!(Format::from_path(Path::new("App.TOML")), Some(Format::Toml));
+        assert_eq!(Format::from_path(Path::new("init.NIX")), Some(Format::Nix));
+        assert_eq!(
+            Format::try_from(Path::new("Config.YAML")).unwrap(),
+            Format::Yaml
+        );
+    }
+
+    #[test]
+    fn format_from_str_agrees_with_from_extension() {
+        // `FromStr` is the `ok_or_else` error-wrapping shell over
+        // `from_extension`: the alias algebra lives at one site, so the
+        // two parsers can never disagree on any input, in any case.
+        for s in [
+            "yaml", "YAML", "yml", "Yml", "toml", "TOML", "lisp", "lsp", "el", "EL", "nix", "NIX",
+            "json", "JSON", "conf", "", "ya ml",
+        ] {
+            assert_eq!(
+                s.parse::<Format>().ok(),
+                Format::from_extension(s),
+                "FromStr and from_extension disagree on {s:?}"
+            );
+        }
     }
 
     #[test]
