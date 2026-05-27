@@ -17,7 +17,7 @@ use crate::observatory::ReloadObservatory;
 use crate::provider::ProviderChain;
 use crate::reload::ReloadFailure;
 use crate::source::ConfigSource;
-use crate::watcher::{ConfigWatcher, symlink_target};
+use crate::watcher::{ConfigWatcher, WatchEventClass, symlink_target};
 
 /// A concurrent, hot-reloadable config store.
 ///
@@ -86,20 +86,13 @@ where
         let prefix_owned = env_prefix.to_owned();
 
         let watcher = ConfigWatcher::watch(path, move |event| {
-            use notify::EventKind;
-            use notify::event::{DataChange, MetadataKind, ModifyKind};
-
-            match &event.kind {
-                EventKind::Modify(
-                    ModifyKind::Metadata(MetadataKind::WriteTime)
-                    | ModifyKind::Data(DataChange::Content),
-                )
-                | EventKind::Create(_) => {}
-                EventKind::Remove(_) => {
+            match WatchEventClass::classify(&event.kind) {
+                WatchEventClass::Reload => {}
+                WatchEventClass::Removed => {
                     info!("config file removed, continuing to watch for replacement...");
                     return;
                 }
-                _ => return,
+                WatchEventClass::Ignored => return,
             }
 
             // Check if symlink target changed (nix rebuild)

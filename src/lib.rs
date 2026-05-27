@@ -77,4 +77,4 @@ pub use source::{
 };
 pub use store::ConfigStore;
 pub use tiered::{ConfigDiff, ConfigTier, ConfigTierKind, DiffLine, TieredConfig};
-pub use watcher::{ConfigWatcher, symlink_target};
+pub use watcher::{ConfigWatcher, WatchEventClass, symlink_target};

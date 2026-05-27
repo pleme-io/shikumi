@@ -11,7 +11,111 @@ use std::time::Duration;
 use notify::{RecursiveMode, Watcher};
 use tracing::debug;
 
+use crate::cube::{ClosedAxis, ClosedAxisLabel};
 use crate::error::ShikumiError;
+
+/// Reload-relevance class of a file-watch [`notify::Event`] — the typed
+/// decision "does this event warrant re-reading the config?".
+///
+/// The hot-reload promise (Pillar 2) turns on exactly one predicate: of
+/// the raw `notify` event stream, *which* events mean the config bytes
+/// may have changed. That decision lived inline in
+/// [`crate::ConfigStore::load_and_watch`]'s watcher closure — anonymous,
+/// reachable only through the timing-sensitive integration tests, and
+/// un-reusable by any second watcher consumer. Lifting it to a named,
+/// `Copy` closed enum makes the trigger semantics a pure function of the
+/// event kind: deterministically unit-testable (no `sleep`, no
+/// filesystem race) and shared by every consumer that subscribes to the
+/// raw stream — a future debounce layer, a manual re-subscribe path, or
+/// `mado`'s MCP watcher all classify through one site instead of
+/// re-coding the `match`.
+///
+/// The three classes partition the event space: [`Self::Reload`] (the
+/// bytes may have changed — re-read and re-project), [`Self::Removed`]
+/// (a transient unlink, kept distinct because nix-darwin's atomic
+/// unlink+symlink swap surfaces a `Remove` that must *not* trigger a
+/// read of a half-applied rebuild), and [`Self::Ignored`] (everything
+/// else — access, rename, the `Any`/`Other` catch-alls).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum WatchEventClass {
+    /// A content/metadata-write `Modify` or any `Create` — the file's
+    /// bytes may have changed; the store should re-read and re-project.
+    Reload,
+    /// A `Remove` — the watched path was unlinked. nix-darwin applies a
+    /// config rebuild as an atomic unlink+symlink swap, so a `Remove` is
+    /// a transient mid-swap state: the watcher keeps watching for the
+    /// replacement rather than reading a half-applied rebuild.
+    Removed,
+    /// Any other event — non-mutating access, a rename, a
+    /// non-write metadata touch, or the `Any`/`Other` catch-alls. Not
+    /// reload-relevant.
+    Ignored,
+}
+
+impl WatchEventClass {
+    /// Every reload-relevance class, in declaration order. Mirror of the
+    /// [`ClosedAxis::ALL`] trait constant; pinned to the variant space by
+    /// [`tests::watch_event_class_all_covers_every_variant`].
+    pub const ALL: &'static [Self] = &[Self::Reload, Self::Removed, Self::Ignored];
+
+    /// Classify a raw [`notify::EventKind`] into its reload-relevance
+    /// class — the single source of truth for the hot-reload trigger
+    /// predicate.
+    ///
+    /// `Modify` with a content data-change or a write-time metadata
+    /// change, and every `Create`, map to [`Self::Reload`]; every
+    /// `Remove` maps to [`Self::Removed`]; all other kinds map to
+    /// [`Self::Ignored`]. Pure in the event kind — no I/O, no clock — so
+    /// the trigger semantics are unit-testable without the
+    /// timing-sensitive watcher harness.
+    #[must_use]
+    pub fn classify(kind: &notify::EventKind) -> Self {
+        use notify::EventKind;
+        use notify::event::{DataChange, MetadataKind, ModifyKind};
+
+        match kind {
+            EventKind::Modify(
+                ModifyKind::Metadata(MetadataKind::WriteTime)
+                | ModifyKind::Data(DataChange::Content),
+            )
+            | EventKind::Create(_) => Self::Reload,
+            EventKind::Remove(_) => Self::Removed,
+            _ => Self::Ignored,
+        }
+    }
+
+    /// Whether this class warrants re-reading the config — `true` exactly
+    /// on [`Self::Reload`].
+    #[must_use]
+    pub const fn should_reload(self) -> bool {
+        matches!(self, Self::Reload)
+    }
+
+    /// Canonical operator-facing lowercase name — `"reload"`, `"removed"`,
+    /// or `"ignored"`. Inherent mirror of the [`ClosedAxisLabel`] trait
+    /// method; the trait impl delegates here so the labels live at one
+    /// site (structured-log fields naming why a watcher event did or
+    /// didn't reload, a CLI watch-trace, a reload-trigger histogram).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Reload => "reload",
+            Self::Removed => "removed",
+            Self::Ignored => "ignored",
+        }
+    }
+}
+
+impl ClosedAxis for WatchEventClass {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
+impl ClosedAxisLabel for WatchEventClass {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
+}
 
 /// Resolves a symlink to its canonical target, or returns `None` if the
 /// path is not a symlink.
@@ -113,6 +217,134 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::thread;
     use tempfile::TempDir;
+
+    use notify::EventKind;
+    use notify::event::{
+        AccessKind, CreateKind, DataChange, MetadataKind, ModifyKind, RemoveKind, RenameMode,
+    };
+
+    #[test]
+    fn classify_create_is_reload() {
+        for kind in [
+            EventKind::Create(CreateKind::File),
+            EventKind::Create(CreateKind::Any),
+            EventKind::Create(CreateKind::Other),
+        ] {
+            assert_eq!(WatchEventClass::classify(&kind), WatchEventClass::Reload);
+        }
+    }
+
+    #[test]
+    fn classify_content_and_writetime_modify_is_reload() {
+        assert_eq!(
+            WatchEventClass::classify(&EventKind::Modify(ModifyKind::Data(DataChange::Content))),
+            WatchEventClass::Reload
+        );
+        assert_eq!(
+            WatchEventClass::classify(&EventKind::Modify(ModifyKind::Metadata(
+                MetadataKind::WriteTime
+            ))),
+            WatchEventClass::Reload
+        );
+    }
+
+    #[test]
+    fn classify_remove_is_removed() {
+        for kind in [
+            EventKind::Remove(RemoveKind::File),
+            EventKind::Remove(RemoveKind::Any),
+            EventKind::Remove(RemoveKind::Other),
+        ] {
+            assert_eq!(WatchEventClass::classify(&kind), WatchEventClass::Removed);
+        }
+    }
+
+    #[test]
+    fn classify_non_reload_modify_and_other_kinds_are_ignored() {
+        // Modify variants that are not a content or write-time change.
+        for kind in [
+            EventKind::Modify(ModifyKind::Data(DataChange::Any)),
+            EventKind::Modify(ModifyKind::Data(DataChange::Size)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)),
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Ownership)),
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+            EventKind::Modify(ModifyKind::Any),
+            EventKind::Modify(ModifyKind::Other),
+        ] {
+            assert_eq!(
+                WatchEventClass::classify(&kind),
+                WatchEventClass::Ignored,
+                "{kind:?} should be Ignored"
+            );
+        }
+        // The non-mutating and catch-all kinds.
+        for kind in [
+            EventKind::Access(AccessKind::Any),
+            EventKind::Any,
+            EventKind::Other,
+        ] {
+            assert_eq!(
+                WatchEventClass::classify(&kind),
+                WatchEventClass::Ignored,
+                "{kind:?} should be Ignored"
+            );
+        }
+    }
+
+    #[test]
+    fn should_reload_agrees_with_classify_reload() {
+        // should_reload is exactly the Reload-class predicate.
+        for class in WatchEventClass::ALL.iter().copied() {
+            assert_eq!(class.should_reload(), class == WatchEventClass::Reload);
+        }
+    }
+
+    #[test]
+    fn watch_event_class_all_covers_every_variant() {
+        // ALL is a duplicate-free set of all three classes; classify can
+        // only ever land in ALL.
+        assert_eq!(WatchEventClass::ALL.len(), 3);
+        let mut seen = WatchEventClass::ALL.to_vec();
+        seen.sort_by_key(|c| c.as_str());
+        seen.dedup();
+        assert_eq!(seen.len(), 3, "ALL must have no duplicates");
+        for kind in [
+            EventKind::Create(CreateKind::File),
+            EventKind::Modify(ModifyKind::Data(DataChange::Content)),
+            EventKind::Remove(RemoveKind::File),
+            EventKind::Access(AccessKind::Any),
+            EventKind::Any,
+        ] {
+            assert!(WatchEventClass::ALL.contains(&WatchEventClass::classify(&kind)));
+        }
+    }
+
+    #[test]
+    fn watch_event_class_as_str_is_distinct_lowercase() {
+        assert_eq!(WatchEventClass::Reload.as_str(), "reload");
+        assert_eq!(WatchEventClass::Removed.as_str(), "removed");
+        assert_eq!(WatchEventClass::Ignored.as_str(), "ignored");
+    }
+
+    #[test]
+    fn watch_event_class_label_round_trips() {
+        use crate::ClosedAxisLabel;
+        // The ClosedAxisLabel round-trip law, pinned locally:
+        // from_canonical_str(v.as_str()) == Some(v) for every variant,
+        // case-insensitively.
+        for class in WatchEventClass::ALL.iter().copied() {
+            assert_eq!(
+                WatchEventClass::from_canonical_str(ClosedAxisLabel::as_str(class)),
+                Some(class)
+            );
+            assert_eq!(
+                WatchEventClass::from_canonical_str(&class.as_str().to_uppercase()),
+                Some(class)
+            );
+        }
+        assert_eq!(WatchEventClass::from_canonical_str("nonsense"), None);
+        assert_eq!(WatchEventClass::from_canonical_str(""), None);
+    }
 
     #[test]
     fn symlink_target_regular_file_returns_none() {
