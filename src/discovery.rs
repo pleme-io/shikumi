@@ -1057,20 +1057,33 @@ impl ConfigDiscovery {
     /// of the searched locations.
     pub fn discover_all(&self) -> Result<Vec<PathBuf>, ShikumiError> {
         let mut found: Vec<PathBuf> = Vec::new();
+        // Every main-config candidate path actually checked, in search
+        // order. Accumulated alongside `found` so the NotFound report is
+        // the search itself, not a re-fabricated guess that can drift from
+        // (and lie about) which paths were resolved and which formats were
+        // honored.
+        let mut tried: Vec<PathBuf> = Vec::new();
         let app = &self.app_name;
 
         if self.hierarchical {
-            // Layer 1: /etc/{app}/{app}.yaml (system-wide, lowest priority)
+            // Layer 1: /etc/{app}/{app}.{ext} (system-wide, lowest priority)
             self.collect_configs(
                 &PathBuf::from(format!("/etc/{app}")),
                 app,
                 NameStyle::Bare,
                 &mut found,
+                &mut tried,
             );
 
-            // Layer 2: ~/.config/{app}/{app}.yaml (user-level)
+            // Layer 2: ~/.config/{app}/{app}.{ext} (user-level)
             if let Some(config_dir) = self.user_config_dir() {
-                self.collect_configs(&config_dir.join(app), app, NameStyle::Bare, &mut found);
+                self.collect_configs(
+                    &config_dir.join(app),
+                    app,
+                    NameStyle::Bare,
+                    &mut found,
+                    &mut tried,
+                );
             }
 
             let start = self.start_dir.clone().or_else(|| env::current_dir().ok());
@@ -1085,7 +1098,7 @@ impl ConfigDiscovery {
                 ancestors.reverse();
 
                 for dir in &ancestors {
-                    self.collect_configs(dir, app, NameStyle::Dotfile, &mut found);
+                    self.collect_configs(dir, app, NameStyle::Dotfile, &mut found, &mut tried);
                 }
             }
         } else {
@@ -1100,6 +1113,7 @@ impl ConfigDiscovery {
             }
 
             for path in self.standard_paths() {
+                tried.push(path.clone());
                 if path.exists() {
                     found.push(path);
                 }
@@ -1107,17 +1121,7 @@ impl ConfigDiscovery {
         }
 
         if found.is_empty() {
-            Err(ShikumiError::NotFound {
-                tried: if self.hierarchical {
-                    vec![
-                        PathBuf::from(format!("/etc/{app}/{app}.yaml")),
-                        PathBuf::from(format!("~/.config/{app}/{app}.yaml")),
-                        PathBuf::from(format!(".{app}.yaml")),
-                    ]
-                } else {
-                    self.standard_paths()
-                },
-            })
+            Err(ShikumiError::NotFound { tried })
         } else {
             Ok(found)
         }
@@ -1153,9 +1157,25 @@ impl ConfigDiscovery {
     ///
     /// `Bare`: `{dir}/{app}.{ext}` and `{dir}/{app}-*.{ext}` partials.
     /// `Dotfile`: `{dir}/.{app}.{ext}` and `{dir}/.{app}-*.{ext}` partials.
-    fn collect_configs(&self, dir: &Path, app: &str, style: NameStyle, found: &mut Vec<PathBuf>) {
+    ///
+    /// Every main candidate path is recorded in `tried` (whether or not it
+    /// exists) before its existence is tested, so the searched-path list a
+    /// [`ShikumiError::NotFound`] reports is derived from the same loop that
+    /// does the stat — the report cannot drift from the resolved directories
+    /// or the configured formats. Globbed partials are not individual candidate
+    /// paths and are not recorded, matching `standard_paths` (which lists
+    /// main candidates only).
+    fn collect_configs(
+        &self,
+        dir: &Path,
+        app: &str,
+        style: NameStyle,
+        found: &mut Vec<PathBuf>,
+        tried: &mut Vec<PathBuf>,
+    ) {
         for ext in self.configured_extensions() {
             let main_path = dir.join(style.main_filename(app, ext));
+            tried.push(main_path.clone());
             if main_path.exists() {
                 found.push(main_path);
             }
@@ -2092,8 +2112,9 @@ mod tests {
         fs::write(&dotted, "k: v").unwrap();
 
         let mut found = Vec::new();
+        let mut tried = Vec::new();
         let d = ConfigDiscovery::new(app).formats(&[Format::Yaml]);
-        d.collect_configs(dir.path(), app, NameStyle::Bare, &mut found);
+        d.collect_configs(dir.path(), app, NameStyle::Bare, &mut found, &mut tried);
 
         assert!(found.contains(&main_file));
         assert!(found.contains(&partial));
@@ -2113,8 +2134,9 @@ mod tests {
         fs::write(&bare_main, "k: v").unwrap();
 
         let mut found = Vec::new();
+        let mut tried = Vec::new();
         let d = ConfigDiscovery::new(app).formats(&[Format::Yaml]);
-        d.collect_configs(dir.path(), app, NameStyle::Dotfile, &mut found);
+        d.collect_configs(dir.path(), app, NameStyle::Dotfile, &mut found, &mut tried);
 
         assert!(found.contains(&main_file));
         assert!(found.contains(&partial));
@@ -2133,8 +2155,9 @@ mod tests {
         fs::write(&partial, "k: v").unwrap();
 
         let mut found = Vec::new();
+        let mut tried = Vec::new();
         let d = ConfigDiscovery::new(app).formats(&[Format::Yaml]);
-        d.collect_configs(dir.path(), app, NameStyle::Bare, &mut found);
+        d.collect_configs(dir.path(), app, NameStyle::Bare, &mut found, &mut tried);
 
         let main_idx = found.iter().position(|p| p == &main_file).unwrap();
         let partial_idx = found.iter().position(|p| p == &partial).unwrap();
@@ -2142,7 +2165,7 @@ mod tests {
     }
 
     #[test]
-    fn hierarchical_discover_all_returns_not_found_with_representative_paths() {
+    fn hierarchical_discover_all_not_found_reports_resolved_searched_candidates() {
         let dir = TempDir::new().unwrap();
         let dir_path = dir.path().canonicalize().unwrap();
         let app = "hiernf";
@@ -2154,10 +2177,73 @@ mod tests {
             .start_dir(&dir_path)
             .discover_all();
 
-        assert!(result.is_err());
-        if let Err(ShikumiError::NotFound { tried }) = result {
-            assert!(!tried.is_empty(), "should list representative paths");
-        }
+        let ShikumiError::NotFound { tried } = result.expect_err("no files exist") else {
+            panic!("expected NotFound");
+        };
+        assert!(!tried.is_empty());
+
+        // The report is the resolved search, not a fabricated guess: the
+        // user-level XDG candidate, the /etc system candidate, and the
+        // walk-up dotfile candidate at start_dir all appear by their real
+        // resolved paths.
+        let xdg_candidate = nonexistent_xdg.join(format!("{app}/{app}.yaml"));
+        let etc_candidate = PathBuf::from(format!("/etc/{app}/{app}.yaml"));
+        let start_dotfile = dir_path.join(format!(".{app}.yaml"));
+        assert!(
+            tried.contains(&xdg_candidate),
+            "must report resolved XDG candidate {xdg_candidate:?}; got: {tried:?}"
+        );
+        assert!(
+            tried.contains(&etc_candidate),
+            "must report /etc candidate {etc_candidate:?}; got: {tried:?}"
+        );
+        assert!(
+            tried.contains(&start_dotfile),
+            "must report start_dir dotfile candidate {start_dotfile:?}; got: {tried:?}"
+        );
+
+        // No unresolved `~/.config` literal leaks into the report — the
+        // old fabricated list embedded one; the resolved search never does.
+        assert!(
+            !tried
+                .iter()
+                .any(|p| p.to_string_lossy().contains("~/.config")),
+            "report must carry resolved paths, not a `~` literal; got: {tried:?}"
+        );
+    }
+
+    #[test]
+    fn hierarchical_discover_all_not_found_honors_configured_formats() {
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path().canonicalize().unwrap();
+        let app = "hierfmt";
+
+        let nonexistent_xdg = dir_path.join("nonexistent_xdg");
+        let result = ConfigDiscovery::new(app)
+            .formats(&[Format::Toml])
+            .xdg_config_home(&nonexistent_xdg)
+            .hierarchical()
+            .start_dir(&dir_path)
+            .discover_all();
+
+        let ShikumiError::NotFound { tried } = result.expect_err("no files exist") else {
+            panic!("expected NotFound");
+        };
+
+        // The fabricated list hardcoded `.yaml`; the resolved search only
+        // ever stats the configured formats, so a TOML-only discovery
+        // reports TOML candidates and no YAML at all.
+        assert!(!tried.is_empty());
+        assert!(
+            tried
+                .iter()
+                .all(|p| p.extension().is_some_and(|e| e == "toml")),
+            "every reported candidate must be .toml; got: {tried:?}"
+        );
+        assert!(
+            tried.contains(&dir_path.join(format!(".{app}.toml"))),
+            "must report the resolved start_dir .toml dotfile candidate; got: {tried:?}"
+        );
     }
 
     // ---- Builder injection tests ----
@@ -2507,7 +2593,8 @@ mod tests {
         }
 
         let mut found = Vec::new();
-        d.collect_configs(dir.path(), app, NameStyle::Bare, &mut found);
+        let mut tried = Vec::new();
+        d.collect_configs(dir.path(), app, NameStyle::Bare, &mut found, &mut tried);
         for ext in d.configured_extensions() {
             let expected = dir.path().join(format!("{app}.{ext}"));
             assert!(
@@ -2539,7 +2626,8 @@ mod tests {
             "no configured exts ⇒ no partial matches"
         );
         let mut found = Vec::new();
-        d.collect_configs(dir.path(), app, NameStyle::Bare, &mut found);
+        let mut tried = Vec::new();
+        d.collect_configs(dir.path(), app, NameStyle::Bare, &mut found, &mut tried);
         assert!(
             found.is_empty(),
             "no configured exts ⇒ collect_configs surfaces nothing"
