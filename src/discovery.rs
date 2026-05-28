@@ -877,6 +877,44 @@ impl FromStr for Format {
     }
 }
 
+/// Resolve a directory by checking a builder-supplied override first,
+/// then falling back to a named environment variable.
+///
+/// Returns the override path verbatim when `override_dir` is `Some`,
+/// regardless of whether `env_var` is set in the process environment —
+/// the builder override is load-bearing for deterministic testing
+/// (`ConfigDiscovery::xdg_config_home` / `ConfigDiscovery::home_dir`
+/// pin the resolution away from the host's `$XDG_CONFIG_HOME` / `$HOME`)
+/// and must dominate the env layer in lockstep. On no override, returns
+/// the env var's value as a `PathBuf` if the variable is set; `None`
+/// otherwise.
+///
+/// The single source of truth for the
+/// `(builder-override → env-var fallback)` resolution shape that
+/// [`ConfigDiscovery::resolve_xdg_config_home`] and
+/// [`ConfigDiscovery::resolve_home`] previously open-coded as their own
+/// `if let Some(ref dir) = self.X { return Some(dir.clone()) } else
+/// env::var(NAME).ok().map(PathBuf::from)` chains. Lifting both to one
+/// primitive collapses the duplication and pins the override-dominance
+/// contract at one site. A future builder-overridable directory env var
+/// (e.g. a hypothetical `XDG_DATA_HOME` override, an `XDG_STATE_HOME`
+/// override for a future hierarchical layer, an
+/// `XDG_RUNTIME_DIR` override for an ephemeral-config layer) calls this
+/// primitive instead of inlining a third copy.
+///
+/// Peer to [`ConfigDiscovery::resolve_env_override`] on the
+/// env-override-axis: that primitive maps a builder-named env var
+/// straight to a path (no fallback — the env var *is* the path
+/// candidate); this primitive uses the env var as a *fallback* when no
+/// builder override is supplied. The two shapes are distinct directions
+/// on the `(builder override × env var)` axis and stay as separate
+/// primitives.
+fn dir_override_or_env(override_dir: Option<&Path>, env_var: &str) -> Option<PathBuf> {
+    override_dir
+        .map(Path::to_path_buf)
+        .or_else(|| env::var(env_var).ok().map(PathBuf::from))
+}
+
 /// Builder for config file discovery.
 ///
 /// Scans XDG paths, `$HOME/.config/{app}/`, and legacy `$HOME/.{app}`
@@ -1165,19 +1203,25 @@ impl ConfigDiscovery {
     }
 
     /// Resolve `XDG_CONFIG_HOME`, preferring the builder override.
+    ///
+    /// Routes through [`dir_override_or_env`], the one
+    /// `(builder-override → env-var fallback)` resolution primitive
+    /// shared with [`Self::resolve_home`]; the shape lives at one site
+    /// rather than two parallel `if let Some(ref dir) = self.X { … }
+    /// else env::var(NAME)` chains.
     fn resolve_xdg_config_home(&self) -> Option<PathBuf> {
-        if let Some(ref dir) = self.xdg_config_home {
-            return Some(dir.clone());
-        }
-        env::var("XDG_CONFIG_HOME").ok().map(PathBuf::from)
+        dir_override_or_env(self.xdg_config_home.as_deref(), "XDG_CONFIG_HOME")
     }
 
     /// Resolve `HOME`, preferring the builder override.
+    ///
+    /// Routes through [`dir_override_or_env`], the one
+    /// `(builder-override → env-var fallback)` resolution primitive
+    /// shared with [`Self::resolve_xdg_config_home`]; the shape lives
+    /// at one site rather than two parallel `if let Some(ref dir) =
+    /// self.X { … } else env::var(NAME)` chains.
     fn resolve_home(&self) -> Option<PathBuf> {
-        if let Some(ref dir) = self.home_dir {
-            return Some(dir.clone());
-        }
-        env::var("HOME").ok().map(PathBuf::from)
+        dir_override_or_env(self.home_dir.as_deref(), "HOME")
     }
 
     /// Resolve the user config directory.
@@ -2695,6 +2739,152 @@ mod tests {
             paths.iter().all(|p| p.starts_with(&nonexistent)),
             "all paths should be under the injected directories"
         );
+    }
+
+    // ---- dir_override_or_env typed-primitive tests ----
+
+    #[test]
+    fn dir_override_or_env_returns_override_when_set_and_env_unset() {
+        // Override Some, env unset → override wins. The override must be
+        // returned verbatim (not derived through the env layer), since
+        // the builder override is load-bearing for deterministic testing
+        // and operator-specified directory pinning.
+        let var = "SHIKUMI_DOE_TEST_OVR_NOENV";
+        // Ensure the env var is absent for this branch.
+        unsafe { env::remove_var(var) };
+        let pinned = PathBuf::from("/pinned/by/builder");
+        let resolved = dir_override_or_env(Some(pinned.as_path()), var);
+        assert_eq!(resolved, Some(pinned));
+    }
+
+    #[test]
+    fn dir_override_or_env_override_wins_when_both_set() {
+        // Override dominance contract: when both the builder override
+        // and the env var are present, the override wins and the env
+        // value is ignored. This is the property `xdg_config_home(...)`
+        // / `home_dir(...)` builder methods rely on for deterministic
+        // testing pinned away from the host's `$XDG_CONFIG_HOME` /
+        // `$HOME`.
+        let var = "SHIKUMI_DOE_TEST_BOTH_SET";
+        unsafe { env::set_var(var, "/from/env/loser") };
+        let pinned = PathBuf::from("/from/builder/winner");
+        let resolved = dir_override_or_env(Some(pinned.as_path()), var);
+        unsafe { env::remove_var(var) };
+        assert_eq!(resolved, Some(pinned));
+    }
+
+    #[test]
+    fn dir_override_or_env_falls_back_to_env_when_override_absent() {
+        // Override None, env set → env value lifted into a PathBuf.
+        let var = "SHIKUMI_DOE_TEST_ENV_FALLBACK";
+        unsafe { env::set_var(var, "/from/env/fallback") };
+        let resolved = dir_override_or_env(None, var);
+        unsafe { env::remove_var(var) };
+        assert_eq!(resolved, Some(PathBuf::from("/from/env/fallback")));
+    }
+
+    #[test]
+    fn dir_override_or_env_returns_none_when_both_absent() {
+        // Override None, env unset → None. The shared "neither layer
+        // contributed" terminal state both `resolve_xdg_config_home`
+        // and `resolve_home` rely on to signal "no user config dir
+        // available" to `user_config_dir` (which then short-circuits
+        // and skips XDG/HOME paths in `standard_paths`).
+        let var = "SHIKUMI_DOE_TEST_BOTH_ABSENT";
+        unsafe { env::remove_var(var) };
+        let resolved = dir_override_or_env(None, var);
+        assert_eq!(resolved, None);
+    }
+
+    #[test]
+    fn dir_override_or_env_preserves_override_path_bytes_verbatim() {
+        // The override path is returned without canonicalization,
+        // normalization, or `..` collapse — the primitive is a pure
+        // lookup, the same property the open-coded `dir.clone()`
+        // returns held. Relative and dotted paths flow through
+        // unchanged.
+        let var = "SHIKUMI_DOE_TEST_VERBATIM";
+        unsafe { env::remove_var(var) };
+        for raw in [
+            "/abs/path/with-hyphens",
+            "rel/path",
+            "../parent/dotdot",
+            "./curr/dot",
+            "/with/trailing/slash/",
+            "",
+        ] {
+            let pinned = PathBuf::from(raw);
+            let resolved = dir_override_or_env(Some(pinned.as_path()), var);
+            assert_eq!(resolved, Some(pinned), "raw path: {raw:?}");
+        }
+    }
+
+    #[test]
+    fn dir_override_or_env_agrees_with_open_coded_form_pointwise() {
+        // Pin equivalence to the `if let Some(ref dir) = override { Some(dir.clone()) }
+        // else env::var(NAME).ok().map(PathBuf::from)` shape the two
+        // call sites previously inlined, across the four
+        // `(override × env)` cells. A future refactor that drifts the
+        // primitive away from the open-coded shape (e.g. swapping the
+        // order of resolution, canonicalizing on entry) breaks this
+        // test before reaching the call sites. Uses a unique env-var
+        // name so the test is safe under parallel cargo-test runs.
+        fn open_coded(override_owned: Option<PathBuf>, env_var: &str) -> Option<PathBuf> {
+            if let Some(dir) = override_owned {
+                return Some(dir);
+            }
+            env::var(env_var).ok().map(PathBuf::from)
+        }
+
+        let var = "SHIKUMI_DOE_TEST_AGREEMENT";
+        let pinned = PathBuf::from("/builder/override");
+
+        // (None override, env unset)
+        unsafe { env::remove_var(var) };
+        assert_eq!(dir_override_or_env(None, var), open_coded(None, var));
+
+        // (None override, env set)
+        unsafe { env::set_var(var, "/agreement/env/value") };
+        assert_eq!(dir_override_or_env(None, var), open_coded(None, var));
+
+        // (Some override, env set)
+        assert_eq!(
+            dir_override_or_env(Some(pinned.as_path()), var),
+            open_coded(Some(pinned.clone()), var),
+        );
+
+        // (Some override, env unset)
+        unsafe { env::remove_var(var) };
+        assert_eq!(
+            dir_override_or_env(Some(pinned.as_path()), var),
+            open_coded(Some(pinned), var),
+        );
+    }
+
+    #[test]
+    fn resolve_xdg_config_home_honors_builder_override() {
+        // End-to-end pin on `resolve_xdg_config_home` through the new
+        // primitive: the builder override is returned verbatim. Uses
+        // a path absent from any real env so the assertion is
+        // independent of the host's `$XDG_CONFIG_HOME`. Does not
+        // mutate `$XDG_CONFIG_HOME` itself — that would race with
+        // other tests reading it under parallel cargo-test runs.
+        let pinned = PathBuf::from("/dir_override_or_env_test/pin/xdg");
+        let d = ConfigDiscovery::new("doe_xdg_app").xdg_config_home(&pinned);
+        assert_eq!(d.resolve_xdg_config_home(), Some(pinned));
+    }
+
+    #[test]
+    fn resolve_home_honors_builder_override() {
+        // End-to-end pin on `resolve_home` through the new primitive:
+        // the builder override is returned verbatim. Uses a path
+        // absent from any real env so the assertion is independent of
+        // the host's `$HOME`. Does not mutate `$HOME` itself — that
+        // would race with other tests reading it under parallel
+        // cargo-test runs.
+        let pinned = PathBuf::from("/dir_override_or_env_test/pin/home");
+        let d = ConfigDiscovery::new("doe_home_app").home_dir(&pinned);
+        assert_eq!(d.resolve_home(), Some(pinned));
     }
 
     // ---- configured_extensions typed-primitive tests ----
