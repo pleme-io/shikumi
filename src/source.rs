@@ -321,13 +321,17 @@ impl crate::ClosedAxisLabel for ConfigSourceKind {
 /// One source of truth for the chain-walk discipline: the failing-source
 /// resolver behind [`crate::ShikumiError::failing_source`] previously
 /// open-coded "find the [`ConfigSource::File`] whose path equals P" twice
-/// (once per file-attribution rule) and "the sole layer of kind K" twice
-/// (the env- and defaults-uniqueness rules); both collapse to one
-/// [`Self::find_file`] / [`Self::unique_of_kind`] site here. Future
-/// consumers reading the recipe — an attestation manifest grouping layers
-/// by kind, a diagnostic dump locating the file layer behind a value, a
-/// new uniqueness-keyed attribution rule for a future [`ConfigSource`]
-/// variant — key on these queries instead of re-walking the slice.
+/// (once per file-attribution rule), "the sole layer of kind K" twice
+/// (the env- and defaults-uniqueness rules), and "the [`ConfigSource::Env`]
+/// layer whose prefix matches P case-insensitively" once
+/// (the env-by-prefix rule); all five collapse to one
+/// [`Self::find_file`] / [`Self::unique_of_kind`] / [`Self::find_env_by_prefix`]
+/// site here. Future consumers reading the recipe — an attestation
+/// manifest grouping layers by kind, a diagnostic dump locating the file
+/// layer behind a value, a chain-diff that needs to match an env layer
+/// across reloads, a new uniqueness-keyed attribution rule for a future
+/// [`ConfigSource`] variant — key on these queries instead of re-walking
+/// the slice.
 ///
 /// Implemented for `[ConfigSource]`, so it applies to any `&[ConfigSource]`
 /// (a borrowed `Vec`, a stored chain slice) by deref.
@@ -353,6 +357,30 @@ pub trait ConfigSourceChain {
     /// [`ConfigSourceKind`] discriminant, so a future variant participates
     /// without touching this method.
     fn unique_of_kind(&self, kind: ConfigSourceKind) -> Option<&ConfigSource>;
+
+    /// The first [`ConfigSource::Env`] entry whose recorded prefix equals
+    /// `prefix` under ASCII-case-insensitive comparison, or `None` if no
+    /// env layer in the chain carries that prefix.
+    ///
+    /// Matches only [`ConfigSource::Env`] layers — [`ConfigSource::File`]
+    /// and [`ConfigSource::Defaults`] carry no prefix and never match.
+    /// The comparison is [`str::eq_ignore_ascii_case`] rather than
+    /// strict equality because figment uppercases the prefix when
+    /// emitting [`figment::Metadata::name`] (see
+    /// [`ConfigSource::env_metadata_name`]) while users may pass any
+    /// case to [`crate::ProviderChain::with_env`]; a strict comparison
+    /// would silently drop legitimate matches when the user-supplied
+    /// prefix and figment's emitted form disagree on case.
+    ///
+    /// The third chain-level provenance query peer to [`Self::find_file`]
+    /// (path-equality on `ConfigSource::File`) and [`Self::unique_of_kind`]
+    /// (kind-uniqueness on the typed discriminant). Together the three
+    /// methods close the chain-walk discipline for the failing-source
+    /// resolver: every "which layer in the recipe …?" question routes
+    /// through one named primitive instead of an open-coded
+    /// `iter().find` / `iter().filter` that re-derives the comparison
+    /// shape at every consumer.
+    fn find_env_by_prefix(&self, prefix: &str) -> Option<&ConfigSource>;
 }
 
 impl ConfigSourceChain for [ConfigSource] {
@@ -364,6 +392,13 @@ impl ConfigSourceChain for [ConfigSource] {
         let mut matches = self.iter().filter(|s| s.kind() == kind);
         let first = matches.next()?;
         matches.next().is_none().then_some(first)
+    }
+
+    fn find_env_by_prefix(&self, prefix: &str) -> Option<&ConfigSource> {
+        self.iter().find(|s| {
+            s.as_env_prefix()
+                .is_some_and(|p| p.eq_ignore_ascii_case(prefix))
+        })
     }
 }
 
@@ -1083,6 +1118,112 @@ mod tests {
                 assert_eq!(
                     lifted, manual,
                     "unique_of_kind({kind:?}) must match the open-coded uniqueness walk"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn find_env_by_prefix_returns_matching_env_entry() {
+        let chain = sample_chain();
+        let hit = chain
+            .find_env_by_prefix("APP_")
+            .expect("an env layer was recorded with that prefix");
+        assert_eq!(hit.as_env_prefix(), Some("APP_"));
+    }
+
+    #[test]
+    fn find_env_by_prefix_matches_case_insensitively() {
+        // figment uppercases the prefix when emitting metadata names,
+        // while users may pass any case to ProviderChain::with_env. The
+        // primitive must match across the case boundary so the
+        // failing-source resolver's EnvByPrefix rule fires regardless of
+        // which side carries the canonical casing.
+        let chain = [ConfigSource::Env("myapp_".to_owned())];
+        let hit = chain
+            .find_env_by_prefix("MYAPP_")
+            .expect("ASCII case-insensitive match must locate the layer");
+        assert_eq!(hit.as_env_prefix(), Some("myapp_"));
+
+        let chain = [ConfigSource::Env("MyApp_".to_owned())];
+        assert!(chain.find_env_by_prefix("MYAPP_").is_some());
+        assert!(chain.find_env_by_prefix("myapp_").is_some());
+        assert!(chain.find_env_by_prefix("myApp_").is_some());
+    }
+
+    #[test]
+    fn find_env_by_prefix_none_for_unrecorded_prefix() {
+        let chain = sample_chain();
+        assert!(chain.find_env_by_prefix("OTHER_").is_none());
+    }
+
+    #[test]
+    fn find_env_by_prefix_ignores_non_env_layers() {
+        // A chain of File/Defaults layers must never match, even when the
+        // probe is a non-empty prefix string that could conceivably collide
+        // with some file path; only Env layers carry prefixes.
+        let chain = [
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/etc/APP_/app.yaml")),
+        ];
+        assert!(chain.find_env_by_prefix("APP_").is_none());
+    }
+
+    #[test]
+    fn find_env_by_prefix_returns_first_match() {
+        // Two env layers with the same prefix (degenerate but constructible
+        // via two with_env calls): the first match wins, matching the
+        // iter().find semantics the resolver previously inlined.
+        let first = ConfigSource::Env("DUP_".to_owned());
+        let second = ConfigSource::Env("DUP_".to_owned());
+        let chain = [first.clone(), second];
+        let hit = chain
+            .find_env_by_prefix("DUP_")
+            .expect("first matching env layer");
+        // Compare by address: must be the first slot, not the second.
+        assert!(std::ptr::eq(hit, &chain[0]));
+    }
+
+    #[test]
+    fn find_env_by_prefix_matches_empty_prefix() {
+        // figment::providers::Env::raw() emits the bare metadata-name
+        // shape, recognized as EnvMetadataTag::Bare and routed to the
+        // uniqueness rule by the resolver — but a chain may still carry
+        // an Env layer with the empty prefix. The primitive matches it
+        // pointwise.
+        let chain = [ConfigSource::Env(String::new())];
+        let hit = chain
+            .find_env_by_prefix("")
+            .expect("empty-prefix env layer");
+        assert_eq!(hit.as_env_prefix(), Some(""));
+    }
+
+    #[test]
+    fn find_env_by_prefix_agrees_with_open_coded_walk_pointwise() {
+        // Pin equivalence to the iter().find(|s| s.as_env_prefix()
+        // .is_some_and(|p| p.eq_ignore_ascii_case(probe))) pattern the
+        // failing-source resolver used to inline, across the case
+        // boundary and across chains with 0, 1, and 2 env layers.
+        let chains = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Env("A_".to_owned()),
+                ConfigSource::Env("B_".to_owned()),
+            ],
+            vec![ConfigSource::Env("MixedCase_".to_owned())],
+        ];
+        for chain in &chains {
+            for probe in ["APP_", "app_", "A_", "MIXEDCASE_", "OTHER_", ""] {
+                let lifted = chain.find_env_by_prefix(probe);
+                let manual = chain.iter().find(|s| {
+                    s.as_env_prefix()
+                        .is_some_and(|p| p.eq_ignore_ascii_case(probe))
+                });
+                assert_eq!(
+                    lifted, manual,
+                    "find_env_by_prefix({probe:?}) must match the open-coded walk"
                 );
             }
         }

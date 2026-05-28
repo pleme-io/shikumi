@@ -2274,10 +2274,7 @@ fn resolve_failing_source<'a>(
         }
         Some(FigmentNameTag::Env(env_tag)) => {
             if let EnvMetadataTag::Prefixed(prefix_upper) = env_tag
-                && let Some(hit) = chain.iter().find(|s| {
-                    s.as_env_prefix()
-                        .is_some_and(|p| p.eq_ignore_ascii_case(prefix_upper))
-                })
+                && let Some(hit) = chain.find_env_by_prefix(prefix_upper)
             {
                 return Some(FailingSourceAttribution::new(
                     hit,
