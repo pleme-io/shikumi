@@ -1005,17 +1005,19 @@ impl ConfigDiscovery {
     /// Returns `ShikumiError::NotFound` if no config file exists at any
     /// of the standard locations.
     pub fn discover(&self) -> Result<PathBuf, ShikumiError> {
-        if let Some(ref var) = self.env_override
-            && let Ok(path_str) = env::var(var)
-        {
-            let path = PathBuf::from(&path_str);
-            if path.exists() {
-                return Ok(path);
+        let mut tried: Vec<PathBuf> = Vec::new();
+
+        if let Some(env_path) = self.resolve_env_override() {
+            tried.push(env_path.clone());
+            if env_path.exists() {
+                return Ok(env_path);
             }
-            warn!(
-                "${var} is set to {}, but the file does not exist. Falling back to defaults.",
-                path.display()
-            );
+            if let Some(ref var) = self.env_override {
+                warn!(
+                    "${var} is set to {}, but the file does not exist. Falling back to defaults.",
+                    env_path.display()
+                );
+            }
         }
 
         // 2. Standard XDG / home paths
@@ -1025,8 +1027,9 @@ impl ConfigDiscovery {
                 return Ok(path.clone());
             }
         }
+        tried.extend(paths);
 
-        Err(ShikumiError::NotFound { tried: paths })
+        Err(ShikumiError::NotFound { tried })
     }
 
     /// Discover the config file, or return a default path if none exists.
@@ -1109,12 +1112,10 @@ impl ConfigDiscovery {
             }
         } else {
             // Non-hierarchical: return all existing standard paths
-            if let Some(ref var) = self.env_override
-                && let Ok(path_str) = env::var(var)
-            {
-                let path = PathBuf::from(&path_str);
-                if path.exists() {
-                    found.push(path);
+            if let Some(env_path) = self.resolve_env_override() {
+                tried.push(env_path.clone());
+                if env_path.exists() {
+                    found.push(env_path);
                 }
             }
 
@@ -1131,6 +1132,36 @@ impl ConfigDiscovery {
         } else {
             Ok(found)
         }
+    }
+
+    /// Resolve the env-override path, if configured and set in the
+    /// process environment. Returns `Some(path)` when both
+    /// [`Self::env_override`] has named a variable and that variable
+    /// is set; `None` otherwise. The returned path is **not** checked
+    /// for existence — callers stat it themselves and decide whether
+    /// to fall back to the standard search.
+    ///
+    /// The single source of truth for the
+    /// `(env_override var name → resolved candidate path)` lookup.
+    /// [`Self::discover`] and [`Self::discover_all`]'s non-hierarchical
+    /// branch previously open-coded the same
+    /// `if let Some(ref var) = self.env_override
+    /// && let Ok(path_str) = env::var(var) { let path =
+    /// PathBuf::from(&path_str); … }` shape at both sites — same
+    /// var lookup, same `PathBuf::from`, same handling fork between
+    /// exists / does-not-exist. Lifting the resolution to one method
+    /// collapses the duplication to a single typed primitive and
+    /// makes the candidate path observable to the search-derives-
+    /// report discipline (see [`Self::discover_all`]'s `tried`
+    /// accumulator): the env-override path is now recorded in
+    /// `ShikumiError::NotFound::tried` whenever it was actually
+    /// checked, so the operator-facing "where did you look?" answer
+    /// stays the resolved search rather than dropping the
+    /// user-supplied path that was the first place stat'd.
+    fn resolve_env_override(&self) -> Option<PathBuf> {
+        let var = self.env_override.as_ref()?;
+        let path_str = env::var(var).ok()?;
+        Some(PathBuf::from(path_str))
     }
 
     /// Resolve `XDG_CONFIG_HOME`, preferring the builder override.
@@ -1787,6 +1818,146 @@ mod tests {
         } else {
             panic!("expected NotFound error");
         }
+    }
+
+    #[test]
+    fn discover_not_found_reports_env_override_path_when_set_but_absent() {
+        // The env-override path is the first place `discover` stats. The
+        // NotFound report must include it — the operator-facing answer to
+        // "where did you look?" must not drop the user-supplied path.
+        // Pinned at the `discover` site as well as the `discover_all`
+        // sites (see `hierarchical_discover_all_not_found_reports_resolved_searched_candidates`).
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path().canonicalize().unwrap();
+        let nonexistent_env_path = dir_path.join("absent-env-override.yaml");
+
+        let var = "SHIKUMI_TEST_DISC_NF_ENV_OVERRIDE";
+        unsafe { env::set_var(var, nonexistent_env_path.to_str().unwrap()) };
+
+        let nonexistent_xdg = dir_path.join("nonexistent_xdg");
+        let nonexistent_home = dir_path.join("nonexistent_home");
+        let result = ConfigDiscovery::new("shikumi_disc_envrep_xyz_app")
+            .env_override(var)
+            .xdg_config_home(&nonexistent_xdg)
+            .home_dir(&nonexistent_home)
+            .discover();
+
+        unsafe { env::remove_var(var) };
+
+        let ShikumiError::NotFound { tried } = result.expect_err("no files exist") else {
+            panic!("expected NotFound");
+        };
+
+        assert!(
+            tried.contains(&nonexistent_env_path),
+            "discover() NotFound.tried must include the env-override path \
+             that was checked first (the user-supplied path); got: {tried:?}"
+        );
+        // The standard search candidates are still reported alongside.
+        assert!(
+            tried.iter().any(|p| p.starts_with(&nonexistent_xdg)),
+            "discover() NotFound.tried must also include the resolved XDG \
+             candidates; got: {tried:?}"
+        );
+    }
+
+    #[test]
+    fn discover_not_found_omits_env_override_when_var_unset() {
+        // No env-override path was checked, so the report must not
+        // fabricate one — the report is the resolved search.
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path().canonicalize().unwrap();
+        let nonexistent_xdg = dir_path.join("nonexistent_xdg");
+        let nonexistent_home = dir_path.join("nonexistent_home");
+
+        // env_override names a var that is intentionally NOT set.
+        let result = ConfigDiscovery::new("shikumi_disc_envunset_xyz_app")
+            .env_override("SHIKUMI_TEST_DISC_NF_UNSET_VAR_XYZ_GUARANTEED_ABSENT")
+            .xdg_config_home(&nonexistent_xdg)
+            .home_dir(&nonexistent_home)
+            .discover();
+
+        let ShikumiError::NotFound { tried } = result.expect_err("no files exist") else {
+            panic!("expected NotFound");
+        };
+
+        // No path under the env-override variable was resolved, so none
+        // should appear in `tried`. Only the resolved XDG/HOME candidates.
+        assert!(
+            tried
+                .iter()
+                .all(|p| p.starts_with(&nonexistent_xdg) || p.starts_with(&nonexistent_home)),
+            "discover() NotFound.tried must contain only resolved XDG/HOME \
+             candidates when env-override var is unset; got: {tried:?}"
+        );
+        assert!(
+            !tried.is_empty(),
+            "standard candidates should still be reported"
+        );
+    }
+
+    #[test]
+    fn discover_all_non_hierarchical_not_found_reports_env_override_path() {
+        // Sibling fidelity contract for the non-hierarchical branch of
+        // `discover_all`: an env-override path checked-and-absent must
+        // appear in `tried`, exactly as it does for `discover`.
+        let dir = TempDir::new().unwrap();
+        let dir_path = dir.path().canonicalize().unwrap();
+        let nonexistent_env_path = dir_path.join("absent-env-override.yaml");
+
+        let var = "SHIKUMI_TEST_DISC_ALL_NF_ENV_OVERRIDE";
+        unsafe { env::set_var(var, nonexistent_env_path.to_str().unwrap()) };
+
+        let nonexistent_xdg = dir_path.join("nonexistent_xdg");
+        let nonexistent_home = dir_path.join("nonexistent_home");
+        let result = ConfigDiscovery::new("shikumi_disc_all_envrep_xyz_app")
+            .env_override(var)
+            .xdg_config_home(&nonexistent_xdg)
+            .home_dir(&nonexistent_home)
+            .discover_all();
+
+        unsafe { env::remove_var(var) };
+
+        let ShikumiError::NotFound { tried } = result.expect_err("no files exist") else {
+            panic!("expected NotFound");
+        };
+
+        assert!(
+            tried.contains(&nonexistent_env_path),
+            "discover_all() non-hierarchical NotFound.tried must include \
+             the env-override path that was checked; got: {tried:?}"
+        );
+    }
+
+    #[test]
+    fn resolve_env_override_returns_none_when_var_unconfigured() {
+        // No env_override builder call → no var to resolve.
+        let d = ConfigDiscovery::new("shikumi_resolve_envov_xyz_none_configured");
+        assert!(d.resolve_env_override().is_none());
+    }
+
+    #[test]
+    fn resolve_env_override_returns_none_when_var_unset() {
+        // env_override names a var, but the var is not in the environment.
+        let d = ConfigDiscovery::new("shikumi_resolve_envov_xyz_var_unset")
+            .env_override("SHIKUMI_RESOLVE_ENVOV_UNSET_VAR_GUARANTEED_ABSENT_XYZ");
+        assert!(d.resolve_env_override().is_none());
+    }
+
+    #[test]
+    fn resolve_env_override_returns_path_when_var_set() {
+        // env_override names a var and the var is set: returns the
+        // resolved path regardless of whether the file exists.
+        let var = "SHIKUMI_RESOLVE_ENVOV_SET_VAR_XYZ";
+        let synthetic = "/this/path/need/not/exist.yaml";
+        unsafe { env::set_var(var, synthetic) };
+
+        let d = ConfigDiscovery::new("shikumi_resolve_envov_xyz_var_set").env_override(var);
+        let resolved = d.resolve_env_override();
+
+        unsafe { env::remove_var(var) };
+
+        assert_eq!(resolved, Some(PathBuf::from(synthetic)));
     }
 
     // ---- Hierarchical discovery tests ----
