@@ -62,7 +62,14 @@ gcp-native = ["dep:reqwest", "dep:tokio"]
 [dependencies]
 arc-swap = "1.8"
 figment = { version = "0.10", features = ["env", "yaml", "toml"] }
-notify = "8.2"
+# notify's `default` feature implicitly includes `macos_fsevent` which
+# transitively pulls fsevent-sys (apple-only). Cargo features are
+# crate-global — once activated anywhere in the workspace, ALL builds
+# of notify get it, including linux builds where fsevent-sys fails
+# to compile. Disable default features here; pick a portable backend.
+# `macos_kqueue` works on both linux and macos and doesn't pull
+# fsevent-sys (notify's source gates fsevent on `macos_fsevent` only).
+notify = { version = "8.2", default-features = false, features = ["macos_kqueue"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 # Used by shikumi::tiered::ConfigDiff for structural YAML diffing
