@@ -124,7 +124,12 @@ use std::env;
 /// [`crate::axis_cardinality`], [`crate::axis_ordinal`],
 /// [`crate::axis_at`] — at the trait impl declaration.
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash,
+         gen_platform::TypedDispatcher,
+         gen_platform::Discriminant,
+         gen_platform::IsVariant,
+         gen_platform::FromStrKind)]
+#[discriminant(also_display)]
 pub enum ConfigTierKind {
     /// Zero-opinion floor.
     Bare,
@@ -138,6 +143,13 @@ pub enum ConfigTierKind {
     /// `prescribed_default()`.
     Custom,
 }
+
+// Fleet-wide dispatcher-catalog registration. TWELFTH consumer
+// class adopting gen-platform's typed-dispatcher catamorphism
+// (after gen / caixa / wasm-platform / cofre / shigoto / engenho /
+// magma / kura / pangea / tatara / hanshi). See
+// theory/UNIFIED-COMPUTING-MODEL.md §VI.
+gen_platform::register_dispatcher!("shikumi.config-tier-kind", ConfigTierKind);
 
 impl ConfigTierKind {
     /// Every [`ConfigTierKind`] value, in declaration order — the
