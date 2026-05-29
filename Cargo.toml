@@ -65,8 +65,8 @@ figment = { version = "0.10", features = ["env", "yaml", "toml"] }
 
 # Typed-dispatcher catalog integration
 # (theory/UNIFIED-COMPUTING-MODEL.md §VI).
-gen-platform = { path = "../gen/crates/gen-platform" }
-gen-types = { path = "../gen/crates/gen-types" }
+gen-platform = { git = "https://github.com/pleme-io/gen" }
+gen-types = { git = "https://github.com/pleme-io/gen" }
 # notify's `default` feature implicitly includes `macos_fsevent` which
 # transitively pulls fsevent-sys (apple-only). Cargo features are
 # crate-global — once activated anywhere in the workspace, ALL builds
