@@ -67,14 +67,14 @@ figment = { version = "0.10", features = ["env", "yaml", "toml"] }
 # (theory/UNIFIED-COMPUTING-MODEL.md §VI).
 gen-platform = { git = "https://github.com/pleme-io/gen" }
 gen-types = { git = "https://github.com/pleme-io/gen" }
-# notify's `default` feature implicitly includes `macos_fsevent` which
-# transitively pulls fsevent-sys (apple-only). Cargo features are
-# crate-global — once activated anywhere in the workspace, ALL builds
-# of notify get it, including linux builds where fsevent-sys fails
-# to compile. Disable default features here; pick a portable backend.
-# `macos_kqueue` works on both linux and macos and doesn't pull
-# fsevent-sys (notify's source gates fsevent on `macos_fsevent` only).
-notify = { version = "8.2", default-features = false, features = ["macos_kqueue"] }
+# Cargo features activate globally per-target — turning on a notify
+# macOS backend feature in [dependencies] adds the apple-only backend
+# crate as an unconditional dep for every target, including Linux
+# (fsevent-sys fails to compile; kqueue → kqueue-sys fails to compile).
+# The only correct seam is target-gating the feature itself: Linux
+# gets bare notify (uses inotify, its only Linux backend), macOS opts
+# into a real backend via the target-conditional block below.
+notify = { version = "8.2", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 # Used by shikumi::tiered::ConfigDiff for structural YAML diffing
@@ -98,6 +98,14 @@ tokio = { version = "1", features = ["rt"], optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 # Feature-gated for the `cli` feature — clap Args for ConfigShowCommand.
 clap = { version = "4", features = ["derive"], optional = true }
+
+# macOS opts into the kqueue backend for notify. Gating via
+# `[target.'cfg(target_os = "macos")']` is the only way to keep this
+# feature out of Linux builds — Cargo feature unification per-target
+# means a global `features = ["macos_kqueue"]` would activate the
+# apple-only kqueue → kqueue-sys chain in every target.
+[target.'cfg(target_os = "macos")'.dependencies]
+notify = { version = "8.2", default-features = false, features = ["macos_kqueue"] }
 
 [dev-dependencies]
 tempfile = "3"
