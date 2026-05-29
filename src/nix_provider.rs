@@ -120,17 +120,7 @@ impl Provider for NixProvider {
 
     fn data(&self) -> Result<Map<Profile, Dict>, FigmentError> {
         let value = self.load().map_err(|e| FigmentError::from(e.to_string()))?;
-        let dict = match value {
-            Value::Dict(_, d) => d,
-            other => {
-                return Err(FigmentError::from(format!(
-                    "top-level nix expression must evaluate to an attrset; got {other:?}"
-                )));
-            }
-        };
-        let mut map = Map::new();
-        map.insert(Profile::Default, dict);
-        Ok(map)
+        crate::provider::provider_data_from_value(value, Format::Nix)
     }
 }
 

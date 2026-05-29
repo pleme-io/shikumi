@@ -158,17 +158,7 @@ impl Provider for LispProvider {
 
     fn data(&self) -> Result<Map<Profile, Dict>, FigmentError> {
         let value = Self::load(&self.path).map_err(|e| FigmentError::from(e.to_string()))?;
-        let dict = match value {
-            Value::Dict(_, d) => d,
-            other => {
-                return Err(FigmentError::from(format!(
-                    "top-level lisp form must be a kwargs list; got {other:?}"
-                )));
-            }
-        };
-        let mut map = Map::new();
-        map.insert(Profile::Default, dict);
-        Ok(map)
+        crate::provider::provider_data_from_value(value, Format::Lisp)
     }
 }
 
@@ -277,6 +267,43 @@ mod tests {
                 tema: "nord".into(),
                 largura_tab: 4,
             }
+        );
+    }
+
+    #[test]
+    fn data_error_routes_through_provider_data_from_value_helper() {
+        // A top-level lisp form that yields a non-Dict figment Value
+        // (`(defapp foo)` has one non-keyword argument, which
+        // `is_kwargs_list` rejects, so `sexp_to_value_root` falls back
+        // to `sexp_to_value` and produces `Value::Array`).
+        // `Provider::data` then routes through
+        // `provider_data_from_value`, which emits the format-specific
+        // wording sourced from `Format::Lisp.dict_required_message`.
+        // This test pins the routing: the message the operator sees on
+        // a Lisp-side top-level-shape failure is the one
+        // `Format::dict_required_message(Format::Lisp)` declares — the
+        // open-coded `"top-level lisp form must be a kwargs list"`
+        // wording the previous inline `match` emitted lives at one site
+        // now, and the lift cannot drift the diagnostic away from it.
+        use figment::Provider;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("not_kwargs.lisp");
+        std::fs::write(&path, "(defapp foo)").unwrap();
+
+        let provider = LispProvider::file(&path);
+        let err = provider
+            .data()
+            .expect_err("non-kwargs top-level form must error");
+        let msg = err.to_string();
+        let prefix = Format::Lisp.dict_required_message();
+        assert!(
+            msg.starts_with(prefix),
+            "Lisp data() error must start with `{prefix}`, got `{msg}`",
+        );
+        assert!(
+            msg.contains("; got "),
+            "data() error must append the concrete-Value tail; got `{msg}`",
         );
     }
 

@@ -142,6 +142,50 @@ impl Format {
         }
     }
 
+    /// Operator-facing English message stating this format's top-level
+    /// dict-required contract — the prefix the shikumi-built providers
+    /// (`crate::LispProvider`, `crate::NixProvider`) emit when a parsed
+    /// [`figment::value::Value`] turns out not to be a [`figment::value::Value::Dict`]
+    /// at the root, to which the helper appends `"; got <Value:?>"` for
+    /// the concrete diagnostic.
+    ///
+    /// One source of truth for the per-format "top-level X must be Y"
+    /// wording on the shikumi-built-provider failure path:
+    /// - [`Self::Yaml`] → `"top-level yaml document must be a mapping"`
+    /// - [`Self::Toml`] → `"top-level toml document must be a table"`
+    /// - [`Self::Lisp`] → `"top-level lisp form must be a kwargs list"`
+    /// - [`Self::Nix`] → `"top-level nix expression must evaluate to an attrset"`
+    ///
+    /// The Lisp / Nix arms preserve the messages the two providers
+    /// previously emitted verbatim — including the per-language verb
+    /// ("must be" vs "must evaluate to") and noun ("form" / "expression")
+    /// — so the operator-facing diagnostic does not drift on the lift.
+    /// The YAML / TOML arms exist for total-coverage discipline: the
+    /// figment-builtin file providers handle the dict-required check
+    /// internally and never reach this method today, but a future
+    /// shikumi-built provider class that wraps a figment-builtin format
+    /// (e.g. a templating layer on top of YAML) would route through the
+    /// matching arm here, and the YAML / TOML wordings are pinned now so
+    /// that future arm cannot drift on the noun choice.
+    ///
+    /// Routed through by [`crate::provider::provider_data_from_value`],
+    /// the value→`Map<Profile, Dict>` projection shared by every
+    /// shikumi-built [`figment::Provider::data`] impl. The message lives
+    /// at one site here — adding a new [`Format`] variant forces an arm
+    /// in the exhaustive match in lockstep at compile time, and the
+    /// existing wordings are pinned by
+    /// `format_dict_required_message_pins_per_format_wording` so the
+    /// lift cannot silently rewrite either provider's diagnostic.
+    #[must_use]
+    pub const fn dict_required_message(self) -> &'static str {
+        match self {
+            Self::Yaml => "top-level yaml document must be a mapping",
+            Self::Toml => "top-level toml document must be a table",
+            Self::Lisp => "top-level lisp form must be a kwargs list",
+            Self::Nix => "top-level nix expression must evaluate to an attrset",
+        }
+    }
+
     /// Closed-enum classification of which provider class loads this
     /// format — the typed partition over the [`Format`] variant space
     /// along the (figment-builtin × shikumi-built) axis.
@@ -3103,6 +3147,78 @@ mod tests {
         assert!(!Format::Toml.has_shikumi_provider());
         assert!(Format::Lisp.has_shikumi_provider());
         assert!(Format::Nix.has_shikumi_provider());
+    }
+
+    #[test]
+    fn format_dict_required_message_pins_per_format_wording() {
+        // Concrete-position pin on Format::dict_required_message: the
+        // four per-format error-message prefixes at one site. The Lisp
+        // and Nix wordings are byte-identical to the messages the two
+        // shikumi-built providers previously emitted from their `data`
+        // impls — pinned here so the open-coded → lifted refactor of
+        // `LispProvider::data` and `NixProvider::data` cannot silently
+        // rewrite the operator-facing diagnostic. The YAML / TOML
+        // wordings exist for total-coverage discipline (the
+        // figment-builtin file providers do not route through this
+        // method today) and are pinned now so a future provider that
+        // does cannot drift on the noun choice.
+        assert_eq!(
+            Format::Yaml.dict_required_message(),
+            "top-level yaml document must be a mapping",
+        );
+        assert_eq!(
+            Format::Toml.dict_required_message(),
+            "top-level toml document must be a table",
+        );
+        assert_eq!(
+            Format::Lisp.dict_required_message(),
+            "top-level lisp form must be a kwargs list",
+        );
+        assert_eq!(
+            Format::Nix.dict_required_message(),
+            "top-level nix expression must evaluate to an attrset",
+        );
+    }
+
+    #[test]
+    fn format_dict_required_message_starts_with_top_level_and_names_format() {
+        // Structural pin: every variant's message starts with the
+        // shared `"top-level "` prefix and cites the format's canonical
+        // name (`as_str`) verbatim. Catches a future format addition
+        // that forgets either the shared prefix or the name-citation
+        // discipline.
+        for f in Format::ALL.iter().copied() {
+            let msg = f.dict_required_message();
+            assert!(
+                msg.starts_with("top-level "),
+                "{f:?}: message must start with `top-level `, got `{msg}`",
+            );
+            assert!(
+                msg.contains(f.as_str()),
+                "{f:?}: message must cite the format's canonical name `{}`, got `{msg}`",
+                f.as_str(),
+            );
+        }
+    }
+
+    #[test]
+    fn format_dict_required_message_is_distinct_per_variant() {
+        // No two variants share the same dict-required wording. The
+        // operator-facing diagnostic distinguishes which format-aware
+        // provider rejected the top-level shape; a duplicated message
+        // would lose that distinction.
+        let mut seen: Vec<&'static str> = Format::ALL
+            .iter()
+            .map(|f| f.dict_required_message())
+            .collect();
+        seen.sort_unstable();
+        let len_before = seen.len();
+        seen.dedup();
+        assert_eq!(
+            seen.len(),
+            len_before,
+            "dict_required_message must be distinct for every Format variant",
+        );
     }
 
     #[test]

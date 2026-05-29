@@ -7,8 +7,9 @@
 use std::path::Path;
 
 use figment::{
-    Figment,
     providers::{Env, Format as _, Serialized, Toml as FigToml, Yaml as FigYaml},
+    value::{Dict, Map, Value},
+    Error as FigmentError, Figment, Profile,
 };
 
 use crate::discovery::Format;
@@ -16,6 +17,61 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::ShikumiError;
 use crate::source::ConfigSource;
+
+/// Wrap a shikumi-built provider's parsed [`figment::value::Value`] into
+/// the [`Map<Profile, Dict>`] shape [`figment::Provider::data`] requires.
+///
+/// On [`Value::Dict`], returns `Ok({ Profile::Default => dict })` — the
+/// one-shot `Map::new()` + `insert(Profile::Default, dict)` shape every
+/// shikumi-built provider's `data` impl previously open-coded at its tail.
+/// On any other [`Value`] variant, returns a [`FigmentError`] whose
+/// message routes through [`Format::dict_required_message`] for the
+/// format-specific "top-level <format> X must be Y" wording and appends
+/// `"; got <other:?>"` so the operator-facing diagnostic identifies the
+/// concrete shape figment received.
+///
+/// One source of truth for the value→provider-data projection on
+/// shikumi-built providers. `LispProvider::data` (feature-gated under
+/// `lisp`) and [`crate::nix_provider::NixProvider::data`] each
+/// previously inlined the four-line shape — the dict-extracting
+/// `match`, the format-prose error path, the `Map::new()` allocation,
+/// and the `Profile::Default` key — once per provider. Lifting collapses
+/// the duplication to one site beside [`ProviderChain`], the
+/// consumer-facing peer that owns the layered figment composition; a
+/// future shikumi-built provider class — an `HTTP` config endpoint, a
+/// `Vault` secret store, a Kubernetes `ConfigMap` reader — implements
+/// its own value-producing `load()` and routes its `data()` through this
+/// helper, inheriting the dict-required contract and the operator-facing
+/// error wording by construction.
+///
+/// The format argument supplies the per-format wording slot; the helper
+/// itself does not parse or validate the file. Callers pass the
+/// [`Format`] their provider declares (e.g. [`Format::Lisp`] for the
+/// Lisp provider) so the failure path agrees with the metadata-name
+/// the provider's `figment::Provider::metadata` impl already emits
+/// through [`Format::metadata_name`].
+// The return shape is dictated by `figment::Provider::data`; the size of
+// `figment::Error` is figment's choice, not shikumi's. Boxing here would
+// fork the helper's `Err` from the trait method's `Err` and force every
+// call site to unbox at the trait boundary.
+#[allow(clippy::result_large_err)]
+pub(crate) fn provider_data_from_value(
+    value: Value,
+    format: Format,
+) -> Result<Map<Profile, Dict>, FigmentError> {
+    let dict = match value {
+        Value::Dict(_, d) => d,
+        other => {
+            return Err(FigmentError::from(format!(
+                "{}; got {other:?}",
+                format.dict_required_message(),
+            )));
+        }
+    };
+    let mut map = Map::new();
+    map.insert(Profile::Default, dict);
+    Ok(map)
+}
 
 /// Builder for a figment provider chain.
 ///
@@ -780,5 +836,103 @@ mod tests {
         assert_eq!(rebuilt_value, original_value);
         assert_eq!(rebuilt_value.name.as_deref(), Some("low"));
         assert_eq!(rebuilt_value.count, Some(2));
+    }
+
+    // ---- provider_data_from_value (shikumi-built-provider Value -> Map projection) ----
+
+    #[test]
+    fn provider_data_from_value_wraps_dict_under_profile_default() {
+        // Value::Dict input lifts to the single-entry { Profile::Default => dict }
+        // shape — the exact wrapper figment::Provider::data requires, with the
+        // contained dict preserved verbatim (no key rewriting, no allocation
+        // beyond the outer Map).
+        let mut inner = Dict::new();
+        inner.insert("k".to_owned(), Value::from("v"));
+        let input = Value::Dict(figment::value::Tag::Default, inner.clone());
+
+        let map = provider_data_from_value(input, Format::Lisp).expect("Dict input must succeed");
+        assert_eq!(map.len(), 1, "exactly one profile entry");
+        let dict = map
+            .get(&Profile::Default)
+            .expect("Profile::Default present");
+        assert_eq!(dict, &inner, "inner dict preserved verbatim");
+    }
+
+    #[test]
+    fn provider_data_from_value_errors_on_non_dict_value() {
+        // Any non-Dict Value variant must yield a FigmentError. The
+        // structural-shape check is the helper's contract; the precise
+        // wording is pinned in the adjacent `_uses_format_message` test.
+        let cases = [
+            Value::Empty(figment::value::Tag::Default, figment::value::Empty::None),
+            Value::Array(figment::value::Tag::Default, vec![Value::from(1i64)]),
+            Value::from("not a dict"),
+            Value::from(42i64),
+            Value::from(true),
+        ];
+        for input in cases {
+            let kind = format!("{input:?}");
+            let err = provider_data_from_value(input, Format::Lisp)
+                .expect_err(&format!("non-Dict input must error: {kind}"));
+            // FigmentError surfaces the message via Display.
+            assert!(
+                !err.to_string().is_empty(),
+                "non-Dict error must carry a message ({kind})"
+            );
+        }
+    }
+
+    #[test]
+    fn provider_data_from_value_uses_format_dict_required_message() {
+        // The helper's error path delegates the format-specific wording
+        // to Format::dict_required_message — pin pointwise that the
+        // emitted message starts with the format-typed prefix and
+        // appends `"; got <Value:?>"` for the concrete shape.
+        let probe = Value::Empty(figment::value::Tag::Default, figment::value::Empty::None);
+        for format in [Format::Yaml, Format::Toml, Format::Lisp, Format::Nix] {
+            let err = provider_data_from_value(probe.clone(), format)
+                .expect_err("non-Dict input must error so the format-aware message is observable");
+            let msg = err.to_string();
+            let prefix = format.dict_required_message();
+            assert!(
+                msg.starts_with(prefix),
+                "{format:?}: message must start with `{prefix}`, got `{msg}`",
+            );
+            assert!(
+                msg.contains("; got "),
+                "{format:?}: message must append `; got <Value>` segment, got `{msg}`",
+            );
+        }
+    }
+
+    #[test]
+    fn provider_data_from_value_preserves_nested_dict_structure() {
+        // The helper does not flatten or rewrite nested Dict values —
+        // the inner shape figment passed in lands in the Map verbatim.
+        // Pins that the helper is a pure projection: dict in, same dict
+        // out under Profile::Default.
+        let mut nested = Dict::new();
+        nested.insert("inner_a".to_owned(), Value::from(1i64));
+        nested.insert("inner_b".to_owned(), Value::from("two"));
+        let mut top = Dict::new();
+        top.insert(
+            "nested".to_owned(),
+            Value::Dict(figment::value::Tag::Default, nested.clone()),
+        );
+        let input = Value::Dict(figment::value::Tag::Default, top.clone());
+
+        let map =
+            provider_data_from_value(input, Format::Nix).expect("nested Dict input must succeed");
+        let stored = map
+            .get(&Profile::Default)
+            .expect("Profile::Default present");
+        assert_eq!(stored, &top, "nested dict structure preserved verbatim");
+        // And the round-trip through the inner Dict survives.
+        let Value::Dict(_, recovered_inner) =
+            stored.get("nested").expect("nested key present").clone()
+        else {
+            panic!("nested entry must remain Value::Dict");
+        };
+        assert_eq!(recovered_inner, nested);
     }
 }
