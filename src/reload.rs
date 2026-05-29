@@ -279,6 +279,60 @@ impl ReloadFailure {
             .and_then(AttributionRule::figment_source_kind)
     }
 
+    /// [`crate::FormatProvenance`] of the file layer blamed for the
+    /// failure, or `None` when no attribution was recorded *or* when
+    /// the recorded attribution is not on the file axis — strict
+    /// superset of
+    /// [`Self::attribution_rule`]`.and_then(AttributionRule::file_provenance)`,
+    /// surfaced as a typed accessor so observers (dashboards, alerting
+    /// policies, attestation manifests, structured-log routers) don't
+    /// re-derive the (rule → file-provenance) partial projection at
+    /// every observation site.
+    ///
+    /// Two-stage `None` discipline mirroring [`Self::figment_source_kind`]:
+    /// (1) `None` when no attribution was recorded
+    /// ([`Self::attribution_rule`] is [`None`]),
+    /// (2) `None` when the recorded attribution is not on the file
+    /// axis ([`Self::layer_kind`] is anything other than
+    /// [`Some(crate::ConfigSourceKind::File)`]) — neither path pins a
+    /// file-provider class. File-axis attributions
+    /// ([`AttributionRule::FileBySource`] →
+    /// [`Some(crate::FormatProvenance::FigmentBuiltin)`],
+    /// [`AttributionRule::FileByMetadataName`] →
+    /// [`Some(crate::FormatProvenance::ShikumiBuilt)`]) surface a
+    /// [`Some`] cell directly. Operationally distinguishes "no
+    /// attribution at all" from "env-axis or defaults-axis attribution
+    /// that names no provider class" — observers cannot recover the
+    /// originating provider class off the cross-thread envelope unless
+    /// the captured rule already pinned it.
+    ///
+    /// Composes with [`Self::layer_kind`] as a refinement on the
+    /// file-axis cells: when [`Some`], the projection is [`Some`]
+    /// exactly when [`Self::layer_kind`] returns
+    /// [`Some(crate::ConfigSourceKind::File)`]. Pinned by
+    /// `file_provenance_some_iff_layer_kind_file`.
+    ///
+    /// Cross-thread mirror of
+    /// [`FailingSourceAttribution::file_provenance`] (and of
+    /// [`AttributionRule::file_provenance`] at the rule layer): the
+    /// captured envelope's projection agrees pointwise with the live
+    /// error's, pinning the lossless-capture contract for the
+    /// file-provenance axis on the cross-thread observable form.
+    /// Pinned by
+    /// `file_provenance_agrees_with_underlying_error_pointwise`.
+    ///
+    /// Composes with [`Self::failing_source`] as the
+    /// "which-layer × which-provider-class" coordinate over the file
+    /// attribution sub-surface: a structured-log replay, attestation
+    /// manifest, or per-format alerting policy that routes on both
+    /// halves no longer reaches for the rule slot and projects through
+    /// it inline.
+    #[must_use]
+    pub fn file_provenance(&self) -> Option<crate::FormatProvenance> {
+        self.attribution_rule
+            .and_then(AttributionRule::file_provenance)
+    }
+
     /// Joint (figment-Source-axis kind × shikumi-layer-kind) cell
     /// pinned by [`Self::attribution_rule`], or `None` when no
     /// attribution was recorded *or* when the recorded attribution
@@ -2078,6 +2132,158 @@ mod tests {
         let g = f.clone();
         assert_eq!(g.figment_source_kind(), Some(FigmentSourceKind::File));
         assert_eq!(g.figment_source_kind(), f.figment_source_kind());
+    }
+
+    #[test]
+    fn file_provenance_agrees_with_rule_file_provenance_pointwise() {
+        // For every constructible rule scenario, the cross-thread
+        // accessor result equals
+        // attribution_rule.and_then(AttributionRule::file_provenance) —
+        // pinning the convenience accessor as a pure projection over
+        // the captured rule slot. Peer to
+        // `figment_source_kind_agrees_with_rule_figment_source_kind_pointwise`
+        // on the file-provenance axis.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            };
+            assert_eq!(f.file_provenance(), rule.file_provenance());
+        }
+    }
+
+    #[test]
+    fn file_provenance_some_iff_layer_kind_file() {
+        // Composition law on the cross-thread envelope: when an
+        // attribution is recorded, file_provenance is Some exactly
+        // when layer_kind is Some(File). When no attribution is
+        // recorded, both are None and the biconditional still holds
+        // vacuously. Pins the same refinement as the AttributionRule-
+        // side `attribution_rule_file_provenance_some_iff_file_layer_kind`
+        // biconditional, surfaced through the captured envelope.
+        let scenarios: Vec<ReloadFailure> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .map(|rule| ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            })
+            .chain(std::iter::once(ReloadFailure::from_error(
+                &ShikumiError::Parse("x".to_owned()),
+            )))
+            .collect();
+        for f in scenarios {
+            assert_eq!(
+                f.file_provenance().is_some(),
+                f.layer_kind() == Some(ConfigSourceKind::File),
+                "envelope {:?}: file_provenance.is_some() must equal \
+                 (layer_kind == Some(File))",
+                f.attribution_rule,
+            );
+        }
+    }
+
+    #[test]
+    fn file_provenance_pins_each_file_rule_on_envelope() {
+        // Concrete pin: the two file-axis rules map through the
+        // envelope to the two recognized FormatProvenance cells in
+        // lockstep with the rule-side projection. Peer to
+        // `attribution_rule_file_provenance_pins_each_file_rule`
+        // surfaced through the captured envelope.
+        let cases = [
+            (
+                AttributionRule::FileBySource,
+                crate::FormatProvenance::FigmentBuiltin,
+            ),
+            (
+                AttributionRule::FileByMetadataName,
+                crate::FormatProvenance::ShikumiBuilt,
+            ),
+        ];
+        for (rule, provenance) in cases {
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::File(std::path::PathBuf::from("/etc/x"))),
+                attribution_rule: Some(rule),
+            };
+            assert_eq!(f.file_provenance(), Some(provenance), "rule {rule:?}");
+        }
+    }
+
+    #[test]
+    fn file_provenance_agrees_with_underlying_error_pointwise() {
+        // End-to-end lossless-capture: a real Extract error attributing
+        // via FileBySource produces a captured envelope whose
+        // file_provenance projection equals the underlying error's
+        // failing_attribution()'s file_provenance. Peer to
+        // `figment_source_kind_survives_clone_independent_of_originating_error`
+        // but pinning the agreement law across the error → envelope
+        // boundary.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("rf_fp_agreement.yaml");
+        std::fs::write(&file, "count: not_a_number\n").unwrap();
+        let err = ProviderChain::new()
+            .with_file(&file)
+            .extract::<Cfg>()
+            .unwrap_err();
+        let f = ReloadFailure::from_error(&err);
+        let underlying = err
+            .failing_attribution()
+            .and_then(FailingSourceAttribution::file_provenance);
+        assert_eq!(f.file_provenance(), underlying);
+        assert_eq!(
+            f.file_provenance(),
+            Some(crate::FormatProvenance::FigmentBuiltin),
+            "YAML extract failure attributes via FileBySource → FigmentBuiltin",
+        );
+    }
+
+    #[test]
+    fn file_provenance_survives_clone_independent_of_originating_error() {
+        // The captured file_provenance is derived from the captured
+        // rule (Copy) — it must survive cloning and outlive the
+        // originating ShikumiError, parallel to the
+        // figment_source_kind / metadata_axis / layer_kind clone
+        // invariants already pinned on the cross-thread envelope.
+        use crate::provider::ProviderChain;
+        #[derive(serde::Deserialize, Debug)]
+        struct Cfg {
+            #[allow(dead_code)]
+            count: u32,
+        }
+        let f = {
+            let dir = tempfile::TempDir::new().unwrap();
+            let file = dir.path().join("rf_fp_clone.yaml");
+            std::fs::write(&file, "count: not_a_number\n").unwrap();
+            let err = ProviderChain::new()
+                .with_file(&file)
+                .extract::<Cfg>()
+                .unwrap_err();
+            ReloadFailure::from_error(&err)
+        };
+        let g = f.clone();
+        assert_eq!(
+            g.file_provenance(),
+            Some(crate::FormatProvenance::FigmentBuiltin),
+        );
+        assert_eq!(g.file_provenance(), f.file_provenance());
     }
 
     #[test]

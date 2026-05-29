@@ -839,6 +839,84 @@ impl AttributionRule {
         }
     }
 
+    /// Partial inverse of
+    /// [`crate::FormatProvenance::file_attribution_rule`]: re-hydrate the
+    /// recognized [`crate::FormatProvenance`] from a file-axis attribution
+    /// rule, or [`None`] for non-file-axis rules.
+    ///
+    /// File-axis rules ([`Self::layer_kind`] returns
+    /// [`ConfigSourceKind::File`]) carry the provider class that emitted
+    /// the offending file layer's metadata as a structural consequence of
+    /// their dispatch shape:
+    /// [`Self::FileBySource`] ⇒ [`Some(crate::FormatProvenance::FigmentBuiltin)`]
+    /// (figment's YAML/TOML providers attach `Source::File`),
+    /// [`Self::FileByMetadataName`] ⇒
+    /// [`Some(crate::FormatProvenance::ShikumiBuilt)`] (shikumi's
+    /// [`crate::LispProvider`] / [`crate::NixProvider`] attach the
+    /// `"<format>: <path>"` shape). Non-file-axis rules
+    /// ([`Self::EnvByPrefix`], [`Self::EnvByUniqueness`],
+    /// [`Self::DefaultsByCodeUniqueness`]) all map to [`None`] — the
+    /// (provenance ↔ file-rule) pairing only ranges over the file
+    /// attribution sub-surface.
+    ///
+    /// One source of truth for the typed inverse of the
+    /// (provenance → file-rule) projection. Before this method, the
+    /// inverse was implicit in [`crate::FormatProvenance::file_attribution_rule`]'s
+    /// match shape and recoverable only by manually re-deriving the
+    /// (rule → provenance) dispatch inline — a string-of-prose contract,
+    /// not a typed law. Now it composes as one method call: a recorded
+    /// [`Self`] (read off a captured [`FailingSourceAttribution`] or
+    /// [`crate::ReloadFailure::attribution_rule`]) routes to the
+    /// originating provider class in one closed-enum read, with the
+    /// `None`-on-non-file-axis discipline pinning the partial range at
+    /// the type level. Pairs with the existing
+    /// [`Self::figment_source_kind`] partial projection (and the
+    /// total [`Self::layer_kind`] / [`Self::metadata_axis`] /
+    /// [`Self::confidence`] projections) as a fifth orthogonal axis
+    /// over the rule space.
+    ///
+    /// Closes the partial bijection on the file-axis sub-surface: the
+    /// (provenance × file-axis rule) cube has 2 × 2 = 4 product cells
+    /// (two provenances, two file rules); the recognized image is
+    /// exactly the 2 diagonal cells where
+    /// `provenance.file_attribution_rule() == rule` holds. The forward
+    /// map [`crate::FormatProvenance::file_attribution_rule`] is total
+    /// over the provenance space; this inverse is partial over the rule
+    /// space, returning [`Some`] exactly on the two file-axis cells.
+    /// The bijection laws — `rule.file_provenance().map(|p|
+    /// p.file_attribution_rule()) == Some(rule)` for every file-axis
+    /// rule, and `p.file_attribution_rule().file_provenance() == Some(p)`
+    /// for every provenance — are pinned by
+    /// `attribution_rule_file_provenance_round_trips_through_format_provenance`
+    /// and `format_provenance_file_attribution_rule_round_trips_through_file_provenance`.
+    ///
+    /// `Some`-iff-file-layer-kind discipline: `self.file_provenance()`
+    /// is [`Some`] exactly when [`Self::layer_kind`] is
+    /// [`ConfigSourceKind::File`]. The partial image of this projection
+    /// is exactly the file-axis sub-cube; pinned by
+    /// `attribution_rule_file_provenance_some_iff_file_layer_kind`.
+    /// A future variant added to [`Self`] forces a provenance assignment
+    /// in the exhaustive match in lockstep — either as a new file-axis
+    /// arm (carrying a [`Some(_)`] provenance) or a non-file-axis arm
+    /// (carrying [`None`]) — and the cross-axis law stays coherent by
+    /// construction.
+    ///
+    /// Mirrored on the captured-failure surfaces:
+    /// [`FailingSourceAttribution::file_provenance`] (borrowed envelope)
+    /// and [`crate::ReloadFailure::file_provenance`] (cross-thread
+    /// observable form) surface the same projection through the captured
+    /// rule slot, so a structured-log replay or attestation manifest
+    /// that records a captured failure can recover the originating
+    /// provider class without retaining the live [`crate::ShikumiError`].
+    #[must_use]
+    pub fn file_provenance(self) -> Option<crate::FormatProvenance> {
+        match self {
+            Self::FileBySource => Some(crate::FormatProvenance::FigmentBuiltin),
+            Self::FileByMetadataName => Some(crate::FormatProvenance::ShikumiBuilt),
+            Self::EnvByPrefix | Self::EnvByUniqueness | Self::DefaultsByCodeUniqueness => None,
+        }
+    }
+
     /// Forward partial unifier of the two source-axis projections
     /// over this rule: [`Self::figment_source_kind`] (partial) and
     /// [`Self::layer_kind`] (total). Returns the rule's joint cell on
@@ -2214,6 +2292,26 @@ impl<'a> FailingSourceAttribution<'a> {
     #[must_use]
     pub fn coordinates(self) -> AttributionCoordinates {
         self.rule.coordinates()
+    }
+
+    /// [`crate::FormatProvenance`] of [`Self::rule`] on the file-axis
+    /// sub-surface; convenience over [`AttributionRule::file_provenance`].
+    /// One method call answers "which provider class — figment-builtin
+    /// or shikumi-built — emitted the offending file layer's metadata?"
+    /// without destructuring the envelope or re-deriving the
+    /// (rule → provenance) projection inline.
+    ///
+    /// Some-iff-file-layer-kind discipline shared with
+    /// [`AttributionRule::file_provenance`]: the projection is [`Some`]
+    /// exactly when [`Self::layer_kind`] returns
+    /// [`ConfigSourceKind::File`] (equivalently, when the captured rule
+    /// is one of the two file-axis variants
+    /// [`AttributionRule::FileBySource`] /
+    /// [`AttributionRule::FileByMetadataName`]). Pinned by
+    /// `failing_source_attribution_file_provenance_mirrors_rule_file_provenance`.
+    #[must_use]
+    pub fn file_provenance(self) -> Option<crate::FormatProvenance> {
+        self.rule.file_provenance()
     }
 }
 
@@ -5339,6 +5437,167 @@ mod tests {
                 attr.metadata_axis() == AttributionAxis::MetadataSource,
                 "envelope for rule {rule:?}: figment_source_kind.is_some() must equal \
                  (metadata_axis == MetadataSource)",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_file_provenance_pins_each_file_rule() {
+        // The (file-rule -> provenance) partial inverse: FileBySource is
+        // the figment-builtin file rule (figment's YAML/TOML providers
+        // attach Source::File, matched by path equality); FileByMetadataName
+        // is the shikumi-built file rule (the LispProvider / NixProvider
+        // attach the "<format>: <path>" shape, matched by parsed-path
+        // equality). The structural law pinned at the type level,
+        // mirroring `format_provenance_file_attribution_rule_pins_each_provenance`
+        // on the forward direction.
+        assert_eq!(
+            AttributionRule::FileBySource.file_provenance(),
+            Some(crate::FormatProvenance::FigmentBuiltin),
+        );
+        assert_eq!(
+            AttributionRule::FileByMetadataName.file_provenance(),
+            Some(crate::FormatProvenance::ShikumiBuilt),
+        );
+    }
+
+    #[test]
+    fn attribution_rule_file_provenance_none_for_non_file_rules() {
+        // Non-file-axis rules (env-prefix, env-uniqueness, defaults-code-
+        // uniqueness) all map to None on the file_provenance projection.
+        // The partial range of the inverse is the file-axis sub-surface
+        // only — the (provenance ↔ file-rule) pairing does not extend to
+        // env or defaults rules.
+        for rule in [
+            AttributionRule::EnvByPrefix,
+            AttributionRule::EnvByUniqueness,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            assert_eq!(
+                rule.file_provenance(),
+                None,
+                "non-file-axis rule {rule:?} must not project to a FormatProvenance",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_file_provenance_some_iff_file_layer_kind() {
+        // Structural composition law: file_provenance is Some exactly
+        // when layer_kind is File. Pins the partial range: file-axis
+        // rules' identity names a provider class; non-file-axis rules'
+        // identity does not. Mirror of the `figment_source_kind ↔
+        // MetadataSource` biconditional but on the (file × non-file)
+        // sub-partition of the layer-kind axis.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.file_provenance().is_some(),
+                rule.layer_kind() == ConfigSourceKind::File,
+                "rule {rule:?}: file_provenance.is_some() must equal \
+                 (layer_kind == File)",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_file_provenance_round_trips_through_format_provenance() {
+        // Inverse-then-forward round-trip law on the file-axis subset:
+        // for every file-axis rule, recovering the provenance via
+        // file_provenance and projecting back through
+        // FormatProvenance::file_attribution_rule returns the original
+        // rule byte-for-byte. The bijection law on the recognized half
+        // of the (provenance ↔ file-rule) pairing — peer to the
+        // bijection laws Format::format_coordinates /
+        // FormatCoordinates::format_or_none and
+        // AttributionRule::coordinates / AttributionRule::from_coordinates
+        // pin on their respective product cubes.
+        for rule in AttributionRule::ALL.iter().copied() {
+            if let Some(provenance) = rule.file_provenance() {
+                assert_eq!(
+                    provenance.file_attribution_rule(),
+                    rule,
+                    "rule {rule:?}: file_provenance → file_attribution_rule \
+                     must round-trip to the originating rule",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn format_provenance_file_attribution_rule_round_trips_through_file_provenance() {
+        // Forward-then-inverse round-trip law: for every provenance,
+        // the file_attribution_rule's file_provenance recovers the
+        // originating provenance. Dual of
+        // `attribution_rule_file_provenance_round_trips_through_format_provenance`
+        // — the forward map FormatProvenance::file_attribution_rule
+        // (total over the provenance space) composes with the partial
+        // inverse AttributionRule::file_provenance to the identity on
+        // FormatProvenance::ALL.
+        for provenance in crate::FormatProvenance::ALL.iter().copied() {
+            assert_eq!(
+                provenance.file_attribution_rule().file_provenance(),
+                Some(provenance),
+                "provenance {provenance:?}: file_attribution_rule → file_provenance \
+                 must round-trip to the originating provenance",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_file_provenance_image_equals_format_provenance_all() {
+        // Image of file_provenance over the rule space, dropping None
+        // returns, equals FormatProvenance::ALL exactly — every
+        // recognized provenance is reachable through some file-axis
+        // rule, and no rule projects outside FormatProvenance::ALL.
+        // Pins the surjectivity of the partial inverse onto the
+        // provenance space. Peer to
+        // `attribution_rule_figment_source_kind_image_is_file_and_code_only`
+        // for the figment_source_kind axis.
+        use std::collections::HashSet;
+        let observed: HashSet<crate::FormatProvenance> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter_map(AttributionRule::file_provenance)
+            .collect();
+        let expected: HashSet<crate::FormatProvenance> =
+            crate::FormatProvenance::ALL.iter().copied().collect();
+        assert_eq!(
+            observed, expected,
+            "image of file_provenance over AttributionRule::ALL must equal \
+             FormatProvenance::ALL; got: {observed:?}",
+        );
+    }
+
+    #[test]
+    fn failing_source_attribution_file_provenance_mirrors_rule_file_provenance() {
+        // The envelope's file_provenance() must agree with the rule's,
+        // byte-for-byte, on every recognized rule. Pins the contract
+        // that the convenience accessor stays a thin forwarder over
+        // AttributionRule::file_provenance — peer to
+        // `failing_source_attribution_figment_source_kind_mirrors_rule_figment_source_kind`
+        // on the parallel partial-projection axis.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let src = ConfigSource::Defaults;
+            let attr = FailingSourceAttribution::new(&src, rule);
+            assert_eq!(attr.file_provenance(), rule.file_provenance());
+        }
+    }
+
+    #[test]
+    fn failing_source_attribution_file_provenance_some_iff_file_layer_kind() {
+        // The envelope's file_provenance is Some exactly when its
+        // layer_kind is File. Forwarder discipline pins the same
+        // biconditional as
+        // `attribution_rule_file_provenance_some_iff_file_layer_kind`,
+        // surfaced through the borrowed envelope.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let src = ConfigSource::Defaults;
+            let attr = FailingSourceAttribution::new(&src, rule);
+            assert_eq!(
+                attr.file_provenance().is_some(),
+                attr.layer_kind() == ConfigSourceKind::File,
+                "envelope for rule {rule:?}: file_provenance.is_some() must equal \
+                 (layer_kind == File)",
             );
         }
     }
