@@ -73,7 +73,7 @@ pub use provider::ProviderChain;
 pub use reload::ReloadFailure;
 pub use source::{
     ConfigSource, ConfigSourceChain, ConfigSourceKind, EnvMetadataTag, FigmentNameTag,
-    FigmentSourceKind, FigmentSourceTag,
+    FigmentNameTagKind, FigmentSourceKind, FigmentSourceTag,
 };
 pub use store::ConfigStore;
 pub use tiered::{ConfigDiff, ConfigTier, ConfigTierKind, DiffLine, TieredConfig};

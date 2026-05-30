@@ -529,6 +529,219 @@ impl<'a> FigmentNameTag<'a> {
             Self::Format(_) => None,
         }
     }
+
+    /// Data-free, `'static` discriminant of this [`FigmentNameTag`]:
+    /// the kind of `figment::Metadata::name` shape
+    /// ([`FigmentNameTagKind::Format`] / [`FigmentNameTagKind::Env`])
+    /// independent of the inner borrowed [`crate::FormatMetadataTag`]
+    /// envelope or [`EnvMetadataTag`] prefix.
+    ///
+    /// One source of truth for the figment-name-axis kind partition.
+    /// Observers that need only the kind axis (filtering by name-tag
+    /// class, hashing in a `'static` map, recording per-failure
+    /// name-class in an attestation manifest, comparing across thread
+    /// boundaries) match on this closed enum instead of pattern-matching
+    /// against [`FigmentNameTag`] with a borrowed lifetime, or chaining
+    /// [`Self::as_format`] / [`Self::as_env`] together. The kind is
+    /// `'static`, so it can cross threads, serialize, and persist
+    /// across observation boundaries the borrowed tag cannot.
+    ///
+    /// Symmetric peer of [`FigmentSourceTag::kind`] on the figment-Source
+    /// axis: same typescape discipline (closed, allocation-free,
+    /// `Copy + Eq + Hash + #[non_exhaustive]`, exhaustive forward map),
+    /// applied to figment's `Metadata::name` axis. The pair
+    /// ([`FigmentSourceKind`] on the source axis, [`FigmentNameTagKind`]
+    /// on the name axis) closes the figment-metadata kind universe under
+    /// one typescape primitive set: every `figment::Metadata` field's
+    /// borrowed tag projects to a `'static` discriminant on its axis.
+    ///
+    /// Pairs with [`Self::attribution_axis`]: the projection is constant
+    /// ([`crate::AttributionAxis::MetadataName`] for every variant) since
+    /// [`FigmentNameTag`] *is* the typed reading of
+    /// `figment::Metadata::name`. That structural law mirrors the
+    /// `attribution_axis` constant on [`FigmentSourceTag`] (always
+    /// [`crate::AttributionAxis::MetadataSource`]).
+    /// A future variant landing on [`FigmentNameTag`] (e.g. a
+    /// hypothetical `"http://… config endpoint"` name shape) forces a
+    /// [`FigmentNameTagKind`] arm in lockstep at compile time, and the
+    /// constant axis projection extends without per-site updates.
+    #[must_use]
+    pub fn kind(self) -> FigmentNameTagKind {
+        match self {
+            Self::Format(_) => FigmentNameTagKind::Format,
+            Self::Env(_) => FigmentNameTagKind::Env,
+        }
+    }
+
+    /// [`crate::AttributionAxis`] of this tag — constant
+    /// [`crate::AttributionAxis::MetadataName`] for every variant, since
+    /// [`FigmentNameTag`] *is* the typed reading of
+    /// `figment::Metadata::name`.
+    ///
+    /// One source of truth for the structural law that every
+    /// figment-name-axis attribution dispatches off `metadata.name`,
+    /// regardless of which variant fires. Mirrors
+    /// [`FigmentSourceTag::attribution_axis`] (constant
+    /// [`crate::AttributionAxis::MetadataSource`]) on the source axis:
+    /// each typed reading of a `figment::Metadata` field maps to its
+    /// originating axis as a constant. The pair
+    /// (name-side: [`Self::attribution_axis`], source-side:
+    /// [`FigmentSourceTag::attribution_axis`], resolver-side:
+    /// [`crate::AttributionRule::metadata_axis`]) cross-checks the axis
+    /// across the three surfaces; consumers see the same axis label
+    /// without re-deriving the (typed-source × name-string) partition.
+    #[must_use]
+    pub fn attribution_axis(self) -> crate::AttributionAxis {
+        let _ = self.kind();
+        crate::AttributionAxis::MetadataName
+    }
+}
+
+/// Data-free, `'static` discriminant of [`FigmentNameTag`]: the kind of
+/// `figment::Metadata::name` shape independent of the inner borrowed
+/// [`crate::FormatMetadataTag`] envelope or [`EnvMetadataTag`] prefix.
+///
+/// Closed two-way partition over the [`FigmentNameTag`] variant space,
+/// returned by [`FigmentNameTag::kind`]. The enum exists so consumers
+/// that need only the kind axis (filtering by name-tag class, hashing
+/// in a `'static` map, recording per-failure name-class in an
+/// attestation manifest, comparing across thread boundaries) match on
+/// one closed enum instead of pattern-matching against the borrowed
+/// tag or chaining [`FigmentNameTag::as_format`] /
+/// [`FigmentNameTag::as_env`] together.
+///
+/// Symmetric peer of [`FigmentSourceKind`] on the figment-Source axis:
+/// same typescape discipline (closed, allocation-free,
+/// `Copy + Eq + Hash + #[non_exhaustive]`, exhaustive forward map),
+/// applied to figment's `Metadata::name` axis. Before this lift, the
+/// figment-metadata kind universe was asymmetric — the
+/// `Metadata::source` axis had a typed `'static` kind ([`FigmentSourceKind`])
+/// but the `Metadata::name` axis had only the borrowed tag
+/// ([`FigmentNameTag`]) with no `'static` discriminant; observers
+/// needing the cross-thread, cross-axis kind classification on the
+/// name side had to either retain the borrowed tag (lifetime
+/// contamination) or re-derive the partition through
+/// [`FigmentNameTag::as_format`] / [`FigmentNameTag::as_env`]
+/// inlined at every observation site.
+///
+/// `'static` and allocation-free — no lifetime parameter, unlike
+/// [`FigmentNameTag`]. The kind survives any borrow on the originating
+/// `figment::Metadata::name` and can therefore cross thread boundaries,
+/// serialize, and live in long-lived structures (the way
+/// [`ConfigSourceKind`] does on the captured cross-thread observable
+/// form of [`crate::ReloadFailure`], and [`FigmentSourceKind`] does on
+/// the figment-Source side).
+///
+/// Adding a future [`FigmentNameTag`] variant (e.g. a hypothetical
+/// `"http://… config endpoint"` shape if figment's name-axis grows one)
+/// means adding one [`FigmentNameTagKind`] variant in lockstep — the
+/// exhaustive [`FigmentNameTag::kind`] match forces the assignment at
+/// compile time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum FigmentNameTagKind {
+    /// Maps to [`FigmentNameTag::Format`] regardless of inner
+    /// [`crate::FormatMetadataTag`] envelope. Reached from a
+    /// `figment::Metadata::name` of shape `"<format>: <path>"` emitted
+    /// by a shikumi-built provider ([`crate::LispProvider`],
+    /// [`crate::NixProvider`]).
+    Format,
+    /// Maps to [`FigmentNameTag::Env`] regardless of inner
+    /// [`EnvMetadataTag`] prefix. Reached from a
+    /// `figment::Metadata::name` of shape
+    /// `` `PREFIX` environment variable(s) `` or
+    /// `"environment variable(s)"` emitted by `figment::providers::Env`.
+    Env,
+}
+
+impl FigmentNameTagKind {
+    /// Every [`FigmentNameTagKind`] variant, in declaration order
+    /// ([`Self::Format`], [`Self::Env`]).
+    ///
+    /// The closed list of `figment::Metadata::name` shape classes shikumi
+    /// recognizes. Iterate to enumerate the figment-name-axis kind space
+    /// without listing variants by hand at every consumer site — e.g.
+    /// dashboards initializing per-kind counters (weighting `Env`
+    /// attributions visibly differently from `Format` ones since they
+    /// originate from distinct provider classes), attestation manifests
+    /// recording the figment-name-axis kind space's cardinality,
+    /// structured-diagnostics legends rendering different prose per
+    /// class, or partition-coverage tests asserting disjointness across
+    /// the figment-side classification on the name axis.
+    ///
+    /// One source of truth for the kind enumeration on the
+    /// [`FigmentNameTagKind`] axis: peer to [`FigmentSourceKind::ALL`]
+    /// on the figment-Source axis, [`ConfigSourceKind::ALL`] on the
+    /// shikumi-side layer-kind axis, [`crate::AttributionAxis::ALL`] on
+    /// the metadata axis, and the other closed-axis primitives' `ALL`
+    /// constants — the same typescape discipline (closed `'static` slice,
+    /// in declaration order) applied to figment's `Metadata::name` axis.
+    ///
+    /// Adding a new variant to [`Self`] (e.g. a future `Url` kind in
+    /// lockstep with a hypothetical `FigmentNameTag::Url` if figment
+    /// grows one) means extending this slice in lockstep with the
+    /// variant itself. The compiler enforces nothing here directly,
+    /// so the `figment_name_tag_kind_all_covers_every_constructible_tag`
+    /// test pins the contract by asserting that every kind produced by
+    /// [`FigmentNameTag::kind`] over the canonical sample table appears
+    /// in [`Self::ALL`], and the `figment_name_tag_kind_all_has_no_duplicates`
+    /// test pins that the constant is a set (no double-listed variant).
+    pub const ALL: &'static [Self] = &[Self::Format, Self::Env];
+
+    /// Returns `true` for [`Self::Format`]; equivalent to
+    /// `self == FigmentNameTagKind::Format`. Convenience predicate
+    /// matching the [`FigmentSourceKind::is_file`] /
+    /// [`FigmentSourceKind::is_code`] / [`FigmentSourceKind::is_custom`]
+    /// sibling pattern on the figment-Source axis.
+    #[must_use]
+    pub fn is_format(self) -> bool {
+        matches!(self, Self::Format)
+    }
+
+    /// Returns `true` for [`Self::Env`].
+    #[must_use]
+    pub fn is_env(self) -> bool {
+        matches!(self, Self::Env)
+    }
+
+    /// Canonical operator-facing lowercase name of the figment-name
+    /// kind — `"format"` for [`Self::Format`], `"env"` for [`Self::Env`].
+    ///
+    /// The single source of truth for the figment-name-axis kind label
+    /// strings on the [`FigmentNameTagKind`] axis. Inherent mirror of
+    /// the [`crate::ClosedAxisLabel`] trait method; the trait impl
+    /// delegates here so the canonical names live at one site instead
+    /// of being re-stated at every operator-facing surface (a future
+    /// structured-log field naming the figment-name-axis kind of a
+    /// failing attribution, a CLI flag filtering attributions by
+    /// figment-name-axis kind, an attestation manifest recording the
+    /// figment-name-axis kind histogram of loaded values). The
+    /// strings match the variant identifiers in ASCII-lowercase form.
+    ///
+    /// The `"env"` label intentionally coincides with
+    /// [`ConfigSourceKind::Env`]'s label by typescape design: the two
+    /// axes meet at the shikumi-env-layer ↔ figment-Env-name
+    /// resolution boundary. The trait-uniform distinctness law
+    /// (`closed_axis_label_as_str_distinct_for_every_implementor`)
+    /// pins distinctness within an axis only; cross-axis label
+    /// coincidence is structural, not a discipline violation.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Format => "format",
+            Self::Env => "env",
+        }
+    }
+}
+
+impl crate::ClosedAxis for FigmentNameTagKind {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxisLabel for FigmentNameTagKind {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
 }
 
 /// Borrowed classification of a [`figment::Source`].
@@ -2439,5 +2652,356 @@ mod tests {
             FigmentNameTag::classify(name).is_none(),
             "Yaml provider's path-shaped name `{name}` must NOT classify as a name-axis tag"
         );
+    }
+
+    // ---- FigmentNameTagKind / FigmentNameTag::kind ----
+    //
+    // The (FigmentNameTag → FigmentNameTagKind) lift closes the
+    // figment-metadata kind universe under one typescape primitive set:
+    // the figment-Source axis was already projected to a `'static`
+    // discriminant (FigmentSourceKind via FigmentSourceTag::kind); the
+    // figment-`Metadata::name` axis now has its symmetric peer. Tests
+    // mirror the FigmentSourceKind suite pointwise.
+
+    /// Canonical sample table covering every `FigmentNameTag` variant
+    /// once, with the kind each must classify into. Source for the
+    /// `figment_name_tag_kind_all_*` cover/partition tests below — peer
+    /// to `canonical_figment_source_kind_samples` on the figment-Source
+    /// axis.
+    fn canonical_figment_name_tag_kind_samples() -> Vec<(String, FigmentNameTagKind)> {
+        vec![
+            (
+                crate::discovery::Format::Lisp.metadata_name(Path::new("/etc/app/app.lisp")),
+                FigmentNameTagKind::Format,
+            ),
+            (
+                crate::discovery::Format::Nix.metadata_name(Path::new("/etc/app/app.nix")),
+                FigmentNameTagKind::Format,
+            ),
+            (
+                ConfigSource::env_metadata_name("MYAPP_"),
+                FigmentNameTagKind::Env,
+            ),
+            (ConfigSource::env_metadata_name(""), FigmentNameTagKind::Env),
+        ]
+    }
+
+    #[test]
+    fn figment_name_tag_kind_classifies_each_variant() {
+        // The forward map FigmentNameTag → FigmentNameTagKind is
+        // exhaustive: every variant pins to exactly one kind. Mirrors
+        // `figment_source_kind_classifies_each_variant` on the
+        // figment-Source axis.
+        let lisp_name = crate::discovery::Format::Lisp.metadata_name(Path::new("/a.lisp"));
+        let lisp_tag = FigmentNameTag::classify(&lisp_name).unwrap();
+        assert_eq!(lisp_tag.kind(), FigmentNameTagKind::Format);
+
+        let nix_name = crate::discovery::Format::Nix.metadata_name(Path::new("/a.nix"));
+        let nix_tag = FigmentNameTag::classify(&nix_name).unwrap();
+        assert_eq!(nix_tag.kind(), FigmentNameTagKind::Format);
+
+        let prefixed = ConfigSource::env_metadata_name("APP_");
+        let prefixed_tag = FigmentNameTag::classify(&prefixed).unwrap();
+        assert_eq!(prefixed_tag.kind(), FigmentNameTagKind::Env);
+
+        let bare = ConfigSource::env_metadata_name("");
+        let bare_tag = FigmentNameTag::classify(&bare).unwrap();
+        assert_eq!(bare_tag.kind(), FigmentNameTagKind::Env);
+    }
+
+    #[test]
+    fn figment_name_tag_kind_is_data_free() {
+        // Inner data does not influence kind — every Format variant
+        // maps to FigmentNameTagKind::Format regardless of the inner
+        // FormatMetadataTag's format or path; every Env variant maps
+        // to FigmentNameTagKind::Env regardless of the inner
+        // EnvMetadataTag's prefix / bare distinction. Mirrors
+        // `figment_source_kind_is_data_free` on the figment-Source axis.
+        for (format, path) in [
+            (crate::discovery::Format::Lisp, "/a.lisp"),
+            (crate::discovery::Format::Lisp, "/very/long/path/to/x.lisp"),
+            (crate::discovery::Format::Nix, "rel.nix"),
+        ] {
+            let name = format.metadata_name(Path::new(path));
+            let tag = FigmentNameTag::classify(&name).unwrap();
+            assert_eq!(tag.kind(), FigmentNameTagKind::Format);
+        }
+        for prefix in ["MYAPP_", "TOBIRA_", "X_", ""] {
+            let name = ConfigSource::env_metadata_name(prefix);
+            let tag = FigmentNameTag::classify(&name).unwrap();
+            assert_eq!(tag.kind(), FigmentNameTagKind::Env);
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_kind_agrees_with_as_predicates_pointwise() {
+        // The kind() / as_format() / as_env() pair must agree on every
+        // constructible tag variant — kind is the closed-enum lift of
+        // the two `as_*` projection predicates. Mirrors
+        // `figment_source_kind_agrees_with_predicates_pointwise` on the
+        // figment-Source axis.
+        for (name, _) in canonical_figment_name_tag_kind_samples() {
+            let tag = FigmentNameTag::classify(&name).unwrap();
+            assert_eq!(
+                tag.as_format().is_some(),
+                tag.kind() == FigmentNameTagKind::Format,
+            );
+            assert_eq!(
+                tag.as_env().is_some(),
+                tag.kind() == FigmentNameTagKind::Env,
+            );
+            // Kind-side predicates agree pointwise with the as_* tag
+            // projections.
+            assert_eq!(
+                tag.kind().is_format(),
+                tag.kind() == FigmentNameTagKind::Format,
+            );
+            assert_eq!(tag.kind().is_env(), tag.kind() == FigmentNameTagKind::Env);
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_attribution_axis_is_always_metadata_name() {
+        // Structural law: every FigmentNameTag classification sits on
+        // the metadata.name axis. This is the cross-primitive bridge
+        // between FigmentNameTag and AttributionAxis — symmetric peer
+        // of `figment_source_tag_attribution_axis_is_always_metadata_source`
+        // on the figment-Source axis.
+        use crate::AttributionAxis;
+        for (name, _) in canonical_figment_name_tag_kind_samples() {
+            let tag = FigmentNameTag::classify(&name).unwrap();
+            assert_eq!(tag.attribution_axis(), AttributionAxis::MetadataName);
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_kind_is_static_and_copy_and_hashable() {
+        // The discriminant is `'static` (no lifetime parameter) so it
+        // can cross thread boundaries the borrowed tag cannot. Trait
+        // bounds match the sibling typescape primitives
+        // (FigmentSourceKind, ConfigSourceKind, AttributionRule,
+        // AttributionConfidence, AttributionAxis).
+        fn assert_static<T: 'static>() {}
+        use std::collections::HashSet;
+        let mut set: HashSet<FigmentNameTagKind> =
+            FigmentNameTagKind::ALL.iter().copied().collect();
+        set.insert(FigmentNameTagKind::Format); // duplicate
+        assert_eq!(set.len(), FigmentNameTagKind::ALL.len());
+
+        // Copy: rebind without move.
+        let k = FigmentNameTagKind::Env;
+        let k2 = k;
+        let k3 = k;
+        assert_eq!(k, k2);
+        assert_eq!(k2, k3);
+
+        // 'static — observable by inserting into a static bound.
+        assert_static::<FigmentNameTagKind>();
+    }
+
+    #[test]
+    fn figment_name_tag_kind_all_has_no_duplicates() {
+        // The constant must be a set — no variant listed twice. Pins
+        // the typescape discipline shared with FigmentSourceKind::ALL
+        // and the other closed-enum kind axes.
+        use std::collections::HashSet;
+        let set: HashSet<FigmentNameTagKind> = FigmentNameTagKind::ALL.iter().copied().collect();
+        assert_eq!(
+            set.len(),
+            FigmentNameTagKind::ALL.len(),
+            "FigmentNameTagKind::ALL must contain no duplicates; got: {:?}",
+            FigmentNameTagKind::ALL,
+        );
+    }
+
+    #[test]
+    fn figment_name_tag_kind_all_covers_every_constructible_tag() {
+        // Subset cover: every kind produced by FigmentNameTag::kind
+        // over the canonical sample table must lie in
+        // FigmentNameTagKind::ALL. A future tag variant that adds a new
+        // kind class must extend FigmentNameTagKind and its ALL in the
+        // same commit; otherwise this test fails.
+        use std::collections::HashSet;
+        let declared: HashSet<FigmentNameTagKind> =
+            FigmentNameTagKind::ALL.iter().copied().collect();
+        let observed: HashSet<FigmentNameTagKind> = canonical_figment_name_tag_kind_samples()
+            .iter()
+            .map(|(name, _)| FigmentNameTag::classify(name).unwrap().kind())
+            .collect();
+        assert!(
+            observed.is_subset(&declared),
+            "FigmentNameTag::kind image must lie in FigmentNameTagKind::ALL; \
+             observed: {observed:?}, declared: {declared:?}",
+        );
+    }
+
+    #[test]
+    fn figment_name_tag_kind_all_equals_tag_kind_image() {
+        // Tight equality (stronger than subset cover): every variant
+        // in FigmentNameTagKind::ALL must be witnessed by at least one
+        // tag's kind() — no orphan variant in the declared kind space
+        // lacks a producing tag.
+        use std::collections::HashSet;
+        let declared: HashSet<FigmentNameTagKind> =
+            FigmentNameTagKind::ALL.iter().copied().collect();
+        let observed: HashSet<FigmentNameTagKind> = canonical_figment_name_tag_kind_samples()
+            .iter()
+            .map(|(name, _)| FigmentNameTag::classify(name).unwrap().kind())
+            .collect();
+        assert_eq!(
+            observed, declared,
+            "FigmentNameTag::kind image must equal FigmentNameTagKind::ALL",
+        );
+    }
+
+    #[test]
+    fn figment_name_tag_kind_all_declaration_order_is_format_env() {
+        // Pin declaration order. Consumers (diagnostics legends,
+        // attestation manifests, dashboard column orderings) that
+        // iterate ALL get a stable order; reordering the slice is a
+        // breaking change that must show up here.
+        assert_eq!(
+            FigmentNameTagKind::ALL,
+            &[FigmentNameTagKind::Format, FigmentNameTagKind::Env],
+        );
+    }
+
+    #[test]
+    fn figment_name_tag_kind_all_partition_is_format_xor_env() {
+        // Boolean partition: `is_format` / `is_env` over a tag sliced
+        // by each kind cell must agree with the cell's identity.
+        let samples = canonical_figment_name_tag_kind_samples();
+        for kind in FigmentNameTagKind::ALL.iter().copied() {
+            let witnessing_name = samples
+                .iter()
+                .find(|(name, _)| FigmentNameTag::classify(name).unwrap().kind() == kind)
+                .map(|(name, _)| name)
+                .expect("every kind cell must be witnessed by some tag");
+            let tag = FigmentNameTag::classify(witnessing_name).unwrap();
+            match kind {
+                FigmentNameTagKind::Format => {
+                    assert!(tag.kind().is_format());
+                    assert!(!tag.kind().is_env());
+                }
+                FigmentNameTagKind::Env => {
+                    assert!(tag.kind().is_env());
+                    assert!(!tag.kind().is_format());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_kind_as_str_yields_canonical_lowercase_names() {
+        // Concrete-position pin on FigmentNameTagKind::as_str. The
+        // trait-uniform round-trip test in cube::tests pins labels
+        // equal pairwise under from_canonical_str, but this test pins
+        // the literal string values themselves so a future rename
+        // (e.g. capitalizing "Env", prefixing "name-format") fails here
+        // before drifting through the trait-uniform round-trip law and
+        // the operator-facing rendering surface. The `"env"` label
+        // intentionally coincides with `ConfigSourceKind::Env`'s label
+        // by typescape design: the two axes meet at the shikumi-env-
+        // layer ↔ figment-Env-name resolution boundary.
+        assert_eq!(FigmentNameTagKind::Format.as_str(), "format");
+        assert_eq!(FigmentNameTagKind::Env.as_str(), "env");
+    }
+
+    #[test]
+    fn figment_name_tag_kind_from_canonical_str_round_trips_through_trait() {
+        // Pin the trait-default `from_canonical_str` parse on
+        // FigmentNameTagKind: each canonical lowercase name parses back
+        // to its variant via the ClosedAxisLabel default impl. Mixed-
+        // case forms an operator might type round-trip case-insensitively.
+        use crate::ClosedAxisLabel;
+        for k in FigmentNameTagKind::ALL.iter().copied() {
+            assert_eq!(
+                <FigmentNameTagKind as ClosedAxisLabel>::from_canonical_str(k.as_str()),
+                Some(k),
+                "trait from_canonical_str must round-trip for {k:?}",
+            );
+        }
+        assert_eq!(
+            <FigmentNameTagKind as ClosedAxisLabel>::from_canonical_str("Format"),
+            Some(FigmentNameTagKind::Format),
+        );
+        assert_eq!(
+            <FigmentNameTagKind as ClosedAxisLabel>::from_canonical_str("ENV"),
+            Some(FigmentNameTagKind::Env),
+        );
+        // Unrecognized strings — including the trailing-whitespace
+        // case and a one-character drift — reject.
+        assert_eq!(
+            <FigmentNameTagKind as ClosedAxisLabel>::from_canonical_str("env "),
+            None,
+        );
+        assert_eq!(
+            <FigmentNameTagKind as ClosedAxisLabel>::from_canonical_str("forma"),
+            None,
+        );
+    }
+
+    #[test]
+    fn figment_name_tag_kind_all_attribution_axis_image_is_metadata_name() {
+        // Cross-primitive cover law: every kind in FigmentNameTagKind::ALL
+        // — when projected back through a witnessing tag's
+        // `attribution_axis()` — must lie on AttributionAxis::MetadataName.
+        // Pins the structural law `figment_name_tag_attribution_axis_is_always_metadata_name`
+        // from the perspective of the kind axis: the figment-name-axis
+        // kind partition is a sub-partition of the metadata.name
+        // attribution axis. Symmetric peer of
+        // `figment_source_kind_all_attribution_axis_image_is_metadata_source`
+        // on the figment-Source axis.
+        use crate::AttributionAxis;
+        use std::collections::HashSet;
+        let samples = canonical_figment_name_tag_kind_samples();
+        let observed: HashSet<AttributionAxis> = FigmentNameTagKind::ALL
+            .iter()
+            .copied()
+            .map(|kind| {
+                let (name, _) = samples
+                    .iter()
+                    .find(|(name, _)| FigmentNameTag::classify(name).unwrap().kind() == kind)
+                    .expect("every kind cell must be witnessed");
+                FigmentNameTag::classify(name).unwrap().attribution_axis()
+            })
+            .collect();
+        assert_eq!(
+            observed,
+            HashSet::from([AttributionAxis::MetadataName]),
+            "every FigmentNameTagKind variant projects to AttributionAxis::MetadataName",
+        );
+    }
+
+    #[test]
+    fn figment_name_tag_kind_round_trips_through_figment_env_emission() {
+        // End-to-end: classify a real figment::providers::Env-emitted
+        // metadata-name through FigmentNameTag, project to kind, and
+        // confirm the kind matches FigmentNameTagKind::Env. Pins the
+        // cross-side contract that figment's Env emission lands on the
+        // Env kind cell.
+        use figment::Provider;
+        for prefix in ["MYAPP_", "TOBIRA_", "X_"] {
+            let env = figment::providers::Env::prefixed(prefix);
+            let md = env.metadata();
+            let name: &str = md.name.as_ref();
+            let tag = FigmentNameTag::classify(name).expect("figment Env name must classify");
+            assert_eq!(tag.kind(), FigmentNameTagKind::Env);
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_kind_round_trips_through_format_emission() {
+        // End-to-end: every shikumi-built provider variant's emitted
+        // metadata-name classifies via FigmentNameTag::Format and
+        // projects to FigmentNameTagKind::Format. Pins the cross-side
+        // contract that shikumi's own emissions land on the Format
+        // kind cell.
+        use crate::discovery::Format;
+        for f in Format::ALL.iter().filter(|f| f.has_shikumi_provider()) {
+            let name = f.metadata_name(Path::new("/etc/app/app.cfg"));
+            let tag = FigmentNameTag::classify(&name).expect("format-emitted name classifies");
+            assert_eq!(tag.kind(), FigmentNameTagKind::Format);
+        }
     }
 }

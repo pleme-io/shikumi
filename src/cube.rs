@@ -1284,8 +1284,8 @@ mod tests {
     use crate::{
         AttributionAxis, AttributionConfidence, AttributionCoordinates, AttributionRule,
         AttributionSourceKindCoordinates, ConfigSourceKind, ConfigTierKind,
-        ErrorLocalizationCoordinates, FieldPathLocalization, FigmentSourceKind, Format,
-        FormatCoordinates, FormatProvenance, ShikumiErrorKind, WatchEventClass,
+        ErrorLocalizationCoordinates, FieldPathLocalization, FigmentNameTagKind, FigmentSourceKind,
+        Format, FormatCoordinates, FormatProvenance, ShikumiErrorKind, WatchEventClass,
     };
 
     // ---- Implementor-list macros ----
@@ -1328,15 +1328,17 @@ mod tests {
     // test can list one macro call instead of two.
 
     /// Invokes `$cb!(TypeName)` for each [`ClosedAxis`] axis-primitive
-    /// enum — the twelve closed-enum axis primitives the typescape
+    /// enum — the thirteen closed-enum axis primitives the typescape
     /// recognizes today, in declaration order. [`PartitionFace`],
-    /// [`ConfigTierKind`], and [`WatchEventClass`] sit at the tail as
-    /// the three non-cube-axis primitives (the first a variant-tag
-    /// projection of [`PartitionOrdinal`], the second of
+    /// [`ConfigTierKind`], [`WatchEventClass`], and [`FigmentNameTagKind`]
+    /// sit at the tail as the four non-cube-axis primitives (the first
+    /// a variant-tag projection of [`PartitionOrdinal`], the second of
     /// [`crate::ConfigTier`], the third the reload-relevance
-    /// classification of a raw [`notify::Event`] kind that lifts the
-    /// hot-reload trigger predicate to a closed three-way partition);
-    /// the leading nine are the per-axis-of-the-cube primitives.
+    /// classification of a raw [`notify::Event`] kind, the fourth the
+    /// `'static` discriminant of [`crate::FigmentNameTag`] on the
+    /// figment-`Metadata::name` axis — the symmetric peer of
+    /// [`FigmentSourceKind`] on the figment-`Source` axis); the
+    /// leading nine are the per-axis-of-the-cube primitives.
     macro_rules! for_each_closed_axis_primitive {
         ($cb:ident) => {
             $cb!(Format);
@@ -1351,6 +1353,7 @@ mod tests {
             $cb!(PartitionFace);
             $cb!(ConfigTierKind);
             $cb!(WatchEventClass);
+            $cb!(FigmentNameTagKind);
         };
     }
 
@@ -1450,6 +1453,7 @@ mod tests {
             $cb!(FieldPathLocalization);
             $cb!(AttributionRule);
             $cb!(WatchEventClass);
+            $cb!(FigmentNameTagKind);
         };
     }
 
@@ -1891,6 +1895,25 @@ mod tests {
         assert_trait_matches_inherent::<WatchEventClass>(WatchEventClass::ALL);
     }
 
+    #[test]
+    fn figment_name_tag_kind_trait_all_matches_inherent_all() {
+        // `FigmentNameTagKind` is the thirteenth closed-axis primitive
+        // — the `'static` discriminant of `crate::FigmentNameTag` on
+        // figment's `Metadata::name` axis, the symmetric peer of
+        // `FigmentSourceKind` on the `Metadata::source` axis. The
+        // trait `ALL` slice is the inherent `ALL` slice (pointwise
+        // equal, same declaration order: `Format`, `Env`). A future
+        // variant landing on `FigmentNameTagKind` (e.g. a hypothetical
+        // `Url` kind in lockstep with a `FigmentNameTag::Url` if
+        // figment's name axis grows one) extends both slices in
+        // lockstep. Pins that the trait-uniform invariant suite
+        // reaching every `for_each_closed_axis_*` macro arm now
+        // reaches the figment-name-axis kind classification on the
+        // same proof harness as the figment-Source-axis kind and
+        // every other axis primitive on the typescape.
+        assert_trait_matches_inherent::<FigmentNameTagKind>(FigmentNameTagKind::ALL);
+    }
+
     // ---- axis_iter agrees with trait ALL for every implementor ----
 
     #[test]
@@ -1916,8 +1939,8 @@ mod tests {
     // ---- axis_cardinality pins today's variant / cell counts ----
 
     #[test]
-    fn axis_cardinality_pins_todays_counts_across_sixteen_implementors() {
-        // Twelve closed-enum axis primitives. A new variant landing
+    fn axis_cardinality_pins_todays_counts_across_seventeen_implementors() {
+        // Thirteen closed-enum axis primitives. A new variant landing
         // on any of these enums extends the expected count in
         // lockstep.
         assert_axis_cardinality_matches_trait_all::<Format>(4);
@@ -1932,6 +1955,7 @@ mod tests {
         assert_axis_cardinality_matches_trait_all::<PartitionFace>(2);
         assert_axis_cardinality_matches_trait_all::<ConfigTierKind>(4);
         assert_axis_cardinality_matches_trait_all::<WatchEventClass>(3);
+        assert_axis_cardinality_matches_trait_all::<FigmentNameTagKind>(2);
         // Four product cubes. A new cell-axis landing on any cube
         // extends the expected count by the product of the new axis's
         // cardinality with the cube's prior cardinality.
@@ -3476,18 +3500,21 @@ mod tests {
     // before any silent dropouts at the trait-uniform test sites.
 
     #[test]
-    fn for_each_closed_axis_primitive_macro_covers_twelve_axes() {
-        // Pin that the macro expands to exactly twelve arms — the
-        // twelve closed-enum axis primitives the typescape
+    fn for_each_closed_axis_primitive_macro_covers_thirteen_axes() {
+        // Pin that the macro expands to exactly thirteen arms — the
+        // thirteen closed-enum axis primitives the typescape
         // recognizes today (the nine per-axis-of-the-cube primitives
         // plus `PartitionFace`, the variant-tag projection of
         // `PartitionOrdinal`, plus `ConfigTierKind`, the variant-tag
         // projection of `crate::ConfigTier`, plus `WatchEventClass`,
         // the reload-relevance classification of a raw
-        // `notify::Event` kind). A thirteenth axis primitive landing
-        // extends the macro in lockstep with the `impl ClosedAxis`
-        // declaration; this assertion fails until the macro arm
-        // lands.
+        // `notify::Event` kind, plus `FigmentNameTagKind`, the
+        // `'static` discriminant of `FigmentNameTag` on figment's
+        // `Metadata::name` axis — the symmetric peer of
+        // `FigmentSourceKind` on the `Metadata::source` axis). A
+        // fourteenth axis primitive landing extends the macro in
+        // lockstep with the `impl ClosedAxis` declaration; this
+        // assertion fails until the macro arm lands.
         let mut count = 0usize;
         macro_rules! tally {
             ($ty:ident) => {
@@ -3496,8 +3523,8 @@ mod tests {
         }
         for_each_closed_axis_primitive!(tally);
         assert_eq!(
-            count, 12,
-            "for_each_closed_axis_primitive! must expand to twelve arms",
+            count, 13,
+            "for_each_closed_axis_primitive! must expand to thirteen arms",
         );
     }
 
@@ -3539,10 +3566,10 @@ mod tests {
     }
 
     #[test]
-    fn for_each_closed_axis_implementor_macro_covers_sixteen_types() {
-        // Pin that the superset macro expands to exactly sixteen arms
-        // — the twelve axis primitives plus the four product cubes.
-        // A thirteenth axis primitive OR a fifth cube landing extends
+    fn for_each_closed_axis_implementor_macro_covers_seventeen_types() {
+        // Pin that the superset macro expands to exactly seventeen arms
+        // — the thirteen axis primitives plus the four product cubes.
+        // A fourteenth axis primitive OR a fifth cube landing extends
         // the composed macro in lockstep through one of its two
         // component macros; this assertion fails until the arm
         // lands.
@@ -3554,8 +3581,8 @@ mod tests {
         }
         for_each_closed_axis_implementor!(tally);
         assert_eq!(
-            count, 16,
-            "for_each_closed_axis_implementor! must expand to sixteen arms (12 axes + 4 cubes)",
+            count, 17,
+            "for_each_closed_axis_implementor! must expand to seventeen arms (13 axes + 4 cubes)",
         );
     }
 
@@ -3579,17 +3606,18 @@ mod tests {
             };
         }
         for_each_closed_axis_implementor!(add);
-        // 12-axis sum: Format=4, FormatProvenance=2, ConfigSourceKind=3,
+        // 13-axis sum: Format=4, FormatProvenance=2, ConfigSourceKind=3,
         // FigmentSourceKind=3, ShikumiErrorKind=6, FieldPathLocalization=3,
         // AttributionRule=5, AttributionConfidence=2, AttributionAxis=2,
-        // PartitionFace=2, ConfigTierKind=4, WatchEventClass=3 → 39.
+        // PartitionFace=2, ConfigTierKind=4, WatchEventClass=3,
+        // FigmentNameTagKind=2 → 41.
         // 4-cube sum: FormatCoordinates=8, AttributionCoordinates=12,
         // ErrorLocalizationCoordinates=18, AttributionSourceKindCoordinates=9
-        // → 47. Grand total 39+47 = 86.
+        // → 47. Grand total 41+47 = 88.
         assert_eq!(
-            total, 86,
+            total, 88,
             "macro must emit each implementor exactly once \
-             (today's axis_cardinality checksum is 86)",
+             (today's axis_cardinality checksum is 88)",
         );
     }
 
@@ -3748,17 +3776,18 @@ mod tests {
     }
 
     #[test]
-    fn for_each_closed_axis_label_implementor_macro_covers_twelve_implementors() {
-        // Pin that the macro expands to exactly twelve arms — the
-        // twelve [`ClosedAxisLabel`] implementors the typescape
+    fn for_each_closed_axis_label_implementor_macro_covers_thirteen_implementors() {
+        // Pin that the macro expands to exactly thirteen arms — the
+        // thirteen [`ClosedAxisLabel`] implementors the typescape
         // recognizes today ([`PartitionFace`], [`ConfigTierKind`],
         // [`Format`], [`FormatProvenance`], [`ConfigSourceKind`],
         // [`FigmentSourceKind`], [`AttributionConfidence`],
         // [`AttributionAxis`], [`ShikumiErrorKind`],
         // [`FieldPathLocalization`], [`AttributionRule`],
-        // [`WatchEventClass`]). A thirteenth implementor landing
-        // extends the macro in lockstep with the `impl ClosedAxisLabel`
-        // declaration; this assertion fails until the macro arm lands.
+        // [`WatchEventClass`], [`FigmentNameTagKind`]). A fourteenth
+        // implementor landing extends the macro in lockstep with the
+        // `impl ClosedAxisLabel` declaration; this assertion fails
+        // until the macro arm lands.
         let mut count = 0usize;
         macro_rules! tally {
             ($ty:ident) => {
@@ -3767,8 +3796,8 @@ mod tests {
         }
         for_each_closed_axis_label_implementor!(tally);
         assert_eq!(
-            count, 12,
-            "for_each_closed_axis_label_implementor! must expand to twelve arms",
+            count, 13,
+            "for_each_closed_axis_label_implementor! must expand to thirteen arms",
         );
     }
 
@@ -3796,13 +3825,13 @@ mod tests {
         }
         for_each_closed_axis_label_implementor!(add);
         assert_eq!(
-            total, 39,
+            total, 41,
             "macro must emit each ClosedAxisLabel implementor exactly once \
-             (today's axis_cardinality checksum is 39: \
+             (today's axis_cardinality checksum is 41: \
              PartitionFace=2 + ConfigTierKind=4 + Format=4 + FormatProvenance=2 \
              + ConfigSourceKind=3 + FigmentSourceKind=3 + AttributionConfidence=2 \
              + AttributionAxis=2 + ShikumiErrorKind=6 + FieldPathLocalization=3 \
-             + AttributionRule=5 + WatchEventClass=3)",
+             + AttributionRule=5 + WatchEventClass=3 + FigmentNameTagKind=2)",
         );
     }
 
