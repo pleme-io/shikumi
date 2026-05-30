@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::source::{
     ConfigSource, ConfigSourceChain, ConfigSourceKind, EnvMetadataTag, FigmentNameTag,
-    FigmentSourceKind, FigmentSourceTag,
+    FigmentNameTagKind, FigmentSourceKind, FigmentSourceTag,
 };
 
 /// Errors produced by shikumi's config discovery, loading, and watching.
@@ -836,6 +836,87 @@ impl AttributionRule {
             Self::FileBySource => Some(FigmentSourceKind::File),
             Self::DefaultsByCodeUniqueness => Some(FigmentSourceKind::Code),
             Self::FileByMetadataName | Self::EnvByPrefix | Self::EnvByUniqueness => None,
+        }
+    }
+
+    /// [`FigmentNameTagKind`] this rule's identity already pins on the
+    /// figment-`Metadata::name` axis, or [`None`] when the rule is
+    /// dispatched off `metadata.source` and therefore does not constrain
+    /// the originating `figment::Metadata::name` at all.
+    ///
+    /// Symmetric peer of [`Self::figment_source_kind`] on the
+    /// figment-`Metadata::name` axis: name-axis rules
+    /// ([`Self::metadata_axis`] returns [`AttributionAxis::MetadataName`])
+    /// consult `figment::Metadata::name` directly via
+    /// [`FigmentNameTag::classify`], so the rule's identity already pins
+    /// the [`FigmentNameTagKind`] cell that fired:
+    /// [`Self::FileByMetadataName`] ⇒
+    /// [`Some(FigmentNameTagKind::Format)`] (the resolver matched the
+    /// shikumi-built provider's `"<format>: <path>"` shape, classifying
+    /// to [`FigmentNameTag::Format`]),
+    /// [`Self::EnvByPrefix`] ⇒ [`Some(FigmentNameTagKind::Env)`] (the
+    /// resolver matched figment's `` `PREFIX` environment variable(s) ``
+    /// shape, classifying to [`FigmentNameTag::Env`] with
+    /// [`EnvMetadataTag::Prefixed`]),
+    /// [`Self::EnvByUniqueness`] ⇒ [`Some(FigmentNameTagKind::Env)`] (the
+    /// resolver matched an env-shaped name without a recorded prefix,
+    /// classifying to [`FigmentNameTag::Env`] with either
+    /// [`EnvMetadataTag::Prefixed`] or [`EnvMetadataTag::Bare`]).
+    /// Source-axis rules ([`Self::metadata_axis`] returns
+    /// [`AttributionAxis::MetadataSource`]) consult
+    /// `figment::Metadata::source` instead — the actual
+    /// `figment::Metadata::name` may carry any text the upstream
+    /// provider attached (figment's built-in YAML/TOML providers attach
+    /// the file path verbatim; figment's `Serialized` attaches the
+    /// `Source::Code` shape) — so the partial projection returns
+    /// [`None`]: [`Self::FileBySource`], [`Self::DefaultsByCodeUniqueness`]
+    /// both map to [`None`].
+    ///
+    /// One source of truth for the (rule → figment-name-tag-kind)
+    /// projection — symmetric peer of the (rule → figment-source-kind)
+    /// projection on the `Metadata::source` axis. Before this method, the
+    /// information was implicit in the resolver's branching shape and
+    /// recoverable only by re-reading `metadata.name` off the originating
+    /// [`figment::Error`] and re-running [`FigmentNameTag::classify`] /
+    /// [`FigmentNameTag::kind`] inline; lifting it to a typed accessor
+    /// pins "this rule's identity already names the figment-name-axis
+    /// kind cell" at the type level. A future variant added to [`Self`]
+    /// forces a kind assignment in the exhaustive match in lockstep with
+    /// the [`Self::figment_source_kind`] arm.
+    ///
+    /// Composes with [`Self::metadata_axis`] as a refinement on the
+    /// name-axis: the partial projection is [`Some`] exactly when
+    /// `self.metadata_axis() == AttributionAxis::MetadataName`. The
+    /// `Some-iff-MetadataName` invariant is the dual of the
+    /// `Some-iff-MetadataSource` invariant on [`Self::figment_source_kind`],
+    /// and pinned by
+    /// `attribution_rule_figment_name_tag_kind_some_iff_metadata_axis_name`.
+    /// Composes with [`Self::figment_source_kind`] as a strict partition
+    /// over the rule space: every rule's identity dispatches on exactly
+    /// one figment-metadata axis, so for every rule exactly one of
+    /// [`Self::figment_source_kind`] and [`Self::figment_name_tag_kind`]
+    /// returns [`Some`]. Pinned by
+    /// `attribution_rule_figment_name_tag_kind_xor_figment_source_kind`.
+    ///
+    /// Image of the projection over [`Self::ALL`] is exactly
+    /// [`FigmentNameTagKind::ALL`] — both [`FigmentNameTagKind::Format`]
+    /// (reached via [`Self::FileByMetadataName`]) and
+    /// [`FigmentNameTagKind::Env`] (reached via [`Self::EnvByPrefix`] /
+    /// [`Self::EnvByUniqueness`]) lie in the image. Pinned by
+    /// `attribution_rule_figment_name_tag_kind_image_equals_figment_name_tag_kind_all`.
+    ///
+    /// Pairs with [`FailingSourceAttribution::figment_name_tag_kind`] /
+    /// [`crate::ReloadFailure::figment_name_tag_kind`]: the same
+    /// projection surfaced off the borrowed and cross-thread observable
+    /// forms, with the cross-thread accessor lifted to `Option<_>` to
+    /// track the `Some-iff-attribution` discipline established for the
+    /// sibling projection accessors.
+    #[must_use]
+    pub fn figment_name_tag_kind(self) -> Option<FigmentNameTagKind> {
+        match self {
+            Self::FileByMetadataName => Some(FigmentNameTagKind::Format),
+            Self::EnvByPrefix | Self::EnvByUniqueness => Some(FigmentNameTagKind::Env),
+            Self::FileBySource | Self::DefaultsByCodeUniqueness => None,
         }
     }
 
@@ -2255,6 +2336,32 @@ impl<'a> FailingSourceAttribution<'a> {
     #[must_use]
     pub fn figment_source_kind(self) -> Option<FigmentSourceKind> {
         self.rule.figment_source_kind()
+    }
+
+    /// [`FigmentNameTagKind`] of [`Self::rule`]; convenience over
+    /// [`AttributionRule::figment_name_tag_kind`]. One method call
+    /// answers "did the rule already pin which figment-name-axis cell
+    /// fired?" — [`Some`] for name-axis rules
+    /// ([`AttributionRule::FileByMetadataName`] →
+    /// [`Some(FigmentNameTagKind::Format)`],
+    /// [`AttributionRule::EnvByPrefix`] /
+    /// [`AttributionRule::EnvByUniqueness`] →
+    /// [`Some(FigmentNameTagKind::Env)`]), [`None`] for source-axis
+    /// rules whose identity does not constrain the originating
+    /// `figment::Metadata::name` — without destructuring the envelope or
+    /// re-reading `metadata.name` off the originating
+    /// [`figment::Error`].
+    ///
+    /// Some-iff-MetadataName discipline shared with
+    /// [`AttributionRule::figment_name_tag_kind`]: the projection is
+    /// [`Some`] exactly when [`Self::metadata_axis`] returns
+    /// [`AttributionAxis::MetadataName`] — the dual of the
+    /// Some-iff-MetadataSource discipline on [`Self::figment_source_kind`].
+    /// Pinned by
+    /// `failing_source_attribution_figment_name_tag_kind_mirrors_rule_figment_name_tag_kind`.
+    #[must_use]
+    pub fn figment_name_tag_kind(self) -> Option<FigmentNameTagKind> {
+        self.rule.figment_name_tag_kind()
     }
 
     /// Joint (figment-Source-axis kind × shikumi-layer-kind) cell of
@@ -5437,6 +5544,200 @@ mod tests {
                 attr.metadata_axis() == AttributionAxis::MetadataSource,
                 "envelope for rule {rule:?}: figment_source_kind.is_some() must equal \
                  (metadata_axis == MetadataSource)",
+            );
+        }
+    }
+
+    // ---- AttributionRule::figment_name_tag_kind / envelope mirror ----
+    //
+    // The (rule → figment-name-tag-kind) partial projection: name-axis
+    // rules pin a FigmentNameTagKind cell at the type level
+    // (FileByMetadataName → Format; EnvByPrefix / EnvByUniqueness → Env);
+    // source-axis rules pin none. Symmetric peer of the
+    // (rule → figment-source-kind) suite above.
+
+    #[test]
+    fn attribution_rule_figment_name_tag_kind_some_for_file_by_metadata_name() {
+        // FileByMetadataName dispatches off the shikumi-built provider's
+        // "<format>: <path>" metadata-name shape, classifying via
+        // FigmentNameTag::Format — so the rule's identity already pins
+        // FigmentNameTagKind::Format.
+        assert_eq!(
+            AttributionRule::FileByMetadataName.figment_name_tag_kind(),
+            Some(FigmentNameTagKind::Format),
+        );
+    }
+
+    #[test]
+    fn attribution_rule_figment_name_tag_kind_some_for_env_by_prefix() {
+        // EnvByPrefix dispatches off figment's
+        // "`PREFIX` environment variable(s)" metadata-name shape,
+        // classifying via FigmentNameTag::Env with EnvMetadataTag::Prefixed —
+        // so the rule's identity already pins FigmentNameTagKind::Env.
+        assert_eq!(
+            AttributionRule::EnvByPrefix.figment_name_tag_kind(),
+            Some(FigmentNameTagKind::Env),
+        );
+    }
+
+    #[test]
+    fn attribution_rule_figment_name_tag_kind_some_for_env_by_uniqueness() {
+        // EnvByUniqueness dispatches off an env-shaped metadata-name
+        // (either prefixed without a chain match, or bare), classifying
+        // via FigmentNameTag::Env — so the rule's identity already pins
+        // FigmentNameTagKind::Env.
+        assert_eq!(
+            AttributionRule::EnvByUniqueness.figment_name_tag_kind(),
+            Some(FigmentNameTagKind::Env),
+        );
+    }
+
+    #[test]
+    fn attribution_rule_figment_name_tag_kind_none_for_source_axis_rules() {
+        // The two source-axis rules dispatch off `metadata.source`, not
+        // `metadata.name`, so the rule's identity does not pin a
+        // FigmentNameTagKind cell — return None for both.
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            assert_eq!(
+                rule.figment_name_tag_kind(),
+                None,
+                "source-axis rule {rule:?} must not pin a FigmentNameTagKind",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_figment_name_tag_kind_partitions_every_variant() {
+        // Every AttributionRule variant must classify into exactly one
+        // Option<FigmentNameTagKind> cell. Pins the partition contract
+        // that AttributionRule::figment_name_tag_kind is a total function
+        // over the rule space (returning a partial projection); a
+        // future variant added to AttributionRule forces an assignment
+        // in the exhaustive match (compile-time), and this test pins
+        // the resulting partition (test-time). Symmetric peer of
+        // `attribution_rule_figment_source_kind_partitions_every_variant`.
+        let cases = [
+            (AttributionRule::FileBySource, None),
+            (
+                AttributionRule::FileByMetadataName,
+                Some(FigmentNameTagKind::Format),
+            ),
+            (AttributionRule::EnvByPrefix, Some(FigmentNameTagKind::Env)),
+            (
+                AttributionRule::EnvByUniqueness,
+                Some(FigmentNameTagKind::Env),
+            ),
+            (AttributionRule::DefaultsByCodeUniqueness, None),
+        ];
+        for (rule, expected) in cases {
+            assert_eq!(rule.figment_name_tag_kind(), expected, "rule {rule:?}");
+        }
+    }
+
+    #[test]
+    fn attribution_rule_figment_name_tag_kind_some_iff_metadata_axis_name() {
+        // Structural composition law: figment_name_tag_kind is Some
+        // exactly when metadata_axis is MetadataName. The dual of
+        // `attribution_rule_figment_source_kind_some_iff_metadata_axis_source`
+        // on the name axis; together the two biconditionals pin that
+        // every rule's identity dispatches on exactly one figment-metadata
+        // axis (the AttributionAxis::ALL bi-partition: every rule has
+        // exactly one MetadataSource-or-MetadataName label).
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.figment_name_tag_kind().is_some(),
+                rule.metadata_axis() == AttributionAxis::MetadataName,
+                "rule {rule:?}: figment_name_tag_kind.is_some() must equal \
+                 (metadata_axis == MetadataName)",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_figment_name_tag_kind_image_equals_figment_name_tag_kind_all() {
+        // Image of figment_name_tag_kind over the rule space, dropping
+        // None returns, equals FigmentNameTagKind::ALL exactly — every
+        // recognized name-axis kind (Format from FileByMetadataName, Env
+        // from EnvByPrefix / EnvByUniqueness) is reachable through some
+        // name-axis rule, and no rule projects outside FigmentNameTagKind::ALL.
+        // Pins the surjectivity of the partial projection onto the
+        // figment-name-tag-kind space. Peer to
+        // `attribution_rule_file_provenance_image_equals_format_provenance_all`
+        // for the file-provenance axis, and the dual of
+        // `attribution_rule_figment_source_kind_image_is_file_and_code_only`
+        // on the source-axis (where Custom remains unreached today).
+        use std::collections::HashSet;
+        let observed: HashSet<FigmentNameTagKind> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter_map(AttributionRule::figment_name_tag_kind)
+            .collect();
+        let expected: HashSet<FigmentNameTagKind> =
+            FigmentNameTagKind::ALL.iter().copied().collect();
+        assert_eq!(
+            observed, expected,
+            "image of figment_name_tag_kind over AttributionRule::ALL must equal \
+             FigmentNameTagKind::ALL; got: {observed:?}",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_figment_name_tag_kind_xor_figment_source_kind() {
+        // Cross-axis partition law: every rule's identity dispatches on
+        // exactly one figment-metadata axis, so for every rule exactly
+        // one of figment_source_kind and figment_name_tag_kind returns
+        // Some. The two partial projections together cover the rule
+        // space disjointly. Strictly stronger than the two per-axis
+        // biconditionals: pins the bi-partition of the rule space across
+        // both figment-metadata axes at one site, mirroring
+        // `attribution_axis_all_covers_failing_source_attribution_axes`
+        // on the (MetadataSource vs MetadataName) partition.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let src_some = rule.figment_source_kind().is_some();
+            let name_some = rule.figment_name_tag_kind().is_some();
+            assert!(
+                src_some ^ name_some,
+                "rule {rule:?}: exactly one of figment_source_kind / \
+                 figment_name_tag_kind must be Some (got src_some={src_some}, \
+                 name_some={name_some})",
+            );
+        }
+    }
+
+    #[test]
+    fn failing_source_attribution_figment_name_tag_kind_mirrors_rule_figment_name_tag_kind() {
+        // The envelope's figment_name_tag_kind() must agree with the
+        // rule's, byte-for-byte, on every recognized rule. Pins the
+        // contract that the convenience accessor stays a thin
+        // forwarder over AttributionRule::figment_name_tag_kind, peer
+        // to `failing_source_attribution_figment_source_kind_mirrors_rule_figment_source_kind`
+        // on the source axis.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let src = ConfigSource::Defaults;
+            let attr = FailingSourceAttribution::new(&src, rule);
+            assert_eq!(attr.figment_name_tag_kind(), rule.figment_name_tag_kind());
+        }
+    }
+
+    #[test]
+    fn failing_source_attribution_figment_name_tag_kind_some_iff_metadata_axis_name() {
+        // The envelope's figment_name_tag_kind is Some exactly when its
+        // metadata_axis is MetadataName. Forwarder discipline pins the
+        // same biconditional as
+        // `attribution_rule_figment_name_tag_kind_some_iff_metadata_axis_name`,
+        // surfaced through the borrowed envelope. Dual of
+        // `failing_source_attribution_figment_source_kind_some_iff_metadata_axis_source`.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let src = ConfigSource::Defaults;
+            let attr = FailingSourceAttribution::new(&src, rule);
+            assert_eq!(
+                attr.figment_name_tag_kind().is_some(),
+                attr.metadata_axis() == AttributionAxis::MetadataName,
+                "envelope for rule {rule:?}: figment_name_tag_kind.is_some() must equal \
+                 (metadata_axis == MetadataName)",
             );
         }
     }

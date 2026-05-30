@@ -20,7 +20,7 @@ use crate::error::{
     AttributionSourceKindCoordinates, ErrorLocalizationCoordinates, FailingSourceAttribution,
     FieldPathLocalization, ShikumiError, ShikumiErrorKind, dotted_field_path,
 };
-use crate::source::{ConfigSource, ConfigSourceKind, FigmentSourceKind};
+use crate::source::{ConfigSource, ConfigSourceKind, FigmentNameTagKind, FigmentSourceKind};
 
 /// A clone-able summary of the most recent reload failure on a
 /// [`crate::ConfigStore`].
@@ -277,6 +277,80 @@ impl ReloadFailure {
     pub fn figment_source_kind(&self) -> Option<FigmentSourceKind> {
         self.attribution_rule
             .and_then(AttributionRule::figment_source_kind)
+    }
+
+    /// [`FigmentNameTagKind`] structurally pinned by
+    /// [`Self::attribution_rule`], or `None` when no attribution was
+    /// recorded *or* when the recorded attribution is source-axis
+    /// (where the rule's identity does not constrain
+    /// `figment::Metadata::name`) — strict superset of
+    /// [`Self::attribution_rule`]`.and_then(AttributionRule::figment_name_tag_kind)`,
+    /// surfaced as a typed accessor so observers (dashboards,
+    /// alerting policies, attestation manifests) don't re-derive the
+    /// (rule → figment-name-tag-kind) partial projection at every
+    /// observation site.
+    ///
+    /// Symmetric peer of [`Self::figment_source_kind`] on the
+    /// figment-`Metadata::name` axis — the two accessors close the
+    /// cross-thread observable form's figment-metadata kind universe.
+    /// Before this accessor, the name-axis-side classification could
+    /// not survive the borrowed-tag → owned-envelope boundary: the
+    /// underlying [`FigmentNameTag`] is lifetime-parameterized
+    /// (allocation-free but unable to cross thread boundaries or
+    /// persist in [`ReloadFailure`]), so observers reading
+    /// [`crate::ConfigStore::last_reload_error`] could only reach the
+    /// figment-name-axis kind by retaining the live [`ShikumiError`]
+    /// (impossible — [`ShikumiError`] is not [`Clone`]) or by
+    /// re-parsing [`Self::message`] for the originating tag shape (a
+    /// drift-prone string surface). The lifted accessor surfaces the
+    /// `'static` [`FigmentNameTagKind`] discriminant through the
+    /// captured rule slot.
+    ///
+    /// Two-stage `None` discipline mirroring [`Self::figment_source_kind`]:
+    /// (1) `None` when no attribution was recorded
+    /// ([`Self::attribution_rule`] is [`None`]),
+    /// (2) `None` when the recorded attribution is source-axis
+    /// ([`Self::metadata_axis`] is
+    /// [`Some(AttributionAxis::MetadataSource)`]) — neither path pins a
+    /// figment-name-axis cell. Name-axis attributions
+    /// ([`AttributionRule::FileByMetadataName`] →
+    /// [`Some(FigmentNameTagKind::Format)`],
+    /// [`AttributionRule::EnvByPrefix`] /
+    /// [`AttributionRule::EnvByUniqueness`] →
+    /// [`Some(FigmentNameTagKind::Env)`]) surface a [`Some`] cell directly.
+    /// Operationally distinguishes "no provenance at all" from
+    /// "source-axis provenance whose figment name-tag kind was not
+    /// retained" — observers cannot recover figment's `Metadata::name`
+    /// classification off the cross-thread envelope, but they can
+    /// route on whether the attribution rule already pinned it.
+    ///
+    /// Composes with [`Self::metadata_axis`] as a refinement on the
+    /// name-axis cells: when [`Some`], the projection is [`Some`]
+    /// exactly when [`Self::metadata_axis`] returns
+    /// [`Some(AttributionAxis::MetadataName)`]. Pinned by
+    /// `figment_name_tag_kind_some_iff_metadata_axis_metadata_name`.
+    /// Composes with [`Self::figment_source_kind`] as a strict
+    /// partition over the attributed-envelope surface: every attributed
+    /// failure has exactly one of the two figment-metadata kind cells
+    /// surfaced as [`Some`]; unattributed failures have both as [`None`].
+    /// Pinned by
+    /// `figment_name_tag_kind_xor_figment_source_kind_on_attributed_envelopes`.
+    ///
+    /// Cross-thread mirror of
+    /// [`FailingSourceAttribution::figment_name_tag_kind`] (and of
+    /// [`AttributionRule::figment_name_tag_kind`] at the rule layer): the
+    /// captured envelope's projection agrees pointwise with the live
+    /// error's, pinning the lossless-capture contract for the
+    /// figment-name-tag-kind axis on the cross-thread observable form.
+    /// Pinned by
+    /// `figment_name_tag_kind_agrees_with_underlying_error_pointwise`.
+    ///
+    /// [`FigmentNameTag`]: crate::FigmentNameTag
+    /// [`ShikumiError`]: crate::ShikumiError
+    #[must_use]
+    pub fn figment_name_tag_kind(&self) -> Option<FigmentNameTagKind> {
+        self.attribution_rule
+            .and_then(AttributionRule::figment_name_tag_kind)
     }
 
     /// [`crate::FormatProvenance`] of the file layer blamed for the
@@ -2132,6 +2206,230 @@ mod tests {
         let g = f.clone();
         assert_eq!(g.figment_source_kind(), Some(FigmentSourceKind::File));
         assert_eq!(g.figment_source_kind(), f.figment_source_kind());
+    }
+
+    // ---- figment_name_tag_kind accessor tests ----
+    //
+    // The symmetric peer of the figment_source_kind suite on the
+    // cross-thread observable form. Together the two accessors close
+    // the figment-metadata kind universe on `ReloadFailure`: every
+    // attributed envelope surfaces exactly one figment-metadata-kind
+    // cell (Some on either source-axis or name-axis); unattributed
+    // envelopes surface None on both.
+
+    fn synthetic_failure_with_rule(rule: AttributionRule) -> ReloadFailure {
+        ReloadFailure {
+            message: "synth".to_owned(),
+            kind: ShikumiErrorKind::Extract,
+            sources: vec![],
+            field_path: vec![],
+            failing_source: Some(ConfigSource::Defaults),
+            attribution_rule: Some(rule),
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_kind_some_for_file_by_metadata_name_rule() {
+        // FileByMetadataName fires when the resolver matched the
+        // shikumi-built provider's "<format>: <path>" name-axis shape;
+        // the rule's identity already pins FigmentNameTagKind::Format.
+        let f = synthetic_failure_with_rule(AttributionRule::FileByMetadataName);
+        assert_eq!(f.figment_name_tag_kind(), Some(FigmentNameTagKind::Format),);
+    }
+
+    #[test]
+    fn figment_name_tag_kind_some_for_env_by_prefix_rule() {
+        // EnvByPrefix fires when figment's "`PREFIX` environment
+        // variable(s)" name-axis shape matched a chain env layer's
+        // prefix; the rule's identity already pins FigmentNameTagKind::Env.
+        let f = synthetic_failure_with_rule(AttributionRule::EnvByPrefix);
+        assert_eq!(f.figment_name_tag_kind(), Some(FigmentNameTagKind::Env));
+    }
+
+    #[test]
+    fn figment_name_tag_kind_some_for_env_by_uniqueness_rule() {
+        // EnvByUniqueness fires on an env-shaped name (prefixed without
+        // chain match, or bare) when the chain holds a unique Env layer;
+        // the rule's identity pins FigmentNameTagKind::Env.
+        let f = synthetic_failure_with_rule(AttributionRule::EnvByUniqueness);
+        assert_eq!(f.figment_name_tag_kind(), Some(FigmentNameTagKind::Env));
+    }
+
+    #[test]
+    fn figment_name_tag_kind_none_for_unattributed_extract() {
+        // No metadata to map → no rule → no figment_name_tag_kind.
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults],
+            error: fake_figment_error(),
+        };
+        let f = ReloadFailure::from_error(&err);
+        assert!(f.attribution_rule.is_none());
+        assert!(f.figment_name_tag_kind().is_none());
+    }
+
+    #[test]
+    fn figment_name_tag_kind_none_for_non_extract_variants() {
+        // Non-figment-bearing variants and bare Figment never carry
+        // attribution → never carry a figment_name_tag_kind.
+        for f in [
+            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&ShikumiError::Figment(fake_figment_error())),
+        ] {
+            assert!(f.figment_name_tag_kind().is_none());
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_kind_none_for_source_axis_attribution() {
+        // Source-axis attributions (FileBySource, DefaultsByCodeUniqueness)
+        // carry an attribution_rule but their identity does not pin a
+        // figment-name-axis cell — the accessor returns None even when
+        // the rule slot is Some. The dual of
+        // `figment_source_kind_none_for_name_axis_attribution`.
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            let f = synthetic_failure_with_rule(rule);
+            assert!(f.attribution_rule.is_some(), "rule {rule:?}");
+            assert!(
+                f.figment_name_tag_kind().is_none(),
+                "rule {rule:?}: source-axis attribution must yield None figment_name_tag_kind",
+            );
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_kind_agrees_with_rule_figment_name_tag_kind_pointwise() {
+        // For every constructible rule scenario, the cross-thread
+        // accessor result equals
+        // attribution_rule.and_then(AttributionRule::figment_name_tag_kind)
+        // — pinning the convenience accessor as a pure projection. Peer
+        // to `figment_source_kind_agrees_with_rule_figment_source_kind_pointwise`
+        // on the name-axis.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let f = synthetic_failure_with_rule(rule);
+            assert_eq!(f.figment_name_tag_kind(), rule.figment_name_tag_kind());
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_kind_some_iff_metadata_axis_metadata_name() {
+        // Composition law on the cross-thread envelope: when an
+        // attribution is recorded, figment_name_tag_kind is Some
+        // exactly when metadata_axis is Some(MetadataName). When no
+        // attribution is recorded, both are None and the biconditional
+        // still holds vacuously. Pins the same refinement as the
+        // AttributionRule-side law, surfaced through the captured
+        // envelope. Dual of
+        // `figment_source_kind_some_iff_metadata_axis_metadata_source`.
+        let scenarios: Vec<ReloadFailure> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .map(synthetic_failure_with_rule)
+            .chain(std::iter::once(ReloadFailure::from_error(
+                &ShikumiError::Parse("x".to_owned()),
+            )))
+            .collect();
+        for f in scenarios {
+            assert_eq!(
+                f.figment_name_tag_kind().is_some(),
+                f.metadata_axis() == Some(AttributionAxis::MetadataName),
+                "envelope {:?}: figment_name_tag_kind.is_some() must equal \
+                 (metadata_axis == Some(MetadataName))",
+                f.attribution_rule,
+            );
+        }
+    }
+
+    #[test]
+    fn figment_name_tag_kind_xor_figment_source_kind_on_attributed_envelopes() {
+        // Cross-axis partition law on the cross-thread envelope: every
+        // attributed failure carries exactly one of figment_source_kind
+        // / figment_name_tag_kind as Some (rule identity dispatches on
+        // exactly one figment-metadata axis); unattributed failures
+        // carry both as None. Closes the figment-metadata kind universe
+        // on the ReloadFailure surface — the same partition the
+        // AttributionRule side pins via
+        // `attribution_rule_figment_name_tag_kind_xor_figment_source_kind`,
+        // surfaced through the captured envelope.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let f = synthetic_failure_with_rule(rule);
+            let src_some = f.figment_source_kind().is_some();
+            let name_some = f.figment_name_tag_kind().is_some();
+            assert!(
+                src_some ^ name_some,
+                "attributed envelope for rule {rule:?}: exactly one of \
+                 figment_source_kind / figment_name_tag_kind must be Some \
+                 (got src_some={src_some}, name_some={name_some})",
+            );
+        }
+        // Unattributed envelope: both halves None.
+        let f = ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned()));
+        assert!(f.figment_source_kind().is_none());
+        assert!(f.figment_name_tag_kind().is_none());
+    }
+
+    #[test]
+    fn figment_name_tag_kind_agrees_with_underlying_error_pointwise() {
+        // End-to-end lossless-capture: a real Extract error attributing
+        // via EnvByPrefix (synthesized through
+        // `synthetic_error_with_metadata_name`) produces a captured
+        // envelope whose figment_name_tag_kind projection equals the
+        // underlying error's failing_attribution()'s
+        // figment_name_tag_kind. Peer to
+        // `file_provenance_agrees_with_underlying_error_pointwise` on the
+        // file-provenance axis, but pinning the agreement law across the
+        // error → envelope boundary on the figment-name-tag-kind axis.
+        // Uses a synthetic env-prefixed metadata name (the same shape
+        // shikumi's tests for EnvByPrefix use in error::tests) so the
+        // resolver attributes via EnvByPrefix without needing a live
+        // figment::providers::Env in the test process.
+        let mut e = figment::Error::from("synth".to_owned());
+        e.metadata = Some(figment::Metadata::named("`MAXIS_` environment variable(s)"));
+        let err = ShikumiError::Extract {
+            sources: vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("MAXIS_".to_owned()),
+            ],
+            error: Box::new(e),
+        };
+        let f = ReloadFailure::from_error(&err);
+        let underlying = err
+            .failing_attribution()
+            .and_then(FailingSourceAttribution::figment_name_tag_kind);
+        assert_eq!(f.figment_name_tag_kind(), underlying);
+        assert_eq!(
+            f.figment_name_tag_kind(),
+            Some(FigmentNameTagKind::Env),
+            "env-prefixed extract attributes via EnvByPrefix → FigmentNameTagKind::Env",
+        );
+    }
+
+    #[test]
+    fn figment_name_tag_kind_survives_clone_independent_of_originating_error() {
+        // The captured figment_name_tag_kind is derived from the
+        // captured rule (Copy) — it must survive cloning and outlive
+        // the originating ShikumiError, parallel to the
+        // figment_source_kind / metadata_axis / layer_kind clone-survival
+        // invariants already pinned on the cross-thread envelope.
+        let f = {
+            let mut e = figment::Error::from("synth".to_owned());
+            e.metadata = Some(figment::Metadata::named(
+                "`CLONED_` environment variable(s)",
+            ));
+            let err = ShikumiError::Extract {
+                sources: vec![
+                    ConfigSource::Defaults,
+                    ConfigSource::Env("CLONED_".to_owned()),
+                ],
+                error: Box::new(e),
+            };
+            ReloadFailure::from_error(&err)
+        };
+        let g = f.clone();
+        assert_eq!(g.figment_name_tag_kind(), Some(FigmentNameTagKind::Env));
+        assert_eq!(g.figment_name_tag_kind(), f.figment_name_tag_kind());
     }
 
     #[test]
