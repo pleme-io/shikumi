@@ -1282,10 +1282,11 @@ pub fn forward_iter<C: PartialInverseCube>() -> impl Iterator<Item = C> {
 mod tests {
     use super::*;
     use crate::{
-        AttributionAxis, AttributionConfidence, AttributionCoordinates, AttributionRule,
-        AttributionSourceKindCoordinates, ConfigSourceKind, ConfigTierKind,
-        ErrorLocalizationCoordinates, FieldPathLocalization, FigmentNameTagKind, FigmentSourceKind,
-        Format, FormatCoordinates, FormatProvenance, ShikumiErrorKind, WatchEventClass,
+        AttributionAxis, AttributionConfidence, AttributionCoordinates,
+        AttributionNameKindCoordinates, AttributionRule, AttributionSourceKindCoordinates,
+        ConfigSourceKind, ConfigTierKind, ErrorLocalizationCoordinates, FieldPathLocalization,
+        FigmentNameTagKind, FigmentSourceKind, Format, FormatCoordinates, FormatProvenance,
+        ShikumiErrorKind, WatchEventClass,
     };
 
     // ---- Implementor-list macros ----
@@ -1358,14 +1359,18 @@ mod tests {
     }
 
     /// Invokes `$cb!(TypeName)` for each [`ProductCube`] implementor —
-    /// the four product cubes the typescape recognizes today, in
-    /// declaration order.
+    /// the five product cubes the typescape recognizes today, in
+    /// declaration order. [`AttributionNameKindCoordinates`] sits at
+    /// the tail as the symmetric peer of
+    /// [`AttributionSourceKindCoordinates`] on the figment-
+    /// `Metadata::name` axis.
     macro_rules! for_each_product_cube {
         ($cb:ident) => {
             $cb!(FormatCoordinates);
             $cb!(AttributionCoordinates);
             $cb!(ErrorLocalizationCoordinates);
             $cb!(AttributionSourceKindCoordinates);
+            $cb!(AttributionNameKindCoordinates);
         };
     }
 
@@ -1939,7 +1944,7 @@ mod tests {
     // ---- axis_cardinality pins today's variant / cell counts ----
 
     #[test]
-    fn axis_cardinality_pins_todays_counts_across_seventeen_implementors() {
+    fn axis_cardinality_pins_todays_counts_across_eighteen_implementors() {
         // Thirteen closed-enum axis primitives. A new variant landing
         // on any of these enums extends the expected count in
         // lockstep.
@@ -1956,13 +1961,14 @@ mod tests {
         assert_axis_cardinality_matches_trait_all::<ConfigTierKind>(4);
         assert_axis_cardinality_matches_trait_all::<WatchEventClass>(3);
         assert_axis_cardinality_matches_trait_all::<FigmentNameTagKind>(2);
-        // Four product cubes. A new cell-axis landing on any cube
+        // Five product cubes. A new cell-axis landing on any cube
         // extends the expected count by the product of the new axis's
         // cardinality with the cube's prior cardinality.
         assert_axis_cardinality_matches_trait_all::<FormatCoordinates>(8);
         assert_axis_cardinality_matches_trait_all::<AttributionCoordinates>(12);
         assert_axis_cardinality_matches_trait_all::<ErrorLocalizationCoordinates>(18);
         assert_axis_cardinality_matches_trait_all::<AttributionSourceKindCoordinates>(9);
+        assert_axis_cardinality_matches_trait_all::<AttributionNameKindCoordinates>(6);
     }
 
     // ---- axis_ordinal closes the dense-embedding round-trip ----
@@ -3529,12 +3535,15 @@ mod tests {
     }
 
     #[test]
-    fn for_each_product_cube_macro_covers_four_cubes() {
-        // Pin that the macro expands to exactly four arms — the four
-        // product cubes the typescape recognizes today. A fifth cube
-        // landing extends the macro in lockstep with the `impl
-        // ProductCube` declaration; this assertion fails until the
-        // macro arm lands.
+    fn for_each_product_cube_macro_covers_five_cubes() {
+        // Pin that the macro expands to exactly five arms — the five
+        // product cubes the typescape recognizes today
+        // ([`FormatCoordinates`], [`AttributionCoordinates`],
+        // [`ErrorLocalizationCoordinates`],
+        // [`AttributionSourceKindCoordinates`],
+        // [`AttributionNameKindCoordinates`]). A sixth cube landing
+        // extends the macro in lockstep with the `impl ProductCube`
+        // declaration; this assertion fails until the macro arm lands.
         let mut count = 0usize;
         macro_rules! tally {
             ($ty:ident) => {
@@ -3542,7 +3551,7 @@ mod tests {
             };
         }
         for_each_product_cube!(tally);
-        assert_eq!(count, 4, "for_each_product_cube! must expand to four arms");
+        assert_eq!(count, 5, "for_each_product_cube! must expand to five arms");
     }
 
     #[test]
@@ -3566,10 +3575,10 @@ mod tests {
     }
 
     #[test]
-    fn for_each_closed_axis_implementor_macro_covers_seventeen_types() {
-        // Pin that the superset macro expands to exactly seventeen arms
-        // — the thirteen axis primitives plus the four product cubes.
-        // A fourteenth axis primitive OR a fifth cube landing extends
+    fn for_each_closed_axis_implementor_macro_covers_eighteen_types() {
+        // Pin that the superset macro expands to exactly eighteen arms
+        // — the thirteen axis primitives plus the five product cubes.
+        // A fourteenth axis primitive OR a sixth cube landing extends
         // the composed macro in lockstep through one of its two
         // component macros; this assertion fails until the arm
         // lands.
@@ -3581,8 +3590,8 @@ mod tests {
         }
         for_each_closed_axis_implementor!(tally);
         assert_eq!(
-            count, 17,
-            "for_each_closed_axis_implementor! must expand to seventeen arms (13 axes + 4 cubes)",
+            count, 18,
+            "for_each_closed_axis_implementor! must expand to eighteen arms (13 axes + 5 cubes)",
         );
     }
 
@@ -3611,13 +3620,13 @@ mod tests {
         // AttributionRule=5, AttributionConfidence=2, AttributionAxis=2,
         // PartitionFace=2, ConfigTierKind=4, WatchEventClass=3,
         // FigmentNameTagKind=2 → 41.
-        // 4-cube sum: FormatCoordinates=8, AttributionCoordinates=12,
-        // ErrorLocalizationCoordinates=18, AttributionSourceKindCoordinates=9
-        // → 47. Grand total 41+47 = 88.
+        // 5-cube sum: FormatCoordinates=8, AttributionCoordinates=12,
+        // ErrorLocalizationCoordinates=18, AttributionSourceKindCoordinates=9,
+        // AttributionNameKindCoordinates=6 → 53. Grand total 41+53 = 94.
         assert_eq!(
-            total, 88,
+            total, 94,
             "macro must emit each implementor exactly once \
-             (today's axis_cardinality checksum is 88)",
+             (today's axis_cardinality checksum is 94)",
         );
     }
 

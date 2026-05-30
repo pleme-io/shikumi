@@ -16,9 +16,10 @@
 use std::fmt;
 
 use crate::error::{
-    AttributionAxis, AttributionConfidence, AttributionCoordinates, AttributionRule,
-    AttributionSourceKindCoordinates, ErrorLocalizationCoordinates, FailingSourceAttribution,
-    FieldPathLocalization, ShikumiError, ShikumiErrorKind, dotted_field_path,
+    AttributionAxis, AttributionConfidence, AttributionCoordinates, AttributionNameKindCoordinates,
+    AttributionRule, AttributionSourceKindCoordinates, ErrorLocalizationCoordinates,
+    FailingSourceAttribution, FieldPathLocalization, ShikumiError, ShikumiErrorKind,
+    dotted_field_path,
 };
 use crate::source::{ConfigSource, ConfigSourceKind, FigmentNameTagKind, FigmentSourceKind};
 
@@ -449,6 +450,59 @@ impl ReloadFailure {
     pub fn attribution_source_kind_coordinates(&self) -> Option<AttributionSourceKindCoordinates> {
         self.attribution_rule
             .and_then(AttributionRule::attribution_source_kind_coordinates)
+    }
+
+    /// Joint (figment-`Metadata::name`-axis kind × shikumi-layer-kind)
+    /// cell pinned by [`Self::attribution_rule`], or `None` when no
+    /// attribution was recorded *or* when the recorded attribution is
+    /// source-axis (where the rule's identity does not constrain
+    /// `figment::Metadata::name` and so does not pin a joint cell) —
+    /// strict superset of
+    /// [`Self::attribution_rule`]`.and_then(AttributionRule::attribution_name_kind_coordinates)`,
+    /// surfaced as a typed accessor so observers (dashboards, alerting
+    /// policies, attestation manifests) don't re-derive the (rule →
+    /// joint cell) projection at every observation site.
+    ///
+    /// Symmetric peer of [`Self::attribution_source_kind_coordinates`]
+    /// on the figment-`Metadata::name` axis — the two accessors close
+    /// the cross-thread observable form's figment-metadata × shikumi-
+    /// layer joint-cell universe. Every attributed envelope surfaces
+    /// exactly one of the two joint cells as [`Some`]; unattributed
+    /// envelopes surface both as [`None`]. Pinned by
+    /// `attribution_name_kind_coordinates_xor_attribution_source_kind_coordinates_on_attributed_envelopes`.
+    ///
+    /// Two-stage `None` discipline mirroring
+    /// [`Self::attribution_source_kind_coordinates`]: (1) `None` when
+    /// no attribution was recorded ([`Self::attribution_rule`] is
+    /// [`None`]), (2) `None` when the recorded attribution is
+    /// source-axis ([`Self::metadata_axis`] is
+    /// [`Some(AttributionAxis::MetadataSource)`]) — neither path pins
+    /// the joint cell. Name-axis attributions
+    /// ([`AttributionRule::FileByMetadataName`] → `(Format, File)`,
+    /// [`AttributionRule::EnvByPrefix`] /
+    /// [`AttributionRule::EnvByUniqueness`] → `(Env, Env)`) surface a
+    /// [`Some`] cell directly.
+    ///
+    /// Composes [`Self::figment_name_tag_kind`] and [`Self::layer_kind`]
+    /// into one [`Copy`] joint cell; observers reading
+    /// [`crate::ConfigStore::last_reload_error`] no longer pair the two
+    /// partial reads inline. Every [`Some`] return satisfies
+    /// [`AttributionNameKindCoordinates::is_realizable`] — the
+    /// structural diagonal of name-axis rules — pinned by
+    /// `attribution_name_kind_coordinates_returns_realizable_cell_when_some`.
+    ///
+    /// Cross-thread mirror of
+    /// [`FailingSourceAttribution::attribution_name_kind_coordinates`]
+    /// (and of [`AttributionRule::attribution_name_kind_coordinates`]
+    /// at the rule layer): the captured envelope's joint cell agrees
+    /// pointwise with the live error's, pinning the lossless-capture
+    /// contract for the name-axis joint cell on the cross-thread
+    /// observable form. Pinned by
+    /// `attribution_name_kind_coordinates_agrees_with_paired_projections_pointwise`.
+    #[must_use]
+    pub fn attribution_name_kind_coordinates(&self) -> Option<AttributionNameKindCoordinates> {
+        self.attribution_rule
+            .and_then(AttributionRule::attribution_name_kind_coordinates)
     }
 
     /// Coordinate triple of [`Self::attribution_rule`], or `None` when
@@ -3438,6 +3492,267 @@ mod tests {
         assert_eq!(
             g.attribution_source_kind_coordinates(),
             f.attribution_source_kind_coordinates(),
+        );
+    }
+
+    // ---- attribution_name_kind_coordinates accessor tests ----
+
+    #[test]
+    fn attribution_name_kind_coordinates_none_for_unattributed_extract() {
+        // No metadata to map → no rule → no name-axis joint cell. Pins
+        // the first stage of the two-stage None discipline on the
+        // cross-thread envelope, symmetric peer of
+        // `attribution_source_kind_coordinates_none_for_unattributed_extract`.
+        let err = ShikumiError::Extract {
+            sources: vec![ConfigSource::Defaults],
+            error: fake_figment_error(),
+        };
+        let f = ReloadFailure::from_error(&err);
+        assert!(f.attribution_rule.is_none());
+        assert!(f.attribution_name_kind_coordinates().is_none());
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_none_for_non_extract_variants() {
+        // Non-figment-bearing variants and bare Figment never carry
+        // attribution → never carry a name-axis joint cell.
+        for f in [
+            ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned())),
+            ReloadFailure::from_error(&ShikumiError::Figment(fake_figment_error())),
+        ] {
+            assert!(f.attribution_name_kind_coordinates().is_none());
+        }
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_none_for_source_axis_attribution() {
+        // Source-axis attributions carry an attribution_rule but their
+        // identity does not pin the name-axis joint cell — the
+        // accessor returns None even when the rule slot is Some. Pins
+        // the second-stage None arm of the two-stage discipline on the
+        // cross-thread envelope, symmetric peer of
+        // `attribution_source_kind_coordinates_none_for_name_axis_attribution`.
+        for rule in [
+            AttributionRule::FileBySource,
+            AttributionRule::DefaultsByCodeUniqueness,
+        ] {
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            };
+            assert!(f.attribution_rule.is_some(), "rule {rule:?}");
+            assert!(
+                f.attribution_name_kind_coordinates().is_none(),
+                "rule {rule:?}: source-axis attribution must yield None name-axis joint cell",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_some_for_name_axis_attribution_pins_known_cells() {
+        // Name-axis attributions surface their joint cell directly on
+        // the cross-thread envelope: FileByMetadataName → (Format, File),
+        // EnvByPrefix / EnvByUniqueness → (Env, Env). Pins both
+        // realizable cells of the new cube through synthetic
+        // ReloadFailure values carrying each name-axis rule.
+        let cases: [(AttributionRule, AttributionNameKindCoordinates); 3] = [
+            (
+                AttributionRule::FileByMetadataName,
+                AttributionNameKindCoordinates {
+                    figment_name_tag_kind: FigmentNameTagKind::Format,
+                    layer_kind: ConfigSourceKind::File,
+                },
+            ),
+            (
+                AttributionRule::EnvByPrefix,
+                AttributionNameKindCoordinates {
+                    figment_name_tag_kind: FigmentNameTagKind::Env,
+                    layer_kind: ConfigSourceKind::Env,
+                },
+            ),
+            (
+                AttributionRule::EnvByUniqueness,
+                AttributionNameKindCoordinates {
+                    figment_name_tag_kind: FigmentNameTagKind::Env,
+                    layer_kind: ConfigSourceKind::Env,
+                },
+            ),
+        ];
+        for (rule, expected) in cases {
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            };
+            assert_eq!(
+                f.attribution_name_kind_coordinates(),
+                Some(expected),
+                "rule {rule:?}: name-axis joint cell pin on cross-thread envelope",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_agrees_with_rule_pointwise() {
+        // For every constructible rule scenario, the accessor result
+        // equals
+        // attribution_rule.and_then(AttributionRule::attribution_name_kind_coordinates)
+        // — pinning the convenience accessor as a pure projection.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            };
+            assert_eq!(
+                f.attribution_name_kind_coordinates(),
+                rule.attribution_name_kind_coordinates(),
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_returns_realizable_cell_when_some() {
+        // Every Some return from the cross-thread accessor satisfies
+        // AttributionNameKindCoordinates::is_realizable — the captured
+        // envelope's projection never produces an unrealizable cell,
+        // no matter which rule was captured.
+        let scenarios: Vec<ReloadFailure> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .map(|rule| ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            })
+            .chain(std::iter::once(ReloadFailure::from_error(
+                &ShikumiError::Parse("x".to_owned()),
+            )))
+            .collect();
+        for f in scenarios {
+            if let Some(cell) = f.attribution_name_kind_coordinates() {
+                assert!(
+                    cell.is_realizable(),
+                    "envelope {:?}: joint cell {cell:?} must be realizable",
+                    f.attribution_rule,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_agrees_with_paired_projections_pointwise() {
+        // Lossless-decomposition contract on the cross-thread
+        // envelope: the joint cell's named fields agree byte-for-byte
+        // with the paired
+        // (figment_name_tag_kind, layer_kind)
+        // reads on the same envelope. Holds vacuously when the joint
+        // cell is None (the paired projection is also None on its
+        // figment_name_tag_kind half).
+        let scenarios: Vec<ReloadFailure> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .map(|rule| ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            })
+            .chain(std::iter::once(ReloadFailure::from_error(
+                &ShikumiError::Parse("x".to_owned()),
+            )))
+            .collect();
+        for f in scenarios {
+            let joint = f.attribution_name_kind_coordinates();
+            let paired = f.figment_name_tag_kind().map(|figment_name_tag_kind| {
+                AttributionNameKindCoordinates {
+                    figment_name_tag_kind,
+                    layer_kind: f.layer_kind().expect(
+                        "figment_name_tag_kind Some implies layer_kind Some on the cross-thread envelope",
+                    ),
+                }
+            });
+            assert_eq!(
+                joint, paired,
+                "envelope {:?}: joint cell must equal paired projections",
+                f.attribution_rule,
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_xor_attribution_source_kind_coordinates_on_attributed_envelopes()
+     {
+        // Cross-cube partition law on the cross-thread observable
+        // form: every attributed envelope surfaces exactly one of the
+        // two figment-metadata × shikumi-layer joint cells as Some;
+        // unattributed envelopes surface both as None. Closes the
+        // joint-cell universe across the two cubes on the captured
+        // envelope, mirror of the rule-side
+        // `attribution_rule_attribution_name_kind_coordinates_xor_attribution_source_kind_coordinates`.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let f = ReloadFailure {
+                message: "synth".to_owned(),
+                kind: ShikumiErrorKind::Extract,
+                sources: vec![],
+                field_path: vec![],
+                failing_source: Some(ConfigSource::Defaults),
+                attribution_rule: Some(rule),
+            };
+            let source = f.attribution_source_kind_coordinates().is_some();
+            let name = f.attribution_name_kind_coordinates().is_some();
+            assert_ne!(
+                source, name,
+                "envelope {rule:?}: exactly one of the two joint cells must be Some",
+            );
+        }
+        // Unattributed envelope: both None.
+        let unattributed = ReloadFailure::from_error(&ShikumiError::Parse("x".to_owned()));
+        assert!(unattributed.attribution_source_kind_coordinates().is_none());
+        assert!(unattributed.attribution_name_kind_coordinates().is_none());
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_survives_clone_independent_of_originating_error() {
+        // The captured joint cell is derived from the captured rule
+        // (Copy) — it must survive cloning and outlive the originating
+        // ShikumiError, parallel to the figment_name_tag_kind-clone
+        // and attribution_source_kind_coordinates-clone invariants
+        // already pinned on the cross-thread envelope.
+        let f = ReloadFailure {
+            message: "synth".to_owned(),
+            kind: ShikumiErrorKind::Extract,
+            sources: vec![],
+            field_path: vec![],
+            failing_source: Some(ConfigSource::Env("APP_".to_owned())),
+            attribution_rule: Some(AttributionRule::EnvByPrefix),
+        };
+        let g = f.clone();
+        assert_eq!(
+            g.attribution_name_kind_coordinates(),
+            Some(AttributionNameKindCoordinates {
+                figment_name_tag_kind: FigmentNameTagKind::Env,
+                layer_kind: ConfigSourceKind::Env,
+            }),
+        );
+        assert_eq!(
+            g.attribution_name_kind_coordinates(),
+            f.attribution_name_kind_coordinates(),
         );
     }
 }

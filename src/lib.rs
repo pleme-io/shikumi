@@ -62,9 +62,9 @@ pub use discovery::{
     ConfigDiscovery, Format, FormatCoordinates, FormatMetadataTag, FormatProvenance,
 };
 pub use error::{
-    AttributionAxis, AttributionConfidence, AttributionCoordinates, AttributionRule,
-    AttributionSourceKindCoordinates, ErrorLocalizationCoordinates, FailingSourceAttribution,
-    FieldPathLocalization, ShikumiError, ShikumiErrorKind,
+    AttributionAxis, AttributionConfidence, AttributionCoordinates, AttributionNameKindCoordinates,
+    AttributionRule, AttributionSourceKindCoordinates, ErrorLocalizationCoordinates,
+    FailingSourceAttribution, FieldPathLocalization, ShikumiError, ShikumiErrorKind,
 };
 #[cfg(feature = "lisp")]
 pub use lisp_provider::{LispProvider, load_from_str as load_lisp_from_str};

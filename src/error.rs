@@ -1055,6 +1055,73 @@ impl AttributionRule {
             })
     }
 
+    /// Forward partial unifier of the two name-axis projections over
+    /// this rule: [`Self::figment_name_tag_kind`] (partial) and
+    /// [`Self::layer_kind`] (total). Returns the rule's joint cell on
+    /// the (figment-`Metadata::name`-axis kind × shikumi-layer-kind)
+    /// plane as a typed [`AttributionNameKindCoordinates`] envelope.
+    ///
+    /// Some-iff-MetadataName discipline: returns [`Some`] exactly when
+    /// [`Self::figment_name_tag_kind`] returns [`Some`] (equivalently,
+    /// when [`Self::metadata_axis`] returns
+    /// [`AttributionAxis::MetadataName`]). Name-axis rules pin both
+    /// halves of their joint cell:
+    /// [`Self::FileByMetadataName`] → `(Format, File)`,
+    /// [`Self::EnvByPrefix`] → `(Env, Env)`,
+    /// [`Self::EnvByUniqueness`] → `(Env, Env)`. Source-axis rules pin
+    /// only [`Self::layer_kind`]; their figment-name-axis half is
+    /// unconstrained, so the joint cell is [`None`].
+    ///
+    /// One source of truth for the (figment-name-axis kind ×
+    /// shikumi-layer-kind) joint cell on a recognized rule. Symmetric
+    /// peer of [`Self::attribution_source_kind_coordinates`] on the
+    /// figment-`Metadata::source` axis. Before this method, observers
+    /// that wanted the joint cell on the name-axis sub-surface — a
+    /// per-cell dashboard routing on the joint cell, an attestation
+    /// manifest recording the name-axis rule subset's image, a
+    /// structured-diagnostics legend rendering distinct prose per
+    /// joint cell — inlined a two-step
+    /// `self.figment_name_tag_kind().map(|nk| (nk, self.layer_kind()))`
+    /// projection at every site. The named struct collapses the two
+    /// reads (one partial, one total) into one [`Option<_>`] read,
+    /// surfacing the joint cell as a typescape-eligible value
+    /// (`Copy + Eq + Hash + #[non_exhaustive]`) usable in `match`,
+    /// `HashMap` keys, log labels, alerting buckets, and attestation
+    /// manifest payloads.
+    ///
+    /// Pairs with [`AttributionNameKindCoordinates::is_realizable`] as
+    /// the membership-predicate discipline: every [`Some`] return of
+    /// this accessor produces a cell satisfying `is_realizable`. Peer
+    /// to [`Self::attribution_source_kind_coordinates`] /
+    /// [`AttributionSourceKindCoordinates::is_realizable`] on the
+    /// fourth product cube — both are total-or-partial forward maps
+    /// whose image is the recognized subset of their cube.
+    ///
+    /// Composes with [`Self::attribution_source_kind_coordinates`] as a
+    /// strict partition over the rule space: every rule's identity
+    /// dispatches on exactly one figment-metadata axis, so for every
+    /// rule exactly one of
+    /// [`Self::attribution_source_kind_coordinates`] and
+    /// [`Self::attribution_name_kind_coordinates`] returns [`Some`].
+    /// Pinned by
+    /// `attribution_rule_attribution_name_kind_coordinates_xor_attribution_source_kind_coordinates`.
+    ///
+    /// Composes with the captured-failure envelopes — the convenience
+    /// forwarders
+    /// [`FailingSourceAttribution::attribution_name_kind_coordinates`]
+    /// and [`crate::ReloadFailure::attribution_name_kind_coordinates`]
+    /// surface the same joint cell off the borrowed and cross-thread
+    /// observable surfaces, with the cross-thread accessor lifted to
+    /// the same `Some-iff-name-axis-attribution` discipline.
+    #[must_use]
+    pub fn attribution_name_kind_coordinates(self) -> Option<AttributionNameKindCoordinates> {
+        self.figment_name_tag_kind()
+            .map(|figment_name_tag_kind| AttributionNameKindCoordinates {
+                figment_name_tag_kind,
+                layer_kind: self.layer_kind(),
+            })
+    }
+
     /// Forward unifier of the three orthogonal projections over this
     /// rule: [`Self::metadata_axis`], [`Self::layer_kind`],
     /// [`Self::confidence`]. Returns the rule's coordinates as a
@@ -1862,6 +1929,226 @@ impl AttributionSourceKindCoordinates {
     }
 }
 
+/// Joint cell of a name-axis [`AttributionRule`]: the typed pair of
+/// [`FigmentNameTagKind`] (which [`figment::Metadata::name`] class the
+/// rule's identity already names) and [`ConfigSourceKind`] (which
+/// [`ConfigSource`] layer class the rule attributes to).
+///
+/// Symmetric peer of [`AttributionSourceKindCoordinates`] on the
+/// figment-`Metadata::name` axis: same typescape discipline (named
+/// product struct, closed `'static` slice in declaration order,
+/// `Copy + Eq + Hash + #[non_exhaustive]` element type, cardinality
+/// pinned as a product of the constituent axis cardinalities, a
+/// forward-partial / membership-predicate pair), applied to figment's
+/// `Metadata::name` axis. The pair
+/// (source-side: [`AttributionSourceKindCoordinates`],
+/// name-side: [`AttributionNameKindCoordinates`]) closes the
+/// figment-metadata × shikumi-layer joint-cell universe under one
+/// typescape primitive set: every rule's identity already projects to
+/// exactly one of the two cubes — pinned by the cross-axis XOR
+/// partition law
+/// `attribution_rule_attribution_name_kind_coordinates_xor_attribution_source_kind_coordinates`.
+///
+/// The (`figment_name_tag_kind × layer_kind`) plane has
+/// `FigmentNameTagKind::ALL.len()` × `ConfigSourceKind::ALL.len()`
+/// = 2 × 3 = 6 product cells; today's name-axis rule subset occupies
+/// 2 of them — the "realizable" cells in the partition pinned by
+/// [`Self::is_realizable`]:
+///
+/// - [`AttributionRule::FileByMetadataName`] →
+///   `(FigmentNameTagKind::Format, ConfigSourceKind::File)`.
+/// - [`AttributionRule::EnvByPrefix`] /
+///   [`AttributionRule::EnvByUniqueness`] →
+///   `(FigmentNameTagKind::Env, ConfigSourceKind::Env)`.
+///
+/// The other 4 cells are unrealizable today by construction: no
+/// recognized [`AttributionRule`] pairs `FigmentNameTagKind::Format`
+/// with [`ConfigSourceKind::Env`] or [`ConfigSourceKind::Defaults`],
+/// and no recognized rule pairs `FigmentNameTagKind::Env` with
+/// [`ConfigSourceKind::File`] or [`ConfigSourceKind::Defaults`]. The
+/// realizability invariant is "lies on the structural diagonal of
+/// name-axis rules":
+/// `(figment_name_tag_kind, layer_kind) ∈ {(Format, File), (Env, Env)}`,
+/// pinned by [`Self::is_realizable`] and verified pointwise across the
+/// rule space by
+/// `attribution_name_kind_coordinates_realizable_image_equals_rule_image`.
+///
+/// Fifth product-axis `ALL` constant on the typescape primitive set,
+/// peer to [`AttributionCoordinates::ALL`] (the first, 12-cell
+/// `axis × layer_kind × confidence` cube),
+/// [`crate::FormatCoordinates::ALL`] (the second, 8-cell
+/// `format × provenance` cube),
+/// [`ErrorLocalizationCoordinates::ALL`] (the third, 18-cell
+/// `kind × localization` cube), and
+/// [`AttributionSourceKindCoordinates::ALL`] (the fourth, 9-cell
+/// `figment_source_kind × layer_kind` cube), but lifted on a different
+/// sibling pair (`FigmentNameTagKind × ConfigSourceKind`).
+/// [`AttributionRule::attribution_name_kind_coordinates`] (and the
+/// convenience forwarders
+/// [`FailingSourceAttribution::attribution_name_kind_coordinates`] /
+/// [`crate::ReloadFailure::attribution_name_kind_coordinates`]) is the
+/// forward partial map (`None` for source-axis rules);
+/// [`Self::is_realizable`] is the membership predicate over the
+/// recognized 2-cell subset.
+///
+/// Composes [`AttributionRule::figment_name_tag_kind`] (the partial
+/// projection onto the figment-name-axis kind) with
+/// [`AttributionRule::layer_kind`] (the total projection onto the
+/// shikumi-layer-kind) into one [`Copy`] joint cell. Operationally
+/// distinguishes the realizable image of the name-axis rule subset
+/// from the cross-axis consistency violations
+/// (e.g. `(Format, Env)`, `(Env, File)`) that no recognized rule can
+/// occupy.
+///
+/// The struct exists (rather than a bare tuple) so call sites document
+/// which slot is which — `figment_name_tag_kind` / `layer_kind` — at
+/// the type level rather than relying on positional destructuring
+/// discipline. Consumers route on the named fields in `match`,
+/// `HashMap` keys, structured-log payloads, and attestation manifests;
+/// the `Copy + Eq + Hash + #[non_exhaustive]` bounds match the sibling
+/// product-cube structs ([`AttributionCoordinates`],
+/// [`crate::FormatCoordinates`], [`ErrorLocalizationCoordinates`],
+/// [`AttributionSourceKindCoordinates`]) and the underlying axis
+/// primitives ([`FigmentNameTagKind`], [`ConfigSourceKind`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct AttributionNameKindCoordinates {
+    /// Which [`figment::Metadata::name`]-axis kind the name-axis rule's
+    /// identity already pins — see [`FigmentNameTagKind`] /
+    /// [`AttributionRule::figment_name_tag_kind`].
+    pub figment_name_tag_kind: FigmentNameTagKind,
+    /// Which [`ConfigSource`] layer kind the rule attributes to —
+    /// see [`ConfigSourceKind`] / [`AttributionRule::layer_kind`].
+    pub layer_kind: ConfigSourceKind,
+}
+
+impl AttributionNameKindCoordinates {
+    /// Every cell of the `figment_name_tag_kind × layer_kind` product
+    /// cube — the structural composition of
+    /// [`FigmentNameTagKind::ALL`] (2 cells) and
+    /// [`ConfigSourceKind::ALL`] (3 cells) into the `2 × 3 = 6`-cell
+    /// coordinate space, in lexicographic order over the two sibling
+    /// slices (`figment_name_tag_kind` outermost, `layer_kind`
+    /// innermost).
+    ///
+    /// Fifth product-axis `ALL` constant on the typescape primitive
+    /// set — peer to [`AttributionCoordinates::ALL`],
+    /// [`crate::FormatCoordinates::ALL`],
+    /// [`ErrorLocalizationCoordinates::ALL`], and
+    /// [`AttributionSourceKindCoordinates::ALL`] — lifted on the
+    /// `FigmentNameTagKind × ConfigSourceKind` sibling pair. Same
+    /// typescape discipline (closed `'static` slice, in declaration
+    /// order, `Copy + Eq + Hash + #[non_exhaustive]` element type)
+    /// applied to the attribution-name-kind product cube.
+    ///
+    /// Cardinality is pinned by
+    /// `attribution_name_kind_coordinates_all_cardinality_matches_product_of_axes`
+    /// against `FigmentNameTagKind::ALL.len() * ConfigSourceKind::ALL.len()`,
+    /// so any new variant on either sibling axis forces an extension of
+    /// this slice in lockstep with the variant itself. The
+    /// `attribution_name_kind_coordinates_all_equals_axes_cartesian_product`
+    /// test pins tight equality against the inline doubly-nested product
+    /// over the sibling `ALL` constants — `Self::ALL` is the product,
+    /// not a subset and not a superset.
+    ///
+    /// The partition into realizable and unrealizable cells is the
+    /// 2 + 4 split pinned by [`Self::is_realizable`]: 2 cells lie on
+    /// the structural diagonal of name-axis rules (`(Format, File)`
+    /// from [`AttributionRule::FileByMetadataName`] and `(Env, Env)`
+    /// from [`AttributionRule::EnvByPrefix`] /
+    /// [`AttributionRule::EnvByUniqueness`]); the other 4 cells are
+    /// unrealizable today. The
+    /// `attribution_name_kind_coordinates_realizable_image_equals_rule_image`
+    /// test pins the realizable half as the exact image of
+    /// [`AttributionRule::attribution_name_kind_coordinates`] over
+    /// [`AttributionRule::ALL`], and the
+    /// `attribution_name_kind_coordinates_realizable_partitions_into_2_realizable_and_4_unrealizable`
+    /// test pins the cardinality split.
+    pub const ALL: &'static [Self] = &[
+        Self {
+            figment_name_tag_kind: FigmentNameTagKind::Format,
+            layer_kind: ConfigSourceKind::Defaults,
+        },
+        Self {
+            figment_name_tag_kind: FigmentNameTagKind::Format,
+            layer_kind: ConfigSourceKind::Env,
+        },
+        Self {
+            figment_name_tag_kind: FigmentNameTagKind::Format,
+            layer_kind: ConfigSourceKind::File,
+        },
+        Self {
+            figment_name_tag_kind: FigmentNameTagKind::Env,
+            layer_kind: ConfigSourceKind::Defaults,
+        },
+        Self {
+            figment_name_tag_kind: FigmentNameTagKind::Env,
+            layer_kind: ConfigSourceKind::Env,
+        },
+        Self {
+            figment_name_tag_kind: FigmentNameTagKind::Env,
+            layer_kind: ConfigSourceKind::File,
+        },
+    ];
+
+    /// Realizability predicate over the 6-cell product cube: returns
+    /// `true` exactly on the 2 cells that can be produced by
+    /// [`AttributionRule::attribution_name_kind_coordinates`] (or its
+    /// captured-failure mirrors
+    /// [`FailingSourceAttribution::attribution_name_kind_coordinates`]
+    /// and [`crate::ReloadFailure::attribution_name_kind_coordinates`])
+    /// on some recognized [`AttributionRule`] variant, and `false`
+    /// on the remaining 4 cells.
+    ///
+    /// The invariant is the structural diagonal of name-axis rules:
+    /// `(figment_name_tag_kind, layer_kind) ∈ {(Format, File),
+    /// (Env, Env)}`. Proven by enumeration over the rule space:
+    /// [`AttributionRule::FileByMetadataName`] is the only name-axis
+    /// rule that dispatches off [`FigmentNameTag::Format`] and pairs
+    /// with [`ConfigSource::File`] (so its joint cell is
+    /// `(Format, File)`); [`AttributionRule::EnvByPrefix`] and
+    /// [`AttributionRule::EnvByUniqueness`] are the two name-axis rules
+    /// that dispatch off [`FigmentNameTag::Env`] and pair with
+    /// [`ConfigSource::Env`] (so both joint cells coincide on
+    /// `(Env, Env)`). Source-axis rules don't pin a
+    /// `figment_name_tag_kind` at all and are absent from this image.
+    ///
+    /// Operational use: an attestation manifest, structured-log replay,
+    /// or cross-process diagnostic that observes the
+    /// (`figment_name_tag_kind`, `layer_kind`) coordinates recovers the
+    /// realizability classification — "is this cell a valid observation
+    /// of a recognized name-axis rule, or a cross-axis consistency
+    /// violation" — by one method call instead of re-deriving the
+    /// consistency check inline. Future name-axis rules land coherently:
+    /// a new [`AttributionRule`] variant that dispatches off a future
+    /// [`FigmentNameTag`] variant extends the recognized image, forces
+    /// an exhaustive-match arm in
+    /// [`AttributionRule::attribution_name_kind_coordinates`]
+    /// (compile-time), and forces an extension of the
+    /// `attribution_name_kind_coordinates_realizable_image_equals_rule_image`
+    /// expectation (test-time) — all three stay in lockstep.
+    ///
+    /// Peer to [`AttributionSourceKindCoordinates::is_realizable`] on
+    /// the source-axis cube and
+    /// [`ErrorLocalizationCoordinates::is_realizable`] on the
+    /// error-localization cube: all three are membership predicates on
+    /// a non-injective forward map's image. Pairs with the
+    /// partial-inverse discipline of [`AttributionRule::from_coordinates`]
+    /// / [`crate::FormatCoordinates::format_or_none`] on the cubes
+    /// where the forward map is injective.
+    ///
+    /// [`FigmentNameTag::Format`]: crate::FigmentNameTag::Format
+    /// [`FigmentNameTag::Env`]: crate::FigmentNameTag::Env
+    #[must_use]
+    pub fn is_realizable(self) -> bool {
+        matches!(
+            (self.figment_name_tag_kind, self.layer_kind),
+            (FigmentNameTagKind::Format, ConfigSourceKind::File)
+                | (FigmentNameTagKind::Env, ConfigSourceKind::Env)
+        )
+    }
+}
+
 impl crate::ClosedAxis for ShikumiErrorKind {
     const ALL: &'static [Self] = Self::ALL;
 }
@@ -1937,6 +2224,16 @@ impl crate::ClosedAxis for AttributionSourceKindCoordinates {
 }
 
 impl crate::ProductCube for AttributionSourceKindCoordinates {
+    fn is_realizable(self) -> bool {
+        Self::is_realizable(self)
+    }
+}
+
+impl crate::ClosedAxis for AttributionNameKindCoordinates {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ProductCube for AttributionNameKindCoordinates {
     fn is_realizable(self) -> bool {
         Self::is_realizable(self)
     }
@@ -2381,6 +2678,27 @@ impl<'a> FailingSourceAttribution<'a> {
     #[must_use]
     pub fn attribution_source_kind_coordinates(self) -> Option<AttributionSourceKindCoordinates> {
         self.rule.attribution_source_kind_coordinates()
+    }
+
+    /// Joint (figment-`Metadata::name`-axis kind × shikumi-layer-kind)
+    /// cell of [`Self::rule`]; convenience over
+    /// [`AttributionRule::attribution_name_kind_coordinates`]. One
+    /// method call returns the name-axis rule's joint cell — the
+    /// figment-name-axis kind paired with the shikumi-layer kind —
+    /// without destructuring the envelope or inlining the two sibling
+    /// reads ([`Self::figment_name_tag_kind`], [`Self::layer_kind`])
+    /// at the call site.
+    ///
+    /// Some-iff-MetadataName discipline shared with
+    /// [`AttributionRule::attribution_name_kind_coordinates`]: the joint
+    /// cell is [`Some`] exactly when [`Self::metadata_axis`] returns
+    /// [`AttributionAxis::MetadataName`] — the dual of the
+    /// Some-iff-MetadataSource discipline on
+    /// [`Self::attribution_source_kind_coordinates`]. Pinned by
+    /// `failing_source_attribution_attribution_name_kind_coordinates_mirrors_rule`.
+    #[must_use]
+    pub fn attribution_name_kind_coordinates(self) -> Option<AttributionNameKindCoordinates> {
+        self.rule.attribution_name_kind_coordinates()
     }
 
     /// Coordinate triple of [`Self::rule`]; convenience over
@@ -7349,6 +7667,370 @@ mod tests {
             observed.is_subset(&declared),
             "image of attribution_source_kind_coordinates must lie in \
              AttributionSourceKindCoordinates::ALL; observed: {observed:?}, \
+             declared: {declared:?}",
+        );
+    }
+
+    // ---- AttributionNameKindCoordinates::ALL cover / partition / realizability ----
+
+    #[test]
+    fn attribution_name_kind_coordinates_all_has_no_duplicates() {
+        // Pins that the constant is a set, not a multiset — every
+        // cell appears at most once. Mirrors the
+        // `_all_has_no_duplicates` discipline on every sibling
+        // product-cube `ALL`.
+        use std::collections::HashSet;
+        let unique: HashSet<AttributionNameKindCoordinates> = AttributionNameKindCoordinates::ALL
+            .iter()
+            .copied()
+            .collect();
+        assert_eq!(
+            unique.len(),
+            AttributionNameKindCoordinates::ALL.len(),
+            "AttributionNameKindCoordinates::ALL must contain no duplicates; got: {:?}",
+            AttributionNameKindCoordinates::ALL,
+        );
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_all_cardinality_matches_product_of_axes() {
+        // Pins the product-cube cardinality contract as a function of
+        // the constituent axis cardinalities rather than a literal
+        // integer: any new variant on either sibling axis
+        // (FigmentNameTagKind::ALL or ConfigSourceKind::ALL) forces an
+        // extension of Self::ALL in lockstep through this assertion.
+        // Also pins the concrete current value (6) so an unintentional
+        // churn on either axis is caught even when the product math
+        // still works out.
+        assert_eq!(
+            AttributionNameKindCoordinates::ALL.len(),
+            FigmentNameTagKind::ALL.len() * ConfigSourceKind::ALL.len(),
+            "ALL must equal the cartesian product cardinality",
+        );
+        assert_eq!(
+            AttributionNameKindCoordinates::ALL.len(),
+            6,
+            "ALL must have 2 * 3 = 6 cells today",
+        );
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_all_equals_axes_cartesian_product() {
+        // Tight equality (not subset) against the inline doubly-nested
+        // product over the sibling ALL slices: Self::ALL IS the
+        // cartesian product, no extras and no omissions. A future
+        // variant on either sibling axis (figment_name_tag_kind or
+        // layer_kind) forces both an entry in the constant and a
+        // corresponding cell appearing here through the inline product
+        // enumeration.
+        use std::collections::HashSet;
+        let mut expected: HashSet<AttributionNameKindCoordinates> = HashSet::new();
+        for figment_name_tag_kind in FigmentNameTagKind::ALL.iter().copied() {
+            for layer_kind in ConfigSourceKind::ALL.iter().copied() {
+                expected.insert(AttributionNameKindCoordinates {
+                    figment_name_tag_kind,
+                    layer_kind,
+                });
+            }
+        }
+        let listed: HashSet<AttributionNameKindCoordinates> = AttributionNameKindCoordinates::ALL
+            .iter()
+            .copied()
+            .collect();
+        assert_eq!(
+            listed, expected,
+            "ALL must be the exact cartesian product of the sibling ALL slices",
+        );
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_all_iterates_in_lexicographic_order() {
+        // Pins iteration order figment_name_tag_kind-outer /
+        // layer_kind-inner — the doubly-nested product enumeration
+        // over the sibling ALL slices in lexicographic order.
+        let mut expected: Vec<AttributionNameKindCoordinates> = Vec::new();
+        for figment_name_tag_kind in FigmentNameTagKind::ALL.iter().copied() {
+            for layer_kind in ConfigSourceKind::ALL.iter().copied() {
+                expected.push(AttributionNameKindCoordinates {
+                    figment_name_tag_kind,
+                    layer_kind,
+                });
+            }
+        }
+        let listed: Vec<AttributionNameKindCoordinates> =
+            AttributionNameKindCoordinates::ALL.to_vec();
+        assert_eq!(
+            listed, expected,
+            "ALL must iterate in figment_name_tag_kind-outer / layer_kind-inner lexicographic order",
+        );
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_is_realizable_matches_diagonal() {
+        // Pins the realizability invariant pointwise on every cell of
+        // the cube:
+        //   is_realizable iff
+        //   (figment_name_tag_kind, layer_kind) ∈ {(Format, File), (Env, Env)}.
+        // The two definitions agree on all 6 cells.
+        for cell in AttributionNameKindCoordinates::ALL.iter().copied() {
+            let expected = matches!(
+                (cell.figment_name_tag_kind, cell.layer_kind),
+                (FigmentNameTagKind::Format, ConfigSourceKind::File)
+                    | (FigmentNameTagKind::Env, ConfigSourceKind::Env)
+            );
+            assert_eq!(
+                cell.is_realizable(),
+                expected,
+                "cell {cell:?}: is_realizable must equal the name-axis diagonal law",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_realizable_partitions_into_2_realizable_and_4_unrealizable()
+     {
+        // Pins the 2 + 4 cardinality split:
+        // - 2 realizable cells on the structural diagonal of name-axis
+        //   rules: (Format, File) from FileByMetadataName and
+        //   (Env, Env) from {EnvByPrefix, EnvByUniqueness}.
+        // - 4 unrealizable cells: (Format, Defaults), (Format, Env),
+        //   (Env, Defaults), (Env, File).
+        // A future name-axis rule lands as a realizable cell whose
+        // realizability is forced by the diagonal law, extending the
+        // realizable image and shrinking the unrealizable count in
+        // lockstep.
+        let realizable = AttributionNameKindCoordinates::ALL
+            .iter()
+            .filter(|c| c.is_realizable())
+            .count();
+        let unrealizable = AttributionNameKindCoordinates::ALL
+            .iter()
+            .filter(|c| !c.is_realizable())
+            .count();
+        assert_eq!(realizable, 2, "realizable cells must be 2");
+        assert_eq!(unrealizable, 4, "unrealizable cells must be 4");
+        assert_eq!(
+            realizable + unrealizable,
+            AttributionNameKindCoordinates::ALL.len(),
+            "realizable + unrealizable must cover ALL exactly once",
+        );
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_realizable_image_equals_rule_image() {
+        // The realizable half of ALL is the exact image of
+        // AttributionRule::attribution_name_kind_coordinates over the
+        // rule space. Pins which specific cells (not just how many)
+        // are observable from a recognized AttributionRule — a tighter
+        // contract than the cardinality split. Future name-axis rules
+        // land coherently: a new rule extends the image and forces an
+        // expansion of the realizable subset in lockstep.
+        use std::collections::HashSet;
+        let observed: HashSet<AttributionNameKindCoordinates> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter_map(AttributionRule::attribution_name_kind_coordinates)
+            .collect();
+        let realizable: HashSet<AttributionNameKindCoordinates> =
+            AttributionNameKindCoordinates::ALL
+                .iter()
+                .copied()
+                .filter(|c| c.is_realizable())
+                .collect();
+        assert_eq!(
+            observed, realizable,
+            "observed image over AttributionRule::ALL must equal the realizable cells",
+        );
+    }
+
+    #[test]
+    fn attribution_rule_attribution_name_kind_coordinates_returns_realizable_cell_when_some() {
+        // Forward-partial / image-realizable contract: every Some
+        // return from AttributionRule::attribution_name_kind_coordinates
+        // must satisfy is_realizable. The accessor never produces an
+        // unrealizable cell, no matter which rule is queried.
+        for rule in AttributionRule::ALL.iter().copied() {
+            if let Some(cell) = rule.attribution_name_kind_coordinates() {
+                assert!(
+                    cell.is_realizable(),
+                    "rule {rule:?} mapped to non-realizable cell {cell:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn attribution_rule_attribution_name_kind_coordinates_some_iff_metadata_axis_name() {
+        // Composition law on AttributionRule: the partial joint cell
+        // projection is Some exactly when metadata_axis is
+        // MetadataName. Symmetric peer of
+        // `attribution_rule_attribution_source_kind_coordinates_some_iff_metadata_axis_source`.
+        for rule in AttributionRule::ALL.iter().copied() {
+            assert_eq!(
+                rule.attribution_name_kind_coordinates().is_some(),
+                rule.metadata_axis() == AttributionAxis::MetadataName,
+                "rule {rule:?}: attribution_name_kind_coordinates.is_some() must equal \
+                 (metadata_axis == MetadataName)",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_attribution_name_kind_coordinates_mirrors_paired_projections() {
+        // The joint-cell accessor must agree byte-for-byte with the
+        // inline pairing of the two sibling projections:
+        // - figment_name_tag_kind() → cell.figment_name_tag_kind
+        // - layer_kind()            → cell.layer_kind
+        // Pins the lossless-decomposition contract: consumers using
+        // either the joint cell or the two reads separately see the
+        // same data.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let joint = rule.attribution_name_kind_coordinates();
+            let paired = rule.figment_name_tag_kind().map(|figment_name_tag_kind| {
+                AttributionNameKindCoordinates {
+                    figment_name_tag_kind,
+                    layer_kind: rule.layer_kind(),
+                }
+            });
+            assert_eq!(
+                joint, paired,
+                "rule {rule:?}: joint accessor must equal the paired projections",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_attribution_name_kind_coordinates_pins_known_rules() {
+        // Per-variant pinning table: name-axis rules already name
+        // both halves of their joint cell, source-axis rules name
+        // neither.
+        let cases: [(AttributionRule, Option<AttributionNameKindCoordinates>); 5] = [
+            (AttributionRule::FileBySource, None),
+            (
+                AttributionRule::FileByMetadataName,
+                Some(AttributionNameKindCoordinates {
+                    figment_name_tag_kind: FigmentNameTagKind::Format,
+                    layer_kind: ConfigSourceKind::File,
+                }),
+            ),
+            (
+                AttributionRule::EnvByPrefix,
+                Some(AttributionNameKindCoordinates {
+                    figment_name_tag_kind: FigmentNameTagKind::Env,
+                    layer_kind: ConfigSourceKind::Env,
+                }),
+            ),
+            (
+                AttributionRule::EnvByUniqueness,
+                Some(AttributionNameKindCoordinates {
+                    figment_name_tag_kind: FigmentNameTagKind::Env,
+                    layer_kind: ConfigSourceKind::Env,
+                }),
+            ),
+            (AttributionRule::DefaultsByCodeUniqueness, None),
+        ];
+        for (rule, expected) in cases {
+            assert_eq!(
+                rule.attribution_name_kind_coordinates(),
+                expected,
+                "rule {rule:?}: attribution_name_kind_coordinates pin",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_rule_attribution_name_kind_coordinates_xor_attribution_source_kind_coordinates()
+    {
+        // Cross-axis partition law: every rule's identity dispatches
+        // on exactly one figment-metadata axis, so for every rule
+        // exactly one of attribution_source_kind_coordinates and
+        // attribution_name_kind_coordinates returns Some. Closes the
+        // joint-cell universe across the two cubes.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let source = rule.attribution_source_kind_coordinates().is_some();
+            let name = rule.attribution_name_kind_coordinates().is_some();
+            assert_ne!(
+                source, name,
+                "rule {rule:?}: exactly one of the two joint cells must be Some",
+            );
+        }
+    }
+
+    #[test]
+    fn failing_source_attribution_attribution_name_kind_coordinates_mirrors_rule() {
+        // The envelope's accessor must agree with the rule's,
+        // byte-for-byte, on every recognized rule. Pins the
+        // convenience accessor as a thin forwarder over
+        // AttributionRule::attribution_name_kind_coordinates.
+        for rule in AttributionRule::ALL.iter().copied() {
+            let src = ConfigSource::Defaults;
+            let attr = FailingSourceAttribution::new(&src, rule);
+            assert_eq!(
+                attr.attribution_name_kind_coordinates(),
+                rule.attribution_name_kind_coordinates(),
+                "envelope for rule {rule:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_is_copy_and_hashable() {
+        // Typescape bounds parity with the sibling product-cube
+        // structs (AttributionCoordinates, FormatCoordinates,
+        // ErrorLocalizationCoordinates, AttributionSourceKindCoordinates)
+        // and the underlying axis primitives (FigmentNameTagKind,
+        // ConfigSourceKind).
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(AttributionNameKindCoordinates {
+            figment_name_tag_kind: FigmentNameTagKind::Format,
+            layer_kind: ConfigSourceKind::File,
+        });
+        set.insert(AttributionNameKindCoordinates {
+            figment_name_tag_kind: FigmentNameTagKind::Env,
+            layer_kind: ConfigSourceKind::Env,
+        });
+        // Duplicate insertion — no growth.
+        set.insert(AttributionNameKindCoordinates {
+            figment_name_tag_kind: FigmentNameTagKind::Format,
+            layer_kind: ConfigSourceKind::File,
+        });
+        assert_eq!(set.len(), 2, "every coordinate must hash distinctly");
+
+        // Copy: rebind without move.
+        let c = AttributionNameKindCoordinates {
+            figment_name_tag_kind: FigmentNameTagKind::Env,
+            layer_kind: ConfigSourceKind::Defaults,
+        };
+        let c2 = c;
+        let c3 = c;
+        assert_eq!(c, c2);
+        assert_eq!(c2, c3);
+    }
+
+    #[test]
+    fn attribution_name_kind_coordinates_realizable_image_lies_in_attribution_name_kind_coordinates_all()
+     {
+        // Cross-primitive cover law: every realizable cell observed
+        // from AttributionRule lies in
+        // AttributionNameKindCoordinates::ALL. Pins the contract that
+        // the rule's partial-projection image stays a sub-image of the
+        // declared product cube — no rule-specific joint cell ever
+        // escapes the typescape's declared product axis.
+        use std::collections::HashSet;
+        let observed: HashSet<AttributionNameKindCoordinates> = AttributionRule::ALL
+            .iter()
+            .copied()
+            .filter_map(AttributionRule::attribution_name_kind_coordinates)
+            .collect();
+        let declared: HashSet<AttributionNameKindCoordinates> = AttributionNameKindCoordinates::ALL
+            .iter()
+            .copied()
+            .collect();
+        assert!(
+            observed.is_subset(&declared),
+            "image of attribution_name_kind_coordinates must lie in \
+             AttributionNameKindCoordinates::ALL; observed: {observed:?}, \
              declared: {declared:?}",
         );
     }
