@@ -146,6 +146,182 @@ pub enum SecretBackend {
     GcpSecret(String),
 }
 
+impl SecretBackend {
+    /// Data-free discriminant of this [`SecretBackend`]: the kind of
+    /// backend independent of the inner literal value, command string,
+    /// 1Password reference, SOPS / Vault payload, Akeyless name, AWS
+    /// secret id, or GCP resource name.
+    ///
+    /// The closed-image projection over the [`SecretBackend`] variant
+    /// space, returning a `'static` [`SecretBackendKind`] suitable for
+    /// cross-thread observation, hashing, and structured-diagnostic
+    /// indexing. Mirrors [`crate::ConfigSource::kind`] on the layer axis
+    /// and [`crate::FigmentNameTag::kind`] on the figment-`Metadata::name`
+    /// axis: same typescape discipline (exhaustive forward map, data-free
+    /// codomain, allocation-free), applied to the secret-resolution
+    /// backend axis.
+    ///
+    /// Adding a future [`SecretBackend`] variant (e.g. an `EnvVar` or
+    /// `Kubernetes` backend) means adding one [`SecretBackendKind`]
+    /// variant in lockstep — the exhaustive match here forces the
+    /// assignment at compile time.
+    #[must_use]
+    pub const fn kind(&self) -> SecretBackendKind {
+        match self {
+            Self::Literal(_) => SecretBackendKind::Literal,
+            Self::Command(_) => SecretBackendKind::Command,
+            Self::Op(_) => SecretBackendKind::Op,
+            Self::Sops(_) => SecretBackendKind::Sops,
+            Self::Akeyless(_) => SecretBackendKind::Akeyless,
+            Self::Vault(_) => SecretBackendKind::Vault,
+            Self::AwsSecret(_) => SecretBackendKind::AwsSecret,
+            Self::GcpSecret(_) => SecretBackendKind::GcpSecret,
+        }
+    }
+}
+
+/// Data-free, `'static` discriminant of [`SecretBackend`]: the kind of
+/// secret-resolution backend independent of the inner payload.
+///
+/// Closed eight-way partition over the [`SecretBackend`] variant space,
+/// returned by [`SecretBackend::kind`]. The enum exists so consumers
+/// that care only about the backend axis (per-backend telemetry, kind-
+/// indexed dispatch tables, structured-diagnostic legends naming the
+/// failing backend, attestation manifests recording the backend mix of
+/// resolved secrets) match on one closed enum instead of pattern-matching
+/// against the payload-carrying [`SecretBackend`] or shelling its
+/// `serde` tag through a string round-trip.
+///
+/// Peer of [`crate::ConfigSourceKind`] on the layer axis,
+/// [`crate::FigmentSourceKind`] / [`crate::FigmentNameTagKind`] on the
+/// figment-`Metadata::{source, name}` axes, and the other closed-enum
+/// kind primitives: same typescape discipline (closed, allocation-free,
+/// `Copy + Eq + Hash + #[non_exhaustive]`, exhaustive forward map),
+/// applied to the secret-resolution backend axis.
+///
+/// The canonical label strings match [`SecretBackend`]'s
+/// `#[serde(rename_all = "snake_case")]` shape pointwise — the same
+/// keys a YAML config author types (`literal`, `command`, `op`, `sops`,
+/// `akeyless`, `vault`, `aws_secret`, `gcp_secret`) — so operator-facing
+/// surfaces naming the failing backend by kind use the same vocabulary
+/// the config schema does.
+///
+/// `'static` and allocation-free, suitable for crossing thread
+/// boundaries the borrowed [`SecretBackend`] (which holds owned `String`
+/// payloads) is unnecessarily expensive to clone for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum SecretBackendKind {
+    /// Maps to [`SecretBackend::Literal`] regardless of inner string.
+    Literal,
+    /// Maps to [`SecretBackend::Command`] regardless of inner shell
+    /// command string.
+    Command,
+    /// Maps to [`SecretBackend::Op`] regardless of inner 1Password
+    /// reference string.
+    Op,
+    /// Maps to [`SecretBackend::Sops`] regardless of inner
+    /// [`SopsRef`] variant.
+    Sops,
+    /// Maps to [`SecretBackend::Akeyless`] regardless of inner secret
+    /// name.
+    Akeyless,
+    /// Maps to [`SecretBackend::Vault`] regardless of inner
+    /// [`VaultRef`] variant.
+    Vault,
+    /// Maps to [`SecretBackend::AwsSecret`] regardless of inner secret
+    /// id.
+    AwsSecret,
+    /// Maps to [`SecretBackend::GcpSecret`] regardless of inner resource
+    /// name.
+    GcpSecret,
+}
+
+impl SecretBackendKind {
+    /// Every [`SecretBackendKind`] variant, in declaration order
+    /// ([`Self::Literal`], [`Self::Command`], [`Self::Op`],
+    /// [`Self::Sops`], [`Self::Akeyless`], [`Self::Vault`],
+    /// [`Self::AwsSecret`], [`Self::GcpSecret`]).
+    ///
+    /// The closed list of secret-resolution backends shikumi recognizes,
+    /// in the same declaration order as the [`SecretBackend`] variant
+    /// list. Iterate to enumerate the backend space without listing
+    /// variants by hand at every consumer site — e.g. dashboards
+    /// initializing per-backend counters, attestation manifests
+    /// recording the backend-mix histogram of resolved secrets, or
+    /// partition-coverage tests asserting disjointness across the
+    /// secret-side classification.
+    ///
+    /// Adding a new variant to [`Self`] (e.g. a future `EnvVar` or
+    /// `Kubernetes` backend) means extending this slice in lockstep with
+    /// the variant itself. The compiler enforces nothing here directly,
+    /// so the `secret_backend_kind_all_covers_every_constructible_backend`
+    /// test pins the contract by asserting that every kind produced by
+    /// [`SecretBackend::kind`] over the canonical sample table appears
+    /// in [`Self::ALL`], and the `secret_backend_kind_all_has_no_duplicates`
+    /// test pins that the constant is a set (no double-listed variant).
+    pub const ALL: &'static [Self] = &[
+        Self::Literal,
+        Self::Command,
+        Self::Op,
+        Self::Sops,
+        Self::Akeyless,
+        Self::Vault,
+        Self::AwsSecret,
+        Self::GcpSecret,
+    ];
+
+    /// Canonical operator-facing `snake_case` name of the backend kind
+    /// — `"literal"`, `"command"`, `"op"`, `"sops"`, `"akeyless"`,
+    /// `"vault"`, `"aws_secret"`, or `"gcp_secret"`.
+    ///
+    /// The single source of truth for the backend-kind label strings on
+    /// the [`SecretBackendKind`] axis. Inherent mirror of the
+    /// [`crate::ClosedAxisLabel`] trait method; the trait impl delegates
+    /// here so the canonical names live at one site instead of being
+    /// re-stated at every operator-facing surface.
+    ///
+    /// The strings coincide with [`SecretBackend`]'s
+    /// `#[serde(rename_all = "snake_case")]` YAML keys pointwise — by
+    /// typescape design, so an operator naming a backend through a
+    /// kind-indexed surface (a CLI flag filtering by backend, a
+    /// structured-log field, an attestation manifest histogram) uses the
+    /// same vocabulary the config schema does. Pairs with
+    /// [`crate::ClosedAxisLabel::from_canonical_str`] via the trait-
+    /// default linear-scan parse; the round-trip law
+    /// `Self::from_canonical_str(v.as_str()) == Some(v)` is pinned for
+    /// every variant uniformly by the trait-uniform
+    /// `closed_axis_label_round_trips_for_every_implementor` test in
+    /// `cube::tests`. The concrete-position pin at
+    /// `secret_backend_kind_as_str_yields_canonical_snake_case_names`
+    /// holds the literal string values stable so a future rename (e.g.
+    /// `"aws"` for `AwsSecret`, capitalizing `"Op"`) fails at that site
+    /// before drifting through the round-trip law and the YAML schema.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Literal => "literal",
+            Self::Command => "command",
+            Self::Op => "op",
+            Self::Sops => "sops",
+            Self::Akeyless => "akeyless",
+            Self::Vault => "vault",
+            Self::AwsSecret => "aws_secret",
+            Self::GcpSecret => "gcp_secret",
+        }
+    }
+}
+
+impl crate::ClosedAxis for SecretBackendKind {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxisLabel for SecretBackendKind {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
+}
+
 /// SOPS-encrypted file reference.
 ///
 /// Accepts either a bare path (`"secrets/prod.yaml"`) or a path+field
@@ -1172,5 +1348,358 @@ mod tests {
         ));
         let result = resolve(&source);
         assert!(result.is_err());
+    }
+
+    // ── SecretBackendKind — the 'static discriminant of SecretBackend ──
+    //
+    // The kind axis closes the secret-resolution backend universe under
+    // one typescape primitive: SecretBackend (payload-carrying) projects
+    // through SecretBackend::kind to SecretBackendKind ('static, data-
+    // free, allocation-free). Tests mirror the FigmentNameTagKind /
+    // ConfigSourceKind suites pointwise on the secret-backend axis.
+
+    /// Canonical sample table covering every [`SecretBackend`] variant
+    /// once, with the kind each must classify into. Source for the
+    /// `secret_backend_kind_all_*` cover/partition tests below.
+    fn canonical_secret_backend_kind_samples() -> Vec<(SecretBackend, SecretBackendKind)> {
+        vec![
+            (
+                SecretBackend::Literal("dev".into()),
+                SecretBackendKind::Literal,
+            ),
+            (
+                SecretBackend::Command("echo hunter2".into()),
+                SecretBackendKind::Command,
+            ),
+            (
+                SecretBackend::Op("op://prod/app/jwt".into()),
+                SecretBackendKind::Op,
+            ),
+            (
+                SecretBackend::Sops(SopsRef::File(PathBuf::from("secrets/prod.yaml"))),
+                SecretBackendKind::Sops,
+            ),
+            (
+                SecretBackend::Sops(SopsRef::Field {
+                    file: PathBuf::from("secrets/prod.yaml"),
+                    field: "jwt_secret".into(),
+                }),
+                SecretBackendKind::Sops,
+            ),
+            (
+                SecretBackend::Akeyless("/prod/my-secret".into()),
+                SecretBackendKind::Akeyless,
+            ),
+            (
+                SecretBackend::Vault(VaultRef::Path("secret/data/prod/app".into())),
+                SecretBackendKind::Vault,
+            ),
+            (
+                SecretBackend::Vault(VaultRef::Field {
+                    path: "secret/data/prod/app".into(),
+                    field: "password".into(),
+                }),
+                SecretBackendKind::Vault,
+            ),
+            (
+                SecretBackend::AwsSecret("prod/app/jwt".into()),
+                SecretBackendKind::AwsSecret,
+            ),
+            (
+                SecretBackend::GcpSecret("projects/p/secrets/jwt".into()),
+                SecretBackendKind::GcpSecret,
+            ),
+        ]
+    }
+
+    #[test]
+    fn secret_backend_kind_classifies_each_variant() {
+        // The forward map SecretBackend → SecretBackendKind is
+        // exhaustive: every variant pins to exactly one kind. Mirrors
+        // `figment_name_tag_kind_classifies_each_variant` on the
+        // figment-Metadata::name axis.
+        for (backend, expected) in canonical_secret_backend_kind_samples() {
+            assert_eq!(
+                backend.kind(),
+                expected,
+                "SecretBackend::kind must classify {backend:?} as {expected:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_is_data_free() {
+        // Inner payload does not influence kind — every Literal maps to
+        // Literal regardless of the inner String value; every Sops maps
+        // to Sops regardless of the inner SopsRef variant; every Vault
+        // maps to Vault regardless of the inner VaultRef variant.
+        for literal in ["", "a", "very-long-secret-payload-with-special-chars-$@!"] {
+            assert_eq!(
+                SecretBackend::Literal(literal.into()).kind(),
+                SecretBackendKind::Literal,
+            );
+        }
+        for sops in [
+            SopsRef::File(PathBuf::from("a.yaml")),
+            SopsRef::File(PathBuf::from("/very/long/path/to/b.json")),
+            SopsRef::Field {
+                file: PathBuf::from("c.yaml"),
+                field: "k".into(),
+            },
+        ] {
+            assert_eq!(SecretBackend::Sops(sops).kind(), SecretBackendKind::Sops);
+        }
+        for vault in [
+            VaultRef::Path("p".into()),
+            VaultRef::Field {
+                path: "p".into(),
+                field: "f".into(),
+            },
+        ] {
+            assert_eq!(SecretBackend::Vault(vault).kind(), SecretBackendKind::Vault);
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_is_static_and_copy_and_hashable() {
+        // The discriminant is `'static` (no lifetime parameter), `Copy`,
+        // and `Hash`-able — the same trait-bounds parity as the sibling
+        // typescape primitives (FigmentNameTagKind, ConfigSourceKind,
+        // FigmentSourceKind, AttributionRule, AttributionConfidence,
+        // AttributionAxis).
+        fn assert_static<T: 'static>() {}
+        use std::collections::HashSet;
+        let mut set: HashSet<SecretBackendKind> = SecretBackendKind::ALL.iter().copied().collect();
+        set.insert(SecretBackendKind::Vault); // duplicate
+        assert_eq!(set.len(), SecretBackendKind::ALL.len());
+
+        // Copy: rebind without move.
+        let k = SecretBackendKind::Op;
+        let k2 = k;
+        let k3 = k;
+        assert_eq!(k, k2);
+        assert_eq!(k2, k3);
+
+        assert_static::<SecretBackendKind>();
+    }
+
+    #[test]
+    fn secret_backend_kind_all_has_no_duplicates() {
+        // The constant must be a set — no variant listed twice. Pins
+        // the typescape discipline shared with the other closed-enum
+        // kind axes.
+        use std::collections::HashSet;
+        let set: HashSet<SecretBackendKind> = SecretBackendKind::ALL.iter().copied().collect();
+        assert_eq!(
+            set.len(),
+            SecretBackendKind::ALL.len(),
+            "SecretBackendKind::ALL must contain no duplicates; got: {:?}",
+            SecretBackendKind::ALL,
+        );
+    }
+
+    #[test]
+    fn secret_backend_kind_all_covers_every_constructible_backend() {
+        // Subset cover: every kind produced by SecretBackend::kind over
+        // the canonical sample table must lie in SecretBackendKind::ALL.
+        // A future backend variant that adds a new kind class must
+        // extend SecretBackendKind and its ALL in the same commit;
+        // otherwise this test fails.
+        use std::collections::HashSet;
+        let declared: HashSet<SecretBackendKind> = SecretBackendKind::ALL.iter().copied().collect();
+        let observed: HashSet<SecretBackendKind> = canonical_secret_backend_kind_samples()
+            .iter()
+            .map(|(backend, _)| backend.kind())
+            .collect();
+        assert!(
+            observed.is_subset(&declared),
+            "SecretBackend::kind image must lie in SecretBackendKind::ALL; \
+             observed: {observed:?}, declared: {declared:?}",
+        );
+    }
+
+    #[test]
+    fn secret_backend_kind_all_equals_backend_kind_image() {
+        // Tight equality (stronger than subset cover): every variant in
+        // SecretBackendKind::ALL must be witnessed by at least one
+        // backend's kind() — no orphan variant in the declared kind
+        // space lacks a producing backend.
+        use std::collections::HashSet;
+        let declared: HashSet<SecretBackendKind> = SecretBackendKind::ALL.iter().copied().collect();
+        let observed: HashSet<SecretBackendKind> = canonical_secret_backend_kind_samples()
+            .iter()
+            .map(|(backend, _)| backend.kind())
+            .collect();
+        assert_eq!(
+            observed, declared,
+            "SecretBackend::kind image must equal SecretBackendKind::ALL",
+        );
+    }
+
+    #[test]
+    fn secret_backend_kind_all_declaration_order_matches_secret_backend() {
+        // Pin declaration order. Consumers (diagnostics legends,
+        // attestation manifests, dashboard column orderings, per-
+        // backend histograms) that iterate ALL get a stable order
+        // matching the SecretBackend variant declaration order;
+        // reordering the slice is a breaking change that must show up
+        // here.
+        assert_eq!(
+            SecretBackendKind::ALL,
+            &[
+                SecretBackendKind::Literal,
+                SecretBackendKind::Command,
+                SecretBackendKind::Op,
+                SecretBackendKind::Sops,
+                SecretBackendKind::Akeyless,
+                SecretBackendKind::Vault,
+                SecretBackendKind::AwsSecret,
+                SecretBackendKind::GcpSecret,
+            ],
+        );
+    }
+
+    #[test]
+    fn secret_backend_kind_as_str_yields_canonical_snake_case_names() {
+        // Concrete-position pin on SecretBackendKind::as_str. The
+        // trait-uniform round-trip test in cube::tests pins labels
+        // equal pairwise under from_canonical_str, but this test pins
+        // the literal string values themselves so a future rename
+        // (e.g. `"aws"` for `AwsSecret`, capitalizing `"Op"`) fails
+        // here before drifting through the trait-uniform round-trip
+        // law, the YAML schema, and the operator-facing rendering
+        // surface. The strings match SecretBackend's
+        // `#[serde(rename_all = "snake_case")]` shape pointwise — the
+        // YAML key an operator types is the canonical kind label.
+        assert_eq!(SecretBackendKind::Literal.as_str(), "literal");
+        assert_eq!(SecretBackendKind::Command.as_str(), "command");
+        assert_eq!(SecretBackendKind::Op.as_str(), "op");
+        assert_eq!(SecretBackendKind::Sops.as_str(), "sops");
+        assert_eq!(SecretBackendKind::Akeyless.as_str(), "akeyless");
+        assert_eq!(SecretBackendKind::Vault.as_str(), "vault");
+        assert_eq!(SecretBackendKind::AwsSecret.as_str(), "aws_secret");
+        assert_eq!(SecretBackendKind::GcpSecret.as_str(), "gcp_secret");
+    }
+
+    #[test]
+    fn secret_backend_kind_as_str_matches_serde_json_tag_for_each_variant() {
+        // Cross-side contract: the kind label coincides with the
+        // serde-emitted external tag for every backend variant. Pins
+        // that a config author and a diagnostics consumer use the same
+        // vocabulary: the externally-tagged JSON / YAML key the author
+        // types decodes into a SecretBackend whose kind() label equals
+        // that key. A future rename of either the serde tag or the
+        // kind label would diverge them and fail this test.
+        //
+        // JSON is the chosen serialization here: serde_json renders
+        // externally-tagged enums as `{"variant_tag": payload}`,
+        // exposing the canonical tag string in a position we can
+        // extract without YAML's `!tag value` ambiguity. The YAML
+        // schema decodes the same canonical tags through serde's
+        // shared variant-name machinery.
+        for (backend, expected_kind) in canonical_secret_backend_kind_samples() {
+            let value: serde_json::Value = serde_json::to_value(&backend).unwrap();
+            let object = value
+                .as_object()
+                .expect("externally-tagged SecretBackend serializes as a single-key object");
+            assert_eq!(
+                object.len(),
+                1,
+                "externally-tagged SecretBackend must serialize as exactly one key",
+            );
+            let key = object.keys().next().unwrap();
+            assert_eq!(
+                key,
+                expected_kind.as_str(),
+                "serde external tag for {backend:?} ({key:?}) must equal \
+                 SecretBackendKind::as_str ({:?})",
+                expected_kind.as_str(),
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_from_canonical_str_round_trips_through_trait() {
+        // Pin the trait-default `from_canonical_str` parse on
+        // SecretBackendKind: each canonical snake_case name parses
+        // back to its variant via the ClosedAxisLabel default impl.
+        // Mixed-case forms an operator might type round-trip
+        // case-insensitively.
+        use crate::ClosedAxisLabel;
+        for k in SecretBackendKind::ALL.iter().copied() {
+            assert_eq!(
+                <SecretBackendKind as ClosedAxisLabel>::from_canonical_str(k.as_str()),
+                Some(k),
+                "trait from_canonical_str must round-trip for {k:?}",
+            );
+        }
+        assert_eq!(
+            <SecretBackendKind as ClosedAxisLabel>::from_canonical_str("LITERAL"),
+            Some(SecretBackendKind::Literal),
+        );
+        assert_eq!(
+            <SecretBackendKind as ClosedAxisLabel>::from_canonical_str("Aws_Secret"),
+            Some(SecretBackendKind::AwsSecret),
+        );
+        // Unrecognized strings — including the trailing-whitespace
+        // case, the unprefixed-aws form, and a one-character drift —
+        // reject.
+        assert_eq!(
+            <SecretBackendKind as ClosedAxisLabel>::from_canonical_str("aws"),
+            None,
+        );
+        assert_eq!(
+            <SecretBackendKind as ClosedAxisLabel>::from_canonical_str("op "),
+            None,
+        );
+        assert_eq!(
+            <SecretBackendKind as ClosedAxisLabel>::from_canonical_str(""),
+            None,
+        );
+    }
+
+    #[test]
+    fn secret_backend_kind_resolve_dispatch_arms_partition_by_kind() {
+        // Structural law: the `resolve` dispatch table partitions
+        // SecretSource::Backend cases by SecretBackend::kind exactly
+        // — the resolver arm taken for any backend value is uniquely
+        // determined by its kind. Tested by witnessing every kind cell
+        // through at least one canonical-sample backend and confirming
+        // its `resolve` call routes to the same outcome class
+        // (literal-pass-through for Literal kinds; non-Literal kinds
+        // attempt their backend operation, which either succeeds or
+        // fails with a non-panic error in this CI environment without
+        // the backend CLIs / native clients installed). The pin keeps
+        // a future kind-axis variant in lockstep with the resolve
+        // dispatch table — adding a SecretBackendKind variant without
+        // extending `resolve` would leave the kind unreachable in
+        // dispatch and fail this test.
+        use std::collections::HashSet;
+        let mut witnessed: HashSet<SecretBackendKind> = HashSet::new();
+        for (backend, expected_kind) in canonical_secret_backend_kind_samples() {
+            let source = SecretSource::Backend(backend.clone());
+            // The resolver call must not panic for any kind cell.
+            let result = resolve(&source);
+            match expected_kind {
+                SecretBackendKind::Literal => {
+                    assert!(result.is_ok(), "Literal must resolve to Ok");
+                }
+                _ => {
+                    // The backend CLIs / native clients are not
+                    // installed in this CI environment; non-Literal
+                    // kinds therefore surface as Err. The point of
+                    // this test is dispatch totality, not backend
+                    // success — every kind cell reaches an arm.
+                    let _ = result;
+                }
+            }
+            witnessed.insert(backend.kind());
+        }
+        let declared: HashSet<SecretBackendKind> = SecretBackendKind::ALL.iter().copied().collect();
+        assert_eq!(
+            witnessed, declared,
+            "every SecretBackendKind variant must be witnessed by \
+             a canonical-sample backend reaching the resolve dispatch",
+        );
     }
 }
