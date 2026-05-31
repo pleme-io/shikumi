@@ -114,6 +114,46 @@ pub enum SecretSource {
     Literal(String),
 }
 
+impl SecretSource {
+    /// Backend kind this source resolves into, projecting both the
+    /// top-level [`Self::Literal`] shorthand and the explicit
+    /// [`SecretBackend::Literal`] tag onto the same
+    /// [`SecretBackendKind::Literal`] cell — the equivalence the
+    /// [`resolve`] dispatch table already encodes pointwise (the
+    /// [`Self::Literal`] arm and the [`SecretBackend::Literal`] arm
+    /// take identical bodies).
+    ///
+    /// The closed-image projection over the [`SecretSource`] variant
+    /// space onto the [`SecretBackendKind`] axis, composing
+    /// [`SecretBackend::kind`] under the [`Self::Backend`] wrapper and
+    /// collapsing the bare-string literal path. Mirrors
+    /// [`SecretBackend::kind`] on the source-side surface so consumers
+    /// observing a parsed `SecretSource` — telemetry recording the
+    /// backend mix of resolved secrets, kind-indexed dispatch tables
+    /// over `SecretSource` values, structured-diagnostic legends
+    /// naming the failing backend by kind regardless of literal-tag
+    /// shape — read one typed projection instead of enumerating both
+    /// literal arms at each site.
+    ///
+    /// The two-literal-paths equivalence is structural, not
+    /// representational: an operator who writes `jwt_secret:
+    /// dev-token` (parses as [`Self::Literal`]) and one who writes
+    /// `jwt_secret: { literal: dev-token }` (parses as
+    /// [`Self::Backend`] of [`SecretBackend::Literal`]) declare the
+    /// same secret-resolution shape, and this projection witnesses
+    /// that fact at the type level. Pinned by the
+    /// `secret_source_backend_kind_collapses_literal_paths` and
+    /// `secret_source_resolve_dispatch_partitions_by_backend_kind`
+    /// tests in `secret::tests`.
+    #[must_use]
+    pub const fn backend_kind(&self) -> SecretBackendKind {
+        match self {
+            Self::Literal(_) => SecretBackendKind::Literal,
+            Self::Backend(backend) => backend.kind(),
+        }
+    }
+}
+
 /// Internally-tagged variants — the backends proper.
 ///
 /// Split out from [`SecretSource`] so the outer enum can be `untagged`
@@ -1700,6 +1740,193 @@ mod tests {
             witnessed, declared,
             "every SecretBackendKind variant must be witnessed by \
              a canonical-sample backend reaching the resolve dispatch",
+        );
+    }
+
+    // ── SecretSource::backend_kind ─────────────────────────────────
+    // The source-side projection composes SecretBackend::kind under
+    // the Backend wrapper and collapses the bare-string literal path
+    // onto SecretBackendKind::Literal — the equivalence the resolve
+    // dispatch table encodes by giving the SecretSource::Literal and
+    // SecretSource::Backend(SecretBackend::Literal) arms identical
+    // bodies.
+
+    #[test]
+    fn secret_source_backend_kind_pins_known_sources() {
+        // Per-source pin: every canonical SecretSource value maps to
+        // the declared SecretBackendKind cell. Exhausts the
+        // 1 (top-level Literal) + every backend kind via Backend
+        // wrapping.
+        let cases: Vec<(SecretSource, SecretBackendKind)> = vec![
+            (
+                SecretSource::Literal("bare".into()),
+                SecretBackendKind::Literal,
+            ),
+            (
+                SecretSource::Backend(SecretBackend::Literal("explicit".into())),
+                SecretBackendKind::Literal,
+            ),
+            (
+                SecretSource::Backend(SecretBackend::Command("echo s".into())),
+                SecretBackendKind::Command,
+            ),
+            (
+                SecretSource::Backend(SecretBackend::Op("op://v/i/f".into())),
+                SecretBackendKind::Op,
+            ),
+            (
+                SecretSource::Backend(SecretBackend::Sops(SopsRef::File(PathBuf::from("s.yaml")))),
+                SecretBackendKind::Sops,
+            ),
+            (
+                SecretSource::Backend(SecretBackend::Akeyless("/p/s".into())),
+                SecretBackendKind::Akeyless,
+            ),
+            (
+                SecretSource::Backend(SecretBackend::Vault(VaultRef::Path("secret/p".into()))),
+                SecretBackendKind::Vault,
+            ),
+            (
+                SecretSource::Backend(SecretBackend::AwsSecret("p/s".into())),
+                SecretBackendKind::AwsSecret,
+            ),
+            (
+                SecretSource::Backend(SecretBackend::GcpSecret("projects/p/secrets/s".into())),
+                SecretBackendKind::GcpSecret,
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(
+                source.backend_kind(),
+                expected,
+                "SecretSource::backend_kind must classify {source:?} as {expected:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_source_backend_kind_collapses_literal_paths() {
+        // The two-literal-paths equivalence pinned at the type level:
+        // SecretSource::Literal(_) and SecretSource::Backend(
+        // SecretBackend::Literal(_)) both project to
+        // SecretBackendKind::Literal regardless of inner payload —
+        // the same fact the resolve dispatch encodes by giving the
+        // two arms identical bodies. Witnessed across several payload
+        // strings so a future inner-payload-dependent kind would fail
+        // this test.
+        for payload in ["", "dev", "very-long-secret-payload-$@!"] {
+            let bare = SecretSource::Literal(payload.into());
+            let tagged = SecretSource::Backend(SecretBackend::Literal(payload.into()));
+            assert_eq!(bare.backend_kind(), SecretBackendKind::Literal);
+            assert_eq!(tagged.backend_kind(), SecretBackendKind::Literal);
+            assert_eq!(bare.backend_kind(), tagged.backend_kind());
+        }
+    }
+
+    #[test]
+    fn secret_source_backend_kind_wraps_secret_backend_kind_on_backend_variant() {
+        // The Backend arm is a pure projection over the inner
+        // SecretBackend — composing SecretBackend::kind under the
+        // wrapper. Lossless decomposition: reading backend_kind on
+        // SecretSource::Backend(b) equals reading kind on b directly,
+        // for every canonical backend sample.
+        for (backend, expected) in canonical_secret_backend_kind_samples() {
+            let source = SecretSource::Backend(backend.clone());
+            assert_eq!(
+                source.backend_kind(),
+                backend.kind(),
+                "SecretSource::Backend(b).backend_kind() must equal b.kind() for {backend:?}",
+            );
+            assert_eq!(source.backend_kind(), expected);
+        }
+    }
+
+    #[test]
+    fn secret_source_backend_kind_image_lies_in_secret_backend_kind_all() {
+        // Cover law: every backend_kind read must be a cell of
+        // SecretBackendKind::ALL — the projection cannot escape the
+        // closed eight-way partition.
+        use std::collections::HashSet;
+        let declared: HashSet<SecretBackendKind> = SecretBackendKind::ALL.iter().copied().collect();
+        let sources: Vec<SecretSource> = std::iter::once(SecretSource::Literal("bare".into()))
+            .chain(
+                canonical_secret_backend_kind_samples()
+                    .into_iter()
+                    .map(|(backend, _)| SecretSource::Backend(backend)),
+            )
+            .collect();
+        for source in &sources {
+            assert!(
+                declared.contains(&source.backend_kind()),
+                "SecretSource::backend_kind on {source:?} produced \
+                 a kind outside SecretBackendKind::ALL",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_source_backend_kind_covers_every_secret_backend_kind() {
+        // The image of SecretSource::backend_kind over the union of
+        // {top-level Literal} ∪ {Backend(b) | b ∈ canonical samples}
+        // equals SecretBackendKind::ALL exactly — no kind cell is
+        // unreachable from a constructible SecretSource. Pins
+        // surjectivity onto SecretBackendKind via SecretSource.
+        use std::collections::HashSet;
+        let mut witnessed: HashSet<SecretBackendKind> = HashSet::new();
+        witnessed.insert(SecretSource::Literal("bare".into()).backend_kind());
+        for (backend, _) in canonical_secret_backend_kind_samples() {
+            witnessed.insert(SecretSource::Backend(backend).backend_kind());
+        }
+        let declared: HashSet<SecretBackendKind> = SecretBackendKind::ALL.iter().copied().collect();
+        assert_eq!(
+            witnessed, declared,
+            "SecretSource::backend_kind must cover every SecretBackendKind cell",
+        );
+    }
+
+    #[test]
+    fn secret_source_resolve_dispatch_partitions_by_backend_kind() {
+        // Structural law on the source-side surface: the resolve
+        // dispatch over SecretSource partitions by
+        // SecretSource::backend_kind exactly — every source value
+        // routes to an arm, and the Literal kind (whether reached via
+        // the top-level shorthand or via the Backend(SecretBackend::
+        // Literal) tag) takes the literal-pass-through arm.
+        // Strengthens the existing
+        // `secret_backend_kind_resolve_dispatch_arms_partition_by_kind`
+        // pin by also witnessing the SecretSource::Literal arm,
+        // closing the source-axis dispatch totality.
+        use std::collections::HashSet;
+        let bare = SecretSource::Literal("bare".into());
+        let result = resolve(&bare);
+        assert!(
+            matches!(result.as_deref(), Ok("bare")),
+            "SecretSource::Literal must resolve to its bare payload",
+        );
+        assert_eq!(bare.backend_kind(), SecretBackendKind::Literal);
+
+        let mut witnessed: HashSet<SecretBackendKind> = HashSet::new();
+        witnessed.insert(bare.backend_kind());
+        for (backend, expected_kind) in canonical_secret_backend_kind_samples() {
+            let source = SecretSource::Backend(backend);
+            let r = resolve(&source);
+            if matches!(expected_kind, SecretBackendKind::Literal) {
+                assert!(
+                    r.is_ok(),
+                    "SecretSource::Backend(SecretBackend::Literal) must resolve to Ok",
+                );
+            }
+            // Non-Literal kinds may error in this CI environment
+            // without the backend CLIs / native clients installed;
+            // the partition law cares about dispatch totality, not
+            // backend success.
+            witnessed.insert(source.backend_kind());
+        }
+        let declared: HashSet<SecretBackendKind> = SecretBackendKind::ALL.iter().copied().collect();
+        assert_eq!(
+            witnessed, declared,
+            "resolve dispatch over SecretSource must reach every \
+             SecretBackendKind cell via the backend_kind projection",
         );
     }
 }
