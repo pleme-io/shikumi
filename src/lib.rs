@@ -38,6 +38,8 @@ pub mod cli;
 pub mod coverage;
 mod cube;
 mod discovery;
+#[macro_use]
+pub mod macros;
 mod error;
 #[cfg(feature = "lisp")]
 pub mod lisp_provider;
@@ -78,6 +80,8 @@ pub use source::{
     FigmentNameTagKind, FigmentSourceKind, FigmentSourceTag,
 };
 pub use coverage::{ConfigCoverage, CoverageReport};
+#[doc(hidden)]
+pub use macros::__tiered_permutation_run;
 pub use store::ConfigStore;
 pub use tiered::{ConfigDiff, ConfigTier, ConfigTierKind, DiffLine, TieredConfig};
 pub use watcher::{ConfigWatcher, WatchEventClass, symlink_target};
