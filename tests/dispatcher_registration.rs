@@ -10,7 +10,7 @@
 //! tiered configuration is now mechanically queryable through
 //! one CLI call: `gen dispatchers --from-catalog | grep shikumi`.
 
-use gen_platform::{catalog, TypedDispatcherTrait};
+use gen_platform::{TypedDispatcherTrait, catalog};
 use shikumi::ConfigTierKind;
 
 #[test]

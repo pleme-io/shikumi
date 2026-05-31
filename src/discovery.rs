@@ -334,9 +334,9 @@ impl Format {
     /// `(Format, &str)` projection.
     #[must_use]
     pub fn strip_metadata_name(name: &str) -> Option<(Self, &str)> {
-        Self::ALL
+        FormatProvenance::ShikumiBuilt
+            .formats()
             .iter()
-            .filter(|f| f.has_shikumi_provider())
             .find_map(|f| {
                 let prefix = format!("{f}: ");
                 name.strip_prefix(&prefix).map(|rest| (*f, rest))
@@ -576,6 +576,94 @@ impl FormatProvenance {
         match self {
             Self::FigmentBuiltin => "figment-builtin",
             Self::ShikumiBuilt => "shikumi-built",
+        }
+    }
+
+    /// The closed slice of [`Format`] variants whose [`Format::provenance`]
+    /// equals `self` — the fiber of [`Format::provenance`] over this
+    /// provenance cell.
+    ///
+    /// Partial inverse of [`Format::provenance`] on the provenance side:
+    /// where [`Format::provenance`] is the total forward map
+    /// `Format → FormatProvenance` (every format declares one provenance),
+    /// [`Self::formats`] is the closed-image inverse `FormatProvenance →
+    /// &'static [Format]` returning the preimage of each provenance value
+    /// as a `'static` slice in [`Format::ALL`] declaration order.
+    ///
+    /// One source of truth for the (provenance → formats) fiber. Before
+    /// this method, consumers wanting the fiber inlined
+    /// `Format::ALL.iter().filter(|f| f.has_shikumi_provider())` (or its
+    /// `!`-negation for the figment-builtin half) at 9+ sites across the
+    /// crate — one production callsite in [`Format::strip_metadata_name`]
+    /// (the failing-source resolver's name-axis dispatch over the
+    /// shikumi-built providers), and 8 test-time sites pinning the
+    /// shikumi-built ↔ figment-builtin partition on each downstream
+    /// invariant (the env-tag/format-tag disjointness, the metadata-name
+    /// shape uniqueness, the format-axis cube coverage). Each duplicated
+    /// `filter(…has_shikumi_provider())` had to be manually kept in
+    /// lockstep with `Format::provenance`'s match — a future format
+    /// landing under [`Self::FigmentBuiltin`] would still need every
+    /// `filter(|f| f.has_shikumi_provider())` site to keep returning the
+    /// shikumi-built half rather than silently including the new format,
+    /// and the discipline was upheld only by reviewer attention.
+    ///
+    /// Lifting the fiber to one named accessor pins the partition at the
+    /// type level. The slices live as `&'static [Format]` constants, so
+    /// iteration is allocation-free at every call site and the slice
+    /// cardinality (today: 2 + 2 = `Format::ALL.len()`) is pinned at the
+    /// type level. A future [`Format`] variant landing forces an arm in
+    /// [`Format::provenance`] (compile-time, exhaustive match) AND an
+    /// extension of one of the slices here (test-time, pinned by
+    /// [`Self`]'s fiber tests) — both extensions land in lockstep through
+    /// the type system + the trait-uniform test suite.
+    ///
+    /// **Fiber law** — for every `(f, p)` pair in
+    /// `Format::ALL × FormatProvenance::ALL`:
+    /// `f ∈ p.formats() ⇔ Format::provenance(f) == p`. The two directions
+    /// (forward map vs. fiber containment) agree pointwise. Pinned by
+    /// `format_provenance_formats_is_fiber_of_format_provenance` over the
+    /// full `Format::ALL × FormatProvenance::ALL` product. The contract
+    /// is structural: a future provenance variant cannot land without
+    /// declaring a fiber slice that respects this law on its row.
+    ///
+    /// **Partition law** — the slices partition [`Format::ALL`]: the
+    /// disjoint union of `p.formats()` over `FormatProvenance::ALL` equals
+    /// `Format::ALL` as a set (no format missing from every fiber, no
+    /// format appearing in two fibers, no fiber holding a format
+    /// `Format::ALL` does not). Pinned by
+    /// `format_provenance_formats_partition_format_all_disjointly` and
+    /// `format_provenance_formats_cardinalities_sum_to_format_all`. Both
+    /// laws follow from the fiber law and the totality of
+    /// [`Format::provenance`], but stating them as separate tests pins
+    /// each side of the law at a single failure site.
+    ///
+    /// **Declaration order** — each fiber slice lists its formats in the
+    /// same relative order as they appear in [`Format::ALL`]. Pinned by
+    /// `format_provenance_formats_respects_format_all_declaration_order`.
+    /// Consumers that want a deterministic per-provenance ordering for
+    /// dashboards / structured-log fields / attestation manifests can
+    /// rely on the slice without reordering.
+    ///
+    /// Today's fibers — [`Self::FigmentBuiltin`] →
+    /// `[Format::Yaml, Format::Toml]`, [`Self::ShikumiBuilt`] →
+    /// `[Format::Lisp, Format::Nix]` — match the partition pinned by the
+    /// `format_provenance_classifies_each_variant` test on the forward
+    /// side.
+    ///
+    /// Composes with [`FormatCoordinates`]: the realizable cells of the
+    /// `(format × provenance)` cube ([`FormatCoordinates::ALL`] filtered
+    /// by [`FormatCoordinates::is_realizable`]) project onto
+    /// `p.formats()` under the format-axis projection — the fiber is the
+    /// format-axis slice of the realizable surface restricted to the
+    /// `provenance == p` plane. Future cube-cover dashboards rendering
+    /// per-provenance format histograms reach the format list through
+    /// this accessor instead of re-deriving the slice from a filter over
+    /// [`FormatCoordinates::ALL`].
+    #[must_use]
+    pub const fn formats(self) -> &'static [Format] {
+        match self {
+            Self::FigmentBuiltin => &[Format::Yaml, Format::Toml],
+            Self::ShikumiBuilt => &[Format::Lisp, Format::Nix],
         }
     }
 }
@@ -3914,6 +4002,224 @@ mod tests {
                 attr.rule.layer_kind(),
                 attr.source.kind(),
                 "rule layer_kind must agree with source kind",
+            );
+        }
+    }
+
+    // ---- FormatProvenance::formats fiber tests ----
+
+    #[test]
+    fn format_provenance_formats_is_fiber_of_format_provenance() {
+        // The fiber law: for every (f, p) in Format::ALL × FormatProvenance::ALL,
+        // `f ∈ p.formats() ⇔ Format::provenance(f) == p`. Pinned over the
+        // full 4 × 2 = 8-cell product to catch any drift between the
+        // forward map and the closed fiber slice.
+        for f in Format::ALL.iter().copied() {
+            for p in FormatProvenance::ALL.iter().copied() {
+                assert_eq!(
+                    p.formats().contains(&f),
+                    f.provenance() == p,
+                    "fiber law: f.provenance() == p iff p.formats() contains f, on ({f:?}, {p:?})",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn format_provenance_formats_partition_format_all_disjointly() {
+        // The fibers partition Format::ALL into FormatProvenance::ALL.len()
+        // disjoint, exhaustive slices. The disjoint-union of `p.formats()`
+        // over `FormatProvenance::ALL` equals `Format::ALL` as a set, and
+        // no format appears in more than one fiber. Pins the partition law
+        // independent of the fiber law: the disjointness and exhaustiveness
+        // both fail at this single site if the slices drift.
+        use std::collections::HashSet;
+        let mut union: HashSet<Format> = HashSet::new();
+        let mut total_count = 0_usize;
+        for p in FormatProvenance::ALL.iter().copied() {
+            for f in p.formats().iter().copied() {
+                assert!(
+                    union.insert(f),
+                    "format {f:?} appears in more than one fiber (provenance {p:?})",
+                );
+                total_count += 1;
+            }
+        }
+        assert_eq!(
+            total_count,
+            Format::ALL.len(),
+            "the disjoint union of fibers must cover Format::ALL with no duplicates",
+        );
+        let expected: HashSet<Format> = Format::ALL.iter().copied().collect();
+        assert_eq!(
+            union, expected,
+            "the disjoint union of fibers must equal Format::ALL as a set",
+        );
+    }
+
+    #[test]
+    fn format_provenance_formats_cardinalities_sum_to_format_all() {
+        // The fiber cardinalities sum to Format::ALL.len(). Pinned as a
+        // cardinality statement independent of disjointness (which follows
+        // when combined with disjointness via the
+        // `partition_format_all_disjointly` test). A future Format variant
+        // landing forces a fiber extension to keep this sum law intact.
+        let sum: usize = FormatProvenance::ALL
+            .iter()
+            .copied()
+            .map(|p| p.formats().len())
+            .sum();
+        assert_eq!(
+            sum,
+            Format::ALL.len(),
+            "the fiber cardinalities must sum to Format::ALL.len()",
+        );
+    }
+
+    #[test]
+    fn format_provenance_formats_respects_format_all_declaration_order() {
+        // Each fiber slice lists its formats in the same relative order as
+        // they appear in Format::ALL. Consumers (per-provenance dashboards,
+        // structured-log fields, attestation manifests) get a deterministic
+        // ordering without re-sorting the slice.
+        for p in FormatProvenance::ALL.iter().copied() {
+            let fiber = p.formats();
+            let mut last_position: Option<usize> = None;
+            for f in fiber.iter().copied() {
+                let position = Format::ALL
+                    .iter()
+                    .position(|all_f| *all_f == f)
+                    .unwrap_or_else(|| panic!("fiber format {f:?} missing from Format::ALL"));
+                if let Some(prev) = last_position {
+                    assert!(
+                        position > prev,
+                        "fiber for {p:?} must list formats in Format::ALL declaration order; \
+                         {f:?} at Format::ALL position {position} appears after position {prev}",
+                    );
+                }
+                last_position = Some(position);
+            }
+        }
+    }
+
+    #[test]
+    fn format_provenance_formats_today_match_recognized_partition() {
+        // Concrete-position pin on the fibers today. The fiber law +
+        // partition law above are structural over the typescape; this test
+        // pins the literal slice values so a future provenance reassignment
+        // (e.g. moving Format::Yaml from FigmentBuiltin to ShikumiBuilt via
+        // a new shikumi-built YAML provider) fails here before drifting
+        // through the structural laws. Mirrors
+        // `format_provenance_classifies_each_variant` on the forward side.
+        assert_eq!(
+            FormatProvenance::FigmentBuiltin.formats(),
+            &[Format::Yaml, Format::Toml],
+            "FigmentBuiltin fiber must equal [Yaml, Toml] today",
+        );
+        assert_eq!(
+            FormatProvenance::ShikumiBuilt.formats(),
+            &[Format::Lisp, Format::Nix],
+            "ShikumiBuilt fiber must equal [Lisp, Nix] today",
+        );
+    }
+
+    #[test]
+    fn format_provenance_formats_agrees_with_has_shikumi_provider() {
+        // The (provenance.formats() → has_shikumi_provider) projection
+        // collapses to one boolean per fiber: every format in
+        // FormatProvenance::ShikumiBuilt.formats() has has_shikumi_provider()
+        // == true; every format in FormatProvenance::FigmentBuiltin.formats()
+        // has it == false. Pins the agreement with the legacy bool predicate
+        // pointwise across the fiber, so consumers replacing the inlined
+        // `Format::ALL.iter().filter(|f| f.has_shikumi_provider())` pattern
+        // (8 test sites + 1 production site today) with
+        // `FormatProvenance::ShikumiBuilt.formats().iter()` reach the same
+        // image by construction.
+        for f in FormatProvenance::ShikumiBuilt.formats().iter().copied() {
+            assert!(
+                f.has_shikumi_provider(),
+                "ShikumiBuilt fiber {f:?} must have has_shikumi_provider() == true",
+            );
+        }
+        for f in FormatProvenance::FigmentBuiltin.formats().iter().copied() {
+            assert!(
+                !f.has_shikumi_provider(),
+                "FigmentBuiltin fiber {f:?} must have has_shikumi_provider() == false",
+            );
+        }
+    }
+
+    #[test]
+    fn format_provenance_formats_image_equals_realizable_format_axis() {
+        // The fiber p.formats() equals the format-axis projection of the
+        // realizable cells of FormatCoordinates restricted to the
+        // `provenance == p` plane. Pins the join with the cube-coverage
+        // discipline: future cube-cover dashboards that build a per-
+        // provenance format histogram via the cube projection agree with
+        // the direct-fiber accessor by construction.
+        use std::collections::HashSet;
+        for p in FormatProvenance::ALL.iter().copied() {
+            let fiber: HashSet<Format> = p.formats().iter().copied().collect();
+            let from_cube: HashSet<Format> = FormatCoordinates::ALL
+                .iter()
+                .copied()
+                .filter(|cell| cell.provenance == p && cell.is_realizable())
+                .map(|cell| cell.format)
+                .collect();
+            assert_eq!(
+                fiber, from_cube,
+                "fiber for {p:?} must equal the realizable-cube format projection \
+                 on the provenance == {p:?} plane",
+            );
+        }
+    }
+
+    #[test]
+    fn format_provenance_strip_metadata_name_routes_through_shikumi_built_fiber() {
+        // Pin that Format::strip_metadata_name dispatches over exactly the
+        // ShikumiBuilt fiber: every Format in the fiber must roundtrip
+        // through metadata_name → strip_metadata_name, and no Format outside
+        // the fiber can produce a recognized metadata-name today. Pins the
+        // production-callsite refactor: the inlined
+        // `Format::ALL.iter().filter(|f| f.has_shikumi_provider())` and the
+        // new `FormatProvenance::ShikumiBuilt.formats().iter()` route must
+        // recognize the same set of metadata-names.
+        let path = Path::new("/etc/app/app.cfg");
+        for f in FormatProvenance::ShikumiBuilt.formats().iter().copied() {
+            let name = f.metadata_name(path);
+            let (recovered, rest) = Format::strip_metadata_name(&name).unwrap_or_else(|| {
+                panic!("ShikumiBuilt fiber {f:?} must round-trip strip_metadata_name")
+            });
+            assert_eq!(
+                recovered, f,
+                "strip_metadata_name must recover the ShikumiBuilt fiber format {f:?}",
+            );
+            assert_eq!(
+                rest,
+                path.to_str().unwrap(),
+                "strip_metadata_name must return the trailing path verbatim",
+            );
+        }
+        // The FigmentBuiltin fiber emits a metadata_name (the morphism is
+        // total per Format::metadata_name's docs), but strip_metadata_name
+        // is closed over the ShikumiBuilt fiber alone: those names round-
+        // trip to None today because figment's builtin providers attach
+        // attribution via Source::File, not metadata.name.
+        // The forward emission is well-formed, but the resolver does not
+        // recognize it on the name axis — pinning this asymmetry guards
+        // against silent widening of the strip on a future refactor.
+        for f in FormatProvenance::FigmentBuiltin.formats().iter().copied() {
+            let name = f.metadata_name(path);
+            // The figment-builtin metadata-name *shape* is the same prefix
+            // form, so strip_metadata_name's closed dispatch over
+            // ShikumiBuilt rejects it — exactly because the prefix
+            // alphabet routes through ShikumiBuilt.formats(). The pin
+            // documents that the strip stays closed over the fiber.
+            assert!(
+                Format::strip_metadata_name(&name).is_none(),
+                "strip_metadata_name must not recognize FigmentBuiltin fiber {f:?} \
+                 (the resolver routes figment-builtin file attribution through Source::File, \
+                 not metadata.name)",
             );
         }
     }

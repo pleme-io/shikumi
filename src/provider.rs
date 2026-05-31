@@ -7,9 +7,9 @@
 use std::path::Path;
 
 use figment::{
+    Error as FigmentError, Figment, Profile,
     providers::{Env, Format as _, Serialized, Toml as FigToml, Yaml as FigYaml},
     value::{Dict, Map, Value},
-    Error as FigmentError, Figment, Profile,
 };
 
 use crate::discovery::Format;

@@ -124,11 +124,18 @@ use std::env;
 /// [`crate::axis_cardinality`], [`crate::axis_ordinal`],
 /// [`crate::axis_at`] — at the trait impl declaration.
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash,
-         gen_platform::TypedDispatcher,
-         gen_platform::Discriminant,
-         gen_platform::IsVariant,
-         gen_platform::FromStrKind)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    gen_platform::TypedDispatcher,
+    gen_platform::Discriminant,
+    gen_platform::IsVariant,
+    gen_platform::FromStrKind,
+)]
 #[discriminant(also_display)]
 pub enum ConfigTierKind {
     /// Zero-opinion floor.
