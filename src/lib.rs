@@ -35,6 +35,7 @@
 
 #[cfg(feature = "cli")]
 pub mod cli;
+pub mod coverage;
 mod cube;
 mod discovery;
 mod error;
@@ -76,6 +77,7 @@ pub use source::{
     ConfigSource, ConfigSourceChain, ConfigSourceKind, EnvMetadataTag, FigmentNameTag,
     FigmentNameTagKind, FigmentSourceKind, FigmentSourceTag,
 };
+pub use coverage::{ConfigCoverage, CoverageReport};
 pub use store::ConfigStore;
 pub use tiered::{ConfigDiff, ConfigTier, ConfigTierKind, DiffLine, TieredConfig};
 pub use watcher::{ConfigWatcher, WatchEventClass, symlink_target};
