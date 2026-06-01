@@ -117,6 +117,239 @@ impl SecretError {
             operation: op.as_str(),
         }
     }
+
+    /// Closed-enum classification of this error's variant — the typed
+    /// kind partition over the [`SecretError`] variant space.
+    ///
+    /// One source of truth for the kind axis: consumers route on the
+    /// returned [`SecretErrorKind`] (in `match`, `HashMap` keys, log
+    /// labels, alerting buckets, retry-policy dispatch tables, telemetry
+    /// recording the per-kind refusal mix across backends, attestation
+    /// manifests recording the kind histogram of secret-resolution
+    /// failures) instead of pattern-matching the five payload-carrying
+    /// variants by hand at every observation site. Equivalent to
+    /// `matches!` on the underlying variant — but the closed-enum
+    /// return value composes further (it's `Copy + Eq + Hash + 'static`),
+    /// where a `matches!` predicate does not, and crosses thread
+    /// boundaries the borrowed payloads cannot.
+    ///
+    /// Peer projection to [`ShikumiError::kind`] on the [`ShikumiError`]
+    /// variant space — same typescape discipline (closed exhaustive
+    /// match, `'static` codomain, `Copy + Eq + Hash`) applied to the
+    /// secret-client error axis. The two error kinds compose
+    /// structurally: a [`Self::Shikumi`] error carries a [`ShikumiError`]
+    /// whose own [`ShikumiError::kind`] refines the partition further on
+    /// the wrapped-shikumi sub-axis, so observers wanting the underlying
+    /// shikumi kind on a wrapped error read
+    /// `err.as_shikumi().map(ShikumiError::kind)` without inlining a
+    /// per-variant pattern match.
+    ///
+    /// The implementation is one exhaustive `match`, so a future
+    /// [`SecretError`] variant landing forces a corresponding
+    /// [`SecretErrorKind`] variant in lockstep at compile time — the
+    /// kind partition stays coherent by construction.
+    #[must_use]
+    pub const fn kind(&self) -> SecretErrorKind {
+        match self {
+            Self::NotFound { .. } => SecretErrorKind::NotFound,
+            Self::Unauthorized { .. } => SecretErrorKind::Unauthorized,
+            Self::Unsupported { .. } => SecretErrorKind::Unsupported,
+            Self::Backend(_) => SecretErrorKind::Backend,
+            Self::Shikumi(_) => SecretErrorKind::Shikumi,
+        }
+    }
+
+    /// Borrow the underlying [`ShikumiError`] if this is a
+    /// [`Self::Shikumi`] pass-through, else `None`.
+    ///
+    /// One source of truth for the (`SecretError → wrapped-shikumi`)
+    /// partial projection. Consumers wanting to refine the kind
+    /// partition on the wrapped-shikumi sub-axis (via
+    /// [`ShikumiError::kind`]) read
+    /// `err.as_shikumi().map(ShikumiError::kind)` through this accessor
+    /// instead of inlining `if let Self::Shikumi(inner) = err { … }` at
+    /// every cross-kind dispatch site. Dual to [`Self::kind`]'s
+    /// `Self::Shikumi` arm — `as_shikumi().is_some()` ↔
+    /// `kind() == SecretErrorKind::Shikumi` by construction.
+    #[must_use]
+    pub const fn as_shikumi(&self) -> Option<&ShikumiError> {
+        match self {
+            Self::Shikumi(inner) => Some(inner),
+            _ => None,
+        }
+    }
+}
+
+/// Data-free, `'static` discriminant of [`SecretError`]: the kind of
+/// secret-client error independent of the payload-carrying fields.
+///
+/// Closed five-way partition over the [`SecretError`] variant space,
+/// returned by [`SecretError::kind`]. The enum exists so consumers that
+/// care only about the kind axis (per-kind retry-policy dispatch,
+/// per-kind telemetry counters, structured-diagnostic legends naming
+/// the failing kind, alerting buckets histogramming refusal classes
+/// across backends, attestation manifests recording the kind mix of
+/// secret-resolution failures, cross-thread log fields naming the kind
+/// after the borrowed [`SecretError`] payload has been dropped) match
+/// on one closed enum instead of pattern-matching against the
+/// payload-carrying [`SecretError`] (whose `Backend(String)` and
+/// `Shikumi(ShikumiError)` payloads hold owned data that cannot be
+/// trivially cloned for cross-thread observation).
+///
+/// Peer of [`crate::ShikumiErrorKind`] on the [`crate::ShikumiError`]
+/// variant axis, and of the other closed-enum kind primitives
+/// ([`crate::SecretBackendKind`] on the secret-resolution backend axis,
+/// [`crate::SecretRefShape`] on the cross-type ref-extraction-shape
+/// axis, [`SecretOperation`] on the cross-surface operation axis,
+/// [`crate::ConfigSourceKind`] on the layer axis,
+/// [`crate::FigmentSourceKind`] / [`crate::FigmentNameTagKind`] on
+/// the figment-`Metadata::{source, name}` axes): same typescape
+/// discipline (closed, allocation-free,
+/// `Copy + Eq + Hash + #[non_exhaustive]`, exhaustive forward map),
+/// applied to the secret-client error axis.
+///
+/// `'static` and allocation-free — survives the borrow on the
+/// originating [`SecretError`]'s owned payloads and can therefore
+/// cross thread boundaries, serialize, and live in long-lived
+/// structures the way [`crate::ShikumiErrorKind`] does on the
+/// captured cross-thread observable form of [`crate::ReloadFailure`].
+///
+/// Adding a future [`SecretError`] variant means adding one
+/// [`SecretErrorKind`] variant in lockstep — the exhaustive
+/// [`SecretError::kind`] match forces the assignment at compile time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum SecretErrorKind {
+    /// Maps to [`SecretError::NotFound`] regardless of inner secret
+    /// name. The backend confirmed the secret does not exist on the
+    /// store — distinct from [`Self::Backend`] (transport failure) and
+    /// [`Self::Unauthorized`] (permission denied).
+    NotFound,
+    /// Maps to [`SecretError::Unauthorized`] regardless of inner
+    /// message. The caller lacks permission for the operation — distinct
+    /// from [`Self::Unsupported`] (the backend cannot perform the
+    /// operation at all, regardless of caller).
+    Unauthorized,
+    /// Maps to [`SecretError::Unsupported`] regardless of inner backend
+    /// or operation tags. The backend does not advertise the requested
+    /// operation in its [`Capabilities`] — pairs with [`SecretOperation`]
+    /// on the operation axis ([`SecretError::unsupported`] is the
+    /// canonical constructor, naming the operation through one typed
+    /// primitive).
+    Unsupported,
+    /// Maps to [`SecretError::Backend`] regardless of inner message.
+    /// Transport, network, or serialization failure — the catch-all for
+    /// backend-side faults that aren't captured by the structural kinds
+    /// above. The only kind [`SecretError::is_retryable`] currently
+    /// returns `true` for (on timeout / 5xx substring match).
+    Backend,
+    /// Maps to [`SecretError::Shikumi`] regardless of inner
+    /// [`ShikumiError`] variant. Pass-through wrapper for errors
+    /// originating in the [`crate::secret`] resolver layer or the
+    /// CLI/shell backends — observers wanting the underlying
+    /// [`ShikumiError`] variant refine the partition via
+    /// [`SecretError::as_shikumi`] +
+    /// [`crate::ShikumiError::kind`].
+    Shikumi,
+}
+
+impl SecretErrorKind {
+    /// Every [`SecretErrorKind`] variant, in the same declaration order
+    /// as the [`SecretError`] arms in [`SecretError::kind`]
+    /// ([`Self::NotFound`], [`Self::Unauthorized`], [`Self::Unsupported`],
+    /// [`Self::Backend`], [`Self::Shikumi`]).
+    ///
+    /// The closed list of error kinds the secret-client surface
+    /// recognizes today, in the same declaration order as the
+    /// [`SecretError`] variant list. Iterate to enumerate the kind space
+    /// without listing variants by hand at every consumer site — e.g.
+    /// dashboards initializing per-kind retry-policy buckets, attestation
+    /// manifests recording the failure-mix histogram across backends,
+    /// CLI flag values listing the filterable kind set, partition-
+    /// coverage tests asserting disjointness over the whole universe.
+    ///
+    /// One source of truth for the kind enumeration on the
+    /// [`SecretErrorKind`] axis: peer to [`crate::ShikumiErrorKind::ALL`]
+    /// on the [`crate::ShikumiError`] variant axis, the same typescape
+    /// discipline applied across the closed-enum primitive set.
+    ///
+    /// Adding a new variant to [`Self`] means extending this slice in
+    /// lockstep with the variant itself. The compiler enforces nothing
+    /// here directly, so the `secret_error_kind_all_covers_every_variant`
+    /// test pins the contract by asserting that every kind produced by
+    /// [`SecretError::kind`] over the construction-table surface appears
+    /// in [`Self::ALL`], and the `secret_error_kind_all_has_no_duplicates`
+    /// test pins that the constant is a set (no double-listed variant).
+    pub const ALL: &'static [Self] = &[
+        Self::NotFound,
+        Self::Unauthorized,
+        Self::Unsupported,
+        Self::Backend,
+        Self::Shikumi,
+    ];
+
+    /// Canonical operator-facing lowercase name of the error kind —
+    /// [`Self::NotFound`] renders as `"not-found"`, [`Self::Unauthorized`]
+    /// as `"unauthorized"`, [`Self::Unsupported`] as `"unsupported"`,
+    /// [`Self::Backend`] as `"backend"`, [`Self::Shikumi`] as
+    /// `"shikumi"`.
+    ///
+    /// Single source of truth for the five canonical strings on the
+    /// secret-client kind axis. Inherent mirror of the
+    /// [`crate::ClosedAxisLabel`] trait method; the trait impl delegates
+    /// here so the canonical names live at one site instead of being
+    /// re-stated at every operator-facing surface (a future structured-
+    /// log field naming the surfaced kind, a CLI flag filtering captured
+    /// failures by kind, a per-kind retry-policy dispatch table, an
+    /// alerting bucket histogramming the kind partition, an attestation
+    /// manifest recording the kind histogram).
+    ///
+    /// Kebab-case for the compound-noun variant [`Self::NotFound`]
+    /// (`"not-found"`) — the same convention shared with
+    /// [`crate::ShikumiErrorKind::as_str`]
+    /// ([`crate::ShikumiErrorKind::NotFound`] → `"not-found"`),
+    /// [`crate::FormatProvenance::as_str`] (`"figment-builtin"` /
+    /// `"shikumi-built"`), and [`crate::AttributionAxis::as_str`]
+    /// (`"metadata-source"` / `"metadata-name"`): compound-noun variant
+    /// identifiers route the punctuation at the type level
+    /// (operator-facing string) rather than at the call site. The
+    /// remaining four single-word variants render as their lowercase
+    /// identifier ([`Self::Unauthorized`] → `"unauthorized"`,
+    /// [`Self::Unsupported`] → `"unsupported"`, [`Self::Backend`] →
+    /// `"backend"`, [`Self::Shikumi`] → `"shikumi"`), matching the
+    /// single-word lowercase convention shared with the sibling kind
+    /// primitives.
+    ///
+    /// Pairs with [`crate::ClosedAxisLabel::from_canonical_str`] via the
+    /// trait-default linear-scan parse; the round-trip law
+    /// `Self::from_canonical_str(v.as_str()) == Some(v)` holds for every
+    /// variant uniformly through the trait-uniform
+    /// `closed_axis_label_round_trips_for_every_implementor` test in
+    /// `cube::tests`. The concrete-position pin at
+    /// `secret_error_kind_as_str_yields_canonical_lowercase_names` holds
+    /// the literal strings stable so a future rename (e.g. capitalizing
+    /// `"NotFound"`, switching `"backend"` to `"transport"`) fails at
+    /// that site before drifting through the round-trip law.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NotFound => "not-found",
+            Self::Unauthorized => "unauthorized",
+            Self::Unsupported => "unsupported",
+            Self::Backend => "backend",
+            Self::Shikumi => "shikumi",
+        }
+    }
+}
+
+impl crate::ClosedAxis for SecretErrorKind {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxisLabel for SecretErrorKind {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
 }
 
 /// Operations a [`SecretClient`] backend may expose — the closed
@@ -2548,6 +2781,201 @@ mod tests {
             backend,
             SecretOperation::GetVersion,
         );
+    }
+
+    // ── SecretErrorKind — typed kind axis over the SecretError variant space ──
+
+    /// Construction table: one representative [`SecretError`] for each
+    /// expected [`SecretErrorKind`] arm, in the same declaration order
+    /// as `SecretErrorKind::ALL`. Reused across the per-kind pin tests.
+    fn one_per_secret_error_kind() -> [(SecretError, SecretErrorKind); 5] {
+        [
+            (
+                SecretError::NotFound { name: "x".into() },
+                SecretErrorKind::NotFound,
+            ),
+            (
+                SecretError::Unauthorized {
+                    message: "no token".into(),
+                },
+                SecretErrorKind::Unauthorized,
+            ),
+            (
+                SecretError::Unsupported {
+                    backend: "sops",
+                    operation: "rotate",
+                },
+                SecretErrorKind::Unsupported,
+            ),
+            (
+                SecretError::Backend("connection refused".into()),
+                SecretErrorKind::Backend,
+            ),
+            (
+                SecretError::Shikumi(ShikumiError::NotFound { tried: Vec::new() }),
+                SecretErrorKind::Shikumi,
+            ),
+        ]
+    }
+
+    #[test]
+    fn secret_error_kind_all_covers_every_variant() {
+        // The closed list ALL enumerates exactly the five kinds the
+        // construction table produces. Mirrors the
+        // `shikumi_error_kind_all_covers_every_constructed_variant`
+        // pin on the [`ShikumiErrorKind`] axis.
+        let mut seen: std::collections::HashSet<SecretErrorKind> = std::collections::HashSet::new();
+        for kind in SecretErrorKind::ALL.iter().copied() {
+            assert!(seen.insert(kind), "duplicate in ALL: {kind:?}");
+        }
+        assert_eq!(seen.len(), 5);
+        for (_, expected) in one_per_secret_error_kind() {
+            assert!(
+                seen.contains(&expected),
+                "construction-table kind {expected:?} missing from SecretErrorKind::ALL",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_all_has_no_duplicates() {
+        // The constant is a set. Same discipline as the sibling
+        // closed-axis primitives.
+        let mut sorted: Vec<&'static str> =
+            SecretErrorKind::ALL.iter().map(|k| k.as_str()).collect();
+        sorted.sort_unstable();
+        let original_len = sorted.len();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            original_len,
+            "SecretErrorKind::ALL must not list any variant twice",
+        );
+    }
+
+    #[test]
+    fn secret_error_kind_is_static_copy_hashable() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        // Static, Copy, Eq, Hash — trait-bounds parity with the sibling
+        // closed-axis primitives. Suitable for cross-thread observation
+        // and HashMap keys.
+        fn assert_send_sync<T: Send + Sync + 'static>() {}
+        fn assert_copy<T: Copy>() {}
+        fn assert_eq_hash<T: Eq + std::hash::Hash>() {}
+        assert_send_sync::<SecretErrorKind>();
+        assert_copy::<SecretErrorKind>();
+        assert_eq_hash::<SecretErrorKind>();
+
+        let kind = SecretErrorKind::Backend;
+        let mut h1 = DefaultHasher::new();
+        kind.hash(&mut h1);
+        let mut h2 = DefaultHasher::new();
+        kind.hash(&mut h2);
+        assert_eq!(h1.finish(), h2.finish());
+    }
+
+    #[test]
+    fn secret_error_kind_as_str_yields_canonical_lowercase_names() {
+        // Concrete-position pin on the canonical labels. A future
+        // rename (e.g. switching `"backend"` to `"transport"`,
+        // capitalizing `"NotFound"`, dropping the `"not-"` prefix on
+        // [`SecretErrorKind::NotFound`]) fails here before drifting
+        // through the trait-uniform round-trip law.
+        assert_eq!(SecretErrorKind::NotFound.as_str(), "not-found");
+        assert_eq!(SecretErrorKind::Unauthorized.as_str(), "unauthorized");
+        assert_eq!(SecretErrorKind::Unsupported.as_str(), "unsupported");
+        assert_eq!(SecretErrorKind::Backend.as_str(), "backend");
+        assert_eq!(SecretErrorKind::Shikumi.as_str(), "shikumi");
+    }
+
+    #[test]
+    fn secret_error_kind_pins_every_variant_pointwise() {
+        // The (SecretError → SecretErrorKind) projection assigns the
+        // expected kind to every construction-table entry. Pins the
+        // forward map at the type level — a future variant addition
+        // forces a new arm in the exhaustive `SecretError::kind` match,
+        // which forces a new construction-table row, which forces an
+        // ALL entry through `secret_error_kind_all_covers_every_variant`.
+        for (err, expected_kind) in one_per_secret_error_kind() {
+            assert_eq!(
+                err.kind(),
+                expected_kind,
+                "SecretError::kind on {err:?} must yield {expected_kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_image_lies_in_secret_error_kind_all() {
+        // Cover law: every kind read from a construction-table entry
+        // lies in [`SecretErrorKind::ALL`]. The projection cannot
+        // escape the closed five-way partition.
+        for (err, _) in one_per_secret_error_kind() {
+            assert!(
+                SecretErrorKind::ALL.contains(&err.kind()),
+                "SecretError::kind({err:?}) must lie in SecretErrorKind::ALL",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_pins_unsupported_payload_independence() {
+        // The kind projection is payload-free on the [`Self::Unsupported`]
+        // arm: any (backend, operation) pair produces
+        // [`SecretErrorKind::Unsupported`]. Witnesses the data-free
+        // discipline pointwise on the surface that carries the most
+        // structured payload.
+        for op in SecretOperation::ALL.iter().copied() {
+            let err = SecretError::unsupported("any-backend", op);
+            assert_eq!(
+                err.kind(),
+                SecretErrorKind::Unsupported,
+                "unsupported({op:?}) must classify as SecretErrorKind::Unsupported",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_as_shikumi_agrees_with_kind_pointwise() {
+        // The (`as_shikumi().is_some()` ↔ `kind() == Shikumi`)
+        // structural law holds for every construction-table entry.
+        // Dual to the `Self::Shikumi` arm of `SecretError::kind`.
+        for (err, expected_kind) in one_per_secret_error_kind() {
+            assert_eq!(
+                err.as_shikumi().is_some(),
+                expected_kind == SecretErrorKind::Shikumi,
+                "as_shikumi().is_some() must match (kind == Shikumi) on {err:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_as_shikumi_recovers_inner_pointwise() {
+        // On the [`Self::Shikumi`] arm, `as_shikumi()` recovers a
+        // reference to the wrapped [`ShikumiError`] whose own
+        // [`ShikumiError::kind`] refines the cross-kind partition on
+        // the wrapped-shikumi sub-axis. Probe over every shikumi-side
+        // kind to witness the structural composition.
+        for shikumi_kind in crate::ShikumiErrorKind::ALL.iter().copied() {
+            // Reuse the simplest constructible ShikumiError per kind —
+            // NotFound is data-light and constructible without figment.
+            // The wrapped-shikumi kind refines through the inner
+            // ShikumiError, not through SecretErrorKind itself.
+            let inner = match shikumi_kind {
+                crate::ShikumiErrorKind::NotFound => ShikumiError::NotFound { tried: Vec::new() },
+                _ => continue,
+            };
+            let err = SecretError::Shikumi(inner);
+            let recovered = err.as_shikumi().expect("Self::Shikumi must yield Some");
+            assert_eq!(
+                recovered.kind(),
+                shikumi_kind,
+                "as_shikumi must preserve inner ShikumiError::kind ({shikumi_kind:?})",
+            );
+            assert_eq!(err.kind(), SecretErrorKind::Shikumi);
+        }
     }
 
     #[cfg(feature = "op-native")]
