@@ -94,6 +94,183 @@ impl SecretError {
     pub fn is_retryable(&self) -> bool {
         matches!(self, Self::Backend(msg) if msg.contains("timeout") || msg.contains("5"))
     }
+
+    /// Construct an [`Self::Unsupported`] from a typed [`SecretOperation`]
+    /// — the canonical [`SecretOperation::as_str`] string becomes the
+    /// `operation` field.
+    ///
+    /// The closed constructor that names every `Unsupported` site through
+    /// one [`SecretOperation`] variant rather than a `&'static str`
+    /// literal. Default trait impls on [`SecretClient`] route through
+    /// this constructor, so the operation-name strings live at one site
+    /// ([`SecretOperation::as_str`]) instead of being re-stated at each
+    /// `Err(SecretError::Unsupported { operation: "list" })` arm.
+    ///
+    /// A future operation landing on [`SecretOperation`] (`Metadata`,
+    /// `Tags`, etc.) extends the canonical-label site once and every
+    /// default trait impl using this constructor picks the new label up
+    /// without per-site edits.
+    #[must_use]
+    pub const fn unsupported(backend: &'static str, op: SecretOperation) -> Self {
+        Self::Unsupported {
+            backend,
+            operation: op.as_str(),
+        }
+    }
+}
+
+/// Operations a [`SecretClient`] backend may expose — the closed
+/// six-way axis over the (Capabilities-field × default-trait-method
+/// × [`SecretError::Unsupported`]-tag) cross-surface space.
+///
+/// Three surfaces previously named the same operation universe
+/// independently:
+///
+/// - [`Capabilities`]'s six `bool` fields (`get`, `list`, `put`,
+///   `delete`, `rotate`, `versions`) — the advertised capability the
+///   backend claims to support.
+/// - The six default trait methods on [`SecretClient`] (`get`, `list`,
+///   `put`, `delete`, `rotate`, `get_version`) — the actual dispatch
+///   point.
+/// - The five `Err(SecretError::Unsupported { operation: "X", .. })`
+///   arms each default impl raised (`"list"`, `"put"`, `"delete"`,
+///   `"rotate"`, `"get_version"`) — the operator-facing label naming
+///   which operation the backend refused.
+///
+/// The three-way agreement was implicit in the dispatch table only —
+/// a future operation landing meant editing the [`Capabilities`]
+/// struct, adding a default trait method, and inventing a fresh
+/// magic-string label in lockstep, with nothing in the type system
+/// pinning the alignment. Lifting the universe to one typed primitive
+/// closes the cross-surface agreement: every operation has exactly
+/// one [`SecretOperation`] variant, [`Capabilities::supports`] picks
+/// the matching field by closed-enum dispatch, and
+/// [`SecretError::unsupported`] uses [`Self::as_str`] for the
+/// operator-facing label. A future variant landing (e.g. a hypothetical
+/// `Metadata` operation pairing with a `metadata` Capabilities flag
+/// and a default `metadata` trait method) lands as one new arm on
+/// each of the three surfaces, with the [`SecretOperation`] enum
+/// forcing the assignment at compile time.
+///
+/// Closed-axis discipline: `Copy + Eq + Hash + #[non_exhaustive]`,
+/// allocation-free, [`crate::ClosedAxis`] + [`crate::ClosedAxisLabel`]
+/// — same trait-bounds parity as [`SecretBackendKind`] /
+/// [`crate::SecretRefShape`] on the secret-axis primitives, and as
+/// [`crate::ConfigSourceKind`] / [`crate::FigmentSourceKind`] /
+/// [`crate::FigmentNameTagKind`] on the resolution-axis primitives.
+///
+/// [`SecretBackendKind`]: crate::secret::SecretBackendKind
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum SecretOperation {
+    /// Read the current secret value — [`SecretClient::get`]. Maps to
+    /// [`Capabilities::get`]. Every backend supports `Get`; the variant
+    /// exists for symmetry on the axis (so [`Capabilities::supports`]
+    /// is total over [`Self::ALL`]) and so a future per-operation
+    /// telemetry surface need not special-case the read path.
+    Get,
+    /// Enumerate secret names — [`SecretClient::list`]. Maps to
+    /// [`Capabilities::list`].
+    List,
+    /// Create or update a secret — [`SecretClient::put`]. Maps to
+    /// [`Capabilities::put`].
+    Put,
+    /// Delete a secret — [`SecretClient::delete`]. Maps to
+    /// [`Capabilities::delete`].
+    Delete,
+    /// Trigger backend-side rotation — [`SecretClient::rotate`]. Maps
+    /// to [`Capabilities::rotate`].
+    Rotate,
+    /// Fetch a specific historical version — [`SecretClient::get_version`].
+    /// Maps to [`Capabilities::versions`]. The Capabilities field's
+    /// `versions` plural and the trait method's `get_version` singular
+    /// previously disagreed at the string level; [`SecretOperation`]
+    /// names the operation once and both surfaces project onto it.
+    GetVersion,
+}
+
+impl SecretOperation {
+    /// Every [`SecretOperation`] variant, in declaration order
+    /// ([`Self::Get`], [`Self::List`], [`Self::Put`], [`Self::Delete`],
+    /// [`Self::Rotate`], [`Self::GetVersion`]).
+    ///
+    /// The closed list of operations the [`SecretClient`] surface
+    /// recognizes today — same six entries as [`Capabilities`]'s field
+    /// set, in the same declaration order. Adding a new variant means
+    /// extending this slice in lockstep with the variant itself; the
+    /// `secret_operation_all_*` tests pin the contract.
+    pub const ALL: &'static [Self] = &[
+        Self::Get,
+        Self::List,
+        Self::Put,
+        Self::Delete,
+        Self::Rotate,
+        Self::GetVersion,
+    ];
+
+    /// Canonical operator-facing `snake_case` name — `"get"`, `"list"`,
+    /// `"put"`, `"delete"`, `"rotate"`, or `"get_version"`.
+    ///
+    /// The single source of truth for the operation-name strings the
+    /// [`SecretError::Unsupported`] arm carries on its `operation`
+    /// field. The labels coincide with the [`SecretClient`] trait
+    /// method names pointwise (rather than with the [`Capabilities`]
+    /// field names, which would render `"versions"` for the `versions`
+    /// field — disagreeing with the trait method's `get_version`
+    /// singular). Picking the trait-method shape keeps the
+    /// [`SecretError::Unsupported`] message (`"backend X does not
+    /// support get_version"`) naming the same identifier an operator
+    /// would call from code, instead of the Capabilities-side plural
+    /// that has no matching dispatch site.
+    ///
+    /// Pairs with [`crate::ClosedAxisLabel::from_canonical_str`] via
+    /// the trait-default linear-scan parse; the round-trip law
+    /// `Self::from_canonical_str(v.as_str()) == Some(v)` holds for
+    /// every variant uniformly through the trait-uniform
+    /// `closed_axis_label_round_trips_for_every_implementor` test in
+    /// `cube::tests`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Get => "get",
+            Self::List => "list",
+            Self::Put => "put",
+            Self::Delete => "delete",
+            Self::Rotate => "rotate",
+            Self::GetVersion => "get_version",
+        }
+    }
+
+    /// Whether `caps` advertises this operation — the typed projection
+    /// of [`SecretOperation`] onto the matching [`Capabilities`] field.
+    ///
+    /// Dual of [`Capabilities::supports`]; the two methods delegate to
+    /// the same arm by symmetry. Consumers that carry a
+    /// [`SecretOperation`] (e.g. dispatch-side code deciding "should I
+    /// call `.list()` on this client?") read the capability through
+    /// this projection without inlining a six-arm `match` over the
+    /// Capabilities boolean fields at each site.
+    #[must_use]
+    pub const fn is_supported_by(self, caps: Capabilities) -> bool {
+        match self {
+            Self::Get => caps.get,
+            Self::List => caps.list,
+            Self::Put => caps.put,
+            Self::Delete => caps.delete,
+            Self::Rotate => caps.rotate,
+            Self::GetVersion => caps.versions,
+        }
+    }
+}
+
+impl crate::ClosedAxis for SecretOperation {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxisLabel for SecretOperation {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
 }
 
 /// Which operations a [`SecretClient`] backend supports.
@@ -101,19 +278,31 @@ impl SecretError {
 /// Queried via [`SecretClient::capabilities`]. Daemons that need
 /// write-access can reject read-only clients at startup instead of
 /// discovering the limitation at the first `put()` call.
+///
+/// Projects onto the [`SecretOperation`] axis via [`Self::supports`] —
+/// `caps.supports(SecretOperation::Foo)` reads the matching boolean
+/// field by closed-enum dispatch, so consumers that carry a typed
+/// [`SecretOperation`] (per-operation telemetry, dispatch-side
+/// "should I call this method?" gating, attestation manifests
+/// recording the operation mix of refused calls) read the capability
+/// through one projection instead of pattern-matching the six
+/// boolean fields by name at each site.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Capabilities {
     /// Read operations always supported — every backend can `get`.
+    /// Maps to [`SecretOperation::Get`].
     pub get: bool,
-    /// Enumerate secrets by prefix.
+    /// Enumerate secrets by prefix. Maps to [`SecretOperation::List`].
     pub list: bool,
-    /// Create or update a secret.
+    /// Create or update a secret. Maps to [`SecretOperation::Put`].
     pub put: bool,
-    /// Delete a secret.
+    /// Delete a secret. Maps to [`SecretOperation::Delete`].
     pub delete: bool,
-    /// Trigger backend-side rotation.
+    /// Trigger backend-side rotation. Maps to [`SecretOperation::Rotate`].
     pub rotate: bool,
-    /// Read historical versions.
+    /// Read historical versions. Maps to [`SecretOperation::GetVersion`]
+    /// — note the (Capabilities-side plural × trait-side singular)
+    /// disagreement that [`SecretOperation`] reconciles structurally.
     pub versions: bool,
 }
 
@@ -144,6 +333,23 @@ impl Capabilities {
             rotate: true,
             versions: true,
         }
+    }
+
+    /// Whether this capability set advertises `op` — the typed
+    /// projection from [`SecretOperation`] onto the matching boolean
+    /// field.
+    ///
+    /// One source of truth for the (operation × capability) dispatch
+    /// surface. Mirrors [`SecretOperation::is_supported_by`] in the
+    /// dual direction; both methods delegate to the same arm by
+    /// symmetry. Dispatch-side consumers (a `daemon.has_write_access()`
+    /// gate that checks `caps.supports(SecretOperation::Put)` rather
+    /// than `caps.put`, a per-operation reject-counter keyed by
+    /// [`SecretOperation`]) read the capability through one projection
+    /// instead of re-deriving the six boolean reads inline.
+    #[must_use]
+    pub const fn supports(self, op: SecretOperation) -> bool {
+        op.is_supported_by(self)
     }
 }
 
@@ -205,43 +411,43 @@ pub trait SecretClient: Send + Sync {
 
     /// List secret names, optionally filtered by prefix.
     async fn list(&self, _prefix: Option<&str>) -> Result<Vec<String>, SecretError> {
-        Err(SecretError::Unsupported {
-            backend: self.backend_name(),
-            operation: "list",
-        })
+        Err(SecretError::unsupported(
+            self.backend_name(),
+            SecretOperation::List,
+        ))
     }
 
     /// Create or update a secret.
     async fn put(&self, _name: &str, _value: &str) -> Result<(), SecretError> {
-        Err(SecretError::Unsupported {
-            backend: self.backend_name(),
-            operation: "put",
-        })
+        Err(SecretError::unsupported(
+            self.backend_name(),
+            SecretOperation::Put,
+        ))
     }
 
     /// Delete a secret.
     async fn delete(&self, _name: &str) -> Result<(), SecretError> {
-        Err(SecretError::Unsupported {
-            backend: self.backend_name(),
-            operation: "delete",
-        })
+        Err(SecretError::unsupported(
+            self.backend_name(),
+            SecretOperation::Delete,
+        ))
     }
 
     /// Trigger backend-side rotation (re-derives the value; details are
     /// backend-specific).
     async fn rotate(&self, _name: &str) -> Result<(), SecretError> {
-        Err(SecretError::Unsupported {
-            backend: self.backend_name(),
-            operation: "rotate",
-        })
+        Err(SecretError::unsupported(
+            self.backend_name(),
+            SecretOperation::Rotate,
+        ))
     }
 
     /// Fetch a specific historical version of the secret.
     async fn get_version(&self, _name: &str, _version: &str) -> Result<String, SecretError> {
-        Err(SecretError::Unsupported {
-            backend: self.backend_name(),
-            operation: "get_version",
-        })
+        Err(SecretError::unsupported(
+            self.backend_name(),
+            SecretOperation::GetVersion,
+        ))
     }
 }
 
@@ -2104,6 +2310,244 @@ mod tests {
         };
         assert!(unsupported.to_string().contains("sops"));
         assert!(unsupported.to_string().contains("rotate"));
+    }
+
+    // ── SecretOperation — typed axis over the operation universe ───────
+
+    #[test]
+    fn secret_operation_all_covers_every_variant() {
+        // Pin that ALL enumerates every constructible variant pointwise.
+        // The compiler enforces this on the as_str match; the test makes
+        // the contract explicit.
+        let mut seen: std::collections::HashSet<SecretOperation> = std::collections::HashSet::new();
+        for op in SecretOperation::ALL.iter().copied() {
+            assert!(seen.insert(op), "duplicate in ALL: {op:?}");
+        }
+        assert_eq!(seen.len(), 6);
+        assert!(seen.contains(&SecretOperation::Get));
+        assert!(seen.contains(&SecretOperation::List));
+        assert!(seen.contains(&SecretOperation::Put));
+        assert!(seen.contains(&SecretOperation::Delete));
+        assert!(seen.contains(&SecretOperation::Rotate));
+        assert!(seen.contains(&SecretOperation::GetVersion));
+    }
+
+    #[test]
+    fn secret_operation_all_has_no_duplicates() {
+        // The constant is a set. Same discipline as
+        // `config_source_kind_all_has_no_duplicates`,
+        // `secret_backend_kind_all_has_no_duplicates`, etc.
+        let mut sorted: Vec<&'static str> =
+            SecretOperation::ALL.iter().map(|o| o.as_str()).collect();
+        sorted.sort_unstable();
+        let original_len = sorted.len();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            original_len,
+            "SecretOperation::ALL must not list any variant twice",
+        );
+    }
+
+    #[test]
+    fn secret_operation_is_static_copy_hashable() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        // Static, Copy, Eq, Hash — trait-bounds parity with the sibling
+        // closed-axis primitives. Suitable for cross-thread observation
+        // and HashMap keys.
+        fn assert_send_sync<T: Send + Sync + 'static>() {}
+        fn assert_copy<T: Copy>() {}
+        fn assert_eq_hash<T: Eq + std::hash::Hash>() {}
+        assert_send_sync::<SecretOperation>();
+        assert_copy::<SecretOperation>();
+        assert_eq_hash::<SecretOperation>();
+
+        // The hash of a Copy value is stable across clones.
+        let op = SecretOperation::GetVersion;
+        let mut h1 = DefaultHasher::new();
+        op.hash(&mut h1);
+        let mut h2 = DefaultHasher::new();
+        op.hash(&mut h2);
+        assert_eq!(h1.finish(), h2.finish());
+    }
+
+    #[test]
+    fn secret_operation_as_str_yields_canonical_snake_case_names() {
+        // Concrete-position pin on the canonical labels. A future
+        // rename (e.g. "versions" for GetVersion to match the
+        // Capabilities field name) fails here before drifting through
+        // the round-trip law or the SecretError::Unsupported message.
+        assert_eq!(SecretOperation::Get.as_str(), "get");
+        assert_eq!(SecretOperation::List.as_str(), "list");
+        assert_eq!(SecretOperation::Put.as_str(), "put");
+        assert_eq!(SecretOperation::Delete.as_str(), "delete");
+        assert_eq!(SecretOperation::Rotate.as_str(), "rotate");
+        assert_eq!(SecretOperation::GetVersion.as_str(), "get_version");
+    }
+
+    #[test]
+    fn capabilities_supports_matches_field_pointwise() {
+        // The (operation → field) projection agrees with direct field
+        // reads on a `caps` with every bit flipped to true. Pins the
+        // structural alignment between [`SecretOperation`] variants
+        // and the matching [`Capabilities`] fields — including the
+        // `GetVersion` ↔ `versions` naming asymmetry the typed primitive
+        // reconciles.
+        let caps = Capabilities {
+            get: true,
+            list: true,
+            put: true,
+            delete: true,
+            rotate: true,
+            versions: true,
+        };
+        assert_eq!(caps.supports(SecretOperation::Get), caps.get);
+        assert_eq!(caps.supports(SecretOperation::List), caps.list);
+        assert_eq!(caps.supports(SecretOperation::Put), caps.put);
+        assert_eq!(caps.supports(SecretOperation::Delete), caps.delete);
+        assert_eq!(caps.supports(SecretOperation::Rotate), caps.rotate);
+        assert_eq!(caps.supports(SecretOperation::GetVersion), caps.versions);
+
+        // And on a caps with every bit flipped to false (the not-all-true
+        // case, so the alignment doesn't pass trivially).
+        let none = Capabilities {
+            get: false,
+            list: false,
+            put: false,
+            delete: false,
+            rotate: false,
+            versions: false,
+        };
+        for op in SecretOperation::ALL.iter().copied() {
+            assert!(!none.supports(op), "no-cap caps must reject {op:?}");
+        }
+
+        // Selective: turn on exactly one field and confirm only the
+        // matching operation reports supported. Pins the projection is
+        // a bijection between the six fields and the six variants.
+        let mut probe = none;
+        probe.put = true;
+        assert!(probe.supports(SecretOperation::Put));
+        for op in SecretOperation::ALL.iter().copied() {
+            assert_eq!(
+                probe.supports(op),
+                op == SecretOperation::Put,
+                "after flipping only `put`, supports({op:?}) must be (op == Put)",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_is_supported_by_dual_agrees_with_capabilities_supports() {
+        // The (Capabilities, SecretOperation) projection is symmetric:
+        // both sides delegate to the same arm. Pinned over every
+        // (caps, op) sample point.
+        for caps in [
+            Capabilities::read_only(),
+            Capabilities::full(),
+            Capabilities {
+                get: true,
+                list: false,
+                put: true,
+                delete: false,
+                rotate: true,
+                versions: false,
+            },
+        ] {
+            for op in SecretOperation::ALL.iter().copied() {
+                assert_eq!(
+                    caps.supports(op),
+                    op.is_supported_by(caps),
+                    "supports/is_supported_by must agree on {op:?} / {caps:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn capabilities_read_only_supports_only_get() {
+        let caps = Capabilities::read_only();
+        for op in SecretOperation::ALL.iter().copied() {
+            assert_eq!(
+                caps.supports(op),
+                op == SecretOperation::Get,
+                "read_only must support exactly Get; got mismatch on {op:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn capabilities_full_supports_every_operation() {
+        let caps = Capabilities::full();
+        for op in SecretOperation::ALL.iter().copied() {
+            assert!(caps.supports(op), "full caps must support {op:?}");
+        }
+    }
+
+    #[test]
+    fn secret_error_unsupported_uses_canonical_str_pointwise() {
+        // The typed constructor produces the same `operation` string
+        // every default trait impl previously hard-coded.
+        for op in SecretOperation::ALL.iter().copied() {
+            let err = SecretError::unsupported("test-backend", op);
+            match err {
+                SecretError::Unsupported { backend, operation } => {
+                    assert_eq!(backend, "test-backend");
+                    assert_eq!(
+                        operation,
+                        op.as_str(),
+                        "constructor must use op.as_str() pointwise on {op:?}",
+                    );
+                }
+                other => panic!("expected Unsupported, got {other:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn secret_client_default_unsupported_arms_use_secret_operation_labels() {
+        fn assert_unsupported_with_op(
+            result: Result<(), SecretError>,
+            backend_expected: &'static str,
+            op: SecretOperation,
+        ) {
+            match result {
+                Err(SecretError::Unsupported { backend, operation }) => {
+                    assert_eq!(backend, backend_expected);
+                    assert_eq!(
+                        operation,
+                        op.as_str(),
+                        "default impl for {op:?} must emit op.as_str() as the operation tag",
+                    );
+                }
+                other => panic!("expected Unsupported({op:?}), got {other:?}"),
+            }
+        }
+
+        // The five default trait impls each route through
+        // `SecretError::unsupported(_, SecretOperation::X)`, so the
+        // `operation` string on the raised error is exactly
+        // `SecretOperation::X.as_str()`. Pinned via the CommandClient,
+        // whose write/list/rotate/get_version methods inherit the
+        // default impls without overriding them.
+        let client = CommandClient::with_get_template("echo {name}");
+        let backend = client.backend_name();
+
+        assert_unsupported_with_op(
+            client.list(None).await.map(|_| ()),
+            backend,
+            SecretOperation::List,
+        );
+        assert_unsupported_with_op(client.put("k", "v").await, backend, SecretOperation::Put);
+        assert_unsupported_with_op(client.delete("k").await, backend, SecretOperation::Delete);
+        assert_unsupported_with_op(client.rotate("k").await, backend, SecretOperation::Rotate);
+        assert_unsupported_with_op(
+            client.get_version("k", "1").await.map(|_| ()),
+            backend,
+            SecretOperation::GetVersion,
+        );
     }
 
     #[cfg(feature = "op-native")]

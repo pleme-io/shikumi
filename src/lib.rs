@@ -78,6 +78,7 @@ pub use nix_provider::NixProvider;
 pub use provider::ProviderChain;
 pub use reload::ReloadFailure;
 pub use secret::{SecretBackendKind, SecretRefShape};
+pub use secret_client::SecretOperation;
 pub use source::{
     ConfigSource, ConfigSourceChain, ConfigSourceKind, EnvMetadataTag, FigmentNameTag,
     FigmentNameTagKind, FigmentSourceKind, FigmentSourceTag,
