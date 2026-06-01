@@ -144,14 +144,20 @@ mod tests {
         fn bare() -> Self {
             Demo {
                 name: String::new(),
-                window: Inner { width: 0, height: 0 },
+                window: Inner {
+                    width: 0,
+                    height: 0,
+                },
                 tags: vec![],
             }
         }
         fn prescribed_default() -> Self {
             Demo {
                 name: "mado".into(),
-                window: Inner { width: 80, height: 24 },
+                window: Inner {
+                    width: 80,
+                    height: 24,
+                },
                 tags: vec!["a".into()],
             }
         }
@@ -160,10 +166,7 @@ mod tests {
     #[test]
     fn schema_leaf_paths_are_dotted_and_sorted() {
         let paths = ConfigCoverage::schema_leaf_paths::<Demo>();
-        assert_eq!(
-            paths,
-            vec!["name", "tags", "window.height", "window.width"]
-        );
+        assert_eq!(paths, vec!["name", "tags", "window.height", "window.width"]);
     }
 
     #[test]

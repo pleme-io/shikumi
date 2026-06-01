@@ -54,6 +54,7 @@ mod store;
 pub mod tiered;
 mod watcher;
 
+pub use coverage::{ConfigCoverage, CoverageReport};
 pub use cube::{
     ClosedAxis, ClosedAxisLabel, PartialInverseCube, PartitionFace, PartitionOrdinal, ProductCube,
     at_partition_ordinal, axis_at, axis_cardinality, axis_from_label, axis_iter, axis_label,
@@ -71,17 +72,16 @@ pub use error::{
 };
 #[cfg(feature = "lisp")]
 pub use lisp_provider::{LispProvider, load_from_str as load_lisp_from_str};
+#[doc(hidden)]
+pub use macros::__tiered_permutation_run;
 pub use nix_provider::NixProvider;
 pub use provider::ProviderChain;
 pub use reload::ReloadFailure;
-pub use secret::SecretBackendKind;
+pub use secret::{SecretBackendKind, SecretRefShape};
 pub use source::{
     ConfigSource, ConfigSourceChain, ConfigSourceKind, EnvMetadataTag, FigmentNameTag,
     FigmentNameTagKind, FigmentSourceKind, FigmentSourceTag,
 };
-pub use coverage::{ConfigCoverage, CoverageReport};
-#[doc(hidden)]
-pub use macros::__tiered_permutation_run;
 pub use store::ConfigStore;
 pub use tiered::{ConfigDiff, ConfigTier, ConfigTierKind, DiffLine, TieredConfig};
 pub use watcher::{ConfigWatcher, WatchEventClass, symlink_target};

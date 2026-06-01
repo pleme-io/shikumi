@@ -246,7 +246,10 @@ where
     let tiers: [(&str, fn() -> C); 3] = [
         ("bare", <C as crate::TieredConfig>::bare),
         ("discovered", <C as crate::TieredConfig>::discovered),
-        ("prescribed_default", <C as crate::TieredConfig>::prescribed_default),
+        (
+            "prescribed_default",
+            <C as crate::TieredConfig>::prescribed_default,
+        ),
     ];
     let mut failures: Vec<String> = Vec::new();
     for (tier_name, tier_fn) in tiers {
@@ -272,9 +275,9 @@ where
                 Ok(_) => failures.push(format!(
                     "tier={tier_name} cell={cell:?}: serde round-trip not idempotent"
                 )),
-                Err(e) => failures.push(format!(
-                    "tier={tier_name} cell={cell:?}: re-serialize: {e}"
-                )),
+                Err(e) => {
+                    failures.push(format!("tier={tier_name} cell={cell:?}: re-serialize: {e}"));
+                }
             }
         }
     }
@@ -325,8 +328,13 @@ mod tests {
         Center,
     }
     impl ClosedAxis for Edge {
-        const ALL: &'static [Self] =
-            &[Self::Top, Self::Bottom, Self::Left, Self::Right, Self::Center];
+        const ALL: &'static [Self] = &[
+            Self::Top,
+            Self::Bottom,
+            Self::Left,
+            Self::Right,
+            Self::Center,
+        ];
     }
 
     // 3 × 2 × 5 = 30-cell cube.

@@ -382,6 +382,29 @@ pub enum SopsRef {
     Field { file: PathBuf, field: String },
 }
 
+impl SopsRef {
+    /// Closed-image projection over the [`SopsRef`] variant space onto
+    /// the shared [`SecretRefShape`] axis — `Whole` on the bare-file
+    /// shorthand, `Field` on the explicit `{file, field}` form.
+    ///
+    /// Inherent mirror of [`VaultRef::shape`] on the sibling
+    /// untagged-enum `*Ref` shape; both forward maps share the same
+    /// codomain so consumers observing a parsed reference (telemetry
+    /// recording how often operators extract a single field vs. resolve
+    /// a whole secret, structured-diagnostic legends naming the
+    /// extraction shape, kind-indexed dispatch tables routing on the
+    /// shape axis without enumerating both ref types) read one typed
+    /// projection. `const fn`, allocation-free, `'static` codomain —
+    /// same trait-bounds parity as the sibling kind primitives.
+    #[must_use]
+    pub const fn shape(&self) -> SecretRefShape {
+        match self {
+            Self::File(_) => SecretRefShape::Whole,
+            Self::Field { .. } => SecretRefShape::Field,
+        }
+    }
+}
+
 /// HashiCorp Vault secret reference.
 ///
 /// Accepts either a bare path string (`"secret/data/prod/app"`) or a
@@ -399,6 +422,151 @@ pub enum VaultRef {
     /// Read a specific field of the Vault secret via
     /// `vault read -field=<field> <path>`.
     Field { path: String, field: String },
+}
+
+impl VaultRef {
+    /// Closed-image projection over the [`VaultRef`] variant space onto
+    /// the shared [`SecretRefShape`] axis — `Whole` on the bare-path
+    /// shorthand, `Field` on the explicit `{path, field}` form.
+    ///
+    /// Inherent mirror of [`SopsRef::shape`] on the sibling
+    /// untagged-enum `*Ref` shape; both forward maps share the same
+    /// codomain so consumers reading the extraction axis off a
+    /// `SecretBackend::Sops` / `SecretBackend::Vault` payload no longer
+    /// re-derive a per-type `matches!(_, Field { .. })` predicate. The
+    /// `Vault::Path` variant projects to [`SecretRefShape::Whole`] even
+    /// though the `vault read -field=value <path>` dispatch picks a
+    /// specific field name — the shape axis classifies the
+    /// **operator-authored config shape**, not the resolver's downstream
+    /// dispatch, which is precisely the invariant a telemetry / legend
+    /// consumer wants. `const fn`, allocation-free, `'static` codomain.
+    #[must_use]
+    pub const fn shape(&self) -> SecretRefShape {
+        match self {
+            Self::Path(_) => SecretRefShape::Whole,
+            Self::Field { .. } => SecretRefShape::Field,
+        }
+    }
+}
+
+/// Data-free, `'static` discriminant of the shared
+/// (whole-reference × extracted-field) axis over the untagged-enum
+/// `*Ref` shape — the closed two-way partition both [`SopsRef`] and
+/// [`VaultRef`] project onto.
+///
+/// Closed enum returned by [`SopsRef::shape`] / [`VaultRef::shape`]. The
+/// enum exists so consumers that care only about the extraction axis
+/// (per-shape telemetry — how often do operators extract a single field
+/// vs. resolve a whole secret? — kind-indexed dispatch tables routing on
+/// the shape, structured-diagnostic legends naming the extraction shape
+/// of the failing secret, attestation manifests recording the shape mix
+/// of resolved secrets) match on one closed enum instead of
+/// pattern-matching `matches!(r, SopsRef::Field { .. })` against the
+/// payload-carrying ref enum at each ref type, AND without re-deriving
+/// the equivalence between `SopsRef::Field { .. }` and
+/// `VaultRef::Field { .. }` (which today operators read as the same
+/// "extract a single field from a larger payload" config shape but
+/// shikumi could not name as one type-level cell).
+///
+/// Peer of [`SecretBackendKind`] on the backend axis,
+/// [`crate::ConfigSourceKind`] on the layer axis,
+/// [`crate::FigmentSourceKind`] / [`crate::FigmentNameTagKind`] on the
+/// figment-`Metadata::{source, name}` axes, and the other closed-enum
+/// kind primitives: same typescape discipline (closed, allocation-free,
+/// `Copy + Eq + Hash + #[non_exhaustive]`, exhaustive forward map),
+/// applied to the secret-ref extraction-shape axis. Distinguishes
+/// itself from [`SecretBackendKind`] by being **shared across two ref
+/// types** rather than one-to-one with a single backend enum's
+/// variants — the first such cross-type closed-axis primitive on the
+/// typescape, and the substrate now knows the (Sops, Vault) ref pair
+/// agree on one extraction axis at the type level instead of in the
+/// dispatch table only.
+///
+/// `'static` and allocation-free, suitable for crossing thread
+/// boundaries the borrowed [`SopsRef`] / [`VaultRef`] (which hold owned
+/// `PathBuf` / `String` payloads) are unnecessarily expensive to clone
+/// for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum SecretRefShape {
+    /// Whole-reference resolution — the bare-payload shorthand. Maps to
+    /// [`SopsRef::File`] and [`VaultRef::Path`]: operator authored the
+    /// reference without naming an extracted field, and the resolver
+    /// returns the whole reference's value (decrypted file for Sops,
+    /// default `-field=value` read for Vault).
+    Whole,
+    /// Field-extraction resolution — the explicit `{path/file, field}`
+    /// form. Maps to [`SopsRef::Field`] and [`VaultRef::Field`]: the
+    /// operator named a specific JSON/YAML key (Sops, via `jq -r`) or
+    /// Vault response field (Vault, via `vault read -field=<field>`) to
+    /// extract from the larger payload.
+    Field,
+}
+
+impl SecretRefShape {
+    /// Every [`SecretRefShape`] variant, in declaration order
+    /// ([`Self::Whole`], [`Self::Field`]).
+    ///
+    /// The closed list of secret-reference extraction shapes shikumi
+    /// recognizes, in the same declaration order as the [`SopsRef`] /
+    /// [`VaultRef`] variant lists pointwise (both list the whole-payload
+    /// shorthand first and the field-extraction form second; the
+    /// matching declaration order is what makes the round-trip law and
+    /// per-axis declaration-order assertion uniform across both ref
+    /// types). Iterate to enumerate the shape space without listing
+    /// variants by hand at every consumer site — e.g. dashboards
+    /// initializing per-shape counters, attestation manifests recording
+    /// the shape-mix histogram of resolved secrets, or
+    /// partition-coverage tests asserting disjointness across the
+    /// extraction-shape classification.
+    ///
+    /// Adding a new variant to [`Self`] (e.g. a future
+    /// `MultiField { fields: Vec<String> }` shape paired with new
+    /// per-ref-type variants) means extending this slice in lockstep
+    /// with the variant itself. The compiler enforces nothing here
+    /// directly, so the `secret_ref_shape_all_covers_every_*` tests pin
+    /// the contract.
+    pub const ALL: &'static [Self] = &[Self::Whole, Self::Field];
+
+    /// Canonical operator-facing lowercase name of the extraction
+    /// shape — `"whole"` or `"field"`.
+    ///
+    /// The single source of truth for the shape-label strings on the
+    /// [`SecretRefShape`] axis. Inherent mirror of the
+    /// [`crate::ClosedAxisLabel`] trait method; the trait impl delegates
+    /// here so the canonical names live at one site instead of being
+    /// re-stated at every operator-facing surface (a future
+    /// structured-log field naming the failing secret's extraction
+    /// shape, a CLI flag filtering attributions by shape, an attestation
+    /// manifest recording the shape histogram of resolved secrets).
+    ///
+    /// Pairs with [`crate::ClosedAxisLabel::from_canonical_str`] via the
+    /// trait-default linear-scan parse; the round-trip law
+    /// `Self::from_canonical_str(v.as_str()) == Some(v)` is pinned for
+    /// every variant uniformly by the trait-uniform
+    /// `closed_axis_label_round_trips_for_every_implementor` test in
+    /// `cube::tests`. The concrete-position pin at
+    /// `secret_ref_shape_as_str_yields_canonical_lowercase_names` holds
+    /// the literal string values stable so a future rename (e.g.
+    /// `"bare"` for `Whole`, capitalizing `"Field"`) fails at that site
+    /// before drifting through the round-trip law.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Whole => "whole",
+            Self::Field => "field",
+        }
+    }
+}
+
+impl crate::ClosedAxis for SecretRefShape {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxisLabel for SecretRefShape {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
 }
 
 /// Dispatch a [`SecretSource`] to the matching backend resolver.
@@ -1928,5 +2096,256 @@ mod tests {
             "resolve dispatch over SecretSource must reach every \
              SecretBackendKind cell via the backend_kind projection",
         );
+    }
+
+    // ── SecretRefShape — the shared (whole × field) projection over
+    // (SopsRef, VaultRef) ──────────────────────────────────────────────
+    //
+    // The shape axis closes the untagged-enum `*Ref` shape universe under
+    // ONE typescape primitive: SopsRef::shape and VaultRef::shape both
+    // project through to SecretRefShape (`'static`, data-free,
+    // allocation-free, Copy + Eq + Hash + #[non_exhaustive]). Tests
+    // mirror the SecretBackendKind / FigmentNameTagKind suites pointwise
+    // on the cross-type extraction-shape axis — the first cross-type
+    // closed-axis primitive on the typescape.
+
+    /// Canonical sample table covering every [`SopsRef`] variant once,
+    /// with the shape each must classify into.
+    fn canonical_sops_ref_shape_samples() -> Vec<(SopsRef, SecretRefShape)> {
+        vec![
+            (
+                SopsRef::File(PathBuf::from("secrets/prod.yaml")),
+                SecretRefShape::Whole,
+            ),
+            (
+                SopsRef::Field {
+                    file: PathBuf::from("secrets/prod.yaml"),
+                    field: "jwt_secret".into(),
+                },
+                SecretRefShape::Field,
+            ),
+        ]
+    }
+
+    /// Canonical sample table covering every [`VaultRef`] variant once,
+    /// with the shape each must classify into.
+    fn canonical_vault_ref_shape_samples() -> Vec<(VaultRef, SecretRefShape)> {
+        vec![
+            (
+                VaultRef::Path("secret/data/prod/app".into()),
+                SecretRefShape::Whole,
+            ),
+            (
+                VaultRef::Field {
+                    path: "secret/data/prod/app".into(),
+                    field: "password".into(),
+                },
+                SecretRefShape::Field,
+            ),
+        ]
+    }
+
+    #[test]
+    fn sops_ref_shape_classifies_each_variant() {
+        // The forward map SopsRef → SecretRefShape is exhaustive: every
+        // variant pins to exactly one shape.
+        for (sops, expected) in canonical_sops_ref_shape_samples() {
+            assert_eq!(
+                sops.shape(),
+                expected,
+                "SopsRef::shape must classify {sops:?} as {expected:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn vault_ref_shape_classifies_each_variant() {
+        // The forward map VaultRef → SecretRefShape is exhaustive: every
+        // variant pins to exactly one shape.
+        for (vault, expected) in canonical_vault_ref_shape_samples() {
+            assert_eq!(
+                vault.shape(),
+                expected,
+                "VaultRef::shape must classify {vault:?} as {expected:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_ref_shape_is_data_free() {
+        // Inner payload does not influence shape — every SopsRef::File
+        // maps to Whole regardless of inner PathBuf; every
+        // SopsRef::Field maps to Field regardless of inner file/field
+        // payload; same for VaultRef.
+        for path in ["", "a.yaml", "/very/long/path/to/b.json"] {
+            assert_eq!(
+                SopsRef::File(PathBuf::from(path)).shape(),
+                SecretRefShape::Whole,
+            );
+        }
+        for (file, field) in [("", ""), ("a.yaml", "k"), ("/p/q.json", "deeply.nested.k")] {
+            assert_eq!(
+                SopsRef::Field {
+                    file: PathBuf::from(file),
+                    field: field.into(),
+                }
+                .shape(),
+                SecretRefShape::Field,
+            );
+        }
+        for p in ["", "p", "secret/data/prod/app"] {
+            assert_eq!(VaultRef::Path(p.into()).shape(), SecretRefShape::Whole);
+        }
+        for (path, field) in [("", ""), ("p", "f"), ("secret/data/x", "password")] {
+            assert_eq!(
+                VaultRef::Field {
+                    path: path.into(),
+                    field: field.into(),
+                }
+                .shape(),
+                SecretRefShape::Field,
+            );
+        }
+    }
+
+    #[test]
+    fn secret_ref_shape_is_static_and_copy_and_hashable() {
+        // The discriminant is `'static` (no lifetime parameter), `Copy`,
+        // and `Hash`-able — same trait-bounds parity as the sibling
+        // typescape kind primitives.
+        fn assert_static<T: 'static>() {}
+        use std::collections::HashSet;
+        let mut set: HashSet<SecretRefShape> = SecretRefShape::ALL.iter().copied().collect();
+        set.insert(SecretRefShape::Whole); // duplicate
+        assert_eq!(set.len(), SecretRefShape::ALL.len());
+
+        // Copy: rebind without move.
+        let s = SecretRefShape::Field;
+        let s2 = s;
+        let s3 = s;
+        assert_eq!(s, s2);
+        assert_eq!(s2, s3);
+
+        assert_static::<SecretRefShape>();
+    }
+
+    #[test]
+    fn secret_ref_shape_all_has_no_duplicates() {
+        // The constant must be a set — no variant listed twice.
+        use std::collections::HashSet;
+        let set: HashSet<SecretRefShape> = SecretRefShape::ALL.iter().copied().collect();
+        assert_eq!(
+            set.len(),
+            SecretRefShape::ALL.len(),
+            "SecretRefShape::ALL must contain no duplicates; got: {:?}",
+            SecretRefShape::ALL,
+        );
+    }
+
+    #[test]
+    fn secret_ref_shape_all_covers_both_ref_types() {
+        // Subset cover: every shape produced by SopsRef::shape and
+        // VaultRef::shape over the canonical sample tables lies in
+        // SecretRefShape::ALL. A future ref-shape class added must
+        // extend SecretRefShape and its ALL in the same commit;
+        // otherwise this test fails.
+        use std::collections::HashSet;
+        let declared: HashSet<SecretRefShape> = SecretRefShape::ALL.iter().copied().collect();
+        let observed: HashSet<SecretRefShape> = canonical_sops_ref_shape_samples()
+            .iter()
+            .map(|(s, _)| s.shape())
+            .chain(
+                canonical_vault_ref_shape_samples()
+                    .iter()
+                    .map(|(v, _)| v.shape()),
+            )
+            .collect();
+        assert!(
+            observed.is_subset(&declared),
+            "SopsRef::shape ∪ VaultRef::shape image must lie in \
+             SecretRefShape::ALL; observed: {observed:?}, declared: {declared:?}",
+        );
+    }
+
+    #[test]
+    fn secret_ref_shape_all_equals_union_of_ref_images() {
+        // Tight equality (stronger than subset cover): every variant in
+        // SecretRefShape::ALL is witnessed by at least one ref shape —
+        // no orphan variant in the declared shape space lacks a
+        // producing ref type. Together with the per-type
+        // classify_each_variant tests, this pins the cross-type
+        // surjectivity law: the union of both ref-type images covers
+        // the whole shape axis.
+        use std::collections::HashSet;
+        let declared: HashSet<SecretRefShape> = SecretRefShape::ALL.iter().copied().collect();
+        let observed: HashSet<SecretRefShape> = canonical_sops_ref_shape_samples()
+            .iter()
+            .map(|(s, _)| s.shape())
+            .chain(
+                canonical_vault_ref_shape_samples()
+                    .iter()
+                    .map(|(v, _)| v.shape()),
+            )
+            .collect();
+        assert_eq!(
+            observed, declared,
+            "(SopsRef ∪ VaultRef)::shape image must equal SecretRefShape::ALL",
+        );
+    }
+
+    #[test]
+    fn secret_ref_shape_sops_and_vault_agree_pointwise() {
+        // The cross-type equivalence law: SopsRef::Field and
+        // VaultRef::Field project to the SAME SecretRefShape cell
+        // (Field), and SopsRef::File and VaultRef::Path project to the
+        // same cell (Whole). This is the structural fact the lift
+        // names at the type level — before this primitive, the two
+        // ref types' shape axes were typed independently and could
+        // drift; pinning the pointwise agreement closes the cross-type
+        // shape-axis discipline.
+        assert_eq!(
+            SopsRef::File(PathBuf::from("a")).shape(),
+            VaultRef::Path("a".into()).shape(),
+        );
+        assert_eq!(
+            SopsRef::Field {
+                file: PathBuf::from("a"),
+                field: "k".into(),
+            }
+            .shape(),
+            VaultRef::Field {
+                path: "a".into(),
+                field: "k".into(),
+            }
+            .shape(),
+        );
+    }
+
+    #[test]
+    fn secret_ref_shape_all_declaration_order_matches_ref_variants() {
+        // Pin declaration order. Both SopsRef and VaultRef list the
+        // whole-payload shorthand variant first (File/Path) and the
+        // field-extraction variant second; SecretRefShape::ALL matches
+        // pointwise (Whole, Field). Consumers iterating ALL get a
+        // stable order matching both ref-type variant declaration
+        // orders; reordering the slice is a breaking change that must
+        // show up here.
+        assert_eq!(
+            SecretRefShape::ALL,
+            &[SecretRefShape::Whole, SecretRefShape::Field]
+        );
+    }
+
+    #[test]
+    fn secret_ref_shape_as_str_yields_canonical_lowercase_names() {
+        // Concrete-position pin on SecretRefShape::as_str: the two
+        // canonical labels at one site. The trait-uniform round-trip
+        // test in `cube::tests` pins the labels equal pairwise under
+        // from_canonical_str, but this test pins the literal string
+        // values themselves so a future rename (e.g. `"bare"` for
+        // Whole, capitalizing `"Field"`) would fail here before
+        // drifting through the round-trip law.
+        assert_eq!(SecretRefShape::Whole.as_str(), "whole");
+        assert_eq!(SecretRefShape::Field.as_str(), "field");
     }
 }
