@@ -586,6 +586,255 @@ impl Capabilities {
     }
 }
 
+/// Closed-axis primitive over the shikumi-provided [`SecretClient`]
+/// implementor universe — the seven runtime clients shikumi ships, with
+/// each variant pinned pointwise to the matching impl's
+/// [`SecretClient::backend_name`]: [`MemClient`] → [`Self::Mem`]
+/// (in-memory test scaffold, label `"mem"`), [`CommandClient`] →
+/// [`Self::Command`] (shell-subprocess `get` shim, label `"command"`),
+/// `AkeylessClient` → [`Self::Akeyless`] (native HTTP, Akeyless gateway,
+/// label `"akeyless"`), `AwsClient` → [`Self::AwsSecretsManager`] (AWS
+/// Secrets Manager SDK, label `"aws-secrets-manager"`), `OpConnectClient`
+/// → [`Self::OpConnect`] (1Password Connect HTTP, label `"op-connect"`),
+/// `VaultClient` → [`Self::Vault`] (`HashiCorp` Vault KV v2 HTTP, label
+/// `"vault"`), `GcpSecretClient` → [`Self::GcpSecretManager`] (GCP Secret
+/// Manager SDK, label `"gcp-secret-manager"`).
+///
+/// Distinct universe from [`SecretBackendKind`] on the secret-axis
+/// primitive set: that primitive partitions the [`crate::secret::SecretBackend`]
+/// variant space (what a YAML config author writes —
+/// `literal`/`command`/`op`/`sops`/`akeyless`/`vault`/`aws_secret`/`gcp_secret`),
+/// while this primitive partitions the [`SecretClient`] implementor
+/// space (what the daemon dispatches against at runtime). The two
+/// surfaces overlap (every [`SecretClient`] impl resolves _some_
+/// [`crate::secret::SecretBackend`]-shaped value) but are not in
+/// bijection: [`Self::Mem`] (test scaffold) has no [`crate::secret::SecretBackend`]
+/// peer, [`Self::OpConnect`] is a distinct HTTP transport from
+/// [`SecretBackendKind::Op`] (which dispatches the `op` CLI), and the
+/// SOPS backend ([`SecretBackendKind::Sops`]) has no [`SecretClient`]
+/// peer (resolved via [`crate::secret::resolve_sops_file`] /
+/// [`crate::secret::resolve_sops_field`] directly). The label strings
+/// likewise diverge — `SecretBackendKind` follows
+/// [`crate::secret::SecretBackend`]'s `#[serde(rename_all =
+/// "snake_case")]` (`"aws_secret"`, `"gcp_secret"`), while
+/// `SecretClientKind` mirrors the runtime client's `backend_name()`
+/// kebab-case (`"aws-secrets-manager"`, `"gcp-secret-manager"`,
+/// `"op-connect"`).
+///
+/// Before this lift, [`SecretClient::backend_name`] was an open
+/// `&'static str` axis: each impl returned a hand-picked label with no
+/// type-level pin that distinct impls picked distinct labels, no closed
+/// enumeration for per-client dispatch (telemetry recording the client
+/// mix of resolved secrets, per-client retry policies, attestation
+/// manifests recording the client histogram of refusals, CLI flag
+/// values listing the filterable client set, structured-diagnostic
+/// legends naming the failing client by typed primitive across thread
+/// boundaries), and no structural agreement between the
+/// [`SecretError::Unsupported`] `backend` field's string and any typed
+/// classification. Lifting the universe to one closed enum closes the
+/// runtime-client axis structurally: every shikumi-shipped impl's
+/// [`SecretClient::backend_name`] maps to exactly one [`SecretClientKind`]
+/// variant through the default [`SecretClient::client_kind`] projection,
+/// and the canonical labels live at one site
+/// ([`SecretClientKind::as_str`]) instead of being re-stated as a
+/// magic-string `&'static str` literal in every `impl SecretClient
+/// for X { fn backend_name(&self) -> &'static str { "x" } }` arm.
+///
+/// Peer of [`SecretBackendKind`] (config-author backend axis),
+/// [`SecretErrorKind`] (error-variant axis), [`SecretOperation`]
+/// (cross-surface operation axis), and the other closed-enum kind
+/// primitives ([`crate::ConfigSourceKind`] on the layer axis,
+/// [`crate::FigmentSourceKind`] / [`crate::FigmentNameTagKind`] on the
+/// figment-`Metadata::{source, name}` axes): same typescape discipline
+/// (closed, allocation-free, `Copy + Eq + Hash + #[non_exhaustive]`,
+/// canonical operator-facing label), applied to the secret-client
+/// runtime-implementor axis.
+///
+/// `'static` and allocation-free, suitable for crossing thread
+/// boundaries — observable on a captured [`SecretError`] envelope
+/// without retaining the borrowed [`SecretClient`] reference that
+/// produced it.
+///
+/// Adding a future [`SecretClient`] implementor on the shikumi side
+/// (e.g. a `KubernetesSecretClient` for in-cluster `Secret` resources,
+/// a `KeychainClient` for the macOS Keychain) means adding one
+/// [`SecretClientKind`] variant in lockstep with the
+/// `impl SecretClient for X` declaration; the default
+/// [`SecretClient::client_kind`] derivation projects through
+/// [`crate::ClosedAxisLabel::from_canonical_str`], so the new impl's
+/// `backend_name()` string lands at one place
+/// ([`SecretClientKind::as_str`]) and the typed projection follows
+/// automatically. External implementors (out-of-crate consumers writing
+/// their own [`SecretClient`]) get [`None`] from the default
+/// [`SecretClient::client_kind`] — the closed axis covers the
+/// shikumi-shipped universe only and explicitly does not claim to
+/// cover every possible implementor.
+///
+/// [`SecretBackendKind`]: crate::secret::SecretBackendKind
+/// [`SecretBackendKind::Op`]: crate::secret::SecretBackendKind::Op
+/// [`SecretBackendKind::Sops`]: crate::secret::SecretBackendKind::Sops
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum SecretClientKind {
+    /// Maps to [`MemClient`] — the thread-safe in-memory test scaffold.
+    /// [`SecretClient::backend_name`] returns `"mem"`.
+    Mem,
+    /// Maps to [`CommandClient`] — the shell-subprocess `get` shim.
+    /// [`SecretClient::backend_name`] returns `"command"`.
+    Command,
+    /// Maps to `AkeylessClient` (feature `akeyless-native`) — native HTTP
+    /// against an Akeyless gateway. [`SecretClient::backend_name`]
+    /// returns `"akeyless"`. Coincides with [`SecretBackendKind::Akeyless`]'s
+    /// label since the runtime client matches the config-author backend
+    /// 1:1 on this axis.
+    Akeyless,
+    /// Maps to `AwsClient` (feature `aws-native`) — native AWS Secrets
+    /// Manager SDK. [`SecretClient::backend_name`] returns
+    /// `"aws-secrets-manager"`. Distinct from [`SecretBackendKind::AwsSecret`]'s
+    /// `"aws_secret"` label by typescape design: the runtime client
+    /// labels its transport (`"aws-secrets-manager"`, naming the AWS
+    /// service) while the config-author backend labels its YAML key
+    /// (`"aws_secret"`, the `#[serde(rename_all = "snake_case")]` tag).
+    AwsSecretsManager,
+    /// Maps to `OpConnectClient` (feature `op-native`) — 1Password
+    /// Connect HTTP transport. [`SecretClient::backend_name`] returns
+    /// `"op-connect"`. Distinct from [`SecretBackendKind::Op`]'s `"op"`
+    /// label: that backend dispatches the `op` CLI, this client talks
+    /// HTTP to a 1Password Connect server (different transport, same
+    /// upstream 1Password vault).
+    OpConnect,
+    /// Maps to `VaultClient` (feature `vault-native`) — `HashiCorp` Vault
+    /// KV v2 HTTP transport. [`SecretClient::backend_name`] returns
+    /// `"vault"`. Coincides with [`SecretBackendKind::Vault`]'s label
+    /// since the runtime client matches the config-author backend 1:1
+    /// on this axis.
+    Vault,
+    /// Maps to `GcpSecretClient` (feature `gcp-native`) — native GCP
+    /// Secret Manager SDK. [`SecretClient::backend_name`] returns
+    /// `"gcp-secret-manager"`. Distinct from [`SecretBackendKind::GcpSecret`]'s
+    /// `"gcp_secret"` label (same reasoning as the
+    /// [`Self::AwsSecretsManager`] / [`SecretBackendKind::AwsSecret`]
+    /// pair).
+    GcpSecretManager,
+}
+
+impl SecretClientKind {
+    /// Every [`SecretClientKind`] variant, in declaration order
+    /// ([`Self::Mem`], [`Self::Command`], [`Self::Akeyless`],
+    /// [`Self::AwsSecretsManager`], [`Self::OpConnect`], [`Self::Vault`],
+    /// [`Self::GcpSecretManager`]).
+    ///
+    /// The closed list of shikumi-shipped [`SecretClient`] impls. Iterate
+    /// to enumerate the runtime-client space without listing variants by
+    /// hand at every consumer site — e.g. dashboards initializing per-
+    /// client telemetry counters, attestation manifests recording the
+    /// client-mix histogram of resolved secrets, CLI flag values listing
+    /// the filterable client set, partition-coverage tests asserting
+    /// disjointness across the runtime-client classification.
+    ///
+    /// One source of truth for the runtime-client enumeration on the
+    /// [`SecretClientKind`] axis: peer to [`SecretBackendKind::ALL`] on
+    /// the config-author backend axis, [`SecretErrorKind::ALL`] on the
+    /// error-variant axis, [`SecretOperation::ALL`] on the operation
+    /// axis, and the other closed-enum kind primitives — same typescape
+    /// discipline applied to the runtime [`SecretClient`] implementor
+    /// axis.
+    ///
+    /// Adding a new variant to [`Self`] (in lockstep with a new
+    /// shikumi-shipped `impl SecretClient`) means extending this slice
+    /// in lockstep with the variant itself. The compiler enforces nothing
+    /// here directly, so the
+    /// `secret_client_kind_all_covers_every_variant` test pins the
+    /// contract via the `Self::ALL.iter().copied()` round-trip with the
+    /// closed enum's variant set, and the
+    /// `secret_client_kind_all_has_no_duplicates` test pins that the
+    /// constant is a set (no double-listed variant).
+    ///
+    /// [`SecretBackendKind`]: crate::secret::SecretBackendKind
+    pub const ALL: &'static [Self] = &[
+        Self::Mem,
+        Self::Command,
+        Self::Akeyless,
+        Self::AwsSecretsManager,
+        Self::OpConnect,
+        Self::Vault,
+        Self::GcpSecretManager,
+    ];
+
+    /// Canonical operator-facing name of the runtime client — pinned
+    /// pointwise to each [`SecretClient`] impl's
+    /// [`SecretClient::backend_name`] return string: `"mem"`,
+    /// `"command"`, `"akeyless"`, `"aws-secrets-manager"`,
+    /// `"op-connect"`, `"vault"`, `"gcp-secret-manager"`.
+    ///
+    /// Single source of truth for the seven runtime backend-name strings
+    /// that previously lived inline as magic-string literals at each
+    /// `impl SecretClient for X { fn backend_name(&self) -> &'static str
+    /// { "x" } }` arm. Inherent mirror of the
+    /// [`crate::ClosedAxisLabel`] trait method; the trait impl delegates
+    /// here so the canonical names live at one site instead of being
+    /// re-stated at every operator-facing surface (a future structured-
+    /// log field naming the failing client by typed primitive, a CLI
+    /// flag filtering captured failures by client, an alerting bucket
+    /// histogramming the client partition over the captured-failure
+    /// surface, an attestation manifest recording the client histogram).
+    ///
+    /// The label space is heterogeneous on the kebab-case axis by
+    /// runtime-transport design — `"aws-secrets-manager"`,
+    /// `"op-connect"`, `"gcp-secret-manager"` are kebab-cased to name
+    /// the specific transport (AWS Secrets Manager SDK, 1Password
+    /// Connect HTTP, GCP Secret Manager SDK), while `"mem"`,
+    /// `"command"`, `"akeyless"`, `"vault"` are single-word lowercase
+    /// matching the typescape's other single-word kind labels
+    /// ([`crate::ConfigSourceKind::as_str`], [`SecretOperation::as_str`]).
+    /// Within an axis, the trait-uniform distinctness law
+    /// (`closed_axis_label_as_str_distinct_for_every_implementor`) pins
+    /// pairwise distinctness; cross-axis label coincidence
+    /// ([`Self::Akeyless`] / [`SecretBackendKind::Akeyless`] both
+    /// labeled `"akeyless"`, [`Self::Vault`] / [`SecretBackendKind::Vault`]
+    /// both labeled `"vault"`) is structural and intentional — the
+    /// runtime client and the config-author backend agree on the YAML
+    /// key at the resolution boundary.
+    ///
+    /// Pairs with [`crate::ClosedAxisLabel::from_canonical_str`] via the
+    /// trait-default linear-scan parse; the round-trip law
+    /// `Self::from_canonical_str(v.as_str()) == Some(v)` holds for every
+    /// variant uniformly through the trait-uniform
+    /// `closed_axis_label_round_trips_for_every_implementor` test in
+    /// `cube::tests`. The concrete-position pin at
+    /// `secret_client_kind_as_str_yields_canonical_names` holds the
+    /// literal strings stable so a future rename (e.g. shortening
+    /// `"aws-secrets-manager"` to `"aws"`, expanding `"mem"` to
+    /// `"in-memory"`) fails at that site before drifting through the
+    /// round-trip law and the per-impl `backend_name()` pins.
+    ///
+    /// [`SecretBackendKind`]: crate::secret::SecretBackendKind
+    /// [`SecretBackendKind::Akeyless`]: crate::secret::SecretBackendKind::Akeyless
+    /// [`SecretBackendKind::Vault`]: crate::secret::SecretBackendKind::Vault
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Mem => "mem",
+            Self::Command => "command",
+            Self::Akeyless => "akeyless",
+            Self::AwsSecretsManager => "aws-secrets-manager",
+            Self::OpConnect => "op-connect",
+            Self::Vault => "vault",
+            Self::GcpSecretManager => "gcp-secret-manager",
+        }
+    }
+}
+
+impl crate::ClosedAxis for SecretClientKind {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxisLabel for SecretClientKind {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
+}
+
 /// Metadata attached to a secret value.
 ///
 /// Not all backends populate every field — `None` means the backend
@@ -626,6 +875,50 @@ pub trait SecretClient: Send + Sync {
 
     /// Which operations this backend supports.
     fn capabilities(&self) -> Capabilities;
+
+    /// Typed closed-axis classification of this client's runtime backend
+    /// — [`Some`] for the seven shikumi-shipped impls (whose
+    /// [`Self::backend_name`] strings are pinned pointwise on
+    /// [`SecretClientKind::as_str`]), [`None`] for external implementors
+    /// whose [`Self::backend_name`] doesn't match any canonical label
+    /// on the [`SecretClientKind`] axis.
+    ///
+    /// Default impl derives the typed kind from [`Self::backend_name`]
+    /// via [`SecretClientKind::from_canonical_str`] (the trait-default
+    /// case-insensitive linear-scan parse over [`SecretClientKind::ALL`]),
+    /// so every shikumi-shipped impl projects automatically without
+    /// touching the impl body: [`MemClient`]'s `"mem"` resolves to
+    /// [`Some(SecretClientKind::Mem)`], `AkeylessClient`'s `"akeyless"`
+    /// resolves to [`Some(SecretClientKind::Akeyless)`], and so on for
+    /// all seven. External implementors with custom backend-name strings
+    /// outside the closed axis receive [`None`] from the default — the
+    /// trait does not claim to classify implementors it doesn't ship.
+    ///
+    /// Consumers reading the typed projection (per-client telemetry
+    /// dispatching off [`SecretClientKind`], structured-diagnostic
+    /// legends naming the failing client by typed primitive across
+    /// thread boundaries, attestation manifests recording the client
+    /// histogram of refusals, CLI flag values listing the filterable
+    /// client set, cross-thread observable forms that need a `'static`
+    /// classification surviving the borrow on the live [`SecretClient`])
+    /// route through this projection instead of re-deriving the
+    /// classification by string-comparing [`Self::backend_name`] at every
+    /// observation site. The closed-enum return value composes further
+    /// (it's `Copy + Eq + Hash + 'static`), where the raw
+    /// `&'static str` does not.
+    ///
+    /// Pairs with [`Self::backend_name`] under the structural law
+    /// `self.client_kind().map(SecretClientKind::as_str) == Some(self.backend_name())`
+    /// for every shikumi-shipped impl — pinned by
+    /// `secret_client_kind_default_client_kind_recovers_backend_name_pointwise`
+    /// in the per-impl test surface for every always-available impl
+    /// ([`MemClient`], [`CommandClient`]) and per-feature for the
+    /// gated impls. External impls satisfy
+    /// `self.client_kind().is_none()` until they opt into the typed
+    /// axis by overriding this method directly.
+    fn client_kind(&self) -> Option<SecretClientKind> {
+        <SecretClientKind as crate::ClosedAxisLabel>::from_canonical_str(self.backend_name())
+    }
 
     /// Fetch the current secret value.
     async fn get(&self, name: &str) -> Result<String, SecretError>;
@@ -1576,10 +1869,10 @@ fn urlencode(s: &str) -> String {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// VaultClient — HashiCorp Vault KV v2 via thin reqwest HTTP
+// VaultClient — `HashiCorp` Vault KV v2 via thin reqwest HTTP
 // ─────────────────────────────────────────────────────────────────────
 
-/// Native HashiCorp Vault `SecretClient` — KV v2 engine.
+/// Native `HashiCorp` Vault `SecretClient` — KV v2 engine.
 ///
 /// Feature-gated on `vault-native`. Only KV v2 semantics are covered
 /// here: a `mount` (e.g. `"secret"`) + a path. `name` maps to the item
@@ -3187,5 +3480,192 @@ mod tests {
             GcpSecretClient::decode_payload(&body, "x"),
             Err(SecretError::Backend(_))
         ));
+    }
+
+    // ── SecretClientKind — typed axis over the SecretClient impl universe ──
+
+    #[test]
+    fn secret_client_kind_all_covers_every_variant() {
+        // Pin that ALL enumerates every constructible variant pointwise.
+        // The compiler enforces this on the as_str match; the test makes
+        // the contract explicit. Same discipline as
+        // `secret_operation_all_covers_every_variant`,
+        // `secret_error_kind_all_covers_every_variant`.
+        let mut seen: std::collections::HashSet<SecretClientKind> =
+            std::collections::HashSet::new();
+        for kind in SecretClientKind::ALL.iter().copied() {
+            assert!(seen.insert(kind), "duplicate in ALL: {kind:?}");
+        }
+        assert_eq!(seen.len(), 7);
+        assert!(seen.contains(&SecretClientKind::Mem));
+        assert!(seen.contains(&SecretClientKind::Command));
+        assert!(seen.contains(&SecretClientKind::Akeyless));
+        assert!(seen.contains(&SecretClientKind::AwsSecretsManager));
+        assert!(seen.contains(&SecretClientKind::OpConnect));
+        assert!(seen.contains(&SecretClientKind::Vault));
+        assert!(seen.contains(&SecretClientKind::GcpSecretManager));
+    }
+
+    #[test]
+    fn secret_client_kind_all_has_no_duplicates() {
+        // The constant is a set. Same discipline as
+        // `secret_error_kind_all_has_no_duplicates`,
+        // `secret_operation_all_has_no_duplicates`.
+        let mut sorted: Vec<&'static str> =
+            SecretClientKind::ALL.iter().map(|k| k.as_str()).collect();
+        sorted.sort_unstable();
+        let original_len = sorted.len();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            original_len,
+            "SecretClientKind::ALL must not list any variant twice",
+        );
+    }
+
+    #[test]
+    fn secret_client_kind_is_static_copy_hashable() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        // Static, Copy, Eq, Hash — trait-bounds parity with the sibling
+        // closed-axis primitives. Suitable for cross-thread observation
+        // and HashMap keys.
+        fn assert_send_sync<T: Send + Sync + 'static>() {}
+        fn assert_copy<T: Copy>() {}
+        fn assert_eq_hash<T: Eq + std::hash::Hash>() {}
+        assert_send_sync::<SecretClientKind>();
+        assert_copy::<SecretClientKind>();
+        assert_eq_hash::<SecretClientKind>();
+
+        // The hash of a Copy value is stable across clones.
+        let k = SecretClientKind::AwsSecretsManager;
+        let mut h1 = DefaultHasher::new();
+        k.hash(&mut h1);
+        let mut h2 = DefaultHasher::new();
+        k.hash(&mut h2);
+        assert_eq!(h1.finish(), h2.finish());
+    }
+
+    #[test]
+    fn secret_client_kind_as_str_yields_canonical_names() {
+        // Concrete-position pin on the canonical labels. A future rename
+        // (e.g. shortening `"aws-secrets-manager"` to `"aws"`, expanding
+        // `"mem"` to `"in-memory"`, dropping the `-secrets-manager`
+        // suffix) fails here before drifting through the round-trip law
+        // or the per-impl `backend_name()` pins below.
+        assert_eq!(SecretClientKind::Mem.as_str(), "mem");
+        assert_eq!(SecretClientKind::Command.as_str(), "command");
+        assert_eq!(SecretClientKind::Akeyless.as_str(), "akeyless");
+        assert_eq!(
+            SecretClientKind::AwsSecretsManager.as_str(),
+            "aws-secrets-manager",
+        );
+        assert_eq!(SecretClientKind::OpConnect.as_str(), "op-connect");
+        assert_eq!(SecretClientKind::Vault.as_str(), "vault");
+        assert_eq!(
+            SecretClientKind::GcpSecretManager.as_str(),
+            "gcp-secret-manager",
+        );
+    }
+
+    #[test]
+    fn secret_client_kind_as_str_pins_mem_client_backend_name() {
+        // The lift's structural contract: the canonical label of
+        // [`SecretClientKind::Mem`] is byte-identical to
+        // [`MemClient::backend_name`]. Pinned per-impl so a future
+        // re-label of either side fails at one site.
+        let client = MemClient::new();
+        assert_eq!(client.backend_name(), SecretClientKind::Mem.as_str());
+    }
+
+    #[test]
+    fn secret_client_kind_as_str_pins_command_client_backend_name() {
+        let client = CommandClient::with_get_template("echo x");
+        assert_eq!(client.backend_name(), SecretClientKind::Command.as_str());
+    }
+
+    #[test]
+    fn secret_client_default_client_kind_recovers_mem_kind() {
+        // The trait-default `client_kind` derives from `backend_name`
+        // via `SecretClientKind::from_canonical_str`. For a
+        // shikumi-shipped impl, the projection must round-trip to
+        // [`Some(_)`] on the matching variant — the operative agreement
+        // pin between the `backend_name` string axis and the
+        // [`SecretClientKind`] typed axis.
+        let client = MemClient::new();
+        assert_eq!(client.client_kind(), Some(SecretClientKind::Mem));
+    }
+
+    #[test]
+    fn secret_client_default_client_kind_recovers_command_kind() {
+        let client = CommandClient::with_get_template("echo x");
+        assert_eq!(client.client_kind(), Some(SecretClientKind::Command));
+    }
+
+    #[test]
+    fn secret_client_default_client_kind_recovers_backend_name_pointwise() {
+        // The structural law:
+        //   `self.client_kind().map(SecretClientKind::as_str) == Some(self.backend_name())`
+        // for every shikumi-shipped impl. Always-available impls
+        // ([`MemClient`], [`CommandClient`]) pinned here; per-feature
+        // impls pinned below.
+        let mem = MemClient::new();
+        assert_eq!(
+            mem.client_kind().map(SecretClientKind::as_str),
+            Some(mem.backend_name()),
+        );
+
+        let cmd = CommandClient::with_get_template("x");
+        assert_eq!(
+            cmd.client_kind().map(SecretClientKind::as_str),
+            Some(cmd.backend_name()),
+        );
+    }
+
+    #[cfg(feature = "op-native")]
+    #[test]
+    fn secret_client_kind_recovers_op_connect_backend_name() {
+        let client = OpConnectClient::new(OpConnectConfig {
+            base_url: "https://connect.example.com/".into(),
+            token: "t".into(),
+            vault_id: "v".into(),
+        });
+        assert_eq!(client.client_kind(), Some(SecretClientKind::OpConnect));
+        assert_eq!(
+            client.client_kind().map(SecretClientKind::as_str),
+            Some(client.backend_name()),
+        );
+    }
+
+    #[cfg(feature = "vault-native")]
+    #[test]
+    fn secret_client_kind_recovers_vault_backend_name() {
+        let client = VaultClient::new(VaultConfig {
+            base_url: "https://vault.example.com:8200/".into(),
+            token: "t".into(),
+            mount: "/secret/".into(),
+            namespace: None,
+        });
+        assert_eq!(client.client_kind(), Some(SecretClientKind::Vault));
+        assert_eq!(
+            client.client_kind().map(SecretClientKind::as_str),
+            Some(client.backend_name()),
+        );
+    }
+
+    #[test]
+    fn secret_client_kind_image_lies_in_secret_client_kind_all() {
+        // Every variant of [`SecretClientKind`] appears in
+        // [`SecretClientKind::ALL`]. Composes the as_str canonical
+        // labels with the trait-default `from_canonical_str` round-trip
+        // law (also pinned by
+        // `closed_axis_label_round_trips_for_every_implementor` in
+        // `cube::tests`).
+        for kind in SecretClientKind::ALL.iter().copied() {
+            let parsed =
+                <SecretClientKind as crate::ClosedAxisLabel>::from_canonical_str(kind.as_str());
+            assert_eq!(parsed, Some(kind), "round-trip failed for {kind:?}");
+        }
     }
 }

@@ -1287,7 +1287,7 @@ mod tests {
         ConfigSourceKind, ConfigTierKind, ErrorLocalizationCoordinates, FieldPathLocalization,
         FigmentNameTagKind, FigmentSourceKind, Format, FormatCoordinates, FormatProvenance,
         SecretBackendKind, SecretRefShape, ShikumiErrorKind, WatchEventClass,
-        secret_client::{SecretErrorKind, SecretOperation},
+        secret_client::{SecretClientKind, SecretErrorKind, SecretOperation},
     };
 
     // ---- Implementor-list macros ----
@@ -1371,6 +1371,7 @@ mod tests {
             $cb!(SecretRefShape);
             $cb!(SecretOperation);
             $cb!(SecretErrorKind);
+            $cb!(SecretClientKind);
         };
     }
 
@@ -1479,6 +1480,7 @@ mod tests {
             $cb!(SecretRefShape);
             $cb!(SecretOperation);
             $cb!(SecretErrorKind);
+            $cb!(SecretClientKind);
         };
     }
 
@@ -3526,33 +3528,16 @@ mod tests {
     // before any silent dropouts at the trait-uniform test sites.
 
     #[test]
-    fn for_each_closed_axis_primitive_macro_covers_seventeen_axes() {
-        // Pin that the macro expands to exactly seventeen arms — the
-        // seventeen closed-enum axis primitives the typescape recognizes
-        // today (the nine per-axis-of-the-cube primitives plus
-        // `PartitionFace`, the variant-tag projection of
-        // `PartitionOrdinal`, plus `ConfigTierKind`, the variant-tag
-        // projection of `crate::ConfigTier`, plus `WatchEventClass`,
-        // the reload-relevance classification of a raw `notify::Event`
-        // kind, plus `FigmentNameTagKind`, the `'static` discriminant
-        // of `FigmentNameTag` on figment's `Metadata::name` axis — the
-        // symmetric peer of `FigmentSourceKind` on the `Metadata::source`
-        // axis, plus `SecretBackendKind`, the `'static` discriminant of
-        // `crate::secret::SecretBackend` on the secret-resolution
-        // backend axis, plus `SecretRefShape`, the shared
-        // (whole-reference × extracted-field) variant-tag axis over
-        // the untagged-enum `*Ref` pair `(SopsRef, VaultRef)` — the
-        // first cross-type closed-axis primitive on the typescape, plus
-        // `SecretOperation`, the closed six-way axis over the
-        // (Capabilities-field × default-trait-method × Unsupported-tag)
-        // cross-surface space of [`crate::secret_client::SecretClient`],
-        // plus `SecretErrorKind`, the `'static` discriminant of
-        // [`crate::secret_client::SecretError`] on the secret-client
-        // error axis — the symmetric peer of `ShikumiErrorKind` on the
-        // [`crate::ShikumiError`] variant axis).
-        // An eighteenth axis primitive landing extends the macro in
-        // lockstep with the `impl ClosedAxis` declaration; this
-        // assertion fails until the macro arm lands.
+    fn for_each_closed_axis_primitive_macro_covers_eighteen_axes() {
+        // Pin that the macro expands to exactly eighteen arms — the
+        // seventeen pre-existing axis primitives plus `SecretClientKind`,
+        // the `'static` closed seven-way classification over the
+        // shikumi-shipped [`crate::secret_client::SecretClient`]
+        // implementor universe — the runtime-client peer of
+        // `crate::secret::SecretBackendKind` on the config-author
+        // backend axis. A nineteenth axis primitive landing extends the
+        // macro in lockstep with the `impl ClosedAxis` declaration;
+        // this assertion fails until the macro arm lands.
         let mut count = 0usize;
         macro_rules! tally {
             ($ty:ident) => {
@@ -3561,8 +3546,8 @@ mod tests {
         }
         for_each_closed_axis_primitive!(tally);
         assert_eq!(
-            count, 17,
-            "for_each_closed_axis_primitive! must expand to seventeen arms",
+            count, 18,
+            "for_each_closed_axis_primitive! must expand to eighteen arms",
         );
     }
 
@@ -3607,10 +3592,10 @@ mod tests {
     }
 
     #[test]
-    fn for_each_closed_axis_implementor_macro_covers_twenty_two_types() {
-        // Pin that the superset macro expands to exactly twenty-two
-        // arms — the seventeen axis primitives plus the five product
-        // cubes. An eighteenth axis primitive OR a sixth cube landing
+    fn for_each_closed_axis_implementor_macro_covers_twenty_three_types() {
+        // Pin that the superset macro expands to exactly twenty-three
+        // arms — the eighteen axis primitives plus the five product
+        // cubes. A nineteenth axis primitive OR a sixth cube landing
         // extends the composed macro in lockstep through one of its
         // two component macros; this assertion fails until the arm
         // lands.
@@ -3622,8 +3607,8 @@ mod tests {
         }
         for_each_closed_axis_implementor!(tally);
         assert_eq!(
-            count, 22,
-            "for_each_closed_axis_implementor! must expand to twenty-two arms (17 axes + 5 cubes)",
+            count, 23,
+            "for_each_closed_axis_implementor! must expand to twenty-three arms (18 axes + 5 cubes)",
         );
     }
 
@@ -3647,19 +3632,19 @@ mod tests {
             };
         }
         for_each_closed_axis_implementor!(add);
-        // 17-axis sum: Format=4, FormatProvenance=2, ConfigSourceKind=3,
+        // 18-axis sum: Format=4, FormatProvenance=2, ConfigSourceKind=3,
         // FigmentSourceKind=3, ShikumiErrorKind=6, FieldPathLocalization=3,
         // AttributionRule=5, AttributionConfidence=2, AttributionAxis=2,
         // PartitionFace=2, ConfigTierKind=4, WatchEventClass=3,
         // FigmentNameTagKind=2, SecretBackendKind=8, SecretRefShape=2,
-        // SecretOperation=6, SecretErrorKind=5 → 62.
+        // SecretOperation=6, SecretErrorKind=5, SecretClientKind=7 → 69.
         // 5-cube sum: FormatCoordinates=8, AttributionCoordinates=12,
         // ErrorLocalizationCoordinates=18, AttributionSourceKindCoordinates=9,
-        // AttributionNameKindCoordinates=6 → 53. Grand total 62+53 = 115.
+        // AttributionNameKindCoordinates=6 → 53. Grand total 69+53 = 122.
         assert_eq!(
-            total, 115,
+            total, 122,
             "macro must emit each implementor exactly once \
-             (today's axis_cardinality checksum is 115)",
+             (today's axis_cardinality checksum is 122)",
         );
     }
 
@@ -3818,21 +3803,17 @@ mod tests {
     }
 
     #[test]
-    fn for_each_closed_axis_label_implementor_macro_covers_seventeen_implementors() {
-        // Pin that the macro expands to exactly seventeen arms — the
-        // seventeen [`ClosedAxisLabel`] implementors the typescape
-        // recognizes today ([`PartitionFace`], [`ConfigTierKind`],
-        // [`Format`], [`FormatProvenance`], [`ConfigSourceKind`],
-        // [`FigmentSourceKind`], [`AttributionConfidence`],
-        // [`AttributionAxis`], [`ShikumiErrorKind`],
-        // [`FieldPathLocalization`], [`AttributionRule`],
-        // [`WatchEventClass`], [`FigmentNameTagKind`],
-        // [`SecretBackendKind`], [`SecretRefShape`],
-        // [`crate::secret_client::SecretOperation`],
-        // [`crate::secret_client::SecretErrorKind`]). An eighteenth
-        // implementor landing extends the macro in lockstep with the
-        // `impl ClosedAxisLabel` declaration; this assertion fails
-        // until the macro arm lands.
+    fn for_each_closed_axis_label_implementor_macro_covers_eighteen_implementors() {
+        // Pin that the macro expands to exactly eighteen arms — the
+        // seventeen pre-existing [`ClosedAxisLabel`] implementors plus
+        // [`crate::secret_client::SecretClientKind`], the seven-way
+        // typed classification over the shikumi-shipped
+        // [`crate::secret_client::SecretClient`] implementor universe
+        // (labels pinned pointwise on each impl's
+        // [`crate::secret_client::SecretClient::backend_name`]). A
+        // nineteenth implementor landing extends the macro in lockstep
+        // with the `impl ClosedAxisLabel` declaration; this assertion
+        // fails until the macro arm lands.
         let mut count = 0usize;
         macro_rules! tally {
             ($ty:ident) => {
@@ -3841,8 +3822,8 @@ mod tests {
         }
         for_each_closed_axis_label_implementor!(tally);
         assert_eq!(
-            count, 17,
-            "for_each_closed_axis_label_implementor! must expand to seventeen arms",
+            count, 18,
+            "for_each_closed_axis_label_implementor! must expand to eighteen arms",
         );
     }
 
@@ -3870,15 +3851,15 @@ mod tests {
         }
         for_each_closed_axis_label_implementor!(add);
         assert_eq!(
-            total, 62,
+            total, 69,
             "macro must emit each ClosedAxisLabel implementor exactly once \
-             (today's axis_cardinality checksum is 62: \
+             (today's axis_cardinality checksum is 69: \
              PartitionFace=2 + ConfigTierKind=4 + Format=4 + FormatProvenance=2 \
              + ConfigSourceKind=3 + FigmentSourceKind=3 + AttributionConfidence=2 \
              + AttributionAxis=2 + ShikumiErrorKind=6 + FieldPathLocalization=3 \
              + AttributionRule=5 + WatchEventClass=3 + FigmentNameTagKind=2 \
              + SecretBackendKind=8 + SecretRefShape=2 + SecretOperation=6 \
-             + SecretErrorKind=5)",
+             + SecretErrorKind=5 + SecretClientKind=7)",
         );
     }
 
