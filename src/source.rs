@@ -420,6 +420,181 @@ pub enum EnvMetadataTag<'a> {
     Bare,
 }
 
+impl EnvMetadataTag<'_> {
+    /// Data-free, `'static` discriminant of this [`EnvMetadataTag`]:
+    /// the kind of figment env-metadata shape
+    /// ([`EnvMetadataTagKind::Prefixed`] / [`EnvMetadataTagKind::Bare`])
+    /// independent of the inner borrowed prefix slice.
+    ///
+    /// One source of truth for the env-metadata-tag kind partition.
+    /// Observers that need only the kind axis (filtering by prefix
+    /// presence, hashing in a `'static` map, recording the
+    /// prefixed/bare class of a failing env attribution in an
+    /// attestation manifest, comparing across thread boundaries) match
+    /// on this closed enum instead of pattern-matching against the
+    /// borrowed tag with a lifetime parameter.
+    ///
+    /// Symmetric peer of [`FigmentSourceTag::kind`] and
+    /// [`FigmentNameTag::kind`] on the third figment-metadata sub-axis:
+    /// together the triple [`FigmentSourceKind`] /
+    /// [`FigmentNameTagKind`] / [`EnvMetadataTagKind`] closes the
+    /// figment-metadata kind universe (source axis × name axis ×
+    /// env-name sub-axis) under one typescape primitive set, every
+    /// borrowed tag projects to a `'static` discriminant on its axis.
+    ///
+    /// A future [`EnvMetadataTag`] variant landing (e.g. a hypothetical
+    /// `Glob(&str)` shape if figment grows pattern-matched env
+    /// providers) forces a corresponding [`EnvMetadataTagKind`] arm
+    /// through the exhaustive match below.
+    #[must_use]
+    pub fn kind(self) -> EnvMetadataTagKind {
+        match self {
+            Self::Prefixed(_) => EnvMetadataTagKind::Prefixed,
+            Self::Bare => EnvMetadataTagKind::Bare,
+        }
+    }
+}
+
+/// Data-free, `'static` discriminant of [`EnvMetadataTag`]: the kind of
+/// figment env-metadata shape independent of the inner borrowed prefix
+/// slice.
+///
+/// Closed two-way partition over the [`EnvMetadataTag`] variant space,
+/// returned by [`EnvMetadataTag::kind`]. The enum exists so consumers
+/// that need only the kind axis (filtering by prefix presence, hashing
+/// in a `'static` map, recording the prefixed/bare class of a failing
+/// env attribution in an attestation manifest, comparing across thread
+/// boundaries) match on one closed enum instead of pattern-matching
+/// against the borrowed tag with a lifetime parameter.
+///
+/// Symmetric peer of [`FigmentSourceKind`] on the figment-Source axis
+/// and [`FigmentNameTagKind`] on the figment-Name axis: same typescape
+/// discipline (closed, allocation-free,
+/// `Copy + Eq + Hash + #[non_exhaustive]`, exhaustive forward map),
+/// applied to figment's env-metadata sub-axis. Before this lift, the
+/// figment-metadata kind universe carried typed `'static` kinds on the
+/// outer `Metadata::source` and `Metadata::name` axes but the inner
+/// env-name sub-axis (the [`FigmentNameTag::Env`] variant's borrowed
+/// payload) had only the borrowed tag with no `'static` discriminant;
+/// observers needing the cross-thread, cross-axis prefixed/bare
+/// classification had to either retain the borrowed tag (lifetime
+/// contamination) or re-derive the partition through inlined
+/// `matches!(tag, EnvMetadataTag::Prefixed(_))` predicates at every
+/// observation site.
+///
+/// `'static` and allocation-free — no lifetime parameter, unlike
+/// [`EnvMetadataTag`]. The kind survives any borrow on the originating
+/// `figment::Metadata::name` and can therefore cross thread boundaries,
+/// serialize, and live in long-lived structures (the way
+/// [`ConfigSourceKind`] does on the captured cross-thread observable
+/// form of [`crate::ReloadFailure`], and [`FigmentSourceKind`] /
+/// [`FigmentNameTagKind`] do on the outer figment-metadata axes).
+///
+/// Adding a future [`EnvMetadataTag`] variant (e.g. a hypothetical
+/// `Glob(&str)` shape if figment grows pattern-matched env providers)
+/// means adding one [`EnvMetadataTagKind`] variant in lockstep — the
+/// exhaustive [`EnvMetadataTag::kind`] match forces the assignment at
+/// compile time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum EnvMetadataTagKind {
+    /// Maps to [`EnvMetadataTag::Prefixed`] regardless of inner
+    /// borrowed prefix slice. Reached from a
+    /// `figment::Metadata::name` of shape
+    /// `` `PREFIX` environment variable(s) `` emitted by
+    /// [`figment::providers::Env::prefixed`].
+    Prefixed,
+    /// Maps to [`EnvMetadataTag::Bare`]. Reached from a
+    /// `figment::Metadata::name` of shape `"environment variable(s)"`
+    /// emitted by [`figment::providers::Env::raw`].
+    Bare,
+}
+
+impl EnvMetadataTagKind {
+    /// Every [`EnvMetadataTagKind`] variant, in declaration order
+    /// ([`Self::Prefixed`], [`Self::Bare`]).
+    ///
+    /// The closed list of env-metadata-tag shape classes shikumi
+    /// recognizes. Iterate to enumerate the env-name sub-axis kind
+    /// space without listing variants by hand at every consumer site —
+    /// dashboards initializing per-kind counters (weighting `Bare`
+    /// attributions visibly more weakly than `Prefixed` ones since the
+    /// bare shape carries no scoping information), attestation
+    /// manifests recording the env-name sub-axis kind histogram of
+    /// failing attributions, structured-diagnostics legends rendering
+    /// different prose per class, or partition-coverage tests asserting
+    /// disjointness across the classification.
+    ///
+    /// One source of truth for the kind enumeration on the
+    /// [`EnvMetadataTagKind`] axis: peer to [`FigmentSourceKind::ALL`]
+    /// on the figment-Source axis, [`FigmentNameTagKind::ALL`] on the
+    /// figment-Name axis, and the other closed-axis primitives' `ALL`
+    /// constants — the same typescape discipline (closed `'static`
+    /// slice, in declaration order) applied to figment's env-name
+    /// sub-axis.
+    ///
+    /// Adding a new variant to [`Self`] (e.g. a future `Glob` kind in
+    /// lockstep with a hypothetical `EnvMetadataTag::Glob` if figment
+    /// grows pattern-matched env providers) means extending this slice
+    /// in lockstep with the variant itself. The compiler enforces
+    /// nothing here directly, so the
+    /// `env_metadata_tag_kind_all_covers_every_constructible_tag` test
+    /// pins the contract by asserting that every kind produced by
+    /// [`EnvMetadataTag::kind`] over the canonical sample table
+    /// appears in [`Self::ALL`], and the
+    /// `env_metadata_tag_kind_all_has_no_duplicates` test pins that the
+    /// constant is a set (no double-listed variant).
+    pub const ALL: &'static [Self] = &[Self::Prefixed, Self::Bare];
+
+    /// Returns `true` for [`Self::Prefixed`]; equivalent to
+    /// `self == EnvMetadataTagKind::Prefixed`. Convenience predicate
+    /// matching the [`FigmentNameTagKind::is_format`] /
+    /// [`FigmentNameTagKind::is_env`] sibling pattern on the
+    /// figment-Name axis.
+    #[must_use]
+    pub fn is_prefixed(self) -> bool {
+        matches!(self, Self::Prefixed)
+    }
+
+    /// Returns `true` for [`Self::Bare`].
+    #[must_use]
+    pub fn is_bare(self) -> bool {
+        matches!(self, Self::Bare)
+    }
+
+    /// Canonical operator-facing lowercase name of the env-metadata
+    /// kind — `"prefixed"` for [`Self::Prefixed`], `"bare"` for
+    /// [`Self::Bare`].
+    ///
+    /// The single source of truth for the env-name sub-axis kind label
+    /// strings on the [`EnvMetadataTagKind`] axis. Inherent mirror of
+    /// the [`crate::ClosedAxisLabel`] trait method; the trait impl
+    /// delegates here so the canonical names live at one site instead
+    /// of being re-stated at every operator-facing surface (a future
+    /// structured-log field naming the env-tag kind of a failing
+    /// attribution, a CLI flag filtering env attributions by
+    /// prefixed/bare class, an attestation manifest recording the
+    /// env-name sub-axis kind histogram of loaded values). The
+    /// strings match the variant identifiers in ASCII-lowercase form.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Prefixed => "prefixed",
+            Self::Bare => "bare",
+        }
+    }
+}
+
+impl crate::ClosedAxis for EnvMetadataTagKind {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxisLabel for EnvMetadataTagKind {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
+}
+
 /// Closed-enum classification of `figment::Metadata::name`.
 ///
 /// figment attaches per-value attribution along two axes: the
@@ -3002,6 +3177,307 @@ mod tests {
             let name = f.metadata_name(Path::new("/etc/app/app.cfg"));
             let tag = FigmentNameTag::classify(&name).expect("format-emitted name classifies");
             assert_eq!(tag.kind(), FigmentNameTagKind::Format);
+        }
+    }
+
+    // ---- EnvMetadataTagKind / EnvMetadataTag::kind ----
+    //
+    // The (EnvMetadataTag → EnvMetadataTagKind) lift closes the
+    // figment-metadata kind universe on the third sub-axis: the
+    // outer figment-Source axis was projected to a `'static`
+    // discriminant via FigmentSourceTag::kind → FigmentSourceKind, the
+    // outer figment-Name axis via FigmentNameTag::kind →
+    // FigmentNameTagKind, and the inner env-name sub-axis (inside
+    // FigmentNameTag::Env) now lifts to EnvMetadataTagKind. Tests
+    // mirror the FigmentNameTagKind suite pointwise.
+
+    /// Canonical sample table covering every `EnvMetadataTag` variant
+    /// once, with the kind each must classify into. Source for the
+    /// `env_metadata_tag_kind_all_*` cover/partition tests below — peer
+    /// to `canonical_figment_name_tag_kind_samples` on the figment-Name
+    /// axis.
+    fn canonical_env_metadata_tag_kind_samples() -> Vec<(String, EnvMetadataTagKind)> {
+        vec![
+            (
+                ConfigSource::env_metadata_name("MYAPP_"),
+                EnvMetadataTagKind::Prefixed,
+            ),
+            (
+                ConfigSource::env_metadata_name("TOBIRA_"),
+                EnvMetadataTagKind::Prefixed,
+            ),
+            (
+                ConfigSource::env_metadata_name(""),
+                EnvMetadataTagKind::Bare,
+            ),
+        ]
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_classifies_each_variant() {
+        // The forward map EnvMetadataTag → EnvMetadataTagKind is
+        // exhaustive: every variant pins to exactly one kind. Mirrors
+        // `figment_name_tag_kind_classifies_each_variant` on the
+        // figment-Name axis.
+        let prefixed_name = ConfigSource::env_metadata_name("APP_");
+        let prefixed = ConfigSource::strip_env_metadata_name(&prefixed_name)
+            .expect("prefixed env metadata classifies");
+        assert_eq!(prefixed.kind(), EnvMetadataTagKind::Prefixed);
+
+        let bare_name = ConfigSource::env_metadata_name("");
+        let bare = ConfigSource::strip_env_metadata_name(&bare_name)
+            .expect("bare env metadata classifies");
+        assert_eq!(bare.kind(), EnvMetadataTagKind::Bare);
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_is_data_free() {
+        // Inner data does not influence kind — every Prefixed variant
+        // maps to EnvMetadataTagKind::Prefixed regardless of the inner
+        // borrowed prefix slice. Mirrors `figment_name_tag_kind_is_data_free`
+        // on the figment-Name axis.
+        for prefix in ["MYAPP_", "TOBIRA_", "X_", "VERY_LONG_PREFIX_"] {
+            let tag = EnvMetadataTag::Prefixed(prefix);
+            assert_eq!(tag.kind(), EnvMetadataTagKind::Prefixed);
+        }
+        // The Bare variant has no inner data; the projection is constant.
+        assert_eq!(EnvMetadataTag::Bare.kind(), EnvMetadataTagKind::Bare);
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_agrees_with_predicates_pointwise() {
+        // The kind() projection must agree with the kind-side
+        // `is_prefixed` / `is_bare` predicates pointwise on every
+        // constructible tag variant. Mirrors
+        // `figment_name_tag_kind_agrees_with_as_predicates_pointwise`
+        // on the figment-Name axis.
+        for (name, _) in canonical_env_metadata_tag_kind_samples() {
+            let tag = ConfigSource::strip_env_metadata_name(&name)
+                .expect("canonical sample must classify as env metadata");
+            assert_eq!(
+                tag.kind().is_prefixed(),
+                tag.kind() == EnvMetadataTagKind::Prefixed,
+            );
+            assert_eq!(tag.kind().is_bare(), tag.kind() == EnvMetadataTagKind::Bare,);
+        }
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_is_static_and_copy_and_hashable() {
+        // The discriminant is `'static` (no lifetime parameter) so it
+        // can cross thread boundaries the borrowed tag cannot. Trait
+        // bounds match the sibling typescape primitives
+        // (FigmentNameTagKind, FigmentSourceKind, ConfigSourceKind,
+        // AttributionRule, AttributionConfidence, AttributionAxis).
+        fn assert_static<T: 'static>() {}
+        use std::collections::HashSet;
+        let mut set: HashSet<EnvMetadataTagKind> =
+            EnvMetadataTagKind::ALL.iter().copied().collect();
+        set.insert(EnvMetadataTagKind::Prefixed); // duplicate
+        assert_eq!(set.len(), EnvMetadataTagKind::ALL.len());
+
+        // Copy: rebind without move.
+        let k = EnvMetadataTagKind::Bare;
+        let k2 = k;
+        let k3 = k;
+        assert_eq!(k, k2);
+        assert_eq!(k2, k3);
+
+        // 'static — observable by inserting into a static bound.
+        assert_static::<EnvMetadataTagKind>();
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_all_has_no_duplicates() {
+        // The constant must be a set — no variant listed twice. Pins
+        // the typescape discipline shared with FigmentNameTagKind::ALL,
+        // FigmentSourceKind::ALL, and the other closed-enum kind axes.
+        use std::collections::HashSet;
+        let set: HashSet<EnvMetadataTagKind> = EnvMetadataTagKind::ALL.iter().copied().collect();
+        assert_eq!(
+            set.len(),
+            EnvMetadataTagKind::ALL.len(),
+            "EnvMetadataTagKind::ALL must contain no duplicates; got: {:?}",
+            EnvMetadataTagKind::ALL,
+        );
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_all_covers_every_constructible_tag() {
+        // Subset cover: every kind produced by EnvMetadataTag::kind
+        // over the canonical sample table must lie in
+        // EnvMetadataTagKind::ALL. A future tag variant that adds a new
+        // kind class must extend EnvMetadataTagKind and its ALL in the
+        // same commit; otherwise this test fails.
+        use std::collections::HashSet;
+        let declared: HashSet<EnvMetadataTagKind> =
+            EnvMetadataTagKind::ALL.iter().copied().collect();
+        let observed: HashSet<EnvMetadataTagKind> = canonical_env_metadata_tag_kind_samples()
+            .iter()
+            .map(|(name, _)| {
+                ConfigSource::strip_env_metadata_name(name)
+                    .expect("canonical sample must classify as env metadata")
+                    .kind()
+            })
+            .collect();
+        assert!(
+            observed.is_subset(&declared),
+            "EnvMetadataTag::kind image must lie in EnvMetadataTagKind::ALL; \
+             observed: {observed:?}, declared: {declared:?}",
+        );
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_all_equals_tag_kind_image() {
+        // Tight equality (stronger than subset cover): every variant
+        // in EnvMetadataTagKind::ALL must be witnessed by at least one
+        // tag's kind() — no orphan variant in the declared kind space
+        // lacks a producing tag.
+        use std::collections::HashSet;
+        let declared: HashSet<EnvMetadataTagKind> =
+            EnvMetadataTagKind::ALL.iter().copied().collect();
+        let observed: HashSet<EnvMetadataTagKind> = canonical_env_metadata_tag_kind_samples()
+            .iter()
+            .map(|(name, _)| {
+                ConfigSource::strip_env_metadata_name(name)
+                    .expect("canonical sample must classify as env metadata")
+                    .kind()
+            })
+            .collect();
+        assert_eq!(
+            observed, declared,
+            "EnvMetadataTag::kind image must equal EnvMetadataTagKind::ALL",
+        );
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_all_declaration_order_is_prefixed_bare() {
+        // Pin declaration order. Consumers (diagnostics legends,
+        // attestation manifests, dashboard column orderings) that
+        // iterate ALL get a stable order; reordering the slice is a
+        // breaking change that must show up here.
+        assert_eq!(
+            EnvMetadataTagKind::ALL,
+            &[EnvMetadataTagKind::Prefixed, EnvMetadataTagKind::Bare],
+        );
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_all_partition_is_prefixed_xor_bare() {
+        // Boolean partition: `is_prefixed` / `is_bare` over a tag
+        // sliced by each kind cell must agree with the cell's identity.
+        let samples = canonical_env_metadata_tag_kind_samples();
+        for kind in EnvMetadataTagKind::ALL.iter().copied() {
+            let witnessing_name = samples
+                .iter()
+                .find(|(name, _)| {
+                    ConfigSource::strip_env_metadata_name(name)
+                        .expect("sample must classify")
+                        .kind()
+                        == kind
+                })
+                .map(|(name, _)| name)
+                .expect("every kind cell must be witnessed by some tag");
+            let tag = ConfigSource::strip_env_metadata_name(witnessing_name)
+                .expect("witness must classify");
+            match kind {
+                EnvMetadataTagKind::Prefixed => {
+                    assert!(tag.kind().is_prefixed());
+                    assert!(!tag.kind().is_bare());
+                }
+                EnvMetadataTagKind::Bare => {
+                    assert!(tag.kind().is_bare());
+                    assert!(!tag.kind().is_prefixed());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_as_str_yields_canonical_lowercase_names() {
+        // Concrete-position pin on EnvMetadataTagKind::as_str. The
+        // trait-uniform round-trip test in cube::tests pins labels
+        // equal pairwise under from_canonical_str, but this test pins
+        // the literal string values themselves so a future rename
+        // (e.g. capitalizing "Prefixed", prefixing "env-prefixed")
+        // fails here before drifting through the trait-uniform
+        // round-trip law and the operator-facing rendering surface.
+        assert_eq!(EnvMetadataTagKind::Prefixed.as_str(), "prefixed");
+        assert_eq!(EnvMetadataTagKind::Bare.as_str(), "bare");
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_from_canonical_str_round_trips_through_trait() {
+        // Pin the trait-default `from_canonical_str` parse on
+        // EnvMetadataTagKind: each canonical lowercase name parses
+        // back to its variant via the ClosedAxisLabel default impl.
+        // Mixed-case forms an operator might type round-trip
+        // case-insensitively.
+        use crate::ClosedAxisLabel;
+        for k in EnvMetadataTagKind::ALL.iter().copied() {
+            assert_eq!(
+                <EnvMetadataTagKind as ClosedAxisLabel>::from_canonical_str(k.as_str()),
+                Some(k),
+                "trait from_canonical_str must round-trip for {k:?}",
+            );
+        }
+        assert_eq!(
+            <EnvMetadataTagKind as ClosedAxisLabel>::from_canonical_str("Prefixed"),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+        assert_eq!(
+            <EnvMetadataTagKind as ClosedAxisLabel>::from_canonical_str("BARE"),
+            Some(EnvMetadataTagKind::Bare),
+        );
+        // Unrecognized strings — including a trailing-whitespace case
+        // and a one-character drift — reject.
+        assert_eq!(
+            <EnvMetadataTagKind as ClosedAxisLabel>::from_canonical_str("bare "),
+            None,
+        );
+        assert_eq!(
+            <EnvMetadataTagKind as ClosedAxisLabel>::from_canonical_str("prefixe"),
+            None,
+        );
+        assert_eq!(
+            <EnvMetadataTagKind as ClosedAxisLabel>::from_canonical_str(""),
+            None,
+        );
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_pairs_with_figment_name_tag_kind_env() {
+        // Cross-primitive bridge: when a FigmentNameTag is the Env
+        // variant, the inner EnvMetadataTag's kind classifies the
+        // env sub-shape. Pins the structural law that the
+        // (FigmentNameTagKind::Env → EnvMetadataTagKind) refinement
+        // path covers every env-shaped metadata-name observation.
+        for (name, expected_env_kind) in canonical_env_metadata_tag_kind_samples() {
+            let outer = FigmentNameTag::classify(&name)
+                .expect("canonical env metadata classifies via FigmentNameTag");
+            assert_eq!(outer.kind(), FigmentNameTagKind::Env);
+            let inner = outer
+                .as_env()
+                .expect("Env variant must expose inner EnvMetadataTag");
+            assert_eq!(inner.kind(), expected_env_kind);
+        }
+    }
+
+    #[test]
+    fn env_metadata_tag_kind_round_trips_through_figment_env_emission() {
+        // End-to-end: classify a real figment::providers::Env-emitted
+        // metadata-name through EnvMetadataTag::kind, and confirm the
+        // kind matches EnvMetadataTagKind::Prefixed for prefixed
+        // emissions. Pins the cross-side contract that figment's
+        // prefixed Env emission lands on the Prefixed kind cell.
+        use figment::Provider;
+        for prefix in ["MYAPP_", "TOBIRA_", "X_"] {
+            let env = figment::providers::Env::prefixed(prefix);
+            let md = env.metadata();
+            let name: &str = md.name.as_ref();
+            let tag = ConfigSource::strip_env_metadata_name(name)
+                .expect("figment prefixed Env name must classify as env metadata");
+            assert_eq!(tag.kind(), EnvMetadataTagKind::Prefixed);
         }
     }
 }

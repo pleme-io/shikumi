@@ -80,8 +80,8 @@ pub use reload::ReloadFailure;
 pub use secret::{SecretBackendKind, SecretRefShape};
 pub use secret_client::{SecretClientKind, SecretErrorKind, SecretOperation};
 pub use source::{
-    ConfigSource, ConfigSourceChain, ConfigSourceKind, EnvMetadataTag, FigmentNameTag,
-    FigmentNameTagKind, FigmentSourceKind, FigmentSourceTag,
+    ConfigSource, ConfigSourceChain, ConfigSourceKind, EnvMetadataTag, EnvMetadataTagKind,
+    FigmentNameTag, FigmentNameTagKind, FigmentSourceKind, FigmentSourceTag,
 };
 pub use store::ConfigStore;
 pub use tiered::{ConfigDiff, ConfigTier, ConfigTierKind, DiffLine, TieredConfig};
