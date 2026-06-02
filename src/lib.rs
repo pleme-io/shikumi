@@ -84,5 +84,5 @@ pub use source::{
     FigmentNameTag, FigmentNameTagKind, FigmentSourceKind, FigmentSourceTag,
 };
 pub use store::ConfigStore;
-pub use tiered::{ConfigDiff, ConfigTier, ConfigTierKind, DiffLine, TieredConfig};
+pub use tiered::{ConfigDiff, ConfigTier, ConfigTierKind, DiffLine, DiffLineKind, TieredConfig};
 pub use watcher::{ConfigWatcher, WatchEventClass, symlink_target};

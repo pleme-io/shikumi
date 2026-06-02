@@ -436,6 +436,204 @@ pub enum DiffLine {
     Context(String),
 }
 
+impl DiffLine {
+    /// Data-free, `'static` discriminant of this [`DiffLine`]: the kind
+    /// of diff cell ([`DiffLineKind::Removed`] / [`DiffLineKind::Added`]
+    /// / [`DiffLineKind::Context`]) independent of the inner payload
+    /// [`String`].
+    ///
+    /// One source of truth for the diff-line kind partition over
+    /// [`DiffLine`]. Observers that need only the cell-kind axis
+    /// (counting added/removed/context lines for stats, filtering for
+    /// "show only changes", dispatching per-kind glyph or color at
+    /// render time, comparing across thread boundaries without cloning
+    /// the borrowed line text) match on this closed enum instead of
+    /// pattern-matching against the three payload-carrying variants of
+    /// [`DiffLine`].
+    ///
+    /// Peer of [`ConfigTier::kind`] on the [`ConfigTier`] axis — same
+    /// typescape closed-axis discipline (allocation-free,
+    /// `Copy + Eq + Hash + #[non_exhaustive]`, exhaustive forward map),
+    /// lifted to the diff-line surface so the
+    /// `ConfigDiff`-internal partition is named at the type level
+    /// rather than lying open-coded in [`ConfigDiff::is_empty_diff`]
+    /// and [`ConfigDiff::render_unified`].
+    ///
+    /// A future [`DiffLine`] variant landing (e.g. a hypothetical
+    /// `Header(String)` shape for hunk headers, a `Sep` shape for
+    /// inter-hunk separators) forces a corresponding
+    /// [`DiffLineKind`] arm through the exhaustive match below.
+    #[must_use]
+    pub const fn kind(&self) -> DiffLineKind {
+        match self {
+            Self::Removed(_) => DiffLineKind::Removed,
+            Self::Added(_) => DiffLineKind::Added,
+            Self::Context(_) => DiffLineKind::Context,
+        }
+    }
+
+    /// Borrow the inner line text regardless of kind. Companion of
+    /// [`Self::kind`]: the (kind, text) pair losslessly reconstructs
+    /// the original [`DiffLine`] value, and the two accessors together
+    /// replace the three-arm `match` blocks at every renderer site.
+    #[must_use]
+    pub fn text(&self) -> &str {
+        match self {
+            Self::Removed(s) | Self::Added(s) | Self::Context(s) => s.as_str(),
+        }
+    }
+}
+
+/// Data-free, `'static` discriminant of [`DiffLine`]: the closed
+/// three-way partition over the diff-cell variant space, independent
+/// of the inner payload [`String`].
+///
+/// Returned by [`DiffLine::kind`]. The enum exists so consumers that
+/// need only the cell-kind axis (per-kind counters, "only changed
+/// lines" filters, per-kind glyph or color rendering at the
+/// `ConfigDiff::render_unified` surface, structured-diagnostic
+/// legends naming the diff-cell class, comparing across thread
+/// boundaries) match on one closed enum instead of pattern-matching
+/// against three payload-carrying variants.
+///
+/// Peer of [`crate::ConfigTierKind`] (variant-tag projection of
+/// [`ConfigTier`]), [`crate::WatchEventClass`] (reload-relevance
+/// classification of [`notify::EventKind`]), and the other closed-
+/// enum kind primitives on the typescape — same discipline (closed,
+/// allocation-free, `Copy + Eq + Hash + #[non_exhaustive]`,
+/// exhaustive forward map), applied to the diff-cell axis. Before
+/// this lift, the three-way kind universe lived only inside
+/// [`DiffLine`]'s variant set: every observer wanting the data-free
+/// kind class re-pattern-matched against the payload-carrying enum,
+/// and the unified-diff glyph (`-`, `+`, ` `) appeared inline at
+/// every renderer site rather than at one canonical accessor.
+///
+/// Adding a future [`DiffLine`] variant (a hypothetical `Header`
+/// shape for hunk headers, a `Sep` shape for inter-hunk separators)
+/// means adding one [`DiffLineKind`] variant in lockstep — the
+/// exhaustive [`DiffLine::kind`] match forces the assignment at
+/// compile time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum DiffLineKind {
+    /// Maps to [`DiffLine::Removed`] regardless of inner payload —
+    /// a line present in the baseline and absent in the candidate.
+    /// Rendered with the canonical unified-diff `-` prefix
+    /// ([`Self::glyph`]).
+    Removed,
+    /// Maps to [`DiffLine::Added`] regardless of inner payload —
+    /// a line absent in the baseline and present in the candidate.
+    /// Rendered with the canonical unified-diff `+` prefix
+    /// ([`Self::glyph`]).
+    Added,
+    /// Maps to [`DiffLine::Context`] regardless of inner payload —
+    /// a line identical in both sides. Rendered with the canonical
+    /// unified-diff ` ` (space) prefix ([`Self::glyph`]).
+    Context,
+}
+
+impl DiffLineKind {
+    /// Every [`DiffLineKind`] variant, in declaration order
+    /// ([`Self::Removed`], [`Self::Added`], [`Self::Context`]).
+    ///
+    /// The closed list of diff-line kinds shikumi recognizes. Peer of
+    /// [`crate::WatchEventClass::ALL`] (also three-cell) on the
+    /// watcher axis and the other closed-axis primitives' `ALL`
+    /// constants — same typescape discipline (closed `'static` slice,
+    /// in declaration order). Adding a new variant to [`Self`] means
+    /// extending this slice in lockstep; the cube-test cardinality
+    /// pin (`for_each_closed_axis_primitive!` checksum in
+    /// `cube::tests`) catches drift before silent dropouts.
+    pub const ALL: &'static [Self] = &[Self::Removed, Self::Added, Self::Context];
+
+    /// Canonical operator-facing lowercase name of the diff-line kind —
+    /// `"removed"`, `"added"`, or `"context"`.
+    ///
+    /// The single source of truth for the diff-cell kind label strings
+    /// on the [`DiffLineKind`] axis. Inherent mirror of the
+    /// [`crate::ClosedAxisLabel`] trait method; the trait impl
+    /// delegates here so the canonical names live at one site instead
+    /// of being re-stated at every operator-facing surface (per-kind
+    /// counters in a CLI `config-diff` summary, structured-log fields
+    /// naming the diff-cell class, attestation manifests recording the
+    /// diff-cell kind histogram between two config tiers). The
+    /// strings match the variant identifiers in ASCII-lowercase form.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Removed => "removed",
+            Self::Added => "added",
+            Self::Context => "context",
+        }
+    }
+
+    /// Canonical unified-diff prefix character — `'-'` for
+    /// [`Self::Removed`], `'+'` for [`Self::Added`], `' '` for
+    /// [`Self::Context`]. The single source of truth for the per-kind
+    /// glyph used by [`ConfigDiff::render_unified`] and every future
+    /// renderer that emits the unified-diff line shape.
+    ///
+    /// Before this lift the three glyph characters lived inline at the
+    /// renderer's three-arm `match`; the kind axis names the
+    /// (variant → glyph) projection as a typed accessor, so a future
+    /// alternative renderer (a Markdown-fenced diff, a color-coded
+    /// terminal renderer routing glyph through a palette) reads one
+    /// accessor instead of re-stating the three-arm match.
+    #[must_use]
+    pub const fn glyph(self) -> char {
+        match self {
+            Self::Removed => '-',
+            Self::Added => '+',
+            Self::Context => ' ',
+        }
+    }
+
+    /// Whether this kind represents a structural change between the
+    /// two sides (`true` for [`Self::Added`] or [`Self::Removed`],
+    /// `false` for [`Self::Context`]).
+    ///
+    /// Refines [`ConfigDiff::is_empty_diff`]: a diff is empty exactly
+    /// when no [`DiffLine`] has a `is_changed` kind. The predicate
+    /// previously lived as inline `matches!(l, DiffLine::Added(_) |
+    /// DiffLine::Removed(_))` at the call site; the lift names the
+    /// (kind → is-it-a-change?) projection at the type level.
+    #[must_use]
+    pub const fn is_changed(self) -> bool {
+        matches!(self, Self::Added | Self::Removed)
+    }
+
+    /// Returns `true` for [`Self::Removed`]; equivalent to
+    /// `self == DiffLineKind::Removed`.
+    #[must_use]
+    pub const fn is_removed(self) -> bool {
+        matches!(self, Self::Removed)
+    }
+
+    /// Returns `true` for [`Self::Added`]; equivalent to
+    /// `self == DiffLineKind::Added`.
+    #[must_use]
+    pub const fn is_added(self) -> bool {
+        matches!(self, Self::Added)
+    }
+
+    /// Returns `true` for [`Self::Context`]; equivalent to
+    /// `self == DiffLineKind::Context`.
+    #[must_use]
+    pub const fn is_context(self) -> bool {
+        matches!(self, Self::Context)
+    }
+}
+
+impl crate::ClosedAxis for DiffLineKind {
+    const ALL: &'static [Self] = Self::ALL;
+}
+
+impl crate::ClosedAxisLabel for DiffLineKind {
+    fn as_str(self) -> &'static str {
+        Self::as_str(self)
+    }
+}
+
 impl ConfigDiff {
     /// Minimum-viable diff: line-by-line walk of two YAML strings.
     /// Lines that match position-wise are Context; non-matching
@@ -478,24 +676,18 @@ impl ConfigDiff {
 
     /// Render as a unified-diff-like string for CLI display.
     /// `-` prefix for Removed, `+` for Added, ` ` for Context.
+    ///
+    /// Routes the per-kind glyph through [`DiffLineKind::glyph`] and
+    /// the payload through [`DiffLine::text`], so the three magic
+    /// `'-' / '+' / ' '` characters live at one site
+    /// ([`DiffLineKind::glyph`]) instead of being re-stated at every
+    /// renderer's three-arm match.
     #[must_use]
     pub fn render_unified(&self) -> String {
         let mut out = String::new();
         for line in &self.lines {
-            match line {
-                DiffLine::Context(s) => {
-                    out.push(' ');
-                    out.push_str(s);
-                }
-                DiffLine::Removed(s) => {
-                    out.push('-');
-                    out.push_str(s);
-                }
-                DiffLine::Added(s) => {
-                    out.push('+');
-                    out.push_str(s);
-                }
-            }
+            out.push(line.kind().glyph());
+            out.push_str(line.text());
             out.push('\n');
         }
         out
@@ -503,12 +695,13 @@ impl ConfigDiff {
 
     /// True when there are no Added or Removed lines (only Context).
     /// I.e. baseline == candidate.
+    ///
+    /// Routes through [`DiffLineKind::is_changed`] — the
+    /// (variant → is-it-a-change?) projection lives at one site
+    /// instead of inlined here.
     #[must_use]
     pub fn is_empty_diff(&self) -> bool {
-        !self
-            .lines
-            .iter()
-            .any(|l| matches!(l, DiffLine::Added(_) | DiffLine::Removed(_)))
+        !self.lines.iter().any(|l| l.kind().is_changed())
     }
 }
 
@@ -812,6 +1005,299 @@ mod tests {
         unsafe {
             std::env::remove_var(key);
         }
+    }
+
+    // ── DiffLineKind + DiffLine::kind coverage ──────────────────
+    //
+    // The (DiffLine → DiffLineKind) lift closes the diff-cell kind
+    // partition on the third closed three-way classification of the
+    // typescape, alongside `ConfigSourceKind` (3 cells), `FieldPathLocalization`
+    // (3), and `WatchEventClass` (3). Tests mirror the
+    // `EnvMetadataTagKind` suite pointwise on the source axis:
+    // forward-map exhaustivity, payload-independence, trait-bounds
+    // parity, no-duplicates on the closed list, image containment in
+    // `ALL`, declaration-order pin, concrete-position canonical
+    // labels, glyph-pin against the operator-facing unified-diff
+    // convention, refactor pins on the two consumer sites
+    // (`is_empty_diff` / `render_unified`), and the trait-default
+    // round-trip.
+
+    fn canonical_diff_line_kind_samples() -> Vec<(DiffLine, DiffLineKind)> {
+        vec![
+            (DiffLine::Removed("name: ''".into()), DiffLineKind::Removed),
+            (
+                DiffLine::Added("name: default-name".into()),
+                DiffLineKind::Added,
+            ),
+            (DiffLine::Context("size: 42".into()), DiffLineKind::Context),
+            (DiffLine::Removed(String::new()), DiffLineKind::Removed),
+            (DiffLine::Added(String::new()), DiffLineKind::Added),
+            (DiffLine::Context(String::new()), DiffLineKind::Context),
+        ]
+    }
+
+    #[test]
+    fn diff_line_kind_classifies_each_variant() {
+        // The forward map DiffLine → DiffLineKind is exhaustive: every
+        // variant pins to exactly one kind.
+        assert_eq!(DiffLine::Removed("x".into()).kind(), DiffLineKind::Removed,);
+        assert_eq!(DiffLine::Added("y".into()).kind(), DiffLineKind::Added);
+        assert_eq!(DiffLine::Context("z".into()).kind(), DiffLineKind::Context,);
+    }
+
+    #[test]
+    fn diff_line_kind_is_data_free() {
+        // Inner payload does not influence kind — every Removed
+        // variant maps to DiffLineKind::Removed regardless of the
+        // inner String. Mirrors `env_metadata_tag_kind_is_data_free`
+        // on the figment-Name env-name sub-axis.
+        for payload in ["", "a", "name: 'long value'  ", "\n", "\u{1F600}"] {
+            assert_eq!(
+                DiffLine::Removed(payload.to_string()).kind(),
+                DiffLineKind::Removed,
+            );
+            assert_eq!(
+                DiffLine::Added(payload.to_string()).kind(),
+                DiffLineKind::Added,
+            );
+            assert_eq!(
+                DiffLine::Context(payload.to_string()).kind(),
+                DiffLineKind::Context,
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_agrees_with_predicates_pointwise() {
+        // The kind() projection must agree with the kind-side
+        // `is_removed` / `is_added` / `is_context` predicates pointwise
+        // on every constructible variant.
+        for (line, expected) in canonical_diff_line_kind_samples() {
+            let k = line.kind();
+            assert_eq!(k, expected);
+            assert_eq!(k.is_removed(), k == DiffLineKind::Removed);
+            assert_eq!(k.is_added(), k == DiffLineKind::Added);
+            assert_eq!(k.is_context(), k == DiffLineKind::Context);
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_is_changed_partitions_added_or_removed() {
+        // is_changed() partitions the kind axis: true exactly on the
+        // two changed kinds (Added, Removed), false on Context. The
+        // partition is the structural law `ConfigDiff::is_empty_diff`
+        // refines through `.kind().is_changed()`.
+        assert!(DiffLineKind::Removed.is_changed());
+        assert!(DiffLineKind::Added.is_changed());
+        assert!(!DiffLineKind::Context.is_changed());
+    }
+
+    #[test]
+    fn diff_line_kind_is_static_and_copy_and_hashable() {
+        // The discriminant is `'static` (no lifetime parameter) and
+        // Copy + Hash + Eq, so it can be hashed in a `'static` map and
+        // cross thread boundaries the borrowed payload `&String`
+        // cannot. Trait bounds match the sibling typescape primitives.
+        use std::collections::HashSet;
+        fn assert_static<T: 'static>() {}
+        assert_static::<DiffLineKind>();
+        let mut set: HashSet<DiffLineKind> = DiffLineKind::ALL.iter().copied().collect();
+        set.insert(DiffLineKind::Removed); // duplicate
+        assert_eq!(set.len(), DiffLineKind::ALL.len());
+        // Copy: rebind without move.
+        let k = DiffLineKind::Added;
+        let k2 = k;
+        assert_eq!(k, k2);
+    }
+
+    #[test]
+    fn diff_line_kind_all_has_no_duplicates() {
+        // `ALL` is a set on the closed axis — no duplicated variant.
+        use std::collections::HashSet;
+        let unique: HashSet<DiffLineKind> = DiffLineKind::ALL.iter().copied().collect();
+        assert_eq!(unique.len(), DiffLineKind::ALL.len());
+    }
+
+    #[test]
+    fn diff_line_kind_all_covers_every_constructible_line() {
+        // Every kind produced by DiffLine::kind() on the canonical
+        // sample table appears in DiffLineKind::ALL. Catches drift if
+        // a future DiffLine variant lands without extending ::ALL.
+        for (line, _) in canonical_diff_line_kind_samples() {
+            assert!(
+                DiffLineKind::ALL.contains(&line.kind()),
+                "DiffLineKind::ALL must contain the kind of every constructible DiffLine",
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_all_equals_diff_line_kind_image() {
+        // Tight image / `ALL` equality: the image of DiffLine::kind
+        // over the canonical sample table equals DiffLineKind::ALL as
+        // a set — no kind cell is unreachable, no orphan cell exists.
+        use std::collections::HashSet;
+        let image: HashSet<DiffLineKind> = canonical_diff_line_kind_samples()
+            .into_iter()
+            .map(|(l, _)| l.kind())
+            .collect();
+        let all: HashSet<DiffLineKind> = DiffLineKind::ALL.iter().copied().collect();
+        assert_eq!(image, all);
+    }
+
+    #[test]
+    fn diff_line_kind_all_declaration_order_is_removed_added_context() {
+        // Declaration order pin. Mirror of the renderer's natural
+        // reading order (removed → added → context) so the canonical
+        // axis enumeration matches the unified-diff legend operators
+        // already read in tools.
+        assert_eq!(DiffLineKind::ALL.len(), 3);
+        assert_eq!(DiffLineKind::ALL[0], DiffLineKind::Removed);
+        assert_eq!(DiffLineKind::ALL[1], DiffLineKind::Added);
+        assert_eq!(DiffLineKind::ALL[2], DiffLineKind::Context);
+    }
+
+    #[test]
+    fn diff_line_kind_as_str_yields_canonical_lowercase_names() {
+        // Concrete-position pin on the canonical operator-facing
+        // labels. A rename here would surface a literal string change
+        // before drifting through the round-trip law.
+        assert_eq!(DiffLineKind::Removed.as_str(), "removed");
+        assert_eq!(DiffLineKind::Added.as_str(), "added");
+        assert_eq!(DiffLineKind::Context.as_str(), "context");
+    }
+
+    #[test]
+    fn diff_line_kind_glyph_yields_canonical_unified_diff_prefixes() {
+        // Concrete-position pin on the canonical unified-diff glyphs.
+        // The three glyph characters previously lived inline at the
+        // renderer's three-arm match; pinning them at the kind axis
+        // catches any future rename before drifting through the
+        // renderer.
+        assert_eq!(DiffLineKind::Removed.glyph(), '-');
+        assert_eq!(DiffLineKind::Added.glyph(), '+');
+        assert_eq!(DiffLineKind::Context.glyph(), ' ');
+    }
+
+    #[test]
+    fn diff_line_text_returns_inner_payload_pointwise() {
+        // The `text` accessor borrows the inner payload regardless of
+        // kind. Composes with `.kind()` to losslessly decompose a
+        // DiffLine into its (kind, text) pair — the natural shape for
+        // any renderer that previously matched on the three variants.
+        for payload in ["", "a", "name: value", "  leading spaces"] {
+            assert_eq!(DiffLine::Removed(payload.to_string()).text(), payload);
+            assert_eq!(DiffLine::Added(payload.to_string()).text(), payload);
+            assert_eq!(DiffLine::Context(payload.to_string()).text(), payload);
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_from_canonical_str_round_trips_through_trait() {
+        // Trait-default round-trip law: case-insensitively, every
+        // canonical label parses back to its kind via the
+        // `ClosedAxisLabel` trait default. Mixed-case inputs hit the
+        // case-insensitive parse path.
+        use crate::ClosedAxisLabel;
+        for &k in DiffLineKind::ALL {
+            let lower = k.as_str();
+            assert_eq!(DiffLineKind::from_canonical_str(lower), Some(k));
+            let upper = lower.to_ascii_uppercase();
+            assert_eq!(DiffLineKind::from_canonical_str(&upper), Some(k));
+            // Mixed: capitalize first letter only.
+            let mut mixed = String::new();
+            for (i, c) in lower.chars().enumerate() {
+                if i == 0 {
+                    mixed.extend(c.to_uppercase());
+                } else {
+                    mixed.push(c);
+                }
+            }
+            assert_eq!(DiffLineKind::from_canonical_str(&mixed), Some(k));
+        }
+    }
+
+    #[test]
+    fn config_diff_is_empty_diff_routes_through_diff_line_kind_is_changed() {
+        // Pin the structural refactor: `ConfigDiff::is_empty_diff`
+        // returns false iff some line has a `is_changed` kind. A diff
+        // composed of only Context lines is empty; any Added or
+        // Removed line makes it non-empty regardless of how many
+        // Context lines surround it.
+        let only_context = ConfigDiff {
+            lines: vec![DiffLine::Context("a".into()), DiffLine::Context("b".into())],
+        };
+        assert!(only_context.is_empty_diff());
+
+        let with_added = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("a".into()),
+                DiffLine::Added("c".into()),
+                DiffLine::Context("b".into()),
+            ],
+        };
+        assert!(!with_added.is_empty_diff());
+
+        let with_removed = ConfigDiff {
+            lines: vec![DiffLine::Removed("x".into())],
+        };
+        assert!(!with_removed.is_empty_diff());
+
+        let empty_lines = ConfigDiff { lines: vec![] };
+        assert!(empty_lines.is_empty_diff());
+    }
+
+    #[test]
+    fn config_diff_render_unified_emits_one_glyph_per_kind() {
+        // Pin the structural refactor: `ConfigDiff::render_unified`
+        // routes each line's glyph through `DiffLineKind::glyph` and
+        // each payload through `DiffLine::text`. The rendered output
+        // is byte-identical to the prior open-coded three-arm match.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("name: ''".into()),
+                DiffLine::Added("name: default-name".into()),
+                DiffLine::Context("size: 42".into()),
+            ],
+        };
+        let rendered = diff.render_unified();
+        assert_eq!(
+            rendered, "-name: ''\n+name: default-name\n size: 42\n",
+            "render_unified must emit the canonical glyph per kind",
+        );
+        // Pointwise: each line's first character equals its kind's glyph.
+        for (i, line) in diff.lines.iter().enumerate() {
+            let expected_glyph = line.kind().glyph();
+            let actual_first = rendered
+                .lines()
+                .nth(i)
+                .and_then(|s| s.chars().next())
+                .expect("rendered output must have at least i+1 lines");
+            assert_eq!(
+                actual_first, expected_glyph,
+                "rendered line {i} must start with its kind's glyph",
+            );
+        }
+    }
+
+    #[test]
+    fn config_diff_render_unified_byte_identical_to_pre_lift_form() {
+        // Strong pin on the refactor: the rendered output must match
+        // what the prior three-arm match produced byte-for-byte across
+        // every line position (empty payloads, mixed kinds, trailing
+        // newlines). Composes with the kind-axis lift without changing
+        // the operator-facing surface.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context(String::new()),
+                DiffLine::Removed("a".into()),
+                DiffLine::Added("b".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        // Pre-lift expected output:
+        //   " \n" + "-a\n" + "+b\n" + " c\n"
+        assert_eq!(diff.render_unified(), " \n-a\n+b\n c\n");
     }
 
     #[test]

@@ -1284,9 +1284,10 @@ mod tests {
     use crate::{
         AttributionAxis, AttributionConfidence, AttributionCoordinates,
         AttributionNameKindCoordinates, AttributionRule, AttributionSourceKindCoordinates,
-        ConfigSourceKind, ConfigTierKind, EnvMetadataTagKind, ErrorLocalizationCoordinates,
-        FieldPathLocalization, FigmentNameTagKind, FigmentSourceKind, Format, FormatCoordinates,
-        FormatProvenance, SecretBackendKind, SecretRefShape, ShikumiErrorKind, WatchEventClass,
+        ConfigSourceKind, ConfigTierKind, DiffLineKind, EnvMetadataTagKind,
+        ErrorLocalizationCoordinates, FieldPathLocalization, FigmentNameTagKind, FigmentSourceKind,
+        Format, FormatCoordinates, FormatProvenance, SecretBackendKind, SecretRefShape,
+        ShikumiErrorKind, WatchEventClass,
         secret_client::{SecretClientKind, SecretErrorKind, SecretOperation},
     };
 
@@ -1373,6 +1374,7 @@ mod tests {
             $cb!(SecretOperation);
             $cb!(SecretErrorKind);
             $cb!(SecretClientKind);
+            $cb!(DiffLineKind);
         };
     }
 
@@ -1483,6 +1485,7 @@ mod tests {
             $cb!(SecretOperation);
             $cb!(SecretErrorKind);
             $cb!(SecretClientKind);
+            $cb!(DiffLineKind);
         };
     }
 
@@ -1968,8 +1971,8 @@ mod tests {
     // ---- axis_cardinality pins today's variant / cell counts ----
 
     #[test]
-    fn axis_cardinality_pins_todays_counts_across_nineteen_implementors() {
-        // Fourteen closed-enum axis primitives. A new variant landing
+    fn axis_cardinality_pins_todays_counts_across_twenty_implementors() {
+        // Twenty closed-enum axis primitives. A new variant landing
         // on any of these enums extends the expected count in
         // lockstep.
         assert_axis_cardinality_matches_trait_all::<Format>(4);
@@ -1986,6 +1989,7 @@ mod tests {
         assert_axis_cardinality_matches_trait_all::<WatchEventClass>(3);
         assert_axis_cardinality_matches_trait_all::<FigmentNameTagKind>(2);
         assert_axis_cardinality_matches_trait_all::<EnvMetadataTagKind>(2);
+        assert_axis_cardinality_matches_trait_all::<DiffLineKind>(3);
         // Five product cubes. A new cell-axis landing on any cube
         // extends the expected count by the product of the new axis's
         // cardinality with the cube's prior cardinality.
@@ -3531,16 +3535,16 @@ mod tests {
     // before any silent dropouts at the trait-uniform test sites.
 
     #[test]
-    fn for_each_closed_axis_primitive_macro_covers_nineteen_axes() {
-        // Pin that the macro expands to exactly nineteen arms — the
-        // eighteen pre-existing axis primitives plus
-        // [`crate::EnvMetadataTagKind`], the `'static` closed two-way
-        // classification over the [`crate::EnvMetadataTag`] variant
-        // space — the prefixed/bare peer of [`FigmentNameTagKind`] on
-        // the env-name sub-axis of the figment-`Metadata::name` axis.
-        // A twentieth axis primitive landing extends the macro in
-        // lockstep with the `impl ClosedAxis` declaration; this
-        // assertion fails until the macro arm lands.
+    fn for_each_closed_axis_primitive_macro_covers_twenty_axes() {
+        // Pin that the macro expands to exactly twenty arms — the
+        // nineteen pre-existing axis primitives plus
+        // [`crate::DiffLineKind`], the `'static` closed three-way
+        // classification over the [`crate::DiffLine`] variant space —
+        // the removed/added/context peer of [`WatchEventClass`] on the
+        // diff-cell axis of [`crate::ConfigDiff`]. A twenty-first axis
+        // primitive landing extends the macro in lockstep with the
+        // `impl ClosedAxis` declaration; this assertion fails until
+        // the macro arm lands.
         let mut count = 0usize;
         macro_rules! tally {
             ($ty:ident) => {
@@ -3549,8 +3553,8 @@ mod tests {
         }
         for_each_closed_axis_primitive!(tally);
         assert_eq!(
-            count, 19,
-            "for_each_closed_axis_primitive! must expand to nineteen arms",
+            count, 20,
+            "for_each_closed_axis_primitive! must expand to twenty arms",
         );
     }
 
@@ -3595,10 +3599,10 @@ mod tests {
     }
 
     #[test]
-    fn for_each_closed_axis_implementor_macro_covers_twenty_four_types() {
-        // Pin that the superset macro expands to exactly twenty-four
-        // arms — the nineteen axis primitives plus the five product
-        // cubes. A twentieth axis primitive OR a sixth cube landing
+    fn for_each_closed_axis_implementor_macro_covers_twenty_five_types() {
+        // Pin that the superset macro expands to exactly twenty-five
+        // arms — the twenty axis primitives plus the five product
+        // cubes. A twenty-first axis primitive OR a sixth cube landing
         // extends the composed macro in lockstep through one of its
         // two component macros; this assertion fails until the arm
         // lands.
@@ -3610,8 +3614,8 @@ mod tests {
         }
         for_each_closed_axis_implementor!(tally);
         assert_eq!(
-            count, 24,
-            "for_each_closed_axis_implementor! must expand to twenty-four arms (19 axes + 5 cubes)",
+            count, 25,
+            "for_each_closed_axis_implementor! must expand to twenty-five arms (20 axes + 5 cubes)",
         );
     }
 
@@ -3635,20 +3639,20 @@ mod tests {
             };
         }
         for_each_closed_axis_implementor!(add);
-        // 19-axis sum: Format=4, FormatProvenance=2, ConfigSourceKind=3,
+        // 20-axis sum: Format=4, FormatProvenance=2, ConfigSourceKind=3,
         // FigmentSourceKind=3, ShikumiErrorKind=6, FieldPathLocalization=3,
         // AttributionRule=5, AttributionConfidence=2, AttributionAxis=2,
         // PartitionFace=2, ConfigTierKind=4, WatchEventClass=3,
         // FigmentNameTagKind=2, EnvMetadataTagKind=2, SecretBackendKind=8,
         // SecretRefShape=2, SecretOperation=6, SecretErrorKind=5,
-        // SecretClientKind=7 → 71.
+        // SecretClientKind=7, DiffLineKind=3 → 74.
         // 5-cube sum: FormatCoordinates=8, AttributionCoordinates=12,
         // ErrorLocalizationCoordinates=18, AttributionSourceKindCoordinates=9,
-        // AttributionNameKindCoordinates=6 → 53. Grand total 71+53 = 124.
+        // AttributionNameKindCoordinates=6 → 53. Grand total 74+53 = 127.
         assert_eq!(
-            total, 124,
+            total, 127,
             "macro must emit each implementor exactly once \
-             (today's axis_cardinality checksum is 124)",
+             (today's axis_cardinality checksum is 127)",
         );
     }
 
@@ -3807,14 +3811,15 @@ mod tests {
     }
 
     #[test]
-    fn for_each_closed_axis_label_implementor_macro_covers_nineteen_implementors() {
-        // Pin that the macro expands to exactly nineteen arms — the
-        // eighteen pre-existing [`ClosedAxisLabel`] implementors plus
-        // [`crate::EnvMetadataTagKind`], the prefixed/bare classification
-        // over the [`crate::EnvMetadataTag`] variant space (labels
-        // `"prefixed"` / `"bare"`). A twentieth implementor landing
-        // extends the macro in lockstep with the `impl ClosedAxisLabel`
-        // declaration; this assertion fails until the macro arm lands.
+    fn for_each_closed_axis_label_implementor_macro_covers_twenty_implementors() {
+        // Pin that the macro expands to exactly twenty arms — the
+        // nineteen pre-existing [`ClosedAxisLabel`] implementors plus
+        // [`crate::DiffLineKind`], the removed/added/context classification
+        // over the [`crate::DiffLine`] variant space (labels
+        // `"removed"` / `"added"` / `"context"`). A twenty-first
+        // implementor landing extends the macro in lockstep with the
+        // `impl ClosedAxisLabel` declaration; this assertion fails
+        // until the macro arm lands.
         let mut count = 0usize;
         macro_rules! tally {
             ($ty:ident) => {
@@ -3823,8 +3828,8 @@ mod tests {
         }
         for_each_closed_axis_label_implementor!(tally);
         assert_eq!(
-            count, 19,
-            "for_each_closed_axis_label_implementor! must expand to nineteen arms",
+            count, 20,
+            "for_each_closed_axis_label_implementor! must expand to twenty arms",
         );
     }
 
@@ -3852,15 +3857,16 @@ mod tests {
         }
         for_each_closed_axis_label_implementor!(add);
         assert_eq!(
-            total, 71,
+            total, 74,
             "macro must emit each ClosedAxisLabel implementor exactly once \
-             (today's axis_cardinality checksum is 71: \
+             (today's axis_cardinality checksum is 74: \
              PartitionFace=2 + ConfigTierKind=4 + Format=4 + FormatProvenance=2 \
              + ConfigSourceKind=3 + FigmentSourceKind=3 + AttributionConfidence=2 \
              + AttributionAxis=2 + ShikumiErrorKind=6 + FieldPathLocalization=3 \
              + AttributionRule=5 + WatchEventClass=3 + FigmentNameTagKind=2 \
              + EnvMetadataTagKind=2 + SecretBackendKind=8 + SecretRefShape=2 \
-             + SecretOperation=6 + SecretErrorKind=5 + SecretClientKind=7)",
+             + SecretOperation=6 + SecretErrorKind=5 + SecretClientKind=7 \
+             + DiffLineKind=3)",
         );
     }
 
