@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "akeyless-api"
 version = "0.1.0"
-source = "git+https://github.com/pleme-io/akeyless-api#87e7f7ed798a067f1332f7848ba25bea5c0fd482"
+source = "git+https://github.com/pleme-io/akeyless-api#39b3d3c558f554963fe10dd719a1d8738f6b8f82"
 dependencies = [
  "reqwest",
  "serde",
@@ -387,7 +387,7 @@ dependencies = [
  "http 1.4.1",
  "http-body 0.4.6",
  "hyper 0.14.32",
- "hyper 1.10.0",
+ "hyper 1.10.1",
  "hyper-rustls 0.24.2",
  "hyper-rustls 0.27.9",
  "hyper-util",
@@ -539,9 +539,9 @@ dependencies = [
 
 [[package]]
 name = "bitflags"
-version = "2.11.1"
+version = "2.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4512299f36f043ab09a583e57bceb5a5aab7a73db1805848e8fef3c9e8c78b3"
+checksum = "84d7ced0ae9557296835c32bf1b1e02b44c746701f898460fb000d7eaa84f00a"
 
 [[package]]
 name = "blake3"
@@ -605,9 +605,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.62"
+version = "1.2.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1dce859f0832a7d088c4f1119888ab94ef4b5d6795d1ce05afb7fe159d79f98"
+checksum = "556e016178bb5662a08681bbe0f00f8e17631781a4dfc8c45e466e4b185ec27f"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -941,8 +941,8 @@ dependencies = [
 
 [[package]]
 name = "gen-macros"
-version = "0.1.8"
-source = "git+https://github.com/pleme-io/gen#97aaf2e4ce3cfbc50d0f7377d227bda42dd4d2c6"
+version = "0.1.9"
+source = "git+https://github.com/pleme-io/gen#6d82c9d3885c781e923ec46330d05d7eca469a3b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -951,8 +951,8 @@ dependencies = [
 
 [[package]]
 name = "gen-platform"
-version = "0.1.8"
-source = "git+https://github.com/pleme-io/gen#97aaf2e4ce3cfbc50d0f7377d227bda42dd4d2c6"
+version = "0.1.9"
+source = "git+https://github.com/pleme-io/gen#6d82c9d3885c781e923ec46330d05d7eca469a3b"
 dependencies = [
  "gen-macros",
  "gen-types",
@@ -964,8 +964,8 @@ dependencies = [
 
 [[package]]
 name = "gen-types"
-version = "0.1.8"
-source = "git+https://github.com/pleme-io/gen#97aaf2e4ce3cfbc50d0f7377d227bda42dd4d2c6"
+version = "0.1.9"
+source = "git+https://github.com/pleme-io/gen#6d82c9d3885c781e923ec46330d05d7eca469a3b"
 dependencies = [
  "blake3",
  "chrono",
@@ -1199,9 +1199,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "1.10.0"
+version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb92f162bf56536459fc83c79b974bb12837acfed43d6bc370a7916d0ae15ecc"
+checksum = "55281c53a1894c864990125767da440a4e630446785086f52523b20033b74498"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -1240,7 +1240,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33ca68d021ef39cf6463ab54c1d0f5daf03377b70561305bb89a8f83aab66e0f"
 dependencies = [
  "http 1.4.1",
- "hyper 1.10.0",
+ "hyper 1.10.1",
  "hyper-util",
  "rustls 0.23.40",
  "rustls-native-certs",
@@ -1262,7 +1262,7 @@ dependencies = [
  "futures-util",
  "http 1.4.1",
  "http-body 1.0.1",
- "hyper 1.10.0",
+ "hyper 1.10.1",
  "ipnet",
  "libc",
  "percent-encoding",
@@ -1443,9 +1443,9 @@ checksum = "c8fae54786f62fb2918dcfae3d568594e50eb9b5c25bf04371af6fe7516452fb"
 
 [[package]]
 name = "inotify"
-version = "0.11.1"
+version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd5b3eaf1a28b758ac0faa5a4254e8ab2705605496f1b1f3fbbc3988ad73d199"
+checksum = "533e68a5842e734946fe159fb03fc9bbbb254f590dd0d8ad321ae5ff7beca2c1"
 dependencies = [
  "bitflags",
  "inotify-sys",
@@ -1512,9 +1512,9 @@ dependencies = [
 
 [[package]]
 name = "kqueue"
-version = "1.1.1"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eac30106d7dce88daf4a3fcb4879ea939476d5074a9b7ddd0fb97fa4bed5596a"
+checksum = "273c0752728918e0ac4976f2b275b6fefb9ecd400585dec929419f3844cd87b5"
 dependencies = [
  "kqueue-sys",
  "libc",
@@ -1556,9 +1556,9 @@ checksum = "92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0"
 
 [[package]]
 name = "log"
-version = "0.4.30"
+version = "0.4.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "616ec5685824bcc94416c6d4a7a446eea774a31efd7062c8480ba6fd06d7a6e5"
+checksum = "113b30b4cd05f7c06868fdb2854f66a7b9fece9a48425351cd532e810d74024f"
 
 [[package]]
 name = "lru-slab"
@@ -1915,7 +1915,7 @@ dependencies = [
  "http 1.4.1",
  "http-body 1.0.1",
  "http-body-util",
- "hyper 1.10.0",
+ "hyper 1.10.1",
  "hyper-rustls 0.27.9",
  "hyper-util",
  "js-sys",
@@ -2013,9 +2013,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-native-certs"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "612460d5f7bea540c490b2b6395d8e34a953e52b491accd6c86c8164c5932a63"
+checksum = "dab5152771c58876a2146916e53e35057e1a4dfa2b9df0f0305b07f611fdea4d"
 dependencies = [
  "openssl-probe",
  "rustls-pki-types",
@@ -2281,7 +2281,7 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "akeyless-api",
  "arc-swap",
@@ -2306,9 +2306,9 @@ dependencies = [
 
 [[package]]
 name = "shlex"
-version = "1.3.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
+checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "signal-hook-registry"
@@ -2404,7 +2404,7 @@ dependencies = [
 [[package]]
 name = "tatara-lisp"
 version = "0.2.3"
-source = "git+https://github.com/pleme-io/tatara#6bcdf2f09c69c859a85e354cecaf1036cd4ca163"
+source = "git+https://github.com/pleme-io/tatara#536e741b92cc54724ea8d131e60ed5ea1c8ad59f"
 dependencies = [
  "blake3",
  "serde",
@@ -2416,7 +2416,7 @@ dependencies = [
 [[package]]
 name = "tatara-lisp-derive"
 version = "0.2.3"
-source = "git+https://github.com/pleme-io/tatara#6bcdf2f09c69c859a85e354cecaf1036cd4ca163"
+source = "git+https://github.com/pleme-io/tatara#536e741b92cc54724ea8d131e60ed5ea1c8ad59f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2697,9 +2697,9 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "typenum"
-version = "1.20.0"
+version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40ce102ab67701b8526c123c1bab5cbe42d7040ccfd0f64af1a385808d2f43de"
+checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 
 [[package]]
 name = "uncased"
@@ -2772,9 +2772,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.23.1"
+version = "1.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddd74a9687298c6858e9b88ec8935ec45d22e8fd5e6394fa1bd4e99a87789c76"
+checksum = "d258b83ceec21034727ecee8c382cfa6c3e133699b0742c64571814fb420c9f7"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
@@ -3323,18 +3323,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.49"
+version = "0.8.50"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bce33a6288fa3f072a8c2c7d0f2fdbb90e28298f0135c1f99b96c3db2efcc60b"
+checksum = "3b065d4f0e55f82fae73202e189638116a87c55ab6b8e6c2721e13dd9d854ad1"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.49"
+version = "0.8.50"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fd425244944f4ab65ccff928e7323354c5a018c75838362fdce749dfad2ee1e"
+checksum = "0b631b19d36a892ab55420c92dbc83ccd79274f25be714855d3074aa71cab639"
 dependencies = [
  "proc-macro2",
  "quote",
