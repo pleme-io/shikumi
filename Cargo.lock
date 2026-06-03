@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "akeyless-api"
 version = "0.1.0"
-source = "git+https://github.com/pleme-io/akeyless-api#28f4a5d56388a9213ca915b89a8e1250d0caf736"
+source = "git+https://github.com/pleme-io/akeyless-api#87e7f7ed798a067f1332f7848ba25bea5c0fd482"
 dependencies = [
  "reqwest",
  "serde",
@@ -60,7 +60,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -71,7 +71,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -843,7 +843,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -941,8 +941,8 @@ dependencies = [
 
 [[package]]
 name = "gen-macros"
-version = "0.1.5"
-source = "git+https://github.com/pleme-io/gen#f18830b4ef710ebe44c6d92abf0e020fd6943414"
+version = "0.1.8"
+source = "git+https://github.com/pleme-io/gen#97aaf2e4ce3cfbc50d0f7377d227bda42dd4d2c6"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -951,8 +951,8 @@ dependencies = [
 
 [[package]]
 name = "gen-platform"
-version = "0.1.5"
-source = "git+https://github.com/pleme-io/gen#f18830b4ef710ebe44c6d92abf0e020fd6943414"
+version = "0.1.8"
+source = "git+https://github.com/pleme-io/gen#97aaf2e4ce3cfbc50d0f7377d227bda42dd4d2c6"
 dependencies = [
  "gen-macros",
  "gen-types",
@@ -964,8 +964,8 @@ dependencies = [
 
 [[package]]
 name = "gen-types"
-version = "0.1.5"
-source = "git+https://github.com/pleme-io/gen#f18830b4ef710ebe44c6d92abf0e020fd6943414"
+version = "0.1.8"
+source = "git+https://github.com/pleme-io/gen#97aaf2e4ce3cfbc50d0f7377d227bda42dd4d2c6"
 dependencies = [
  "blake3",
  "chrono",
@@ -1267,7 +1267,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "tokio",
  "tower-service",
  "tracing",
@@ -1784,7 +1784,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls 0.23.40",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "thiserror",
  "tokio",
  "tracing",
@@ -1821,7 +1821,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -1981,7 +1981,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2349,7 +2349,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2403,8 +2403,8 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp"
-version = "0.2.1"
-source = "git+https://github.com/pleme-io/tatara#c99fdb36b625bd5ec96dc31af33cf4d965d608b6"
+version = "0.2.3"
+source = "git+https://github.com/pleme-io/tatara#6bcdf2f09c69c859a85e354cecaf1036cd4ca163"
 dependencies = [
  "blake3",
  "serde",
@@ -2415,8 +2415,8 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp-derive"
-version = "0.2.1"
-source = "git+https://github.com/pleme-io/tatara#c99fdb36b625bd5ec96dc31af33cf4d965d608b6"
+version = "0.2.3"
+source = "git+https://github.com/pleme-io/tatara#6bcdf2f09c69c859a85e354cecaf1036cd4ca163"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2433,7 +2433,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2959,7 +2959,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
