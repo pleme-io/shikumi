@@ -381,6 +381,48 @@ pub trait ConfigSourceChain {
     /// `iter().find` / `iter().filter` that re-derives the comparison
     /// shape at every consumer.
     fn find_env_by_prefix(&self, prefix: &str) -> Option<&ConfigSource>;
+
+    /// Dense per-layer-kind tally of the chain over the
+    /// [`ConfigSourceKind`] axis — the typed histogram every
+    /// attestation manifest, structured-log dashboard, and
+    /// chain-shape audit bucketing the (defaults × env × file) layer
+    /// counts has previously re-derived inline.
+    ///
+    /// Equivalent to
+    /// `crate::axis_histogram(self.iter().map(ConfigSource::kind))`
+    /// but named at the chain-walk surface so consumers reading the
+    /// recipe ([`crate::ConfigStore::sources`] /
+    /// [`crate::ProviderChain::sources`]) don't reach for the cube-
+    /// level generic helper. The histogram's `total()` equals
+    /// `self.len()` pointwise (every chain entry projects to exactly
+    /// one kind); `is_empty()` iff the chain is empty.
+    ///
+    /// Peer to [`crate::ConfigDiff::kind_histogram`] on the
+    /// diff-line axis, [`crate::axis_histogram`] on the generic
+    /// closed-axis helper surface. The two concrete consumers of
+    /// [`crate::AxisHistogram`] now sit on the (chain-shape × diff-
+    /// shape) pair the typescape's recipe and reload surfaces emit;
+    /// future axis-tally consumers (a watcher-side reload-trigger
+    /// histogram over [`crate::WatchEventClass`], a secret-resolution
+    /// refusal histogram over [`crate::secret_client::SecretErrorKind`],
+    /// a format-axis loader histogram over [`crate::Format`]) inherit
+    /// the same lift discipline by composing `axis_histogram` over
+    /// the appropriate per-cell projection.
+    ///
+    /// The fourth chain-level provenance query peer to
+    /// [`Self::find_file`], [`Self::unique_of_kind`], and
+    /// [`Self::find_env_by_prefix`]: those three answer
+    /// "*which layer in the recipe …?*" point queries; this one
+    /// answers the *aggregate* "*how many layers of each kind?*"
+    /// over the same chain. Trait-default implementation so a
+    /// chain-shape consumer reading the histogram does not need to
+    /// retain the chain slice — the projection is one method call.
+    fn layer_kind_histogram(&self) -> crate::AxisHistogram<ConfigSourceKind>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        crate::axis_histogram(self.as_ref().iter().map(ConfigSource::kind))
+    }
 }
 
 impl ConfigSourceChain for [ConfigSource] {
@@ -1612,6 +1654,125 @@ mod tests {
                 assert_eq!(
                     lifted, manual,
                     "find_env_by_prefix({probe:?}) must match the open-coded walk"
+                );
+            }
+        }
+    }
+
+    // ---- ConfigSourceChain::layer_kind_histogram ----
+
+    #[test]
+    fn layer_kind_histogram_counts_each_kind_pointwise() {
+        // Concrete pin on the (chain → ConfigSourceKind tally)
+        // projection. `sample_chain()` is two File layers + one Env
+        // layer (no Defaults), so the histogram must read 2 File,
+        // 1 Env, 0 Defaults.
+        let chain = sample_chain();
+        let hist = chain.as_slice().layer_kind_histogram();
+        assert_eq!(hist.count(ConfigSourceKind::File), 2);
+        assert_eq!(hist.count(ConfigSourceKind::Env), 1);
+        assert_eq!(hist.count(ConfigSourceKind::Defaults), 0);
+        // total() equals chain length pointwise (every entry projects
+        // to exactly one kind).
+        assert_eq!(hist.total(), chain.len());
+    }
+
+    #[test]
+    fn layer_kind_histogram_empty_chain_is_zero_on_every_cell() {
+        // Empty-chain law: every cell reads zero, total is zero,
+        // is_empty() is true. Pins the monoid identity at the
+        // chain-shape boundary.
+        let chain: [ConfigSource; 0] = [];
+        let hist = chain.layer_kind_histogram();
+        for kind in ConfigSourceKind::ALL.iter().copied() {
+            assert_eq!(
+                hist.count(kind),
+                0,
+                "empty chain must read zero on every kind cell ({kind:?})",
+            );
+        }
+        assert_eq!(hist.total(), 0);
+        assert!(hist.is_empty());
+    }
+
+    #[test]
+    fn layer_kind_histogram_agrees_with_open_coded_per_kind_count() {
+        // The lift collapses the per-cell `iter().filter(|s| s.kind()
+        // == k).count()` loop the typescape doc-strings promised — pin
+        // pointwise equivalence over the typed kind axis across chains
+        // with 0, 1, 2, and 3 entries of mixed kinds, so a future
+        // regression in either side surfaces here.
+        let chains = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Defaults,
+                ConfigSource::Env("X_".to_owned()),
+            ],
+        ];
+        for chain in &chains {
+            let hist = chain.as_slice().layer_kind_histogram();
+            for kind in ConfigSourceKind::ALL.iter().copied() {
+                let manual = chain.iter().filter(|s| s.kind() == kind).count();
+                assert_eq!(
+                    hist.count(kind),
+                    manual,
+                    "layer_kind_histogram({kind:?}) must equal the open-coded \
+                     filter-count over chain of length {}",
+                    chain.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kind_histogram_iter_yields_declaration_order() {
+        // The dense per-cell iteration must yield the
+        // ConfigSourceKind::ALL declaration order
+        // (Defaults, Env, File) regardless of the chain's observation
+        // order — observation order does not leak into the histogram's
+        // value-side iteration. Mirror of
+        // `kind_histogram_iter_yields_declaration_order` on the
+        // diff-line axis in `tiered::tests`.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Env("E_".to_owned()),
+            ConfigSource::Defaults,
+        ];
+        let pairs: Vec<(ConfigSourceKind, usize)> =
+            chain.as_slice().layer_kind_histogram().iter().collect();
+        let values: Vec<ConfigSourceKind> = pairs.iter().map(|(k, _)| *k).collect();
+        assert_eq!(values, ConfigSourceKind::ALL.to_vec());
+    }
+
+    #[test]
+    fn layer_kind_histogram_equals_axis_histogram_over_kind_projection() {
+        // Pin equivalence to the generic
+        // `crate::axis_histogram(self.iter().map(ConfigSource::kind))`
+        // shape the trait-default method routes through — the lift
+        // must not silently re-implement the per-cell count loop on
+        // a parallel surface. Pointwise equality on every kind cell.
+        let chains = [
+            sample_chain(),
+            vec![ConfigSource::Defaults, ConfigSource::Defaults],
+            vec![
+                ConfigSource::Env("A_".to_owned()),
+                ConfigSource::Env("B_".to_owned()),
+                ConfigSource::File(PathBuf::from("/x.toml")),
+            ],
+        ];
+        for chain in &chains {
+            let lifted = chain.as_slice().layer_kind_histogram();
+            let generic = crate::axis_histogram(chain.iter().map(ConfigSource::kind));
+            for kind in ConfigSourceKind::ALL.iter().copied() {
+                assert_eq!(
+                    lifted.count(kind),
+                    generic.count(kind),
+                    "layer_kind_histogram must equal axis_histogram(kind-projection) \
+                     on {kind:?} over chain of length {}",
+                    chain.len(),
                 );
             }
         }
