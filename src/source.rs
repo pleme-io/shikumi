@@ -423,6 +423,60 @@ pub trait ConfigSourceChain {
     {
         crate::axis_histogram(self.as_ref().iter().map(ConfigSource::kind))
     }
+
+    /// Dense per-format tally of the chain's [`ConfigSource::File`]
+    /// layers over the [`crate::discovery::Format`] axis — the typed
+    /// histogram every per-format dashboard, attestation manifest
+    /// bucketing the (yaml × toml × lisp × nix) loader counts, and
+    /// chain-shape audit has previously re-derived inline.
+    ///
+    /// Equivalent to
+    /// `crate::axis_histogram(self.iter().filter_map(ConfigSource::file_format))`
+    /// but named at the chain-walk surface so consumers reading the
+    /// recipe ([`crate::ConfigStore::sources`] /
+    /// [`crate::ProviderChain::sources`]) don't reach for the cube-
+    /// level generic helper. Only [`ConfigSource::File`] entries with
+    /// a recognized extension contribute: [`ConfigSource::Defaults`]
+    /// and [`ConfigSource::Env`] entries project to [`None`] through
+    /// [`ConfigSource::file_format`] (no path to read), as do `File`
+    /// entries whose extension is unrecognized or absent (the
+    /// conservative TOML fallback in
+    /// [`crate::ProviderChain::with_file`] does not declare a format
+    /// on the recipe). The histogram's `total()` therefore equals the
+    /// count of `File` entries with recognized extensions, which is
+    /// at most `self.layer_kind_histogram().count(ConfigSourceKind::File)`
+    /// — with equality exactly when every file layer in the chain
+    /// carries a recognized extension. `is_empty()` iff no chain
+    /// entry projects through [`ConfigSource::file_format`] to a
+    /// recognized format.
+    ///
+    /// Peer to [`Self::layer_kind_histogram`] on the
+    /// [`ConfigSourceKind`] axis,
+    /// [`crate::ConfigDiff::kind_histogram`] on the diff-line axis,
+    /// and [`crate::axis_histogram`] on the generic closed-axis
+    /// helper surface. With this lift the chain-shape surface carries
+    /// the two natural aggregate projections side by side: one over
+    /// the (defaults × env × file) layer-kind axis (every entry
+    /// contributes), and one over the (yaml × toml × lisp × nix)
+    /// file-format axis (file entries with recognized extensions
+    /// contribute). The named histogram delivers the
+    /// "format-axis loader histogram over [`crate::Format`]" the
+    /// [`Self::layer_kind_histogram`] doc-string promised as the next
+    /// axis-tally consumer.
+    ///
+    /// Trait-default implementation so a chain-shape consumer reading
+    /// the histogram does not need to retain the chain slice — the
+    /// projection is one method call. A future [`crate::Format`]
+    /// variant lands as one new column in the histogram automatically
+    /// (the typescape's [`crate::Format::ALL`] / [`crate::AxisHistogram`]
+    /// discipline sizes the slot count); no per-consumer update is
+    /// required.
+    fn file_format_histogram(&self) -> crate::AxisHistogram<crate::discovery::Format>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        crate::axis_histogram(self.as_ref().iter().filter_map(ConfigSource::file_format))
+    }
 }
 
 impl ConfigSourceChain for [ConfigSource] {
@@ -1776,6 +1830,294 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ---- ConfigSourceChain::file_format_histogram ----
+
+    #[test]
+    fn file_format_histogram_counts_each_recognized_format_pointwise() {
+        // Concrete pin on the (chain → Format tally) projection on the
+        // file-axis sub-slice. `sample_chain()` is two `.yaml` File
+        // layers + one Env layer (no Defaults), so the histogram must
+        // read 2 Yaml, 0 Toml, 0 Lisp, 0 Nix. The Env layer projects
+        // to None through `file_format()` and contributes to no cell.
+        use crate::discovery::Format;
+        let chain = sample_chain();
+        let hist = chain.as_slice().file_format_histogram();
+        assert_eq!(hist.count(Format::Yaml), 2);
+        assert_eq!(hist.count(Format::Toml), 0);
+        assert_eq!(hist.count(Format::Lisp), 0);
+        assert_eq!(hist.count(Format::Nix), 0);
+        // total() equals the count of File entries with recognized
+        // extensions — here 2 (both `.yaml`).
+        assert_eq!(hist.total(), 2);
+    }
+
+    #[test]
+    fn file_format_histogram_covers_every_recognized_format() {
+        // A chain with one File entry per recognized format must
+        // produce a histogram with exactly one observation per Format
+        // cell — total equals Format::ALL cardinality. Pins the
+        // uniform-cover law on the file-format axis.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        let hist = chain.as_slice().file_format_histogram();
+        for format in Format::ALL.iter().copied() {
+            assert_eq!(
+                hist.count(format),
+                1,
+                "uniform-cover chain must read 1 on every Format cell ({format:?})",
+            );
+        }
+        assert_eq!(hist.total(), Format::ALL.len());
+    }
+
+    #[test]
+    fn file_format_histogram_empty_chain_is_zero_on_every_cell() {
+        // Empty-chain law on the file-format axis: every cell reads
+        // zero, total is zero, is_empty() is true. Pins the monoid
+        // identity at the chain-shape boundary on the second
+        // chain-level histogram surface.
+        use crate::discovery::Format;
+        let chain: [ConfigSource; 0] = [];
+        let hist = chain.file_format_histogram();
+        for format in Format::ALL.iter().copied() {
+            assert_eq!(
+                hist.count(format),
+                0,
+                "empty chain must read zero on every Format cell ({format:?})",
+            );
+        }
+        assert_eq!(hist.total(), 0);
+        assert!(hist.is_empty());
+    }
+
+    #[test]
+    fn file_format_histogram_ignores_defaults_and_env_layers() {
+        // Defaults and Env entries carry no path and project to None
+        // through `file_format()`; they must not contribute to any
+        // Format cell regardless of how many chain entries of those
+        // kinds are present.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ];
+        let hist = chain.as_slice().file_format_histogram();
+        for format in Format::ALL.iter().copied() {
+            assert_eq!(
+                hist.count(format),
+                0,
+                "Defaults/Env-only chain must read zero on every Format cell ({format:?})",
+            );
+        }
+        assert_eq!(hist.total(), 0);
+        assert!(hist.is_empty());
+    }
+
+    #[test]
+    fn file_format_histogram_ignores_unrecognized_and_extensionless_files() {
+        // File entries whose extension is unrecognized or absent yield
+        // None through `file_format()` (the conservative TOML fallback
+        // in `with_file` does not declare a format on the recipe);
+        // they must not contribute to any Format cell. Pins the
+        // `None`-discipline pointwise.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/etc/cfg.unknownext")),
+            ConfigSource::File(PathBuf::from("/etc/no_extension")),
+            ConfigSource::File(PathBuf::from("/etc/.dotfile")),
+        ];
+        let hist = chain.as_slice().file_format_histogram();
+        for format in Format::ALL.iter().copied() {
+            assert_eq!(
+                hist.count(format),
+                0,
+                "unrecognized-extension chain must read zero on {format:?}",
+            );
+        }
+        assert_eq!(hist.total(), 0);
+    }
+
+    #[test]
+    fn file_format_histogram_agrees_with_open_coded_per_format_count() {
+        // The lift collapses the per-cell
+        // `iter().filter_map(file_format).filter(|f| *f == X).count()`
+        // loop the typescape doc-strings promised — pin pointwise
+        // equivalence over the typed format axis across chains of
+        // mixed kinds, mixed formats, and mixed recognized/unrecognized
+        // extensions so a future regression in either side surfaces
+        // here.
+        use crate::discovery::Format;
+        let chains = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.yml")),
+                ConfigSource::File(PathBuf::from("/c.toml")),
+                ConfigSource::File(PathBuf::from("/d.lisp")),
+                ConfigSource::File(PathBuf::from("/e.unknownext")),
+                ConfigSource::Env("X_".to_owned()),
+            ],
+        ];
+        for chain in &chains {
+            let hist = chain.as_slice().file_format_histogram();
+            for format in Format::ALL.iter().copied() {
+                let manual = chain
+                    .iter()
+                    .filter_map(ConfigSource::file_format)
+                    .filter(|f| *f == format)
+                    .count();
+                assert_eq!(
+                    hist.count(format),
+                    manual,
+                    "file_format_histogram({format:?}) must equal the open-coded \
+                     filter_map+filter count over chain of length {}",
+                    chain.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_format_histogram_iter_yields_format_all_declaration_order() {
+        // The dense per-cell iteration must yield the Format::ALL
+        // declaration order (Yaml, Toml, Lisp, Nix) regardless of the
+        // chain's observation order — observation order does not leak
+        // into the histogram's value-side iteration. Peer to
+        // `layer_kind_histogram_iter_yields_declaration_order` on the
+        // ConfigSourceKind axis.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.nix")),
+            ConfigSource::File(PathBuf::from("/b.lisp")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.yaml")),
+        ];
+        let pairs: Vec<(Format, usize)> = chain.as_slice().file_format_histogram().iter().collect();
+        let values: Vec<Format> = pairs.iter().map(|(f, _)| *f).collect();
+        assert_eq!(values, Format::ALL.to_vec());
+    }
+
+    #[test]
+    fn file_format_histogram_equals_axis_histogram_over_file_format_projection() {
+        // Pin equivalence to the generic
+        // `crate::axis_histogram(self.iter().filter_map(ConfigSource::file_format))`
+        // shape the trait-default method routes through — the lift
+        // must not silently re-implement the per-cell count loop on a
+        // parallel surface. Pointwise equality on every Format cell.
+        use crate::discovery::Format;
+        let chains = [
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/x.toml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.lisp")),
+                ConfigSource::File(PathBuf::from("/c.unknownext")),
+                ConfigSource::Env("E_".to_owned()),
+            ],
+        ];
+        for chain in &chains {
+            let lifted = chain.as_slice().file_format_histogram();
+            let generic = crate::axis_histogram(chain.iter().filter_map(ConfigSource::file_format));
+            for format in Format::ALL.iter().copied() {
+                assert_eq!(
+                    lifted.count(format),
+                    generic.count(format),
+                    "file_format_histogram must equal \
+                     axis_histogram(file_format-projection) on {format:?} \
+                     over chain of length {}",
+                    chain.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_format_histogram_total_bounded_by_file_layer_count() {
+        // Cross-histogram invariant: the file-format histogram's total
+        // is at most the layer-kind histogram's count of File entries,
+        // since `file_format()` projects only `File` layers to `Some`
+        // (and even then only when the extension is recognized). The
+        // strict inequality happens exactly when some `File` layer
+        // carries an unrecognized or absent extension. Pins the
+        // structural relationship between the two chain-level
+        // histograms the trait now exposes.
+        let chains: [Vec<ConfigSource>; 4] = [
+            sample_chain(),
+            vec![ConfigSource::Defaults, ConfigSource::Env("E_".to_owned())],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.unknownext")),
+                ConfigSource::File(PathBuf::from("/c.no_extension")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.nix")),
+            ],
+        ];
+        for chain in &chains {
+            let file_kind_count = chain
+                .as_slice()
+                .layer_kind_histogram()
+                .count(ConfigSourceKind::File);
+            let format_total = chain.as_slice().file_format_histogram().total();
+            assert!(
+                format_total <= file_kind_count,
+                "file_format_histogram total ({format_total}) must be at most \
+                 layer_kind_histogram(File) ({file_kind_count}) over chain of length {}",
+                chain.len(),
+            );
+        }
+        // Equality case: every File layer carries a recognized
+        // extension — the bound is tight on the uniform-cover chain.
+        let uniform = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        let file_kind_count = uniform
+            .as_slice()
+            .layer_kind_histogram()
+            .count(ConfigSourceKind::File);
+        let format_total = uniform.as_slice().file_format_histogram().total();
+        assert_eq!(
+            format_total, file_kind_count,
+            "uniform-cover chain: file_format_histogram total must equal \
+             layer_kind_histogram(File)",
+        );
+        // Strict-inequality case: at least one File layer carries an
+        // unrecognized extension — the bound is strict.
+        let mixed = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.unknownext")),
+        ];
+        let file_kind_count = mixed
+            .as_slice()
+            .layer_kind_histogram()
+            .count(ConfigSourceKind::File);
+        let format_total = mixed.as_slice().file_format_histogram().total();
+        assert!(
+            format_total < file_kind_count,
+            "mixed-extension chain: file_format_histogram total ({format_total}) \
+             must be strictly less than layer_kind_histogram(File) ({file_kind_count})",
+        );
     }
 
     // ---- ConfigSourceKind / ConfigSource::kind ----
