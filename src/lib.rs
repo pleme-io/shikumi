@@ -56,11 +56,12 @@ mod watcher;
 
 pub use coverage::{ConfigCoverage, CoverageReport};
 pub use cube::{
-    ClosedAxis, ClosedAxisLabel, PartialInverseCube, PartitionFace, PartitionOrdinal, ProductCube,
-    at_partition_ordinal, axis_at, axis_cardinality, axis_from_label, axis_iter, axis_label,
-    axis_ordinal, forward_iter, partition_ordinal, realizable_at, realizable_count,
-    realizable_images, realizable_iter, realizable_ordinal, unrealizable_at, unrealizable_count,
-    unrealizable_iter, unrealizable_ordinal,
+    AxisHistogram, ClosedAxis, ClosedAxisLabel, PartialInverseCube, PartitionFace,
+    PartitionOrdinal, ProductCube, at_partition_ordinal, axis_at, axis_cardinality,
+    axis_from_label, axis_histogram, axis_iter, axis_label, axis_ordinal, forward_iter,
+    partition_ordinal, realizable_at, realizable_count, realizable_images, realizable_iter,
+    realizable_ordinal, unrealizable_at, unrealizable_count, unrealizable_iter,
+    unrealizable_ordinal,
 };
 pub use discovery::{
     ConfigDiscovery, Format, FormatCoordinates, FormatMetadataTag, FormatProvenance,

@@ -703,6 +703,27 @@ impl ConfigDiff {
     pub fn is_empty_diff(&self) -> bool {
         !self.lines.iter().any(|l| l.kind().is_changed())
     }
+
+    /// Typed per-kind tally of [`Self::lines`] over the
+    /// [`DiffLineKind`] axis — the dense histogram every CLI
+    /// `config-diff` summary, dashboard, attestation manifest, and
+    /// alerting policy bucketing the (added × removed × context) line
+    /// counts has previously re-derived inline.
+    ///
+    /// Equivalent to
+    /// `crate::axis_histogram(self.lines.iter().map(DiffLine::kind))`
+    /// but named at the [`ConfigDiff`] surface so consumers reading a
+    /// diff don't reach for the cube-level generic helper. The
+    /// histogram's `total()` equals `self.lines.len()` pointwise (every
+    /// line projects to exactly one kind); `is_empty()` iff
+    /// `self.lines.is_empty()`; `count(DiffLineKind::Added) +
+    /// count(DiffLineKind::Removed)` equals zero iff [`Self::is_empty_diff`]
+    /// returns `true` — pinned by
+    /// `kind_histogram_changed_cells_match_is_empty_diff`.
+    #[must_use]
+    pub fn kind_histogram(&self) -> crate::AxisHistogram<DiffLineKind> {
+        crate::axis_histogram(self.lines.iter().map(DiffLine::kind))
+    }
 }
 
 #[cfg(test)]
@@ -1329,5 +1350,100 @@ mod tests {
             }
             other => panic!("expected Custom, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn kind_histogram_counts_each_kind_pointwise() {
+        // Concrete pin on the [`ConfigDiff::kind_histogram`] lift: the
+        // per-cell counts agree with the manual filter-and-count loop
+        // it replaces. The fixture covers the three diff-cell kinds at
+        // distinct cardinalities so the per-cell numbers are
+        // distinguishable (1 removed, 2 added, 3 context).
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let hist = diff.kind_histogram();
+        assert_eq!(hist.count(DiffLineKind::Removed), 1);
+        assert_eq!(hist.count(DiffLineKind::Added), 2);
+        assert_eq!(hist.count(DiffLineKind::Context), 3);
+        assert_eq!(hist.total(), diff.lines.len());
+    }
+
+    #[test]
+    fn kind_histogram_empty_diff_is_zero_on_every_cell() {
+        // An empty [`ConfigDiff`] yields the all-zero histogram: total
+        // = 0, every cell = 0, `is_empty()` = true. The identity slot
+        // of the histogram monoid on the diff-cell axis.
+        let diff = ConfigDiff::default();
+        let hist = diff.kind_histogram();
+        assert_eq!(hist.total(), 0);
+        assert!(hist.is_empty());
+        for cell in [
+            DiffLineKind::Removed,
+            DiffLineKind::Added,
+            DiffLineKind::Context,
+        ] {
+            assert_eq!(hist.count(cell), 0);
+        }
+    }
+
+    #[test]
+    fn kind_histogram_changed_cells_match_is_empty_diff() {
+        // Cross-primitive law: the sum of the [`DiffLineKind::Added`]
+        // and [`DiffLineKind::Removed`] cells equals zero iff
+        // [`ConfigDiff::is_empty_diff`] returns true. Both
+        // surfaces project from the same partition over the
+        // [`DiffLineKind`] axis (the `is_changed()` half), so the
+        // agreement is structural — pinned here on a context-only
+        // diff (empty by structure) and on a mixed diff.
+        let context_only = ConfigDiff {
+            lines: vec![DiffLine::Context("c".into())],
+        };
+        let h1 = context_only.kind_histogram();
+        assert!(context_only.is_empty_diff());
+        assert_eq!(
+            h1.count(DiffLineKind::Added) + h1.count(DiffLineKind::Removed),
+            0
+        );
+
+        let with_change = ConfigDiff {
+            lines: vec![DiffLine::Context("c".into()), DiffLine::Added("a".into())],
+        };
+        let h2 = with_change.kind_histogram();
+        assert!(!with_change.is_empty_diff());
+        assert!(h2.count(DiffLineKind::Added) + h2.count(DiffLineKind::Removed) > 0);
+    }
+
+    #[test]
+    fn kind_histogram_iter_yields_declaration_order() {
+        // The histogram's `iter()` walks
+        // [`DiffLineKind::ALL`] in declaration order
+        // (Removed, Added, Context) regardless of input ordering.
+        // Pinned here against an input that observes Context first,
+        // then Added, then Removed — the histogram's iteration order
+        // is by axis declaration, not by observation order.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        let pairs: Vec<(DiffLineKind, usize)> = diff.kind_histogram().iter().collect();
+        assert_eq!(
+            pairs,
+            vec![
+                (DiffLineKind::Removed, 1),
+                (DiffLineKind::Added, 1),
+                (DiffLineKind::Context, 1),
+            ],
+        );
     }
 }

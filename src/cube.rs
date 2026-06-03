@@ -246,6 +246,189 @@ pub fn axis_at<A: ClosedAxis>(ordinal: usize) -> Option<A> {
     A::ALL.get(ordinal).copied()
 }
 
+/// Dense, declaration-ordered per-cell observation tally over a
+/// [`ClosedAxis`] — the typed histogram every fleet observer reaches for
+/// when bucketing observations by axis cell.
+///
+/// The histogram's value space is sized by
+/// [`axis_cardinality::<A>()`][axis_cardinality]: one [`usize`] slot per
+/// axis cell, laid out in declaration order over [`ClosedAxis::ALL`]
+/// (i.e. indexed by [`axis_ordinal`]). Every observation increments
+/// exactly one slot through [`Self::observe`] (or [`Self::from_iter`] in
+/// bulk).
+///
+/// **Why one typed primitive.** The per-axis observation-mix histogram
+/// is named as a use case in seventeen-plus doc-strings across the crate
+/// — `crate::ConfigDiff::render_unified`'s per-kind summary on the
+/// diff-cell axis ([`crate::DiffLineKind`]; "this rebuild added 12,
+/// removed 4"), per-backend telemetry on
+/// [`crate::SecretBackendKind`], per-class reload-trigger counts on
+/// [`crate::WatchEventClass`], per-kind reload-failure buckets on
+/// [`crate::ShikumiErrorKind`], per-confidence attribution mix on
+/// [`crate::AttributionConfidence`], attestation manifests recording the
+/// per-axis cardinality mix of resolved values — yet no typed lift
+/// existed. Every observer re-derived the count loop inline as
+/// `items.iter().filter(|x| x.kind() == k).count()` per cell, or
+/// `items.iter().fold(HashMap::new(), |mut m, x| { *m.entry(x).or_insert(0) += 1; m })`
+/// with the indeterminate ordering and one-allocation-per-key overhead a
+/// `HashMap` brings. The lift names the (closed-axis × iterable
+/// observations → per-cell counts) projection at one site, indexed by
+/// [`axis_ordinal`] so the dense layout agrees with [`axis_iter`] /
+/// [`axis_at`] pointwise.
+///
+/// **Type-level axis tagging.** The [`std::marker::PhantomData<A>`] slot
+/// keeps the histogram parameterized by axis at the type level: a
+/// `AxisHistogram<DiffLineKind>` cannot be passed where an
+/// `AxisHistogram<WatchEventClass>` is expected. Cross-axis confusion
+/// (rendering a diff-kind histogram through a reload-event renderer, or
+/// vice versa) is structurally impossible — the compiler catches the
+/// swap at the call site rather than silently mis-attributing counts.
+///
+/// **Algebraic structure.** The histogram is a free commutative monoid
+/// over the axis cells under pointwise addition: [`Self::empty`] is the
+/// identity, [`Self::merge`] is the binary operation. Both are pinned by
+/// the trait-uniform invariant tests reaching every [`ClosedAxis`]
+/// implementor uniformly.
+///
+/// **Implementor coverage.** Generic over the [`ClosedAxis`] trait
+/// bound, so every closed-axis primitive on the typescape (the twenty
+/// closed-enum kinds plus the five product cubes — twenty-five
+/// implementors uniformly) inherits the histogram primitive at no
+/// per-axis cost. Trait-uniform laws reach every implementor through
+/// `for_each_closed_axis_implementor!` in [`tests`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AxisHistogram<A: ClosedAxis> {
+    counts: Vec<usize>,
+    _marker: std::marker::PhantomData<A>,
+}
+
+impl<A: ClosedAxis> Default for AxisHistogram<A> {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+impl<A: ClosedAxis> AxisHistogram<A> {
+    /// The all-zero histogram — every cell at zero, [`Self::total`] = 0,
+    /// [`Self::is_empty`] = `true`. The monoid identity under
+    /// [`Self::merge`].
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            counts: vec![0usize; axis_cardinality::<A>()],
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    /// Record one observation: bump the cell at `value` by one.
+    pub fn observe(&mut self, value: A) {
+        self.counts[axis_ordinal(value)] += 1;
+    }
+
+    /// Number of observations recorded on `value`. Defined on every
+    /// axis cell (returns zero for cells no observation landed on);
+    /// total over the axis space without an out-of-range case.
+    #[must_use]
+    pub fn count(&self, value: A) -> usize {
+        self.counts[axis_ordinal(value)]
+    }
+
+    /// Sum of every cell — the total number of observations recorded.
+    /// Equal to the length of the input iterator passed to
+    /// [`Self::from_iter`] or to [`axis_histogram`]; pinned by the
+    /// trait-uniform `axis_histogram_total_equals_input_length_*` law
+    /// in [`tests`].
+    #[must_use]
+    pub fn total(&self) -> usize {
+        self.counts.iter().sum()
+    }
+
+    /// `true` when every cell is zero — equivalent to
+    /// `self.total() == 0`.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.counts.iter().all(|&c| c == 0)
+    }
+
+    /// Iterate every `(axis-value, count)` pair in declaration order
+    /// over [`ClosedAxis::ALL`]. Length equals
+    /// [`axis_cardinality::<A>()`][axis_cardinality] regardless of how
+    /// many cells are nonzero — the iteration covers the full axis,
+    /// not just observed cells. The ordering agrees with
+    /// [`axis_iter::<A>()`][axis_iter] pointwise.
+    pub fn iter(&self) -> impl Iterator<Item = (A, usize)> + '_ {
+        axis_iter::<A>()
+            .enumerate()
+            .map(|(i, v)| (v, self.counts[i]))
+    }
+
+    /// Iterate only the nonzero `(axis-value, count)` pairs in
+    /// declaration order — the complement of the zero-cells. Useful
+    /// for rendering compact operator-facing summaries that skip
+    /// unobserved categories (a CLI `config-diff` summary listing
+    /// `"added: 12, removed: 4"` without the `context: 53` cell, a
+    /// structured-log field listing only the error classes that fired
+    /// in the last reload window). Pointwise prefix of [`Self::iter`]
+    /// filtered by `count > 0`.
+    pub fn nonzero(&self) -> impl Iterator<Item = (A, usize)> + '_ {
+        self.iter().filter(|&(_, c)| c > 0)
+    }
+
+    /// Pointwise sum with `other` — the monoid operation. Every cell
+    /// becomes `self.count(v) + other.count(v)`. Commutative,
+    /// associative, identity at [`Self::empty`]. The natural shape for
+    /// merging histograms across thread boundaries / observation
+    /// windows / sub-batches before rendering a fleet-wide summary.
+    #[must_use]
+    pub fn merge(mut self, other: &Self) -> Self {
+        for (slot, &delta) in self.counts.iter_mut().zip(other.counts.iter()) {
+            *slot += delta;
+        }
+        self
+    }
+}
+
+impl<A: ClosedAxis> FromIterator<A> for AxisHistogram<A> {
+    /// Build a histogram by recording every observation in `iter`. The
+    /// canonical entry point — every consumer that wants a per-cell
+    /// tally from a stream of axis values pipes the stream through
+    /// [`Iterator::collect`] into [`AxisHistogram`]. Equivalent to
+    /// [`axis_histogram`] applied to the same iterator.
+    fn from_iter<I: IntoIterator<Item = A>>(iter: I) -> Self {
+        let mut hist = Self::empty();
+        for value in iter {
+            hist.observe(value);
+        }
+        hist
+    }
+}
+
+/// Lift an iterator of axis observations into a typed
+/// [`AxisHistogram<A>`] — the dense per-cell tally over
+/// [`ClosedAxis::ALL`].
+///
+/// Generic over the [`ClosedAxis`] trait bound so the helper is
+/// inherited uniformly across every implementor: a CLI `config-diff`
+/// summary tallying added/removed/context lines on
+/// [`crate::DiffLineKind`], a structured-diagnostic legend bucketing
+/// reload failures by [`crate::ShikumiErrorKind`], a dashboard
+/// initializing a per-axis counter from a snapshot of observations on
+/// [`crate::SecretBackendKind`], an attestation manifest recording the
+/// per-axis observation-mix histogram on
+/// [`crate::WatchEventClass`] — each previously re-derived the
+/// (filter, count) loop inline at every observation site. The lift
+/// names the (closed-axis × iterable observations → per-cell counts)
+/// projection at one site.
+///
+/// Convenience wrapper over `iter.into_iter().collect::<AxisHistogram<A>>()`
+/// — same shape, named for symmetry with [`axis_iter`] / [`axis_at`] /
+/// [`axis_ordinal`] / [`axis_cardinality`] on the closed-axis
+/// generic-helper surface.
+#[must_use]
+pub fn axis_histogram<A: ClosedAxis, I: IntoIterator<Item = A>>(items: I) -> AxisHistogram<A> {
+    items.into_iter().collect()
+}
+
 /// Closed labeling discipline trait — adds the canonical operator-facing
 /// string label on top of [`ClosedAxis`].
 ///
@@ -3981,5 +4164,298 @@ mod tests {
             };
         }
         for_each_closed_axis_label_implementor!(check);
+    }
+
+    // ---- AxisHistogram trait-uniform invariants ----
+    //
+    // Reach every [`ClosedAxis`] implementor — the twenty axis primitives
+    // and the five product cubes — through
+    // [`for_each_closed_axis_implementor`] so the per-axis histogram
+    // primitive's laws hold uniformly without per-axis test duplication.
+
+    fn assert_empty_histogram_is_zero_on_every_cell<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.total(),
+            0,
+            "empty histogram total must be 0 for axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert!(
+            hist.is_empty(),
+            "empty histogram is_empty must be true for axis {}",
+            std::any::type_name::<A>(),
+        );
+        for value in axis_iter::<A>() {
+            assert_eq!(
+                hist.count(value),
+                0,
+                "empty histogram count must be 0 for cell {value:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+        assert_eq!(
+            hist.nonzero().count(),
+            0,
+            "empty histogram must have no nonzero cells on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_singleton_histogram_pins_observed_cell<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has count=1 on it and count=0
+        // elsewhere; total=1, is_empty=false.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(hist.total(), 1, "singleton total must equal 1");
+            assert!(!hist.is_empty(), "singleton must not be empty");
+            for cell in axis_iter::<A>() {
+                let expected = usize::from(cell == observed);
+                assert_eq!(
+                    hist.count(cell),
+                    expected,
+                    "singleton on {observed:?}: count({cell:?}) must be {expected}",
+                );
+            }
+            let nonzero: Vec<(A, usize)> = hist.nonzero().collect();
+            assert_eq!(nonzero, vec![(observed, 1)], "singleton nonzero set");
+        }
+    }
+
+    fn assert_all_observed_once_yields_uniform_histogram<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once yields a histogram with
+        // every cell at 1 and total = cardinality.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            hist.total(),
+            axis_cardinality::<A>(),
+            "axis-cover histogram total must equal axis_cardinality on {}",
+            std::any::type_name::<A>(),
+        );
+        for cell in axis_iter::<A>() {
+            assert_eq!(hist.count(cell), 1, "every cell must be 1 in axis-cover");
+        }
+        assert_eq!(
+            hist.nonzero().count(),
+            axis_cardinality::<A>(),
+            "every cell nonzero in axis-cover",
+        );
+    }
+
+    fn assert_iter_matches_axis_iter_pointwise<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // `iter()` is the dense axis_iter sequence joined with the
+        // per-cell counts; the value-side projection equals
+        // axis_iter::<A>() pointwise.
+        let hist = AxisHistogram::<A>::empty();
+        let values_via_hist: Vec<A> = hist.iter().map(|(v, _)| v).collect();
+        let values_via_axis: Vec<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            values_via_hist,
+            values_via_axis,
+            "AxisHistogram::iter value sequence must equal axis_iter on {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_total_equals_input_length<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The free-function `axis_histogram` constructor: total over the
+        // resulting histogram equals the input iterator length pointwise.
+        // Pinned over a synthetic input that observes every cell twice
+        // (length 2*cardinality) to cover the bulk-observation path.
+        let input: Vec<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let expected = input.len();
+        let hist = axis_histogram(input);
+        assert_eq!(
+            hist.total(),
+            expected,
+            "axis_histogram total must equal input length on {}",
+            std::any::type_name::<A>(),
+        );
+        for cell in axis_iter::<A>() {
+            assert_eq!(hist.count(cell), 2, "every cell observed twice");
+        }
+    }
+
+    fn assert_merge_is_pointwise_sum<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Merge law: count(a, lhs.merge(rhs)) == count(a, lhs) + count(a, rhs)
+        // for every cell. Identity at empty:
+        // lhs.merge(empty) == lhs (cell-wise).
+        let lhs: AxisHistogram<A> = axis_iter::<A>().collect();
+        let rhs: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let merged = lhs.clone().merge(&rhs);
+        for cell in axis_iter::<A>() {
+            assert_eq!(
+                merged.count(cell),
+                lhs.count(cell) + rhs.count(cell),
+                "merge must be pointwise sum on {cell:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+        assert_eq!(
+            merged.total(),
+            lhs.total() + rhs.total(),
+            "merged total equals sum of totals on {}",
+            std::any::type_name::<A>(),
+        );
+        let id_right = lhs.clone().merge(&AxisHistogram::<A>::empty());
+        assert_eq!(
+            id_right,
+            lhs,
+            "empty is right identity under merge on {}",
+            std::any::type_name::<A>(),
+        );
+        let id_left = AxisHistogram::<A>::empty().merge(&lhs);
+        assert_eq!(
+            id_left,
+            lhs,
+            "empty is left identity under merge on {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_empty_is_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_empty_histogram_is_zero_on_every_cell::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_singleton_pins_observed_cell_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_singleton_histogram_pins_observed_cell::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_axis_cover_is_uniform_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_all_observed_once_yields_uniform_histogram::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_iter_matches_axis_iter_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_iter_matches_axis_iter_pointwise::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_total_equals_input_length_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_total_equals_input_length::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_merge_is_monoid_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_merge_is_pointwise_sum::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_default_equals_empty() {
+        // `Default::default()` and `AxisHistogram::empty()` produce
+        // pointwise-equal histograms — the all-zero state on the
+        // identity slot of the monoid.
+        let via_default: AxisHistogram<DiffLineKind> = AxisHistogram::default();
+        let via_empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert_eq!(via_default, via_empty);
+    }
+
+    #[test]
+    fn axis_histogram_free_fn_equals_collect_for_diff_line_kind() {
+        // `axis_histogram(iter)` and `iter.collect::<AxisHistogram<_>>()`
+        // produce pointwise-equal histograms. Pinned concretely on
+        // [`DiffLineKind`] so the implementation contract is named at
+        // one site (the trait-uniform laws above cover every axis).
+        let input = [
+            DiffLineKind::Removed,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Context,
+        ];
+        let via_fn = axis_histogram::<DiffLineKind, _>(input.iter().copied());
+        let via_collect: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+        assert_eq!(via_fn, via_collect);
+        assert_eq!(via_fn.count(DiffLineKind::Removed), 1);
+        assert_eq!(via_fn.count(DiffLineKind::Added), 2);
+        assert_eq!(via_fn.count(DiffLineKind::Context), 1);
+        assert_eq!(via_fn.total(), 4);
+    }
+
+    #[test]
+    fn axis_histogram_observe_bumps_only_target_cell() {
+        // The single-observation primitive: observe(v) increments
+        // count(v) by 1, leaves every other cell unchanged. Composes
+        // with merge / FromIterator / axis_histogram as the atomic
+        // operation underneath each.
+        let mut hist: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        hist.observe(DiffLineKind::Added);
+        assert_eq!(hist.count(DiffLineKind::Added), 1);
+        assert_eq!(hist.count(DiffLineKind::Removed), 0);
+        assert_eq!(hist.count(DiffLineKind::Context), 0);
+        hist.observe(DiffLineKind::Added);
+        assert_eq!(hist.count(DiffLineKind::Added), 2);
+        hist.observe(DiffLineKind::Removed);
+        assert_eq!(hist.count(DiffLineKind::Added), 2);
+        assert_eq!(hist.count(DiffLineKind::Removed), 1);
+        assert_eq!(hist.total(), 3);
+    }
+
+    #[test]
+    fn axis_histogram_indexes_through_axis_ordinal() {
+        // Pin the layout invariant: `hist.count(cell)` reads through
+        // `axis_ordinal(cell)` on the internal Vec. Pinned via the
+        // axis-cover construction, which lays one count at every
+        // ordinal in `0..axis_cardinality::<DiffLineKind>()`.
+        let hist: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        for cell in axis_iter::<DiffLineKind>() {
+            let ordinal = axis_ordinal::<DiffLineKind>(cell);
+            assert!(
+                ordinal < axis_cardinality::<DiffLineKind>(),
+                "ordinal must be in-range for {cell:?}",
+            );
+            assert_eq!(hist.count(cell), 1, "cell {cell:?} count must equal 1");
+        }
     }
 }
