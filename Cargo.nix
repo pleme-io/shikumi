@@ -100,8 +100,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/akeyless-api";
-          rev = "87e7f7ed798a067f1332f7848ba25bea5c0fd482";
-          sha256 = "0mg18dn2gndlxg6f0dvmzvrnzyksiasl1azmwzw8n3aj7pr7h02i";
+          rev = "39b3d3c558f554963fe10dd719a1d8738f6b8f82";
+          sha256 = "0016qn7izw8ky70vf7qb70g7hirkq7sxpgww7r4m38gvqvhs58ic";
         };
         libName = "akeyless_api";
         authors = [
@@ -1483,7 +1483,7 @@ rec {
           }
           {
             name = "hyper";
-            packageId = "hyper 1.10.0";
+            packageId = "hyper 1.10.1";
             optional = true;
             features = [ "client" "http1" "http2" ];
           }
@@ -2081,9 +2081,9 @@ rec {
       };
       "bitflags" = rec {
         crateName = "bitflags";
-        version = "2.11.1";
+        version = "2.12.1";
         edition = "2021";
-        sha256 = "1cvqijg3rvwgis20a66vfdxannjsxfy5fgjqkaq3l13gyfcj4lf4";
+        sha256 = "02phhjm7w380zdh8928zf13cfi1bw2qz2ay36ml2jmwmmv8cxmw4";
         authors = [
           "The Rust Project Developers"
         ];
@@ -2276,9 +2276,9 @@ rec {
       };
       "cc" = rec {
         crateName = "cc";
-        version = "1.2.62";
+        version = "1.2.63";
         edition = "2018";
-        sha256 = "164zsxcy2zzvbbh1qpbrsssz8kmria41j4agih47sal3y1cyip51";
+        sha256 = "0zy2bqc4nvj6bv2cipx4h4bn65wf1zqf1fw1hsh64mmvg1hh2vjm";
         authors = [
           "Alex Crichton <alex@alexcrichton.com>"
         ];
@@ -3233,13 +3233,13 @@ rec {
       };
       "gen-macros" = rec {
         crateName = "gen-macros";
-        version = "0.1.8";
+        version = "0.1.9";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/gen";
-          rev = "97aaf2e4ce3cfbc50d0f7377d227bda42dd4d2c6";
-          sha256 = "1a91d9b524p3kmn3zxvsp0kxznnir23jdyiy9qp8945f77vyx8zy";
+          rev = "6d82c9d3885c781e923ec46330d05d7eca469a3b";
+          sha256 = "0h0ks7rsxav3dk6fmyciz0ncp94pvm92ankkw783vhq12hgnciia";
         };
         procMacro = true;
         libName = "gen_macros";
@@ -3265,13 +3265,13 @@ rec {
       };
       "gen-platform" = rec {
         crateName = "gen-platform";
-        version = "0.1.8";
+        version = "0.1.9";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/gen";
-          rev = "97aaf2e4ce3cfbc50d0f7377d227bda42dd4d2c6";
-          sha256 = "1a91d9b524p3kmn3zxvsp0kxznnir23jdyiy9qp8945f77vyx8zy";
+          rev = "6d82c9d3885c781e923ec46330d05d7eca469a3b";
+          sha256 = "0h0ks7rsxav3dk6fmyciz0ncp94pvm92ankkw783vhq12hgnciia";
         };
         libName = "gen_platform";
         authors = [
@@ -3308,13 +3308,13 @@ rec {
       };
       "gen-types" = rec {
         crateName = "gen-types";
-        version = "0.1.8";
+        version = "0.1.9";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/gen";
-          rev = "97aaf2e4ce3cfbc50d0f7377d227bda42dd4d2c6";
-          sha256 = "1a91d9b524p3kmn3zxvsp0kxznnir23jdyiy9qp8945f77vyx8zy";
+          rev = "6d82c9d3885c781e923ec46330d05d7eca469a3b";
+          sha256 = "0h0ks7rsxav3dk6fmyciz0ncp94pvm92ankkw783vhq12hgnciia";
         };
         libName = "gen_types";
         authors = [
@@ -4143,11 +4143,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "client" "h2" "http1" "http2" "runtime" "server" "socket2" "stream" "tcp" ];
       };
-      "hyper 1.10.0" = rec {
+      "hyper 1.10.1" = rec {
         crateName = "hyper";
-        version = "1.10.0";
+        version = "1.10.1";
         edition = "2021";
-        sha256 = "1k2yw456v4d7f31nngflzsn3fa5i9fbrpiw3zicn8lsnpxig34pb";
+        sha256 = "1624nwrh1ci34psqcl3q8q266kha8kd6fmqjj14qck49l59iqa2m";
         authors = [
           "Sean McArthur <sean@seanmonstar.com>"
         ];
@@ -4332,7 +4332,7 @@ rec {
           }
           {
             name = "hyper";
-            packageId = "hyper 1.10.0";
+            packageId = "hyper 1.10.1";
             usesDefaultFeatures = false;
           }
           {
@@ -4447,7 +4447,7 @@ rec {
           }
           {
             name = "hyper";
-            packageId = "hyper 1.10.0";
+            packageId = "hyper 1.10.1";
           }
           {
             name = "ipnet";
@@ -4506,7 +4506,7 @@ rec {
           }
           {
             name = "hyper";
-            packageId = "hyper 1.10.0";
+            packageId = "hyper 1.10.1";
             features = [ "full" ];
           }
           {
@@ -5075,15 +5075,9 @@ rec {
       };
       "inotify" = rec {
         crateName = "inotify";
-        version = "0.11.1";
+        version = "0.11.2";
         edition = "2018";
-        sha256 = "16fiffnqhfdwzgrv3wcnaih0a9xbx1a44nma1yn5idr83apkwnxx";
-        authors = [
-          "Hanno Braun <mail@hannobraun.de>"
-          "Félix Saparelli <me@passcod.name>"
-          "Cristian Kubis <cristian.kubis@tsunix.de>"
-          "Frank Denis <github@pureftpd.org>"
-        ];
+        sha256 = "1hd2xixzzr8s6anxil0db57jbfxvr4zv17qmzr34jwrfhjjnhgjk";
         dependencies = [
           {
             name = "bitflags";
@@ -5100,8 +5094,8 @@ rec {
         ];
         features = {
           "default" = [ "stream" ];
-          "futures-core" = [ "dep:futures-core" ];
-          "stream" = [ "futures-core" "tokio" ];
+          "futures-util" = [ "dep:futures-util" ];
+          "stream" = [ "futures-util" "tokio" ];
           "tokio" = [ "dep:tokio" ];
         };
       };
@@ -5250,9 +5244,9 @@ rec {
       };
       "kqueue" = rec {
         crateName = "kqueue";
-        version = "1.1.1";
+        version = "1.2.0";
         edition = "2021";
-        sha256 = "0sjrsnza8zxr1zfpv6sa0zapd54kx9wlijrz9apqvs6wsw303hza";
+        sha256 = "1dc7rm23i7s1574xx185836rxyzynrsv5wkn96nf0649f990fg17";
         authors = [
           "William Orr <will@worrbase.com>"
         ];
@@ -5353,9 +5347,9 @@ rec {
       };
       "log" = rec {
         crateName = "log";
-        version = "0.4.30";
+        version = "0.4.31";
         edition = "2021";
-        sha256 = "1rd6sw3gv9hb93464w7x3sip99zf8sjagm662r2ckg14b1lcavk1";
+        sha256 = "0kq2fh6q2bjkrm8m6hj8kb7gxfd7cr7qbcpxd1lc1xq5rns30fqi";
         authors = [
           "The Rust Project Developers"
         ];
@@ -6433,7 +6427,7 @@ rec {
           }
           {
             name = "hyper";
-            packageId = "hyper 1.10.0";
+            packageId = "hyper 1.10.1";
             target = { target, features }: (!("wasm32" == target."arch" or null));
             features = [ "http1" "client" ];
           }
@@ -6594,7 +6588,7 @@ rec {
           }
           {
             name = "hyper";
-            packageId = "hyper 1.10.0";
+            packageId = "hyper 1.10.1";
             usesDefaultFeatures = false;
             target = { target, features }: (!("wasm32" == target."arch" or null));
             features = [ "http1" "http2" "client" "server" ];
@@ -6970,9 +6964,9 @@ rec {
       };
       "rustls-native-certs" = rec {
         crateName = "rustls-native-certs";
-        version = "0.8.3";
+        version = "0.8.4";
         edition = "2021";
-        sha256 = "0qrajg2n90bcr3bcq6j95gjm7a9lirfkkdmjj32419dyyzan0931";
+        sha256 = "0kgazl8zc1sv63qg179bz96ilzh56lzfa5k92ji7d265f4kibdfs";
         libName = "rustls_native_certs";
         dependencies = [
           {
@@ -7839,7 +7833,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.2";
+        version = "0.1.3";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -7971,9 +7965,9 @@ rec {
       };
       "shlex" = rec {
         crateName = "shlex";
-        version = "1.3.0";
-        edition = "2015";
-        sha256 = "0r1y6bv26c1scpxvhg2cabimrmwgbp4p3wy6syj9n0c4s3q2znhg";
+        version = "2.0.1";
+        edition = "2018";
+        sha256 = "1fjsll1cd7d2bcpdij9kd6w62rpbc7qqzvydvs021vsmr1cxvypq";
         authors = [
           "comex <comexk@gmail.com>"
           "Fenhl <fenhl@fenhl.net>"
@@ -8226,8 +8220,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "6bcdf2f09c69c859a85e354cecaf1036cd4ca163";
-          sha256 = "0ml3r5kv1z3fjx5fphcm80hdqqw5hag1zh7ijcl0isiacaxkk5sv";
+          rev = "536e741b92cc54724ea8d131e60ed5ea1c8ad59f";
+          sha256 = "0w29v8qzs2mjgh4ck05pfsrywvddma96nh1xnbfaka7g4az5z5gb";
         };
         libName = "tatara_lisp";
         authors = [
@@ -8268,8 +8262,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "6bcdf2f09c69c859a85e354cecaf1036cd4ca163";
-          sha256 = "0ml3r5kv1z3fjx5fphcm80hdqqw5hag1zh7ijcl0isiacaxkk5sv";
+          rev = "536e741b92cc54724ea8d131e60ed5ea1c8ad59f";
+          sha256 = "0w29v8qzs2mjgh4ck05pfsrywvddma96nh1xnbfaka7g4az5z5gb";
         };
         procMacro = true;
         libName = "tatara_lisp_derive";
@@ -9294,13 +9288,9 @@ rec {
       };
       "typenum" = rec {
         crateName = "typenum";
-        version = "1.20.0";
+        version = "1.20.1";
         edition = "2018";
-        sha256 = "1pj35y6q11d3y55gdl6g1h2dfhmybjming0jdi9bh0bpnqm11kj0";
-        authors = [
-          "Paho Lurie-Gregg <paho@paholg.com>"
-          "Andre Bogus <bogusandre@gmail.com>"
-        ];
+        sha256 = "086s9ly0906kw5yw41249fba97w5zfxf03pyfwdkffvcprqfixdn";
         features = {
           "scale-info" = [ "dep:scale-info" ];
           "scale_info" = [ "scale-info/derive" ];
@@ -9470,9 +9460,9 @@ rec {
       };
       "uuid" = rec {
         crateName = "uuid";
-        version = "1.23.1";
+        version = "1.23.2";
         edition = "2021";
-        sha256 = "0xlwg23rmsfl3gx98qsyzpl24pf4bs9wi3mqx5c6i319hyb4mmyx";
+        sha256 = "1xy942s4z0bi8p3441wvd4ry3hx6ry1c7s6fgrr38462xqybhn6j";
         authors = [
           "Ashley Mannix<ashleymannix@live.com.au>"
           "Dylan DPC<dylan.dpc@gmail.com>"
@@ -12091,9 +12081,9 @@ rec {
       };
       "zerocopy" = rec {
         crateName = "zerocopy";
-        version = "0.8.49";
+        version = "0.8.50";
         edition = "2021";
-        sha256 = "02y6zhpdphwnkgww2d81iwljh3mrvcphyz9cihm0fgzsi1i3mqxw";
+        sha256 = "1laahnfxs4qyfb1fdf5nbb2qfshi72b1hbi0ffp2zy2m1r7ms1iv";
         authors = [
           "Joshua Liebow-Feeser <joshlf@google.com>"
           "Jack Wrenn <jswrenn@amazon.com>"
@@ -12127,9 +12117,9 @@ rec {
       };
       "zerocopy-derive" = rec {
         crateName = "zerocopy-derive";
-        version = "0.8.49";
+        version = "0.8.50";
         edition = "2021";
-        sha256 = "07pfsbx9sx6fzmi870vmih0mlk1m4drqx4pzrijspx2494j2bm4g";
+        sha256 = "0fdnr9qslx1hbn2i9rsvy9s95mychfy2vj90ajsjm2basccinqqb";
         procMacro = true;
         libName = "zerocopy_derive";
         authors = [
