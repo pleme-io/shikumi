@@ -374,6 +374,63 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         self.iter().filter(|&(_, c)| c > 0)
     }
 
+    /// Number of distinct axis cells that received at least one
+    /// observation — the **support cardinality** of the histogram.
+    /// Equivalent to `self.nonzero().count()`; the structural
+    /// cardinality peer to [`Self::total`].
+    ///
+    /// Where [`Self::total`] sums observation counts (the *size*
+    /// aggregate over the multiset of observations),
+    /// `distinct_cells` counts the cells that received any
+    /// observation (the *support* of the multiset — the cardinality
+    /// of the underlying set of observed cells). Together they form
+    /// the natural pair of scalar projections every typed histogram
+    /// carries: `total` reads "how many observations", `distinct_cells`
+    /// reads "how many *kinds* of observation", `dominant_cell` reads
+    /// "*which* kind dominates". Before this lift, every consumer
+    /// asking "did the chain see at least N distinct kinds?" re-derived
+    /// the projection inline as `hist.iter().filter(|&(_, c)| c > 0).count()`
+    /// or `hist.nonzero().count()`; the lift names the projection at
+    /// one site so a future consumer's coverage check, attestation
+    /// manifest support count, or diagnostic "N of M kinds observed"
+    /// summary reads off one method call.
+    ///
+    /// **Structural bounds.** The return value is always in the
+    /// interval `[0, axis_cardinality::<A>()]`. Tight at both ends:
+    /// the empty histogram reads `0`, the uniform axis-cover
+    /// histogram reads `axis_cardinality::<A>()`. The projection
+    /// connects the histogram surface to the typescape's structural
+    /// axis size — `distinct_cells == axis_cardinality::<A>()` is the
+    /// "*every* cell observed" coverage predicate, reachable as a
+    /// single equality.
+    ///
+    /// **Companion invariants.**
+    /// - `distinct_cells() == 0` ⇔ [`Self::is_empty`] is `true`
+    ///   (peer to the empty-histogram boundary equivalence
+    ///   [`Self::dominant_cell`] carries).
+    /// - `distinct_cells() <= total()` always: each distinct cell
+    ///   contributes at least one observation, so the support is
+    ///   bounded by the multiset's size.
+    /// - `distinct_cells() == total()` iff every observed cell
+    ///   appears exactly once — the "uniform-singleton" shape.
+    /// - `distinct_cells() <= axis_cardinality::<A>()` always: the
+    ///   support is bounded by the axis size.
+    /// - `merge(self, other).distinct_cells() >=
+    ///   self.distinct_cells().max(other.distinct_cells())`: the
+    ///   support is monotone under [`Self::merge`] — merging never
+    ///   shrinks the set of observed cells.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The three trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_distinct_cells_empty_is_zero_*`,
+    /// `axis_histogram_distinct_cells_singleton_is_one_*`,
+    /// `axis_histogram_distinct_cells_axis_cover_equals_cardinality_*`).
+    #[must_use]
+    pub fn distinct_cells(&self) -> usize {
+        self.counts.iter().filter(|&&c| c > 0).count()
+    }
+
     /// The first axis cell (in declaration order over [`ClosedAxis::ALL`])
     /// whose observation count equals the maximum count over the
     /// histogram; `None` when no cell carries any observation
@@ -4720,6 +4777,277 @@ mod tests {
             std::iter::once(DiffLineKind::Context).collect();
         assert!(!singleton.is_empty());
         assert!(singleton.dominant_cell().is_some());
+    }
+
+    // ---- AxisHistogram::distinct_cells trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // distinct_cells projection's contract holds uniformly without
+    // per-axis test duplication: empty → 0; singleton → 1 on every
+    // cell K; uniform axis-cover → axis_cardinality::<A>(). Concrete
+    // bound and merge-interaction pins follow below on
+    // [`DiffLineKind`].
+
+    fn assert_distinct_cells_empty_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.distinct_cells(),
+            0,
+            "empty histogram distinct_cells must be 0 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_distinct_cells_singleton_is_one<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has exactly one observed cell —
+        // the singleton support law uniformly across implementors.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.distinct_cells(),
+                1,
+                "singleton distinct_cells must equal 1 \
+                 for observed cell {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_distinct_cells_axis_cover_equals_cardinality<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once produces a uniform
+        // histogram; distinct_cells must equal the axis cardinality —
+        // the maximum-coverage law. Pinned uniformly across every
+        // closed-axis implementor.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            hist.distinct_cells(),
+            axis_cardinality::<A>(),
+            "axis-cover histogram distinct_cells must equal \
+             axis_cardinality on {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_distinct_cells_empty_is_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_distinct_cells_empty_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_distinct_cells_singleton_is_one_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_distinct_cells_singleton_is_one::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_distinct_cells_axis_cover_equals_cardinality_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_distinct_cells_axis_cover_equals_cardinality::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_distinct_cells_equals_nonzero_count() {
+        // The lift's defining equivalence: distinct_cells reads the
+        // same scalar as the open-coded nonzero().count() pattern the
+        // test laws and consumer-side coverage checks re-derive.
+        // Pinned pointwise across the canonical observation-mix shapes
+        // (empty, singleton, two-cell uneven, three-cell uniform,
+        // two-of-three with one heavy) so a future regression in
+        // either side surfaces here.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.distinct_cells(),
+                hist.nonzero().count(),
+                "distinct_cells must equal nonzero().count() on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_distinct_cells_is_bounded_above_by_total_and_axis_cardinality() {
+        // Structural-bound pin: distinct_cells ∈ [0, total] ∩
+        // [0, axis_cardinality::<A>()]. Each distinct cell contributes
+        // at least one observation, so the support is bounded above
+        // by the multiset size; the support is also bounded by the
+        // axis size. Pinned over four observation shapes (empty,
+        // singleton, axis-cover, heavy-tail mix) so both bounds get a
+        // tight witness (empty: 0 == 0, singleton: 1 <= 1, axis-cover:
+        // 3 == 3, heavy-tail: 2 <= 5).
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[],
+            &[DiffLineKind::Removed],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let support = hist.distinct_cells();
+            assert!(
+                support <= hist.total(),
+                "distinct_cells {support} must be <= total {} on input of length {}",
+                hist.total(),
+                input.len(),
+            );
+            assert!(
+                support <= axis_cardinality::<DiffLineKind>(),
+                "distinct_cells {support} must be <= axis_cardinality {} on input of length {}",
+                axis_cardinality::<DiffLineKind>(),
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_distinct_cells_equals_total_iff_every_observation_is_unique() {
+        // Equality case of the bound: distinct_cells == total iff
+        // every observed cell appears exactly once. The "uniform-
+        // singleton" shape — every nonzero count is 1. Pinned by two
+        // witnesses on each side of the equality, so a future
+        // regression in the predicate surfaces at the boundary.
+        // Equality witnesses (every observed cell appears once):
+        let unique_a: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        let unique_b: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Context).collect();
+        let unique_c: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        for hist in [&unique_a, &unique_b, &unique_c] {
+            assert_eq!(
+                hist.distinct_cells(),
+                hist.total(),
+                "uniform-singleton histogram must satisfy distinct_cells == total",
+            );
+        }
+        // Strict-inequality witnesses (some observed cell has count > 1):
+        let dup_a: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Added]
+            .into_iter()
+            .collect();
+        let dup_b: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Context,
+            DiffLineKind::Context,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        for hist in [&dup_a, &dup_b] {
+            assert!(
+                hist.distinct_cells() < hist.total(),
+                "duplicated-observation histogram must satisfy distinct_cells < total",
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_distinct_cells_iff_is_empty_is_zero() {
+        // Boundary pin: distinct_cells == 0 iff is_empty is true.
+        // Equivalence holds across both directions — an empty
+        // history reads 0, a non-empty history reads at least 1.
+        // Peer to the same boundary equivalence dominant_cell carries
+        // on the Some/None side.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_empty());
+        assert_eq!(empty.distinct_cells(), 0);
+
+        let singleton: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        assert!(!singleton.is_empty());
+        assert!(singleton.distinct_cells() >= 1);
+    }
+
+    #[test]
+    fn axis_histogram_distinct_cells_after_merge_is_monotone_and_equals_support_union() {
+        // The (merge, distinct_cells) composition: the support of a
+        // merged histogram equals the union of either side's support
+        // (set-theoretic union of observed-cell sets), so the
+        // distinct_cells is at least each side's, and equal to the
+        // union cardinality. Pinned with disjoint-support, overlapping-
+        // support, and identity (empty-rhs) shapes so the merge
+        // monotonicity gets a tight witness at each boundary.
+        let added_only: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Added]
+            .into_iter()
+            .collect();
+        let removed_only: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        let context_and_added: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Context,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        let empty_hist: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+
+        // Disjoint supports: union is the sum of distinct counts.
+        let disjoint = added_only.clone().merge(&removed_only);
+        assert_eq!(disjoint.distinct_cells(), 2);
+        assert!(disjoint.distinct_cells() >= added_only.distinct_cells());
+        assert!(disjoint.distinct_cells() >= removed_only.distinct_cells());
+
+        // Overlapping supports: union is strictly less than sum on the
+        // shared cell (Added appears in both).
+        let overlap = added_only.clone().merge(&context_and_added);
+        assert_eq!(overlap.distinct_cells(), 2); // {Added, Context}, not 3
+        assert!(overlap.distinct_cells() >= added_only.distinct_cells());
+        assert!(overlap.distinct_cells() >= context_and_added.distinct_cells());
+
+        // Identity (empty-rhs): merge leaves the support unchanged.
+        let with_empty = added_only.clone().merge(&empty_hist);
+        assert_eq!(with_empty.distinct_cells(), added_only.distinct_cells());
     }
 
     #[test]

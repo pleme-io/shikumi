@@ -2615,6 +2615,141 @@ mod tests {
     }
 
     #[test]
+    fn layer_kind_histogram_distinct_cells_counts_observed_kinds() {
+        // Cross-surface pin: the
+        // [`crate::AxisHistogram::distinct_cells`] projection composes
+        // with [`Self::layer_kind_histogram`] to read "how many
+        // distinct layer kinds did this chain contain?" at one
+        // method-call site. `sample_chain()` is two File layers + one
+        // Env layer (no Defaults), so distinct_cells = 2 (File, Env).
+        let chain = sample_chain();
+        assert_eq!(chain.as_slice().layer_kind_histogram().distinct_cells(), 2);
+
+        // Singleton-kind chain: every layer is Defaults, so
+        // distinct_cells = 1 — the support is the single observed cell.
+        let defaults_only = vec![ConfigSource::Defaults, ConfigSource::Defaults];
+        assert_eq!(
+            defaults_only
+                .as_slice()
+                .layer_kind_histogram()
+                .distinct_cells(),
+            1,
+        );
+
+        // Axis-cover chain: one layer per kind covers the whole
+        // [`ConfigSourceKind::ALL`] axis, so distinct_cells equals the
+        // axis cardinality — the maximum-coverage witness.
+        let axis_cover = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/etc/app.yaml")),
+        ];
+        assert_eq!(
+            axis_cover
+                .as_slice()
+                .layer_kind_histogram()
+                .distinct_cells(),
+            crate::axis_cardinality::<ConfigSourceKind>(),
+        );
+    }
+
+    #[test]
+    fn file_format_histogram_distinct_cells_counts_observed_formats() {
+        // Cross-surface pin on the file-format axis: distinct_cells
+        // counts the *recognized* formats observed in the chain. Env /
+        // Defaults / unrecognized-extension File entries project to
+        // None through `file_format()` so they do not contribute, and
+        // duplicate entries on the same format collapse to one
+        // distinct cell — the support cardinality is bounded by the
+        // axis cardinality, not by the layer count.
+        use crate::discovery::Format;
+        // Three .yaml + one .toml + Env + Defaults → distinct file
+        // formats observed = 2 (Yaml, Toml).
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+            ConfigSource::File(PathBuf::from("/d.toml")),
+        ];
+        let hist = chain.as_slice().file_format_histogram();
+        assert_eq!(hist.distinct_cells(), 2);
+        // Companion bound: distinct_cells <= axis_cardinality::<Format>().
+        assert!(hist.distinct_cells() <= crate::axis_cardinality::<Format>());
+        // Companion bound: distinct_cells <= total.
+        assert!(hist.distinct_cells() <= hist.total());
+
+        // Env-only chain: no File layer contributes to the format
+        // histogram, so distinct_cells = 0 — the empty-support
+        // witness even though the chain is non-empty.
+        let env_only = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ];
+        assert_eq!(
+            env_only.as_slice().file_format_histogram().distinct_cells(),
+            0,
+        );
+    }
+
+    #[test]
+    fn env_prefix_kind_histogram_distinct_cells_counts_observed_prefix_kinds() {
+        // Cross-surface pin on the env-prefix-presence axis: a chain
+        // with both a bare and a prefixed Env layer has distinct_cells
+        // = 2 — the full axis is covered. A chain with only prefixed
+        // Env layers reads 1; a File/Defaults-only chain reads 0.
+        let both = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        assert_eq!(
+            both.as_slice().env_prefix_kind_histogram().distinct_cells(),
+            crate::axis_cardinality::<EnvMetadataTagKind>(),
+        );
+
+        let prefixed_only = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+        ];
+        assert_eq!(
+            prefixed_only
+                .as_slice()
+                .env_prefix_kind_histogram()
+                .distinct_cells(),
+            1,
+        );
+
+        let no_env = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/x.yaml")),
+        ];
+        assert_eq!(
+            no_env
+                .as_slice()
+                .env_prefix_kind_histogram()
+                .distinct_cells(),
+            0,
+        );
+    }
+
+    #[test]
+    fn chain_histograms_distinct_cells_is_zero_on_empty_chain() {
+        // Empty-chain composition: every chain-level histogram
+        // (layer_kind / file_format / env_prefix_kind) over an empty
+        // chain is the all-zero histogram, so distinct_cells = 0 at
+        // all three surfaces. Peer to the
+        // chain_histograms_dominant_cell_is_none_on_empty_chain pin —
+        // pins the cross-surface empty-history convention for the
+        // support-cardinality projection at one site.
+        let chain: [ConfigSource; 0] = [];
+        assert_eq!(chain.layer_kind_histogram().distinct_cells(), 0);
+        assert_eq!(chain.file_format_histogram().distinct_cells(), 0);
+        assert_eq!(chain.env_prefix_kind_histogram().distinct_cells(), 0);
+    }
+
+    #[test]
     fn env_prefix_kind_histogram_total_equals_env_layer_count() {
         // Cross-histogram invariant — STRICT equality (no inequality
         // bound, unlike the file-format histogram): every Env layer
