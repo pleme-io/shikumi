@@ -128,6 +128,52 @@ impl ConfigSource {
         }
     }
 
+    /// The [`EnvMetadataTagKind`] declared by this source's recorded env
+    /// prefix shape, if this is a [`Self::Env`] layer.
+    ///
+    /// Returns `Some(EnvMetadataTagKind::Bare)` for [`Self::Env`] with an
+    /// empty prefix (the layer figment routes through
+    /// [`figment::providers::Env::raw`]-shape emission), and
+    /// `Some(EnvMetadataTagKind::Prefixed)` for [`Self::Env`] with any
+    /// non-empty prefix (the layer figment routes through
+    /// [`figment::providers::Env::prefixed`]-shape emission). Returns
+    /// `None` for [`Self::Defaults`] / [`Self::File`] sources — those
+    /// layers carry no env-prefix shape at all.
+    ///
+    /// The chain-side projection on the env-name sub-axis: pointwise
+    /// peer of the figment-side [`EnvMetadataTag::kind`] projection that
+    /// reaches the same [`EnvMetadataTagKind`] axis from the parsed
+    /// `figment::Metadata::name`. The two surfaces converge on one kind
+    /// axis by construction — given the same `prefix`, the chain entry
+    /// `ConfigSource::Env(prefix.into()).env_prefix_kind()` agrees with
+    /// `ConfigSource::strip_env_metadata_name(&ConfigSource::env_metadata_name(prefix))
+    /// .map(EnvMetadataTag::kind)` — pinned by
+    /// `env_prefix_kind_agrees_with_figment_env_metadata_tag_kind` so a
+    /// future divergence (e.g. figment growing a `Glob` env shape that
+    /// [`Self::strip_env_metadata_name`] recognizes but the chain
+    /// projection does not) surfaces at the boundary.
+    ///
+    /// The partial projection composed by
+    /// [`ConfigSourceChain::env_prefix_kind_histogram`] to lift the
+    /// (chain → `EnvMetadataTagKind`) tally over the env-prefix-presence
+    /// axis — peer to [`Self::file_format`] on the file-format axis and
+    /// [`Self::kind`] on the layer-kind axis. Together the three
+    /// projections close the natural per-cell axes of the chain entry:
+    /// every [`ConfigSource`] carries a total [`ConfigSourceKind`]
+    /// discriminant ([`Self::kind`]) and at most one of the two partial
+    /// sub-axis projections ([`Self::file_format`] on `File` layers with
+    /// recognized extensions, [`Self::env_prefix_kind`] on `Env` layers
+    /// regardless of prefix shape) — a structural partition the trait-
+    /// default histograms now expose as three aggregate projections.
+    #[must_use]
+    pub fn env_prefix_kind(&self) -> Option<EnvMetadataTagKind> {
+        match self {
+            Self::Env(prefix) if prefix.is_empty() => Some(EnvMetadataTagKind::Bare),
+            Self::Env(_) => Some(EnvMetadataTagKind::Prefixed),
+            _ => None,
+        }
+    }
+
     /// Canonical `figment::Metadata::name` shape emitted by
     /// [`figment::providers::Env`]: `` `PREFIX` environment variable(s) ``
     /// for prefixed providers, `"environment variable(s)"` for raw env
@@ -476,6 +522,74 @@ pub trait ConfigSourceChain {
         Self: AsRef<[ConfigSource]>,
     {
         crate::axis_histogram(self.as_ref().iter().filter_map(ConfigSource::file_format))
+    }
+
+    /// Dense per-env-prefix-presence tally of the chain's
+    /// [`ConfigSource::Env`] layers over the [`EnvMetadataTagKind`] axis
+    /// — the typed histogram every attestation manifest, structured-log
+    /// dashboard, and chain-shape audit bucketing the (prefixed × bare)
+    /// env-layer counts has previously re-derived inline.
+    ///
+    /// Equivalent to
+    /// `crate::axis_histogram(self.iter().filter_map(ConfigSource::env_prefix_kind))`
+    /// but named at the chain-walk surface so consumers reading the
+    /// recipe ([`crate::ConfigStore::sources`] /
+    /// [`crate::ProviderChain::sources`]) don't reach for the cube-
+    /// level generic helper. Only [`ConfigSource::Env`] entries
+    /// contribute: [`ConfigSource::Defaults`] and [`ConfigSource::File`]
+    /// entries project to [`None`] through
+    /// [`ConfigSource::env_prefix_kind`] (no env-prefix shape to read).
+    /// Unlike [`Self::file_format_histogram`] — where some `File` entries
+    /// can project to [`None`] when the extension is unrecognized — every
+    /// `Env` entry projects to a `Some` cell regardless of prefix value:
+    /// the empty-prefix case maps to [`EnvMetadataTagKind::Bare`], every
+    /// non-empty prefix maps to [`EnvMetadataTagKind::Prefixed`]. The
+    /// histogram's `total()` therefore equals
+    /// `self.layer_kind_histogram().count(ConfigSourceKind::Env)`
+    /// pointwise — strict equality, not the inequality bound the file-
+    /// format histogram carries. `is_empty()` iff the chain holds no
+    /// `Env` entries.
+    ///
+    /// Third chain-level histogram peer of [`Self::layer_kind_histogram`]
+    /// on the [`ConfigSourceKind`] layer-kind axis and
+    /// [`Self::file_format_histogram`] on the file-format axis. With this
+    /// lift the chain-shape surface carries the three natural aggregate
+    /// projections side by side: one over the total layer-kind axis
+    /// (every entry contributes), one over the file-format axis (file
+    /// entries with recognized extensions contribute), and one over the
+    /// env-prefix-presence axis (every env entry contributes). The named
+    /// histogram delivers the "env-name sub-axis loader histogram over
+    /// [`EnvMetadataTagKind`]" the chain-shape lift discipline now closes
+    /// at three sites — every future axis-tally consumer composes
+    /// [`crate::axis_histogram`] over the appropriate per-cell projection
+    /// on the same template.
+    ///
+    /// Pairs structurally with the figment-side
+    /// [`EnvMetadataTag::kind`] projection: for any `Env(prefix)` chain
+    /// entry, the chain-side projection
+    /// [`ConfigSource::env_prefix_kind`] agrees pointwise with the
+    /// figment-side projection over
+    /// [`ConfigSource::env_metadata_name`]/
+    /// [`ConfigSource::strip_env_metadata_name`]. The two histograms
+    /// (one on each surface) would read the same per-cell counts, so a
+    /// future divergence in either projection surfaces at the kind axis.
+    ///
+    /// Trait-default implementation so a chain-shape consumer reading
+    /// the histogram does not need to retain the chain slice — the
+    /// projection is one method call. A future [`EnvMetadataTag`]
+    /// variant lands as one new column in the histogram automatically
+    /// (the typescape's [`EnvMetadataTagKind::ALL`] /
+    /// [`crate::AxisHistogram`] discipline sizes the slot count); no
+    /// per-consumer update is required.
+    fn env_prefix_kind_histogram(&self) -> crate::AxisHistogram<EnvMetadataTagKind>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        crate::axis_histogram(
+            self.as_ref()
+                .iter()
+                .filter_map(ConfigSource::env_prefix_kind),
+        )
     }
 }
 
@@ -2118,6 +2232,343 @@ mod tests {
             "mixed-extension chain: file_format_histogram total ({format_total}) \
              must be strictly less than layer_kind_histogram(File) ({file_kind_count})",
         );
+    }
+
+    // ---- ConfigSource::env_prefix_kind ----
+
+    #[test]
+    fn env_prefix_kind_classifies_empty_prefix_as_bare() {
+        // The empty-prefix Env layer is the chain-side projection of the
+        // figment::providers::Env::raw shape — its env_prefix_kind must
+        // read EnvMetadataTagKind::Bare. Pins the per-cell projection on
+        // the bare side of the kind axis.
+        let s = ConfigSource::Env(String::new());
+        assert_eq!(s.env_prefix_kind(), Some(EnvMetadataTagKind::Bare));
+    }
+
+    #[test]
+    fn env_prefix_kind_classifies_non_empty_prefix_as_prefixed() {
+        // Every non-empty prefix Env layer projects to
+        // EnvMetadataTagKind::Prefixed — the chain-side projection of
+        // figment::providers::Env::prefixed. Across ASCII-case and
+        // long-prefix shapes the kind axis only carries the
+        // prefixed/bare partition; case and length do not influence it.
+        for prefix in [
+            "MYAPP_",
+            "x_",
+            "MixedCase_",
+            "very_long_prefix_with_underscores_",
+            "A",
+        ] {
+            let s = ConfigSource::Env(prefix.to_owned());
+            assert_eq!(
+                s.env_prefix_kind(),
+                Some(EnvMetadataTagKind::Prefixed),
+                "non-empty prefix {prefix:?} must classify as Prefixed",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_is_none_for_non_env_sources() {
+        // Defaults and File layers carry no env-prefix shape at all —
+        // env_prefix_kind must read None on every non-Env source.
+        assert_eq!(ConfigSource::Defaults.env_prefix_kind(), None);
+        assert_eq!(
+            ConfigSource::File(PathBuf::from("/etc/app.yaml")).env_prefix_kind(),
+            None,
+        );
+        assert_eq!(
+            ConfigSource::File(PathBuf::from("/etc/app.unknownext")).env_prefix_kind(),
+            None,
+        );
+    }
+
+    #[test]
+    fn env_prefix_kind_partitions_env_variants_pointwise() {
+        // Exhaustive on the EnvMetadataTagKind::ALL slice: every kind
+        // must be reached by at least one Env layer (Bare via empty
+        // prefix, Prefixed via any non-empty prefix), and the partition
+        // is disjoint on the Env-source side (no Env layer projects to
+        // two cells, no kind is unreachable). Together with
+        // [`env_prefix_kind_is_none_for_non_env_sources`] this closes
+        // the per-cell projection law.
+        let mut reached: Vec<EnvMetadataTagKind> = Vec::new();
+        for layer in [
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("X_".to_owned()),
+        ] {
+            let k = layer
+                .env_prefix_kind()
+                .expect("every Env layer must project to Some");
+            assert!(
+                !reached.contains(&k),
+                "env_prefix_kind must not project two Env layers to the same kind in this sample",
+            );
+            reached.push(k);
+        }
+        for kind in EnvMetadataTagKind::ALL {
+            assert!(
+                reached.contains(kind),
+                "EnvMetadataTagKind::{kind:?} must be reachable from some Env layer",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_agrees_with_figment_env_metadata_tag_kind() {
+        // Cross-surface commutativity: the chain-side projection
+        // ConfigSource::Env(prefix).env_prefix_kind() must agree pointwise
+        // with the figment-side projection that goes through
+        // env_metadata_name (the canonical figment::Metadata::name shape
+        // for the recorded prefix) and strip_env_metadata_name (the
+        // parse), then takes EnvMetadataTag::kind. The two surfaces
+        // converge on one EnvMetadataTagKind axis by construction — a
+        // future divergence (a figment env shape that one surface
+        // recognizes and the other does not) surfaces here.
+        for prefix in ["", "APP_", "MYAPP_", "x_", "MixedCase_"] {
+            let chain_side = ConfigSource::Env(prefix.to_owned())
+                .env_prefix_kind()
+                .expect("every Env layer projects through env_prefix_kind");
+            let figment_side =
+                ConfigSource::strip_env_metadata_name(&ConfigSource::env_metadata_name(prefix))
+                    .map(EnvMetadataTag::kind)
+                    .expect("env_metadata_name round-trips through strip_env_metadata_name");
+            assert_eq!(
+                chain_side, figment_side,
+                "env_prefix_kind({prefix:?}) must agree with the figment-side EnvMetadataTag::kind",
+            );
+        }
+    }
+
+    // ---- ConfigSourceChain::env_prefix_kind_histogram ----
+
+    #[test]
+    fn env_prefix_kind_histogram_counts_each_kind_pointwise() {
+        // Concrete pin on the (chain → EnvMetadataTagKind tally)
+        // projection. `sample_chain()` carries one Env("APP_") layer
+        // (and two File layers + zero Defaults), so the histogram must
+        // read 1 Prefixed, 0 Bare. The File and Defaults entries project
+        // to None through env_prefix_kind() and contribute to no cell.
+        let chain = sample_chain();
+        let hist = chain.as_slice().env_prefix_kind_histogram();
+        assert_eq!(hist.count(EnvMetadataTagKind::Prefixed), 1);
+        assert_eq!(hist.count(EnvMetadataTagKind::Bare), 0);
+        // total() equals the count of Env entries — here 1.
+        assert_eq!(hist.total(), 1);
+    }
+
+    #[test]
+    fn env_prefix_kind_histogram_covers_every_kind() {
+        // A chain with one Env layer per kind (empty-prefix → Bare,
+        // non-empty → Prefixed) must produce a histogram with exactly
+        // one observation per EnvMetadataTagKind cell — total equals
+        // EnvMetadataTagKind::ALL cardinality. Pins the uniform-cover
+        // law on the env-prefix-presence axis.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let hist = chain.as_slice().env_prefix_kind_histogram();
+        for kind in EnvMetadataTagKind::ALL.iter().copied() {
+            assert_eq!(
+                hist.count(kind),
+                1,
+                "uniform-cover chain must read 1 on every EnvMetadataTagKind cell ({kind:?})",
+            );
+        }
+        assert_eq!(hist.total(), EnvMetadataTagKind::ALL.len());
+    }
+
+    #[test]
+    fn env_prefix_kind_histogram_empty_chain_is_zero_on_every_cell() {
+        // Empty-chain law on the env-prefix-presence axis: every cell
+        // reads zero, total is zero, is_empty() is true. Pins the
+        // monoid identity at the chain-shape boundary on the third
+        // chain-level histogram surface.
+        let chain: [ConfigSource; 0] = [];
+        let hist = chain.env_prefix_kind_histogram();
+        for kind in EnvMetadataTagKind::ALL.iter().copied() {
+            assert_eq!(
+                hist.count(kind),
+                0,
+                "empty chain must read zero on every EnvMetadataTagKind cell ({kind:?})",
+            );
+        }
+        assert_eq!(hist.total(), 0);
+        assert!(hist.is_empty());
+    }
+
+    #[test]
+    fn env_prefix_kind_histogram_ignores_defaults_and_file_layers() {
+        // Defaults and File entries carry no env-prefix shape and
+        // project to None through `env_prefix_kind()`; they must not
+        // contribute to any EnvMetadataTagKind cell regardless of how
+        // many chain entries of those kinds are present, regardless of
+        // file extension recognition.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/etc/app.yaml")),
+            ConfigSource::File(PathBuf::from("/etc/app.unknownext")),
+        ];
+        let hist = chain.as_slice().env_prefix_kind_histogram();
+        for kind in EnvMetadataTagKind::ALL.iter().copied() {
+            assert_eq!(
+                hist.count(kind),
+                0,
+                "Defaults/File-only chain must read zero on every \
+                 EnvMetadataTagKind cell ({kind:?})",
+            );
+        }
+        assert_eq!(hist.total(), 0);
+        assert!(hist.is_empty());
+    }
+
+    #[test]
+    fn env_prefix_kind_histogram_agrees_with_open_coded_per_kind_count() {
+        // The lift collapses the per-cell
+        // `iter().filter_map(env_prefix_kind).filter(|k| *k == X).count()`
+        // loop the typescape doc-strings promised — pin pointwise
+        // equivalence over the typed env-prefix-presence axis across
+        // chains of mixed kinds, mixed prefix shapes, and chains with
+        // zero, one, or many env layers so a future regression in
+        // either side surfaces here.
+        let chains = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("A_".to_owned()),
+                ConfigSource::Env("B_".to_owned()),
+                ConfigSource::Env(String::new()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+        ];
+        for chain in &chains {
+            let hist = chain.as_slice().env_prefix_kind_histogram();
+            for kind in EnvMetadataTagKind::ALL.iter().copied() {
+                let manual = chain
+                    .iter()
+                    .filter_map(ConfigSource::env_prefix_kind)
+                    .filter(|k| *k == kind)
+                    .count();
+                assert_eq!(
+                    hist.count(kind),
+                    manual,
+                    "env_prefix_kind_histogram({kind:?}) must equal the open-coded \
+                     filter_map+filter count over chain of length {}",
+                    chain.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_histogram_iter_yields_declaration_order() {
+        // The dense per-cell iteration must yield the
+        // EnvMetadataTagKind::ALL declaration order (Prefixed, Bare)
+        // regardless of the chain's observation order — observation
+        // order does not leak into the histogram's value-side
+        // iteration. Peer to
+        // `file_format_histogram_iter_yields_format_all_declaration_order`
+        // on the file-format axis and
+        // `layer_kind_histogram_iter_yields_declaration_order` on the
+        // layer-kind axis.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("LATER_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ];
+        let pairs: Vec<(EnvMetadataTagKind, usize)> = chain
+            .as_slice()
+            .env_prefix_kind_histogram()
+            .iter()
+            .collect();
+        let values: Vec<EnvMetadataTagKind> = pairs.iter().map(|(k, _)| *k).collect();
+        assert_eq!(values, EnvMetadataTagKind::ALL.to_vec());
+    }
+
+    #[test]
+    fn env_prefix_kind_histogram_equals_axis_histogram_over_env_prefix_kind_projection() {
+        // Pin equivalence to the generic
+        // `crate::axis_histogram(self.iter().filter_map(ConfigSource::env_prefix_kind))`
+        // shape the trait-default method routes through — the lift
+        // must not silently re-implement the per-cell count loop on a
+        // parallel surface. Pointwise equality on every
+        // EnvMetadataTagKind cell.
+        let chains = [
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Defaults,
+                ConfigSource::Env("X_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("A_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+        ];
+        for chain in &chains {
+            let lifted = chain.as_slice().env_prefix_kind_histogram();
+            let generic =
+                crate::axis_histogram(chain.iter().filter_map(ConfigSource::env_prefix_kind));
+            for kind in EnvMetadataTagKind::ALL.iter().copied() {
+                assert_eq!(
+                    lifted.count(kind),
+                    generic.count(kind),
+                    "env_prefix_kind_histogram must equal \
+                     axis_histogram(env_prefix_kind-projection) on {kind:?} \
+                     over chain of length {}",
+                    chain.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_histogram_total_equals_env_layer_count() {
+        // Cross-histogram invariant — STRICT equality (no inequality
+        // bound, unlike the file-format histogram): every Env layer
+        // projects to a Some cell on env_prefix_kind (empty-prefix →
+        // Bare, non-empty → Prefixed), so the histogram total is
+        // exactly the Env count in the layer-kind histogram regardless
+        // of prefix shape. Pins the stronger structural law between the
+        // chain's third and first aggregate projections.
+        let chains: [Vec<ConfigSource>; 5] = [
+            sample_chain(),
+            vec![],
+            vec![ConfigSource::Defaults, ConfigSource::Defaults],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("A_".to_owned()),
+                ConfigSource::Env("B_".to_owned()),
+                ConfigSource::Env(String::new()),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Env("E_".to_owned()),
+                ConfigSource::File(PathBuf::from("/b.unknownext")),
+                ConfigSource::Env(String::new()),
+            ],
+        ];
+        for chain in &chains {
+            let env_kind_count = chain
+                .as_slice()
+                .layer_kind_histogram()
+                .count(ConfigSourceKind::Env);
+            let env_prefix_total = chain.as_slice().env_prefix_kind_histogram().total();
+            assert_eq!(
+                env_prefix_total,
+                env_kind_count,
+                "env_prefix_kind_histogram total ({env_prefix_total}) must equal \
+                 layer_kind_histogram(Env) ({env_kind_count}) over chain of length {}",
+                chain.len(),
+            );
+        }
     }
 
     // ---- ConfigSourceKind / ConfigSource::kind ----
