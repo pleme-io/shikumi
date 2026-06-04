@@ -374,6 +374,77 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         self.iter().filter(|&(_, c)| c > 0)
     }
 
+    /// The first axis cell (in declaration order over [`ClosedAxis::ALL`])
+    /// whose observation count equals the maximum count over the
+    /// histogram; `None` when no cell carries any observation
+    /// (i.e. [`Self::is_empty`] is `true`).
+    ///
+    /// The "argmax" / "modal cell" projection on the histogram — the
+    /// natural typed primitive for diagnostic dumps, dashboards, and
+    /// attestation manifests asking *"which cell dominates this
+    /// observation window?"*: the dominant layer kind in a chain's
+    /// [`crate::ConfigSourceChain::layer_kind_histogram`], the most
+    /// common file format in
+    /// [`crate::ConfigSourceChain::file_format_histogram`], the
+    /// dominant diff-line class in
+    /// [`crate::ConfigDiff::kind_histogram`] for a "rebuild summary"
+    /// line, the most common reload-failure kind in a per-window
+    /// `AxisHistogram<crate::ShikumiErrorKind>`. Before this lift, every
+    /// such consumer re-derived the loop inline as
+    /// `hist.iter().filter(|&(_, c)| c > 0).max_by_key(|&(_, c)| c).map(|(v, _)| v)`
+    /// — and the inline `max_by_key` form silently returned the *last*
+    /// tied cell rather than the first (per
+    /// [`Iterator::max_by_key`]'s contract), so two consumers reading
+    /// "the dominant cell" off the same histogram could disagree under
+    /// ties unless every one carefully reversed the comparison. The
+    /// lift names the projection at one site with a documented
+    /// tie-breaking rule.
+    ///
+    /// **Tie-breaking is deterministic by declaration order.** When
+    /// multiple cells share the maximum count, the cell earliest in
+    /// [`ClosedAxis::ALL`] wins — pointwise consistent with the order
+    /// [`Self::iter`] yields. The same histogram observed under
+    /// different observation orders therefore yields the same
+    /// dominant cell: observation order does not leak through the
+    /// projection.
+    ///
+    /// **Empty-histogram convention.** Returns `None` exactly when
+    /// [`Self::is_empty`] is `true`. A histogram with even a single
+    /// observation always has a dominant cell (the observed one). A
+    /// histogram whose every cell observes the same nonzero count
+    /// returns `Some(first cell)` — the unique cell in declaration
+    /// order with the maximum.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the twenty
+    /// closed-enum axis primitives plus the five product cubes —
+    /// twenty-five today, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]) inherits the
+    /// projection at no per-axis cost. The three trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_dominant_cell_empty_is_none_*`,
+    /// `axis_histogram_dominant_cell_singleton_picks_observed_*`,
+    /// `axis_histogram_dominant_cell_axis_cover_picks_first_*`).
+    ///
+    /// Peer to [`Self::total`] (the *aggregate* over every cell) and
+    /// [`Self::nonzero`] (the *subset* of cells with observations):
+    /// `Self::total` reads the scalar sum, `Self::nonzero` reads the
+    /// subset, `Self::dominant_cell` reads the modal cell — the three
+    /// natural aggregate projections of a typed histogram.
+    #[must_use]
+    pub fn dominant_cell(&self) -> Option<A> {
+        let mut iter = self.iter().filter(|&(_, c)| c > 0);
+        let first = iter.next()?;
+        Some(
+            iter.fold(
+                first,
+                |best, current| {
+                    if current.1 > best.1 { current } else { best }
+                },
+            )
+            .0,
+        )
+    }
+
     /// Pointwise sum with `other` — the monoid operation. Every cell
     /// becomes `self.count(v) + other.count(v)`. Commutative,
     /// associative, identity at [`Self::empty`]. The natural shape for
@@ -4456,6 +4527,245 @@ mod tests {
                 "ordinal must be in-range for {cell:?}",
             );
             assert_eq!(hist.count(cell), 1, "cell {cell:?} count must equal 1");
+        }
+    }
+
+    // ---- AxisHistogram::dominant_cell trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // dominant_cell projection's contract holds uniformly without
+    // per-axis test duplication: empty → None; singleton → Some(K) on
+    // every cell K; uniform axis-cover → Some(first cell in
+    // declaration order). Concrete tie-breaking and merge-interaction
+    // pins follow below on [`DiffLineKind`].
+
+    fn assert_dominant_cell_empty_is_none<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.dominant_cell(),
+            None,
+            "empty histogram dominant_cell must be None on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_dominant_cell_singleton_picks_observed_cell<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug + PartialEq,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has dominant_cell = Some(cell).
+        // Pins the (singleton → unique-max) law uniformly: every
+        // closed-axis implementor's `dominant_cell` recovers the
+        // observed cell from a one-observation history.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.dominant_cell(),
+                Some(observed),
+                "singleton dominant_cell must equal the observed cell {observed:?} \
+                 on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_dominant_cell_axis_cover_picks_first_cell<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug + PartialEq,
+    {
+        // Observing every cell exactly once produces a uniform
+        // histogram (every cell at 1, count maximum tied across the
+        // axis); `dominant_cell` must return the first cell in
+        // declaration order — the documented tie-breaking rule.
+        // Pinned uniformly: every closed-axis implementor's
+        // declaration-order tie-breaking lands at the head of
+        // [`ClosedAxis::ALL`].
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        let first = axis_iter::<A>().next().expect(
+            "every ClosedAxis implementor has at least one variant per the ClosedAxis contract",
+        );
+        assert_eq!(
+            hist.dominant_cell(),
+            Some(first),
+            "uniform axis-cover histogram dominant_cell must be the first cell \
+             in declaration order on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_dominant_cell_empty_is_none_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_dominant_cell_empty_is_none::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_dominant_cell_singleton_picks_observed_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_dominant_cell_singleton_picks_observed_cell::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_dominant_cell_axis_cover_picks_first_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_dominant_cell_axis_cover_picks_first_cell::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_dominant_cell_returns_strict_max_when_unique() {
+        // Concrete pin on the unique-maximum case: observing Added
+        // twice and Removed / Context once each yields the strict max
+        // at Added. The cell returned must be the unique-max cell
+        // regardless of declaration order.
+        let input = [
+            DiffLineKind::Removed,
+            DiffLineKind::Added,
+            DiffLineKind::Context,
+            DiffLineKind::Added,
+        ];
+        let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+        assert_eq!(hist.count(DiffLineKind::Added), 2);
+        assert_eq!(hist.count(DiffLineKind::Removed), 1);
+        assert_eq!(hist.count(DiffLineKind::Context), 1);
+        assert_eq!(hist.dominant_cell(), Some(DiffLineKind::Added));
+    }
+
+    #[test]
+    fn axis_histogram_dominant_cell_breaks_ties_in_declaration_order() {
+        // Concrete pin on the tie-breaking rule: when multiple cells
+        // share the maximum count, the first in [`ClosedAxis::ALL`]
+        // declaration order wins. [`DiffLineKind::ALL`] starts with
+        // [`DiffLineKind::Context`]; observing every cell once at the
+        // same count must return [`DiffLineKind::Context`] regardless
+        // of observation order. Pinned by varying observation order
+        // (Added, Removed, Context vs Context, Removed, Added) and
+        // asserting the result is invariant — observation order does
+        // not leak through the projection.
+        let first = DiffLineKind::ALL[0];
+        let by_observation_order_a: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        let by_observation_order_b: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Context,
+            DiffLineKind::Removed,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(by_observation_order_a, by_observation_order_b);
+        assert_eq!(by_observation_order_a.dominant_cell(), Some(first));
+        assert_eq!(by_observation_order_b.dominant_cell(), Some(first));
+    }
+
+    #[test]
+    fn axis_histogram_dominant_cell_after_merge_reflects_combined_counts() {
+        // The (merge, dominant_cell) composition: dominant_cell on a
+        // merged histogram reflects the pointwise-summed counts, not
+        // either side's individual maximum. Pinned by constructing two
+        // histograms with disagreeing maxima (lhs dominant at Added,
+        // rhs dominant at Removed with a heavier tail), so the merge's
+        // dominant cell is Removed even though Added is the lhs max.
+        let lhs: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Added]
+            .into_iter()
+            .collect();
+        let rhs: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(lhs.dominant_cell(), Some(DiffLineKind::Added));
+        assert_eq!(rhs.dominant_cell(), Some(DiffLineKind::Removed));
+        let merged = lhs.merge(&rhs);
+        assert_eq!(merged.count(DiffLineKind::Added), 2);
+        assert_eq!(merged.count(DiffLineKind::Removed), 3);
+        assert_eq!(merged.dominant_cell(), Some(DiffLineKind::Removed));
+    }
+
+    #[test]
+    fn axis_histogram_dominant_cell_iff_is_empty_is_false() {
+        // Boundary pin: dominant_cell is Some iff is_empty is false.
+        // Equivalence holds across both directions — an observation
+        // history of any length yields Some, an empty history yields
+        // None. Pinned concretely so the boundary discipline is named
+        // at one site; the trait-uniform empty law above pins the
+        // None direction across every implementor.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_empty());
+        assert_eq!(empty.dominant_cell(), None);
+
+        let singleton: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Context).collect();
+        assert!(!singleton.is_empty());
+        assert!(singleton.dominant_cell().is_some());
+    }
+
+    #[test]
+    fn axis_histogram_dominant_cell_equals_open_coded_first_max_loop() {
+        // The lift collapses the inline scan
+        // `iter().filter(|&(_,c)|c>0).fold(first, |best,cur| if cur.1>best.1 {cur} else {best})`
+        // pattern the consumers re-derived per observation site. Pin
+        // pointwise equivalence over the typed `DiffLineKind` cells
+        // across the four canonical observation-mix shapes (empty,
+        // unique-max, tied-max, three-way uniform) so a future
+        // regression in either side surfaces here.
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let manual = {
+                let mut iter = hist.iter().filter(|&(_, c)| c > 0);
+                iter.next().map(|first| {
+                    iter.fold(
+                        first,
+                        |best, current| {
+                            if current.1 > best.1 { current } else { best }
+                        },
+                    )
+                    .0
+                })
+            };
+            assert_eq!(
+                hist.dominant_cell(),
+                manual,
+                "dominant_cell must equal the open-coded first-max scan over input \
+                 of length {}",
+                input.len(),
+            );
         }
     }
 }

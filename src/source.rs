@@ -2529,6 +2529,92 @@ mod tests {
     }
 
     #[test]
+    fn layer_kind_histogram_dominant_cell_picks_majority_kind() {
+        // Cross-surface pin: the
+        // [`crate::AxisHistogram::dominant_cell`] projection composes
+        // with the chain-level [`Self::layer_kind_histogram`] to read
+        // "the dominant layer kind in this chain" at one method-call
+        // site. `sample_chain()` is two File layers + one Env layer
+        // (no Defaults), so the dominant kind must be File.
+        let chain = sample_chain();
+        assert_eq!(
+            chain.as_slice().layer_kind_histogram().dominant_cell(),
+            Some(ConfigSourceKind::File),
+        );
+    }
+
+    #[test]
+    fn file_format_histogram_dominant_cell_picks_majority_format() {
+        // Cross-surface pin on the file-format axis: a chain of three
+        // `.yaml` + one `.toml` File layers has dominant Format = Yaml
+        // (strict majority — no tie-breaking required). Env / Defaults
+        // entries do not contribute (project to None through
+        // `file_format()`), so the dominant cell of the file-format
+        // histogram is decided by the File-only sub-slice.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+            ConfigSource::File(PathBuf::from("/d.toml")),
+        ];
+        assert_eq!(
+            chain.as_slice().file_format_histogram().dominant_cell(),
+            Some(Format::Yaml),
+        );
+    }
+
+    #[test]
+    fn env_prefix_kind_histogram_dominant_cell_for_mixed_prefix_chain() {
+        // Cross-surface pin on the env-prefix-presence axis: a chain
+        // with two `Env(prefix)` (one bare, one prefixed) has
+        // dominant_cell tied; tie-breaking by `EnvMetadataTagKind::ALL`
+        // declaration order (Prefixed, Bare) yields Prefixed. Pinned
+        // here so the documented declaration-order tie-break is
+        // structurally visible at the chain surface, not just the
+        // generic `AxisHistogram` surface.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        assert_eq!(
+            chain.as_slice().env_prefix_kind_histogram().dominant_cell(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+
+        // Sanity: a chain dominated by bare-prefix Env layers picks
+        // Bare. Pin the strict-majority case alongside the tie case so
+        // both halves of the projection are concretely named.
+        let bare_majority = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("X_".to_owned()),
+        ];
+        assert_eq!(
+            bare_majority
+                .as_slice()
+                .env_prefix_kind_histogram()
+                .dominant_cell(),
+            Some(EnvMetadataTagKind::Bare),
+        );
+    }
+
+    #[test]
+    fn chain_histograms_dominant_cell_is_none_on_empty_chain() {
+        // Empty-chain composition: every chain-level histogram
+        // (layer_kind / file_format / env_prefix_kind) over an empty
+        // chain is the all-zero histogram, so `dominant_cell` reads
+        // None at all three surfaces. Pins the cross-surface
+        // empty-history convention at one site.
+        let chain: [ConfigSource; 0] = [];
+        assert_eq!(chain.layer_kind_histogram().dominant_cell(), None);
+        assert_eq!(chain.file_format_histogram().dominant_cell(), None);
+        assert_eq!(chain.env_prefix_kind_histogram().dominant_cell(), None);
+    }
+
+    #[test]
     fn env_prefix_kind_histogram_total_equals_env_layer_count() {
         // Cross-histogram invariant — STRICT equality (no inequality
         // bound, unlike the file-format histogram): every Env layer
