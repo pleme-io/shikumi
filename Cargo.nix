@@ -100,8 +100,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/akeyless-api";
-          rev = "39b3d3c558f554963fe10dd719a1d8738f6b8f82";
-          sha256 = "0016qn7izw8ky70vf7qb70g7hirkq7sxpgww7r4m38gvqvhs58ic";
+          rev = "fc8e46c74c2966649315cafa8ee8b4757dc41096";
+          sha256 = "0hqik0z8vaq6khrmy7g89jjayjql31jryrz9k9mzns5ff7dmkprj";
         };
         libName = "akeyless_api";
         authors = [
@@ -2336,9 +2336,9 @@ rec {
       };
       "chrono" = rec {
         crateName = "chrono";
-        version = "0.4.44";
+        version = "0.4.45";
         edition = "2021";
-        sha256 = "1c64mk9a235271j5g3v4zrzqqmd43vp9vki7vqfllpqf5rd0fwy6";
+        sha256 = "09rkcgk6is2sdhqs9142zv8xqnj8ryx8m9hknllqwyv9wxi9x9qs";
         dependencies = [
           {
             name = "iana-time-zone";
@@ -5347,9 +5347,9 @@ rec {
       };
       "log" = rec {
         crateName = "log";
-        version = "0.4.31";
+        version = "0.4.32";
         edition = "2021";
-        sha256 = "0kq2fh6q2bjkrm8m6hj8kb7gxfd7cr7qbcpxd1lc1xq5rns30fqi";
+        sha256 = "0fmdg0cxig7i4fwf1sw7fmg4d1gdbfzniawcfpwydy1q7320fgwm";
         authors = [
           "The Rust Project Developers"
         ];
@@ -7595,9 +7595,9 @@ rec {
       };
       "serde_with" = rec {
         crateName = "serde_with";
-        version = "3.20.0";
+        version = "3.21.0";
         edition = "2021";
-        sha256 = "1qnddis0nz2yg0dl06fnhf2q3hkim0vraq8ac3xzl8xjnwn1qb77";
+        sha256 = "134ydsww9awaga8yvcqj7rn8gpcx75z6sa3waywvirqhfd6cb9bn";
         authors = [
           "Jonas Bushart"
           "Marcin Kaźmierczak"
@@ -7730,9 +7730,9 @@ rec {
       };
       "serde_with_macros" = rec {
         crateName = "serde_with_macros";
-        version = "3.20.0";
+        version = "3.21.0";
         edition = "2021";
-        sha256 = "1b5z2zs1flszvyfk2i5pky6qdigg82y467zlc81gpd7c723lh35r";
+        sha256 = "0q5ndgb7mhdq9cclbawpki5dal28jaxsdnkqq4h7k8drr307pmc4";
         procMacro = true;
         authors = [
           "Jonas Bushart"
@@ -7833,7 +7833,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.6";
+        version = "0.1.7";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -8215,13 +8215,13 @@ rec {
       };
       "tatara-lisp" = rec {
         crateName = "tatara-lisp";
-        version = "0.2.6";
+        version = "0.2.8";
         edition = "2021";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "eb00684a5843df8e9e684b191c5bf82debccf49e";
-          sha256 = "1bblrhj7x92mmf2d01hniq7i9hh1wj3l5rwbdv5ypmr984ysnxpy";
+          rev = "f0bd686a4fd507f79058cadb5cbc695009aa876e";
+          sha256 = "1pl1flzsrz7rz4fb2mwhfyaazcali6gsd8ah19h3lsss1s8dqlih";
         };
         libName = "tatara_lisp";
         authors = [
@@ -8257,13 +8257,13 @@ rec {
       };
       "tatara-lisp-derive" = rec {
         crateName = "tatara-lisp-derive";
-        version = "0.2.6";
+        version = "0.2.8";
         edition = "2021";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "eb00684a5843df8e9e684b191c5bf82debccf49e";
-          sha256 = "1bblrhj7x92mmf2d01hniq7i9hh1wj3l5rwbdv5ypmr984ysnxpy";
+          rev = "f0bd686a4fd507f79058cadb5cbc695009aa876e";
+          sha256 = "1pl1flzsrz7rz4fb2mwhfyaazcali6gsd8ah19h3lsss1s8dqlih";
         };
         procMacro = true;
         libName = "tatara_lisp_derive";
