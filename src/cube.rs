@@ -695,6 +695,97 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         )
     }
 
+    /// The maximum observation count across every cell of the closed
+    /// axis — the **height of the histogram's peak**. Returns `0` exactly
+    /// when [`Self::is_empty`] is `true`; otherwise returns the count
+    /// carried by [`Self::dominant_cell`] (and pointwise equal to it).
+    ///
+    /// The "scalar peer" of [`Self::dominant_cell`] on the count side —
+    /// the natural typed primitive for diagnostic dumps, dashboards, and
+    /// attestation manifests asking *"how many observations did the
+    /// dominant cell collect?"*: the dominant-format observation count in
+    /// a chain's [`crate::ConfigSourceChain::file_format_histogram`]
+    /// (the "47 of 53 layers were `.yaml`" headline number), the
+    /// dominant-error count in a per-window
+    /// `AxisHistogram<crate::ShikumiErrorKind>` (the "12 of 14 reload
+    /// failures were Parse this window" alarm-threshold input), the
+    /// peak-layer-kind count in a chain's
+    /// [`crate::ConfigSourceChain::layer_kind_histogram`] (the operator
+    /// table's "the chain's heaviest layer kind fired N times" cell).
+    /// Before this lift, every such consumer re-derived the projection
+    /// inline as `hist.dominant_cell().map_or(0, |c| hist.count(c))` —
+    /// which walked the histogram *twice* (once to argmax, once to read
+    /// the count back through the [`Self::count`] indexing). The lift
+    /// names the scalar at one site with a single pass over the counts
+    /// vector.
+    ///
+    /// **Empty-histogram convention** — returns `0` (not `Option<usize>`)
+    /// matching the [`Self::total`] and [`Self::distinct_cells`] empty
+    /// conventions; the scalar peer triple `(total, distinct_cells,
+    /// peak_count)` is therefore uniformly `(0, 0, 0)` on the empty
+    /// histogram. The dual-form `dominant_cell` carries `Option<A>`
+    /// because the *cell* is undefined when no observation has landed;
+    /// the *count* is well-defined as zero on the empty cells of the
+    /// vector. The asymmetry is intentional: every scalar projection
+    /// reads zero on empty; every cell projection reads `None`.
+    ///
+    /// **Closes the (cell, count) modal pair** with [`Self::dominant_cell`]:
+    /// `(dominant_cell(), peak_count())` reads off the histogram's peak
+    /// as a typed `(Option<A>, usize)` pair. When [`Self::dominant_cell`]
+    /// is `Some(v)`, `self.count(v) == self.peak_count()` (the dominant
+    /// cell's count equals the maximum). When [`Self::dominant_cell`] is
+    /// `None`, `peak_count() == 0` and the pair witnesses the
+    /// empty-histogram boundary uniformly.
+    ///
+    /// **Companion invariants** with [`Self::total`],
+    /// [`Self::distinct_cells`], [`Self::dominant_cell`], and
+    /// [`Self::recessive_cell`]:
+    /// - `peak_count() == 0` ⇔ [`Self::is_empty`] is `true`
+    ///   (peer to the empty-histogram boundary [`Self::distinct_cells`]
+    ///   and [`Self::dominant_cell`] both carry).
+    /// - `peak_count() <= total()` always: the peak is bounded above by
+    ///   the multiset's size (every cell contributes at most every
+    ///   observation, and the others contribute zero — equality holds
+    ///   when [`Self::distinct_cells`] is `1`).
+    /// - `peak_count() == total()` iff `distinct_cells() <= 1`: a single
+    ///   observed cell carries every observation, so the peak equals
+    ///   the total. Distinct = 0 (empty) reads 0 == 0; distinct = 1
+    ///   reads N == N; distinct >= 2 reads peak < total strictly.
+    /// - `peak_count() >= recessive_count` whenever the histogram is
+    ///   non-empty, where `recessive_count =
+    ///   count(recessive_cell().unwrap())`: the dominant count bounds
+    ///   the rarest-observed count above (peer to the
+    ///   `count(recessive_cell) <= count(dominant_cell)` invariant on
+    ///   [`Self::recessive_cell`]).
+    /// - `merge(self, other).peak_count() >=
+    ///   self.peak_count().max(other.peak_count())`: the peak is
+    ///   monotone under [`Self::merge`] — merging adds counts pointwise,
+    ///   and adding non-negative deltas to the larger side's peak cell
+    ///   cannot shrink it. The peer to the monotone-support law on
+    ///   [`Self::distinct_cells`] and the monotone-coverage law on
+    ///   [`Self::unobserved`].
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the twenty
+    /// closed-enum axis primitives plus the five product cubes —
+    /// twenty-five today, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]) inherits the
+    /// projection at no per-axis cost. The three trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_peak_count_empty_is_zero_*`,
+    /// `axis_histogram_peak_count_singleton_is_one_*`,
+    /// `axis_histogram_peak_count_axis_cover_is_one_*`).
+    ///
+    /// Peer to [`Self::total`] (the *sum* over every cell) and
+    /// [`Self::distinct_cells`] (the *support cardinality*): the scalar
+    /// surface of the histogram now carries the natural triple of
+    /// `(how many observations, how many kinds, how many on the peak)`
+    /// projections — every operator-facing summary reads off one method
+    /// call each.
+    #[must_use]
+    pub fn peak_count(&self) -> usize {
+        self.counts.iter().copied().max().unwrap_or(0)
+    }
+
     /// Pointwise sum with `other` — the monoid operation. Every cell
     /// becomes `self.count(v) + other.count(v)`. Commutative,
     /// associative, identity at [`Self::empty`]. The natural shape for
@@ -5973,5 +6064,247 @@ mod tests {
         // Monotonicity bound: merged gap size <= min of side gap sizes.
         assert!(merged.unobserved().count() <= lhs_gap_count);
         assert!(merged.unobserved().count() <= rhs_gap_count);
+    }
+
+    // ---- AxisHistogram::peak_count trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // peak_count projection's contract holds uniformly without
+    // per-axis test duplication: empty → 0; singleton → 1 on every
+    // cell K; uniform axis-cover → 1 (every cell observed exactly
+    // once, so the maximum count is 1). Concrete merge-monotonicity
+    // and (cell, count) pairing pins follow below on [`DiffLineKind`].
+
+    fn assert_peak_count_empty_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.peak_count(),
+            0,
+            "empty histogram peak_count must be 0 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_peak_count_singleton_is_one<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has peak count exactly 1 —
+        // the singleton-support peak law uniformly across implementors.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.peak_count(),
+                1,
+                "singleton peak_count must equal 1 \
+                 for observed cell {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_peak_count_axis_cover_is_one<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once produces a uniform
+        // histogram; the maximum cell count is 1 — the uniform-axis-
+        // cover peak law. Peer to the uniform-axis-cover law on
+        // `dominant_cell` (which picks the first cell on ties): here
+        // the *count* at that cell is 1, pinned uniformly across every
+        // closed-axis implementor.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            hist.peak_count(),
+            1,
+            "uniform axis-cover histogram peak_count must equal 1 on {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_peak_count_empty_is_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_count_empty_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_count_singleton_is_one_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_count_singleton_is_one::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_count_axis_cover_is_one_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_count_axis_cover_is_one::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_count_equals_dominant_cell_count_when_non_empty() {
+        // The lift's defining pairing law: on every non-empty histogram
+        // the scalar `peak_count` equals the count carried by the
+        // dominant cell (i.e. `count(dominant_cell().unwrap())`). Pin
+        // pointwise equivalence over the typed `DiffLineKind` cells
+        // across four canonical observation-mix shapes (singleton,
+        // unique-max, tied-max, three-way uniform) so a future
+        // regression in either side surfaces here. The empty boundary
+        // is pinned separately by the trait-uniform empty-is-zero law
+        // above and the dedicated `peak_count_iff_is_empty_is_zero`
+        // test below.
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let dominant = hist
+                .dominant_cell()
+                .expect("non-empty histogram has a dominant cell");
+            assert_eq!(
+                hist.peak_count(),
+                hist.count(dominant),
+                "peak_count must equal count(dominant_cell()) on non-empty input \
+                 of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_count_iff_is_empty_is_zero() {
+        // Boundary pin: peak_count == 0 iff is_empty is true.
+        // Equivalence holds across both directions — an empty history
+        // reads 0, a non-empty history reads at least 1. Peer to the
+        // same boundary equivalence distinct_cells and dominant_cell
+        // both carry.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_empty());
+        assert_eq!(empty.peak_count(), 0);
+
+        let singleton: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        assert!(!singleton.is_empty());
+        assert!(singleton.peak_count() >= 1);
+    }
+
+    #[test]
+    fn axis_histogram_peak_count_is_bounded_above_by_total() {
+        // Structural-bound pin: peak_count ∈ [0, total] on every
+        // histogram, with equality iff distinct_cells <= 1. Pinned
+        // over four observation shapes (empty, singleton,
+        // single-cell-multi-observation, multi-cell) so both the bound
+        // and the equality case get tight witnesses.
+        let single_cell_two_observations: &[DiffLineKind] =
+            &[DiffLineKind::Added, DiffLineKind::Added];
+        let multi_cell: &[DiffLineKind] = &[
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ];
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[],
+            &[DiffLineKind::Removed],
+            single_cell_two_observations,
+            multi_cell,
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert!(
+                hist.peak_count() <= hist.total(),
+                "peak_count {} must be <= total {} on input of length {}",
+                hist.peak_count(),
+                hist.total(),
+                input.len(),
+            );
+            if hist.distinct_cells() <= 1 {
+                assert_eq!(
+                    hist.peak_count(),
+                    hist.total(),
+                    "peak_count must equal total when distinct_cells <= 1 \
+                     on input of length {}",
+                    input.len(),
+                );
+            } else {
+                assert!(
+                    hist.peak_count() < hist.total(),
+                    "peak_count must be strictly less than total when \
+                     distinct_cells >= 2 on input of length {}",
+                    input.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_count_after_merge_is_monotone() {
+        // The (merge, peak_count) composition: merging never shrinks
+        // the peak. Adding non-negative deltas pointwise to the side
+        // with the higher peak cannot lower its count; on every cell
+        // the merge's count is the sum of the sides' counts, and the
+        // maximum of pointwise sums is at least each side's maximum
+        // pointwise. Pinned with disjoint-support, overlapping-support
+        // (where the merge's peak strictly grows), and identity
+        // (empty-rhs) shapes so the monotonicity gets a tight witness
+        // at each boundary.
+        let added_two: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Added]
+            .into_iter()
+            .collect();
+        let removed_one: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        let context_and_added_two: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Context,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        let empty_hist: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+
+        // Disjoint supports: peak equals the larger side's peak
+        // (Added's two beats Removed's one).
+        let disjoint = added_two.clone().merge(&removed_one);
+        assert_eq!(disjoint.peak_count(), 2);
+        assert!(disjoint.peak_count() >= added_two.peak_count());
+        assert!(disjoint.peak_count() >= removed_one.peak_count());
+
+        // Overlapping supports: the shared Added cell grows from
+        // (2, 2) → 4, so the merge's peak strictly grows past each
+        // side's peak.
+        let overlap = added_two.clone().merge(&context_and_added_two);
+        assert_eq!(overlap.peak_count(), 4);
+        assert!(overlap.peak_count() >= added_two.peak_count());
+        assert!(overlap.peak_count() >= context_and_added_two.peak_count());
+
+        // Identity (empty-rhs): merge leaves the peak unchanged.
+        let with_empty = added_two.clone().merge(&empty_hist);
+        assert_eq!(with_empty.peak_count(), added_two.peak_count());
     }
 }
