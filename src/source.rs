@@ -2870,6 +2870,179 @@ mod tests {
     }
 
     #[test]
+    fn layer_kind_histogram_unobserved_lists_unused_layer_kinds() {
+        // Cross-surface pin: the [`crate::AxisHistogram::unobserved`]
+        // projection composes with [`Self::layer_kind_histogram`] to
+        // read "which layer kinds did this chain never realize?" at
+        // one method-call site. `sample_chain()` is two File layers
+        // + one Env layer (no Defaults), so the unobserved kinds are
+        // exactly {Defaults} — the strict-subset coverage-gap case.
+        use crate::cube::axis_cardinality;
+        use std::collections::HashSet;
+        let chain = sample_chain();
+        let gap: HashSet<ConfigSourceKind> = chain
+            .as_slice()
+            .layer_kind_histogram()
+            .unobserved()
+            .collect();
+        assert_eq!(gap, HashSet::from([ConfigSourceKind::Defaults]));
+
+        // Defaults-only chain → unobserved = {Env, File}: the dual
+        // case where the support is the singleton {Defaults} and the
+        // coverage gap is the rest of the axis.
+        let defaults_only = vec![ConfigSource::Defaults, ConfigSource::Defaults];
+        let defaults_gap: HashSet<ConfigSourceKind> = defaults_only
+            .as_slice()
+            .layer_kind_histogram()
+            .unobserved()
+            .collect();
+        assert_eq!(
+            defaults_gap,
+            HashSet::from([ConfigSourceKind::Env, ConfigSourceKind::File]),
+        );
+
+        // Full-axis cover chain → unobserved is empty: every layer
+        // kind appears at least once, so there is no coverage gap.
+        // The dual boundary of the empty-chain case (which is pinned
+        // in `chain_histograms_unobserved_is_full_axis_on_empty_chain`
+        // below).
+        let axis_cover = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/x.yaml")),
+        ];
+        assert_eq!(
+            axis_cover
+                .as_slice()
+                .layer_kind_histogram()
+                .unobserved()
+                .count(),
+            0,
+        );
+        assert_eq!(
+            axis_cover
+                .as_slice()
+                .layer_kind_histogram()
+                .distinct_cells(),
+            axis_cardinality::<ConfigSourceKind>(),
+        );
+    }
+
+    #[test]
+    fn file_format_histogram_unobserved_lists_unused_formats() {
+        // Cross-surface pin on the file-format axis: a chain of three
+        // `.yaml` + one `.toml` File layers + an Env + Defaults has
+        // observed file-format support {Yaml, Toml}, so the
+        // coverage gap is the unobserved formats {Lisp, Nix} — the
+        // strict-subset case. Env / Defaults entries project to
+        // None through `file_format()` and contribute nothing to the
+        // histogram total, so they do not enter the support.
+        use crate::discovery::Format;
+        use std::collections::HashSet;
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+            ConfigSource::File(PathBuf::from("/d.toml")),
+        ];
+        let gap: HashSet<Format> = chain
+            .as_slice()
+            .file_format_histogram()
+            .unobserved()
+            .collect();
+        assert_eq!(gap, HashSet::from([Format::Lisp, Format::Nix]));
+
+        // Env-only chain → file_format support is empty, so
+        // unobserved = full axis = {Yaml, Toml, Lisp, Nix}. Peer to
+        // the empty-histogram boundary on the cube side: an all-zero
+        // histogram has every cell unobserved.
+        let env_only = vec![ConfigSource::Env(String::new())];
+        let env_only_gap: HashSet<Format> = env_only
+            .as_slice()
+            .file_format_histogram()
+            .unobserved()
+            .collect();
+        assert_eq!(env_only_gap, Format::ALL.iter().copied().collect());
+    }
+
+    #[test]
+    fn env_prefix_kind_histogram_unobserved_lists_unused_prefix_kinds() {
+        // Cross-surface pin on the env-prefix-presence axis: a
+        // Bare-only Env chain has env_prefix_kind support {Bare}, so
+        // the coverage gap is {Prefixed} — the strict-subset case
+        // peer to the singleton-support pin on `layer_kind_histogram`.
+        // The dual chain (Prefixed-only) closes the symmetric case.
+        use std::collections::HashSet;
+        let bare_only = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+        ];
+        let bare_gap: HashSet<EnvMetadataTagKind> = bare_only
+            .as_slice()
+            .env_prefix_kind_histogram()
+            .unobserved()
+            .collect();
+        assert_eq!(bare_gap, HashSet::from([EnvMetadataTagKind::Prefixed]));
+
+        let prefixed_only = vec![
+            ConfigSource::Env("A_".to_owned()),
+            ConfigSource::Env("B_".to_owned()),
+        ];
+        let prefixed_gap: HashSet<EnvMetadataTagKind> = prefixed_only
+            .as_slice()
+            .env_prefix_kind_histogram()
+            .unobserved()
+            .collect();
+        assert_eq!(prefixed_gap, HashSet::from([EnvMetadataTagKind::Bare]));
+
+        // No-Env chain (Defaults + File only) → empty support, so
+        // unobserved is the full env-prefix-kind axis.
+        let no_env = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/x.yaml")),
+        ];
+        let no_env_gap: HashSet<EnvMetadataTagKind> = no_env
+            .as_slice()
+            .env_prefix_kind_histogram()
+            .unobserved()
+            .collect();
+        assert_eq!(
+            no_env_gap,
+            EnvMetadataTagKind::ALL.iter().copied().collect(),
+        );
+    }
+
+    #[test]
+    fn chain_histograms_unobserved_is_full_axis_on_empty_chain() {
+        // Empty-chain composition: every chain-level histogram
+        // (layer_kind / file_format / env_prefix_kind) over an empty
+        // chain is the all-zero histogram, so `unobserved` iterates
+        // the full axis at all three surfaces. Peer to
+        // `chain_histograms_dominant_cell_is_none_on_empty_chain` and
+        // `chain_histograms_distinct_cells_is_zero_on_empty_chain`:
+        // the empty-history convention is named at the coverage-gap
+        // surface as well, with the tight boundary witness
+        // (`unobserved` reaches every cell because every cell is
+        // unobserved).
+        use crate::cube::axis_cardinality;
+        let chain: [ConfigSource; 0] = [];
+        assert_eq!(
+            chain.layer_kind_histogram().unobserved().count(),
+            axis_cardinality::<ConfigSourceKind>(),
+        );
+        assert_eq!(
+            chain.file_format_histogram().unobserved().count(),
+            axis_cardinality::<crate::discovery::Format>(),
+        );
+        assert_eq!(
+            chain.env_prefix_kind_histogram().unobserved().count(),
+            axis_cardinality::<EnvMetadataTagKind>(),
+        );
+    }
+
+    #[test]
     fn chain_histograms_distinct_cells_is_zero_on_empty_chain() {
         // Empty-chain composition: every chain-level histogram
         // (layer_kind / file_format / env_prefix_kind) over an empty
