@@ -2735,6 +2735,141 @@ mod tests {
     }
 
     #[test]
+    fn layer_kind_histogram_recessive_cell_picks_minority_kind() {
+        // Cross-surface pin: the
+        // [`crate::AxisHistogram::recessive_cell`] projection composes
+        // with [`Self::layer_kind_histogram`] to read "the rarest
+        // observed layer kind in this chain" at one method-call site.
+        // `sample_chain()` is two File layers + one Env layer (no
+        // Defaults), so the rarest observed kind is Env. Defaults
+        // does not appear in the chain (count 0) and is excluded from
+        // the argmin per the recessive_cell zero-cell-exclusion rule
+        // — the projection picks the rarest *observed* kind, not the
+        // overall minimum.
+        let chain = sample_chain();
+        assert_eq!(
+            chain.as_slice().layer_kind_histogram().recessive_cell(),
+            Some(ConfigSourceKind::Env),
+        );
+    }
+
+    #[test]
+    fn file_format_histogram_recessive_cell_picks_minority_format() {
+        // Cross-surface pin on the file-format axis: a chain of three
+        // `.yaml` + one `.toml` File layers has rarest observed
+        // Format = Toml (strict minimum — no tie-breaking required).
+        // Env / Defaults entries do not contribute (project to None
+        // through `file_format()`) and the unobserved Lisp / Nix
+        // formats are at count 0 and excluded from the argmin per
+        // the recessive_cell zero-cell-exclusion rule.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+            ConfigSource::File(PathBuf::from("/d.toml")),
+        ];
+        assert_eq!(
+            chain.as_slice().file_format_histogram().recessive_cell(),
+            Some(Format::Toml),
+        );
+    }
+
+    #[test]
+    fn env_prefix_kind_histogram_recessive_cell_for_mixed_prefix_chain() {
+        // Cross-surface pin on the env-prefix-presence axis: a chain
+        // with two `Env(prefix)` (one bare, one prefixed) has
+        // recessive_cell tied at count 1; tie-breaking by
+        // `EnvMetadataTagKind::ALL` declaration order (Prefixed,
+        // Bare) yields Prefixed — identical to `dominant_cell` on
+        // the same tied input. The two projections coincide on every
+        // uniform histogram; the pair witnesses that agreement here.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        assert_eq!(
+            chain
+                .as_slice()
+                .env_prefix_kind_histogram()
+                .recessive_cell(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+
+        // Strict-minority case: a chain dominated by bare-prefix Env
+        // layers picks Prefixed as the rarest observed cell. Pin the
+        // strict-minimum case alongside the tie case so both halves
+        // of the projection are concretely named.
+        let bare_majority = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("X_".to_owned()),
+        ];
+        assert_eq!(
+            bare_majority
+                .as_slice()
+                .env_prefix_kind_histogram()
+                .recessive_cell(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+    }
+
+    #[test]
+    fn chain_histograms_recessive_cell_is_none_on_empty_chain() {
+        // Empty-chain composition: every chain-level histogram
+        // (layer_kind / file_format / env_prefix_kind) over an empty
+        // chain is the all-zero histogram, so `recessive_cell` reads
+        // None at all three surfaces. Peer to
+        // `chain_histograms_dominant_cell_is_none_on_empty_chain` —
+        // the two projections share the same empty-history
+        // convention.
+        let chain: [ConfigSource; 0] = [];
+        assert_eq!(chain.layer_kind_histogram().recessive_cell(), None);
+        assert_eq!(chain.file_format_histogram().recessive_cell(), None);
+        assert_eq!(chain.env_prefix_kind_histogram().recessive_cell(), None);
+    }
+
+    #[test]
+    fn chain_histograms_dominant_and_recessive_agree_on_uniform_singleton_chain() {
+        // Cross-surface boundary pin: every chain over which a
+        // chain-level histogram resolves to a single observed cell —
+        // a Defaults-only chain on layer_kind, a `.yaml`-only chain
+        // on file_format, a Bare-only Env chain on
+        // env_prefix_kind — has `dominant_cell == recessive_cell`,
+        // both pointing at the single observed cell. Peer to the
+        // cube-side
+        // `axis_histogram_dominant_and_recessive_agree_on_uniform_axis_cover_for_every_implementor`
+        // pin — the histogram-side agreement holds on every
+        // *singleton-support* histogram, not just on the
+        // axis-cover histograms; pin the chain-side witness here so
+        // the discipline is named at both surfaces.
+        use crate::discovery::Format;
+        // layer_kind: Defaults-only chain → both projections = Defaults.
+        let defaults_only = vec![ConfigSource::Defaults, ConfigSource::Defaults];
+        let layer_hist = defaults_only.as_slice().layer_kind_histogram();
+        assert_eq!(layer_hist.dominant_cell(), Some(ConfigSourceKind::Defaults));
+        assert_eq!(layer_hist.recessive_cell(), layer_hist.dominant_cell());
+        // file_format: `.yaml`-only chain → both = Yaml.
+        let yaml_only = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+        ];
+        let format_hist = yaml_only.as_slice().file_format_histogram();
+        assert_eq!(format_hist.dominant_cell(), Some(Format::Yaml));
+        assert_eq!(format_hist.recessive_cell(), format_hist.dominant_cell());
+        // env_prefix_kind: Bare-only Env chain → both = Bare.
+        let bare_only = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+        ];
+        let env_hist = bare_only.as_slice().env_prefix_kind_histogram();
+        assert_eq!(env_hist.dominant_cell(), Some(EnvMetadataTagKind::Bare));
+        assert_eq!(env_hist.recessive_cell(), env_hist.dominant_cell());
+    }
+
+    #[test]
     fn chain_histograms_distinct_cells_is_zero_on_empty_chain() {
         // Empty-chain composition: every chain-level histogram
         // (layer_kind / file_format / env_prefix_kind) over an empty

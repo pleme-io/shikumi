@@ -502,6 +502,106 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         )
     }
 
+    /// The first axis cell (in declaration order over [`ClosedAxis::ALL`])
+    /// whose observation count equals the minimum *positive* count over
+    /// the histogram; `None` when no cell carries any observation
+    /// (i.e. [`Self::is_empty`] is `true`).
+    ///
+    /// The "argmin" / "rarest observed cell" projection on the
+    /// histogram — the structural dual of [`Self::dominant_cell`] on
+    /// the *minority* side. The natural typed primitive for diagnostic
+    /// dumps and dashboards asking *"which cell is the rarest in this
+    /// observation window?"*: the rarest observed layer kind in a
+    /// chain's [`crate::ConfigSourceChain::layer_kind_histogram`] (a
+    /// reload that fires once with a single Defaults entry on an
+    /// otherwise File-dominated chain), the least common file format
+    /// in [`crate::ConfigSourceChain::file_format_histogram`] (a single
+    /// `.lisp` layer among many `.yaml`), the rarest reload-failure
+    /// kind in a per-window `AxisHistogram<crate::ShikumiErrorKind>`
+    /// (the outlier classification on a stream dominated by `Parse`
+    /// errors). Before this lift, every such consumer re-derived the
+    /// loop inline as
+    /// `hist.iter().filter(|&(_,c)|c>0).min_by_key(|&(_,c)|c).map(|(v,_)|v)`
+    /// — and the inline `min_by_key` form silently returns the *first*
+    /// tied cell (per [`Iterator::min_by_key`]'s contract, which
+    /// reverses [`Iterator::max_by_key`]'s "last on ties" behavior), so
+    /// the open-coded argmin and the open-coded argmax in
+    /// [`Self::dominant_cell`] disagreed on which tied cell to pick.
+    /// The pair of lifts pins one consistent tie-breaking rule across
+    /// both projections.
+    ///
+    /// **Zero cells are excluded from the search.** The argmin is taken
+    /// over the histogram's *support* (the set of observed cells), not
+    /// over the full axis. Zero-count cells are trivially the minimum
+    /// over the full axis and would shadow the rarest *observed* kind;
+    /// excluding them surfaces the rarest cell some observation
+    /// actually fell on — the question the rendering, diagnostic, and
+    /// dashboard sites ask. This matches [`Self::dominant_cell`]'s
+    /// symmetry on the maximum side: both projections operate over the
+    /// nonzero support, so the empty-histogram convention is identical
+    /// (both return `None`) and the singleton case is identical (both
+    /// return the observed cell).
+    ///
+    /// **Tie-breaking is deterministic by declaration order.** When
+    /// multiple observed cells share the minimum count, the cell
+    /// earliest in [`ClosedAxis::ALL`] wins — pointwise consistent
+    /// with [`Self::dominant_cell`]'s tie-breaking rule and the order
+    /// [`Self::iter`] yields. The same histogram observed under
+    /// different observation orders therefore yields the same
+    /// recessive cell: observation order does not leak through the
+    /// projection.
+    ///
+    /// **Empty-histogram convention.** Returns `None` exactly when
+    /// [`Self::is_empty`] is `true`. A histogram with even a single
+    /// observation always has a recessive cell (the observed one). A
+    /// histogram whose every cell observes the same nonzero count
+    /// returns `Some(first cell)` — the unique cell in declaration
+    /// order with the minimum positive count, identical to the
+    /// dominant cell on a uniform histogram. Pinned by
+    /// [`tests::axis_histogram_dominant_and_recessive_agree_on_uniform_axis_cover_for_every_implementor`].
+    ///
+    /// **Companion invariants** with [`Self::dominant_cell`] and
+    /// [`Self::distinct_cells`]:
+    /// - `recessive_cell().is_some() == dominant_cell().is_some()`:
+    ///   both projections are defined on the same support
+    ///   (`!is_empty()`).
+    /// - `dominant_cell() == recessive_cell()` whenever
+    ///   `distinct_cells() == 1` (a single observed cell is both the
+    ///   maximum and the minimum) — the singleton-support law.
+    /// - `count(recessive_cell().unwrap()) <= count(dominant_cell().unwrap())`
+    ///   whenever the histogram is non-empty: the rarest cell's count
+    ///   is bounded above by the dominant cell's count.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the twenty
+    /// closed-enum axis primitives plus the five product cubes —
+    /// twenty-five today, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]) inherits the
+    /// projection at no per-axis cost. The three trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_recessive_cell_empty_is_none_*`,
+    /// `axis_histogram_recessive_cell_singleton_picks_observed_*`,
+    /// `axis_histogram_recessive_cell_axis_cover_picks_first_*`).
+    ///
+    /// Peer to [`Self::dominant_cell`] (the *modal* cell on the maximum
+    /// side) and [`Self::distinct_cells`] (the *count* of observed
+    /// cells): the histogram surface now carries the natural triple of
+    /// "*which* cell" / "*which other* cell" / "*how many* cells"
+    /// projections over the observed support.
+    #[must_use]
+    pub fn recessive_cell(&self) -> Option<A> {
+        let mut iter = self.iter().filter(|&(_, c)| c > 0);
+        let first = iter.next()?;
+        Some(
+            iter.fold(
+                first,
+                |best, current| {
+                    if current.1 < best.1 { current } else { best }
+                },
+            )
+            .0,
+        )
+    }
+
     /// Pointwise sum with `other` — the monoid operation. Every cell
     /// becomes `self.count(v) + other.count(v)`. Commutative,
     /// associative, identity at [`Self::empty`]. The natural shape for
@@ -5091,6 +5191,373 @@ mod tests {
                 hist.dominant_cell(),
                 manual,
                 "dominant_cell must equal the open-coded first-max scan over input \
+                 of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    // ---- AxisHistogram::recessive_cell trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // recessive_cell projection's contract holds uniformly without
+    // per-axis test duplication: empty → None; singleton → Some(K) on
+    // every cell K (identical to dominant_cell on the singleton case);
+    // uniform axis-cover → Some(first cell in declaration order)
+    // (identical to dominant_cell on a tied histogram). Concrete
+    // tie-breaking and merge-interaction pins follow below on
+    // [`DiffLineKind`].
+
+    fn assert_recessive_cell_empty_is_none<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.recessive_cell(),
+            None,
+            "empty histogram recessive_cell must be None on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_recessive_cell_singleton_picks_observed_cell<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug + PartialEq,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has recessive_cell = Some(cell).
+        // Pins the (singleton → unique-min) law uniformly. Identical
+        // to the dominant_cell case on a singleton: the rarest and
+        // the dominant cell coincide when only one cell is observed.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.recessive_cell(),
+                Some(observed),
+                "singleton recessive_cell must equal the observed cell {observed:?} \
+                 on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_recessive_cell_axis_cover_picks_first_cell<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug + PartialEq,
+    {
+        // Observing every cell exactly once produces a uniform
+        // histogram (every cell at 1, count minimum tied across the
+        // axis); `recessive_cell` must return the first cell in
+        // declaration order — the documented tie-breaking rule, same
+        // as `dominant_cell` on the same input. Pinned uniformly:
+        // every closed-axis implementor's declaration-order
+        // tie-breaking lands at the head of [`ClosedAxis::ALL`] on
+        // *both* the maximum and the minimum side, so the two
+        // projections agree on every tied-uniform input.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        let first = axis_iter::<A>().next().expect(
+            "every ClosedAxis implementor has at least one variant per the ClosedAxis contract",
+        );
+        assert_eq!(
+            hist.recessive_cell(),
+            Some(first),
+            "uniform axis-cover histogram recessive_cell must be the first cell \
+             in declaration order on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_recessive_cell_empty_is_none_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_recessive_cell_empty_is_none::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_recessive_cell_singleton_picks_observed_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_recessive_cell_singleton_picks_observed_cell::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_recessive_cell_axis_cover_picks_first_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_recessive_cell_axis_cover_picks_first_cell::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_dominant_and_recessive_agree_on_uniform_axis_cover_for_every_implementor() {
+        // Joint pin: on a uniform axis-cover histogram (every cell
+        // observed once), `dominant_cell` and `recessive_cell` must
+        // return the same cell — the first in declaration order.
+        // The two projections coincide whenever every observed cell
+        // shares the same count; the uniform axis-cover is the
+        // tightest witness of that equality. Reaches every
+        // closed-axis implementor uniformly so the
+        // dominant-equals-recessive-on-uniform discipline is named
+        // structurally rather than per-axis.
+        fn assert_agree<A>()
+        where
+            A: ClosedAxis + std::fmt::Debug + PartialEq,
+        {
+            let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+            assert_eq!(
+                hist.dominant_cell(),
+                hist.recessive_cell(),
+                "uniform axis-cover histogram must satisfy dominant_cell == \
+                 recessive_cell on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_agree::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_recessive_cell_returns_strict_min_when_unique() {
+        // Concrete pin on the unique-minimum case: observing Added
+        // twice and Removed three times yields the strict positive
+        // min at Added. The cell returned must be the unique-min cell
+        // regardless of declaration order. (Context is zero, so it
+        // does not enter the argmin — zero cells are excluded from
+        // the search, as documented on `recessive_cell`.)
+        let input = [
+            DiffLineKind::Removed,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ];
+        let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+        assert_eq!(hist.count(DiffLineKind::Added), 2);
+        assert_eq!(hist.count(DiffLineKind::Removed), 3);
+        assert_eq!(hist.count(DiffLineKind::Context), 0);
+        assert_eq!(hist.recessive_cell(), Some(DiffLineKind::Added));
+    }
+
+    #[test]
+    fn axis_histogram_recessive_cell_breaks_ties_in_declaration_order() {
+        // Concrete pin on the tie-breaking rule: when multiple
+        // observed cells share the minimum count, the first in
+        // [`ClosedAxis::ALL`] declaration order wins. [`DiffLineKind::ALL`]
+        // starts with [`DiffLineKind::Context`]; observing every cell
+        // once at the same count must return [`DiffLineKind::Context`]
+        // regardless of observation order — identical to
+        // [`Self::dominant_cell`]'s tie-breaking on the same input.
+        // Pinned by varying observation order (Added, Removed,
+        // Context vs Context, Removed, Added) and asserting the
+        // result is invariant — observation order does not leak
+        // through the projection.
+        let first = DiffLineKind::ALL[0];
+        let by_observation_order_a: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        let by_observation_order_b: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Context,
+            DiffLineKind::Removed,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(by_observation_order_a, by_observation_order_b);
+        assert_eq!(by_observation_order_a.recessive_cell(), Some(first));
+        assert_eq!(by_observation_order_b.recessive_cell(), Some(first));
+    }
+
+    #[test]
+    fn axis_histogram_recessive_cell_excludes_zero_cells() {
+        // Boundary pin: `recessive_cell` searches the positive
+        // support only — zero-count cells are not eligible. A
+        // histogram with Added = 2 and every other cell at 0 returns
+        // Some(Added), not Some(Context) (the first cell in
+        // declaration order, which is at count 0 and thus excluded).
+        // The pin distinguishes `recessive_cell` from a
+        // "argmin-over-all-cells" reading that would silently treat
+        // unobserved cells as the minimum.
+        let input = [DiffLineKind::Added, DiffLineKind::Added];
+        let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+        assert_eq!(hist.count(DiffLineKind::Context), 0);
+        assert_eq!(hist.count(DiffLineKind::Removed), 0);
+        assert_eq!(hist.count(DiffLineKind::Added), 2);
+        assert_eq!(hist.recessive_cell(), Some(DiffLineKind::Added));
+    }
+
+    #[test]
+    fn axis_histogram_recessive_cell_after_merge_reflects_combined_counts() {
+        // The (merge, recessive_cell) composition: recessive_cell on
+        // a merged histogram reflects the pointwise-summed counts,
+        // not either side's individual minimum. Pinned by
+        // constructing two histograms with disagreeing minima — the
+        // merge's recessive cell follows the combined counts, not
+        // either side's rarest cell in isolation.
+        //
+        // `DiffLineKind::ALL` declaration order is
+        // `[Removed, Added, Context]` (per
+        // `diff_line_kind_all_declaration_order_is_removed_added_context`
+        // in `src/tiered.rs`); witness shapes are constructed
+        // accordingly.
+        let lhs: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        // lhs counts: Removed=2, Added=1, Context=0 →
+        //   recessive = Added (strict min positive = 1, unique).
+        let rhs: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        // rhs counts: Removed=0, Added=2, Context=1 →
+        //   recessive = Context (strict min positive = 1, unique).
+        assert_eq!(lhs.recessive_cell(), Some(DiffLineKind::Added));
+        assert_eq!(rhs.recessive_cell(), Some(DiffLineKind::Context));
+        let merged = lhs.merge(&rhs);
+        assert_eq!(merged.count(DiffLineKind::Removed), 2);
+        assert_eq!(merged.count(DiffLineKind::Added), 3);
+        assert_eq!(merged.count(DiffLineKind::Context), 1);
+        // merged: Removed=2, Added=3, Context=1 →
+        //   recessive = Context (strict min positive = 1, unique).
+        // The merge takes the rhs's Context cell as the global
+        // recessive even though lhs's recessive was Added — the
+        // projection depends on the combined counts, not on either
+        // side's individual recessive in isolation.
+        assert_eq!(merged.recessive_cell(), Some(DiffLineKind::Context));
+    }
+
+    #[test]
+    fn axis_histogram_recessive_cell_iff_is_empty_is_false() {
+        // Boundary pin: recessive_cell is Some iff is_empty is false
+        // — identical companion to the dominant_cell boundary law.
+        // The two projections are defined on the same support, so
+        // their Some/None alignment is structural.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_empty());
+        assert_eq!(empty.recessive_cell(), None);
+        assert_eq!(empty.dominant_cell(), None);
+
+        let singleton: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Context).collect();
+        assert!(!singleton.is_empty());
+        assert!(singleton.recessive_cell().is_some());
+        assert!(singleton.dominant_cell().is_some());
+    }
+
+    #[test]
+    fn axis_histogram_recessive_count_bounded_above_by_dominant_count() {
+        // Companion-bound pin: the rarest cell's count is bounded
+        // above by the dominant cell's count on every non-empty
+        // histogram. Pinned over four observation-mix shapes
+        // (singleton, strict skew, three-way uniform, two-way tie)
+        // so the bound gets tight witnesses at the equality
+        // boundaries (singleton: 1 == 1, uniform: 1 == 1) and at the
+        // strict-inequality boundaries (skew: rare < dominant).
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let rare = hist
+                .recessive_cell()
+                .expect("non-empty histogram must have a recessive cell");
+            let dom = hist
+                .dominant_cell()
+                .expect("non-empty histogram must have a dominant cell");
+            assert!(
+                hist.count(rare) <= hist.count(dom),
+                "recessive count {} must be <= dominant count {} on input of length {}",
+                hist.count(rare),
+                hist.count(dom),
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_recessive_cell_equals_open_coded_first_min_loop() {
+        // The lift collapses the inline scan
+        // `iter().filter(|&(_,c)|c>0).fold(first, |best,cur| if cur.1<best.1 {cur} else {best})`
+        // pattern an open-coded argmin consumer would re-derive per
+        // observation site. Pin pointwise equivalence over the typed
+        // `DiffLineKind` cells across the four canonical
+        // observation-mix shapes (empty, unique-min, tied-min,
+        // three-way uniform) so a future regression in either side
+        // surfaces here.
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let manual = {
+                let mut iter = hist.iter().filter(|&(_, c)| c > 0);
+                iter.next().map(|first| {
+                    iter.fold(
+                        first,
+                        |best, current| {
+                            if current.1 < best.1 { current } else { best }
+                        },
+                    )
+                    .0
+                })
+            };
+            assert_eq!(
+                hist.recessive_cell(),
+                manual,
+                "recessive_cell must equal the open-coded first-min scan over input \
                  of length {}",
                 input.len(),
             );
