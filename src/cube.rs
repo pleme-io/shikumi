@@ -786,6 +786,125 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         self.counts.iter().copied().max().unwrap_or(0)
     }
 
+    /// The minimum observation count across the histogram's *observed*
+    /// support — the **height of the histogram's trough**. Returns `0`
+    /// exactly when [`Self::is_empty`] is `true`; otherwise returns the
+    /// count carried by [`Self::recessive_cell`] (and pointwise equal to
+    /// it).
+    ///
+    /// The "scalar peer" of [`Self::recessive_cell`] on the count side —
+    /// the structural dual of [`Self::peak_count`] on the *minority*
+    /// side. The natural typed primitive for diagnostic dumps,
+    /// dashboards, and attestation manifests asking *"how many
+    /// observations did the rarest observed cell collect?"*: the
+    /// rarest-format observation count in a chain's
+    /// [`crate::ConfigSourceChain::file_format_histogram`] (the "the
+    /// chain's least-used file format fired N times" cell), the
+    /// rarest-error count in a per-window
+    /// `AxisHistogram<crate::ShikumiErrorKind>` (the floor of the
+    /// observed error-class distribution), the trough-layer-kind count
+    /// in a chain's [`crate::ConfigSourceChain::layer_kind_histogram`]
+    /// (the operator table's "the chain's lightest layer kind fired N
+    /// times" cell). Before this lift, every such consumer re-derived
+    /// the projection inline as
+    /// `hist.recessive_cell().map_or(0, |c| hist.count(c))` — which
+    /// walked the histogram *twice* (once to argmin over the support,
+    /// once to read the count back through the [`Self::count`]
+    /// indexing). The lift names the scalar at one site with a single
+    /// pass over the counts vector.
+    ///
+    /// **Zero cells are excluded from the search.** The minimum is
+    /// taken over the histogram's *support* (the set of observed cells),
+    /// not over the full axis. Zero-count cells are trivially the
+    /// minimum over the full axis and would shadow the rarest-observed
+    /// count; excluding them surfaces the count of the rarest cell some
+    /// observation actually fell on — the question the rendering,
+    /// diagnostic, and dashboard sites ask. This matches
+    /// [`Self::recessive_cell`]'s zero-cell-exclusion rule pointwise so
+    /// the `(recessive_cell(), trough_count())` pair reads off the
+    /// histogram's trough consistently with [`Self::peak_count`] /
+    /// [`Self::dominant_cell`] reading the peak.
+    ///
+    /// **Empty-histogram convention** — returns `0` (not
+    /// `Option<usize>`) matching the [`Self::total`],
+    /// [`Self::distinct_cells`], and [`Self::peak_count`] empty
+    /// conventions; the scalar peer quadruple `(total, distinct_cells,
+    /// peak_count, trough_count)` is therefore uniformly `(0, 0, 0, 0)`
+    /// on the empty histogram. The dual-form [`Self::recessive_cell`]
+    /// carries `Option<A>` because the *cell* is undefined when no
+    /// observation has landed; the *count* is well-defined as zero on
+    /// the empty cells of the vector. The asymmetry is intentional and
+    /// pointwise consistent with the `(peak_count, dominant_cell)` pair.
+    ///
+    /// **Closes the (cell, count) modal pair** with
+    /// [`Self::recessive_cell`]:
+    /// `(recessive_cell(), trough_count())` reads off the histogram's
+    /// trough as a typed `(Option<A>, usize)` pair, pointwise dual to
+    /// `(dominant_cell(), peak_count())` reading the peak. When
+    /// [`Self::recessive_cell`] is `Some(v)`,
+    /// `self.count(v) == self.trough_count()` (the recessive cell's
+    /// count equals the minimum-over-support). When
+    /// [`Self::recessive_cell`] is `None`, `trough_count() == 0` and
+    /// the pair witnesses the empty-histogram boundary uniformly.
+    ///
+    /// **Companion invariants** with [`Self::total`],
+    /// [`Self::distinct_cells`], [`Self::peak_count`],
+    /// [`Self::dominant_cell`], and [`Self::recessive_cell`]:
+    /// - `trough_count() == 0` ⇔ [`Self::is_empty`] is `true`
+    ///   (peer to the empty-histogram boundary [`Self::peak_count`],
+    ///   [`Self::distinct_cells`], and [`Self::dominant_cell`] all
+    ///   carry).
+    /// - `trough_count() <= peak_count()` always: the trough is bounded
+    ///   above by the peak (the minimum over a non-empty support is
+    ///   bounded above by the maximum over the same support). Equality
+    ///   holds iff every observed cell carries the same count (the
+    ///   *uniform-observed-count* shape — every singleton-support
+    ///   histogram, every uniform axis-cover histogram, every
+    ///   `k`-cell histogram observed `k` times each-once).
+    /// - `trough_count() >= 1` whenever the histogram is non-empty:
+    ///   every observed cell carries at least one observation by
+    ///   construction, so the minimum over the support is at least
+    ///   one. The peer to the `peak_count() >= 1` non-emptiness floor.
+    /// - The merge behavior is *non-monotonic* (in deliberate contrast
+    ///   to [`Self::peak_count`]'s strict monotonicity under
+    ///   [`Self::merge`]): merging two histograms can either grow the
+    ///   trough (when the supports coincide, every cell's count grows
+    ///   and so does the minimum) or shrink it (when one side observes
+    ///   a cell the other does not, the new cell enters the merged
+    ///   support carrying that side's count and can pull the merged
+    ///   trough below either side's). The empty-identity law still
+    ///   holds: `merge(self, empty).trough_count() == self.trough_count()`.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the twenty
+    /// closed-enum axis primitives plus the five product cubes —
+    /// twenty-five today, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]) inherits the
+    /// projection at no per-axis cost. The three trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_trough_count_empty_is_zero_*`,
+    /// `axis_histogram_trough_count_singleton_is_one_*`,
+    /// `axis_histogram_trough_count_axis_cover_is_one_*`).
+    ///
+    /// Peer to [`Self::total`] (the *sum* over every cell),
+    /// [`Self::distinct_cells`] (the *support cardinality*), and
+    /// [`Self::peak_count`] (the *modal-count scalar* on the majority
+    /// side): the scalar surface of the histogram now carries the
+    /// natural quadruple of
+    /// `(how many observations, how many kinds, how many on the peak,
+    /// how many on the trough)` projections — every operator-facing
+    /// summary reads off one method call each, and the *spread* of the
+    /// observed distribution (`peak_count - trough_count`) reads off a
+    /// single subtraction on the closed scalar surface.
+    #[must_use]
+    pub fn trough_count(&self) -> usize {
+        self.counts
+            .iter()
+            .copied()
+            .filter(|&c| c > 0)
+            .min()
+            .unwrap_or(0)
+    }
+
     /// Pointwise sum with `other` — the monoid operation. Every cell
     /// becomes `self.count(v) + other.count(v)`. Commutative,
     /// associative, identity at [`Self::empty`]. The natural shape for
@@ -6306,5 +6425,269 @@ mod tests {
         // Identity (empty-rhs): merge leaves the peak unchanged.
         let with_empty = added_two.clone().merge(&empty_hist);
         assert_eq!(with_empty.peak_count(), added_two.peak_count());
+    }
+
+    // ---- AxisHistogram::trough_count trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // trough_count projection's contract holds uniformly without
+    // per-axis test duplication: empty → 0; singleton → 1 on every
+    // cell; uniform axis-cover → 1 (every cell observed exactly once,
+    // so the minimum over the support equals 1). Concrete (cell, count)
+    // pairing, structural bound, and merge non-monotonicity pins
+    // follow below on [`DiffLineKind`].
+
+    fn assert_trough_count_empty_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.trough_count(),
+            0,
+            "empty histogram trough_count must be 0 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_trough_count_singleton_is_one<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has trough count exactly 1 — the
+        // singleton-support trough law uniformly across implementors.
+        // Pointwise equal to `peak_count` on the singleton support
+        // (every singleton is uniform, so peak and trough agree).
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.trough_count(),
+                1,
+                "singleton trough_count must equal 1 \
+                 for observed cell {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_trough_count_axis_cover_is_one<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once produces a uniform
+        // histogram; the minimum cell count over the support is 1 —
+        // the uniform-axis-cover trough law. Peer to the
+        // uniform-axis-cover law on `peak_count` (which also reads 1
+        // on the same input): the (peak, trough) pair agrees pointwise
+        // on every uniform histogram, pinned uniformly across every
+        // closed-axis implementor.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            hist.trough_count(),
+            1,
+            "uniform axis-cover histogram trough_count must equal 1 on {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_trough_count_empty_is_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_trough_count_empty_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_trough_count_singleton_is_one_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_trough_count_singleton_is_one::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_trough_count_axis_cover_is_one_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_trough_count_axis_cover_is_one::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_trough_count_equals_recessive_cell_count_when_non_empty() {
+        // The lift's defining pairing law: on every non-empty histogram
+        // the scalar `trough_count` equals the count carried by the
+        // recessive cell (i.e. `count(recessive_cell().unwrap())`). The
+        // structural dual of the
+        // `peak_count == count(dominant_cell())` law on the majority
+        // side. Pin pointwise equivalence over typed `DiffLineKind`
+        // cells across four canonical observation-mix shapes
+        // (singleton, unique-min, tied-min, three-way uniform) so a
+        // future regression in either side surfaces here. The empty
+        // boundary is pinned separately by the trait-uniform
+        // empty-is-zero law above and the dedicated
+        // `trough_count_iff_is_empty_is_zero` test below.
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let recessive = hist
+                .recessive_cell()
+                .expect("non-empty histogram has a recessive cell");
+            assert_eq!(
+                hist.trough_count(),
+                hist.count(recessive),
+                "trough_count must equal count(recessive_cell()) on non-empty input \
+                 of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_trough_count_iff_is_empty_is_zero() {
+        // Boundary pin: trough_count == 0 iff is_empty is true.
+        // Equivalence holds across both directions — an empty history
+        // reads 0, a non-empty history reads at least 1 (every observed
+        // cell carries at least one observation by construction). Peer
+        // to the same boundary equivalence peak_count, distinct_cells,
+        // and dominant_cell all carry.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_empty());
+        assert_eq!(empty.trough_count(), 0);
+
+        let singleton: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        assert!(!singleton.is_empty());
+        assert!(singleton.trough_count() >= 1);
+    }
+
+    #[test]
+    fn axis_histogram_trough_count_is_bounded_above_by_peak_count() {
+        // Structural-bound pin: trough_count ∈ [0, peak_count] on every
+        // histogram, with equality iff every observed cell carries the
+        // same count (the *uniform-observed-count* shape). Pinned over
+        // five observation shapes — empty (0 == 0); singleton
+        // (uniform, trough == peak == 1); single-cell-multi-observation
+        // (uniform-support, trough == peak == 2); k-cell uniform
+        // (axis-cover by hand, trough == peak == 1); skew (strict
+        // inequality witness, trough == 1 < peak == 2) — so both the
+        // bound and the equality case get tight witnesses across the
+        // boundary spectrum.
+        let single_cell_two_observations: &[DiffLineKind] =
+            &[DiffLineKind::Added, DiffLineKind::Added];
+        let two_cell_uniform: &[DiffLineKind] = &[DiffLineKind::Added, DiffLineKind::Removed];
+        let skew: &[DiffLineKind] = &[
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ];
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Removed],
+            single_cell_two_observations,
+            two_cell_uniform,
+            skew,
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert!(
+                hist.trough_count() <= hist.peak_count(),
+                "trough_count {} must be <= peak_count {} on input of length {}",
+                hist.trough_count(),
+                hist.peak_count(),
+                input.len(),
+            );
+            // Equality case — every observed cell carries the same count.
+            let observed_counts: Vec<usize> = hist.nonzero().map(|(_, count)| count).collect();
+            let uniform = observed_counts
+                .first()
+                .is_some_and(|&first| observed_counts.iter().all(|&c| c == first));
+            if uniform || hist.is_empty() {
+                assert_eq!(
+                    hist.trough_count(),
+                    hist.peak_count(),
+                    "trough_count must equal peak_count when observed counts \
+                     are uniform on input of length {}",
+                    input.len(),
+                );
+            } else {
+                assert!(
+                    hist.trough_count() < hist.peak_count(),
+                    "trough_count must be strictly less than peak_count when \
+                     observed counts are non-uniform on input of length {}",
+                    input.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn axis_histogram_trough_count_after_merge_is_non_monotonic() {
+        // The (merge, trough_count) composition: in deliberate contrast
+        // to peak_count's strict monotonicity under merge, trough_count
+        // can either *grow* (when the supports coincide, every observed
+        // cell's count grows so does the minimum) or *shrink* (when one
+        // side observes a cell the other does not, the new cell enters
+        // the merged support carrying that side's count and can pull
+        // the merged trough below either side's). The empty-identity
+        // law still holds. Pinned with overlapping-support (grow),
+        // disjoint-support (shrink-or-equal), and identity (empty-rhs)
+        // shapes so each branch of the non-monotonic behavior gets a
+        // tight witness.
+        let added_two: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Added]
+            .into_iter()
+            .collect();
+        let added_three: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        let removed_one: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        let empty_hist: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+
+        // Overlapping (identical) supports {Added}: trough grows from
+        // (2, 3) → 5, strictly past each side's trough.
+        let overlap = added_two.clone().merge(&added_three);
+        assert_eq!(overlap.trough_count(), 5);
+        assert!(overlap.trough_count() > added_two.trough_count());
+        assert!(overlap.trough_count() > added_three.trough_count());
+
+        // Disjoint supports {Added:2} and {Removed:1}: the merged
+        // support {Added:2, Removed:1} pulls the merged trough down to
+        // 1 — strictly below the higher side's trough (2). Witnesses
+        // the *shrink* branch of non-monotonicity.
+        let disjoint = added_two.clone().merge(&removed_one);
+        assert_eq!(disjoint.trough_count(), 1);
+        assert!(disjoint.trough_count() < added_two.trough_count());
+        assert_eq!(disjoint.trough_count(), removed_one.trough_count());
+
+        // Identity (empty-rhs): merge leaves the trough unchanged.
+        let with_empty = added_two.clone().merge(&empty_hist);
+        assert_eq!(with_empty.trough_count(), added_two.trough_count());
     }
 }
