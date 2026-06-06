@@ -524,6 +524,111 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         self.counts.iter().filter(|&&c| c > 0).count()
     }
 
+    /// Number of axis cells that received no observations — the
+    /// **coverage-gap cardinality** of the histogram. The scalar peer of
+    /// the [`Self::unobserved`] iterator on the count side and the
+    /// structural complement of [`Self::distinct_cells`] over the closed
+    /// axis: every cell of [`ClosedAxis::ALL`] lies in exactly one of
+    /// the (observed, unobserved) sub-axes, and the two scalar counts
+    /// partition the axis without remainder
+    /// (`distinct_cells() + unobserved_cells() == axis_cardinality::<A>()`).
+    ///
+    /// The natural typed primitive for diagnostic dumps, coverage
+    /// dashboards, and attestation manifests asking *"how many axis
+    /// kinds were missing from this observation window?"*: the unfired
+    /// error-class count in a per-window
+    /// `AxisHistogram<crate::ShikumiErrorKind>` (the "N of M error
+    /// classes never fired this reload" attestation), the unused
+    /// file-format count in a chain's
+    /// [`crate::ConfigSourceChain::file_format_histogram`] (the
+    /// "N formats unused in this chain" coverage cell), the absent
+    /// layer-kind count in a chain's
+    /// [`crate::ConfigSourceChain::layer_kind_histogram`] (the "N layer
+    /// kinds the chain never produced" diagnostic — the natural pair to
+    /// the "M layer kinds observed" cell on the same row), the absent
+    /// diff-line class count in
+    /// [`crate::ConfigDiff::kind_histogram`] (the "N diff classes absent
+    /// from this rebuild" attestation). Before this lift, every such
+    /// consumer re-derived the projection inline as
+    /// `hist.unobserved().count()` — which walked the histogram through
+    /// the `iter().filter(|&(_, c)| c == 0).map(|(v, _)| v)` chain plus
+    /// the trailing `.count()` (a five-stage iterator adaptor when a
+    /// single-pass `.filter(|&&c| c == 0).count()` over the raw counts
+    /// vector reads the same scalar). The lift names the projection at
+    /// one site, consumers route through one method call, and the
+    /// (observed, unobserved) cardinality partition becomes a typed
+    /// equality between two named scalars rather than one named scalar
+    /// against a generic helper.
+    ///
+    /// **Underflow-safe by construction.** The pointwise equivalent
+    /// derivation `axis_cardinality::<A>() - distinct_cells()` is
+    /// guaranteed non-negative on every histogram (the support is
+    /// bounded above by the axis size — pinned by the
+    /// `distinct_cells <= axis_cardinality` invariant on
+    /// [`Self::distinct_cells`]), so the subtraction never wraps. The
+    /// named scalar surfaces the bound; consumers do not re-prove
+    /// monotonicity at the call site.
+    ///
+    /// **Structural bounds.** The return value is always in the
+    /// interval `[0, axis_cardinality::<A>()]`. Tight at both ends: the
+    /// uniform axis-cover histogram reads `0` (every cell observed, no
+    /// gap), the empty histogram reads `axis_cardinality::<A>()`
+    /// (every cell unobserved, the full gap). The projection connects
+    /// the histogram surface to the typescape's structural axis size —
+    /// `unobserved_cells == 0` is the "*every* cell observed" coverage
+    /// predicate, reachable as a single equality.
+    ///
+    /// **Companion invariants.**
+    /// - `unobserved_cells() == axis_cardinality::<A>() - distinct_cells()`
+    ///   always: the coverage-gap cardinality reads off the support
+    ///   cardinality through one subtraction from the axis size. The
+    ///   (observed, unobserved) cardinality partition.
+    /// - `unobserved_cells() == axis_cardinality::<A>()` ⇔
+    ///   [`Self::is_empty`] is `true` (peer to `distinct_cells() == 0 ⇔
+    ///   is_empty()` on the dual side of the partition).
+    /// - `unobserved_cells() == 0` ⇔ `distinct_cells() ==
+    ///   axis_cardinality::<A>()` — the full-cover predicate (every
+    ///   cell observed at least once), peer to
+    ///   `unobserved().next().is_none()` on the iterator side.
+    /// - `unobserved_cells() == self.unobserved().count()` always:
+    ///   pointwise equal to the iterator's length, lifting the
+    ///   five-stage `iter().filter().map().filter().count()` chain to a
+    ///   single-pass count on the raw counts vector.
+    /// - `merge(self, other).unobserved_cells() <=
+    ///   self.unobserved_cells().min(other.unobserved_cells())`: the
+    ///   coverage gap is *monotone-decreasing* under [`Self::merge`] —
+    ///   merging never grows the gap (every cell observed in either
+    ///   side is observed in the merge, so the unobserved set is the
+    ///   intersection of the two sides' unobserved sets). The dual of
+    ///   the monotone-growth law on [`Self::distinct_cells`].
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the twenty
+    /// closed-enum axis primitives plus the five product cubes —
+    /// twenty-five today, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]) inherits the
+    /// projection at no per-axis cost. The three trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_unobserved_cells_empty_equals_cardinality_*`,
+    /// `axis_histogram_unobserved_cells_singleton_is_cardinality_minus_one_*`,
+    /// `axis_histogram_unobserved_cells_axis_cover_is_zero_*`).
+    ///
+    /// Peer to [`Self::total`] (the *sum* over every cell),
+    /// [`Self::distinct_cells`] (the *observed-cells cardinality* —
+    /// dual side of the partition), [`Self::peak_count`] (the *modal*
+    /// count scalar), [`Self::trough_count`] (the *rarest-observed*
+    /// count scalar), and [`Self::spread`] (the *observed-distribution
+    /// skew* scalar): the scalar surface of the histogram now carries
+    /// the natural sextuple of
+    /// `(how many observations, how many kinds, how many gaps, how many
+    /// on the peak, how many on the trough, how much spread)`
+    /// projections — every operator-facing summary reads off one method
+    /// call each, and the *full-cover* predicate (`unobserved_cells()
+    /// == 0`) reads off a single equality on the closed scalar surface.
+    #[must_use]
+    pub fn unobserved_cells(&self) -> usize {
+        self.counts.iter().filter(|&&c| c == 0).count()
+    }
+
     /// The first axis cell (in declaration order over [`ClosedAxis::ALL`])
     /// whose observation count equals the maximum count over the
     /// histogram; `None` when no cell carries any observation
@@ -7144,5 +7249,339 @@ mod tests {
         // Identity (empty-rhs): merge leaves the spread unchanged.
         let with_empty = added_two_removed_one.clone().merge(&empty_hist);
         assert_eq!(with_empty.spread(), added_two_removed_one.spread());
+    }
+
+    // ---- AxisHistogram::unobserved_cells trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // unobserved_cells projection's contract holds uniformly without
+    // per-axis test duplication: empty → axis_cardinality (every cell
+    // unobserved, the full gap); singleton → axis_cardinality - 1 on
+    // every cell K (exactly the observed cell drops out of the gap);
+    // axis-cover → 0 (every cell observed, no gap). Concrete defining-
+    // equivalence, partition-law, structural-bound, boundary-equivalence,
+    // and merge-monotonicity pins follow below on [`DiffLineKind`].
+
+    fn assert_unobserved_cells_empty_equals_cardinality<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.unobserved_cells(),
+            axis_cardinality::<A>(),
+            "empty histogram unobserved_cells must equal axis_cardinality on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_unobserved_cells_singleton_is_cardinality_minus_one<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has exactly one observed cell — the
+        // observed cell drops out of the gap, leaving the gap at
+        // `axis_cardinality - 1`. Pinned uniformly across every
+        // closed-axis implementor.
+        let n = axis_cardinality::<A>();
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.unobserved_cells(),
+                n - 1,
+                "singleton unobserved_cells must equal axis_cardinality - 1 \
+                 for observed cell {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_unobserved_cells_axis_cover_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once produces a uniform
+        // axis-cover histogram (every cell observed at least once,
+        // support is the full axis); the coverage gap is empty — the
+        // dual boundary of the empty-histogram convention. The
+        // full-cover histogram has no unobserved cells.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            hist.unobserved_cells(),
+            0,
+            "axis-cover histogram unobserved_cells must be 0 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_unobserved_cells_empty_equals_cardinality_for_every_closed_axis_implementor()
+    {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_unobserved_cells_empty_equals_cardinality::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_unobserved_cells_singleton_is_cardinality_minus_one_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_unobserved_cells_singleton_is_cardinality_minus_one::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_unobserved_cells_axis_cover_is_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_unobserved_cells_axis_cover_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_unobserved_cells_equals_unobserved_iterator_count() {
+        // The lift's defining equivalence: unobserved_cells reads the
+        // same scalar as the open-coded `unobserved().count()` chain
+        // every consumer re-derived inline. Pinned pointwise across the
+        // canonical observation-mix shapes (empty, singleton, partial,
+        // full-cover, heavy-tail mix) so a future regression in either
+        // side surfaces here.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.unobserved_cells(),
+                hist.unobserved().count(),
+                "unobserved_cells must equal unobserved().count() on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_distinct_cells_plus_unobserved_cells_equals_cardinality() {
+        // The (observed, unobserved) cardinality partition: every cell
+        // of the closed axis lies in exactly one of the two scalar
+        // counts, so their sum reads off the axis size at every
+        // histogram. The scalar-level peer to the
+        // `nonzero ⊔ unobserved = axis` set-level partition pinned on
+        // [`AxisHistogram::unobserved`]. Pinned across the same
+        // observation-mix shapes the trait-uniform laws witness on
+        // (empty, singleton, partial, full-cover, heavy-tail) so the
+        // equality holds at every distinct-cells value in the
+        // histogram's range.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        let n = axis_cardinality::<DiffLineKind>();
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.distinct_cells() + hist.unobserved_cells(),
+                n,
+                "distinct_cells + unobserved_cells must equal axis_cardinality \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_unobserved_cells_equals_cardinality_minus_distinct_cells() {
+        // The structural-complement derivation: unobserved_cells reads
+        // off the support cardinality through one subtraction from the
+        // axis size — pointwise equivalent to the underflow-safe form
+        // `axis_cardinality - distinct_cells`. Pinned across the same
+        // boundary shapes the partition law witnesses on so the
+        // subtraction is exercised at every support-size in the
+        // histogram's range.
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        let n = axis_cardinality::<DiffLineKind>();
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.unobserved_cells(),
+                n - hist.distinct_cells(),
+                "unobserved_cells must equal axis_cardinality - distinct_cells \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_unobserved_cells_is_bounded_above_by_axis_cardinality() {
+        // Structural-bound pin: unobserved_cells ∈ [0,
+        // axis_cardinality::<A>()]. Tight at both ends — the empty
+        // histogram reads N (every cell unobserved, full gap), the
+        // axis-cover histogram reads 0 (no gap). Pinned over four
+        // observation shapes (empty, singleton, axis-cover, heavy-tail
+        // mix) so both bounds get a tight witness.
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[],
+            &[DiffLineKind::Removed],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        let n = axis_cardinality::<DiffLineKind>();
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let gap = hist.unobserved_cells();
+            assert!(
+                gap <= n,
+                "unobserved_cells {gap} must be <= axis_cardinality {n} \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_unobserved_cells_full_cover_iff_distinct_equals_cardinality() {
+        // The full-cover predicate at the scalar surface: every cell
+        // observed iff the coverage gap is empty. Pinned at both sides
+        // of the equivalence — full-cover witnesses (gap == 0,
+        // distinct == cardinality) and proper-subset witnesses (gap > 0,
+        // distinct < cardinality) — so the predicate holds at every
+        // branch.
+        let n = axis_cardinality::<DiffLineKind>();
+        // Full-cover witness: every cell observed.
+        let full_cover: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        assert_eq!(full_cover.unobserved_cells(), 0);
+        assert_eq!(full_cover.distinct_cells(), n);
+        assert_eq!(
+            full_cover.unobserved_cells() == 0,
+            full_cover.distinct_cells() == n,
+        );
+        // Proper-subset witness: only some cells observed.
+        let partial: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert!(partial.unobserved_cells() > 0);
+        assert!(partial.distinct_cells() < n);
+        assert_eq!(
+            partial.unobserved_cells() == 0,
+            partial.distinct_cells() == n,
+        );
+    }
+
+    #[test]
+    fn axis_histogram_unobserved_cells_iff_is_empty_equals_cardinality() {
+        // Boundary pin: unobserved_cells == axis_cardinality iff
+        // is_empty is true. Equivalence holds across both directions —
+        // an empty history reads N (every cell unobserved), a non-empty
+        // history reads at most N - 1. Peer to the same boundary
+        // equivalence distinct_cells / dominant_cell carry on the dual
+        // side of the partition.
+        let n = axis_cardinality::<DiffLineKind>();
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_empty());
+        assert_eq!(empty.unobserved_cells(), n);
+
+        let singleton: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        assert!(!singleton.is_empty());
+        assert!(singleton.unobserved_cells() <= n - 1);
+    }
+
+    #[test]
+    fn axis_histogram_unobserved_cells_after_merge_is_monotone_decreasing() {
+        // The (merge, unobserved_cells) composition: the coverage gap
+        // of a merged histogram is the *intersection* of the two sides'
+        // gaps (a cell is unobserved in the merge iff unobserved in
+        // both sides), so the merged gap size is at most each side's.
+        // Pinned with disjoint-support, overlapping-support, and
+        // identity (empty-rhs) shapes so the merge monotone-decreasing
+        // law gets a tight witness at each boundary.
+        //
+        // `DiffLineKind::ALL` declaration order is
+        // `[Removed, Added, Context]` (axis_cardinality = 3).
+        let lhs: AxisHistogram<DiffLineKind> = [DiffLineKind::Removed, DiffLineKind::Added]
+            .into_iter()
+            .collect();
+        // lhs: support {Removed, Added}; gap = 1 ({Context}).
+        let rhs: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Context]
+            .into_iter()
+            .collect();
+        // rhs: support {Added, Context}; gap = 1 ({Removed}).
+        let empty_hist: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+
+        // Overlapping-support: the merge covers every cell, so the gap
+        // collapses to 0 — strictly below each side's gap.
+        let merged = lhs.clone().merge(&rhs);
+        assert_eq!(merged.unobserved_cells(), 0);
+        assert!(merged.unobserved_cells() <= lhs.unobserved_cells());
+        assert!(merged.unobserved_cells() <= rhs.unobserved_cells());
+
+        // Disjoint singleton supports: the gap shrinks from
+        // axis_cardinality - 1 = 2 on each side to 1 on the merge.
+        let solo_added: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Added).collect();
+        let solo_context: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Context).collect();
+        let disjoint = solo_added.clone().merge(&solo_context);
+        assert_eq!(disjoint.unobserved_cells(), 1);
+        assert!(disjoint.unobserved_cells() <= solo_added.unobserved_cells());
+        assert!(disjoint.unobserved_cells() <= solo_context.unobserved_cells());
+
+        // Identity (empty-rhs): merge leaves the gap unchanged.
+        let with_empty = lhs.clone().merge(&empty_hist);
+        assert_eq!(with_empty.unobserved_cells(), lhs.unobserved_cells());
     }
 }

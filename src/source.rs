@@ -3076,20 +3076,24 @@ mod tests {
         // `chain_histograms_distinct_cells_is_zero_on_empty_chain`:
         // the empty-history convention is named at the coverage-gap
         // surface as well, with the tight boundary witness
-        // (`unobserved` reaches every cell because every cell is
-        // unobserved).
+        // (`unobserved_cells` reaches every cell because every cell is
+        // unobserved). Reads through the named scalar
+        // [`AxisHistogram::unobserved_cells`] — the structural
+        // complement of [`AxisHistogram::distinct_cells`] over the
+        // closed axis — rather than the open-coded
+        // `unobserved().count()` chain.
         use crate::cube::axis_cardinality;
         let chain: [ConfigSource; 0] = [];
         assert_eq!(
-            chain.layer_kind_histogram().unobserved().count(),
+            chain.layer_kind_histogram().unobserved_cells(),
             axis_cardinality::<ConfigSourceKind>(),
         );
         assert_eq!(
-            chain.file_format_histogram().unobserved().count(),
+            chain.file_format_histogram().unobserved_cells(),
             axis_cardinality::<crate::discovery::Format>(),
         );
         assert_eq!(
-            chain.env_prefix_kind_histogram().unobserved().count(),
+            chain.env_prefix_kind_histogram().unobserved_cells(),
             axis_cardinality::<EnvMetadataTagKind>(),
         );
     }
