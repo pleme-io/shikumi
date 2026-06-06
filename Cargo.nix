@@ -2081,9 +2081,9 @@ rec {
       };
       "bitflags" = rec {
         crateName = "bitflags";
-        version = "2.12.1";
+        version = "2.13.0";
         edition = "2021";
-        sha256 = "02phhjm7w380zdh8928zf13cfi1bw2qz2ay36ml2jmwmmv8cxmw4";
+        sha256 = "1y239gpvl061rfvav7jds8mjs42kmwi39is7yx5d1qw3hvp8nf5l";
         authors = [
           "The Rust Project Developers"
         ];
@@ -7833,7 +7833,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.9";
+        version = "0.1.10";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -8215,13 +8215,13 @@ rec {
       };
       "tatara-lisp" = rec {
         crateName = "tatara-lisp";
-        version = "0.2.9";
+        version = "0.2.10";
         edition = "2021";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "a74c3fa9610036ebf38b662267963a695361f111";
-          sha256 = "1ckzkjzp6x8jr4mjbayfrlymwzvvfv33sllk446q079fh0kjn6z5";
+          rev = "1b0be8f87eddddc8cb21f07f51780672380cb66e";
+          sha256 = "1xlpxn1naxbgfksgj579gwpr0nwbv0989n3wb6qj713w9l31cbbf";
         };
         libName = "tatara_lisp";
         authors = [
@@ -8257,13 +8257,13 @@ rec {
       };
       "tatara-lisp-derive" = rec {
         crateName = "tatara-lisp-derive";
-        version = "0.2.9";
+        version = "0.2.10";
         edition = "2021";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "a74c3fa9610036ebf38b662267963a695361f111";
-          sha256 = "1ckzkjzp6x8jr4mjbayfrlymwzvvfv33sllk446q079fh0kjn6z5";
+          rev = "1b0be8f87eddddc8cb21f07f51780672380cb66e";
+          sha256 = "1xlpxn1naxbgfksgj579gwpr0nwbv0989n3wb6qj713w9l31cbbf";
         };
         procMacro = true;
         libName = "tatara_lisp_derive";
