@@ -539,9 +539,9 @@ dependencies = [
 
 [[package]]
 name = "bitflags"
-version = "2.12.1"
+version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84d7ced0ae9557296835c32bf1b1e02b44c746701f898460fb000d7eaa84f00a"
+checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 
 [[package]]
 name = "blake3"
@@ -2281,7 +2281,7 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "akeyless-api",
  "arc-swap",
@@ -2403,8 +2403,8 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp"
-version = "0.2.9"
-source = "git+https://github.com/pleme-io/tatara#a74c3fa9610036ebf38b662267963a695361f111"
+version = "0.2.10"
+source = "git+https://github.com/pleme-io/tatara#1b0be8f87eddddc8cb21f07f51780672380cb66e"
 dependencies = [
  "blake3",
  "serde",
@@ -2415,8 +2415,8 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp-derive"
-version = "0.2.9"
-source = "git+https://github.com/pleme-io/tatara#a74c3fa9610036ebf38b662267963a695361f111"
+version = "0.2.10"
+source = "git+https://github.com/pleme-io/tatara#1b0be8f87eddddc8cb21f07f51780672380cb66e"
 dependencies = [
  "proc-macro2",
  "quote",
