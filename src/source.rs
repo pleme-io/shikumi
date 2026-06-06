@@ -2870,6 +2870,58 @@ mod tests {
     }
 
     #[test]
+    fn chain_histograms_spread_is_zero_on_empty_chain() {
+        // Empty-chain composition: every chain-level histogram
+        // (layer_kind / file_format / env_prefix_kind) over an empty
+        // chain is the all-zero histogram, so `spread` reads 0 at
+        // all three surfaces — peer to the
+        // `chain_histograms_dominant_cell_is_none_on_empty_chain`,
+        // `chain_histograms_recessive_cell_is_none_on_empty_chain`,
+        // and `chain_histograms_distinct_cells_is_zero_on_empty_chain`
+        // empty-history conventions. Pins the cross-surface
+        // empty-history convention for the spread scalar at one site.
+        let chain: [ConfigSource; 0] = [];
+        assert_eq!(chain.layer_kind_histogram().spread(), 0);
+        assert_eq!(chain.file_format_histogram().spread(), 0);
+        assert_eq!(chain.env_prefix_kind_histogram().spread(), 0);
+    }
+
+    #[test]
+    fn layer_kind_histogram_spread_reads_distribution_skew() {
+        // Cross-surface pin: composing [`crate::AxisHistogram::spread`]
+        // with [`Self::layer_kind_histogram`] reads "how unevenly did
+        // this chain distribute observations across the observed layer
+        // kinds?" at one method-call site.
+        //
+        // `sample_chain()` has two File layers and one Env layer (no
+        // Defaults); observed support = {File, Env} with counts
+        // (File: 2, Env: 1) → peak 2, trough 1, spread 1 — the
+        // canonical strict-skew shape on a binary observed support.
+        let chain = sample_chain();
+        let hist = chain.as_slice().layer_kind_histogram();
+        assert_eq!(hist.peak_count(), 2);
+        assert_eq!(hist.trough_count(), 1);
+        assert_eq!(hist.spread(), 1);
+
+        // Singleton-support chain: a Defaults-only chain has one
+        // observed cell (peak = trough = chain length), spread = 0
+        // — the structural "balanced observation" boundary on the
+        // singleton-support shape.
+        let defaults_only = vec![ConfigSource::Defaults, ConfigSource::Defaults];
+        assert_eq!(defaults_only.as_slice().layer_kind_histogram().spread(), 0);
+
+        // Axis-cover chain (one layer per kind): every cell at 1,
+        // peak = trough = 1, spread = 0 — the structural balanced
+        // observation boundary on the maximum-coverage shape.
+        let axis_cover = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/etc/app.yaml")),
+        ];
+        assert_eq!(axis_cover.as_slice().layer_kind_histogram().spread(), 0);
+    }
+
+    #[test]
     fn layer_kind_histogram_unobserved_lists_unused_layer_kinds() {
         // Cross-surface pin: the [`crate::AxisHistogram::unobserved`]
         // projection composes with [`Self::layer_kind_histogram`] to

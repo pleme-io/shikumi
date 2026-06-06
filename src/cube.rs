@@ -905,6 +905,115 @@ impl<A: ClosedAxis> AxisHistogram<A> {
             .unwrap_or(0)
     }
 
+    /// The **observed-distribution spread** — the difference between the
+    /// maximum and minimum observation counts over the histogram's
+    /// observed support. Equal to
+    /// `self.peak_count() - self.trough_count()` by construction; named
+    /// at the trait level so consumers reading off the
+    /// observed-distribution skew route through one scalar projection
+    /// rather than re-deriving the (peak, trough) subtraction at every
+    /// diagnostic / dashboard / alarm site.
+    ///
+    /// The natural typed primitive for the *balanced-vs-skewed* question
+    /// every operator-facing summary asks of an observation window:
+    /// *"how unevenly distributed are the observations across the
+    /// observed kinds?"*: the spread of an
+    /// `AxisHistogram<crate::ShikumiErrorKind>` reload-window error
+    /// distribution ("dominant Parse fired 12×, rarest Io fired 1×,
+    /// spread = 11" — the natural input to an outlier-threshold
+    /// classifier), the spread of a
+    /// [`crate::ConfigSourceChain::file_format_histogram`] (the chain's
+    /// "is one format dominating the chain or are they balanced?"
+    /// summary line), the spread of a
+    /// [`crate::ConfigDiff::kind_histogram`] (the diff's "is this
+    /// rebuild adding/removing in roughly equal numbers or strongly
+    /// skewed?" diagnostic). Before this lift, every consumer asking
+    /// "what is the spread of this observation window?" re-derived the
+    /// projection inline as
+    /// `hist.peak_count() - hist.trough_count()` — two method calls
+    /// plus a subtraction at every site, with the silent-underflow risk
+    /// every consumer has to reason about independently
+    /// (`peak_count >= trough_count` is a structural invariant of the
+    /// histogram but not of the inline subtraction surface).
+    ///
+    /// **Underflow-safe by construction.** The subtraction
+    /// `peak_count() - trough_count()` is guaranteed non-negative
+    /// (`peak_count >= trough_count` holds structurally on every
+    /// histogram — both equal 0 on the empty histogram, both are the
+    /// same positive count on a uniform-observed-count histogram,
+    /// otherwise `peak_count > trough_count`). The named scalar
+    /// surfaces the bound; consumers do not need to re-prove
+    /// monotonicity at the call site.
+    ///
+    /// **Empty-histogram convention** — returns `0`, matching the
+    /// [`Self::total`], [`Self::distinct_cells`], [`Self::peak_count`],
+    /// and [`Self::trough_count`] empty conventions. The scalar peer
+    /// quintuple
+    /// `(total, distinct_cells, peak_count, trough_count, spread)` is
+    /// therefore uniformly `(0, 0, 0, 0, 0)` on the empty histogram.
+    ///
+    /// **Structural-skew predicate.** `spread() == 0` is the typed
+    /// *uniformly-observed-count* predicate on the histogram surface:
+    /// every observed cell carries the same count. The predicate holds
+    /// on three distinct shapes — the empty histogram (vacuously: no
+    /// observed cells); every singleton-support histogram (only one
+    /// observed cell, trivially balanced); every histogram whose
+    /// support is observed at a uniform count, including the
+    /// k-cell-observed-k-times-each-once shape and every uniform
+    /// axis-cover histogram. The predicate is pointwise equivalent to
+    /// `dominant_cell() == recessive_cell()` on every non-empty
+    /// histogram — `spread()` lifts the same predicate from the
+    /// `(cell, cell)` pair on the modal-pair surface to the scalar
+    /// surface, so a future "balanced-distribution" diagnostic reads
+    /// off a single equality `hist.spread() == 0` instead of routing
+    /// through both cell-form projections and an `Option<A>` equality.
+    ///
+    /// **Companion invariants** with [`Self::total`],
+    /// [`Self::distinct_cells`], [`Self::peak_count`], and
+    /// [`Self::trough_count`]:
+    /// - `spread() == 0` ⇔ every observed cell carries the same count
+    ///   (the *uniformly-observed-count* shape — including the empty
+    ///   histogram, every singleton-support histogram, every uniform
+    ///   axis-cover histogram).
+    /// - `spread() <= peak_count()` always: the trough is non-negative,
+    ///   so the subtraction is bounded above by the minuend. Equality
+    ///   holds iff the trough is zero — i.e. on the empty histogram.
+    /// - `spread() <= total()` always: composition of
+    ///   `peak_count <= total` with `trough_count >= 0`.
+    /// - The merge behavior is *non-monotonic*: merging two histograms
+    ///   can either grow the spread (when one side carries a heavy
+    ///   tail the other lacks, the merged peak grows faster than the
+    ///   merged trough) or shrink it (when merging an empty-support
+    ///   addition restores the trough to a value closer to the peak).
+    ///   The empty-identity law holds: `merge(self, empty).spread() ==
+    ///   self.spread()`.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the twenty
+    /// closed-enum axis primitives plus the five product cubes —
+    /// twenty-five today, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]) inherits the
+    /// projection at no per-axis cost. The three trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_spread_empty_is_zero_*`,
+    /// `axis_histogram_spread_singleton_is_zero_*`,
+    /// `axis_histogram_spread_axis_cover_is_zero_*`).
+    ///
+    /// Peer to [`Self::total`] (the *sum* over every cell),
+    /// [`Self::distinct_cells`] (the *support cardinality*),
+    /// [`Self::peak_count`] (the *modal* count scalar), and
+    /// [`Self::trough_count`] (the *rarest-observed* count scalar): the
+    /// scalar surface of the histogram now carries the natural
+    /// quintuple of
+    /// `(how many observations, how many kinds, how many on the peak,
+    /// how many on the trough, how much spread)` projections — every
+    /// operator-facing summary reads off one method call each, and the
+    /// *balanced-distribution* predicate (`spread() == 0`) reads off a
+    /// single equality on the closed scalar surface.
+    #[must_use]
+    pub fn spread(&self) -> usize {
+        self.peak_count() - self.trough_count()
+    }
+
     /// Pointwise sum with `other` — the monoid operation. Every cell
     /// becomes `self.count(v) + other.count(v)`. Commutative,
     /// associative, identity at [`Self::empty`]. The natural shape for
@@ -6689,5 +6798,351 @@ mod tests {
         // Identity (empty-rhs): merge leaves the trough unchanged.
         let with_empty = added_two.clone().merge(&empty_hist);
         assert_eq!(with_empty.trough_count(), added_two.trough_count());
+    }
+
+    // ---- AxisHistogram::spread trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // `spread` projection's contract holds uniformly without per-axis
+    // test duplication: empty → 0; singleton → 0 on every cell K
+    // (one observed cell with count 1, trivially balanced); uniform
+    // axis-cover → 0 (every cell at one, perfectly balanced).
+    // Concrete strict-skew, defining-equivalence, bound, and merge-
+    // interaction pins follow below on [`DiffLineKind`].
+
+    fn assert_spread_empty_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.spread(),
+            0,
+            "empty histogram spread must be 0 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_spread_singleton_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has spread = 0 — the
+        // singleton-support case is trivially balanced (one observed
+        // cell at count 1, peak = trough = 1, spread = 0). Pinned
+        // uniformly across every closed-axis implementor.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.spread(),
+                0,
+                "singleton spread must be 0 for observed cell {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_spread_axis_cover_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once produces a uniform
+        // histogram (every cell at 1, peak = trough = 1, spread = 0)
+        // — the structural "every observed kind fired the same number
+        // of times" boundary at the maximum-coverage shape. Pinned
+        // uniformly across every closed-axis implementor.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            hist.spread(),
+            0,
+            "axis-cover histogram spread must be 0 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_spread_empty_is_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_spread_empty_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_spread_singleton_is_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_spread_singleton_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_spread_axis_cover_is_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_spread_axis_cover_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_spread_equals_peak_minus_trough() {
+        // The lift's defining equivalence: spread reads the same
+        // scalar as the open-coded `peak_count - trough_count`
+        // subtraction every consumer re-derived inline. Pinned
+        // pointwise across the canonical observation-mix shapes
+        // (empty, singleton, uniform-tied, strict-skew, heavy-tail)
+        // so a future regression in either side surfaces here.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.spread(),
+                hist.peak_count() - hist.trough_count(),
+                "spread must equal peak_count - trough_count on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_spread_zero_iff_uniformly_observed_count() {
+        // The structural-skew predicate: spread == 0 iff every
+        // observed cell carries the same count — the "uniformly-
+        // observed-count" shape. Pinned at both sides of the
+        // equivalence across the boundary shapes:
+        //   - empty (vacuously uniform — no observed cells),
+        //   - singleton (one observed cell, trivially balanced),
+        //   - uniform axis-cover (every cell at one),
+        //   - k-cell-observed-k-times-each-once (multiple observed
+        //     cells at the same count — the non-trivial balanced
+        //     shape),
+        //   - strict-skew (two cells, one observed twice and one
+        //     once — the canonical skew witness),
+        //   - heavy-tail (one dominant cell with multiple, one
+        //     rarest observed at one — strong skew).
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert_eq!(empty.spread(), 0);
+
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert_eq!(singleton.spread(), 0);
+
+        let axis_cover: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        assert_eq!(axis_cover.spread(), 0);
+
+        let two_each: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(two_each.spread(), 0);
+
+        let skewed: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert!(skewed.spread() > 0);
+        assert_eq!(skewed.spread(), 1);
+
+        let heavy_tail: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert!(heavy_tail.spread() > 0);
+        assert_eq!(heavy_tail.spread(), 3);
+    }
+
+    #[test]
+    fn axis_histogram_spread_agrees_with_dominant_recessive_cell_equality() {
+        // The cross-projection coincidence law: on every non-empty
+        // histogram, `spread() == 0` iff `dominant_cell() ==
+        // recessive_cell()` — the scalar surface lifts the same
+        // "uniformly-observed-count" predicate the modal-pair surface
+        // carries on the `(Option<A>, Option<A>)` form. Pinned at
+        // three boundary shapes (singleton, uniform axis-cover, and a
+        // strict-skew shape) so the two surfaces agree across every
+        // branch of the predicate.
+        let singleton: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        assert_eq!(
+            singleton.spread() == 0,
+            singleton.dominant_cell() == singleton.recessive_cell(),
+        );
+
+        let uniform: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        assert_eq!(
+            uniform.spread() == 0,
+            uniform.dominant_cell() == uniform.recessive_cell(),
+        );
+
+        let skewed: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            skewed.spread() == 0,
+            skewed.dominant_cell() == skewed.recessive_cell(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_spread_is_bounded_above_by_peak_count_and_total() {
+        // Structural-bound pin: spread <= peak_count <= total, both
+        // bounds via the non-negative trough subtraction. Pinned at
+        // four shapes (empty, singleton, balanced, strict-skew) so
+        // both bounds get a tight witness. Equality with peak_count
+        // holds exactly when trough_count == 0 — i.e. on the empty
+        // histogram, the sole shape with trough_count == 0.
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert!(
+                hist.spread() <= hist.peak_count(),
+                "spread {} must be <= peak_count {} on input of length {}",
+                hist.spread(),
+                hist.peak_count(),
+                input.len(),
+            );
+            assert!(
+                hist.spread() <= hist.total(),
+                "spread {} must be <= total {} on input of length {}",
+                hist.spread(),
+                hist.total(),
+                input.len(),
+            );
+            assert_eq!(
+                hist.spread() == hist.peak_count(),
+                hist.trough_count() == 0,
+                "spread == peak_count iff trough_count == 0 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_spread_after_merge_is_non_monotonic() {
+        // The (merge, spread) composition: in deliberate contrast to
+        // peak_count's strict monotonicity under merge, spread can
+        // either *grow* (when one side carries a heavy tail the
+        // other lacks, the merged peak grows faster than the merged
+        // trough) or *shrink* (when merging two strict-skew sides
+        // restores a uniformly-observed-count merge). The
+        // empty-identity law still holds. Pinned with grow,
+        // shrink-or-equal, and identity (empty-rhs) shapes so each
+        // branch of the non-monotonic behavior gets a tight witness.
+        let added_two: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Added]
+            .into_iter()
+            .collect();
+        let added_two_removed_one: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let removed_two: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Removed, DiffLineKind::Removed]
+                .into_iter()
+                .collect();
+        let empty_hist: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+
+        // Grow branch: merging a balanced {Added:2} with a skewed
+        // {Added:2, Removed:1} grows the spread strictly past either
+        // side. lhs spread = 0 (balanced singleton-support), rhs
+        // spread = 1 (Added:2 vs Removed:1), merged = {Added:4,
+        // Removed:1} with peak 4, trough 1, spread 3 — strictly
+        // greater than each side.
+        let grow = added_two.clone().merge(&added_two_removed_one);
+        assert_eq!(grow.spread(), 3);
+        assert!(grow.spread() > added_two.spread());
+        assert!(grow.spread() > added_two_removed_one.spread());
+
+        // Shrink branch: merging two strict-skew supports
+        // {Added:2, Removed:1} and {Removed:2, ???} — pick the
+        // canonical witness: lhs {Added:2, Removed:1} (spread 1)
+        // with rhs {Removed:2, Added:1} (spread 1) merges to
+        // {Added:3, Removed:3} with peak 3, trough 3, spread 0 —
+        // strictly *below* each side's spread. The non-monotonic
+        // shrink branch.
+        let added_two_removed_one_b: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        let shrink = added_two_removed_one
+            .clone()
+            .merge(&added_two_removed_one_b);
+        assert_eq!(shrink.spread(), 0);
+        assert!(shrink.spread() < added_two_removed_one.spread());
+        assert!(shrink.spread() < added_two_removed_one_b.spread());
+
+        // Equal-or-bracketed branch: merging two disjoint singleton-
+        // support sides produces a balanced merge — spread stays at
+        // 0. (Witnesses the identity boundary where spread agrees on
+        // both sides and the merge.)
+        let two_singletons = added_two.clone().merge(&removed_two);
+        assert_eq!(two_singletons.spread(), 0);
+        assert_eq!(two_singletons.spread(), added_two.spread());
+
+        // Identity (empty-rhs): merge leaves the spread unchanged.
+        let with_empty = added_two_removed_one.clone().merge(&empty_hist);
+        assert_eq!(with_empty.spread(), added_two_removed_one.spread());
     }
 }
