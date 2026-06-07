@@ -1697,6 +1697,81 @@ impl<A: ClosedAxis> Extend<A> for AxisHistogram<A> {
     }
 }
 
+impl<A: ClosedAxis> std::iter::Sum<AxisHistogram<A>> for AxisHistogram<A> {
+    /// Reduce an iterator of histograms by pointwise sum — the canonical
+    /// Rust [`Sum`][std::iter::Sum] trait idiom for the monoid
+    /// `(AxisHistogram, merge, empty)`. Every consumer folding a sequence
+    /// of sub-histograms into one aggregate (a fleet-wide accumulator
+    /// folding per-thread tallies before rendering a dashboard tick, a
+    /// rolling-window aggregator summing the last N reload windows'
+    /// `AxisHistogram<crate::ShikumiErrorKind>` into the hour cell, a
+    /// per-fleet observatory summing per-host
+    /// `AxisHistogram<crate::WatchEventClass>` into the fleet cell) reaches
+    /// the reduction through `iter.sum()` — the same trait surface every
+    /// stdlib numeric monoid uses.
+    ///
+    /// Lowered through [`Iterator::fold`] anchored at [`Self::empty`] (the
+    /// monoid identity) and stepped by [`Self::merge`] (the monoid binary
+    /// operation). The canonical Rust monoid-`Sum` pattern: identity at
+    /// `fold`'s seed, binary op at `fold`'s step.
+    ///
+    /// **Equivalence with the explicit fold** — pointwise equal to
+    /// `iter.fold(AxisHistogram::empty(), |acc, h| acc.merge(&h))` on every
+    /// iterator, by definition. The trait method names the reduction at
+    /// one site so consumers no longer re-derive the fold inline.
+    ///
+    /// **Empty-iterator law** — the empty iterator sums to the empty
+    /// histogram (the monoid identity at the `fold` seed, untouched).
+    ///
+    /// **Singleton law** — `std::iter::once(h).sum()` is pointwise equal to
+    /// `h` (the seed merged with a single value is that value, via the
+    /// empty-identity law on [`Self::merge`]).
+    ///
+    /// **Additivity on [`Self::total`]** — the summed histogram's total
+    /// equals the sum of the components' totals, peer to the
+    /// `merge`-additivity law on `total`.
+    ///
+    /// Trait-uniform laws reach every [`ClosedAxis`] implementor through
+    /// `for_each_closed_axis_implementor!` in [`tests`]
+    /// (`axis_histogram_sum_of_empty_iter_is_empty_*`,
+    /// `axis_histogram_sum_of_singleton_iter_equals_inner_*`,
+    /// `axis_histogram_sum_grows_total_additively_*`,
+    /// `axis_histogram_sum_owned_equals_explicit_fold_*`).
+    fn sum<I: IntoIterator<Item = AxisHistogram<A>>>(iter: I) -> Self {
+        iter.into_iter().fold(Self::empty(), |acc, h| acc.merge(&h))
+    }
+}
+
+impl<'a, A: ClosedAxis> std::iter::Sum<&'a AxisHistogram<A>> for AxisHistogram<A> {
+    /// Reduce an iterator of histogram references by pointwise sum — the
+    /// canonical Rust [`Sum`][std::iter::Sum] trait idiom on the
+    /// borrowed-element side, peer to the owned-element [`Sum`] impl above.
+    /// The reference form every stdlib numeric monoid exposes alongside the
+    /// owned form (`impl Sum<&'a u32> for u32`, etc.) so call sites
+    /// reaching the reduction through `slice.iter().sum()` or
+    /// `vec.iter().sum()` work without an interposing `.cloned()` /
+    /// `.copied()` adaptor — the histogram is folded into the accumulator
+    /// by reference at every step.
+    ///
+    /// Lowered through [`Iterator::fold`] anchored at [`Self::empty`] (the
+    /// monoid identity) and stepped by [`Self::merge`] taking the borrowed
+    /// element directly (no `.clone()` at the call site of the merge step).
+    ///
+    /// **Equivalence with the owned-element [`Sum`] impl** — pointwise
+    /// equal to `slice.iter().cloned().sum::<AxisHistogram<A>>()` on every
+    /// slice, but without the per-element clone the owned form would
+    /// require. The (Sum<Owned>, Sum<&Owned>) idiom-peer pair: same
+    /// reduction, two call-site shapes, both anchored at the same
+    /// identity-and-merge fold underneath.
+    ///
+    /// Trait-uniform laws reach every [`ClosedAxis`] implementor through
+    /// `for_each_closed_axis_implementor!` in [`tests`]
+    /// (`axis_histogram_sum_of_refs_equals_sum_of_owned_*`).
+    fn sum<I: IntoIterator<Item = &'a AxisHistogram<A>>>(iter: I) -> Self {
+        iter.into_iter().fold(Self::empty(), AxisHistogram::merge)
+    }
+}
+
 /// Lift an iterator of axis observations into a typed
 /// [`AxisHistogram<A>`] — the dense per-cell tally over
 /// [`ClosedAxis::ALL`].
@@ -6033,6 +6108,303 @@ mod tests {
         via_default_extend.extend(input.iter().copied());
 
         assert_eq!(via_from_iter, via_default_extend);
+    }
+
+    // ---- AxisHistogram::sum (Sum<Self> / Sum<&Self>) trait-uniform laws ----
+    //
+    // Five trait-uniform laws reach every [`ClosedAxis`] implementor through
+    // [`for_each_closed_axis_implementor`] so the per-axis [`Sum`] projection's
+    // contract holds uniformly without per-axis test duplication: summing the
+    // empty iterator is the monoid identity; summing a singleton iterator
+    // recovers the element; summing grows the total additively; summing by
+    // reference equals summing by value; summing equals the explicit
+    // `fold(empty, merge)` the [`Sum`] impl lowers to.
+
+    fn assert_sum_of_empty_iter_is_empty<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The empty-iterator law: `iter.sum()` on the empty iterator yields
+        // the monoid identity (the empty histogram, the `fold` seed
+        // untouched). Pinned on both `Sum<Self>` and `Sum<&Self>` so the
+        // identity holds on both impls.
+        let owned: AxisHistogram<A> = std::iter::empty::<AxisHistogram<A>>().sum();
+        assert_eq!(
+            owned,
+            AxisHistogram::<A>::empty(),
+            "Sum<Self> of empty iter must equal empty on axis {}",
+            std::any::type_name::<A>(),
+        );
+        let pile: Vec<AxisHistogram<A>> = Vec::new();
+        let via_refs: AxisHistogram<A> = pile.iter().sum();
+        assert_eq!(
+            via_refs,
+            AxisHistogram::<A>::empty(),
+            "Sum<&Self> of empty iter must equal empty on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_sum_of_singleton_iter_equals_inner<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The singleton law: summing a one-element iterator recovers the
+        // element pointwise (the empty seed merged with the element is the
+        // element, via the empty-identity law on `merge`). Pinned over the
+        // axis-cover histogram so every cell carries a positive count and
+        // the equality reads off every ordinal.
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let owned: AxisHistogram<A> = std::iter::once(cover.clone()).sum();
+        assert_eq!(
+            owned,
+            cover,
+            "Sum<Self> of singleton must equal inner on axis {}",
+            std::any::type_name::<A>(),
+        );
+        let pile = [cover.clone()];
+        let via_refs: AxisHistogram<A> = pile.iter().sum();
+        assert_eq!(
+            via_refs,
+            cover,
+            "Sum<&Self> of singleton must equal inner on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_sum_grows_total_additively<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The additivity law on the [`Self::total`] scalar surface: the
+        // summed histogram's total equals the sum of the components'
+        // totals, peer to the `merge`-additivity law on `total`. Pinned
+        // over three non-trivial components (the axis-cover, the
+        // axis-cover-twice, and the empty) so the sum has a non-trivial
+        // structure and the empty component witnesses the identity slot
+        // inside the reduction.
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let cover_twice: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let empty = AxisHistogram::<A>::empty();
+        let components = [cover.clone(), cover_twice.clone(), empty.clone()];
+        let expected_total = cover.total() + cover_twice.total() + empty.total();
+
+        let owned: AxisHistogram<A> = components.iter().cloned().sum();
+        assert_eq!(
+            owned.total(),
+            expected_total,
+            "Sum<Self> total must equal sum of component totals on axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        let via_refs: AxisHistogram<A> = components.iter().sum();
+        assert_eq!(
+            via_refs.total(),
+            expected_total,
+            "Sum<&Self> total must equal sum of component totals on axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        // Pointwise cell-level additivity: every cell of the summed
+        // histogram equals the sum of the components' counts on that cell.
+        for cell in axis_iter::<A>() {
+            let expected_cell = cover.count(cell) + cover_twice.count(cell) + empty.count(cell);
+            assert_eq!(
+                via_refs.count(cell),
+                expected_cell,
+                "Sum<&Self> cell {cell:?} must equal sum of component counts on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_sum_of_refs_equals_sum_of_owned<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (Sum<Self>, Sum<&Self>) idiom-peer equivalence: summing by
+        // reference yields the same histogram as summing by value (i.e.
+        // cloning the elements through the owned `Sum`). The canonical
+        // Rust borrowed/owned `Sum` peer pair on a single monoid surface.
+        // Pinned over the axis-cover and the singleton-on-the-first-cell
+        // components so the equivalence covers a non-trivial cell-set.
+        let mut components = vec![axis_iter::<A>().collect::<AxisHistogram<A>>()];
+        if let Some(first) = axis_iter::<A>().next() {
+            let mut single = AxisHistogram::<A>::empty();
+            single.observe(first);
+            components.push(single);
+        }
+        components.push(AxisHistogram::<A>::empty());
+
+        let via_owned: AxisHistogram<A> = components.iter().cloned().sum();
+        let via_refs: AxisHistogram<A> = components.iter().sum();
+        assert_eq!(
+            via_owned,
+            via_refs,
+            "Sum<Self> via cloned must equal Sum<&Self> on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_sum_owned_equals_explicit_fold<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (Sum, fold) lowering equivalence: `iter.sum()` is pointwise
+        // equal to `iter.fold(empty(), |acc, h| acc.merge(&h))` on every
+        // iterator — the explicit lowering the [`Sum`] impl uses. A future
+        // regression in the impl (e.g. one that loses the seed or
+        // mis-orders the fold step) surfaces against this law uniformly.
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let cover_twice: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let components = [cover, cover_twice, AxisHistogram::<A>::empty()];
+
+        let via_sum: AxisHistogram<A> = components.iter().cloned().sum();
+        let via_fold: AxisHistogram<A> = components
+            .iter()
+            .cloned()
+            .fold(AxisHistogram::<A>::empty(), |acc, h| acc.merge(&h));
+        assert_eq!(
+            via_sum,
+            via_fold,
+            "Sum<Self> must equal explicit fold(empty, merge) on axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        let via_sum_refs: AxisHistogram<A> = components.iter().sum();
+        let via_fold_refs: AxisHistogram<A> = components
+            .iter()
+            .fold(AxisHistogram::<A>::empty(), AxisHistogram::merge);
+        assert_eq!(
+            via_sum_refs,
+            via_fold_refs,
+            "Sum<&Self> must equal explicit fold(empty, merge) on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_sum_of_empty_iter_is_empty_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_sum_of_empty_iter_is_empty::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_sum_of_singleton_iter_equals_inner_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_sum_of_singleton_iter_equals_inner::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_sum_grows_total_additively_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_sum_grows_total_additively::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_sum_of_refs_equals_sum_of_owned_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_sum_of_refs_equals_sum_of_owned::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_sum_owned_equals_explicit_fold_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_sum_owned_equals_explicit_fold::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_sum_equals_fleet_aggregate_for_diff_line_kind() {
+        // The (Sum, fleet-aggregate) equivalence on the canonical fleet-
+        // aggregator pattern: collect per-window histograms, sum them via
+        // `iter.sum()` — the result is pointwise equal to the histogram
+        // built from the concatenation of every window's observations.
+        // Pinned concretely on [`DiffLineKind`] across three non-trivial
+        // windows so the equivalence covers a non-trivial cell distribution.
+        let window_a: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let window_b: AxisHistogram<DiffLineKind> = [DiffLineKind::Context, DiffLineKind::Removed]
+            .into_iter()
+            .collect();
+        let window_c: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        let windows = [window_a, window_b, window_c];
+
+        let via_sum_refs: AxisHistogram<DiffLineKind> = windows.iter().sum();
+        let via_sum_owned: AxisHistogram<DiffLineKind> = windows.iter().cloned().sum();
+
+        // Added: 3 (2 from a, 0 from b, 1 from c); Removed: 2; Context: 1.
+        assert_eq!(via_sum_refs.count(DiffLineKind::Added), 3);
+        assert_eq!(via_sum_refs.count(DiffLineKind::Removed), 2);
+        assert_eq!(via_sum_refs.count(DiffLineKind::Context), 1);
+        assert_eq!(via_sum_refs.total(), 6);
+        assert_eq!(via_sum_owned, via_sum_refs);
+    }
+
+    #[test]
+    fn axis_histogram_sum_lowers_to_fold_for_diff_line_kind() {
+        // Pin the canonical Rust lowering at a named site: `iter.sum()`
+        // equals `iter.fold(empty(), |acc, h| acc.merge(&h))` on every
+        // iterator, by definition. A future regression in the [`Sum`] impl
+        // (e.g. one that drifts away from the `(empty seed, merge step)`
+        // shape) surfaces against this pin.
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+            ],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        let windows: Vec<AxisHistogram<DiffLineKind>> = inputs
+            .iter()
+            .map(|input| input.iter().copied().collect())
+            .collect();
+
+        let via_sum: AxisHistogram<DiffLineKind> = windows.iter().cloned().sum();
+        let via_fold: AxisHistogram<DiffLineKind> = windows
+            .iter()
+            .cloned()
+            .fold(AxisHistogram::empty(), |acc, h| acc.merge(&h));
+        assert_eq!(via_sum, via_fold);
+
+        let via_sum_refs: AxisHistogram<DiffLineKind> = windows.iter().sum();
+        let via_fold_refs: AxisHistogram<DiffLineKind> = windows
+            .iter()
+            .fold(AxisHistogram::empty(), AxisHistogram::merge);
+        assert_eq!(via_sum_refs, via_fold_refs);
     }
 
     // ---- AxisHistogram::dominant_cell trait-uniform laws ----
