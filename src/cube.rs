@@ -374,6 +374,115 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         self.iter().filter(|&(_, c)| c > 0)
     }
 
+    /// Iterate the axis cells that received at least one observation
+    /// — the histogram's *observed support* — in declaration order
+    /// over [`ClosedAxis::ALL`]. The cells for which
+    /// `self.count(v) > 0`.
+    ///
+    /// The cell-only form of [`Self::nonzero`] — same support,
+    /// observation counts dropped from the item shape — and the
+    /// structural dual of [`Self::unobserved`] over the closed axis:
+    /// every cell of [`ClosedAxis::ALL`] lies in exactly one of
+    /// [`Self::observed`] and [`Self::unobserved`], and the closed
+    /// axis partitions into the two without remainder. Closes the
+    /// (observed, unobserved) partition at the *cell-only* iterator
+    /// surface, peer to the named-scalar partition
+    /// (`distinct_cells + unobserved_cells == axis_cardinality::<A>()`)
+    /// the histogram already carries.
+    ///
+    /// The natural typed primitive for diagnostic dumps, dashboards,
+    /// and attestation manifests asking *"which kinds did this
+    /// window observe?"* without consuming the per-cell counts: the
+    /// observed layer kinds in a chain's
+    /// [`crate::ConfigSourceChain::layer_kind_histogram`] (the
+    /// "which layer kinds appeared this rebuild?" diagnostic), the
+    /// realized file formats in
+    /// [`crate::ConfigSourceChain::file_format_histogram`] (the
+    /// "which formats did this chain see?" coverage cell), the fired
+    /// error classes in a per-window
+    /// `AxisHistogram<crate::ShikumiErrorKind>` (the "which kinds of
+    /// reload failure fired this hour?" attestation), the present
+    /// diff-line classes in
+    /// [`crate::ConfigDiff::kind_histogram`] (the "which diff
+    /// classes appeared this rebuild?" attestation). Before this
+    /// lift, every such consumer re-derived the projection inline as
+    /// one of three forms — `hist.nonzero().map(|(v, _)| v)` (the
+    /// dropped-count form on the typed pair-iterator),
+    /// `hist.iter().filter(|&(_, c)| c > 0).map(|(v, _)| v)` (the
+    /// open-coded scan over the full axis), or
+    /// `axis_iter::<A>().filter(|&v| hist.count(v) > 0)` (the
+    /// count-lookup form, which makes one indexed read per cell
+    /// against the histogram's counts vector) — each consumer
+    /// picking one of the three with varying call-site verbosity
+    /// (destructure-and-drop on the dropped-count form, two-stage
+    /// filter+map on the open-coded form, axis-iteration plus
+    /// per-cell count lookup on the count-lookup form). The lift
+    /// names the projection at one site.
+    ///
+    /// **Counts are positive, omitted from the item shape** — the
+    /// iterator yields just `A` (the cell), not `(A, usize)`. The
+    /// symmetric peer of [`Self::unobserved`]: where `unobserved`
+    /// drops the (uniformly-zero) count, `observed` drops the
+    /// (varying-positive) count. When the count carries information
+    /// the call site needs (rendering a `"added: 12, removed: 4"`
+    /// summary), [`Self::nonzero`] yields the `(cell, count)` pair
+    /// directly; when only the cell-set matters
+    /// (`hist.observed().collect::<HashSet<_>>()` for set
+    /// comparisons, `for cell in hist.observed()` for per-cell
+    /// rendering that already knows the count is positive),
+    /// `observed` reads cleanly without a `let (v, _) = …`
+    /// destructure.
+    ///
+    /// **Empty-histogram convention** — the empty histogram has no
+    /// observed cells, so [`Self::observed`] is empty (the dual of
+    /// the empty-histogram convention on [`Self::unobserved`], which
+    /// iterates the full axis). The full-cover histogram (every cell
+    /// observed at least once) is the dual boundary: [`Self::observed`]
+    /// iterates the full axis (pointwise equal to
+    /// [`axis_iter::<A>()`][axis_iter]) and [`Self::unobserved`] is
+    /// empty. The two boundaries pin the partition's tight witnesses.
+    ///
+    /// **Companion invariants** with [`Self::nonzero`],
+    /// [`Self::unobserved`], [`Self::distinct_cells`], and
+    /// [`Self::unobserved_cells`]:
+    /// - `observed().count() == distinct_cells()` always — the
+    ///   cell-only iterator's length is the support cardinality, the
+    ///   named scalar peer.
+    /// - The cell-set yielded by [`Self::observed`] equals the
+    ///   cell-set yielded by `nonzero().map(|(v, _)| v)` — the
+    ///   dropped-count equivalence on the pair-iterator surface.
+    /// - The cell-set yielded by [`Self::observed`] is disjoint from
+    ///   the cell-set yielded by [`Self::unobserved`], and their
+    ///   union (in declaration order, [`Self::observed`] then
+    ///   [`Self::unobserved`] interleaved by declaration order) is
+    ///   the full axis — the typed (observed, unobserved) cell-only
+    ///   partition over [`ClosedAxis::ALL`].
+    /// - `observed().next().is_none()` ⇔ [`Self::is_empty`] —
+    ///   the empty-iterator predicate reads the empty-histogram
+    ///   boundary.
+    /// - `observed().next().is_none()` is `false` and the iterator
+    ///   yields [`axis_iter::<A>()`][axis_iter] ⇔ [`Self::is_full_cover`]
+    ///   — the full-axis-iterator predicate reads the full-cover
+    ///   boundary.
+    ///
+    /// **Monotonicity under [`Self::merge`]** — merging never
+    /// shrinks the support: every cell observed in either side is
+    /// observed in the merge, so the merged cell-set is the *union*
+    /// of the two sides' cell-sets. The cell-only peer of the
+    /// monotone-support law on [`Self::distinct_cells`] (the scalar
+    /// surface) and the monotone-non-increase law on
+    /// [`Self::unobserved`] (the dual-side iterator).
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The three trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_observed_empty_is_empty_*`,
+    /// `axis_histogram_observed_axis_cover_is_full_axis_*`,
+    /// `axis_histogram_observed_singleton_is_just_observed_cell_*`).
+    pub fn observed(&self) -> impl Iterator<Item = A> + '_ {
+        self.iter().filter(|&(_, c)| c > 0).map(|(v, _)| v)
+    }
+
     /// Iterate the axis cells that received no observations — the
     /// structural complement of [`Self::nonzero`] over the closed
     /// axis, in declaration order over [`ClosedAxis::ALL`]. The cells
@@ -6532,12 +6641,12 @@ mod tests {
         A: ClosedAxis + std::fmt::Debug + std::hash::Hash + Eq,
     {
         // Partition law: every cell of the axis lies in exactly one of
-        // `unobserved()` and `nonzero().map(|(v, _)| v)`. Witnessed at
-        // three boundary shapes — empty (gap = full axis), singleton
-        // (support = {first}, gap = axis - {first}), uniform axis-
-        // cover (support = full axis, gap = empty) — so the partition
-        // holds at both extremes (full gap, no gap) and at a generic
-        // proper-subset support.
+        // `unobserved()` and `observed()`. Witnessed at three boundary
+        // shapes — empty (gap = full axis), singleton (support =
+        // {first}, gap = axis - {first}), uniform axis-cover (support
+        // = full axis, gap = empty) — so the partition holds at both
+        // extremes (full gap, no gap) and at a generic proper-subset
+        // support.
         use std::collections::HashSet;
         let first = axis_iter::<A>()
             .next()
@@ -6549,7 +6658,7 @@ mod tests {
         ];
         let n = axis_cardinality::<A>();
         for hist in histograms {
-            let observed: HashSet<A> = hist.nonzero().map(|(v, _)| v).collect();
+            let observed: HashSet<A> = hist.observed().collect();
             let unobserved: HashSet<A> = hist.unobserved().collect();
             // Cardinality partition: |observed| + |unobserved| = n.
             assert_eq!(
@@ -6680,7 +6789,7 @@ mod tests {
         ];
         for (input, expected_support) in cases {
             let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
-            let observed: HashSet<DiffLineKind> = hist.nonzero().map(|(v, _)| v).collect();
+            let observed: HashSet<DiffLineKind> = hist.observed().collect();
             let unobserved: HashSet<DiffLineKind> = hist.unobserved().collect();
             assert_eq!(observed.len(), expected_support);
             assert_eq!(observed.len() + unobserved.len(), DiffLineKind::ALL.len());
@@ -6760,6 +6869,354 @@ mod tests {
         // Monotonicity bound: merged gap size <= min of side gap sizes.
         assert!(merged.unobserved().count() <= lhs_gap_count);
         assert!(merged.unobserved().count() <= rhs_gap_count);
+    }
+
+    // ---- AxisHistogram::observed closes the (observed, unobserved)
+    // ---- cell-only iterator partition over the closed axis ----
+    //
+    // [`AxisHistogram::observed`] is the cell-only form of
+    // [`AxisHistogram::nonzero`] (same support, observation counts
+    // dropped) and the structural dual of [`AxisHistogram::unobserved`]
+    // over the closed axis: every cell lies in exactly one of the two
+    // iterators. Three trait-uniform laws reach every `ClosedAxis`
+    // implementor pointwise:
+    //
+    //   (a) empty histogram → observed is empty (the dual of the
+    //       empty-histogram convention on `unobserved`);
+    //   (b) uniform axis-cover histogram → observed iterates the full
+    //       axis (the dual of axis_cover_is_empty on `unobserved`);
+    //   (c) singleton histogram → observed yields exactly the
+    //       observed cell (the dual of singleton_omits_observed_cell
+    //       on `unobserved`).
+
+    fn assert_observed_empty_is_empty<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The empty histogram observes no cell; the observed iterator
+        // is empty — the dual of the empty-histogram convention on
+        // `unobserved` (which iterates the full axis on the empty
+        // histogram).
+        let hist: AxisHistogram<A> = AxisHistogram::empty();
+        assert_eq!(
+            hist.observed().count(),
+            0,
+            "empty histogram observed must be empty on {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_observed_axis_cover_is_full_axis<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug + PartialEq,
+    {
+        // Observing every cell exactly once produces a uniform
+        // axis-cover histogram (every cell at 1, support is the full
+        // axis); `observed` iterates the full axis in declaration
+        // order, pointwise equal to `axis_iter::<A>()` — the dual
+        // boundary of the empty-histogram convention.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        let observed: Vec<A> = hist.observed().collect();
+        let full_axis: Vec<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            observed,
+            full_axis,
+            "uniform axis-cover histogram observed must iterate the full axis on {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_observed_singleton_is_just_observed_cell<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug + PartialEq,
+    {
+        // A singleton-support histogram (one cell observed) has
+        // exactly that cell as its observed support. Pin pointwise
+        // across every cell of every axis: the observed iterator
+        // yields a single-element sequence containing the observed
+        // cell — the dual of the singleton omission law on
+        // `unobserved` (which omits exactly that cell).
+        for observed_cell in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed_cell).collect();
+            let observed: Vec<A> = hist.observed().collect();
+            assert_eq!(
+                observed,
+                vec![observed_cell],
+                "singleton histogram observed must yield exactly the observed cell \
+                 {observed_cell:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+            // Companion bound on the cardinality of the support.
+            assert_eq!(
+                hist.observed().count(),
+                1,
+                "singleton histogram observed cardinality must equal 1 on {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_observed_empty_is_empty_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_observed_empty_is_empty::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_observed_axis_cover_is_full_axis_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_observed_axis_cover_is_full_axis::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_observed_singleton_is_just_observed_cell_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_observed_singleton_is_just_observed_cell::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_observed_equals_nonzero_cell_projection_pointwise() {
+        // The lift's defining equivalence on the pair-iterator
+        // surface: `observed()` yields the same cell-sequence as
+        // `nonzero().map(|(v, _)| v)` — the dropped-count form — on
+        // every histogram. Pin pointwise (in declaration order, not
+        // just as a set) across four canonical observation-mix
+        // shapes (empty, singleton, two-of-three, axis-cover) so a
+        // future regression in either side surfaces here.
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+            ],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let actual: Vec<DiffLineKind> = hist.observed().collect();
+            let manual: Vec<DiffLineKind> = hist.nonzero().map(|(v, _)| v).collect();
+            assert_eq!(
+                actual,
+                manual,
+                "observed must equal the cell projection of nonzero over input \
+                 of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_observed_equals_open_coded_filter_positive_loop() {
+        // The lift also collapses the open-coded scan
+        // `iter().filter(|&(_, c)| c > 0).map(|(v, _)| v)` that
+        // consumers re-derived inline at every observation site. Pin
+        // pointwise equivalence over the typed `DiffLineKind` cells
+        // across the same four canonical shapes so a future
+        // regression in either form surfaces here.
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+            ],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let actual: Vec<DiffLineKind> = hist.observed().collect();
+            let manual: Vec<DiffLineKind> = hist
+                .iter()
+                .filter(|&(_, c)| c > 0)
+                .map(|(v, _)| v)
+                .collect();
+            assert_eq!(
+                actual,
+                manual,
+                "observed must equal the open-coded filter-positive scan over input \
+                 of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_observed_count_equals_distinct_cells() {
+        // Companion-invariant pin: `observed().count() ==
+        // distinct_cells()`. The cell-only iterator's length is the
+        // named support-cardinality scalar — the natural peer of
+        // `unobserved().count() == unobserved_cells()`. Pinned across
+        // the same four canonical shapes the trait-uniform laws
+        // witness on (empty, singleton, partial, full-cover) so the
+        // equality holds at every support-cardinality value in the
+        // histogram's range.
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.observed().count(),
+                hist.distinct_cells(),
+                "observed count must equal distinct_cells on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_observed_partitions_axis_with_unobserved_pointwise() {
+        // Concrete pin of the (observed, unobserved) cell-only
+        // partition on `DiffLineKind`: the two iterators' cell-sets
+        // are disjoint and their union is the full axis. Pinned at
+        // three shapes — empty (observed = ∅, gap = full axis), a
+        // strict-subset support (Added only, observed = {Added},
+        // gap = {Removed, Context}), and the axis-cover (observed =
+        // full axis, gap = ∅) — so the partition is witnessed at
+        // both boundaries and at a generic proper subset.
+        use std::collections::HashSet;
+        let cases: [(&[DiffLineKind], usize); 3] = [
+            (&[], 0),
+            (&[DiffLineKind::Added, DiffLineKind::Added], 1),
+            (
+                &[
+                    DiffLineKind::Added,
+                    DiffLineKind::Removed,
+                    DiffLineKind::Context,
+                ],
+                3,
+            ),
+        ];
+        for (input, expected_support) in cases {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let observed: HashSet<DiffLineKind> = hist.observed().collect();
+            let unobserved: HashSet<DiffLineKind> = hist.unobserved().collect();
+            assert_eq!(observed.len(), expected_support);
+            assert_eq!(observed.len() + unobserved.len(), DiffLineKind::ALL.len());
+            assert!(observed.is_disjoint(&unobserved));
+            let union: HashSet<DiffLineKind> = observed.union(&unobserved).copied().collect();
+            let full_axis: HashSet<DiffLineKind> = DiffLineKind::ALL.iter().copied().collect();
+            assert_eq!(union, full_axis);
+        }
+    }
+
+    #[test]
+    fn axis_histogram_observed_yields_cells_in_declaration_order() {
+        // Order pin: the iterator yields cells in declaration order
+        // over [`ClosedAxis::ALL`], pointwise consistent with the
+        // order [`AxisHistogram::iter`] / [`AxisHistogram::nonzero`]
+        // yield (and the dual of [`AxisHistogram::unobserved`]'s
+        // declaration-order convention). Observation order does not
+        // leak through the projection: the same support observed
+        // under different observation orders yields the same observed
+        // cell-sequence.
+        //
+        // `DiffLineKind::ALL` declaration order is
+        // `[Removed, Added, Context]`. Two observation orders of the
+        // same multi-cell support must yield the same observed
+        // sequence in declaration order.
+        let order_a: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Context,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let order_b: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        let seq_a: Vec<DiffLineKind> = order_a.observed().collect();
+        let seq_b: Vec<DiffLineKind> = order_b.observed().collect();
+        assert_eq!(seq_a, seq_b);
+        assert_eq!(
+            seq_a,
+            vec![
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+                DiffLineKind::Context,
+            ],
+        );
+    }
+
+    #[test]
+    fn axis_histogram_observed_after_merge_grows_monotonically() {
+        // The (merge, observed) composition: merging never shrinks
+        // the support. The observed set of a merged histogram is the
+        // *union* of the two sides' observed sets — a cell is
+        // observed in the merge iff it is observed in at least one
+        // side. The cell-only peer of the monotone-support law on
+        // `distinct_cells` (the scalar surface) and the monotone-
+        // non-increase law on `unobserved` (the dual-side iterator).
+        //
+        // `DiffLineKind::ALL` declaration order is
+        // `[Removed, Added, Context]`.
+        use std::collections::HashSet;
+        let lhs: AxisHistogram<DiffLineKind> = [DiffLineKind::Removed, DiffLineKind::Added]
+            .into_iter()
+            .collect();
+        // lhs support: {Removed, Added}.
+        let rhs: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Context]
+            .into_iter()
+            .collect();
+        // rhs support: {Added, Context}.
+        let lhs_support: HashSet<DiffLineKind> = lhs.observed().collect();
+        let rhs_support: HashSet<DiffLineKind> = rhs.observed().collect();
+        let lhs_support_count = lhs.observed().count();
+        let rhs_support_count = rhs.observed().count();
+        assert_eq!(
+            lhs_support,
+            HashSet::from([DiffLineKind::Removed, DiffLineKind::Added]),
+        );
+        assert_eq!(
+            rhs_support,
+            HashSet::from([DiffLineKind::Added, DiffLineKind::Context]),
+        );
+        let merged = lhs.merge(&rhs);
+        let merged_support: HashSet<DiffLineKind> = merged.observed().collect();
+        // Union of {Removed, Added} and {Added, Context} is the full
+        // axis: the merge covers every cell, so observed iterates
+        // the full axis.
+        let expected: HashSet<DiffLineKind> = lhs_support.union(&rhs_support).copied().collect();
+        assert_eq!(merged_support, expected);
+        let full_axis: HashSet<DiffLineKind> = DiffLineKind::ALL.iter().copied().collect();
+        assert_eq!(merged_support, full_axis);
+        // Monotonicity bound: merged support size >= max of side support sizes.
+        assert!(merged.observed().count() >= lhs_support_count);
+        assert!(merged.observed().count() >= rhs_support_count);
     }
 
     // ---- AxisHistogram::peak_count trait-uniform laws ----
