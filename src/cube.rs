@@ -1227,6 +1227,144 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         self.peak_count() - self.trough_count()
     }
 
+    /// `true` exactly when every observed cell of the closed axis carries
+    /// the same observation count — the **uniformly-observed-count
+    /// predicate** on the histogram surface. The typed peer of
+    /// `spread() == 0` on the boolean surface, lifting the same
+    /// structural-skew boundary from the scalar surface to a named
+    /// predicate.
+    ///
+    /// Pointwise equivalent to three documented surface predicates:
+    /// - `self.spread() == 0` (the scalar-form: peak equals trough,
+    ///   collapsed to one equality on the difference),
+    /// - `self.peak_count() == self.trough_count()` (the defining form
+    ///   on the underlying scalar pair),
+    /// - `self.dominant_cell() == self.recessive_cell()` (the modal-pair
+    ///   form, peering through `Option<A>` equality — both sides agree
+    ///   on the empty histogram with `(None, None)` and on every
+    ///   non-empty uniform shape with `(Some(first), Some(first))`).
+    ///
+    /// Before this lift, every consumer asking *"are the observations
+    /// distributed uniformly across the observed kinds?"* re-derived the
+    /// predicate inline as one of those three forms — and the three
+    /// forms drifted in subtle ways: `peak_count() == trough_count()`
+    /// reads through two method calls and a `usize` equality but says
+    /// nothing structurally about *what* is being equated;
+    /// `spread() == 0` is concise but routes through a subtraction whose
+    /// underflow safety relies on the structural `peak >= trough`
+    /// invariant on [`Self::spread`]; `dominant_cell() == recessive_cell()`
+    /// peers through `Option<A>` equality across two argmax/argmin walks
+    /// of the histogram. The lift names the predicate directly at one
+    /// site with a single-pass scan over the raw counts vector — the
+    /// typed boolean every operator-facing "is this window balanced?"
+    /// check, attestation manifest "every observed kind fired equally"
+    /// gate, and dashboard "uniform-distribution" cell reads off as a
+    /// single method call.
+    ///
+    /// The natural typed primitive for diagnostic dumps, dashboards, and
+    /// attestation manifests asking *"are the observations balanced
+    /// across the observed kinds?"*: the "every error class that fired
+    /// did so the same number of times" attestation on a per-window
+    /// `AxisHistogram<crate::ShikumiErrorKind>`, the "no file format
+    /// dominated the chain" balanced-distribution gate on
+    /// [`crate::ConfigSourceChain::file_format_histogram`], the "every
+    /// observed layer kind contributed equally" diagnostic on
+    /// [`crate::ConfigSourceChain::layer_kind_histogram`], the "no diff
+    /// class dominated the rebuild" attestation on
+    /// [`crate::ConfigDiff::kind_histogram`].
+    ///
+    /// **Empty-histogram convention** — returns `true` vacuously: the
+    /// empty histogram has no observed cells, so the universal "every
+    /// observed cell carries the same count" reads `true` over the
+    /// empty support. Matches `spread() == 0` on the empty case
+    /// (`peak = trough = 0`) and `dominant_cell() == recessive_cell()`
+    /// (`None == None`). The empty histogram is therefore on the
+    /// `true` side of both the `(is_empty, is_uniform_count)` and the
+    /// `(is_full_cover, is_uniform_count)` corners — the only
+    /// histogram on which `is_empty` and `is_uniform_count` both
+    /// fire.
+    ///
+    /// **Singleton-support convention** — returns `true` on every
+    /// histogram whose observed support is a single cell (trivially
+    /// balanced: the one observed cell's count is both the peak and
+    /// the trough). Includes every histogram built from
+    /// `std::iter::once(v)` and every histogram built from N
+    /// observations of the same cell.
+    ///
+    /// **Uniform axis-cover convention** — returns `true` on every
+    /// histogram where every cell received the same count, including
+    /// the k-cell-observed-k-times-each-once shape and the uniform
+    /// axis-cover histogram (every cell at 1). The simultaneous
+    /// witness for `(is_full_cover, is_uniform_count) == (true, true)`
+    /// — every kind observed at least once, and every kind observed
+    /// equally.
+    ///
+    /// **Companion invariants** with [`Self::spread`],
+    /// [`Self::peak_count`], [`Self::trough_count`],
+    /// [`Self::dominant_cell`], [`Self::recessive_cell`], and
+    /// [`Self::is_empty`]:
+    /// - `is_uniform_count() == (spread() == 0)` always — the defining
+    ///   equivalence on the scalar-spread surface.
+    /// - `is_uniform_count() == (peak_count() == trough_count())`
+    ///   always — the structural form on the underlying scalar pair.
+    /// - `is_uniform_count() == (dominant_cell() == recessive_cell())`
+    ///   always — the modal-pair form, pointwise equal on both
+    ///   branches (empty: both reduce to `None == None`; non-empty
+    ///   uniform: both reduce to `Some(first cell) == Some(first cell)`;
+    ///   non-empty skewed: both reduce to `false`).
+    /// - `is_empty() ⇒ is_uniform_count()` — vacuous uniformity on
+    ///   the empty histogram. Contrapositively, `!is_uniform_count() ⇒
+    ///   !is_empty()` (a skewed histogram has at least two distinct
+    ///   counts, both positive, so the support is non-empty).
+    /// - `distinct_cells() <= 1 ⇒ is_uniform_count()` — every
+    ///   histogram with support size 0 or 1 is uniform by construction
+    ///   (empty: no cells to compare; singleton: one cell trivially
+    ///   equals itself). Contrapositively, `!is_uniform_count() ⇒
+    ///   distinct_cells() >= 2` (a skewed histogram observes at least
+    ///   two distinct cells with differing counts).
+    /// - Merge behavior is *non-monotonic* (peer to
+    ///   [`Self::trough_count`] and [`Self::spread`]): merging two
+    ///   uniform-count histograms can produce a non-uniform merge (when
+    ///   the supports differ — the merged cells carry the sum, the
+    ///   unmerged cells carry only one side's count), and merging two
+    ///   non-uniform histograms can produce a uniform merge (when the
+    ///   heavy and light tails cancel pointwise). The empty-identity
+    ///   law still holds:
+    ///   `merge(self, empty).is_uniform_count() == self.is_uniform_count()`.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the twenty-six
+    /// closed-enum axis primitives plus the five product cubes —
+    /// thirty-one today, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]) inherits the
+    /// predicate at no per-axis cost. The three trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_is_uniform_count_empty_is_true_*`,
+    /// `axis_histogram_is_uniform_count_singleton_is_true_*`,
+    /// `axis_histogram_is_uniform_count_axis_cover_is_true_*`).
+    ///
+    /// Peer to [`Self::is_empty`] (the *no-observation* boolean
+    /// boundary on the coverage axis) and [`Self::is_full_cover`] (the
+    /// *complete-observation* boolean boundary on the coverage axis):
+    /// `is_uniform_count` adds the boolean boundary on the *shape*
+    /// axis. The histogram's boolean surface now carries the natural
+    /// triple `(is_empty, is_full_cover, is_uniform_count)` — "did the
+    /// chain see anything?", "did the chain see everything?", "did
+    /// the chain see them all equally?" — each a single method call,
+    /// each independently checkable, and together they classify every
+    /// histogram into the eight cells of the boolean cube (with a few
+    /// cells structurally empty on the cardinality-≥2 implementor set:
+    /// e.g. `is_empty ∧ is_full_cover` requires cardinality 0, never
+    /// realized today; every other corner has a witness on every
+    /// cardinality-≥2 axis).
+    #[must_use]
+    pub fn is_uniform_count(&self) -> bool {
+        let mut nonzero = self.counts.iter().copied().filter(|&c| c > 0);
+        match nonzero.next() {
+            None => true,
+            Some(first) => nonzero.all(|c| c == first),
+        }
+    }
+
     /// Pointwise sum with `other` — the monoid operation. Every cell
     /// becomes `self.count(v) + other.count(v)`. Commutative,
     /// associative, identity at [`Self::empty`]. The natural shape for
@@ -7990,5 +8128,461 @@ mod tests {
 
         let lhs_with_empty = lhs.clone().merge(&empty_hist);
         assert_eq!(lhs_with_empty.is_full_cover(), lhs.is_full_cover());
+    }
+
+    // ---- AxisHistogram::is_uniform_count trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the predicate's
+    // contract holds uniformly without per-axis test duplication:
+    // empty → true (vacuous uniformity — no observed cells to
+    // disagree); singleton → true on every cell (one observed cell is
+    // trivially balanced, peak = trough = 1); uniform axis-cover →
+    // true on every implementor (every cell at count 1, peak = trough
+    // = 1). Concrete defining-equivalence pins on the three forms
+    // (spread == 0, peak == trough, dominant == recessive), the
+    // strict-skew witness, the merge non-monotonicity pin, and the
+    // (is_empty, is_full_cover, is_uniform_count) boolean-triple
+    // boundary witness follow below on [`DiffLineKind`].
+
+    fn assert_is_uniform_count_empty_is_true<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The empty histogram has no observed cells, so the universal
+        // "every observed cell carries the same count" reads `true`
+        // vacuously. Matches `spread() == 0` on the empty case
+        // (`peak = trough = 0`) and `dominant_cell() ==
+        // recessive_cell()` (`None == None`). The vacuous-uniformity
+        // boundary witness.
+        let hist = AxisHistogram::<A>::empty();
+        assert!(
+            hist.is_uniform_count(),
+            "empty histogram is_uniform_count must be true on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_is_uniform_count_singleton_is_true<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has one observed cell at count 1
+        // (peak = trough = 1), so the predicate fires uniformly. The
+        // singleton-support balanced-distribution witness.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert!(
+                hist.is_uniform_count(),
+                "singleton is_uniform_count must be true for observed cell \
+                 {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_is_uniform_count_axis_cover_is_true<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once produces a uniform
+        // axis-cover histogram (every cell at 1, peak = trough = 1) —
+        // the structural "every observed kind fired the same number
+        // of times" boundary at the maximum-coverage shape. The
+        // simultaneous (is_full_cover, is_uniform_count) = (true,
+        // true) witness on every implementor.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert!(
+            hist.is_uniform_count(),
+            "axis-cover histogram is_uniform_count must be true on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_is_uniform_count_empty_is_true_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_uniform_count_empty_is_true::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_uniform_count_singleton_is_true_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_uniform_count_singleton_is_true::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_uniform_count_axis_cover_is_true_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_uniform_count_axis_cover_is_true::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_uniform_count_equals_spread_is_zero() {
+        // The defining equivalence: `is_uniform_count` reads the same
+        // boolean as the open-coded `spread() == 0` form every consumer
+        // re-derived inline. Pinned pointwise across the canonical
+        // observation-mix shapes (empty, singleton, uniform-tied,
+        // strict-skew, heavy-tail) so a future regression in either
+        // side surfaces here.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.is_uniform_count(),
+                hist.spread() == 0,
+                "is_uniform_count must equal (spread == 0) on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_is_uniform_count_equals_peak_equals_trough() {
+        // The structural form on the underlying scalar pair:
+        // `is_uniform_count` reads the same boolean as the
+        // `peak_count() == trough_count()` defining equality. Pinned
+        // across the canonical observation-mix shapes so the equality
+        // holds at every distinct `(peak, trough)` pair the histogram
+        // surface ranges over.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+                DiffLineKind::Context,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.is_uniform_count(),
+                hist.peak_count() == hist.trough_count(),
+                "is_uniform_count must equal (peak_count == trough_count) \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_is_uniform_count_equals_dominant_equals_recessive() {
+        // The modal-pair form: `is_uniform_count` reads the same
+        // boolean as `dominant_cell() == recessive_cell()` across
+        // both branches — the empty histogram (both reduce to `None
+        // == None`, both `true`), the singleton-support histogram
+        // (both reduce to `Some(observed) == Some(observed)`, both
+        // `true`), the uniform axis-cover histogram (both reduce to
+        // `Some(first cell) == Some(first cell)`, both `true`), and
+        // every strict-skew histogram (both reduce to `false`).
+        // Pinned across the same observation-mix shapes so the modal-
+        // pair / boolean equivalence is exercised at every branch.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+                DiffLineKind::Context,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Removed,
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.is_uniform_count(),
+                hist.dominant_cell() == hist.recessive_cell(),
+                "is_uniform_count must equal (dominant_cell == recessive_cell) \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_is_uniform_count_witnesses_strict_skew_is_false() {
+        // The complementary witness: strict-skew shapes (heavy-tail,
+        // binary-skew, multi-level-skew) read `false` — peak strictly
+        // exceeds trough on the observed support, so the predicate
+        // fails. Pinned at three distinct skew shapes so the `false`
+        // branch is exercised at every distinct skew amount the
+        // histogram's spread can carry on `DiffLineKind` (cardinality
+        // 3 — spread can range from 0 to total - 1 in principle).
+        //
+        // Binary-skew: two distinct cells at counts (2, 1) → spread 1.
+        let binary_skew: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert!(!binary_skew.is_uniform_count());
+        assert_eq!(binary_skew.spread(), 1);
+
+        // Heavy-tail: three distinct cells at counts (3, 1, 1) →
+        // spread 2 (peak Added at 3, trough Removed/Context at 1).
+        // The middle of the spread range — the recessive cells are
+        // tied at the floor, the peak rises strictly above.
+        let heavy_tail: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert!(!heavy_tail.is_uniform_count());
+        assert_eq!(heavy_tail.spread(), 2);
+
+        // Strict-three-level skew: three distinct cells at counts
+        // (4, 2, 1) — every observed cell carries a distinct count,
+        // spread 3. The maximum-skew shape on a fully-supported
+        // DiffLineKind histogram.
+        let three_level: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert!(!three_level.is_uniform_count());
+        assert_eq!(three_level.spread(), 3);
+    }
+
+    #[test]
+    fn axis_histogram_is_empty_is_full_cover_is_uniform_count_triple_classifies_canonical_shapes() {
+        // The `(is_empty, is_full_cover, is_uniform_count)` boolean
+        // triple closes the histogram's coverage-and-shape surface in
+        // one projection. On `DiffLineKind` (cardinality 3, every
+        // implementor today carries cardinality >= 2, so the
+        // `(true, true, *)` corner is structurally empty), the four
+        // canonical shapes pin distinct triples:
+        //   - empty            → (true,  false, true ) — nothing
+        //                        observed, vacuous uniformity.
+        //   - singleton        → (false, false, true ) — one cell
+        //                        observed, trivially balanced.
+        //   - partial-skew     → (false, false, false) — two cells
+        //                        observed, distinct counts.
+        //   - axis-cover       → (false, true,  true ) — every cell
+        //                        observed at one, perfectly uniform.
+        //   - partial-uniform  → (false, false, true ) — two cells
+        //                        observed at the same count.
+        //   - full-cover-skew  → (false, true,  false) — every cell
+        //                        observed, distinct counts.
+        // Six of the eight `(bool, bool, bool)` corners get a witness
+        // (the two `(true, *, *)` corners with non-vacuous coverage
+        // are structurally impossible on cardinality >= 1 axes).
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert_eq!(
+            (
+                empty.is_empty(),
+                empty.is_full_cover(),
+                empty.is_uniform_count(),
+            ),
+            (true, false, true),
+        );
+
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert_eq!(
+            (
+                singleton.is_empty(),
+                singleton.is_full_cover(),
+                singleton.is_uniform_count(),
+            ),
+            (false, false, true),
+        );
+
+        let partial_skew: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            (
+                partial_skew.is_empty(),
+                partial_skew.is_full_cover(),
+                partial_skew.is_uniform_count(),
+            ),
+            (false, false, false),
+        );
+
+        let axis_cover: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        assert_eq!(
+            (
+                axis_cover.is_empty(),
+                axis_cover.is_full_cover(),
+                axis_cover.is_uniform_count(),
+            ),
+            (false, true, true),
+        );
+
+        let partial_uniform: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Added, DiffLineKind::Removed]
+                .into_iter()
+                .collect();
+        assert_eq!(
+            (
+                partial_uniform.is_empty(),
+                partial_uniform.is_full_cover(),
+                partial_uniform.is_uniform_count(),
+            ),
+            (false, false, true),
+        );
+
+        let full_cover_skew: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            (
+                full_cover_skew.is_empty(),
+                full_cover_skew.is_full_cover(),
+                full_cover_skew.is_uniform_count(),
+            ),
+            (false, true, false),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_is_uniform_count_after_merge_is_non_monotone() {
+        // The merge behavior on `is_uniform_count` is *non-monotonic*
+        // (peer to the non-monotonic behavior on
+        // [`AxisHistogram::trough_count`] and
+        // [`AxisHistogram::spread`]): merging two uniform-count
+        // histograms can produce a non-uniform merge (when the
+        // supports differ — the merged cells gain count, the
+        // unmerged cells keep one side's count), and merging two
+        // non-uniform histograms can produce a uniform merge (when
+        // the heavy and light tails cancel pointwise). Pinned with
+        // three witnesses spanning the merge surface, plus the
+        // empty-identity law.
+        //
+        // `DiffLineKind::ALL` declaration order is
+        // `[Removed, Added, Context]` (axis_cardinality = 3).
+
+        // Witness 1: uniform-singleton ⊕ uniform-singleton on disjoint
+        // supports → uniform binary support (both at count 1).
+        // Both sides uniform (singleton), merge stays uniform.
+        let solo_added: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Added).collect();
+        let solo_removed: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        let merged_uniform = solo_added.clone().merge(&solo_removed);
+        assert!(merged_uniform.is_uniform_count());
+        assert!(solo_added.is_uniform_count() && solo_removed.is_uniform_count());
+
+        // Witness 2: uniform-pair (Added: 2) ⊕ uniform-singleton
+        // (Removed: 1) → counts (Removed: 1, Added: 2) — non-uniform
+        // merge from two uniform sides. Demonstrates uniform-but-
+        // unequal-counts breaks under merge with disjoint single
+        // support.
+        let added_twice: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Added]
+            .into_iter()
+            .collect();
+        assert!(added_twice.is_uniform_count());
+        let mixed = added_twice.clone().merge(&solo_removed);
+        assert!(!mixed.is_uniform_count());
+
+        // Witness 3: non-uniform ⊕ non-uniform → uniform. lhs has
+        // (Added: 2, Removed: 1), rhs has (Added: 1, Removed: 2);
+        // both skewed, but the heavy-tail cancels pointwise so the
+        // merge is (Added: 3, Removed: 3) — uniform binary support.
+        let lhs_skew: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let rhs_skew: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert!(!lhs_skew.is_uniform_count());
+        assert!(!rhs_skew.is_uniform_count());
+        let cancelled = lhs_skew.clone().merge(&rhs_skew);
+        assert!(cancelled.is_uniform_count());
+
+        // Empty-identity law: merging with the empty histogram leaves
+        // `is_uniform_count` unchanged on every input. Pinned with
+        // both a uniform-side input and a non-uniform-side input.
+        let empty_hist: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        let uniform_with_empty = added_twice.clone().merge(&empty_hist);
+        assert_eq!(
+            uniform_with_empty.is_uniform_count(),
+            added_twice.is_uniform_count(),
+        );
+        let skew_with_empty = lhs_skew.clone().merge(&empty_hist);
+        assert_eq!(
+            skew_with_empty.is_uniform_count(),
+            lhs_skew.is_uniform_count(),
+        );
     }
 }
