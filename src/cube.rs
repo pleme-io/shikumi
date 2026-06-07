@@ -1365,6 +1365,123 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         }
     }
 
+    /// `true` exactly when the histogram's *support* has cardinality
+    /// one — exactly one axis cell received any observation. The
+    /// **singular-support predicate** on the histogram surface: the
+    /// typed boolean witness for the question "did this observation
+    /// window collapse onto a single kind?"
+    ///
+    /// Pointwise equivalent to three documented surface predicates
+    /// that previously had no single named boolean —
+    /// `self.distinct_cells() == 1` (the support-cardinality form on
+    /// the named scalar), `self.nonzero().count() == 1` (the
+    /// iterator-length form, which walks the same closed-axis
+    /// filter), and `self.peak_count() == self.total() && !self.is_empty()`
+    /// (the monoid-collapse form: a single observed cell carries every
+    /// observation, so its peak count equals the total) — collapsed to
+    /// one method call with a single-pass scan that short-circuits on
+    /// the second nonzero cell (the early-exit form bounds the cost
+    /// at two nonzero cells visited rather than walking the entire
+    /// counts vector to count them).
+    ///
+    /// **The support-cardinality boundary triple.** Peer to
+    /// [`Self::is_empty`] (support cardinality `0` — *no* cell
+    /// observed) and [`Self::is_full_cover`] (support cardinality
+    /// `axis_cardinality::<A>()` — *every* cell observed). The
+    /// boolean surface now carries the natural triple
+    /// `(is_empty, has_singular_support, is_full_cover)` on the
+    /// support-cardinality boundary — "did the chain see *nothing*?",
+    /// "did the chain collapse onto *one* kind?", "did the chain see
+    /// *every* kind?" — each independently checkable in one method
+    /// call. The three predicates are pairwise disjoint on every
+    /// `ClosedAxis` implementor with `axis_cardinality::<A>() >= 2`
+    /// (the entire implementor set today): `is_empty ⇒
+    /// !has_singular_support ∧ !is_full_cover` (support 0 ≠ 1,
+    /// 0 ≠ axis_cardinality), `has_singular_support ⇒ !is_empty ∧
+    /// !is_full_cover` (support 1 ≠ 0, 1 ≠ axis_cardinality on
+    /// cardinality ≥ 2), and `is_full_cover ⇒ !is_empty ∧
+    /// !has_singular_support` (support axis_cardinality ≠ 0,
+    /// axis_cardinality ≠ 1 on cardinality ≥ 2).
+    ///
+    /// **Empty-histogram convention** — returns `false`: the empty
+    /// histogram has support cardinality `0`, not `1`. The named
+    /// boundary `is_empty` carries that case; `has_singular_support`
+    /// reads the *one observed cell* case strictly.
+    ///
+    /// **Singleton-observation convention** — every singleton
+    /// observation lands the support cardinality at exactly `1`, so
+    /// `has_singular_support` reads `true` uniformly on every
+    /// singleton across every implementor. The minimal-nonempty
+    /// boundary witness.
+    ///
+    /// **Axis-cover convention** — observing every cell exactly once
+    /// raises the support cardinality to `axis_cardinality::<A>()`,
+    /// so `has_singular_support` reads `true` iff
+    /// `axis_cardinality::<A>() == 1` (no implementor today carries
+    /// cardinality 1, so axis-cover reads `false` uniformly across
+    /// the implementor set). Stated as the conditional law so the
+    /// witness is uniform across the implementor set without case-
+    /// splitting on cardinality at the test site.
+    ///
+    /// **Companion invariants** with [`Self::is_empty`],
+    /// [`Self::is_full_cover`], [`Self::distinct_cells`],
+    /// [`Self::total`], [`Self::peak_count`],
+    /// [`Self::dominant_cell`], [`Self::recessive_cell`], and
+    /// [`Self::is_uniform_count`]:
+    /// - `has_singular_support() ⇔ distinct_cells() == 1` — the
+    ///   defining equivalence on the named scalar peer; reading
+    ///   "the support carries exactly one observed kind" off one
+    ///   named boolean instead of an equality against an `usize`
+    ///   on the support-cardinality scalar.
+    /// - `has_singular_support() ⇔ (peak_count() == total() &&
+    ///   !is_empty())` — the monoidal-collapse form: a single
+    ///   observed cell carries every observation, so its peak count
+    ///   equals the total; the non-empty side excludes the
+    ///   `(0, 0)` degenerate equality the empty histogram carries.
+    /// - `has_singular_support() ⇒ dominant_cell() ==
+    ///   recessive_cell() && dominant_cell().is_some()` — when
+    ///   support is singular, the modal pair collapses to the one
+    ///   observed cell on both sides (the converse fails: on
+    ///   uniform axis-cover, both sides pick the first cell by
+    ///   tie-break but support is not singular).
+    /// - `has_singular_support() ⇒ is_uniform_count()` — a single
+    ///   observed cell is vacuously uniform-counted (only one count
+    ///   in the support to compare to itself); the converse fails
+    ///   on every uniform-multi-cell shape (the empty histogram,
+    ///   uniform axis-cover, every k-cell-observed-k-times-each-once
+    ///   shape) so the implication is one-way.
+    /// - `(is_empty, has_singular_support, is_full_cover)` is
+    ///   pairwise disjoint on every implementor with cardinality
+    ///   ≥ 2 (the entire implementor set today) — at most one of
+    ///   the three reads `true` on any histogram, witnessed by the
+    ///   `(false, false, false)` partial-coverage corner reading
+    ///   none of them and every other typed branch reading exactly
+    ///   one.
+    /// - The merge behavior is *non-monotonic*: merging two
+    ///   singular-support histograms can produce a non-singular
+    ///   merge (when the supports differ — the merged histogram
+    ///   has support cardinality `2`), and merging two non-
+    ///   singular histograms can produce a singular merge only
+    ///   when both sides are empty (vacuously). The
+    ///   empty-identity law holds:
+    ///   `merge(self, empty).has_singular_support() ==
+    ///   self.has_singular_support()`.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the twenty
+    /// closed-enum axis primitives plus the five product cubes —
+    /// twenty-five today, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]) inherits
+    /// the projection at no per-axis cost. The three trait-uniform
+    /// laws pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_has_singular_support_empty_is_false_*`,
+    /// `axis_histogram_has_singular_support_singleton_is_true_*`,
+    /// `axis_histogram_has_singular_support_axis_cover_iff_cardinality_is_one_*`).
+    #[must_use]
+    pub fn has_singular_support(&self) -> bool {
+        let mut nonzero = self.counts.iter().filter(|&&c| c > 0);
+        nonzero.next().is_some() && nonzero.next().is_none()
+    }
+
     /// Pointwise sum with `other` — the monoid operation. Every cell
     /// becomes `self.count(v) + other.count(v)`. Commutative,
     /// associative, identity at [`Self::empty`]. The natural shape for
@@ -8583,6 +8700,414 @@ mod tests {
         assert_eq!(
             skew_with_empty.is_uniform_count(),
             lhs_skew.is_uniform_count(),
+        );
+    }
+
+    // -- has_singular_support: trait-uniform laws ------------------
+    //
+    // Three trait-uniform helpers reach every `ClosedAxis`
+    // implementor via `for_each_closed_axis_implementor!`. The empty,
+    // singleton, and axis-cover branches of the support-cardinality
+    // boundary triple are pinned at the trait level so the predicate's
+    // contract holds uniformly across the implementor set without per-
+    // axis test duplication. Concrete pins on the defining
+    // equivalence, the monoid-collapse equivalence, the
+    // (is_empty, has_singular_support, is_full_cover) pairwise-
+    // disjoint partition, the `has_singular_support ⇒ is_uniform_count`
+    // one-way implication, and the merge non-monotonicity follow
+    // below on [`DiffLineKind`].
+
+    fn assert_has_singular_support_empty_is_false<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The empty histogram has support cardinality `0`, not `1`,
+        // so the singular-support predicate reads `false`. The
+        // [`AxisHistogram::is_empty`] boundary carries the zero-
+        // support case; `has_singular_support` reads the
+        // one-observed-cell case strictly. The zero-support boundary
+        // witness on the (is_empty, has_singular_support,
+        // is_full_cover) pairwise-disjoint partition.
+        let hist = AxisHistogram::<A>::empty();
+        assert!(
+            !hist.has_singular_support(),
+            "empty histogram has_singular_support must be false on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_has_singular_support_singleton_is_true<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has exactly one observed cell, so
+        // the singular-support predicate reads `true`. The minimal-
+        // nonempty boundary witness — every singleton observation
+        // lands exactly on the support-cardinality-1 corner of the
+        // (is_empty, has_singular_support, is_full_cover) partition.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert!(
+                hist.has_singular_support(),
+                "singleton has_singular_support must be true for observed cell \
+                 {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_has_singular_support_axis_cover_iff_cardinality_is_one<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once raises the support
+        // cardinality to `axis_cardinality::<A>()`, so the singular-
+        // support predicate reads `true` iff the axis carries
+        // exactly one cell. Stated as an equivalence so the law is
+        // uniform across the implementor set (every closed-axis
+        // primitive in the typescape today carries
+        // `axis_cardinality >= 2`, so axis-cover reads `false`
+        // uniformly) without case-splitting on cardinality at the
+        // test site. The dual-boundary witness on the (is_empty,
+        // has_singular_support, is_full_cover) partition: axis-cover
+        // sits at the is_full_cover corner on every cardinality-≥ 2
+        // implementor, disjoint from has_singular_support.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            hist.has_singular_support(),
+            axis_cardinality::<A>() == 1,
+            "axis-cover has_singular_support must equal (axis_cardinality == 1) \
+             on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_support_empty_is_false_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_singular_support_empty_is_false::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_support_singleton_is_true_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_singular_support_singleton_is_true::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_support_axis_cover_iff_cardinality_is_one_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_singular_support_axis_cover_iff_cardinality_is_one::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_support_equals_distinct_cells_is_one() {
+        // The defining equivalence: `has_singular_support` reads the
+        // same boolean as the open-coded `distinct_cells() == 1` form
+        // every consumer would otherwise re-derive inline. Pinned
+        // pointwise across the canonical observation-mix shapes
+        // (empty, singleton, singleton-multi-observation, partial-
+        // skew, partial-uniform, axis-cover) so a future regression
+        // in either side surfaces here.
+        let inputs: [&[DiffLineKind]; 6] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.has_singular_support(),
+                hist.distinct_cells() == 1,
+                "has_singular_support must equal (distinct_cells == 1) \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_support_equals_peak_equals_total_on_nonempty() {
+        // The monoid-collapse equivalence: a single observed cell
+        // carries every observation, so its peak count equals the
+        // total — `peak_count() == total() && !is_empty()` reads the
+        // same boolean as `has_singular_support()`. The non-empty
+        // side excludes the `(0, 0)` degenerate equality the empty
+        // histogram carries (where peak == total == 0 trivially but
+        // support is empty, not singular). Pinned across the same
+        // observation-mix shapes so the monoid-collapse equivalence
+        // is exercised at every branch.
+        let inputs: [&[DiffLineKind]; 6] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.has_singular_support(),
+                hist.peak_count() == hist.total() && !hist.is_empty(),
+                "has_singular_support must equal (peak_count == total && !is_empty) \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_support_cardinality_boundary_triple_is_pairwise_disjoint() {
+        // The `(is_empty, has_singular_support, is_full_cover)`
+        // boolean triple closes the histogram's support-cardinality
+        // boundary surface in one projection: support cardinality 0
+        // (`is_empty`), support cardinality 1 (`has_singular_support`),
+        // and support cardinality `axis_cardinality::<A>()`
+        // (`is_full_cover`) — three disjoint corners on the support
+        // sigma-algebra. On every cardinality-≥ 2 implementor (the
+        // entire implementor set today), at most one of the three
+        // reads `true` on any histogram. Pinned at four typed
+        // branches:
+        //   - empty            → (true,  false, false) — the support-0
+        //                        corner.
+        //   - singleton        → (false, true,  false) — the support-1
+        //                        corner.
+        //   - axis-cover       → (false, false, true ) — the support-N
+        //                        corner.
+        //   - partial-multi    → (false, false, false) — none of the
+        //                        boundary corners (support strictly
+        //                        between 1 and N).
+        // The four boundary-corner shapes pin the triple at every
+        // distinct support-cardinality boundary reachable on
+        // `DiffLineKind` (cardinality 3); the partial-multi shape
+        // sits in the (false, false, false) interior.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert_eq!(
+            (
+                empty.is_empty(),
+                empty.has_singular_support(),
+                empty.is_full_cover(),
+            ),
+            (true, false, false),
+        );
+
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert_eq!(
+            (
+                singleton.is_empty(),
+                singleton.has_singular_support(),
+                singleton.is_full_cover(),
+            ),
+            (false, true, false),
+        );
+
+        let axis_cover: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        assert_eq!(
+            (
+                axis_cover.is_empty(),
+                axis_cover.has_singular_support(),
+                axis_cover.is_full_cover(),
+            ),
+            (false, false, true),
+        );
+
+        let partial_multi: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Added, DiffLineKind::Removed]
+                .into_iter()
+                .collect();
+        assert_eq!(
+            (
+                partial_multi.is_empty(),
+                partial_multi.has_singular_support(),
+                partial_multi.is_full_cover(),
+            ),
+            (false, false, false),
+        );
+
+        // Pairwise-disjoint check: on every shape above, at most one
+        // of the three predicates reads `true`. The boolean
+        // arithmetic encodes pairwise disjointness as
+        // `a & b == false ∧ a & c == false ∧ b & c == false`.
+        for hist in [&empty, &singleton, &axis_cover, &partial_multi] {
+            let e = hist.is_empty();
+            let s = hist.has_singular_support();
+            let f = hist.is_full_cover();
+            assert!(
+                !(e && s),
+                "is_empty and has_singular_support must be disjoint",
+            );
+            assert!(!(e && f), "is_empty and is_full_cover must be disjoint",);
+            assert!(
+                !(s && f),
+                "has_singular_support and is_full_cover must be disjoint \
+                 on cardinality-≥ 2 implementors",
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_support_implies_is_uniform_count() {
+        // The one-way implication: a single observed cell is
+        // vacuously uniform-counted (only one count in the support
+        // to compare to itself), so `has_singular_support ⇒
+        // is_uniform_count`. The converse fails on every uniform-
+        // multi-cell shape (the empty histogram reads
+        // `is_uniform_count = true` but `has_singular_support =
+        // false`; uniform axis-cover reads
+        // `is_uniform_count = true` but
+        // `has_singular_support = false` on cardinality-≥ 2 axes;
+        // every k-cell-observed-k-times-each-once shape reads
+        // `is_uniform_count = true` but
+        // `has_singular_support = false`), so the implication is
+        // strictly one-way. Pinned at three singular-support
+        // witnesses (singleton, multi-observation-single-cell, and
+        // heavy-singleton — all read `has_singular_support = true`
+        // and `is_uniform_count = true`) and three counterexamples
+        // to the converse (empty, uniform-pair, uniform-axis-cover —
+        // all read `is_uniform_count = true` but
+        // `has_singular_support = false`).
+
+        // Singular-support side: implication holds.
+        let solo: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert!(solo.has_singular_support());
+        assert!(solo.is_uniform_count());
+
+        let many_solo: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        assert!(many_solo.has_singular_support());
+        assert!(many_solo.is_uniform_count());
+
+        let heavy_solo: AxisHistogram<DiffLineKind> =
+            std::iter::repeat_n(DiffLineKind::Removed, 7).collect();
+        assert!(heavy_solo.has_singular_support());
+        assert!(heavy_solo.is_uniform_count());
+
+        // Converse-fails side: `is_uniform_count` holds but
+        // `has_singular_support` does not on every uniform-multi-cell
+        // shape.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_uniform_count());
+        assert!(!empty.has_singular_support());
+
+        let uniform_pair: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Added, DiffLineKind::Removed]
+                .into_iter()
+                .collect();
+        assert!(uniform_pair.is_uniform_count());
+        assert!(!uniform_pair.has_singular_support());
+
+        let axis_cover: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        assert!(axis_cover.is_uniform_count());
+        assert!(!axis_cover.has_singular_support());
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_support_after_merge_is_non_monotone() {
+        // The merge behavior on `has_singular_support` is *non-
+        // monotonic*: merging two singular-support histograms can
+        // produce a non-singular merge (when the supports differ —
+        // the merged histogram has support cardinality 2), and
+        // merging two non-singular histograms cannot produce a
+        // singular merge unless both sides are empty (vacuously).
+        // Pinned with three witnesses spanning the merge surface,
+        // plus the empty-identity law.
+        //
+        // `DiffLineKind::ALL` declaration order is
+        // `[Removed, Added, Context]` (axis_cardinality = 3).
+
+        // Witness 1: singular ⊕ singular on disjoint supports →
+        // non-singular merge (support cardinality grows from 1 to 2).
+        let solo_added: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Added).collect();
+        let solo_removed: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        assert!(solo_added.has_singular_support());
+        assert!(solo_removed.has_singular_support());
+        let merged_pair = solo_added.clone().merge(&solo_removed);
+        assert!(!merged_pair.has_singular_support());
+
+        // Witness 2: singular ⊕ singular on coincident supports →
+        // singular merge (counts add but support stays at the same
+        // single cell). The monotone case on the singular-support
+        // boundary.
+        let more_added: AxisHistogram<DiffLineKind> =
+            std::iter::repeat_n(DiffLineKind::Added, 4).collect();
+        assert!(more_added.has_singular_support());
+        let merged_same = solo_added.clone().merge(&more_added);
+        assert!(merged_same.has_singular_support());
+
+        // Witness 3: non-singular ⊕ non-singular → non-singular.
+        // Merging never shrinks the support, so two histograms with
+        // distinct observed kinds yield a merge with at least the
+        // union of supports.
+        let mixed_lhs: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Removed]
+            .into_iter()
+            .collect();
+        let mixed_rhs: AxisHistogram<DiffLineKind> = [DiffLineKind::Removed, DiffLineKind::Context]
+            .into_iter()
+            .collect();
+        assert!(!mixed_lhs.has_singular_support());
+        assert!(!mixed_rhs.has_singular_support());
+        let merged_full = mixed_lhs.clone().merge(&mixed_rhs);
+        assert!(!merged_full.has_singular_support());
+
+        // Empty-identity law: merging with the empty histogram
+        // leaves `has_singular_support` unchanged on every input.
+        // Pinned with both a singular-support input and a
+        // non-singular-support input.
+        let empty_hist: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        let singular_with_empty = solo_added.clone().merge(&empty_hist);
+        assert_eq!(
+            singular_with_empty.has_singular_support(),
+            solo_added.has_singular_support(),
+        );
+        let mixed_with_empty = mixed_lhs.clone().merge(&empty_hist);
+        assert_eq!(
+            mixed_with_empty.has_singular_support(),
+            mixed_lhs.has_singular_support(),
         );
     }
 }
