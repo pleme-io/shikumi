@@ -2638,19 +2638,17 @@ mod tests {
 
         // Axis-cover chain: one layer per kind covers the whole
         // [`ConfigSourceKind::ALL`] axis, so distinct_cells equals the
-        // axis cardinality — the maximum-coverage witness.
+        // axis cardinality — the maximum-coverage witness. Reads
+        // through the named predicate [`AxisHistogram::is_full_cover`]
+        // — the boolean form of `distinct_cells == axis_cardinality`
+        // — so the typed full-cover question reaches the chain-level
+        // histogram without re-deriving the equality at the call site.
         let axis_cover = vec![
             ConfigSource::Defaults,
             ConfigSource::Env("APP_".to_owned()),
             ConfigSource::File(PathBuf::from("/etc/app.yaml")),
         ];
-        assert_eq!(
-            axis_cover
-                .as_slice()
-                .layer_kind_histogram()
-                .distinct_cells(),
-            crate::axis_cardinality::<ConfigSourceKind>(),
-        );
+        assert!(axis_cover.as_slice().layer_kind_histogram().is_full_cover(),);
     }
 
     #[test]
@@ -2703,10 +2701,11 @@ mod tests {
             ConfigSource::Env(String::new()),
             ConfigSource::Env("APP_".to_owned()),
         ];
-        assert_eq!(
-            both.as_slice().env_prefix_kind_histogram().distinct_cells(),
-            crate::axis_cardinality::<EnvMetadataTagKind>(),
-        );
+        // The full-cover witness on the env-prefix axis — reads
+        // through the named [`AxisHistogram::is_full_cover`] predicate
+        // rather than the open-coded `distinct_cells ==
+        // axis_cardinality` equality.
+        assert!(both.as_slice().env_prefix_kind_histogram().is_full_cover(),);
 
         let prefixed_only = vec![
             ConfigSource::Env("APP_".to_owned()),

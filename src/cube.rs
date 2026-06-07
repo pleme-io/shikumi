@@ -629,6 +629,114 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         self.counts.iter().filter(|&&c| c == 0).count()
     }
 
+    /// `true` exactly when every cell of the closed axis received at
+    /// least one observation — the **full-cover predicate** on the
+    /// histogram surface. The typed peer of [`Self::is_empty`] on the
+    /// *dual* side of the (observed, unobserved) partition: where
+    /// `is_empty` reads "no cell observed", `is_full_cover` reads
+    /// "every cell observed".
+    ///
+    /// Pointwise equivalent to three documented surface predicates:
+    /// - `self.unobserved_cells() == 0` (coverage gap is empty),
+    /// - `self.distinct_cells() == axis_cardinality::<A>()` (support
+    ///   equals the axis),
+    /// - `self.unobserved().next().is_none()` (the unobserved iterator
+    ///   is empty).
+    ///
+    /// Before this lift, every consumer asking "does this observation
+    /// window cover every kind?" re-derived the predicate inline as
+    /// one of three forms — and the three forms drifted in subtle
+    /// ways: `distinct_cells() == axis_cardinality::<A>()` requires
+    /// importing [`axis_cardinality`] and naming the axis through a
+    /// turbofish at every call site; `unobserved().next().is_none()`
+    /// allocates an iterator just to check emptiness; `unobserved_cells()
+    /// == 0` reads naturally but still names the *coverage-gap* surface
+    /// to ask the *full-cover* question. The lift names the predicate
+    /// directly at one site — the typed boolean every coverage-
+    /// dashboard cell, attestation manifest, and "axis fully exercised"
+    /// gate reads off as a single method call.
+    ///
+    /// The natural typed primitive for diagnostic dumps, coverage
+    /// dashboards, and attestation manifests asking *"did this window
+    /// exercise every kind?"*: the "every error class fired at least
+    /// once this reload window" attestation on a per-window
+    /// `AxisHistogram<crate::ShikumiErrorKind>`, the "every recognized
+    /// file format appeared at least once in the chain" coverage gate
+    /// on [`crate::ConfigSourceChain::file_format_histogram`], the
+    /// "every layer kind produced at least one entry" diagnostic on
+    /// [`crate::ConfigSourceChain::layer_kind_histogram`], the "every
+    /// diff-line class observed in this rebuild" attestation on
+    /// [`crate::ConfigDiff::kind_histogram`].
+    ///
+    /// **Closes the (`is_empty`, `is_full_cover`) boolean partition** on
+    /// the histogram surface — the dual-boundary pair of typed
+    /// predicates over the (observed, unobserved) partition. The two
+    /// boundaries are *not* mutually exclusive on a zero-cardinality
+    /// axis (both hold vacuously when `axis_cardinality::<A>() == 0`,
+    /// since the empty axis has no cells to observe); they are
+    /// mutually exclusive on every implementor today (every closed-axis
+    /// primitive in the typescape carries `axis_cardinality >= 2`).
+    /// The partition closes the histogram's *coverage* surface as
+    /// `is_empty` closed the *observation* surface: a per-window
+    /// "did the chain see anything?" reads off `is_empty`, a
+    /// "did the chain see everything?" reads off `is_full_cover`,
+    /// neither needs to know the axis size.
+    ///
+    /// **Empty-histogram convention** — returns `false` on every
+    /// non-zero-cardinality axis (the empty histogram has the full
+    /// coverage gap, so the predicate fails uniformly). On a
+    /// zero-cardinality axis (none in the typescape today, but
+    /// structurally permitted by [`ClosedAxis`]) the empty histogram
+    /// reads `true` (vacuous full cover — no cells to miss).
+    ///
+    /// **Full-cover-from-singleton convention** — returns `true`
+    /// from a single observation exactly when the axis carries only
+    /// one cell (`axis_cardinality::<A>() == 1`). On axes with
+    /// cardinality `>= 2` (every implementor today), a singleton
+    /// observation leaves at least `axis_cardinality - 1 >= 1` cells
+    /// in the gap, so the predicate fails.
+    ///
+    /// **Companion invariants** with [`Self::is_empty`],
+    /// [`Self::distinct_cells`], [`Self::unobserved_cells`], and
+    /// [`Self::unobserved`]:
+    /// - `is_full_cover() == (unobserved_cells() == 0)` always.
+    /// - `is_full_cover() == (distinct_cells() == axis_cardinality::<A>())`
+    ///   always — the dual-side surfacing of the same boolean across the
+    ///   (observed, unobserved) partition.
+    /// - `is_full_cover() == self.unobserved().next().is_none()`
+    ///   always — the iterator-emptiness equivalent of the gap-size-zero
+    ///   form, without the iterator allocation.
+    /// - `is_full_cover() && is_empty()` iff `axis_cardinality::<A>() == 0`
+    ///   — the degenerate-axis double-boundary.
+    /// - `merge(self, other).is_full_cover() >= self.is_full_cover() ||
+    ///   other.is_full_cover()` (boolean monotone-OR): merging cannot
+    ///   *un*-cover a cell, so if either side reads full cover so does
+    ///   the merge. The peer to the monotone-coverage law on
+    ///   [`Self::unobserved`] / monotone-non-increase law on
+    ///   [`Self::unobserved_cells`].
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the twenty-six
+    /// closed-enum axis primitives plus the five product cubes —
+    /// thirty-one today, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]) inherits the
+    /// projection at no per-axis cost. The three trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_is_full_cover_empty_iff_axis_is_empty_*`,
+    /// `axis_histogram_is_full_cover_singleton_iff_cardinality_is_one_*`,
+    /// `axis_histogram_is_full_cover_on_axis_cover_*`).
+    ///
+    /// Peer to [`Self::is_empty`] (the *no-observation* boolean
+    /// boundary): `(is_empty, is_full_cover)` reads off the histogram's
+    /// observation-coverage boundary as a typed pair, with `is_empty`
+    /// at the "nothing observed" end and `is_full_cover` at the
+    /// "everything observed at least once" end. The dual-boolean pair
+    /// closes the coverage-state surface of the histogram in a single
+    /// `(bool, bool)` projection.
+    #[must_use]
+    pub fn is_full_cover(&self) -> bool {
+        self.counts.iter().all(|&c| c > 0)
+    }
+
     /// The first axis cell (in declaration order over [`ClosedAxis::ALL`])
     /// whose observation count equals the maximum count over the
     /// histogram; `None` when no cell carries any observation
@@ -7583,5 +7691,304 @@ mod tests {
         // Identity (empty-rhs): merge leaves the gap unchanged.
         let with_empty = lhs.clone().merge(&empty_hist);
         assert_eq!(with_empty.unobserved_cells(), lhs.unobserved_cells());
+    }
+
+    // ---- AxisHistogram::is_full_cover trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the predicate's
+    // contract holds uniformly without per-axis test duplication:
+    // axis-cover → always true (observing every cell once fills the
+    // gap); empty → false on every cardinality >= 1 axis (the full gap
+    // is present); singleton → true iff cardinality == 1 (the single
+    // cell is the entire axis). Concrete cross-equivalence pins, the
+    // boolean monotone-OR merge law, and the `(is_empty,
+    // is_full_cover)` partition follow below on [`DiffLineKind`].
+
+    fn assert_is_full_cover_on_axis_cover<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once produces a uniform
+        // axis-cover histogram (every cell observed at least once);
+        // the predicate reads `true` at every implementor. The "full
+        // cover" boundary witness.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert!(
+            hist.is_full_cover(),
+            "axis-cover histogram must read is_full_cover on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_is_full_cover_empty_iff_axis_is_empty<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The empty histogram has the full coverage gap, so the
+        // predicate fails on every non-zero-cardinality axis (every
+        // closed-axis implementor today carries cardinality >= 2).
+        // The degenerate zero-cardinality axis would read `true`
+        // vacuously, so the law is stated as an equivalence with
+        // `axis_cardinality::<A>() == 0` — uniform across the
+        // implementor set without case-splitting on the cardinality.
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.is_full_cover(),
+            axis_cardinality::<A>() == 0,
+            "empty histogram is_full_cover must equal (axis_cardinality == 0) \
+             on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_is_full_cover_singleton_iff_cardinality_is_one<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has exactly one observed cell.
+        // The predicate reads `true` iff that one observed cell is
+        // the entire axis — i.e. iff `axis_cardinality::<A>() == 1`.
+        // On axes with cardinality >= 2 (every implementor today),
+        // the singleton leaves at least one cell in the gap, so the
+        // predicate fails.
+        let n = axis_cardinality::<A>();
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.is_full_cover(),
+                n == 1,
+                "singleton is_full_cover must equal (axis_cardinality == 1) \
+                 for observed cell {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_is_full_cover_on_axis_cover_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_full_cover_on_axis_cover::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_full_cover_empty_iff_axis_is_empty_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_full_cover_empty_iff_axis_is_empty::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_full_cover_singleton_iff_cardinality_is_one_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_full_cover_singleton_iff_cardinality_is_one::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_full_cover_equals_unobserved_cells_zero() {
+        // The defining equivalence: `is_full_cover` reads the same
+        // boolean as the open-coded `unobserved_cells() == 0` form
+        // every consumer re-derived inline. Pinned pointwise across
+        // the canonical observation-mix shapes (empty, singleton,
+        // partial, full-cover, heavy-tail mix) so a future regression
+        // in either side surfaces here.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.is_full_cover(),
+                hist.unobserved_cells() == 0,
+                "is_full_cover must equal (unobserved_cells == 0) \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_is_full_cover_equals_distinct_equals_cardinality() {
+        // The dual-side surfacing of the same boolean across the
+        // (observed, unobserved) partition: `is_full_cover` reads the
+        // same boolean as the `distinct_cells == axis_cardinality`
+        // form on the observed-cells side, pointwise equal to the
+        // `unobserved_cells == 0` form on the unobserved-cells side.
+        // Pinned across the same observation-mix shapes so both
+        // partition sides surface the predicate at every distinct-
+        // cells value in the histogram's range.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        let n = axis_cardinality::<DiffLineKind>();
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.is_full_cover(),
+                hist.distinct_cells() == n,
+                "is_full_cover must equal (distinct_cells == axis_cardinality) \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_is_full_cover_equals_unobserved_iterator_is_empty() {
+        // The iterator-emptiness equivalence: `is_full_cover` reads the
+        // same boolean as the `unobserved().next().is_none()` form
+        // without the iterator allocation. Pinned across the canonical
+        // observation-mix shapes so the predicate-as-emptiness form
+        // is exercised at every coverage-gap state in the histogram's
+        // range.
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.is_full_cover(),
+                hist.unobserved().next().is_none(),
+                "is_full_cover must equal unobserved().next().is_none() \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_is_empty_and_is_full_cover_are_disjoint_on_nonempty_axis() {
+        // The `(is_empty, is_full_cover)` boolean partition closes the
+        // histogram's coverage-state surface. On every closed-axis
+        // implementor today (every axis carries cardinality >= 2), the
+        // two predicates are mutually exclusive: `is_empty` fires
+        // exactly on the all-zero histogram, `is_full_cover` fires
+        // exactly when every cell carries >= 1, and the two cases
+        // disagree on every cell. Pinned on `DiffLineKind`
+        // (cardinality 3) with both witnesses tight: empty reads
+        // `(true, false)`, axis-cover reads `(false, true)`, and the
+        // partial-support shape reads `(false, false)` (neither
+        // boundary holds in the middle of the coverage state space).
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_empty());
+        assert!(!empty.is_full_cover());
+
+        let full_cover: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        assert!(!full_cover.is_empty());
+        assert!(full_cover.is_full_cover());
+
+        let partial: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert!(!partial.is_empty());
+        assert!(!partial.is_full_cover());
+    }
+
+    #[test]
+    fn axis_histogram_is_full_cover_after_merge_is_boolean_monotone() {
+        // The (merge, is_full_cover) composition: merging cannot
+        // *un*-cover a cell (every cell observed in either side is
+        // observed in the merge, so the merged gap is the intersection
+        // of the two sides' gaps), so if either side reads full cover
+        // so does the merge — the boolean monotone-OR law. The peer
+        // to the monotone-non-increase law on
+        // [`AxisHistogram::unobserved_cells`] / the monotone-coverage
+        // law on [`AxisHistogram::unobserved`]. Pinned with
+        // disjoint-support, overlapping-support, and identity
+        // (empty-rhs) shapes so the boolean monotonicity gets a
+        // tight witness at each boundary.
+        //
+        // `DiffLineKind::ALL` declaration order is
+        // `[Removed, Added, Context]` (axis_cardinality = 3).
+        let lhs: AxisHistogram<DiffLineKind> = [DiffLineKind::Removed, DiffLineKind::Added]
+            .into_iter()
+            .collect();
+        // lhs: support {Removed, Added}; is_full_cover = false.
+        let rhs: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Context]
+            .into_iter()
+            .collect();
+        // rhs: support {Added, Context}; is_full_cover = false.
+
+        // Overlapping-support: the merge covers every cell, so
+        // is_full_cover transitions false → true. Boolean monotone
+        // holds (true >= false || false on the OR side).
+        let merged = lhs.clone().merge(&rhs);
+        assert!(merged.is_full_cover());
+        assert!(merged.is_full_cover() >= (lhs.is_full_cover() || rhs.is_full_cover()));
+
+        // Disjoint singleton supports: the merge has two observed
+        // cells out of three — is_full_cover stays false on every
+        // surface. Boolean monotone holds vacuously (false >= false
+        // || false).
+        let solo_added: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Added).collect();
+        let solo_context: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Context).collect();
+        let disjoint = solo_added.clone().merge(&solo_context);
+        assert!(!disjoint.is_full_cover());
+        assert!(
+            disjoint.is_full_cover()
+                >= (solo_added.is_full_cover() || solo_context.is_full_cover())
+        );
+
+        // Identity (empty-rhs): merge leaves is_full_cover unchanged.
+        // Boolean monotone holds with equality on every full-cover
+        // input side and on every non-full-cover input side.
+        let full_cover: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        let empty_hist: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        let full_cover_with_empty = full_cover.clone().merge(&empty_hist);
+        assert!(full_cover_with_empty.is_full_cover());
+        assert_eq!(
+            full_cover_with_empty.is_full_cover(),
+            full_cover.is_full_cover()
+        );
+
+        let lhs_with_empty = lhs.clone().merge(&empty_hist);
+        assert_eq!(lhs_with_empty.is_full_cover(), lhs.is_full_cover());
     }
 }
