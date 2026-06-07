@@ -1611,12 +1611,89 @@ impl<A: ClosedAxis> FromIterator<A> for AxisHistogram<A> {
     /// tally from a stream of axis values pipes the stream through
     /// [`Iterator::collect`] into [`AxisHistogram`]. Equivalent to
     /// [`axis_histogram`] applied to the same iterator.
+    ///
+    /// Implemented in terms of [`Extend::extend`]: build the identity
+    /// (the all-zero histogram via [`Self::empty`]), then fold every
+    /// observation in `iter` into it through the [`Extend`] surface.
+    /// The canonical Rust idiom — `FromIterator` and `Extend` are peers,
+    /// and `from_iter` lowers to `default + extend` so the per-observation
+    /// loop lives at one site (the [`Extend`] impl below) and both
+    /// surfaces stay in lockstep without duplication.
     fn from_iter<I: IntoIterator<Item = A>>(iter: I) -> Self {
         let mut hist = Self::empty();
-        for value in iter {
-            hist.observe(value);
-        }
+        hist.extend(iter);
         hist
+    }
+}
+
+impl<A: ClosedAxis> Extend<A> for AxisHistogram<A> {
+    /// Fold every observation in `iter` into the histogram in place —
+    /// the canonical Rust idiom peer of [`FromIterator`] on the
+    /// already-allocated histogram surface.
+    ///
+    /// Before this lift, every consumer with a pre-existing histogram
+    /// (an observatory accumulator carrying observations across a
+    /// rolling window, a fleet-wide aggregator folding sub-batches as
+    /// they arrive, a dashboard buffering observations until a render
+    /// tick fires, a streaming attestation chain extending the
+    /// `AxisHistogram<crate::ShikumiErrorKind>` cell with the next
+    /// reload window's failures) reached the (extend-with-iterator)
+    /// projection through one of three forms — the open-coded
+    /// `for v in iter { hist.observe(v); }` per-observation loop, the
+    /// `iter.into_iter().for_each(|v| hist.observe(v));` callback form
+    /// (same loop, different call-site shape), or the build-and-merge
+    /// `let other: AxisHistogram<A> = iter.collect(); hist =
+    /// hist.merge(&other);` form (which allocates an intermediate
+    /// histogram and walks the counts vector twice — once to write the
+    /// intermediate, once to fold it back) — collapsed to one trait-
+    /// method call with a single-pass scan that bumps every observed
+    /// cell directly on the existing counts vector. The lift names the
+    /// (existing-histogram, iterable observations → in-place fold)
+    /// projection at one site.
+    ///
+    /// **Empty-identity law** — `hist.extend(std::iter::empty())` leaves
+    /// the histogram unchanged. The vacuous fold on the [`Extend`]
+    /// monoid surface, peer to the [`Self::merge`] empty-identity law
+    /// (`hist.merge(&AxisHistogram::empty()) == hist`).
+    ///
+    /// **Equivalence with [`Self::merge`] on the empty starting point**
+    /// — for every iterator `iter` and every histogram `hist`:
+    /// `let mut a = hist.clone(); a.extend(iter.clone()); a` is pointwise
+    /// equal to `hist.clone().merge(&iter.collect::<AxisHistogram<A>>())`.
+    /// The (extend, merge) duality on the monoid: extending in place is
+    /// the in-place form of merging with the collected histogram, and
+    /// starting from the empty histogram makes the equivalence read
+    /// `extend = FromIterator` pointwise — the canonical lowering the
+    /// [`FromIterator`] impl uses internally.
+    ///
+    /// **Equivalence with the [`Self::observe`] loop** — pointwise
+    /// equal to `for v in iter { hist.observe(v); }` on every iterator,
+    /// by definition. The trait method names the loop at one site so
+    /// consumers no longer re-derive it inline.
+    ///
+    /// **Cell-level accounting** — every cell observed in `iter` has
+    /// its count incremented by the number of times `iter` yielded
+    /// that cell; every other cell is left unchanged. The total grows
+    /// by exactly the input iterator's length:
+    /// `before.total() + iter.into_iter().count() == after.total()`,
+    /// peer to the [`Self::total`] / [`Self::merge`] additivity law.
+    ///
+    /// **Concatenation associativity** — extending with `iter_a` then
+    /// `iter_b` produces the same histogram as extending with
+    /// `iter_a.chain(iter_b)`. The (extend, ⊕) homomorphism over
+    /// iterator concatenation.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The trait-uniform laws pinned in
+    /// [`tests`] hold across the implementor set
+    /// (`axis_histogram_extend_empty_input_is_identity_*`,
+    /// `axis_histogram_extend_starting_empty_equals_from_iter_*`,
+    /// `axis_histogram_extend_grows_total_by_input_length_*`,
+    /// `axis_histogram_extend_chained_equals_two_step_extend_*`).
+    fn extend<I: IntoIterator<Item = A>>(&mut self, iter: I) {
+        for value in iter {
+            self.observe(value);
+        }
     }
 }
 
@@ -5674,6 +5751,288 @@ mod tests {
             );
             assert_eq!(hist.count(cell), 1, "cell {cell:?} count must equal 1");
         }
+    }
+
+    // ---- AxisHistogram::extend trait-uniform laws ----
+    //
+    // Four trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // `Extend<A>` projection's contract holds uniformly without per-axis
+    // test duplication: extending with an empty iterator is identity;
+    // extending the empty histogram is `FromIterator`; extending grows
+    // the total by exactly the input length; extending with two
+    // iterators in sequence equals extending with their concatenation.
+    // The four laws close the (extend, FromIterator) idiom-peer
+    // equivalence at the trait surface, the (extend, observe) loop
+    // equivalence at the per-cell surface, the (extend, total)
+    // additivity, and the (extend, ⊕) homomorphism over iterator
+    // concatenation — every consumer reaching the in-place fold
+    // through one trait method instead of an open-coded
+    // `for v in iter { hist.observe(v); }` loop, an
+    // `iter.into_iter().for_each(|v| hist.observe(v));` callback, or a
+    // `let other: AxisHistogram<A> = iter.collect(); hist =
+    // hist.merge(&other);` build-and-merge intermediary.
+
+    fn assert_extend_empty_input_is_identity<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Extending any histogram with an empty iterator leaves it
+        // unchanged — the vacuous fold on the [`Extend`] monoid
+        // surface, peer to the [`AxisHistogram::merge`] empty-identity
+        // law. Pinned over the empty starting histogram (the identity
+        // slot) and the axis-cover starting histogram (a non-trivial
+        // shape with every cell observed) so the law is witnessed at
+        // both ends of the coverage axis.
+        let mut empty = AxisHistogram::<A>::empty();
+        empty.extend(std::iter::empty::<A>());
+        assert_eq!(
+            empty,
+            AxisHistogram::<A>::empty(),
+            "extend(empty) on empty must be identity on axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        let cover_pre: AxisHistogram<A> = axis_iter::<A>().collect();
+        let mut cover_post = cover_pre.clone();
+        cover_post.extend(std::iter::empty::<A>());
+        assert_eq!(
+            cover_post,
+            cover_pre,
+            "extend(empty) on axis-cover must be identity on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_extend_starting_empty_equals_from_iter<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical lowering: starting from the empty histogram,
+        // extending with an iterator yields the same histogram as
+        // collecting that iterator through [`FromIterator`]. The
+        // (FromIterator, Extend) idiom-peer equivalence that justifies
+        // the [`FromIterator`] impl delegating to [`Extend`]. Pinned
+        // over the axis-cover input (every cell observed once) so the
+        // equivalence covers every ordinal in the counts vector.
+        let mut via_extend = AxisHistogram::<A>::empty();
+        via_extend.extend(axis_iter::<A>());
+        let via_from_iter: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            via_extend,
+            via_from_iter,
+            "extend(axis_iter) on empty must equal axis_iter.collect() on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_extend_grows_total_by_input_length<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The additivity law on the [`Self::total`] scalar surface:
+        // extending grows the total by exactly the number of items the
+        // iterator yields. Pinned over a non-empty starting histogram
+        // (the axis-cover, total = cardinality) extended with another
+        // axis-cover (input length = cardinality) so the post-extend
+        // total equals 2 * cardinality — the additivity reads off the
+        // counts.
+        let mut hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        let before = hist.total();
+        let input: Vec<A> = axis_iter::<A>().collect();
+        let input_len = input.len();
+        hist.extend(input);
+        assert_eq!(
+            hist.total(),
+            before + input_len,
+            "extend must grow total by input length on axis {}",
+            std::any::type_name::<A>(),
+        );
+        for cell in axis_iter::<A>() {
+            assert_eq!(
+                hist.count(cell),
+                2,
+                "cell {cell:?} must read 2 after axis-cover extended by axis-cover on {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_extend_chained_equals_two_step_extend<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (extend, ⊕) homomorphism over iterator concatenation:
+        // extending with `iter_a` then `iter_b` produces the same
+        // histogram as extending with `iter_a.chain(iter_b)`. Pinned
+        // over two disjoint axis-iter halves of the closed axis (the
+        // empty iterator paired with the axis-cover when the axis has
+        // cardinality < 2; otherwise a split at the midpoint) so the
+        // chain covers every cell at least once across cardinalities.
+        let all: Vec<A> = axis_iter::<A>().collect();
+        let mid = all.len() / 2;
+        let head: Vec<A> = all[..mid].to_vec();
+        let tail: Vec<A> = all[mid..].to_vec();
+
+        let mut two_step = AxisHistogram::<A>::empty();
+        two_step.extend(head.iter().copied());
+        two_step.extend(tail.iter().copied());
+
+        let mut chained = AxisHistogram::<A>::empty();
+        chained.extend(head.iter().copied().chain(tail.iter().copied()));
+
+        assert_eq!(
+            two_step,
+            chained,
+            "two-step extend must equal chained extend on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_extend_empty_input_is_identity_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_extend_empty_input_is_identity::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_extend_starting_empty_equals_from_iter_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_extend_starting_empty_equals_from_iter::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_extend_grows_total_by_input_length_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_extend_grows_total_by_input_length::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_extend_chained_equals_two_step_extend_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_extend_chained_equals_two_step_extend::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_extend_equals_observe_loop_for_diff_line_kind() {
+        // The (extend, observe) loop-equivalence on the per-cell
+        // surface: `hist.extend(iter)` is pointwise equal to
+        // `for v in iter { hist.observe(v); }` on every iterator. The
+        // lift names the open-coded loop at one site so consumers no
+        // longer re-derive it inline. Pinned concretely on
+        // [`DiffLineKind`] across four canonical observation-mix
+        // shapes (empty, singleton, two-of-three, axis-cover-plus-
+        // repetition) so the equivalence holds at every shape in the
+        // histogram's coverage axis.
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+            ],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let mut via_extend: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+            via_extend.extend(input.iter().copied());
+
+            let mut via_loop: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+            for &v in input {
+                via_loop.observe(v);
+            }
+
+            assert_eq!(
+                via_extend,
+                via_loop,
+                "extend must equal observe-loop on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_extend_equals_merge_of_collected_for_diff_line_kind() {
+        // The (extend, merge) duality on the monoid: extending in
+        // place is the in-place form of merging with the collected
+        // histogram. Pinned concretely on [`DiffLineKind`] across a
+        // non-trivial starting histogram (an existing observation
+        // window) and a non-trivial extension stream (the next
+        // observation batch) — the canonical shape an observatory or
+        // fleet-wide aggregator reaches through every window boundary.
+        let prior = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Context,
+        ];
+        let next = [
+            DiffLineKind::Removed,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ];
+
+        let mut via_extend: AxisHistogram<DiffLineKind> = prior.iter().copied().collect();
+        via_extend.extend(next.iter().copied());
+
+        let prior_hist: AxisHistogram<DiffLineKind> = prior.iter().copied().collect();
+        let next_hist: AxisHistogram<DiffLineKind> = next.iter().copied().collect();
+        let via_merge = prior_hist.merge(&next_hist);
+
+        assert_eq!(via_extend, via_merge);
+        // Cell-level accounting on the resulting histogram.
+        assert_eq!(via_extend.count(DiffLineKind::Added), 3);
+        assert_eq!(via_extend.count(DiffLineKind::Removed), 2);
+        assert_eq!(via_extend.count(DiffLineKind::Context), 1);
+        assert_eq!(via_extend.total(), 6);
+    }
+
+    #[test]
+    fn axis_histogram_from_iter_lowers_to_extend_for_diff_line_kind() {
+        // The canonical Rust idiom: `FromIterator::from_iter` is
+        // pointwise equal to `let mut h = Default::default();
+        // h.extend(iter); h` — the lowering the [`FromIterator`] impl
+        // uses internally. Pinned concretely on [`DiffLineKind`] so a
+        // future regression in either side (e.g. a `FromIterator` impl
+        // that drifts away from the `default + extend` shape, or an
+        // `Extend` impl that loses an observation through a fold edge
+        // case) surfaces here at one named site.
+        let input = [
+            DiffLineKind::Removed,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Context,
+            DiffLineKind::Added,
+        ];
+
+        let via_from_iter: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+
+        let mut via_default_extend: AxisHistogram<DiffLineKind> = AxisHistogram::default();
+        via_default_extend.extend(input.iter().copied());
+
+        assert_eq!(via_from_iter, via_default_extend);
     }
 
     // ---- AxisHistogram::dominant_cell trait-uniform laws ----
