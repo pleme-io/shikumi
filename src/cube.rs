@@ -1704,6 +1704,146 @@ impl<A: ClosedAxis> Extend<A> for AxisHistogram<A> {
     }
 }
 
+/// Borrowing iterator over the `(axis-value, count)` pairs of an
+/// [`AxisHistogram`], yielded in declaration order over [`ClosedAxis::ALL`].
+///
+/// The concrete return type of
+/// [`<&AxisHistogram<A> as IntoIterator>::into_iter`][IntoIterator] and the
+/// canonical Rust idiom-peer of [`std::slice::Iter`] /
+/// [`std::collections::hash_map::Iter`] — every stdlib collection exposes a
+/// named borrowing iterator (not an `impl Iterator` return) so consumers can
+/// store the iterator in a `let`-bound variable that names the concrete type,
+/// pass it through a generic boundary that needs to spell out the
+/// `IntoIter`-associated type, or implement an extension trait that adds a
+/// method on the borrowing iterator without reaching through an unnameable
+/// `impl Iterator` surface. The borrowed pair shape carries the cell by value
+/// (`A: Copy` is enforced by the [`ClosedAxis`] super-bound) and the count
+/// by value (`usize` is `Copy`), so no lifetime appears in [`Self::Item`] —
+/// the only lifetime is the one tying the iterator to the underlying
+/// histogram's counts vector.
+///
+/// Implements [`Iterator`], [`ExactSizeIterator`] (the length is exactly
+/// [`axis_cardinality::<A>()`][axis_cardinality], pinned at the type level),
+/// [`std::iter::FusedIterator`] (the underlying [`std::slice::Iter`] is
+/// fused), and [`DoubleEndedIterator`] (consumers reaching for `.rev()`,
+/// `.next_back()`, or `.rfold(...)` get the dual-end iteration the
+/// declaration-order pair surface naturally carries).
+#[derive(Debug, Clone)]
+pub struct AxisHistogramIter<'a, A: ClosedAxis> {
+    counts: std::iter::Enumerate<std::slice::Iter<'a, usize>>,
+    _marker: std::marker::PhantomData<A>,
+}
+
+impl<A: ClosedAxis> Iterator for AxisHistogramIter<'_, A> {
+    type Item = (A, usize);
+    fn next(&mut self) -> Option<Self::Item> {
+        self.counts.next().map(|(i, &c)| (A::ALL[i], c))
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.counts.size_hint()
+    }
+}
+
+impl<A: ClosedAxis> ExactSizeIterator for AxisHistogramIter<'_, A> {}
+impl<A: ClosedAxis> std::iter::FusedIterator for AxisHistogramIter<'_, A> {}
+impl<A: ClosedAxis> DoubleEndedIterator for AxisHistogramIter<'_, A> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.counts.next_back().map(|(i, &c)| (A::ALL[i], c))
+    }
+}
+
+/// Consuming iterator over the `(axis-value, count)` pairs of an
+/// [`AxisHistogram`], yielded in declaration order over [`ClosedAxis::ALL`].
+///
+/// The concrete return type of
+/// [`<AxisHistogram<A> as IntoIterator>::into_iter`][IntoIterator] and the
+/// canonical Rust idiom-peer of [`std::vec::IntoIter`] /
+/// [`std::collections::hash_map::IntoIter`] — every stdlib collection exposes
+/// a named consuming iterator alongside the named borrowing iterator.
+/// Implements the same trait surface as [`AxisHistogramIter`]
+/// ([`Iterator`], [`ExactSizeIterator`], [`std::iter::FusedIterator`],
+/// [`DoubleEndedIterator`]).
+#[derive(Debug, Clone)]
+pub struct AxisHistogramIntoIter<A: ClosedAxis> {
+    counts: std::iter::Enumerate<std::vec::IntoIter<usize>>,
+    _marker: std::marker::PhantomData<A>,
+}
+
+impl<A: ClosedAxis> Iterator for AxisHistogramIntoIter<A> {
+    type Item = (A, usize);
+    fn next(&mut self) -> Option<Self::Item> {
+        self.counts.next().map(|(i, c)| (A::ALL[i], c))
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.counts.size_hint()
+    }
+}
+
+impl<A: ClosedAxis> ExactSizeIterator for AxisHistogramIntoIter<A> {}
+impl<A: ClosedAxis> std::iter::FusedIterator for AxisHistogramIntoIter<A> {}
+impl<A: ClosedAxis> DoubleEndedIterator for AxisHistogramIntoIter<A> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.counts.next_back().map(|(i, c)| (A::ALL[i], c))
+    }
+}
+
+impl<'a, A: ClosedAxis> IntoIterator for &'a AxisHistogram<A> {
+    type Item = (A, usize);
+    type IntoIter = AxisHistogramIter<'a, A>;
+
+    /// Iterate every `(axis-value, count)` pair of the borrowed histogram in
+    /// declaration order — the canonical Rust [`IntoIterator`] idiom on
+    /// `&AxisHistogram<A>`, peer of [`FromIterator<A>`] on the same type.
+    /// Lets consumers reach the dense per-cell pair surface through the
+    /// borrowed-collection idiom `for pair in &hist { … }` without naming
+    /// [`AxisHistogram::iter`] explicitly — the same surface every stdlib
+    /// collection exposes (`for x in &vec`, `for (k, v) in &map`).
+    ///
+    /// **Equivalence with [`AxisHistogram::iter`]** — pointwise equal to
+    /// `hist.iter().collect::<Vec<_>>()` on every histogram, by
+    /// construction. The (`IntoIterator`, `iter`) duality on the
+    /// borrowed-collection surface; the two are alternate spellings of the
+    /// same per-cell scan over [`ClosedAxis::ALL`].
+    ///
+    /// **Length law** — yields exactly
+    /// [`axis_cardinality::<A>()`][axis_cardinality] pairs, regardless of
+    /// how many cells are nonzero (the iteration covers the full axis, not
+    /// just the support). [`ExactSizeIterator::len`] reads off the
+    /// cardinality without consuming the iterator.
+    fn into_iter(self) -> Self::IntoIter {
+        AxisHistogramIter {
+            counts: self.counts.iter().enumerate(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<A: ClosedAxis> IntoIterator for AxisHistogram<A> {
+    type Item = (A, usize);
+    type IntoIter = AxisHistogramIntoIter<A>;
+
+    /// Consume the histogram and iterate every `(axis-value, count)` pair in
+    /// declaration order — the canonical Rust [`IntoIterator`] idiom on the
+    /// owned-collection surface, peer of the borrowed
+    /// [`IntoIterator for &AxisHistogram<A>`][IntoIterator]. Yields the same
+    /// pair sequence as the borrowed form (pointwise equal); the asymmetry
+    /// is only at the call site (consume vs borrow).
+    ///
+    /// **Equivalence with [`AxisHistogram::iter`]** — pointwise equal to
+    /// `hist.iter().collect::<Vec<_>>()` on every histogram, by
+    /// construction (the count vector is walked once in either direction).
+    ///
+    /// **Length law** — yields exactly
+    /// [`axis_cardinality::<A>()`][axis_cardinality] pairs, the same as the
+    /// borrowed form.
+    fn into_iter(self) -> Self::IntoIter {
+        AxisHistogramIntoIter {
+            counts: self.counts.into_iter().enumerate(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
 impl<A: ClosedAxis> std::iter::Sum<AxisHistogram<A>> for AxisHistogram<A> {
     /// Reduce an iterator of histograms by pointwise sum — the canonical
     /// Rust [`Sum`][std::iter::Sum] trait idiom for the monoid
@@ -6235,6 +6375,262 @@ mod tests {
         via_default_extend.extend(input.iter().copied());
 
         assert_eq!(via_from_iter, via_default_extend);
+    }
+
+    // ---- AxisHistogram IntoIterator (&Self / Self) trait-uniform laws ----
+    //
+    // Five trait-uniform laws reach every [`ClosedAxis`] implementor through
+    // [`for_each_closed_axis_implementor`] so the per-axis [`IntoIterator`]
+    // projection's contract holds uniformly without per-axis test
+    // duplication: borrowed [`IntoIterator`] equals [`AxisHistogram::iter`]
+    // pointwise; owned [`IntoIterator`] equals the borrowed form pointwise;
+    // the iterator's length equals [`axis_cardinality::<A>()`][axis_cardinality]
+    // ([`ExactSizeIterator`]); the iterator round-trips through
+    // [`DoubleEndedIterator::next_back`] / [`Iterator::rev`]; the iterator
+    // yields the cells in declaration order over [`ClosedAxis::ALL`].
+    //
+    // Together with the existing [`FromIterator<A>`] / [`Extend<A>`] / [`Sum`]
+    // / [`Add`] / [`AddAssign`] impl test sites, this closes the canonical
+    // Rust collection-iteration trait surface on [`AxisHistogram`] at the
+    // same trait peerage every stdlib collection carries
+    // ([`std::vec::Vec`], [`std::collections::HashMap`],
+    // [`std::collections::BTreeMap`], …): [`FromIterator`] in /
+    // [`IntoIterator`] out, with named iterator types
+    // ([`AxisHistogramIter`] borrowed, [`AxisHistogramIntoIter`] owned)
+    // alongside the [`AxisHistogram::iter`] inherent.
+
+    fn assert_into_iter_ref_equals_iter<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Pointwise equality between the two surfaces every stdlib
+        // collection carries: `(&hist).into_iter().collect()` equals
+        // `hist.iter().collect()`, by construction (both walk the counts
+        // vector in declaration order zipped with `A::ALL`). Pinned over a
+        // double-axis-cover histogram so every cell carries a positive
+        // count and the per-pair equality reads off every ordinal.
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let via_iter: Vec<(A, usize)> = hist.iter().collect();
+        let via_into_iter: Vec<(A, usize)> = (&hist).into_iter().collect();
+        assert_eq!(
+            via_iter,
+            via_into_iter,
+            "IntoIterator<&Self> must equal iter() pointwise on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_into_iter_owned_equals_iter<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Pointwise equality between the consuming and borrowing surfaces:
+        // `hist.into_iter().collect()` equals `hist.iter().collect()` on
+        // every histogram. The two walk the counts vector at different
+        // ownership polarities (the consuming form owns the vector
+        // directly through `std::vec::IntoIter`; the borrowing form holds
+        // a `std::slice::Iter` reference) and yield the same `(A, usize)`
+        // pair sequence by construction.
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let via_iter: Vec<(A, usize)> = hist.iter().collect();
+        let via_into_iter: Vec<(A, usize)> = hist.into_iter().collect();
+        assert_eq!(
+            via_iter,
+            via_into_iter,
+            "IntoIterator<Self> must equal iter() pointwise on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_into_iter_ref_length_equals_axis_cardinality<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The [`ExactSizeIterator`] contract on the borrowing iterator:
+        // the iterator's `len()` equals [`axis_cardinality::<A>()`] before
+        // any element is consumed (the full-axis scan, not just the
+        // support). Pinned on the empty histogram so the count is
+        // independent of any observation (the axis-cover form below pins
+        // the orthogonal observation-independence direction).
+        let hist = AxisHistogram::<A>::empty();
+        let iter = (&hist).into_iter();
+        assert_eq!(
+            iter.len(),
+            axis_cardinality::<A>(),
+            "IntoIterator<&Self>::len must equal axis_cardinality on axis {}",
+            std::any::type_name::<A>(),
+        );
+        let collected: Vec<(A, usize)> = (&hist).into_iter().collect();
+        assert_eq!(
+            collected.len(),
+            axis_cardinality::<A>(),
+            "IntoIterator<&Self> must yield axis_cardinality pairs on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_into_iter_ref_yields_cells_in_declaration_order<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The declaration-order contract: dropping the counts from the
+        // pair sequence yields the same cell sequence as
+        // [`axis_iter::<A>()`][axis_iter] pointwise. The (`IntoIterator`,
+        // `axis_iter`) alignment on the cell-only axis: the histogram's
+        // iteration order is the axis's declaration order, period.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        let cells: Vec<A> = (&hist).into_iter().map(|(v, _)| v).collect();
+        let expected: Vec<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cells,
+            expected,
+            "IntoIterator<&Self> cells must agree with axis_iter on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_into_iter_ref_double_ended_round_trips<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The [`DoubleEndedIterator`] contract: collecting through `.rev()`
+        // and reversing the result recovers the forward sequence pointwise
+        // (the two ends agree). Pins that `next_back` reads the same
+        // `(A, usize)` pair the forward iteration would read at the
+        // corresponding position from the tail.
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let forward: Vec<(A, usize)> = (&hist).into_iter().collect();
+        let mut backward: Vec<(A, usize)> = (&hist).into_iter().rev().collect();
+        backward.reverse();
+        assert_eq!(
+            forward,
+            backward,
+            "IntoIterator<&Self>::rev must round-trip pointwise on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_into_iter_ref_equals_iter_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_into_iter_ref_equals_iter::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_into_iter_owned_equals_iter_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_into_iter_owned_equals_iter::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_into_iter_ref_length_equals_axis_cardinality_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_into_iter_ref_length_equals_axis_cardinality::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_into_iter_ref_yields_cells_in_declaration_order_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_into_iter_ref_yields_cells_in_declaration_order::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_into_iter_ref_double_ended_round_trips_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_into_iter_ref_double_ended_round_trips::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_for_loop_ref_yields_pairs_for_diff_line_kind() {
+        // Concrete pin at the canonical Rust call-site shape — the
+        // `for pair in &hist { … }` borrowed-collection idiom every stdlib
+        // collection consumer reaches for. Pinned on a non-trivial
+        // observation mix on [`DiffLineKind`] so the per-cell counts are
+        // visible at the call site and a future regression in the
+        // [`IntoIterator`] impl (e.g. one that drops a cell, scrambles
+        // declaration order, or yields the wrong pair shape) surfaces
+        // here at one named site.
+        let hist: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+
+        let mut pairs: Vec<(DiffLineKind, usize)> = Vec::new();
+        for pair in &hist {
+            pairs.push(pair);
+        }
+
+        // The borrowed [`IntoIterator`] surface yields the same pair
+        // sequence as the [`AxisHistogram::iter`] inherent — by
+        // construction (both walk the counts vector in declaration order).
+        let via_iter: Vec<(DiffLineKind, usize)> = hist.iter().collect();
+        assert_eq!(pairs, via_iter);
+
+        // Cell-level accounting on the pair sequence: declaration order
+        // is [Removed, Added, Context]; the histogram has Added=2,
+        // Removed=1, Context=0.
+        assert_eq!(
+            pairs,
+            vec![
+                (DiffLineKind::Removed, 1),
+                (DiffLineKind::Added, 2),
+                (DiffLineKind::Context, 0),
+            ],
+        );
+    }
+
+    #[test]
+    fn axis_histogram_owned_into_iter_yields_pairs_for_diff_line_kind() {
+        // Concrete pin on the consuming [`IntoIterator`] surface — the
+        // `hist.into_iter().collect()` idiom every stdlib collection
+        // consumer reaches for when the histogram is no longer needed
+        // after the iteration. The owned form moves the counts vector
+        // into `std::vec::IntoIter` (no per-element clone, no `&hist`
+        // borrow held for the duration of the loop).
+        let hist: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Context,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        let snapshot: Vec<(DiffLineKind, usize)> = hist.iter().collect();
+
+        let consumed: Vec<(DiffLineKind, usize)> = hist.into_iter().collect();
+        assert_eq!(consumed, snapshot);
+        assert_eq!(
+            consumed,
+            vec![
+                (DiffLineKind::Removed, 0),
+                (DiffLineKind::Added, 2),
+                (DiffLineKind::Context, 1),
+            ],
+        );
     }
 
     // ---- AxisHistogram::sum (Sum<Self> / Sum<&Self>) trait-uniform laws ----
