@@ -328,6 +328,12 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     /// Number of observations recorded on `value`. Defined on every
     /// axis cell (returns zero for cells no observation landed on);
     /// total over the axis space without an out-of-range case.
+    ///
+    /// The inherent-method surface of the per-cell count lookup; the
+    /// canonical Rust [`Index`][std::ops::Index] operator surface
+    /// (`hist[value]`) is the stdlib idiom-peer — `Self::count(value)`
+    /// equals `hist[value]` pointwise by construction (both lower
+    /// through the same `self.counts[axis_ordinal(value)]` access).
     #[must_use]
     pub fn count(&self, value: A) -> usize {
         self.counts[axis_ordinal(value)]
@@ -2036,6 +2042,35 @@ impl<A: ClosedAxis> std::ops::Add<AxisHistogram<A>> for AxisHistogram<A> {
     fn add(mut self, other: AxisHistogram<A>) -> Self::Output {
         self += &other;
         self
+    }
+}
+
+impl<A: ClosedAxis> std::ops::Index<A> for AxisHistogram<A> {
+    type Output = usize;
+
+    /// Per-cell count read through the canonical Rust
+    /// [`Index`][std::ops::Index] operator — `hist[value]` returns
+    /// `&self.count(value)` by reference into the underlying counts
+    /// vector at `axis_ordinal(value)`. The natural stdlib operator-
+    /// surface peer of [`Self::count`] on the inherent method surface:
+    /// `vec[i]` ↔ `*vec.get(i).unwrap()`, `map[&k]` ↔ `*map.get(&k).unwrap()`,
+    /// `hist[cell]` ↔ `hist.count(cell)`. Every stdlib collection that
+    /// supports lookup by key carries the [`Index`] surface (`Vec<T>:
+    /// Index<usize>`, `[T]: Index<usize>`, `HashMap<K, V>: Index<&K>`,
+    /// `BTreeMap<K, V>: Index<&K>`); the [`AxisHistogram`] now joins
+    /// that peerage on the [`ClosedAxis`] cell-lookup axis.
+    ///
+    /// The `A` argument is taken by value (not by reference) because
+    /// every [`ClosedAxis`] cell is [`Copy`] — the trait bound names
+    /// the cell type as a primitive on the typescape, so the call-site
+    /// shape stays `hist[Added]` (operator-surface idiom every Rust
+    /// programmer already knows) rather than `hist[&Added]`. Total over
+    /// the axis space: defined on every cell, no out-of-range case, no
+    /// panic path beyond the inherent [`usize`] indexing into the
+    /// `axis_cardinality::<A>()`-sized counts vector (which is itself
+    /// statically bounded by [`ClosedAxis::ALL`]).
+    fn index(&self, value: A) -> &usize {
+        &self.counts[axis_ordinal(value)]
     }
 }
 
@@ -6631,6 +6666,211 @@ mod tests {
                 (DiffLineKind::Context, 1),
             ],
         );
+    }
+
+    // ---- AxisHistogram::Index<A> trait-uniform laws ----
+    //
+    // Four trait-uniform laws reach every [`ClosedAxis`] implementor through
+    // [`for_each_closed_axis_implementor`] so the per-axis [`Index`]
+    // projection's contract holds uniformly without per-axis test
+    // duplication: the empty histogram reads zero on every cell; indexing
+    // equals the [`AxisHistogram::count`] inherent peer on every cell;
+    // observing a cell increments its indexed read by exactly one; the
+    // total scalar equals the sum of indexed reads over the axis cover.
+
+    fn assert_index_empty_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The empty-histogram boundary on the [`Index`] surface — every
+        // cell reads zero through `hist[cell]`, peer to the
+        // `assert_empty_histogram_is_zero_on_every_cell` law on the
+        // inherent [`AxisHistogram::count`] surface.
+        let hist = AxisHistogram::<A>::empty();
+        for value in axis_iter::<A>() {
+            assert_eq!(
+                hist[value],
+                0,
+                "empty histogram hist[{value:?}] must be 0 on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_index_equals_count<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Pointwise equality between the operator surface ([`Index`]) and
+        // the inherent surface ([`AxisHistogram::count`]) on every cell:
+        // `hist[cell] == hist.count(cell)`. Pinned over a non-trivial
+        // observation mix (axis-cover repeated twice, so every cell
+        // carries a positive count and the equality reads off every
+        // ordinal).
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for value in axis_iter::<A>() {
+            assert_eq!(
+                hist[value],
+                hist.count(value),
+                "hist[{value:?}] must equal hist.count({value:?}) on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_index_after_observe_increments<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing a cell once increments the indexed read on that cell
+        // by exactly one (and leaves every other cell's indexed read
+        // unchanged). The observation/index-surface peer of the
+        // count-side invariant `observe(v); count(v) == prev + 1`.
+        for observed in axis_iter::<A>() {
+            let mut hist: AxisHistogram<A> = axis_iter::<A>().collect();
+            let snapshot: Vec<usize> = axis_iter::<A>().map(|v| hist[v]).collect();
+            hist.observe(observed);
+            for (i, cell) in axis_iter::<A>().enumerate() {
+                let expected = snapshot[i] + usize::from(cell == observed);
+                assert_eq!(
+                    hist[cell],
+                    expected,
+                    "after observing {observed:?}: hist[{cell:?}] must be {expected} on axis {}",
+                    std::any::type_name::<A>(),
+                );
+            }
+        }
+    }
+
+    fn assert_index_sum_over_axis_equals_total<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Summing the indexed reads over the full axis cover equals
+        // [`AxisHistogram::total`] — the (lookup-surface, scalar-surface)
+        // peer law on the [`Index`] surface, structurally equivalent to
+        // the `total = sum(counts)` invariant the inherent surface
+        // already carries.
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let sum_via_index: usize = axis_iter::<A>().map(|v| hist[v]).sum();
+        assert_eq!(
+            sum_via_index,
+            hist.total(),
+            "sum of hist[v] over axis_iter must equal hist.total() on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_index_empty_is_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_index_empty_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_index_equals_count_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_index_equals_count::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_index_after_observe_increments_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_index_after_observe_increments::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_index_sum_over_axis_equals_total_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_index_sum_over_axis_equals_total::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_index_reads_per_cell_counts_for_diff_line_kind() {
+        // Concrete pin at the canonical Rust call-site shape on the
+        // operator surface — `hist[cell]` reads the per-cell count
+        // directly, peer of `vec[i]` / `map[&k]` / `slice[i]` on the
+        // stdlib collection-lookup surface. Pinned on a non-trivial
+        // observation mix on [`DiffLineKind`] so the per-cell counts
+        // read off at named call sites and a future regression in the
+        // [`Index`] impl (e.g. one that mis-orders the underlying
+        // counts vector, returns the wrong slot, or panics on a valid
+        // cell) surfaces here.
+        let hist: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+
+        // Per-cell counts read through the operator surface — the
+        // canonical stdlib-collection-lookup idiom.
+        assert_eq!(hist[DiffLineKind::Added], 2);
+        assert_eq!(hist[DiffLineKind::Removed], 1);
+        assert_eq!(hist[DiffLineKind::Context], 0);
+
+        // (Index, count) pointwise equivalence on every cell — the
+        // operator-surface ↔ inherent-method peerage at the named
+        // call site.
+        for cell in axis_iter::<DiffLineKind>() {
+            assert_eq!(hist[cell], hist.count(cell));
+        }
+
+        // Summing indexed reads over the axis cover equals total —
+        // the lookup-surface ↔ scalar-surface peerage at the named
+        // call site (3 = 2 + 1 + 0).
+        let total_via_index: usize = axis_iter::<DiffLineKind>().map(|v| hist[v]).sum();
+        assert_eq!(total_via_index, hist.total());
+        assert_eq!(total_via_index, 3);
+    }
+
+    #[test]
+    fn axis_histogram_index_pairs_with_into_iter_for_diff_line_kind() {
+        // Concrete pin at the (Index, IntoIterator) duality the stdlib
+        // collection surface carries: every pair `(cell, count)` from
+        // `&hist` agrees with the indexed read `hist[cell]` at every
+        // step. The canonical stdlib-collection round-trip:
+        // `for (k, v) in &map { assert_eq!(map[&k], v); }` peer on the
+        // [`AxisHistogram`] surface.
+        let hist: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Context,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+
+        for (cell, count) in &hist {
+            assert_eq!(
+                hist[cell], count,
+                "Index/IntoIterator duality must hold on {cell:?}",
+            );
+        }
+
+        // The exact per-cell counts at named call sites.
+        assert_eq!(hist[DiffLineKind::Removed], 3);
+        assert_eq!(hist[DiffLineKind::Added], 2);
+        assert_eq!(hist[DiffLineKind::Context], 1);
     }
 
     // ---- AxisHistogram::sum (Sum<Self> / Sum<&Self>) trait-uniform laws ----
