@@ -1596,11 +1596,18 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     /// associative, identity at [`Self::empty`]. The natural shape for
     /// merging histograms across thread boundaries / observation
     /// windows / sub-batches before rendering a fleet-wide summary.
+    ///
+    /// Implemented in terms of [`std::ops::AddAssign`]: take ownership
+    /// of `self`, fold `other` in through `+=`, return the accumulator.
+    /// The canonical Rust idiom — `merge` and `AddAssign` are peers,
+    /// and lowering `merge` through `+=` keeps the per-cell fold loop
+    /// at exactly one site (the [`AddAssign<&Self>`] impl below). The
+    /// owned-by-value, returning-`Self` shape stays unchanged for every
+    /// existing caller (the [`Sum`] impls' `fold` step routes through
+    /// `AxisHistogram::merge` by name; the lift is purely internal).
     #[must_use]
     pub fn merge(mut self, other: &Self) -> Self {
-        for (slot, &delta) in self.counts.iter_mut().zip(other.counts.iter()) {
-            *slot += delta;
-        }
+        self += other;
         self
     }
 }
@@ -1769,6 +1776,126 @@ impl<'a, A: ClosedAxis> std::iter::Sum<&'a AxisHistogram<A>> for AxisHistogram<A
     /// (`axis_histogram_sum_of_refs_equals_sum_of_owned_*`).
     fn sum<I: IntoIterator<Item = &'a AxisHistogram<A>>>(iter: I) -> Self {
         iter.into_iter().fold(Self::empty(), AxisHistogram::merge)
+    }
+}
+
+impl<A: ClosedAxis> std::ops::AddAssign<&AxisHistogram<A>> for AxisHistogram<A> {
+    /// Fold `other` into `self` in place by pointwise sum — the canonical
+    /// Rust [`AddAssign`][std::ops::AddAssign] trait idiom for the monoid
+    /// `(AxisHistogram, merge, empty)` on the borrowed-right-hand-side
+    /// surface. The peer of [`Self::merge`] on the in-place fold form,
+    /// and the primitive site that carries the per-cell fold loop —
+    /// every other monoid-operator surface on this type
+    /// ([`AddAssign<Self>`], [`Add<Self>`], [`Add<&Self>`], and
+    /// [`Self::merge`] itself) lowers through this impl so the per-cell
+    /// loop lives at exactly one site.
+    ///
+    /// Before this lift, every consumer reaching the in-place
+    /// pointwise-sum projection (an observatory accumulator folding a
+    /// just-collected sub-batch into the rolling-window aggregate, a
+    /// fleet-wide dashboard folding a per-host
+    /// `AxisHistogram<crate::WatchEventClass>` cell into the fleet cell
+    /// at every render tick, a per-tier observatory accumulating
+    /// per-tier `AxisHistogram<crate::ConfigSourceKind>` cells into the
+    /// cross-tier aggregate) reached it through one of three forms — the
+    /// rebind-through-`merge` form `hist = hist.merge(&other);` (the
+    /// most common, allocates no extra histogram but forces a rebind at
+    /// every call site), the open-coded per-cell loop form
+    /// `for (slot, c) in hist.counts.iter_mut().zip(other.counts.iter())
+    /// { *slot += c; }` (the loop the [`merge`][Self::merge] impl used to
+    /// carry inline, requires `pub(crate)` access to the counts vector
+    /// or a private helper), or the build-and-merge form
+    /// `hist = hist.merge(&other.clone());` (which clones the right-hand
+    /// side unnecessarily). The lift names the (existing-histogram,
+    /// borrowed-histogram → in-place fold) projection at one site,
+    /// consumers route through `hist += &other;` uniformly, and the
+    /// per-cell loop lives at exactly one site (this impl) underneath
+    /// every monoid-operator entry surface.
+    ///
+    /// **Equivalence with [`Self::merge`]** — for every pair `(self,
+    /// other)`: `let mut a = self.clone(); a += other; a` is pointwise
+    /// equal to `self.clone().merge(other)`. The (`AddAssign`, `merge`)
+    /// duality on the monoid: extending in place is the in-place form
+    /// of the owned-merge surface. The [`merge`][Self::merge] impl itself
+    /// lowers through this method so the equivalence is by construction.
+    ///
+    /// **Empty-right-hand-side identity** — `hist += &empty` leaves
+    /// `hist` unchanged. The vacuous fold on the [`AddAssign`] surface,
+    /// peer to the [`Self::merge`] empty-identity law.
+    ///
+    /// **Commutativity on the monoid operation** (not on the call site):
+    /// `let mut a = x.clone(); a += &y;` and
+    /// `let mut b = y.clone(); b += &x;` are pointwise equal, by the
+    /// commutativity of cellwise `+`. The call sites differ in which
+    /// histogram is mutated; the resulting histogram does not.
+    ///
+    /// **Cell-level accounting** — every cell `v` has its count
+    /// incremented by `other.count(v)`; the total grows by exactly
+    /// `other.total()`. Peer to the [`Self::total`] / [`Self::merge`]
+    /// additivity law.
+    ///
+    /// **Concatenation associativity** — `a += &b; a += &c;` produces
+    /// the same histogram as `a += &b.clone().merge(&c);`. The
+    /// (`+=`, ⊕) homomorphism over histogram concatenation, peer to
+    /// the (extend, ⊕) homomorphism on [`Extend::extend`].
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The trait-uniform laws pinned in
+    /// [`tests`] hold across the implementor set
+    /// (`axis_histogram_add_assign_ref_empty_rhs_is_identity_*`,
+    /// `axis_histogram_add_assign_ref_equals_merge_*`,
+    /// `axis_histogram_add_assign_ref_grows_total_additively_*`,
+    /// `axis_histogram_add_assign_ref_is_commutative_*`).
+    fn add_assign(&mut self, other: &AxisHistogram<A>) {
+        for (slot, &delta) in self.counts.iter_mut().zip(other.counts.iter()) {
+            *slot += delta;
+        }
+    }
+}
+
+impl<A: ClosedAxis> std::ops::AddAssign<AxisHistogram<A>> for AxisHistogram<A> {
+    /// Fold `other` into `self` in place — the owned-right-hand-side
+    /// peer of [`AddAssign<&Self>`]. Delegates directly to the borrowed
+    /// form (the right-hand side is read once, by reference, then
+    /// dropped); the per-cell fold loop lives at one site (the
+    /// borrowed-RHS impl).
+    fn add_assign(&mut self, other: AxisHistogram<A>) {
+        *self += &other;
+    }
+}
+
+impl<A: ClosedAxis> std::ops::Add<&AxisHistogram<A>> for AxisHistogram<A> {
+    type Output = AxisHistogram<A>;
+
+    /// Pointwise sum of `self` and `other` — the canonical Rust
+    /// [`Add`][std::ops::Add] trait idiom for the monoid
+    /// `(AxisHistogram, merge, empty)` on the borrowed-right-hand-side
+    /// surface. The natural infix-operator peer of [`Self::merge`] — the
+    /// same shape consumers reach for when they want the `+` operator
+    /// on histograms (`a + &b` instead of `a.merge(&b)`).
+    ///
+    /// Lowered through [`AddAssign<&Self>`]: take ownership of `self`,
+    /// fold `other` in through `+=`, return the accumulator. Pointwise
+    /// equal to [`Self::merge`] on every call site, by construction
+    /// (both lower through `+=` underneath). Trait-uniform laws pinned
+    /// in [`tests`] (`axis_histogram_add_ref_equals_merge_*`,
+    /// `axis_histogram_add_ref_is_commutative_*`).
+    fn add(mut self, other: &AxisHistogram<A>) -> Self::Output {
+        self += other;
+        self
+    }
+}
+
+impl<A: ClosedAxis> std::ops::Add<AxisHistogram<A>> for AxisHistogram<A> {
+    type Output = AxisHistogram<A>;
+
+    /// Pointwise sum of `self` and `other` — the owned-right-hand-side
+    /// peer of [`Add<&Self>`]. Delegates to the borrowed form so the
+    /// fold loop lives at exactly one site (the [`AddAssign<&Self>`]
+    /// impl). Pointwise equal to [`Self::merge`] on every call site.
+    fn add(mut self, other: AxisHistogram<A>) -> Self::Output {
+        self += &other;
+        self
     }
 }
 
@@ -6405,6 +6532,348 @@ mod tests {
             .iter()
             .fold(AxisHistogram::empty(), AxisHistogram::merge);
         assert_eq!(via_sum_refs, via_fold_refs);
+    }
+
+    // ---- AxisHistogram::{Add, AddAssign} operator-trait laws ----
+    //
+    // Six trait-uniform laws reach every [`ClosedAxis`] implementor through
+    // [`for_each_closed_axis_implementor`] so the per-axis monoid-operator
+    // projection's contract holds uniformly without per-axis test
+    // duplication: `+= &empty` is identity; `+= &other` equals `merge`;
+    // `+ &other` equals `merge`; `+=` is commutative on the resulting
+    // histogram; `+=` grows the total additively; the owned and borrowed
+    // operator surfaces produce the same histogram (the (Add<Self>,
+    // Add<&Self>) / (AddAssign<Self>, AddAssign<&Self>) idiom-peer
+    // equivalences).
+    //
+    // Together with the existing [`Sum`] laws above and the
+    // [`Self::merge`] laws below, this closes the canonical Rust
+    // monoid-operator trait surface — `Add<Self>`, `Add<&Self>`,
+    // `AddAssign<Self>`, `AddAssign<&Self>`, `Sum<Self>`, `Sum<&Self>` —
+    // on [`AxisHistogram`], at the same trait peerage every stdlib
+    // numeric monoid carries (`u8..u128`, `i8..i128`, `f32`, `f64`,
+    // `Duration`, `Wrapping<T>`, etc.).
+
+    fn assert_add_assign_ref_empty_rhs_is_identity<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The empty-right-hand-side identity law on [`AddAssign<&Self>`]:
+        // `hist += &empty` leaves the histogram unchanged. Peer to the
+        // [`Self::merge`] empty-identity law on the in-place operator
+        // surface. Pinned over the axis-cover histogram so every cell
+        // carries a positive count and the equality reads off every
+        // ordinal.
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let mut acc = cover.clone();
+        acc += &AxisHistogram::<A>::empty();
+        assert_eq!(
+            acc,
+            cover,
+            "hist += &empty must leave hist unchanged on axis {}",
+            std::any::type_name::<A>(),
+        );
+        // The dual: starting from empty, `empty += &cover` reads off the
+        // cover histogram pointwise — the right-empty / left-empty pair
+        // closes the identity at both call sites.
+        let mut empty = AxisHistogram::<A>::empty();
+        empty += &cover;
+        assert_eq!(
+            empty,
+            cover,
+            "empty += &hist must equal hist on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_add_assign_ref_equals_merge<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (AddAssign, merge) equivalence on the borrowed-RHS form:
+        // `let mut a = lhs.clone(); a += &rhs; a` is pointwise equal to
+        // `lhs.clone().merge(&rhs)`. The [`merge`][Self::merge] impl
+        // lowers through `+=` so the equivalence is by construction; the
+        // law pins the contract uniformly so a future regression in
+        // either site (e.g. an inlined per-cell loop drifting out of
+        // sync with the `+=` impl) surfaces against the law.
+        let lhs: AxisHistogram<A> = axis_iter::<A>().collect();
+        let rhs: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+
+        let mut via_add_assign = lhs.clone();
+        via_add_assign += &rhs;
+        let via_merge = lhs.clone().merge(&rhs);
+        assert_eq!(
+            via_add_assign,
+            via_merge,
+            "AddAssign<&Self> must equal merge on axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        // The owned-RHS peer: same equivalence on `AddAssign<Self>`.
+        let mut via_add_assign_owned = lhs.clone();
+        via_add_assign_owned += rhs.clone();
+        assert_eq!(
+            via_add_assign_owned,
+            via_merge,
+            "AddAssign<Self> must equal merge on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_add_ref_equals_merge<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (Add, merge) equivalence on the borrowed-RHS form:
+        // `lhs + &rhs` is pointwise equal to `lhs.merge(&rhs)` on every
+        // pair. The infix-operator peer of the in-place law above.
+        let lhs: AxisHistogram<A> = axis_iter::<A>().collect();
+        let rhs: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+
+        let via_add = lhs.clone() + &rhs;
+        let via_merge = lhs.clone().merge(&rhs);
+        assert_eq!(
+            via_add,
+            via_merge,
+            "Add<&Self> must equal merge on axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        // The owned-RHS peer: same equivalence on `Add<Self>`.
+        let via_add_owned = lhs.clone() + rhs.clone();
+        assert_eq!(
+            via_add_owned,
+            via_merge,
+            "Add<Self> must equal merge on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_add_assign_ref_is_commutative<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Commutativity on the resulting histogram (not on the call
+        // site): the in-place fold of `y` into `x` produces the same
+        // histogram as the in-place fold of `x` into `y`, by the
+        // commutativity of cellwise `+`. The call sites differ in which
+        // histogram is mutated; the resulting histogram does not.
+        // Pinned over two non-trivial histograms (the axis-cover and the
+        // singleton-on-the-first-cell) so the equivalence covers a
+        // non-trivial cell distribution.
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let single = if let Some(first) = axis_iter::<A>().next() {
+            let mut h = AxisHistogram::<A>::empty();
+            h.observe(first);
+            h
+        } else {
+            // No-op on the empty closed axis (no implementor today, but
+            // the law is vacuous in that corner).
+            return;
+        };
+
+        let mut a = cover.clone();
+        a += &single;
+        let mut b = single.clone();
+        b += &cover;
+        assert_eq!(
+            a,
+            b,
+            "AddAssign<&Self> must produce the same histogram regardless of \
+             which side is mutated on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_add_assign_ref_grows_total_additively<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The additivity law on the [`Self::total`] scalar surface:
+        // `a += &b` grows `a.total()` by exactly `b.total()`, peer to
+        // the `merge`-additivity law on `total`. Pinned over two non-
+        // trivial histograms so the law witnesses a non-zero delta.
+        let lhs: AxisHistogram<A> = axis_iter::<A>().collect();
+        let rhs: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let lhs_total_before = lhs.total();
+        let rhs_total = rhs.total();
+
+        let mut acc = lhs.clone();
+        acc += &rhs;
+        assert_eq!(
+            acc.total(),
+            lhs_total_before + rhs_total,
+            "AddAssign<&Self> must grow total by rhs.total() on axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        // Pointwise cell-level additivity: every cell of the summed
+        // histogram equals the sum of the components' counts on that cell.
+        for cell in axis_iter::<A>() {
+            assert_eq!(
+                acc.count(cell),
+                lhs.count(cell) + rhs.count(cell),
+                "AddAssign<&Self> cell {cell:?} must equal lhs + rhs on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_add_owned_equals_add_ref<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (Add<Self>, Add<&Self>) / (AddAssign<Self>, AddAssign<&Self>)
+        // idiom-peer equivalences: the owned-RHS surface produces the
+        // same histogram as the borrowed-RHS surface on every call site.
+        // The canonical Rust owned/borrowed operator peer pair —
+        // `impl Add<Self>` and `impl Add<&Self>` returning equal output
+        // — every stdlib numeric monoid exposes (`u32 + &u32 == u32 +
+        // u32`, etc.).
+        let lhs: AxisHistogram<A> = axis_iter::<A>().collect();
+        let rhs: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+
+        let via_add_ref = lhs.clone() + &rhs;
+        let via_add_owned = lhs.clone() + rhs.clone();
+        assert_eq!(
+            via_add_ref,
+            via_add_owned,
+            "Add<&Self> must equal Add<Self> on axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        let mut via_assign_ref = lhs.clone();
+        via_assign_ref += &rhs;
+        let mut via_assign_owned = lhs.clone();
+        via_assign_owned += rhs.clone();
+        assert_eq!(
+            via_assign_ref,
+            via_assign_owned,
+            "AddAssign<&Self> must equal AddAssign<Self> on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_add_assign_ref_empty_rhs_is_identity_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_add_assign_ref_empty_rhs_is_identity::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_add_assign_ref_equals_merge_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_add_assign_ref_equals_merge::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_add_ref_equals_merge_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_add_ref_equals_merge::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_add_assign_ref_is_commutative_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_add_assign_ref_is_commutative::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_add_assign_ref_grows_total_additively_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_add_assign_ref_grows_total_additively::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_add_owned_equals_add_ref_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_add_owned_equals_add_ref::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_add_assign_equals_fleet_aggregate_for_diff_line_kind() {
+        // The canonical fleet-aggregator pattern on the in-place
+        // operator surface: collect per-window histograms, fold them
+        // into an accumulator via `acc += &window;` — the result is
+        // pointwise equal to the histogram built from the
+        // concatenation of every window's observations, and pointwise
+        // equal to `windows.iter().sum()`. Pinned concretely on
+        // [`DiffLineKind`] across three non-trivial windows so the
+        // equivalence covers a non-trivial cell distribution.
+        let window_a: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let window_b: AxisHistogram<DiffLineKind> = [DiffLineKind::Context, DiffLineKind::Removed]
+            .into_iter()
+            .collect();
+        let window_c: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        let windows = [window_a.clone(), window_b.clone(), window_c.clone()];
+
+        let mut via_add_assign: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        for window in &windows {
+            via_add_assign += window;
+        }
+        let via_sum: AxisHistogram<DiffLineKind> = windows.iter().sum();
+        assert_eq!(via_add_assign, via_sum);
+
+        // Added: 3 (2 from a, 0 from b, 1 from c); Removed: 2; Context: 1.
+        assert_eq!(via_add_assign.count(DiffLineKind::Added), 3);
+        assert_eq!(via_add_assign.count(DiffLineKind::Removed), 2);
+        assert_eq!(via_add_assign.count(DiffLineKind::Context), 1);
+        assert_eq!(via_add_assign.total(), 6);
+    }
+
+    #[test]
+    fn axis_histogram_add_chain_equals_merge_chain_for_diff_line_kind() {
+        // The infix-operator chain `a + &b + &c` is pointwise equal to
+        // `a.merge(&b).merge(&c)` on the merge chain — the (Add, merge)
+        // equivalence composed across multiple right-hand sides. Pinned
+        // concretely on [`DiffLineKind`] across three windows so the
+        // equivalence covers a non-trivial cell distribution and the
+        // associativity-via-`+` form reads off at the call site.
+        let a: AxisHistogram<DiffLineKind> = [DiffLineKind::Added].into_iter().collect();
+        let b: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Removed]
+            .into_iter()
+            .collect();
+        let c: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Context).collect();
+
+        let via_add = a.clone() + &b + &c;
+        let via_merge = a.clone().merge(&b).merge(&c);
+        assert_eq!(via_add, via_merge);
+
+        assert_eq!(via_add.count(DiffLineKind::Added), 2);
+        assert_eq!(via_add.count(DiffLineKind::Removed), 1);
+        assert_eq!(via_add.count(DiffLineKind::Context), 1);
+        assert_eq!(via_add.total(), 4);
     }
 
     // ---- AxisHistogram::dominant_cell trait-uniform laws ----
