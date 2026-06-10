@@ -7833,7 +7833,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.11";
+        version = "0.1.12";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -8220,8 +8220,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "fbfa4d05f6c0a190eac43e719590911caa308323";
-          sha256 = "1wsgn248f5axhyqjh3p35aqd54m426gm91rcy62w79v9crs3acwk";
+          rev = "c7e0b1dc48136cdc17446d650dcca464cbf1d5ab";
+          sha256 = "0rb37r2ngss2cw6y906ppjr54lx2hnvm19gp55lv4l926k6wzfmk";
         };
         libName = "tatara_lisp";
         authors = [
@@ -8262,8 +8262,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "fbfa4d05f6c0a190eac43e719590911caa308323";
-          sha256 = "1wsgn248f5axhyqjh3p35aqd54m426gm91rcy62w79v9crs3acwk";
+          rev = "c7e0b1dc48136cdc17446d650dcca464cbf1d5ab";
+          sha256 = "0rb37r2ngss2cw6y906ppjr54lx2hnvm19gp55lv4l926k6wzfmk";
         };
         procMacro = true;
         libName = "tatara_lisp_derive";
