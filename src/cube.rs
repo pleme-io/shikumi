@@ -290,13 +290,34 @@ pub fn axis_at<A: ClosedAxis>(ordinal: usize) -> Option<A> {
 /// the trait-uniform invariant tests reaching every [`ClosedAxis`]
 /// implementor uniformly.
 ///
+/// **Hashable identity.** [`Eq`] is paired with [`std::hash::Hash`] so
+/// `AxisHistogram<A>` is the canonical Rust [`(Eq, Hash)`][std::hash::Hash]
+/// idiom-peer pair — usable as a [`std::collections::HashSet`] element
+/// or a [`std::collections::HashMap`] key without an interposing
+/// hand-rolled wrapper. A fleet aggregator deduping per-host observation
+/// mixes (`HashSet<AxisHistogram<DiffLineKind>>` collapsing two hosts
+/// that landed the same rebuild summary into one bucket), a memoization
+/// table keyed on the configuration shape that produced an outcome
+/// (`HashMap<AxisHistogram<ConfigSourceKind>, ResolveCost>`), or a
+/// regression-bucket histogram-of-histograms tallying how often each
+/// distinct observation mix recurred (`AxisHistogram<…>` as the
+/// `HashMap` key on a per-window collapse step) all reach the
+/// collection-key surface without per-call-site wrapper types or a
+/// `BTreeMap` fallback whose `Ord` requirement would force a total
+/// ordering the underlying free-commutative-monoid structure has no
+/// canonical pick for. The derived hash inherits the
+/// [`Vec<usize>`][Vec] hash on the counts vector, which agrees with
+/// [`Eq`] pointwise by construction; two histograms that compare equal
+/// hash equally on every axis, pinned by the trait-uniform
+/// `axis_histogram_equal_implies_same_hash_*` law in [`tests`].
+///
 /// **Implementor coverage.** Generic over the [`ClosedAxis`] trait
 /// bound, so every closed-axis primitive on the typescape (the twenty
 /// closed-enum kinds plus the five product cubes — twenty-five
 /// implementors uniformly) inherits the histogram primitive at no
 /// per-axis cost. Trait-uniform laws reach every implementor through
 /// `for_each_closed_axis_implementor!` in [`tests`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AxisHistogram<A: ClosedAxis> {
     counts: Vec<usize>,
     _marker: std::marker::PhantomData<A>,
@@ -12517,6 +12538,235 @@ mod tests {
         assert_eq!(
             mixed_with_empty.has_singular_support(),
             mixed_lhs.has_singular_support(),
+        );
+    }
+
+    // ---- AxisHistogram::Hash trait-uniform laws ----
+    //
+    // [`std::hash::Hash`] is the canonical Rust idiom-peer of [`Eq`];
+    // every stdlib collection-key type that exposes one exposes the
+    // other (`HashMap` / `HashSet` require `K: Eq + Hash`), and the
+    // (Eq ⇒ same hash) contract is the load-bearing invariant that
+    // lets the hash-keyed collections perform correctly. The four
+    // trait-uniform laws below pin the [`Hash`] derive's contract
+    // uniformly across every [`ClosedAxis`] implementor: equal
+    // histograms hash to the same `u64` under the same [`Hasher`]
+    // state; two independently constructed empty histograms hash
+    // identically; cloning preserves the hash pointwise; and a
+    // histogram round-tripped through [`HashSet::contains`] is
+    // recovered by its own hash (the canonical (Eq, Hash) consistency
+    // pin every stdlib hash-keyed collection assumes).
+
+    fn hash_of<T: std::hash::Hash>(value: &T) -> u64 {
+        use std::hash::{DefaultHasher, Hasher};
+        let mut hasher = DefaultHasher::new();
+        value.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    fn assert_hash_equal_implies_same_hash<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (Eq ⇒ same hash) contract on the `Hash` derive: two
+        // histograms that compare equal must hash equally under the
+        // same `Hasher` state. The load-bearing invariant every
+        // stdlib hash-keyed collection assumes. Pinned over two
+        // independently constructed axis-cover histograms (built by
+        // distinct iterator chains) so the same-value / same-hash
+        // pairing reads off without aliasing the input vectors.
+        let lhs: AxisHistogram<A> = axis_iter::<A>().collect();
+        let rhs: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            lhs,
+            rhs,
+            "two axis-cover histograms must compare equal on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert_eq!(
+            hash_of(&lhs),
+            hash_of(&rhs),
+            "Eq histograms must hash equally on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_hash_empty_is_consistent<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The empty-histogram self-consistency law on the `Hash`
+        // derive: two independently constructed
+        // [`AxisHistogram::empty`] instances hash identically, and
+        // the [`Default`] surface (which lowers to `empty`) reaches
+        // the same hash. Pinned so the monoid identity carries a
+        // stable hash value across every implementor.
+        let via_empty = AxisHistogram::<A>::empty();
+        let via_empty_again = AxisHistogram::<A>::empty();
+        let via_default = AxisHistogram::<A>::default();
+        assert_eq!(
+            hash_of(&via_empty),
+            hash_of(&via_empty_again),
+            "AxisHistogram::empty must hash consistently on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert_eq!(
+            hash_of(&via_empty),
+            hash_of(&via_default),
+            "AxisHistogram::default must hash like ::empty on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_hash_clone_preserves_hash<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The clone-preserves-hash law on the `Hash` derive: cloning
+        // a histogram yields a value that hashes identically to its
+        // source. The `Clone` / `Hash` idiom-peer the stdlib's
+        // hash-keyed collections lean on (a key inserted by value can
+        // be looked up by a clone of itself). Pinned over the
+        // axis-cover histogram so every cell carries a positive count
+        // and the equality reads off a non-trivial counts vector.
+        let original: AxisHistogram<A> = axis_iter::<A>().collect();
+        let cloned = original.clone();
+        assert_eq!(
+            hash_of(&original),
+            hash_of(&cloned),
+            "clone must preserve hash on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_hash_hashset_roundtrip<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The end-to-end [`HashSet`] round-trip on the `Hash` derive:
+        // inserting a histogram into a [`std::collections::HashSet`]
+        // and then querying for an independently constructed equal
+        // value returns `true`. This pins the (Eq, Hash) consistency
+        // through the stdlib hash-keyed collection — not just the
+        // raw `Hasher` surface — so the `HashSet<AxisHistogram<A>>`
+        // call-site shape on the consumer side reads off correctly
+        // for every implementor.
+        use std::collections::HashSet;
+        let inserted: AxisHistogram<A> = axis_iter::<A>().collect();
+        let probe: AxisHistogram<A> = axis_iter::<A>().collect();
+        let mut set: HashSet<AxisHistogram<A>> = HashSet::new();
+        set.insert(inserted);
+        assert!(
+            set.contains(&probe),
+            "HashSet must recognize an equal histogram by hash on axis {}",
+            std::any::type_name::<A>(),
+        );
+        // Inserting a clone of the probe leaves the set unchanged
+        // (deduplication is the canonical `HashSet` invariant — only
+        // possible when (Eq, Hash) agree).
+        let len_before = set.len();
+        set.insert(probe);
+        assert_eq!(
+            set.len(),
+            len_before,
+            "HashSet must dedup equal histograms on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_equal_implies_same_hash_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_hash_equal_implies_same_hash::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_empty_hashes_consistently_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_hash_empty_is_consistent::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_clone_preserves_hash_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_hash_clone_preserves_hash::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_hashset_roundtrip_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_hash_hashset_roundtrip::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_hashmap_keys_dedup_observation_mixes_for_diff_line_kind() {
+        // Concrete pin on the canonical fleet-aggregator call-site
+        // shape: a `HashMap<AxisHistogram<DiffLineKind>, usize>`
+        // tallies how often each distinct observation mix recurred
+        // across a per-window collapse step. Two hosts that landed
+        // the same rebuild summary collapse into one bucket; a third
+        // host with a different summary lives in a second bucket.
+        // Pinned on [`DiffLineKind`] so the per-cell counts read off
+        // and the (Eq, Hash) consistency through the stdlib
+        // hash-keyed collection is visible at the call site.
+        use std::collections::HashMap;
+
+        let host_a: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let host_b: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let host_c: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Context).collect();
+
+        // host_a and host_b are pointwise equal — they collapse into
+        // one bucket; host_c is distinct.
+        assert_eq!(host_a, host_b);
+        assert_ne!(host_a, host_c);
+
+        let mut tally: HashMap<AxisHistogram<DiffLineKind>, usize> = HashMap::new();
+        for hist in [host_a.clone(), host_b.clone(), host_c.clone()] {
+            *tally.entry(hist).or_insert(0) += 1;
+        }
+
+        assert_eq!(
+            tally.len(),
+            2,
+            "two distinct observation mixes — two buckets"
+        );
+        assert_eq!(
+            tally.get(&host_a).copied(),
+            Some(2),
+            "host_a and host_b dedup to one key bucketing both hosts",
+        );
+        assert_eq!(
+            tally.get(&host_c).copied(),
+            Some(1),
+            "host_c lands in its own bucket",
         );
     }
 }
