@@ -1825,6 +1825,80 @@ impl<A: ClosedAxis> Extend<(A, usize)> for AxisHistogram<A> {
     }
 }
 
+impl<'a, A: ClosedAxis> FromIterator<&'a A> for AxisHistogram<A> {
+    /// Build a histogram by recording every borrowed observation in `iter`
+    /// — the canonical Rust stdlib borrowed-input
+    /// [`FromIterator<&T>`][FromIterator] idiom-peer of the owned-input
+    /// [`FromIterator<A>`] impl above. The reference form every stdlib
+    /// collection that supports a [`Copy`] item exposes alongside the
+    /// owned form (`impl<'a, T: 'a + Copy> FromIterator<&'a T> for Vec<T>`,
+    /// `impl<'a, T: 'a + Copy> FromIterator<&'a T> for VecDeque<T>`,
+    /// `impl<'a, T: 'a + Copy + Ord> FromIterator<&'a T> for BTreeSet<T>`)
+    /// so call sites reaching the histogram through `slice.iter().collect()`
+    /// or `vec.iter().collect()` (a `&[A]` borrowed from an upstream
+    /// observation buffer, a `Vec<A>` owned by an attestation manifest, a
+    /// `BTreeSet<A>` iterated by reference for an order-preserving fold)
+    /// work without an interposing `.copied()` adaptor — the
+    /// [`ClosedAxis`] super-trait already requires [`Copy`], so the
+    /// borrowed item is dereferenced and observed at one site without a
+    /// per-element clone at the call site.
+    ///
+    /// Lowers through [`Extend<&'a A>::extend`]: build the identity
+    /// ([`Self::empty`]), then fold every borrowed observation in `iter`
+    /// through the borrowed-[`Extend`] surface. The
+    /// (`FromIterator<&'a A>`, `Extend<&'a A>`) peerage mirrors the
+    /// (`FromIterator<A>`, `Extend<A>`) pair on the owned-observation
+    /// surface so the per-observation fold loop lives at one site (the
+    /// [`Extend<&'a A>`] impl below) and both borrowed surfaces stay in
+    /// lockstep without duplication.
+    ///
+    /// **Equivalence with the owned-input [`FromIterator<A>`] impl** —
+    /// pointwise equal to `iter.copied().collect::<AxisHistogram<A>>()`
+    /// on every iterator, but without the per-element `.copied()`
+    /// adaptor the owned form would require. The (`FromIterator<A>`,
+    /// `FromIterator<&'a A>`) idiom-peer pair: same construction, two
+    /// call-site shapes, both anchored at the same `default + extend`
+    /// lowering underneath. Peer of the
+    /// (`Sum<Self>`, `Sum<&Self>`) idiom-peer pair on the dual
+    /// reduction-side of the monoid.
+    fn from_iter<I: IntoIterator<Item = &'a A>>(iter: I) -> Self {
+        let mut hist = Self::empty();
+        hist.extend(iter);
+        hist
+    }
+}
+
+impl<'a, A: ClosedAxis> Extend<&'a A> for AxisHistogram<A> {
+    /// Fold every borrowed observation in `iter` into the histogram in
+    /// place — the canonical Rust stdlib borrowed-input
+    /// [`Extend<&T>`][Extend] idiom-peer of the owned-input [`Extend<A>`]
+    /// impl above. The reference form every stdlib collection that
+    /// supports a [`Copy`] item exposes alongside the owned form
+    /// (`impl<'a, T: 'a + Copy> Extend<&'a T> for Vec<T>`, etc.) so call
+    /// sites reaching the in-place fold through
+    /// `hist.extend(slice.iter())` or `hist.extend(&vec)` (an observatory
+    /// folding a borrowed sub-batch without consuming it, a fleet-wide
+    /// aggregator absorbing a `&[A]` lent by an upstream collector) work
+    /// without an interposing `.copied()` adaptor.
+    ///
+    /// **Equivalence with the owned-input [`Extend<A>`] impl** —
+    /// pointwise equal to `hist.extend(iter.copied())` on every iterator,
+    /// by definition. The borrowed-extend lowers to dereferencing each
+    /// item and folding through the inherent [`Self::observe`] step the
+    /// owned-extend uses; the [`ClosedAxis`] super-trait's [`Copy`] bound
+    /// makes the dereference a value copy with no allocation.
+    ///
+    /// **Empty-identity law** — `hist.extend(std::iter::empty::<&A>())`
+    /// leaves the histogram unchanged. The vacuous fold on the
+    /// borrowed-[`Extend`] surface, peer of the owned-[`Extend<A>`]
+    /// empty-identity law.
+    fn extend<I: IntoIterator<Item = &'a A>>(&mut self, iter: I) {
+        for &value in iter {
+            self.observe(value);
+        }
+    }
+}
+
 /// Borrowing iterator over the `(axis-value, count)` pairs of an
 /// [`AxisHistogram`], yielded in declaration order over [`ClosedAxis::ALL`].
 ///
@@ -6700,6 +6774,171 @@ mod tests {
         via_default_extend.extend(input.iter().copied());
 
         assert_eq!(via_from_iter, via_default_extend);
+    }
+
+    // ---- AxisHistogram borrowed-observation FromIterator / Extend trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor through
+    // [`for_each_closed_axis_implementor`] so the per-axis borrowed-observation
+    // [`FromIterator<&A>`] / [`Extend<&A>`] projection's contract holds
+    // uniformly without per-axis test duplication: extending with an empty
+    // borrowed iterator is identity; the borrowed and owned input surfaces
+    // produce the same histogram (the canonical (owned, borrowed) idiom-peer
+    // equivalence — peer of the (`Sum<Self>`, `Sum<&Self>`) reduction-side
+    // pair on the dual side of the monoid); borrowed `FromIterator` lowers
+    // to `default + borrowed-extend` on the borrowed surface (the canonical
+    // Rust lowering the impl uses internally). The three laws close the
+    // borrowed-input duality on the raw-observation surface at the trait
+    // peerage every stdlib [`Copy`]-item collection carries
+    // (`Vec<T>: FromIterator<&T> where T: Copy`, etc.).
+
+    fn assert_ref_extend_empty_input_is_identity<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Extending any histogram with an empty borrowed iterator leaves
+        // it unchanged — the vacuous fold on the borrowed-[`Extend`]
+        // surface, peer of the owned-[`Extend<A>`] empty-identity law.
+        // Pinned over the empty starting histogram (the identity slot)
+        // and the axis-cover starting histogram (a non-trivial shape
+        // with every cell observed) so the law is witnessed at both
+        // ends of the coverage axis.
+        let mut empty = AxisHistogram::<A>::empty();
+        empty.extend(std::iter::empty::<&A>());
+        assert_eq!(
+            empty,
+            AxisHistogram::<A>::empty(),
+            "ref-extend(empty) on empty must be identity on axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        let cover_pre: AxisHistogram<A> = axis_iter::<A>().collect();
+        let mut cover_post = cover_pre.clone();
+        cover_post.extend(std::iter::empty::<&A>());
+        assert_eq!(
+            cover_post,
+            cover_pre,
+            "ref-extend(empty) on axis-cover must be identity on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_ref_from_iter_equals_owned_from_iter<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (`FromIterator<A>`, `FromIterator<&A>`) idiom-peer
+        // equivalence on the input-side of the monoid: collecting a
+        // borrowed-item iterator yields the same histogram as collecting
+        // a value-item iterator (i.e. cloning the borrowed items through
+        // the owned `FromIterator`). The canonical Rust borrowed/owned
+        // `FromIterator` peer pair on a single observation surface,
+        // mirror of the (`Sum<Self>`, `Sum<&Self>`) duality on the dual
+        // reduction side. Pinned over the axis-cover input so every cell
+        // carries an observation and the equivalence reads off every
+        // ordinal in the counts vector.
+        let cover: Vec<A> = axis_iter::<A>().collect();
+        let via_refs: AxisHistogram<A> = cover.iter().collect();
+        let via_owned: AxisHistogram<A> = cover.iter().copied().collect();
+        assert_eq!(
+            via_refs,
+            via_owned,
+            "FromIterator<&A> via cover.iter() must equal FromIterator<A> via cover.iter().copied() on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_ref_from_iter_lowers_to_default_plus_ref_extend<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical Rust lowering on the borrowed surface:
+        // `iter.collect::<AxisHistogram<A>>()` for a borrowed-item
+        // iterator is pointwise equal to `let mut h =
+        // AxisHistogram::default(); h.extend(iter); h` — the lowering
+        // the borrowed-[`FromIterator`] impl uses internally. Pinned
+        // over the axis-cover input so the lowering is witnessed
+        // against a non-trivial cell distribution.
+        let cover: Vec<A> = axis_iter::<A>().collect();
+        let via_from_iter: AxisHistogram<A> = cover.iter().collect();
+        let mut via_default_extend: AxisHistogram<A> = AxisHistogram::default();
+        via_default_extend.extend(cover.iter());
+        assert_eq!(
+            via_from_iter,
+            via_default_extend,
+            "FromIterator<&A>::from_iter must equal default + Extend<&A>::extend on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_ref_extend_empty_input_is_identity_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_ref_extend_empty_input_is_identity::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_ref_from_iter_equals_owned_from_iter_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_ref_from_iter_equals_owned_from_iter::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_ref_from_iter_lowers_to_default_plus_ref_extend_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_ref_from_iter_lowers_to_default_plus_ref_extend::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_ref_from_iter_drops_copied_adaptor_for_diff_line_kind() {
+        // The canonical Rust call-site shape on the borrowed surface:
+        // `slice.iter().collect::<AxisHistogram<A>>()` reads the same
+        // histogram as `slice.iter().copied().collect()` — the
+        // borrowed-input [`FromIterator<&A>`] impl drops the interposing
+        // `.copied()` adaptor consumers used to write at every borrowed
+        // call site. Pinned concretely on [`DiffLineKind`] across a non-
+        // trivial observation mix so the equivalence reads off the per-
+        // cell counts on the call-site shape consumers reach.
+        let observations = [
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Added,
+            DiffLineKind::Context,
+            DiffLineKind::Added,
+        ];
+
+        let via_refs: AxisHistogram<DiffLineKind> = observations.iter().collect();
+        let via_copied: AxisHistogram<DiffLineKind> = observations.iter().copied().collect();
+        assert_eq!(via_refs, via_copied);
+
+        // Cell-level accounting on the resulting histogram.
+        assert_eq!(via_refs.count(DiffLineKind::Added), 3);
+        assert_eq!(via_refs.count(DiffLineKind::Removed), 1);
+        assert_eq!(via_refs.count(DiffLineKind::Context), 1);
+        assert_eq!(via_refs.total(), 5);
+
+        // The borrowed-[`Extend`] surface drops the same adaptor on the
+        // in-place fold side: `hist.extend(slice.iter())` reads the
+        // same post-extend histogram as `hist.extend(slice.iter().copied())`.
+        let mut via_ref_extend: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        via_ref_extend.extend(observations.iter());
+        let mut via_copied_extend: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        via_copied_extend.extend(observations.iter().copied());
+        assert_eq!(via_ref_extend, via_copied_extend);
+        assert_eq!(via_ref_extend, via_refs);
     }
 
     // ---- AxisHistogram pair-input FromIterator / Extend trait-uniform laws ----
