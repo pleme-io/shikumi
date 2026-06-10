@@ -2424,6 +2424,164 @@ impl<A: ClosedAxis> std::ops::Add<AxisHistogram<A>> for AxisHistogram<A> {
     }
 }
 
+impl<A: ClosedAxis> std::ops::SubAssign<&AxisHistogram<A>> for AxisHistogram<A> {
+    /// Saturating pointwise subtraction of `other` from `self` in place —
+    /// the canonical Rust [`SubAssign`][std::ops::SubAssign] trait idiom
+    /// for the natural-number monus operation `(AxisHistogram, ∸, empty)`
+    /// on the borrowed-right-hand-side surface. The dual of
+    /// [`AddAssign<&Self>`] on the additive monoid: per-cell
+    /// [`usize::saturating_sub`] lifted cellwise across [`ClosedAxis::ALL`].
+    /// The primitive site that carries the per-cell saturating-subtraction
+    /// loop — every other subtraction-operator surface on this type
+    /// ([`SubAssign<Self>`], [`Sub<Self>`], [`Sub<&Self>`]) lowers
+    /// through this impl so the per-cell loop lives at exactly one site.
+    ///
+    /// Saturation is the canonical choice for natural-number-valued
+    /// histograms: counts are [`usize`], so an unsaturated subtraction
+    /// would underflow (debug-panic, release-wrap) on any cell where
+    /// `other.count(v) > self.count(v)`. Saturating at zero gives the
+    /// monus semiring `(ℕ, +, ∸)` the histogram is naturally typed in,
+    /// the same algebra Rust's stdlib exposes through
+    /// [`usize::saturating_sub`] / [`Saturating<u*>::sub`] /
+    /// [`Duration::saturating_sub`]. Closes the additive operator
+    /// quartet `(Add, AddAssign, Sub, SubAssign)` on the
+    /// [`AxisHistogram`] surface, peer to the additive quartet every
+    /// stdlib numeric monoid carries.
+    ///
+    /// Before this lift, every consumer reaching the (cellwise saturating
+    /// subtract) projection — a fleet aggregator removing a per-host
+    /// `AxisHistogram<crate::WatchEventClass>` cell when the host leaves
+    /// the fleet so the fleet histogram retains only the surviving
+    /// hosts' observations, a per-window observatory backing out a
+    /// just-rolled-off window from a rolling-window aggregate so the
+    /// window-of-N projection slides forward by one without re-folding
+    /// N windows from scratch, a per-tier observatory backing out a
+    /// retired tier's `AxisHistogram<crate::ConfigSourceKind>` cell from
+    /// a cross-tier rollup, a delta-projection asking *"what's left of
+    /// `a` after subtracting `b`'s contribution?"* on a per-window
+    /// `AxisHistogram<crate::ShikumiErrorKind>` cell — reached it through
+    /// one of two forms: the open-coded per-cell loop
+    /// `for (slot, &c) in hist.counts.iter_mut().zip(other.counts.iter())
+    /// { *slot = slot.saturating_sub(c); }` (requires `pub(crate)` access
+    /// to the counts vector or a private helper) or the rebuild-from-iter
+    /// form
+    /// `AxisHistogram::from_iter(hist.iter().map(|(v, c)| (v,
+    /// c.saturating_sub(other.count(v)))))` (an
+    /// O(axis_cardinality) reallocation for what is in-place
+    /// arithmetic). Collapsed to one trait-method call with a single-pass
+    /// O(axis_cardinality) scan over the existing counts vector.
+    ///
+    /// **Empty-right-hand-side identity** — `hist -= &empty` leaves
+    /// `hist` unchanged. The vacuous fold on the [`SubAssign`] surface,
+    /// peer to the [`AddAssign`] empty-RHS-identity law on the dual side
+    /// of the monus monoid.
+    ///
+    /// **Self-subtraction absorbing law** — `let mut a = hist.clone();
+    /// a -= &hist` zeros every cell of `a`, pointwise equal to
+    /// [`AxisHistogram::empty`]. The monus self-cancellation law: every
+    /// natural number minus itself is zero. Peer to the
+    /// [`MulAssign<usize>`] zero-factor absorbing law on the
+    /// scalar-action surface.
+    ///
+    /// **Saturation-at-zero law** — `hist -= &larger` (every cell of
+    /// `larger` ≥ every cell of `hist`) yields a histogram pointwise
+    /// equal to [`AxisHistogram::empty`]; no cell underflows below
+    /// zero. The defining property of natural-number monus, peer to the
+    /// stdlib's [`usize::saturating_sub`] saturation contract.
+    ///
+    /// **Round-trip with [`AddAssign`]** — `let mut a = lhs.clone();
+    /// a += &rhs; a -= &rhs;` is pointwise equal to `lhs`, provided no
+    /// cell of `lhs + &rhs` overflows. The (`+=`, `-=`) inverse-pair
+    /// law on the monus monoid wherever the addition stays within
+    /// [`usize::MAX`], peer to the stdlib's
+    /// `(a + b).saturating_sub(b) == a` round-trip on the natural
+    /// numbers. Pinned by
+    /// [`tests::axis_histogram_sub_assign_ref_is_inverse_of_add_assign_ref_for_every_closed_axis_implementor`].
+    ///
+    /// **Cell-level saturation** — every cell `v` satisfies
+    /// `after.count(v) == before.count(v).saturating_sub(other.count(v))`.
+    /// Peer to the [`AddAssign`] cell-additivity law on the dual side of
+    /// the monus monoid.
+    ///
+    /// **Total-shrinking law** — `hist -= &other` shrinks
+    /// `hist.total()` by exactly the sum of per-cell saturated deltas:
+    /// `before.total() - after.total() == Σ_v min(before.count(v),
+    /// other.count(v))`. The total never grows under subtraction, and
+    /// the shrink amount is bounded above by `other.total()` (with
+    /// equality iff every cell satisfies `other.count(v) ≤
+    /// before.count(v)`).
+    ///
+    /// **Non-commutativity** — unlike [`AddAssign`], saturating
+    /// subtraction is not commutative on the resulting histogram:
+    /// `a -= &b` and `b -= &a` produce different histograms in general
+    /// (the monus is the cellwise positive part of `a - b`, the dual
+    /// reads off `b - a`). Documented explicitly here as a contrast with
+    /// the [`AddAssign`] commutativity law.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The trait-uniform laws pinned in
+    /// [`tests`] hold across the implementor set
+    /// (`axis_histogram_sub_assign_ref_empty_rhs_is_identity_*`,
+    /// `axis_histogram_sub_assign_ref_self_yields_empty_*`,
+    /// `axis_histogram_sub_assign_ref_saturates_at_zero_*`,
+    /// `axis_histogram_sub_assign_ref_is_inverse_of_add_assign_ref_*`,
+    /// `axis_histogram_sub_assign_ref_cell_level_saturates_*`,
+    /// `axis_histogram_sub_owned_equals_sub_ref_*`).
+    fn sub_assign(&mut self, other: &AxisHistogram<A>) {
+        for (slot, &delta) in self.counts.iter_mut().zip(other.counts.iter()) {
+            *slot = slot.saturating_sub(delta);
+        }
+    }
+}
+
+impl<A: ClosedAxis> std::ops::SubAssign<AxisHistogram<A>> for AxisHistogram<A> {
+    /// Saturating pointwise subtraction of `other` from `self` in place
+    /// — the owned-right-hand-side peer of [`SubAssign<&Self>`]. Delegates
+    /// to the borrowed form (the right-hand side is read once, by
+    /// reference, then dropped); the per-cell saturating-subtraction loop
+    /// lives at exactly one site (the borrowed-RHS impl).
+    fn sub_assign(&mut self, other: AxisHistogram<A>) {
+        *self -= &other;
+    }
+}
+
+impl<A: ClosedAxis> std::ops::Sub<&AxisHistogram<A>> for AxisHistogram<A> {
+    type Output = AxisHistogram<A>;
+
+    /// Saturating pointwise difference of `self` and `other` — the
+    /// canonical Rust [`Sub`][std::ops::Sub] trait idiom for the
+    /// natural-number monus operation on the borrowed-right-hand-side
+    /// surface. The natural infix-operator peer of
+    /// [`SubAssign<&Self>`] — the same shape consumers reach for when
+    /// they want the `-` operator on histograms (`a - &b` for the
+    /// cellwise saturating difference).
+    ///
+    /// Lowered through [`SubAssign<&Self>`]: take ownership of `self`,
+    /// fold `other` out through `-=`, return the accumulator. Pointwise
+    /// equal to [`SubAssign<&Self>`] on every call site, by construction
+    /// (both lower through `-=` underneath). Trait-uniform laws pinned
+    /// in [`tests`]
+    /// (`axis_histogram_sub_owned_equals_sub_ref_*`).
+    fn sub(mut self, other: &AxisHistogram<A>) -> Self::Output {
+        self -= other;
+        self
+    }
+}
+
+impl<A: ClosedAxis> std::ops::Sub<AxisHistogram<A>> for AxisHistogram<A> {
+    type Output = AxisHistogram<A>;
+
+    /// Saturating pointwise difference of `self` and `other` — the
+    /// owned-right-hand-side peer of [`Sub<&Self>`]. Delegates to the
+    /// borrowed form so the saturating-subtraction loop lives at exactly
+    /// one site (the [`SubAssign<&Self>`] impl). Pointwise equal to
+    /// [`SubAssign<&Self>`] on every call site.
+    fn sub(mut self, other: AxisHistogram<A>) -> Self::Output {
+        self -= &other;
+        self
+    }
+}
+
 impl<A: ClosedAxis> std::ops::MulAssign<usize> for AxisHistogram<A> {
     /// Scale every cell in place by `factor` — the canonical Rust
     /// [`MulAssign`][std::ops::MulAssign] trait idiom for the scalar
@@ -8802,6 +8960,404 @@ mod tests {
         assert_eq!(via_add.count(DiffLineKind::Removed), 1);
         assert_eq!(via_add.count(DiffLineKind::Context), 1);
         assert_eq!(via_add.total(), 4);
+    }
+
+    // ---- AxisHistogram saturating-subtraction trait-uniform laws ----
+    //
+    // The (Sub<Self>, Sub<&Self>, SubAssign<Self>, SubAssign<&Self>)
+    // saturating-subtraction operator quartet closes the additive
+    // operator quartet on the AxisHistogram surface: the
+    // (Add, AddAssign) quartet for the cellwise sum and the
+    // (Sub, SubAssign) quartet for the cellwise saturating difference,
+    // pin one consistent natural-number monus algebra `(ℕ, +, ∸)` on
+    // the histogram. The trait-uniform laws below pin the saturation
+    // contract uniformly across every [`ClosedAxis`] implementor:
+    // empty-RHS is identity; self-subtraction collapses to empty;
+    // saturation at zero (subtracting a larger histogram bottoms out
+    // at empty, no underflow); the round-trip with [`AddAssign`]
+    // (`a += &b; a -= &b;` recovers `a` when no cell overflows on the
+    // intermediate sum); per-cell saturation matches
+    // [`usize::saturating_sub`] cell by cell; the (Sub, SubAssign)
+    // owned/borrowed surfaces agree on the resulting histogram.
+
+    fn assert_sub_assign_ref_empty_rhs_is_identity<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The empty-right-hand-side identity law on [`SubAssign<&Self>`]:
+        // `hist -= &empty` leaves the histogram unchanged. Peer to the
+        // [`AddAssign`] empty-RHS-identity law on the dual side of the
+        // monus monoid. Pinned over the axis-cover histogram so every
+        // cell carries a positive count and the equality reads off every
+        // ordinal.
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let mut acc = cover.clone();
+        acc -= &AxisHistogram::<A>::empty();
+        assert_eq!(
+            acc,
+            cover,
+            "hist -= &empty must leave hist unchanged on axis {}",
+            std::any::type_name::<A>(),
+        );
+        // The dual: subtracting any histogram from empty saturates to
+        // empty. The (empty, ∸) absorbing law on the left-empty side —
+        // there is no "below zero" cell for the difference to land in.
+        let mut empty = AxisHistogram::<A>::empty();
+        empty -= &cover;
+        assert_eq!(
+            empty,
+            AxisHistogram::<A>::empty(),
+            "empty -= &hist must remain empty on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_sub_assign_ref_self_yields_empty<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The self-subtraction absorbing law on [`SubAssign<&Self>`]:
+        // `let mut a = hist.clone(); a -= &hist;` zeros every cell of
+        // `a`, pointwise equal to [`AxisHistogram::empty`]. The monus
+        // self-cancellation law — every natural number minus itself is
+        // zero. Pinned over the axis-cover histogram so every cell
+        // starts positive and the collapse-to-zero reads off every
+        // ordinal.
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let mut acc = cover.clone();
+        acc -= &cover;
+        assert_eq!(
+            acc,
+            AxisHistogram::<A>::empty(),
+            "hist -= &hist must equal AxisHistogram::empty() on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert_eq!(
+            acc.total(),
+            0,
+            "hist -= &hist must zero the total on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert!(
+            acc.is_empty(),
+            "hist -= &hist must satisfy is_empty on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_sub_assign_ref_saturates_at_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The saturation-at-zero law on [`SubAssign<&Self>`]: subtracting
+        // a histogram whose every cell dominates `self`'s cell bottoms
+        // out at empty without underflow. Pinned by subtracting a
+        // doubled axis-cover (every cell = 2) from a single axis-cover
+        // (every cell = 1) — every cell saturates at zero, no debug-
+        // panic, no release-wrap.
+        let single: AxisHistogram<A> = axis_iter::<A>().collect();
+        let double: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let mut acc = single.clone();
+        acc -= &double;
+        assert_eq!(
+            acc,
+            AxisHistogram::<A>::empty(),
+            "small -= &large must saturate to empty on axis {}",
+            std::any::type_name::<A>(),
+        );
+        // Every cell is exactly zero — peer to the per-cell saturation
+        // contract on [`usize::saturating_sub`].
+        for cell in axis_iter::<A>() {
+            assert_eq!(
+                acc.count(cell),
+                0,
+                "saturated sub cell {cell:?} must be 0 on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_sub_assign_ref_is_inverse_of_add_assign_ref<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (AddAssign, SubAssign) round-trip law on the borrowed-RHS
+        // form: `let mut a = lhs.clone(); a += &rhs; a -= &rhs;` is
+        // pointwise equal to `lhs`, provided no cell of the
+        // intermediate sum overflows. The (+=, -=) inverse-pair law on
+        // the monus monoid wherever the addition stays within
+        // [`usize::MAX`] — pins the fleet-aggregator round-trip "fold
+        // in host then back it out" projection. Pinned over the
+        // axis-cover and a doubled cover so the round-trip exercises a
+        // non-trivial cell distribution on both sides.
+        let lhs: AxisHistogram<A> = axis_iter::<A>().collect();
+        let rhs: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let mut round = lhs.clone();
+        round += &rhs;
+        round -= &rhs;
+        assert_eq!(
+            round,
+            lhs,
+            "AddAssign-then-SubAssign on the same rhs must recover lhs on axis {}",
+            std::any::type_name::<A>(),
+        );
+        // The dual order also recovers `lhs` whenever the SubAssign
+        // does not saturate (here every cell of `rhs ≥ 0` ≤ every cell
+        // of `lhs + rhs`, so the round-trip lands on `lhs` regardless
+        // of order).
+        let mut round_other = lhs.clone();
+        round_other += &rhs;
+        let mut also = round_other.clone();
+        also -= &rhs;
+        assert_eq!(
+            also,
+            lhs,
+            "round-trip (any order) must recover lhs on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_sub_assign_ref_cell_level_saturates<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The cell-level saturation contract: every cell `v` of
+        // `after = before -= &other` satisfies `after.count(v) ==
+        // before.count(v).saturating_sub(other.count(v))`. Pinned by
+        // subtracting a doubled-cover (cell = 2 everywhere) from a
+        // triple-cover (cell = 3 everywhere) — every cell saturates at
+        // exactly 1 (the [`usize::saturating_sub`] result on every
+        // ordinal), and the total shrinks by exactly the sum of
+        // per-cell saturated deltas.
+        let triple: AxisHistogram<A> = axis_iter::<A>()
+            .chain(axis_iter::<A>())
+            .chain(axis_iter::<A>())
+            .collect();
+        let double: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let mut acc = triple.clone();
+        acc -= &double;
+        for cell in axis_iter::<A>() {
+            let expected = triple.count(cell).saturating_sub(double.count(cell));
+            assert_eq!(
+                acc.count(cell),
+                expected,
+                "cell {cell:?} must equal saturating_sub on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+        // Total-shrinking law: the total never grows under subtraction,
+        // and the shrink amount is bounded above by `other.total()`.
+        assert!(
+            acc.total() <= triple.total(),
+            "total must not grow under SubAssign on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert_eq!(
+            triple.total() - acc.total(),
+            double.total(),
+            "total shrink must equal rhs.total() when no cell saturates on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_sub_owned_equals_sub_ref<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (Sub<Self>, Sub<&Self>) / (SubAssign<Self>,
+        // SubAssign<&Self>) idiom-peer equivalences: the owned-RHS
+        // surface produces the same histogram as the borrowed-RHS
+        // surface on every call site. The canonical Rust owned/borrowed
+        // operator peer pair — `impl Sub<Self>` and `impl Sub<&Self>`
+        // returning equal output — every stdlib numeric type exposes.
+        let lhs: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let rhs: AxisHistogram<A> = axis_iter::<A>().collect();
+
+        let via_sub_ref = lhs.clone() - &rhs;
+        let via_sub_owned = lhs.clone() - rhs.clone();
+        assert_eq!(
+            via_sub_ref,
+            via_sub_owned,
+            "Sub<&Self> must equal Sub<Self> on axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        let mut via_assign_ref = lhs.clone();
+        via_assign_ref -= &rhs;
+        let mut via_assign_owned = lhs.clone();
+        via_assign_owned -= rhs.clone();
+        assert_eq!(
+            via_assign_ref,
+            via_assign_owned,
+            "SubAssign<&Self> must equal SubAssign<Self> on axis {}",
+            std::any::type_name::<A>(),
+        );
+        // The (Sub, SubAssign) duality on the operator surface: the
+        // infix-operator form agrees with the in-place form, peer to
+        // the (Add, AddAssign) duality already pinned.
+        assert_eq!(
+            via_sub_ref,
+            via_assign_ref,
+            "Sub<&Self> must equal SubAssign<&Self>-then-return on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_sub_assign_ref_empty_rhs_is_identity_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_sub_assign_ref_empty_rhs_is_identity::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_sub_assign_ref_self_yields_empty_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_sub_assign_ref_self_yields_empty::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_sub_assign_ref_saturates_at_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_sub_assign_ref_saturates_at_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_sub_assign_ref_is_inverse_of_add_assign_ref_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_sub_assign_ref_is_inverse_of_add_assign_ref::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_sub_assign_ref_cell_level_saturates_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_sub_assign_ref_cell_level_saturates::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_sub_owned_equals_sub_ref_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_sub_owned_equals_sub_ref::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_sub_assign_host_leaves_fleet_round_trip_for_diff_line_kind() {
+        // The canonical fleet-aggregator round-trip on the subtraction
+        // operator surface: a per-host histogram folded into the fleet
+        // via `fleet += &host` is backed out by `fleet -= &host` so the
+        // fleet histogram retains only the surviving hosts' observations.
+        // Pinned concretely on [`DiffLineKind`] across three hosts so
+        // the back-out covers a non-trivial cell distribution.
+        let host_a: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let host_b: AxisHistogram<DiffLineKind> = [DiffLineKind::Context, DiffLineKind::Removed]
+            .into_iter()
+            .collect();
+        let host_c: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+
+        let mut fleet: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        fleet += &host_a;
+        fleet += &host_b;
+        fleet += &host_c;
+
+        // host_b leaves the fleet — the fleet shrinks to host_a + host_c.
+        fleet -= &host_b;
+
+        let expected: AxisHistogram<DiffLineKind> = host_a.clone() + &host_c;
+        assert_eq!(fleet, expected);
+
+        // host_a is the (2, 1, 0); host_c is (1, 0, 0); together
+        // (Added: 3, Removed: 1, Context: 0).
+        assert_eq!(fleet.count(DiffLineKind::Added), 3);
+        assert_eq!(fleet.count(DiffLineKind::Removed), 1);
+        assert_eq!(fleet.count(DiffLineKind::Context), 0);
+        assert_eq!(fleet.total(), 4);
+    }
+
+    #[test]
+    fn axis_histogram_sub_assign_saturates_per_cell_for_diff_line_kind() {
+        // Concrete pin on the per-cell saturation contract: a histogram
+        // with one cell smaller than the right-hand side saturates that
+        // cell at zero while the other cells subtract normally. Pinned
+        // on [`DiffLineKind`] where Removed: 1 - 3 saturates at 0 while
+        // Added: 5 - 2 reads 3 and Context: 0 - 1 saturates at 0.
+        let lhs: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let rhs: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+
+        let mut diff = lhs.clone();
+        diff -= &rhs;
+
+        // Added: 5 - 2 = 3; Removed: 1 - 3 saturates at 0;
+        // Context: 0 - 1 saturates at 0.
+        assert_eq!(diff.count(DiffLineKind::Added), 3);
+        assert_eq!(diff.count(DiffLineKind::Removed), 0);
+        assert_eq!(diff.count(DiffLineKind::Context), 0);
+        assert_eq!(diff.total(), 3);
+
+        // Pin the per-cell relation to `usize::saturating_sub` explicitly.
+        for &cell in DiffLineKind::ALL {
+            assert_eq!(
+                diff.count(cell),
+                lhs.count(cell).saturating_sub(rhs.count(cell)),
+            );
+        }
+
+        // Non-commutativity: `rhs - &lhs` reads off a different
+        // histogram (the dual cellwise positive part).
+        let mut reverse = rhs.clone();
+        reverse -= &lhs;
+        // Added: 2 - 5 = 0; Removed: 3 - 1 = 2; Context: 1 - 0 = 1.
+        assert_eq!(reverse.count(DiffLineKind::Added), 0);
+        assert_eq!(reverse.count(DiffLineKind::Removed), 2);
+        assert_eq!(reverse.count(DiffLineKind::Context), 1);
+        assert_ne!(diff, reverse);
     }
 
     // ---- AxisHistogram scalar-action trait-uniform laws ----
