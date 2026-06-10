@@ -100,8 +100,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/akeyless-api";
-          rev = "fc8e46c74c2966649315cafa8ee8b4757dc41096";
-          sha256 = "0hqik0z8vaq6khrmy7g89jjayjql31jryrz9k9mzns5ff7dmkprj";
+          rev = "7101af4d986f83d66b924e9f907eb04c0951c2b9";
+          sha256 = "0x22z5vfn5bf1md1w0awlgbh3jbxl4frp6hqrg5fk82r8rcnb52q";
         };
         libName = "akeyless_api";
         authors = [
@@ -495,7 +495,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
           }
           {
             name = "ring";
@@ -731,7 +731,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
             rename = "http-1x";
           }
           {
@@ -853,7 +853,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
             rename = "http-1x";
           }
           {
@@ -949,7 +949,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
             rename = "http-1x";
           }
           {
@@ -1044,7 +1044,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
             rename = "http-1x";
           }
           {
@@ -1143,7 +1143,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
             rename = "http-1x";
           }
           {
@@ -1248,7 +1248,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
             optional = true;
           }
           {
@@ -1379,7 +1379,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
             rename = "http-1x";
           }
           {
@@ -1463,7 +1463,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
             rename = "http-1x";
             optional = true;
           }
@@ -1715,7 +1715,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
             rename = "http-1x";
           }
           {
@@ -1819,7 +1819,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
             rename = "http-1x";
           }
           {
@@ -1889,7 +1889,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
             rename = "http-1x";
           }
           {
@@ -3233,13 +3233,13 @@ rec {
       };
       "gen-macros" = rec {
         crateName = "gen-macros";
-        version = "0.1.9";
+        version = "0.1.10";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/gen";
-          rev = "6d82c9d3885c781e923ec46330d05d7eca469a3b";
-          sha256 = "0h0ks7rsxav3dk6fmyciz0ncp94pvm92ankkw783vhq12hgnciia";
+          rev = "712c3466375ddb1d6876193f2afb0798d30efb70";
+          sha256 = "00rjbz80aqfbwba66wm0ykllzpf6w6s3pgaapv9wjsy5jzh5c4zc";
         };
         procMacro = true;
         libName = "gen_macros";
@@ -3265,13 +3265,13 @@ rec {
       };
       "gen-platform" = rec {
         crateName = "gen-platform";
-        version = "0.1.9";
+        version = "0.1.10";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/gen";
-          rev = "6d82c9d3885c781e923ec46330d05d7eca469a3b";
-          sha256 = "0h0ks7rsxav3dk6fmyciz0ncp94pvm92ankkw783vhq12hgnciia";
+          rev = "712c3466375ddb1d6876193f2afb0798d30efb70";
+          sha256 = "00rjbz80aqfbwba66wm0ykllzpf6w6s3pgaapv9wjsy5jzh5c4zc";
         };
         libName = "gen_platform";
         authors = [
@@ -3308,13 +3308,13 @@ rec {
       };
       "gen-types" = rec {
         crateName = "gen-types";
-        version = "0.1.9";
+        version = "0.1.10";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/gen";
-          rev = "6d82c9d3885c781e923ec46330d05d7eca469a3b";
-          sha256 = "0h0ks7rsxav3dk6fmyciz0ncp94pvm92ankkw783vhq12hgnciia";
+          rev = "712c3466375ddb1d6876193f2afb0798d30efb70";
+          sha256 = "00rjbz80aqfbwba66wm0ykllzpf6w6s3pgaapv9wjsy5jzh5c4zc";
         };
         libName = "gen_types";
         authors = [
@@ -3716,7 +3716,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
           }
           {
             name = "indexmap";
@@ -3898,11 +3898,11 @@ rec {
         ];
 
       };
-      "http 1.4.1" = rec {
+      "http 1.4.2" = rec {
         crateName = "http";
-        version = "1.4.1";
+        version = "1.4.2";
         edition = "2021";
-        sha256 = "1l7k2ia57z3q7q3ka497krzps795kd3fymm2k12lr623y4nldrwb";
+        sha256 = "09b4p8fiivkg7wm0b59fyrn1jkm7px298ci7zb9igz6n647gaw39";
         authors = [
           "Alex Crichton <alex@alexcrichton.com>"
           "Carl Lerche <me@carllerche.com>"
@@ -3968,7 +3968,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
           }
         ];
 
@@ -3996,7 +3996,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
           }
           {
             name = "http-body";
@@ -4178,7 +4178,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
           }
           {
             name = "http-body";
@@ -4328,7 +4328,7 @@ rec {
         dependencies = [
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
           }
           {
             name = "hyper";
@@ -4439,7 +4439,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
           }
           {
             name = "http-body";
@@ -5205,9 +5205,9 @@ rec {
       };
       "js-sys" = rec {
         crateName = "js-sys";
-        version = "0.3.99";
+        version = "0.3.100";
         edition = "2021";
-        sha256 = "04azrzsz91gr5s3z0ij36lz0kj9ry4lw3jz0mmbiwb251rsc8aql";
+        sha256 = "0qi1wjakyw2rx9wwprcfx77g3lvn1b8n6yvfhj2pgym4swh5y0pj";
         libName = "js_sys";
         authors = [
           "The wasm-bindgen Developers"
@@ -5223,11 +5223,6 @@ rec {
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
-          }
-          {
-            name = "once_cell";
-            packageId = "once_cell";
-            usesDefaultFeatures = false;
           }
           {
             name = "wasm-bindgen";
@@ -6413,7 +6408,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
           }
           {
             name = "http-body";
@@ -7833,7 +7828,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.12";
+        version = "0.1.13";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -8215,13 +8210,13 @@ rec {
       };
       "tatara-lisp" = rec {
         crateName = "tatara-lisp";
-        version = "0.2.10";
+        version = "0.2.12";
         edition = "2021";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "c7e0b1dc48136cdc17446d650dcca464cbf1d5ab";
-          sha256 = "0rb37r2ngss2cw6y906ppjr54lx2hnvm19gp55lv4l926k6wzfmk";
+          rev = "9a14bb9b7b67db8fbe1c42b26d98700fc56f5799";
+          sha256 = "1jxsrbv5a19f8jy0rnf9dkribmk5gwicp9z0y9ir2g228v2n4k0c";
         };
         libName = "tatara_lisp";
         authors = [
@@ -8257,13 +8252,13 @@ rec {
       };
       "tatara-lisp-derive" = rec {
         crateName = "tatara-lisp-derive";
-        version = "0.2.10";
+        version = "0.2.12";
         edition = "2021";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "c7e0b1dc48136cdc17446d650dcca464cbf1d5ab";
-          sha256 = "0rb37r2ngss2cw6y906ppjr54lx2hnvm19gp55lv4l926k6wzfmk";
+          rev = "9a14bb9b7b67db8fbe1c42b26d98700fc56f5799";
+          sha256 = "1jxsrbv5a19f8jy0rnf9dkribmk5gwicp9z0y9ir2g228v2n4k0c";
         };
         procMacro = true;
         libName = "tatara_lisp_derive";
@@ -9075,7 +9070,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.1";
+            packageId = "http 1.4.2";
           }
           {
             name = "http-body";
@@ -9460,9 +9455,9 @@ rec {
       };
       "uuid" = rec {
         crateName = "uuid";
-        version = "1.23.2";
+        version = "1.23.3";
         edition = "2021";
-        sha256 = "1xy942s4z0bi8p3441wvd4ry3hx6ry1c7s6fgrr38462xqybhn6j";
+        sha256 = "1drddl03gi12vl1s3l2h371dw39plhn9wappp00v707g7h96nk8l";
         authors = [
           "Ashley Mannix<ashleymannix@live.com.au>"
           "Dylan DPC<dylan.dpc@gmail.com>"
@@ -9639,9 +9634,9 @@ rec {
       };
       "wasm-bindgen" = rec {
         crateName = "wasm-bindgen";
-        version = "0.2.122";
+        version = "0.2.123";
         edition = "2021";
-        sha256 = "02flix96brsb2r1i3grnikii302iqpdm337kl3xv5lklz5v4bl1y";
+        sha256 = "0qqmx07r597gm8lbz8qngvv0phwvpzzyfh3nl84nz9qr1jqs8m52";
         libName = "wasm_bindgen";
         authors = [
           "The wasm-bindgen Developers"
@@ -9690,9 +9685,9 @@ rec {
       };
       "wasm-bindgen-futures" = rec {
         crateName = "wasm-bindgen-futures";
-        version = "0.4.72";
+        version = "0.4.73";
         edition = "2021";
-        sha256 = "03qb24gfr072rk8hb69glfdc8yhqqqq2rhy3j5i0ps8sk79dnwwl";
+        sha256 = "1bva12h8gdpqkp753czlxabs0s21lvgzm41brr4lhpdzz818fmjl";
         libName = "wasm_bindgen_futures";
         authors = [
           "The wasm-bindgen Developers"
@@ -9718,9 +9713,9 @@ rec {
       };
       "wasm-bindgen-macro" = rec {
         crateName = "wasm-bindgen-macro";
-        version = "0.2.122";
+        version = "0.2.123";
         edition = "2021";
-        sha256 = "1inyl55bvdifx7l60q9wl0ivmw7236jg7jqmcqpxhsx3knq52qci";
+        sha256 = "1p50xdwmv543b52bc49vm5lcsgd9adpx647bdisg7ihfbg3hz914";
         procMacro = true;
         libName = "wasm_bindgen_macro";
         authors = [
@@ -9742,9 +9737,9 @@ rec {
       };
       "wasm-bindgen-macro-support" = rec {
         crateName = "wasm-bindgen-macro-support";
-        version = "0.2.122";
+        version = "0.2.123";
         edition = "2021";
-        sha256 = "0pjw5kc2mbfz59agk5l21kh4hxzp94rygdvsnr4f3z6b5hv4g419";
+        sha256 = "0nwqyc63byl7rp9nnv45av8h85fncfmxywkvy35d9qwwkfyk93wh";
         libName = "wasm_bindgen_macro_support";
         authors = [
           "The wasm-bindgen Developers"
@@ -9778,10 +9773,10 @@ rec {
       };
       "wasm-bindgen-shared" = rec {
         crateName = "wasm-bindgen-shared";
-        version = "0.2.122";
+        version = "0.2.123";
         edition = "2021";
         links = "wasm_bindgen";
-        sha256 = "0ds4mmfqvxwc5fp33hn0jblf0f6b4lghrd9mpkls66zic4n9p4ls";
+        sha256 = "14lvjm3pzywm5c4962i6s5zmngic1knpggshnnxr9c97dihzgjvs";
         libName = "wasm_bindgen_shared";
         authors = [
           "The wasm-bindgen Developers"
@@ -9906,9 +9901,9 @@ rec {
       };
       "web-sys" = rec {
         crateName = "web-sys";
-        version = "0.3.99";
+        version = "0.3.100";
         edition = "2021";
-        sha256 = "0dilfvl9jnyhi4skl6cry9wc300r693j0w82jjbq8yy3rx0i8qkd";
+        sha256 = "0sffbkrpgyi1402mv4wzp9av6ky6rnb1d2m2dpf87wi7yfn7223f";
         libName = "web_sys";
         authors = [
           "The wasm-bindgen Developers"
@@ -12081,9 +12076,9 @@ rec {
       };
       "zerocopy" = rec {
         crateName = "zerocopy";
-        version = "0.8.50";
+        version = "0.8.52";
         edition = "2021";
-        sha256 = "1laahnfxs4qyfb1fdf5nbb2qfshi72b1hbi0ffp2zy2m1r7ms1iv";
+        sha256 = "0gv563swc1yn3k8w3wjj07a8q293rkx99nfp3a25vzzmbycj446f";
         authors = [
           "Joshua Liebow-Feeser <joshlf@google.com>"
           "Jack Wrenn <jswrenn@amazon.com>"
@@ -12117,9 +12112,9 @@ rec {
       };
       "zerocopy-derive" = rec {
         crateName = "zerocopy-derive";
-        version = "0.8.50";
+        version = "0.8.52";
         edition = "2021";
-        sha256 = "0fdnr9qslx1hbn2i9rsvy9s95mychfy2vj90ajsjm2basccinqqb";
+        sha256 = "0c3rhsh4sd9kdym4z55zprybjkydy9y2gvw75d72aapcfa5z7rqs";
         procMacro = true;
         libName = "zerocopy_derive";
         authors = [
