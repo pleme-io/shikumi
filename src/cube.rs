@@ -2160,6 +2160,181 @@ impl<A: ClosedAxis> std::ops::Add<AxisHistogram<A>> for AxisHistogram<A> {
     }
 }
 
+impl<A: ClosedAxis> std::ops::MulAssign<usize> for AxisHistogram<A> {
+    /// Scale every cell in place by `factor` — the canonical Rust
+    /// [`MulAssign`][std::ops::MulAssign] trait idiom for the scalar
+    /// action of `(usize, *, 1)` on the additive monoid
+    /// `(AxisHistogram, +, empty)`. Promotes the additive monoid
+    /// quartet ([`Add<Self>`][std::ops::Add],
+    /// [`Add<&Self>`][std::ops::Add],
+    /// [`AddAssign<Self>`][std::ops::AddAssign],
+    /// [`AddAssign<&Self>`][std::ops::AddAssign]) to a commutative
+    /// monoid with [`usize`]-action — a free `(usize, +, *)`-semimodule
+    /// indexed by [`ClosedAxis::ALL`]. The primitive site that carries
+    /// the per-cell scalar-multiplication loop; every other
+    /// scalar-action surface on this type ([`Mul<usize>`]) lowers
+    /// through this impl so the per-cell loop lives at exactly one
+    /// site.
+    ///
+    /// Before this lift, every consumer reaching the (scale every cell
+    /// by N) projection (a fleet-wide aggregator weighting a per-host
+    /// `AxisHistogram<crate::WatchEventClass>` cell by the host's
+    /// reload-count multiplier before folding into the fleet cell, a
+    /// per-tier observatory amplifying a per-tier
+    /// `AxisHistogram<crate::ConfigSourceKind>` cell by a tier-weighting
+    /// factor in a weighted cross-tier rollup, a rolling-window
+    /// projection asking *"what if we observed this window N times in
+    /// a row?"* on a per-window
+    /// `AxisHistogram<crate::ShikumiErrorKind>` cell, a `(cell, weight)`
+    /// table reduction folding a uniform multiplier through a histogram
+    /// before rendering a weighted-coverage attestation) reached it
+    /// through one of two forms — the open-coded per-cell loop
+    /// `for (c, n) in hist.iter() { for _ in 0..n*factor {
+    /// scaled.observe(c); } }` (which re-expands every individual
+    /// observation `total * factor` times, O(total*factor)) or the
+    /// repeated-`+=`-by-self form `for _ in 0..factor { acc += &hist; }`
+    /// (which walks the counts vector `factor` times and is O(factor *
+    /// axis_cardinality)). Collapsed to one trait-method call with a
+    /// single-pass O(axis_cardinality) scan that multiplies every cell
+    /// directly on the existing counts vector. The lift names the
+    /// (existing-histogram, scalar factor → in-place scale) projection
+    /// at one site, consumers route through `hist *= factor;`
+    /// uniformly, and the per-cell loop lives at exactly one site (this
+    /// impl) underneath every scalar-action operator entry surface.
+    ///
+    /// **Zero-factor absorbing law** — `hist *= 0` zeros every cell of
+    /// the histogram, equal pointwise to [`AxisHistogram::empty`]. The
+    /// absorbing element of the scalar monoid `(usize, *, 1)` zeros the
+    /// counts vector; the resulting histogram has [`Self::total`] =
+    /// `0`, [`Self::is_empty`] = `true`, [`Self::distinct_cells`] =
+    /// `0`, [`Self::unobserved_cells`] =
+    /// [`axis_cardinality::<A>()`][axis_cardinality]. Peer to the
+    /// [`AddAssign`][std::ops::AddAssign] empty-RHS-identity law on the
+    /// dual side of the monoid.
+    ///
+    /// **One-factor identity law** — `hist *= 1` leaves the histogram
+    /// unchanged. The identity element of the scalar monoid
+    /// `(usize, *, 1)` preserves the counts vector pointwise; the
+    /// resulting histogram is pointwise equal to the input.
+    ///
+    /// **Total-scaling law** — `hist *= factor` scales the total by
+    /// exactly `factor`: `before.total() * factor == after.total()`,
+    /// peer to the [`AddAssign`] additivity law (`before.total() +
+    /// rhs.total() == after.total()`) on the dual side of the monoid.
+    /// The two scalar surfaces of the histogram now carry a complete
+    /// monoid-with-scalar-action algebra at the [`Self::total`]
+    /// projection.
+    ///
+    /// **Cell-level scaling** — every cell `v` is multiplied by
+    /// `factor`: `before.count(v) * factor == after.count(v)`. Peer to
+    /// the [`AddAssign`] cell-additivity law on the dual side of the
+    /// monoid.
+    ///
+    /// **Support preservation under non-zero factor** — `hist *=
+    /// factor` with `factor > 0` preserves the support: the set of
+    /// observed cells is unchanged (`before.distinct_cells() ==
+    /// after.distinct_cells()`, `before.observed().collect::<HashSet<_>>()
+    /// == after.observed().collect::<HashSet<_>>()`). Multiplying a
+    /// zero count by a non-zero factor stays zero; multiplying a
+    /// positive count by a positive factor stays positive. Only the
+    /// zero-factor case collapses the support (to the empty set, per
+    /// the absorbing law).
+    ///
+    /// **Distributivity over [`AddAssign`]** — scaling distributes
+    /// over the additive monoid: `let mut a = lhs.clone(); a += &rhs;
+    /// a *= factor; a` is pointwise equal to `let mut a = lhs.clone();
+    /// a *= factor; let mut b = rhs.clone(); b *= factor; a += &b; a`.
+    /// The canonical semimodule distributivity law — scaling commutes
+    /// with cellwise addition because each cell carries the same
+    /// `(usize, +, *)` distributive law. Pinned by
+    /// [`tests::axis_histogram_mul_assign_distributes_over_add_assign_for_every_closed_axis_implementor`].
+    ///
+    /// **Equivalence with repeated `+=`** — `hist *= factor` is
+    /// pointwise equal to summing `factor` copies of the input:
+    /// `let mut acc = AxisHistogram::empty(); for _ in 0..factor {
+    /// acc += &hist; } acc` reads the same histogram. The
+    /// scalar-action / repeated-addition equivalence — the natural
+    /// lowering of "scale by N" through "add N times" on the dual
+    /// side of the monoid.
+    ///
+    /// **Overflow behavior** — inherits the underlying [`usize`]
+    /// arithmetic: debug builds panic on overflow, release builds wrap
+    /// silently. Consistent with the [`AddAssign`] impl (which carries
+    /// the same `usize`-arithmetic-inherited overflow contract).
+    /// Trait-uniform fleet aggregators reaching saturating /
+    /// checked-multiplication semantics layer the projection at the
+    /// call site; the primitive site names the natural cellwise `*=`.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The trait-uniform laws pinned
+    /// in [`tests`] hold across the implementor set
+    /// (`axis_histogram_mul_assign_zero_factor_zeros_histogram_*`,
+    /// `axis_histogram_mul_assign_one_factor_is_identity_*`,
+    /// `axis_histogram_mul_assign_scales_total_*`,
+    /// `axis_histogram_mul_assign_scales_cells_*`,
+    /// `axis_histogram_mul_assign_distributes_over_add_assign_*`,
+    /// `axis_histogram_mul_assign_equals_repeated_add_assign_*`).
+    fn mul_assign(&mut self, factor: usize) {
+        for slot in &mut self.counts {
+            *slot *= factor;
+        }
+    }
+}
+
+impl<A: ClosedAxis> std::ops::Mul<usize> for AxisHistogram<A> {
+    type Output = AxisHistogram<A>;
+
+    /// Pointwise scale of `self` by `factor` — the canonical Rust
+    /// [`Mul`][std::ops::Mul] trait idiom for the scalar action of
+    /// `(usize, *, 1)` on the additive monoid `(AxisHistogram, +,
+    /// empty)`. The natural infix-operator peer of [`MulAssign<usize>`]
+    /// — the same shape consumers reach for when they want the `*`
+    /// operator on histograms (`a * 3` instead of `let mut a = a; a *=
+    /// 3; a`), and the canonical Rust scalar-action operator-surface
+    /// peer of [`Duration::mul`][std::time::Duration] /
+    /// [`Duration::MulAssign`][std::time::Duration] on the duration
+    /// side of the typescape.
+    ///
+    /// Lowered through [`MulAssign<usize>`]: take ownership of `self`,
+    /// scale every cell through `*=`, return the accumulator. Pointwise
+    /// equal to `MulAssign<usize>` on every call site, by construction
+    /// (both lower through `*=` underneath). The per-cell scalar-
+    /// multiplication loop lives at exactly one site (the
+    /// [`MulAssign<usize>`] impl above).
+    ///
+    /// **Equivalence with [`MulAssign<usize>`]** — for every `(self,
+    /// factor)`: `self.clone() * factor` is pointwise equal to
+    /// `let mut a = self.clone(); a *= factor; a`. The (`Mul`,
+    /// `MulAssign`) duality on the scalar-action surface, peer to the
+    /// (`Add`, `AddAssign`) duality on the additive monoid surface.
+    /// Pinned by
+    /// [`tests::axis_histogram_mul_equals_mul_assign_for_every_closed_axis_implementor`].
+    ///
+    /// **Zero-factor absorbing law** — `hist * 0` equals
+    /// [`AxisHistogram::empty`] pointwise. Inherits the absorbing law
+    /// from [`MulAssign<usize>`].
+    ///
+    /// **One-factor identity law** — `hist * 1` is pointwise equal to
+    /// `hist`. Inherits the identity law from [`MulAssign<usize>`].
+    ///
+    /// **Distributivity over [`Add`][std::ops::Add]** — scaling
+    /// distributes over the additive monoid on the infix-operator
+    /// surface: `(a + &b) * n` is pointwise equal to `a * n + &(b *
+    /// n)`. Peer to the [`MulAssign`]-distributes-over-[`AddAssign`]
+    /// law on the in-place surface. Pinned by
+    /// [`tests::axis_histogram_mul_distributes_over_add_for_diff_line_kind`].
+    ///
+    /// Trait-uniform laws reach every [`ClosedAxis`] implementor
+    /// through `for_each_closed_axis_implementor!` in [`tests`]
+    /// (`axis_histogram_mul_equals_mul_assign_*`,
+    /// `axis_histogram_mul_zero_factor_yields_empty_*`,
+    /// `axis_histogram_mul_one_factor_is_identity_*`).
+    fn mul(mut self, factor: usize) -> Self::Output {
+        self *= factor;
+        self
+    }
+}
+
 impl<A: ClosedAxis> std::ops::Index<A> for AxisHistogram<A> {
     type Output = usize;
 
@@ -7860,6 +8035,358 @@ mod tests {
         assert_eq!(via_add.count(DiffLineKind::Removed), 1);
         assert_eq!(via_add.count(DiffLineKind::Context), 1);
         assert_eq!(via_add.total(), 4);
+    }
+
+    // ---- AxisHistogram scalar-action trait-uniform laws ----
+    //
+    // The (Mul<usize>, MulAssign<usize>) scalar-action surface promotes
+    // the additive monoid quartet (Add/AddAssign × owned/borrowed) to a
+    // commutative monoid with usize-action — a free
+    // `(usize, +, *)`-semimodule indexed by the closed axis. The
+    // trait-uniform laws below pin the scalar action's contract
+    // uniformly across every [`ClosedAxis`] implementor: zero-factor
+    // absorbs (collapses every cell to zero, pointwise equal to
+    // [`AxisHistogram::empty`]); one-factor is the identity (preserves
+    // the counts vector); the (Mul, MulAssign) operator pair agrees
+    // pointwise; scaling distributes over [`AddAssign`] (the canonical
+    // semimodule distributivity law); scaling is pointwise equal to
+    // repeated `+=`-by-self (the scalar-action / repeated-addition
+    // equivalence on the dual side of the monoid).
+
+    fn assert_mul_assign_zero_factor_zeros_histogram<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The zero-factor absorbing law on `MulAssign<usize>`: `hist
+        // *= 0` zeros every cell of the histogram, pointwise equal to
+        // `AxisHistogram::empty()`. Pinned over the axis-cover
+        // histogram so every cell carries a positive count and the
+        // collapse-to-zero reads off every ordinal.
+        let mut cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        cover *= 0;
+        assert_eq!(
+            cover,
+            AxisHistogram::<A>::empty(),
+            "hist *= 0 must equal AxisHistogram::empty() on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert_eq!(
+            cover.total(),
+            0,
+            "hist *= 0 must zero the total on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert!(
+            cover.is_empty(),
+            "hist *= 0 must satisfy is_empty on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_mul_assign_one_factor_is_identity<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The one-factor identity law on `MulAssign<usize>`: `hist *=
+        // 1` leaves the histogram unchanged. The identity element of
+        // the scalar monoid `(usize, *, 1)` preserves the counts
+        // vector pointwise. Pinned over the axis-cover histogram so
+        // every cell carries a positive count and the equality reads
+        // off every ordinal.
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let mut scaled = cover.clone();
+        scaled *= 1;
+        assert_eq!(
+            scaled,
+            cover,
+            "hist *= 1 must leave hist unchanged on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_mul_assign_scales_total<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The total-scaling law on `MulAssign<usize>`: `hist *=
+        // factor` multiplies `hist.total()` by exactly `factor`. The
+        // scalar peer of the [`AddAssign`] additivity law on the dual
+        // side of the monoid. Pinned at factors 0, 1, 2, 5 so the
+        // identity and absorbing boundaries plus two non-trivial
+        // multipliers witness the contract.
+        let cover: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let total_before = cover.total();
+        for factor in [0usize, 1, 2, 5] {
+            let mut scaled = cover.clone();
+            scaled *= factor;
+            assert_eq!(
+                scaled.total(),
+                total_before * factor,
+                "hist *= {factor} must scale total by {factor} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_mul_assign_scales_cells<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The cell-level scaling law on `MulAssign<usize>`: every cell
+        // `v` has its count multiplied by `factor`. Pinned at factor
+        // 3 over the (axis-cover + once-more) histogram so every cell
+        // carries a non-trivial pre-scale count and the multiplication
+        // reads off every ordinal independently.
+        let pre: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let factor = 3usize;
+        let mut scaled = pre.clone();
+        scaled *= factor;
+        for cell in axis_iter::<A>() {
+            assert_eq!(
+                scaled.count(cell),
+                pre.count(cell) * factor,
+                "hist *= {factor} cell {cell:?} must equal pre.count * {factor} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_mul_assign_distributes_over_add_assign<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The semimodule distributivity law: scaling distributes over
+        // the additive monoid. `(a + &b) * n` is pointwise equal to
+        // `a * n + &(b * n)` — each cell carries the `(usize, +, *)`
+        // distributive law, and the histogram inherits it pointwise.
+        // Pinned over two non-trivial histograms at factor 4 so the
+        // equality reads off a non-trivial cell distribution and a
+        // factor that is neither the identity nor the absorbing
+        // element.
+        let lhs: AxisHistogram<A> = axis_iter::<A>().collect();
+        let rhs: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let factor = 4usize;
+
+        let mut via_scale_after = lhs.clone();
+        via_scale_after += &rhs;
+        via_scale_after *= factor;
+
+        let mut via_scale_first_lhs = lhs.clone();
+        via_scale_first_lhs *= factor;
+        let mut via_scale_first_rhs = rhs.clone();
+        via_scale_first_rhs *= factor;
+        via_scale_first_lhs += &via_scale_first_rhs;
+
+        assert_eq!(
+            via_scale_after,
+            via_scale_first_lhs,
+            "(a + &b) * n must equal a * n + &(b * n) on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_mul_assign_equals_repeated_add_assign<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The scalar-action / repeated-addition equivalence on the
+        // dual side of the monoid: `hist *= factor` reads the same
+        // histogram as `factor` rounds of `+= &hist` against an empty
+        // accumulator. Pinned at factor 3 over the axis-cover
+        // histogram so the equivalence covers a non-trivial cell
+        // distribution and a non-identity / non-absorbing factor.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        let factor = 3usize;
+
+        let mut via_mul = hist.clone();
+        via_mul *= factor;
+
+        let mut via_repeated_add: AxisHistogram<A> = AxisHistogram::empty();
+        for _ in 0..factor {
+            via_repeated_add += &hist;
+        }
+
+        assert_eq!(
+            via_mul,
+            via_repeated_add,
+            "hist *= {factor} must equal {factor} rounds of += &hist on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_mul_equals_mul_assign<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (Mul, MulAssign) idiom-peer equivalence on the scalar-
+        // action surface: `hist * factor` reads the same histogram as
+        // `let mut a = hist.clone(); a *= factor; a`. The canonical
+        // Rust owned/in-place operator peer pair — `impl Mul<usize>`
+        // and `impl MulAssign<usize>` agreeing pointwise — every stdlib
+        // scalar-action operator-surface exposes (`Duration * u32 ==`
+        // a `Duration` whose internal `*=` step is the same fold).
+        // Pinned at factors 0, 1, 2, 5 so the identity, absorbing, and
+        // two non-trivial multipliers witness the equivalence.
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for factor in [0usize, 1, 2, 5] {
+            let via_mul = hist.clone() * factor;
+            let mut via_mul_assign = hist.clone();
+            via_mul_assign *= factor;
+            assert_eq!(
+                via_mul,
+                via_mul_assign,
+                "hist * {factor} must equal `let mut a = hist; a *= {factor}; a` on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_mul_assign_zero_factor_zeros_histogram_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_mul_assign_zero_factor_zeros_histogram::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_mul_assign_one_factor_is_identity_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_mul_assign_one_factor_is_identity::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_mul_assign_scales_total_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_mul_assign_scales_total::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_mul_assign_scales_cells_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_mul_assign_scales_cells::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_mul_assign_distributes_over_add_assign_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_mul_assign_distributes_over_add_assign::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_mul_assign_equals_repeated_add_assign_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_mul_assign_equals_repeated_add_assign::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_mul_equals_mul_assign_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_mul_equals_mul_assign::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_mul_distributes_over_add_for_diff_line_kind() {
+        // The semimodule distributivity law on the infix-operator
+        // surface: `(a + &b) * n` is pointwise equal to `a * n + &(b *
+        // n)`. The (Mul, MulAssign, Add, AddAssign) operator surfaces
+        // compose through one consistent distributive law. Pinned
+        // concretely on [`DiffLineKind`] across two non-trivial
+        // histograms and a non-identity / non-absorbing factor so the
+        // distributivity reads off a non-trivial cell distribution.
+        let a: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let b: AxisHistogram<DiffLineKind> = [DiffLineKind::Removed, DiffLineKind::Context]
+            .into_iter()
+            .collect();
+        let factor = 3usize;
+
+        let via_scale_after = (a.clone() + &b) * factor;
+        let via_scale_first = a.clone() * factor + &(b.clone() * factor);
+
+        assert_eq!(via_scale_after, via_scale_first);
+
+        // Concrete cell counts: a + b yields (Added: 2, Removed: 2,
+        // Context: 1); scaled by 3 yields (6, 6, 3).
+        assert_eq!(via_scale_after.count(DiffLineKind::Added), 6);
+        assert_eq!(via_scale_after.count(DiffLineKind::Removed), 6);
+        assert_eq!(via_scale_after.count(DiffLineKind::Context), 3);
+        assert_eq!(via_scale_after.total(), 15);
+    }
+
+    #[test]
+    fn axis_histogram_mul_equals_fleet_aggregate_for_diff_line_kind() {
+        // The canonical weighted-rollup pattern on the scalar-action
+        // operator surface: a per-host histogram weighted by its host
+        // multiplier folds into the fleet cell via `acc += &(host *
+        // weight)`. Pinned concretely on [`DiffLineKind`] across two
+        // hosts with distinct weights so the per-host scaling reads
+        // off a non-trivial cell distribution and the weighted-sum
+        // matches the equivalent repeated-`+=`-by-host expansion.
+        let host_a: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Removed]
+            .into_iter()
+            .collect();
+        let host_b: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Context,
+            DiffLineKind::Context,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+
+        let weight_a = 2usize;
+        let weight_b = 3usize;
+
+        let via_scaled_add = host_a.clone() * weight_a + &(host_b.clone() * weight_b);
+
+        let mut via_repeated: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        for _ in 0..weight_a {
+            via_repeated += &host_a;
+        }
+        for _ in 0..weight_b {
+            via_repeated += &host_b;
+        }
+
+        assert_eq!(via_scaled_add, via_repeated);
+
+        // Concrete: a * 2 yields (Added: 2, Removed: 2, Context: 0);
+        // b * 3 yields (Added: 3, Removed: 0, Context: 6); sum yields
+        // (Added: 5, Removed: 2, Context: 6).
+        assert_eq!(via_scaled_add.count(DiffLineKind::Added), 5);
+        assert_eq!(via_scaled_add.count(DiffLineKind::Removed), 2);
+        assert_eq!(via_scaled_add.count(DiffLineKind::Context), 6);
+        assert_eq!(via_scaled_add.total(), 13);
     }
 
     // ---- AxisHistogram::dominant_cell trait-uniform laws ----
