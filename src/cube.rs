@@ -389,6 +389,93 @@ impl<A: ClosedAxis> AxisHistogram<A> {
             .map(|(i, v)| (v, self.counts[i]))
     }
 
+    /// Iterate every `(axis-value, &mut count)` pair in declaration order
+    /// over [`ClosedAxis::ALL`] — the canonical Rust stdlib `iter_mut()`
+    /// idiom-peer of [`Self::iter`] on the in-place-mutation surface. Every
+    /// stdlib collection that exposes a borrowing iterator exposes its
+    /// mutable counterpart at this name ([`slice::iter_mut`],
+    /// [`Vec::iter_mut`], [`std::collections::HashMap::iter_mut`],
+    /// [`std::collections::BTreeMap::iter_mut`]); the [`AxisHistogram`] now
+    /// joins that peerage on the closed-axis cell-iteration surface.
+    /// Returns the concrete [`AxisHistogramIterMut`] type so the iterator
+    /// nameably implements [`Iterator`], [`ExactSizeIterator`],
+    /// [`std::iter::FusedIterator`], and [`DoubleEndedIterator`] —
+    /// the same trait surface as [`AxisHistogramIter`] minus [`Clone`]
+    /// (mutable iterators cannot be cloned without violating aliasing —
+    /// the canonical stdlib convention).
+    ///
+    /// **Item shape.** `(A, &mut usize)` — the cell by value (cells are
+    /// [`Copy`] by the [`ClosedAxis`] super-bound) and a mutable reference
+    /// to the underlying count slot. Consumers can read and assign through
+    /// the mutable reference (`for (_, c) in hist.iter_mut() { *c *= 2; }`
+    /// for in-place per-cell mutation; `for (cell, c) in hist.iter_mut() {
+    /// *c = remap(cell, *c); }` for a per-cell remap that depends on
+    /// the cell identity), reaching the cellwise-mutation surface
+    /// directly without an interposing rebuild through
+    /// [`FromIterator<(A, usize)>`] or a repeated [`Self::observe`] loop.
+    ///
+    /// **Length law.** The iterator yields exactly
+    /// [`axis_cardinality::<A>()`][axis_cardinality] pairs — the full
+    /// axis, not just the observed support. Zero-count cells appear with
+    /// `&mut 0` so a remap stepping a zero cell to a positive count
+    /// (e.g. a per-cell prior `*c = remap(cell, *c).max(1)`) is reachable
+    /// without a re-allocation. [`ExactSizeIterator::len`] reads off the
+    /// cardinality without consuming the iterator.
+    ///
+    /// **Declaration-order law.** The iteration order agrees with
+    /// [`axis_iter::<A>()`][axis_iter] pointwise — dropping the count
+    /// from the pair sequence yields the same cell sequence. Peer to the
+    /// declaration-order law on [`Self::iter`] / [`IntoIterator for
+    /// &Self`][IntoIterator].
+    ///
+    /// **Visibility-under-[`Self::iter`] law.** Mutations applied through
+    /// [`Self::iter_mut`] are reflected by the next [`Self::iter`] read:
+    /// for every `f: (A, usize) -> usize`, `for (cell, c) in hist
+    /// .iter_mut() { *c = f(cell, *c); }` followed by
+    /// `hist.iter().collect::<Vec<_>>()` yields the same pair sequence as
+    /// the open-coded `(filter, observe)`-rebuild form
+    /// `let mut next = AxisHistogram::empty(); for (cell, c) in
+    /// hist.iter() { for _ in 0..f(cell, c) { next.observe(cell); } }`
+    /// on every `f` that lifts cleanly. The (`iter_mut`, `iter`) duality
+    /// on the borrowed-collection surface.
+    ///
+    /// **Idiom-peer of [`IntoIterator for &mut Self`][IntoIterator].**
+    /// The mutable-iteration surface carries two equivalent entry shapes
+    /// — `hist.iter_mut()` (inherent named method, idiom-peer of
+    /// [`Self::iter`]) and `for pair in &mut hist { … }` (borrowed-
+    /// collection idiom, idiom-peer of `for pair in &hist`). Both lower
+    /// to the same [`AxisHistogramIterMut`] type by construction.
+    ///
+    /// **Why this lift.** Before this surface, every consumer reaching
+    /// the cellwise-mutation projection (a fleet-wide aggregator
+    /// applying a per-cell decay factor before merging into the
+    /// fleet cell — `for (cell, c) in hist.iter_mut() { *c = decay(cell,
+    /// *c); }` — a future per-cell normalization step dividing each
+    /// count by the histogram's total in place — `let t = hist.total();
+    /// for (_, c) in hist.iter_mut() { *c /= t.max(1); }` — a custom
+    /// per-cell saturating arithmetic that the [`Self::merge`] /
+    /// [`std::ops::MulAssign`] surfaces don't carry uniformly) had to
+    /// either rebuild the histogram through
+    /// [`FromIterator<(A, usize)>`] (an `O(axis_cardinality)`
+    /// reallocation for what is in-place arithmetic) or open-code the
+    /// projection through the inherent `counts` field that lives behind
+    /// `pub(self)` visibility — the lift names the projection at one
+    /// site at the canonical stdlib `iter_mut()` surface.
+    ///
+    /// **Mutability is the only difference vs [`Self::iter`].** All
+    /// other laws on [`Self::iter`] (length equals
+    /// [`axis_cardinality`], declaration order matches
+    /// [`axis_iter`], total equals the sum of yielded counts) hold on
+    /// [`Self::iter_mut`] pointwise — the two surfaces walk the same
+    /// counts vector, differing only on the (read-only, read-write)
+    /// ownership polarity.
+    pub fn iter_mut(&mut self) -> AxisHistogramIterMut<'_, A> {
+        AxisHistogramIterMut {
+            counts: self.counts.iter_mut().enumerate(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+
     /// Iterate only the nonzero `(axis-value, count)` pairs in
     /// declaration order — the complement of the zero-cells. Useful
     /// for rendering compact operator-facing summaries that skip
@@ -2055,6 +2142,88 @@ impl<A: ClosedAxis> IntoIterator for AxisHistogram<A> {
     fn into_iter(self) -> Self::IntoIter {
         AxisHistogramIntoIter {
             counts: self.counts.into_iter().enumerate(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+/// Mutable borrowing iterator over the `(axis-value, &mut count)` pairs of an
+/// [`AxisHistogram`], yielded in declaration order over [`ClosedAxis::ALL`].
+///
+/// The concrete return type of
+/// [`<&mut AxisHistogram<A> as IntoIterator>::into_iter`][IntoIterator] and
+/// [`AxisHistogram::iter_mut`] — the canonical Rust idiom-peer of
+/// [`std::slice::IterMut`] / [`std::collections::hash_map::IterMut`] /
+/// [`std::collections::btree_map::IterMut`] every stdlib collection exposes
+/// alongside its read-only borrowing iterator. The borrowed pair shape carries
+/// the cell by value (`A: Copy` is enforced by the [`ClosedAxis`] super-bound)
+/// and the count by mutable reference (`&mut usize`), so consumers can read
+/// and assign through the second tuple slot in one pass (`for (cell, c) in
+/// hist.iter_mut() { *c = remap(cell, *c); }` is the canonical call shape).
+///
+/// Implements [`Iterator`], [`ExactSizeIterator`] (the length is exactly
+/// [`axis_cardinality::<A>()`][axis_cardinality], pinned at the type level),
+/// [`std::iter::FusedIterator`] (the underlying [`std::slice::IterMut`] is
+/// fused), and [`DoubleEndedIterator`] (consumers reaching for `.rev()`,
+/// `.next_back()`, or `.rfold(...)` get the dual-end iteration the
+/// declaration-order pair surface naturally carries) — the same trait surface
+/// as [`AxisHistogramIter`] minus [`Clone`]. Mutable iterators in the Rust
+/// stdlib are not [`Clone`] (cloning would expose two `&mut` aliases to the
+/// same slot, violating Rust's aliasing rule); [`AxisHistogramIterMut`]
+/// follows that convention.
+#[derive(Debug)]
+pub struct AxisHistogramIterMut<'a, A: ClosedAxis> {
+    counts: std::iter::Enumerate<std::slice::IterMut<'a, usize>>,
+    _marker: std::marker::PhantomData<A>,
+}
+
+impl<'a, A: ClosedAxis> Iterator for AxisHistogramIterMut<'a, A> {
+    type Item = (A, &'a mut usize);
+    fn next(&mut self) -> Option<Self::Item> {
+        self.counts.next().map(|(i, c)| (A::ALL[i], c))
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.counts.size_hint()
+    }
+}
+
+impl<A: ClosedAxis> ExactSizeIterator for AxisHistogramIterMut<'_, A> {}
+impl<A: ClosedAxis> std::iter::FusedIterator for AxisHistogramIterMut<'_, A> {}
+impl<A: ClosedAxis> DoubleEndedIterator for AxisHistogramIterMut<'_, A> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.counts.next_back().map(|(i, c)| (A::ALL[i], c))
+    }
+}
+
+impl<'a, A: ClosedAxis> IntoIterator for &'a mut AxisHistogram<A> {
+    type Item = (A, &'a mut usize);
+    type IntoIter = AxisHistogramIterMut<'a, A>;
+
+    /// Iterate every `(axis-value, &mut count)` pair of the mutably borrowed
+    /// histogram in declaration order — the canonical Rust [`IntoIterator`]
+    /// idiom on `&mut AxisHistogram<A>`, peer of [`IntoIterator for
+    /// &AxisHistogram<A>`][IntoIterator] on the read-only borrowing surface.
+    /// Lets consumers reach the cellwise-mutation surface through the
+    /// borrowed-collection idiom `for pair in &mut hist { … }` without naming
+    /// [`AxisHistogram::iter_mut`] explicitly — the same surface every stdlib
+    /// collection exposes (`for x in &mut vec`, `for (k, v) in &mut map`).
+    ///
+    /// **Equivalence with [`AxisHistogram::iter_mut`]** — pointwise equal to
+    /// `hist.iter_mut().collect::<Vec<_>>()` on every histogram, by
+    /// construction (both lower to the same
+    /// [`std::slice::IterMut`]-driven [`AxisHistogramIterMut`] type over the
+    /// counts vector). The (`IntoIterator`, `iter_mut`) duality on the
+    /// mutably-borrowed-collection surface; the two are alternate spellings
+    /// of the same per-cell mutable scan over [`ClosedAxis::ALL`].
+    ///
+    /// **Length law** — yields exactly
+    /// [`axis_cardinality::<A>()`][axis_cardinality] pairs, regardless of how
+    /// many cells are nonzero (the iteration covers the full axis, not just
+    /// the support). [`ExactSizeIterator::len`] reads off the cardinality
+    /// without consuming the iterator.
+    fn into_iter(self) -> Self::IntoIter {
+        AxisHistogramIterMut {
+            counts: self.counts.iter_mut().enumerate(),
             _marker: std::marker::PhantomData,
         }
     }
@@ -7451,6 +7620,344 @@ mod tests {
                 (DiffLineKind::Context, 1),
             ],
         );
+    }
+
+    // ---- AxisHistogram::iter_mut + IntoIterator<&mut Self> trait-uniform laws ----
+    //
+    // Six trait-uniform laws reach every [`ClosedAxis`] implementor through
+    // [`for_each_closed_axis_implementor`] so the canonical Rust stdlib
+    // `iter_mut()` / `IntoIterator for &mut Self` mutable-iteration surface
+    // is pinned uniformly across every axis-cube primitive without per-axis
+    // test duplication: the `iter_mut` length equals
+    // [`axis_cardinality::<A>()`]; the yielded cell sequence agrees with
+    // [`axis_iter`] pointwise; per-cell zero-out through the mutable
+    // reference yields the empty histogram; per-cell doubling through
+    // `*c *= 2` agrees with [`std::ops::MulAssign<usize>::mul_assign`] by
+    // factor 2 on every cell; [`DoubleEndedIterator`] round-trips
+    // (collect-then-reverse equals forward); the `for pair in &mut hist`
+    // borrowed-collection idiom (`IntoIterator for &mut Self`) is
+    // pointwise-equivalent to [`AxisHistogram::iter_mut`] on every
+    // histogram.
+
+    fn assert_iter_mut_length_equals_axis_cardinality<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The [`ExactSizeIterator`] contract on the mutable borrowing
+        // iterator: the iterator's `len()` equals
+        // [`axis_cardinality::<A>()`] before any element is consumed (the
+        // full-axis scan, not just the support). Pinned on the empty
+        // histogram so the count is independent of any observation —
+        // the iteration covers the full axis, including the zero-count
+        // cells whose `&mut 0` slots a per-cell remap can write to.
+        let mut hist = AxisHistogram::<A>::empty();
+        let len = hist.iter_mut().len();
+        assert_eq!(
+            len,
+            axis_cardinality::<A>(),
+            "iter_mut::len must equal axis_cardinality on axis {}",
+            std::any::type_name::<A>(),
+        );
+        let collected: Vec<(A, &mut usize)> = hist.iter_mut().collect();
+        assert_eq!(
+            collected.len(),
+            axis_cardinality::<A>(),
+            "iter_mut must yield axis_cardinality pairs on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_iter_mut_yields_cells_in_declaration_order<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The declaration-order contract on the mutable surface: dropping
+        // the count-slot from the pair sequence yields the same cell
+        // sequence as [`axis_iter::<A>()`][axis_iter] pointwise. The
+        // (`iter_mut`, `axis_iter`) alignment on the cell-only axis:
+        // the histogram's mutable iteration order is the axis's
+        // declaration order, period — peer to the same law on
+        // [`AxisHistogram::iter`].
+        let mut hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        let cells: Vec<A> = hist.iter_mut().map(|(v, _)| v).collect();
+        let expected: Vec<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cells,
+            expected,
+            "iter_mut cells must agree with axis_iter on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_iter_mut_zero_assignment_equals_empty<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The in-place mutation contract on the mutable surface: writing
+        // `0` through every yielded `&mut usize` slot zeros every cell of
+        // the histogram pointwise, leaving a histogram equal to
+        // [`AxisHistogram::empty`]. The canonical assignment-through-
+        // `iter_mut` idiom every stdlib mutable-iterator consumer reaches
+        // for (`for c in vec.iter_mut() { *c = 0; }` for a slice; the same
+        // shape on the per-cell count slot here).
+        let mut hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        hist.iter_mut().for_each(|(_, c)| *c = 0);
+        assert_eq!(
+            hist,
+            AxisHistogram::<A>::empty(),
+            "iter_mut zero-assignment must yield empty on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert!(
+            hist.is_empty(),
+            "iter_mut zero-assignment must satisfy is_empty on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_iter_mut_double_equals_mul_assign_two<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The cellwise-mutation equivalence with the scalar-action
+        // surface: writing `*c *= 2` through every yielded `&mut usize`
+        // slot agrees with [`std::ops::MulAssign<usize>::mul_assign`] by
+        // factor 2 on every cell, pointwise. Pins that the mutable
+        // iteration surface lowers through the same `self.counts` vector
+        // the in-place scalar-action surface lowers through — the two
+        // routes to the same arithmetic agree by construction.
+        let mut via_iter_mut: AxisHistogram<A> = axis_iter::<A>().collect();
+        let mut via_mul_assign = via_iter_mut.clone();
+        via_iter_mut.iter_mut().for_each(|(_, c)| *c *= 2);
+        via_mul_assign *= 2usize;
+        assert_eq!(
+            via_iter_mut,
+            via_mul_assign,
+            "iter_mut *= 2 must equal MulAssign<usize> by 2 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_iter_mut_double_ended_round_trips<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The [`DoubleEndedIterator`] contract on the mutable surface:
+        // dropping the mutable slot and collecting through `.rev()` then
+        // reversing the result recovers the forward cell sequence
+        // pointwise (the two ends agree on cell identity). Pins that
+        // `next_back` reads the same `A` cell the forward iteration
+        // would read at the corresponding position from the tail —
+        // peer to the same law on [`AxisHistogramIter`] /
+        // [`AxisHistogramIntoIter`].
+        let mut hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let forward: Vec<A> = hist.iter_mut().map(|(v, _)| v).collect();
+        let mut backward: Vec<A> = {
+            let mut iter = hist.iter_mut();
+            let mut buf = Vec::new();
+            while let Some((v, _)) = iter.next_back() {
+                buf.push(v);
+            }
+            buf
+        };
+        backward.reverse();
+        assert_eq!(
+            forward,
+            backward,
+            "iter_mut next_back must round-trip pointwise on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_into_iter_mut_equals_iter_mut<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Pointwise equality between the two entry shapes every stdlib
+        // collection carries on the mutable side: `(&mut hist)
+        // .into_iter()` collects the same cell sequence as
+        // `hist.iter_mut()`. The (`IntoIterator<&mut Self>`, `iter_mut`)
+        // duality on the mutably-borrowed-collection surface; the two
+        // are alternate spellings of the same per-cell mutable scan over
+        // [`ClosedAxis::ALL`]. Compared on the cell axis only because
+        // the mutable slots can't be aliased — collecting the count
+        // values once on each side and comparing them, peer to the
+        // `(IntoIterator<&Self>, iter)` duality test above.
+        let mut via_iter_mut: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let mut via_into_iter_mut = via_iter_mut.clone();
+        let via_iter_mut_pairs: Vec<(A, usize)> = via_iter_mut
+            .iter_mut()
+            .map(|(cell, c)| (cell, *c))
+            .collect();
+        let via_into_iter_mut_pairs: Vec<(A, usize)> = (&mut via_into_iter_mut)
+            .into_iter()
+            .map(|(cell, c)| (cell, *c))
+            .collect();
+        assert_eq!(
+            via_iter_mut_pairs,
+            via_into_iter_mut_pairs,
+            "IntoIterator<&mut Self> must equal iter_mut pointwise on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_iter_mut_length_equals_axis_cardinality_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_iter_mut_length_equals_axis_cardinality::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_iter_mut_yields_cells_in_declaration_order_for_every_closed_axis_implementor()
+    {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_iter_mut_yields_cells_in_declaration_order::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_iter_mut_zero_assignment_equals_empty_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_iter_mut_zero_assignment_equals_empty::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_iter_mut_double_equals_mul_assign_two_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_iter_mut_double_equals_mul_assign_two::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_iter_mut_double_ended_round_trips_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_iter_mut_double_ended_round_trips::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_into_iter_mut_equals_iter_mut_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_into_iter_mut_equals_iter_mut::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_iter_mut_per_cell_remap_for_diff_line_kind() {
+        // Concrete pin on the cellwise-mutation surface the `iter_mut`
+        // lift opens — a *per-cell* remap that depends on the cell
+        // identity, the projection the uniform-scalar [`MulAssign<usize>`]
+        // surface explicitly cannot reach (which multiplies every cell
+        // by the same factor). The canonical call-site shape: walk the
+        // histogram once, apply a per-cell factor to each `&mut usize`
+        // slot in place, no rebuild through [`FromIterator<(A, usize)>`].
+        // The factor table here weights Added by 3 (a downstream fan-out
+        // amplifier), Removed by 5 (a quarantine cost), Context by 0 (a
+        // dropped-from-summary projection) — three distinct factors,
+        // unreachable through any uniform scalar-action surface.
+        let mut hist: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+            DiffLineKind::Context,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+
+        // Snapshot the pre-remap counts so the per-cell factor application
+        // pins both the before and after sides of the equality (no hidden
+        // dependence on a re-computed pre-state).
+        let before = hist.clone();
+        assert_eq!(before.count(DiffLineKind::Added), 2);
+        assert_eq!(before.count(DiffLineKind::Removed), 1);
+        assert_eq!(before.count(DiffLineKind::Context), 3);
+
+        // The per-cell remap walks the histogram once through
+        // [`iter_mut`], reading the cell identity and writing the new
+        // count through the `&mut usize` slot in place.
+        hist.iter_mut().for_each(|(cell, c)| {
+            let factor = match cell {
+                DiffLineKind::Added => 3,
+                DiffLineKind::Removed => 5,
+                DiffLineKind::Context => 0,
+            };
+            *c *= factor;
+        });
+
+        // Post-remap counts: Added = 2 * 3 = 6, Removed = 1 * 5 = 5,
+        // Context = 3 * 0 = 0 (the dropped cell). The total is the sum.
+        assert_eq!(hist.count(DiffLineKind::Added), 6);
+        assert_eq!(hist.count(DiffLineKind::Removed), 5);
+        assert_eq!(hist.count(DiffLineKind::Context), 0);
+        assert_eq!(hist.total(), 11);
+
+        // Support cardinality drops from 3 (all three cells observed
+        // pre-remap) to 2 (Context dropped to zero post-remap) — the
+        // per-cell zero-factor cell collapses the support, the per-cell
+        // analog of the [`MulAssign<usize>`] zero-factor absorbing law on
+        // the uniform-scalar surface but localized to one cell rather
+        // than every cell.
+        assert_eq!(before.distinct_cells(), 3);
+        assert_eq!(hist.distinct_cells(), 2);
+    }
+
+    #[test]
+    fn axis_histogram_iter_mut_for_loop_for_diff_line_kind() {
+        // Concrete pin at the canonical Rust call-site shape — the
+        // `for pair in &mut hist { … }` borrowed-collection idiom every
+        // stdlib mutable-iteration consumer reaches for, peer to the
+        // `for pair in &hist` shape pinned on the borrowing
+        // [`IntoIterator`] surface above. Pins that the
+        // [`IntoIterator<&mut Self>`] impl lowers to the same per-cell
+        // mutable scan as the inherent [`iter_mut`] surface, reaching
+        // the same `(A, &mut usize)` item shape and the same
+        // declaration order over [`ClosedAxis::ALL`].
+        let mut hist: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Removed]
+            .into_iter()
+            .collect();
+
+        // Bump every cell by one through the `for pair in &mut hist`
+        // shape — the canonical Rust borrowed-collection mutable idiom.
+        // The full-axis iteration touches every cell (including
+        // Context's zero count), so post-loop every cell carries
+        // pre-count + 1.
+        for (_, c) in &mut hist {
+            *c += 1;
+        }
+
+        assert_eq!(hist.count(DiffLineKind::Added), 2);
+        assert_eq!(hist.count(DiffLineKind::Removed), 2);
+        assert_eq!(hist.count(DiffLineKind::Context), 1);
+        assert_eq!(hist.total(), 5);
+
+        // Cell-set agreement: after the +=1 pass every cell is observed
+        // (the +1 lifts Context's zero count into the support). The
+        // (`for pair in &mut hist`, `iter_mut`) duality is pointwise
+        // equal — both walk the counts vector in declaration order.
+        assert_eq!(hist.distinct_cells(), axis_cardinality::<DiffLineKind>());
+        assert!(hist.is_full_cover());
     }
 
     // ---- AxisHistogram::Index<A> trait-uniform laws ----
