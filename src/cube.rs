@@ -1710,6 +1710,121 @@ impl<A: ClosedAxis> Extend<A> for AxisHistogram<A> {
     }
 }
 
+impl<A: ClosedAxis> FromIterator<(A, usize)> for AxisHistogram<A> {
+    /// Build a histogram by absorbing every `(cell, count)` pair in `iter`
+    /// — the canonical Rust idiom-peer of [`HashMap::from_iter`][std::collections::HashMap]
+    /// / [`BTreeMap::from_iter`][std::collections::BTreeMap] on the
+    /// pre-aggregated pair-input surface. Where [`FromIterator<A>`]
+    /// builds from a stream of *raw observations* (one bump per yielded
+    /// item), this impl builds from a stream of *pre-counted pairs*
+    /// (one `+= count` per yielded pair) — the natural entry point when
+    /// the histogram's data lives in a serialized, snapshotted, or
+    /// pre-aggregated form rather than as a stream of fresh
+    /// observations.
+    ///
+    /// Lowers through [`Extend<(A, usize)>::extend`]: build the
+    /// identity ([`Self::empty`]), then fold every pair in `iter`
+    /// through the [`Extend`] surface. The
+    /// `FromIterator` / `Extend` peerage mirrors the
+    /// [`FromIterator<A>`] / [`Extend<A>`] pair on the raw-observation
+    /// surface so the per-pair fold loop lives at one site (the
+    /// [`Extend<(A, usize)>`] impl below) and both surfaces stay in
+    /// lockstep without duplication.
+    ///
+    /// **Cell-additive on repeated cells** — when the iterator yields
+    /// the same cell twice as `(cell, n1)` then `(cell, n2)`, the
+    /// resulting histogram reads `n1 + n2` at that cell, peer of the
+    /// `HashMap::extend` "last-wins" semantics inverted for an
+    /// additive monoid (the histogram's natural monoid is
+    /// `(usize, +, 0)` per cell, not `(usize, last, undef)`).
+    fn from_iter<I: IntoIterator<Item = (A, usize)>>(iter: I) -> Self {
+        let mut hist = Self::empty();
+        hist.extend(iter);
+        hist
+    }
+}
+
+impl<A: ClosedAxis> Extend<(A, usize)> for AxisHistogram<A> {
+    /// Fold every `(cell, count)` pair in `iter` into the histogram in
+    /// place by adding `count` to the cell at `cell` — the canonical
+    /// Rust idiom-peer of [`HashMap::extend`][std::collections::HashMap]
+    /// / [`BTreeMap::extend`][std::collections::BTreeMap] on the
+    /// pre-aggregated pair-input surface, complementary to
+    /// [`Extend<A>::extend`] on the raw-observation surface.
+    ///
+    /// Before this lift, every consumer with a pre-aggregated
+    /// `(cell, count)` stream (an attestation manifest's
+    /// `[{kind: "added", count: 12}, {kind: "removed", count: 4}]`
+    /// deserialized into a `Vec<(DiffLineKind, usize)>`, a checkpoint
+    /// snapshot restoring the per-cell counts from a serialized
+    /// `Vec<(A, usize)>`, a config-loaded mapping carrying the
+    /// per-axis tallies from a YAML/TOML/Lisp source, a streaming
+    /// aggregator folding pre-aggregated sub-batches across windows
+    /// without re-expanding to individual observations) reached the
+    /// (pre-aggregated pairs → histogram) projection through one of
+    /// two open-coded forms — the per-pair `for (c, n) in pairs {
+    /// for _ in 0..n { hist.observe(c); } }` re-expansion loop (which
+    /// reproduces every individual observation and is O(total),
+    /// linear in the total observation count rather than the
+    /// distinct-cell count) or the per-pair `for (c, n) in pairs {
+    /// *hist.counts_mut_or_whatever()[axis_ordinal(c)] += n; }` form
+    /// (which requires reaching the private counts vector). Collapsed
+    /// to one trait-method call with a single-pass O(distinct cells)
+    /// scan that bumps every named cell directly on the existing
+    /// counts vector. The lift names the (existing-histogram,
+    /// iterable pre-counted pairs → in-place fold) projection at one
+    /// site.
+    ///
+    /// **Empty-identity law** — `hist.extend(std::iter::empty::<(A, usize)>())`
+    /// leaves the histogram unchanged. The vacuous fold on the pair-
+    /// input [`Extend`] surface, peer to the raw-observation
+    /// [`Extend<A>`] empty-identity law and to the
+    /// [`Self::merge`] empty-identity law.
+    ///
+    /// **Zero-count law** — `hist.extend(iter::once((cell, 0)))` leaves
+    /// the histogram unchanged at every cell. A pair with count zero
+    /// is the additive identity on its cell; the per-pair fold loop
+    /// adds zero without bumping the counts vector.
+    ///
+    /// **Cell-additive on repeated cells** — when the iterator yields
+    /// the same cell twice as `(cell, n1)` then `(cell, n2)`, the
+    /// post-extend cell reads `before + n1 + n2`. The pair-input
+    /// surface is *additive*, not last-wins — the natural monoid on
+    /// per-cell counts is `(usize, +, 0)`, and the [`Extend`] impl
+    /// folds through it. This is the salient asymmetry with
+    /// [`HashMap::extend`] (which carries last-wins semantics on
+    /// repeated keys): the histogram's per-cell algebra is additive
+    /// because that's the algebra observations compose under, so
+    /// the pair-input surface inherits the same composition.
+    ///
+    /// **Equivalence with the [`Self::observe`] expansion loop** —
+    /// pointwise equal to `for (c, n) in iter { for _ in 0..n {
+    /// hist.observe(c); } }` on every iterator, by definition. The
+    /// trait method names the loop at one site and replaces the
+    /// O(total) expansion with an O(distinct cells) single-pass
+    /// scan; consumers no longer re-derive either form inline.
+    ///
+    /// **Equivalence with [`Self::merge`] on the empty starting
+    /// point** — for every iterator `iter` and every histogram
+    /// `hist`: `let mut a = hist.clone(); a.extend(iter.clone()); a`
+    /// is pointwise equal to `hist.clone().merge(&iter.collect::<AxisHistogram<A>>())`.
+    /// The (extend, merge) duality on the pair-input surface mirrors
+    /// the same duality on the raw-observation surface.
+    ///
+    /// **Total-additivity law** — extending grows the total by exactly
+    /// the sum of every yielded pair's count: `before.total() +
+    /// iter.into_iter().map(|(_, n)| n).sum::<usize>() == after.total()`,
+    /// peer of the [`Extend<A>`] additivity law (`before.total() +
+    /// input.len() == after.total()`) on the raw-observation
+    /// surface — both lower to the same scalar additivity on the
+    /// [`Self::total`] projection.
+    fn extend<I: IntoIterator<Item = (A, usize)>>(&mut self, iter: I) {
+        for (cell, count) in iter {
+            self.counts[axis_ordinal(cell)] += count;
+        }
+    }
+}
+
 /// Borrowing iterator over the `(axis-value, count)` pairs of an
 /// [`AxisHistogram`], yielded in declaration order over [`ClosedAxis::ALL`].
 ///
@@ -6410,6 +6525,241 @@ mod tests {
         via_default_extend.extend(input.iter().copied());
 
         assert_eq!(via_from_iter, via_default_extend);
+    }
+
+    // ---- AxisHistogram pair-input FromIterator / Extend trait-uniform laws ----
+    //
+    // Four trait-uniform laws reach every [`ClosedAxis`] implementor through
+    // [`for_each_closed_axis_implementor`] so the per-axis
+    // `Extend<(A, usize)>` / `FromIterator<(A, usize)>` projection's
+    // contract holds uniformly without per-axis test duplication:
+    // extending with an empty pair iterator is identity; extending with a
+    // zero-count pair on any cell is identity; the pair-input surface is
+    // *additive* on repeated cells (the salient asymmetry with
+    // [`HashMap::extend`]'s last-wins semantics); pair-input
+    // [`FromIterator`] lowers to `default + extend` on the pair surface.
+    // The four laws close the (pair-input extend, raw-observation extend)
+    // duality at the trait surface, the additive-monoid promise on
+    // per-cell counts, and the canonical [`HashMap`] / [`BTreeMap`]
+    // pair-input [`FromIterator`] idiom-peer on the histogram surface.
+
+    fn assert_pair_extend_empty_input_is_identity<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Extending any histogram with an empty pair iterator leaves it
+        // unchanged — the vacuous fold on the pair-input [`Extend`]
+        // surface, peer of the raw-observation [`Extend<A>`] empty-
+        // identity law. Pinned over the empty starting histogram (the
+        // identity slot) and the axis-cover starting histogram (a non-
+        // trivial shape with every cell observed) so the law is
+        // witnessed at both ends of the coverage axis.
+        let mut empty = AxisHistogram::<A>::empty();
+        empty.extend(std::iter::empty::<(A, usize)>());
+        assert_eq!(
+            empty,
+            AxisHistogram::<A>::empty(),
+            "pair-extend(empty) on empty must be identity on axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        let cover_pre: AxisHistogram<A> = axis_iter::<A>().collect();
+        let mut cover_post = cover_pre.clone();
+        cover_post.extend(std::iter::empty::<(A, usize)>());
+        assert_eq!(
+            cover_post,
+            cover_pre,
+            "pair-extend(empty) on axis-cover must be identity on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_pair_extend_zero_count_pair_is_identity<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // A pair with count zero is the additive identity on its cell:
+        // `hist.extend(once((cell, 0)))` leaves every cell unchanged.
+        // The per-cell zero-element law on the additive `(usize, +, 0)`
+        // monoid the pair-input surface folds through. Pinned over
+        // every cell of the axis on a non-empty starting histogram
+        // (the axis-cover) so the identity reads off at every ordinal.
+        let cover_pre: AxisHistogram<A> = axis_iter::<A>().collect();
+        for cell in axis_iter::<A>() {
+            let mut hist = cover_pre.clone();
+            hist.extend(std::iter::once((cell, 0usize)));
+            assert_eq!(
+                hist,
+                cover_pre,
+                "pair-extend((cell, 0)) must be identity on cell {cell:?} of axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_pair_extend_is_additive_on_repeated_cells<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The pair-input surface is *additive* on repeated cells —
+        // the salient asymmetry with [`HashMap::extend`]'s last-wins
+        // semantics. When the iterator yields `(cell, n1)` then
+        // `(cell, n2)` on the same cell, the post-extend cell reads
+        // `before + n1 + n2`, not `n2`. Pinned over every cell of
+        // the axis on the empty starting histogram so the additive
+        // law reads off at every ordinal without contamination from
+        // a pre-existing count.
+        for cell in axis_iter::<A>() {
+            let mut hist = AxisHistogram::<A>::empty();
+            hist.extend([(cell, 3usize), (cell, 4usize)]);
+            assert_eq!(
+                hist.count(cell),
+                7,
+                "pair-extend must be additive (3 + 4 = 7) on cell {cell:?} of axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                hist.total(),
+                7,
+                "pair-extend total must equal sum of pair counts on cell {cell:?} of axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_pair_from_iter_lowers_to_pair_extend<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical Rust lowering: pair-input
+        // `FromIterator::from_iter` is pointwise equal to `let mut h =
+        // Default::default(); h.extend(iter); h` on the pair surface.
+        // Mirror of the raw-observation
+        // `axis_histogram_from_iter_lowers_to_extend_*` pin lifted to
+        // the pair-input surface. Pinned over the axis-cover-as-pairs
+        // input `[(cell, 1), …]` so every cell receives a pair and the
+        // equivalence covers every ordinal.
+        let pairs: Vec<(A, usize)> = axis_iter::<A>().map(|c| (c, 1usize)).collect();
+
+        let via_from_iter: AxisHistogram<A> = pairs.iter().copied().collect();
+        let mut via_default_extend = AxisHistogram::<A>::default();
+        via_default_extend.extend(pairs.iter().copied());
+
+        assert_eq!(
+            via_from_iter,
+            via_default_extend,
+            "pair-input FromIterator must lower to default + pair-input Extend on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_pair_extend_empty_input_is_identity_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_pair_extend_empty_input_is_identity::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_pair_extend_zero_count_pair_is_identity_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_pair_extend_zero_count_pair_is_identity::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_pair_extend_is_additive_on_repeated_cells_for_every_closed_axis_implementor()
+    {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_pair_extend_is_additive_on_repeated_cells::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_pair_from_iter_lowers_to_pair_extend_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_pair_from_iter_lowers_to_pair_extend::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_pair_from_iter_equals_observe_expansion_for_diff_line_kind() {
+        // The pair-input [`FromIterator`] expansion-equivalence on the
+        // per-cell surface: collecting `[(cell, n), …]` into an
+        // [`AxisHistogram`] is pointwise equal to collecting the
+        // expanded raw-observation stream `iter::repeat(cell).take(n)`
+        // chained across pairs. The lift replaces the O(total)
+        // re-expansion every consumer used to open-code with an
+        // O(distinct cells) single-pass scan; this pin reads the
+        // equivalence at one named site on [`DiffLineKind`] over a
+        // non-trivial pair mix so a future regression on either side
+        // surfaces here.
+        let pairs: [(DiffLineKind, usize); 3] = [
+            (DiffLineKind::Added, 12),
+            (DiffLineKind::Removed, 4),
+            (DiffLineKind::Context, 53),
+        ];
+
+        let via_pairs: AxisHistogram<DiffLineKind> = pairs.iter().copied().collect();
+
+        let via_expansion: AxisHistogram<DiffLineKind> = pairs
+            .iter()
+            .copied()
+            .flat_map(|(c, n)| std::iter::repeat_n(c, n))
+            .collect();
+
+        assert_eq!(via_pairs, via_expansion);
+        assert_eq!(via_pairs.count(DiffLineKind::Added), 12);
+        assert_eq!(via_pairs.count(DiffLineKind::Removed), 4);
+        assert_eq!(via_pairs.count(DiffLineKind::Context), 53);
+        assert_eq!(via_pairs.total(), 69);
+    }
+
+    #[test]
+    fn axis_histogram_pair_extend_round_trips_through_iter_for_diff_line_kind() {
+        // The canonical (pair-input Extend, iter) round-trip on the
+        // histogram surface — peer of the
+        // `HashMap::from_iter(map.iter())` / `BTreeMap::from_iter(map.iter())`
+        // round-trip every stdlib pair-keyed collection carries.
+        // Folding `hist.iter()` (the [`AxisHistogram::iter`] pair
+        // surface, yielding `(A, usize)` pairs over the full axis)
+        // into an empty histogram through pair-input
+        // [`FromIterator`] recovers the original histogram pointwise.
+        // The natural snapshot / restore round-trip: serialize the
+        // histogram by collecting its pairs into a `Vec<(A, usize)>`
+        // (a YAML attestation manifest cell, a checkpoint snapshot
+        // entry, an RPC response payload), then restore it on the
+        // receiving side by collecting those pairs back. Pinned
+        // concretely on [`DiffLineKind`] over a non-trivial cell
+        // distribution so every ordinal carries a positive count and
+        // the round-trip reads off every cell.
+        let prior: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+            DiffLineKind::Added,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+
+        let pairs: Vec<(DiffLineKind, usize)> = prior.iter().collect();
+        let restored: AxisHistogram<DiffLineKind> = pairs.into_iter().collect();
+
+        assert_eq!(prior, restored);
     }
 
     // ---- AxisHistogram IntoIterator (&Self / Self) trait-uniform laws ----
