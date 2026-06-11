@@ -2048,6 +2048,152 @@ impl<A: ClosedAxis> AxisHistogram<A> {
             .zip(other.counts.iter())
             .all(|(lhs, rhs)| lhs >= rhs)
     }
+
+    /// Strict pointwise dominance `<`: `true` when every cell of `self`
+    /// is `<=` the corresponding cell of `other` *and* at least one
+    /// cell is strictly `<`. The canonical strict-partial-order lift of
+    /// [`Self::is_dominated_by`] — peer to `<` next to `<=` on
+    /// [`std::cmp::PartialOrd`]. `a.is_strictly_dominated_by(&b)` reads
+    /// "`a` is pointwise weaker than `b` *and* they differ on at least
+    /// one cell" / "`a` sits strictly below `b` on the lattice" /
+    /// "every cell of `a` is `<=` and the relation is somewhere
+    /// strict".
+    ///
+    /// Closes the partial-order operator quartet `(≤, ≥, <, >)` at the
+    /// boolean surface — [`Self::is_dominated_by`] / [`Self::dominates`]
+    /// carry the non-strict pair, and `is_strictly_dominated_by` /
+    /// [`Self::strictly_dominates`] carry the strict pair. Single-pass
+    /// `O(axis_cardinality)` short-circuiting scan: returns `false` on
+    /// the first cell where `self > other`, tracks whether any cell was
+    /// strictly less, and reads off `any_strict` at end.
+    ///
+    /// Before this lift, every consumer reaching the strict-dominance
+    /// predicate — a regression detector asking *"is the post-change
+    /// histogram strictly under the pre-change envelope (≤ everywhere
+    /// AND strictly < somewhere)?"*, a per-window observatory asking
+    /// *"did this window strictly improve on the rolling baseline?"*, a
+    /// fleet aggregator asking *"is every host's per-kind error tally
+    /// strictly under the rolling baseline (every cell ≤, at least one
+    /// strictly lower)?"* — reached the projection through the
+    /// composite form `a.is_dominated_by(&b) && a != b` (which walks the
+    /// counts vector twice — once for the dominance scan, once for the
+    /// equality scan). Collapsed to one method call with a single-pass
+    /// scan.
+    ///
+    /// **Irreflexivity**: `!hist.is_strictly_dominated_by(&hist)` for
+    /// every `hist`. The canonical strict-partial-order irreflexivity
+    /// law — every cell is its own `==` with itself, so no cell is
+    /// strictly less. The boundary law that distinguishes a strict
+    /// partial order from the reflexive `≤`.
+    ///
+    /// **Empty is the strict bottom**:
+    /// `empty.is_strictly_dominated_by(&hist)` for every non-empty
+    /// `hist`. Empty is `≤` every histogram (the [`Self::is_dominated_by`]
+    /// law) and not equal to any non-empty histogram, so the strict
+    /// version reads `true` on every non-empty target. On the empty
+    /// target it reads `false` (`empty` is not strictly less than
+    /// itself).
+    ///
+    /// **Asymmetry**: `a.is_strictly_dominated_by(&b) ⇒
+    /// !b.is_strictly_dominated_by(&a)`. The canonical strict-partial-
+    /// order asymmetry law — `a < b` and `b < a` cannot both hold.
+    /// Stronger than the antisymmetry law on the non-strict surface
+    /// (which allows the reflexive case).
+    ///
+    /// **Transitivity**: `a.is_strictly_dominated_by(&b) &&
+    /// b.is_strictly_dominated_by(&c) ⇒ a.is_strictly_dominated_by(&c)`.
+    /// The canonical strict-partial-order transitivity law lifted from
+    /// the cellwise `<`.
+    ///
+    /// **Dual relation**: `a.strictly_dominates(&b) ==
+    /// b.is_strictly_dominated_by(&a)`. The two predicates are perfect
+    /// duals — peer to the `is_dominated_by` / `dominates` duality on
+    /// the non-strict surface.
+    ///
+    /// **Decomposition** (`<=` plus inequality): `a
+    /// .is_strictly_dominated_by(&b) == (a.is_dominated_by(&b) && a !=
+    /// b)`. The canonical strict / non-strict bridge — `<` is `≤` with
+    /// the equal-case excluded. Pins the strict predicate is the one
+    /// the non-strict predicate is built on.
+    ///
+    /// **Strict total bound implication**:
+    /// `a.is_strictly_dominated_by(&b) ⇒ a.total() < b.total()`. Strict
+    /// pointwise `<` is strict-sum-monotone — every cell is `≤` and at
+    /// least one is strictly `<`, so the per-cell `<` on the strict
+    /// cell contributes a strict inequality to the cellwise sum.
+    /// Stronger than the non-strict total bound on
+    /// [`Self::is_dominated_by`] (which only carries `≤` on the totals).
+    ///
+    /// **Partiality**: the strict order is *partial*, not total — two
+    /// histograms can be strictly-incomparable (`!a
+    /// .is_strictly_dominated_by(&b) && !b.is_strictly_dominated_by(&a)
+    /// && a != b`) when one cell is strictly larger on each side. The
+    /// (2, 1, 0) / (1, 2, 0) [`DiffLineKind`] witnesses on the non-
+    /// strict surface remain incomparable on the strict surface too.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The trait-uniform laws pinned in
+    /// [`tests`] hold across the implementor set
+    /// (`axis_histogram_is_strictly_dominated_by_irreflexive_*`,
+    /// `axis_histogram_empty_is_strictly_dominated_by_nonempty_*`,
+    /// `axis_histogram_is_strictly_dominated_by_asymmetric_*`,
+    /// `axis_histogram_is_strictly_dominated_by_transitive_*`,
+    /// `axis_histogram_strictly_dominates_is_dual_of_is_strictly_dominated_by_*`,
+    /// `axis_histogram_is_strictly_dominated_by_decomposition_*`,
+    /// `axis_histogram_is_strictly_dominated_by_strict_total_bound_*`).
+    #[must_use]
+    pub fn is_strictly_dominated_by(&self, other: &Self) -> bool {
+        let mut any_strict = false;
+        for (lhs, rhs) in self.counts.iter().zip(other.counts.iter()) {
+            if lhs > rhs {
+                return false;
+            }
+            if lhs < rhs {
+                any_strict = true;
+            }
+        }
+        any_strict
+    }
+
+    /// Strict pointwise dominance `>`: `true` when every cell of `self`
+    /// is `>=` the corresponding cell of `other` *and* at least one
+    /// cell is strictly `>`. The dual of [`Self::is_strictly_dominated_by`]
+    /// — perfect peer on the strict-partial-order surface.
+    /// `a.strictly_dominates(&b)` reads "`a` is pointwise stronger than
+    /// `b` *and* they differ on at least one cell" / "`a` sits strictly
+    /// above `b` on the lattice".
+    ///
+    /// Holds pointwise equal to `b.is_strictly_dominated_by(&a)`; pinned
+    /// by the trait-uniform dual-relation law
+    /// (`axis_histogram_strictly_dominates_is_dual_of_is_strictly_dominated_by_*`).
+    ///
+    /// **Irreflexivity**: `!hist.strictly_dominates(&hist)` for every
+    /// `hist`.
+    ///
+    /// **Empty is the strict bottom (dual)**:
+    /// `hist.strictly_dominates(&empty)` for every non-empty `hist` and
+    /// `!empty.strictly_dominates(&empty)`.
+    ///
+    /// **Decomposition** (dual): `a.strictly_dominates(&b) ==
+    /// (a.dominates(&b) && a != b)`.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. Pinned together with
+    /// [`Self::is_strictly_dominated_by`] through the trait-uniform laws
+    /// in [`tests`].
+    #[must_use]
+    pub fn strictly_dominates(&self, other: &Self) -> bool {
+        let mut any_strict = false;
+        for (lhs, rhs) in self.counts.iter().zip(other.counts.iter()) {
+            if lhs < rhs {
+                return false;
+            }
+            if lhs > rhs {
+                any_strict = true;
+            }
+        }
+        any_strict
+    }
 }
 
 impl<A: ClosedAxis> FromIterator<A> for AxisHistogram<A> {
@@ -10558,6 +10704,405 @@ mod tests {
         // incomparable pair too: max + min = (2,2,0) + (1,1,0) =
         // (3,3,0) = lhs + rhs.
         assert_eq!(join.clone() + &meet, lhs.clone() + &rhs);
+    }
+
+    // ---- AxisHistogram strict-partial-order trait-uniform laws ----
+    //
+    // The `(is_strictly_dominated_by, strictly_dominates)` pair lifts
+    // the strict `<` and `>` from the partial-order surface — peer to
+    // `<` next to `<=` on [`std::cmp::PartialOrd`]. Together with
+    // `(is_dominated_by, dominates)`, the histogram surface carries the
+    // partial-order operator quartet `(≤, ≥, <, >)` at the boolean
+    // surface. The trait-uniform laws below pin the strict-partial-
+    // order axioms uniformly across every [`ClosedAxis`] implementor:
+    // irreflexivity (no histogram is strictly less than itself); empty
+    // is the strict bottom (empty < every non-empty histogram, but not
+    // < itself); asymmetry (mutual strict-dominance is impossible);
+    // transitivity (the strict relation chains pointwise); dual relation
+    // (`a.strictly_dominates(&b) iff b.is_strictly_dominated_by(&a)`);
+    // decomposition (`a < b iff a ≤ b && a != b` — the canonical strict
+    // / non-strict bridge); and the strict total bound (strict pointwise
+    // `<` implies strict total `<`, stronger than the non-strict total
+    // bound on [`Self::is_dominated_by`]).
+
+    fn assert_is_strictly_dominated_by_irreflexive<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical strict-partial-order irreflexivity law: every
+        // histogram is `==` itself cellwise, so no cell is strictly
+        // less, so `hist.is_strictly_dominated_by(&hist)` reads `false`
+        // on every implementor. The dual predicate `strictly_dominates`
+        // is irreflexive on the same shape. The boundary law that
+        // distinguishes a strict partial order from the reflexive `≤`.
+        // Pinned over both the empty and axis-cover histograms so the
+        // irreflexivity reads off on both the lattice bottom and the
+        // single-observation envelope.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert!(
+            !empty.is_strictly_dominated_by(&empty),
+            "empty.is_strictly_dominated_by(&empty) must read false on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert!(
+            !empty.strictly_dominates(&empty),
+            "empty.strictly_dominates(&empty) must read false on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert!(
+            !cover.is_strictly_dominated_by(&cover),
+            "cover.is_strictly_dominated_by(&cover) must read false on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert!(
+            !cover.strictly_dominates(&cover),
+            "cover.strictly_dominates(&cover) must read false on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_empty_is_strictly_dominated_by_nonempty<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Empty is the strict bottom on the pointwise dominance order:
+        // `empty.is_strictly_dominated_by(&hist)` reads `true` for every
+        // non-empty `hist` — empty is `≤` every histogram (the
+        // [`Self::is_dominated_by`] law) and unequal to any non-empty
+        // histogram, so the strict version reads `true` non-vacuously.
+        // The dual `hist.strictly_dominates(&empty)` reads `true`
+        // symmetrically on every non-empty `hist`. Pinned over the axis-
+        // cover histogram (every cell strictly positive) so the relation
+        // reads off on the non-vacuous case.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert!(
+            empty.is_strictly_dominated_by(&cover),
+            "empty.is_strictly_dominated_by(&cover) must read true on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert!(
+            cover.strictly_dominates(&empty),
+            "cover.strictly_dominates(&empty) must read true on axis {}",
+            std::any::type_name::<A>(),
+        );
+        // Reverse direction reads `false` — the strict order excludes
+        // the equal-case so the dominator side is not strictly below
+        // the bottom.
+        assert!(
+            !cover.is_strictly_dominated_by(&empty),
+            "cover.is_strictly_dominated_by(&empty) must read false on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert!(
+            !empty.strictly_dominates(&cover),
+            "empty.strictly_dominates(&cover) must read false on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_is_strictly_dominated_by_asymmetric<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical strict-partial-order asymmetry law: `a
+        // .is_strictly_dominated_by(&b) ⇒ !b.is_strictly_dominated_by(&a)`.
+        // Stronger than the antisymmetry law on the non-strict surface
+        // (which allows the reflexive case) — the strict surface
+        // forbids both directions. Pinned over the strict chain (empty
+        // < cover < doubled cover) so the asymmetry reads off
+        // non-vacuously on the strict-chain pairs.
+        let bottom: AxisHistogram<A> = AxisHistogram::empty();
+        let middle: AxisHistogram<A> = axis_iter::<A>().collect();
+        let top: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [(&bottom, &middle), (&bottom, &top), (&middle, &top)] {
+            assert!(lhs.is_strictly_dominated_by(rhs));
+            assert!(
+                !rhs.is_strictly_dominated_by(lhs),
+                "asymmetry: a.is_strictly_dominated_by(&b) must imply !b.is_strictly_dominated_by(&a) on axis {}",
+                std::any::type_name::<A>(),
+            );
+            // Dual asymmetry: the `strictly_dominates` side reads off
+            // symmetrically.
+            assert!(rhs.strictly_dominates(lhs));
+            assert!(
+                !lhs.strictly_dominates(rhs),
+                "asymmetry (dual): b.strictly_dominates(&a) must imply !a.strictly_dominates(&b) on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_is_strictly_dominated_by_transitive<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical strict-partial-order transitivity law: `a
+        // .is_strictly_dominated_by(&b) && b.is_strictly_dominated_by(&c)
+        // ⇒ a.is_strictly_dominated_by(&c)`. Lifted from the cellwise
+        // `<` transitivity. Pinned over the strict chain (empty <
+        // cover < doubled cover) so every cell of the chain witnesses
+        // a strict inequality on at least one ordinal and transitivity
+        // reads off non-vacuously.
+        let bottom: AxisHistogram<A> = AxisHistogram::empty();
+        let middle: AxisHistogram<A> = axis_iter::<A>().collect();
+        let top: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+
+        assert!(bottom.is_strictly_dominated_by(&middle));
+        assert!(middle.is_strictly_dominated_by(&top));
+        assert!(
+            bottom.is_strictly_dominated_by(&top),
+            "transitivity: empty < cover < doubled cover must imply empty < doubled cover on axis {}",
+            std::any::type_name::<A>(),
+        );
+        // The dual chain on `strictly_dominates` reads off
+        // symmetrically.
+        assert!(top.strictly_dominates(&middle));
+        assert!(middle.strictly_dominates(&bottom));
+        assert!(
+            top.strictly_dominates(&bottom),
+            "transitivity: doubled cover > cover > empty must imply doubled cover > empty on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_strictly_dominates_is_dual_of_is_strictly_dominated_by<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The dual-relation law on the strict-predicate pair:
+        // `a.strictly_dominates(&b) == b.is_strictly_dominated_by(&a)`
+        // pointwise. Peer to the (is_dominated_by, dominates) dual
+        // relation on the non-strict surface. Pinned across the bottom
+        // / middle / top chain plus the reversed pairs so the dual
+        // relation reads off on every pair (true on the strict side,
+        // false on the equal and reversed pairs).
+        let bottom: AxisHistogram<A> = AxisHistogram::empty();
+        let middle: AxisHistogram<A> = axis_iter::<A>().collect();
+        let top: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&bottom, &middle),
+            (&bottom, &top),
+            (&middle, &top),
+            (&middle, &bottom),
+            (&top, &bottom),
+            (&top, &middle),
+            (&middle, &middle),
+        ] {
+            assert_eq!(
+                lhs.strictly_dominates(rhs),
+                rhs.is_strictly_dominated_by(lhs),
+                "dual: a.strictly_dominates(&b) must equal b.is_strictly_dominated_by(&a) on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_is_strictly_dominated_by_decomposition<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical strict / non-strict bridge: `a
+        // .is_strictly_dominated_by(&b) == (a.is_dominated_by(&b) && a
+        // != b)`. Pins the strict predicate is `≤` with the equal-case
+        // excluded — the strict predicate is the one the non-strict
+        // predicate is built on. Pinned across the bottom / middle /
+        // top chain plus the reversed and equal pairs so the
+        // decomposition reads off on the strict pairs (true on both
+        // sides), the equal pair (the strict side reads false because
+        // `a == b`, even though `a ≤ b` reads true), and the reversed
+        // pairs (both sides read false).
+        let bottom: AxisHistogram<A> = AxisHistogram::empty();
+        let middle: AxisHistogram<A> = axis_iter::<A>().collect();
+        let top: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&bottom, &middle),
+            (&bottom, &top),
+            (&middle, &top),
+            (&middle, &middle),
+            (&middle, &bottom),
+            (&top, &middle),
+        ] {
+            let strict = lhs.is_strictly_dominated_by(rhs);
+            let composite = lhs.is_dominated_by(rhs) && lhs != rhs;
+            assert_eq!(
+                strict,
+                composite,
+                "decomposition: a.is_strictly_dominated_by(&b) must equal (a.is_dominated_by(&b) && a != b) on axis {}",
+                std::any::type_name::<A>(),
+            );
+            // Dual decomposition reads off symmetrically on the
+            // `strictly_dominates` side.
+            let strict_dual = lhs.strictly_dominates(rhs);
+            let composite_dual = lhs.dominates(rhs) && lhs != rhs;
+            assert_eq!(
+                strict_dual,
+                composite_dual,
+                "decomposition (dual): a.strictly_dominates(&b) must equal (a.dominates(&b) && a != b) on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_is_strictly_dominated_by_implies_strict_total_bound<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The strict total bound implication: `a
+        // .is_strictly_dominated_by(&b) ⇒ a.total() < b.total()`.
+        // Strict pointwise `<` is strict-sum-monotone — every cell is
+        // `≤` and at least one is strictly `<`, so the per-cell `<` on
+        // the strict cell contributes a strict inequality to the
+        // cellwise sum. Stronger than the non-strict total bound on
+        // [`Self::is_dominated_by`] (which only carries `≤` on the
+        // totals; equal totals can occur on lattice-incomparable
+        // histograms). Pinned across the strict chain (empty < cover <
+        // doubled cover) so the strict bound reads off non-vacuously.
+        let bottom: AxisHistogram<A> = AxisHistogram::empty();
+        let middle: AxisHistogram<A> = axis_iter::<A>().collect();
+        let top: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [(&bottom, &middle), (&bottom, &top), (&middle, &top)] {
+            assert!(lhs.is_strictly_dominated_by(rhs));
+            assert!(
+                lhs.total() < rhs.total(),
+                "strict total bound: a.is_strictly_dominated_by(&b) must imply a.total() < b.total() on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_is_strictly_dominated_by_irreflexive_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_strictly_dominated_by_irreflexive::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_empty_is_strictly_dominated_by_nonempty_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_empty_is_strictly_dominated_by_nonempty::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_strictly_dominated_by_asymmetric_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_strictly_dominated_by_asymmetric::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_strictly_dominated_by_transitive_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_strictly_dominated_by_transitive::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_strictly_dominates_is_dual_of_is_strictly_dominated_by_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_strictly_dominates_is_dual_of_is_strictly_dominated_by::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_strictly_dominated_by_decomposition_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_strictly_dominated_by_decomposition::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_strictly_dominated_by_strict_total_bound_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_strictly_dominated_by_implies_strict_total_bound::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_strictly_dominated_by_partial_order_is_partial_for_diff_line_kind() {
+        // Concrete pin on the partiality of the strict pointwise
+        // dominance order: the (2, 1, 0) and (1, 2, 0) shapes on
+        // [`DiffLineKind`] — the same incomparable pair the non-strict
+        // partiality witness uses — also witness strict-incomparability.
+        // Neither side strictly dominates the other, even though both
+        // have identical totals. Pins the strict partial order inherits
+        // the partiality of the underlying non-strict order: the same
+        // incomparable pair on `(≤, ≥)` remains incomparable on
+        // `(<, >)`.
+        let lhs: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let rhs: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+
+        // Strict-incomparability inherited from the non-strict surface:
+        // neither side is `≤` the other, so neither side is `<` the
+        // other either.
+        assert!(!lhs.is_strictly_dominated_by(&rhs));
+        assert!(!rhs.is_strictly_dominated_by(&lhs));
+        assert!(!lhs.strictly_dominates(&rhs));
+        assert!(!rhs.strictly_dominates(&lhs));
+
+        // The strict partial order reads off non-vacuously against the
+        // lattice envelopes: `lhs` and `rhs` are both strictly below
+        // their join (the join is strictly above each side because each
+        // side has at least one cell where the join is strictly
+        // greater), and the meet is strictly below both sides
+        // symmetrically.
+        let join = lhs.clone().pointwise_max(&rhs);
+        let meet = lhs.clone().pointwise_min(&rhs);
+        assert!(lhs.is_strictly_dominated_by(&join));
+        assert!(rhs.is_strictly_dominated_by(&join));
+        assert!(meet.is_strictly_dominated_by(&lhs));
+        assert!(meet.is_strictly_dominated_by(&rhs));
+        assert!(join.strictly_dominates(&lhs));
+        assert!(join.strictly_dominates(&rhs));
+        assert!(lhs.strictly_dominates(&meet));
+        assert!(rhs.strictly_dominates(&meet));
+
+        // The strict total bound reads off concretely on the strict
+        // pairs against the lattice envelopes: meet.total()=2 <
+        // lhs.total()=3, lhs.total()=3 < join.total()=4. The strict
+        // total bound is strict — `<` on the totals, not just `<=`.
+        assert!(meet.total() < lhs.total());
+        assert!(meet.total() < rhs.total());
+        assert!(lhs.total() < join.total());
+        assert!(rhs.total() < join.total());
     }
 
     // ---- AxisHistogram scalar-action trait-uniform laws ----
