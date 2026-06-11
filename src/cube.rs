@@ -1724,6 +1724,198 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         self += other;
         self
     }
+
+    /// Cellwise maximum of `self` and `other` — the join (∪) on the
+    /// pointwise dominance lattice. Every cell becomes
+    /// [`std::cmp::max`]`(self.count(v), other.count(v))`. The natural
+    /// shape for "envelope across windows" / "worst-case per-cell
+    /// observation across the fleet" projections: stack rolling-window
+    /// histograms through this lift and the resulting histogram reads
+    /// off the high-water mark per cell, not the cellwise sum.
+    ///
+    /// The lattice peer of [`Self::pointwise_min`] (the meet, ∩) — the
+    /// histogram surface carries a bounded distributive lattice
+    /// `(AxisHistogram, pointwise_max, pointwise_min)` with bottom
+    /// [`Self::empty`] (so `empty.pointwise_max(&hist) == hist` and
+    /// `empty.pointwise_min(&hist) == empty`), peer to the lattice
+    /// algebra `(meet, join, leq)` pleme-io's compliance dimension
+    /// runs on (THEORY.md §III.3). The lattice algebra complements the
+    /// additive monoid quartet `(Add, AddAssign, Sub, SubAssign)` on
+    /// the same histogram type — addition stacks observations, the
+    /// lattice operations take the cellwise envelope.
+    ///
+    /// Before this lift, every consumer reaching the cellwise-max
+    /// projection — a per-window observatory recording the high-water
+    /// mark of [`crate::WatchEventClass`] observations across a
+    /// rolling-window batch, a fleet aggregator reporting the
+    /// worst-case per-host [`crate::ShikumiErrorKind`] cell instead of
+    /// the cellwise sum (the latter conflates "one host failed many
+    /// times" with "many hosts each failed once"), a per-tier
+    /// observatory taking the upper envelope of
+    /// [`crate::ConfigSourceKind`] observations across tiers without
+    /// summing them — reached the projection through one of two forms:
+    /// the open-coded per-cell loop
+    /// `for (slot, &c) in hist.counts.iter_mut().zip(other.counts.iter())
+    /// { *slot = (*slot).max(c); }` (requires `pub(crate)` access to
+    /// the counts vector or a private helper) or the rebuild-from-iter
+    /// form
+    /// `AxisHistogram::from_iter(axis_iter::<A>().map(|v| (v,
+    /// hist.count(v).max(other.count(v)))))` (an
+    /// `O(axis_cardinality)` reallocation for what is in-place
+    /// arithmetic). Collapsed to one method call with a single-pass
+    /// `O(axis_cardinality)` scan over the existing counts vector.
+    ///
+    /// **Empty-identity law** (`empty` is the bottom): `empty
+    /// .pointwise_max(&hist) == hist` and `hist.pointwise_max(&empty)
+    /// == hist`. The (empty, max) identity on the lattice join — peer
+    /// to the (empty, +) identity on the additive monoid: every cell
+    /// of `empty` is zero, so the cellwise max never lowers any cell
+    /// of `hist`.
+    ///
+    /// **Idempotent law**: `hist.pointwise_max(&hist) == hist`. The
+    /// canonical lattice law — every cell is its own max with itself.
+    /// Peer to the (`Mul × 1`, `MulAssign × 1`) identity on the scalar
+    /// action; the lattice surface carries no scalar-action analog (no
+    /// non-trivial absorber on the join side except `usize::MAX`,
+    /// which sits outside the natural-number histogram algebra).
+    ///
+    /// **Commutativity law**: `a.pointwise_max(&b) ==
+    /// b.pointwise_max(&a)` on the resulting histogram. The canonical
+    /// commutative-lattice law — peer to the (`+=`, commutative)
+    /// monoid law from [`AddAssign<&Self>`].
+    ///
+    /// **Absorption law with [`Self::pointwise_min`]**: `a
+    /// .pointwise_max(&a.clone().pointwise_min(&b)) == a`. The
+    /// canonical distributive-lattice absorption law — the histogram
+    /// surface satisfies the lattice axioms uniformly across every
+    /// closed axis.
+    ///
+    /// **Cell-level relation**: every cell `v` of `joined =
+    /// a.pointwise_max(&b)` satisfies `joined.count(v) ==
+    /// a.count(v).max(b.count(v))`. The defining property of the
+    /// cellwise lattice — peer to the cellwise-`+`/cellwise-`∸` laws
+    /// on `Add`/`Sub`.
+    ///
+    /// **Pointwise dominance**: `a.pointwise_max(&b).count(v) >=
+    /// a.count(v)` for every cell `v`, and symmetrically `>= b
+    /// .count(v)`. The join is the supremum on the pointwise order.
+    ///
+    /// **Total-growth bound**: `a.pointwise_max(&b).total() >=
+    /// std::cmp::max(a.total(), b.total())` and `a.pointwise_max(&b)
+    /// .total() <= a.total() + b.total()`. The join total sits between
+    /// the per-side maximum and the cellwise sum; pinned by the lattice
+    /// identity `pointwise_max + pointwise_min = a + b` on the totals.
+    ///
+    /// **Lattice / additive identity**: the cellwise expression
+    /// `a.clone().pointwise_max(&b) + &a.clone().pointwise_min(&b)` is
+    /// pointwise equal to `a + &b`. The canonical max-min/addition
+    /// identity `max(x, y) + min(x, y) == x + y` lifted cellwise —
+    /// pins the lattice algebra and the additive monoid agree on the
+    /// per-cell decomposition.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The trait-uniform laws pinned
+    /// in [`tests`] hold across the implementor set
+    /// (`axis_histogram_pointwise_max_empty_rhs_is_identity_*`,
+    /// `axis_histogram_pointwise_max_idempotent_*`,
+    /// `axis_histogram_pointwise_max_is_commutative_*`,
+    /// `axis_histogram_pointwise_max_cell_level_*`,
+    /// `axis_histogram_pointwise_max_dominates_both_sides_*`,
+    /// `axis_histogram_pointwise_max_plus_min_equals_add_*`).
+    #[must_use]
+    pub fn pointwise_max(mut self, other: &Self) -> Self {
+        for (slot, &delta) in self.counts.iter_mut().zip(other.counts.iter()) {
+            if delta > *slot {
+                *slot = delta;
+            }
+        }
+        self
+    }
+
+    /// Cellwise minimum of `self` and `other` — the meet (∩) on the
+    /// pointwise dominance lattice. Every cell becomes
+    /// [`std::cmp::min`]`(self.count(v), other.count(v))`. The natural
+    /// shape for "common observation floor across windows" /
+    /// "intersection-multiset across hosts" projections: stack
+    /// rolling-window histograms through this lift and the resulting
+    /// histogram reads off the per-cell floor — the count every window
+    /// at least observed — not the cellwise sum.
+    ///
+    /// The lattice peer of [`Self::pointwise_max`] (the join, ∪) — the
+    /// histogram surface carries a bounded distributive lattice
+    /// `(AxisHistogram, pointwise_max, pointwise_min)` with bottom
+    /// [`Self::empty`], peer to the lattice algebra
+    /// `(meet, join, leq)` pleme-io's compliance dimension runs on
+    /// (THEORY.md §III.3). The meet is the dual of the join on the
+    /// lattice: where `pointwise_max` reports the high-water mark per
+    /// cell, `pointwise_min` reports the low-water mark.
+    ///
+    /// Before this lift, every consumer reaching the cellwise-min
+    /// projection — a fleet aggregator reporting the "every host has
+    /// at least N of this kind" floor on [`crate::ShikumiErrorKind`]
+    /// without conflating "one host failed many times" with "many
+    /// hosts each failed once", a per-window observatory taking the
+    /// floor across windows so a "consistent observation baseline"
+    /// reads off, a multiset-intersection projection asking *"what
+    /// observations are common to both histograms?"* — reached the
+    /// projection through one of two forms: the open-coded per-cell
+    /// loop or the rebuild-from-iter form. Collapsed to one method
+    /// call with a single-pass `O(axis_cardinality)` scan over the
+    /// existing counts vector.
+    ///
+    /// **Empty-absorbing law** (`empty` is the bottom): `empty
+    /// .pointwise_min(&hist) == empty` and `hist.pointwise_min(&empty)
+    /// == empty`. The (empty, min) absorbing law on the lattice meet —
+    /// peer to the (empty, ∸) absorbing law on the left-empty side of
+    /// the monus monoid: every cell of `empty` is zero, so the
+    /// cellwise min collapses every cell to zero.
+    ///
+    /// **Idempotent law**: `hist.pointwise_min(&hist) == hist`. The
+    /// canonical lattice law — every cell is its own min with itself.
+    ///
+    /// **Commutativity law**: `a.pointwise_min(&b) ==
+    /// b.pointwise_min(&a)` on the resulting histogram.
+    ///
+    /// **Absorption law with [`Self::pointwise_max`]**: `a
+    /// .pointwise_min(&a.clone().pointwise_max(&b)) == a`. The
+    /// canonical distributive-lattice absorption law.
+    ///
+    /// **Cell-level relation**: every cell `v` of `met =
+    /// a.pointwise_min(&b)` satisfies `met.count(v) ==
+    /// a.count(v).min(b.count(v))`.
+    ///
+    /// **Pointwise dominance**: `a.pointwise_min(&b).count(v) <=
+    /// a.count(v)` for every cell `v`, and symmetrically `<= b
+    /// .count(v)`. The meet is the infimum on the pointwise order.
+    ///
+    /// **Total-shrink bound**: `a.pointwise_min(&b).total() <=
+    /// std::cmp::min(a.total(), b.total())`. The meet total never
+    /// exceeds the per-side minimum — sum of cellwise mins is bounded
+    /// above by each side's total.
+    ///
+    /// **Lattice / additive identity**: `a.clone().pointwise_max(&b) +
+    /// &a.clone().pointwise_min(&b) == a.clone() + &b` pointwise.
+    /// Pinned together with the [`Self::pointwise_max`] lift through
+    /// [`tests::axis_histogram_pointwise_max_plus_min_equals_add_for_every_closed_axis_implementor`].
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The trait-uniform laws pinned
+    /// in [`tests`] hold across the implementor set
+    /// (`axis_histogram_pointwise_min_empty_rhs_is_empty_*`,
+    /// `axis_histogram_pointwise_min_idempotent_*`,
+    /// `axis_histogram_pointwise_min_is_commutative_*`,
+    /// `axis_histogram_pointwise_min_cell_level_*`,
+    /// `axis_histogram_pointwise_min_dominated_by_both_sides_*`,
+    /// `axis_histogram_pointwise_min_absorbed_by_pointwise_max_*`).
+    #[must_use]
+    pub fn pointwise_min(mut self, other: &Self) -> Self {
+        for (slot, &delta) in self.counts.iter_mut().zip(other.counts.iter()) {
+            if delta < *slot {
+                *slot = delta;
+            }
+        }
+        self
+    }
 }
 
 impl<A: ClosedAxis> FromIterator<A> for AxisHistogram<A> {
@@ -9358,6 +9550,464 @@ mod tests {
         assert_eq!(reverse.count(DiffLineKind::Removed), 2);
         assert_eq!(reverse.count(DiffLineKind::Context), 1);
         assert_ne!(diff, reverse);
+    }
+
+    // ---- AxisHistogram cellwise-lattice trait-uniform laws ----
+    //
+    // The (pointwise_max, pointwise_min) lattice surface lifts the
+    // bounded distributive lattice `(meet, join, leq)` from THEORY.md
+    // §III.3 onto the per-cell observation count, peer to the lattice
+    // algebra pleme-io's compliance dimension already runs on. The
+    // trait-uniform laws below pin the lattice axioms uniformly across
+    // every [`ClosedAxis`] implementor: `empty` is the bottom (identity
+    // for max, absorbing for min); both ops are idempotent and
+    // commutative; the cell-level relation matches
+    // [`std::cmp::max`] / [`std::cmp::min`] cell by cell; the absorption
+    // law on the (max, min) pair holds (the canonical distributive-
+    // lattice law); the lattice / additive identity
+    // `pointwise_max + pointwise_min == a + b` reads off pointwise (the
+    // cellwise `max(x,y) + min(x,y) = x + y` law); pointwise dominance
+    // bounds (`max >= each side`, `min <= each side`) hold on every
+    // cell. The lattice surface complements the additive monoid quartet
+    // `(Add, AddAssign, Sub, SubAssign)` already pinned: addition
+    // stacks observations, the lattice operations take the cellwise
+    // envelope (max) or floor (min).
+
+    fn assert_pointwise_max_empty_rhs_is_identity<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // `empty` is the bottom on the lattice join: `hist
+        // .pointwise_max(&empty) == hist` and `empty.pointwise_max(&hist)
+        // == hist`. Every cell of `empty` is zero, so the cellwise max
+        // never lowers any cell of `hist`. Peer to the [`AddAssign`]
+        // empty-RHS-identity law on the dual side of the additive
+        // monoid. Pinned over the axis-cover histogram so every cell
+        // carries a positive count and the equality reads off every
+        // ordinal.
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let joined_right = cover.clone().pointwise_max(&AxisHistogram::<A>::empty());
+        assert_eq!(
+            joined_right,
+            cover,
+            "hist.pointwise_max(&empty) must equal hist on axis {}",
+            std::any::type_name::<A>(),
+        );
+        let joined_left = AxisHistogram::<A>::empty().pointwise_max(&cover);
+        assert_eq!(
+            joined_left,
+            cover,
+            "empty.pointwise_max(&hist) must equal hist on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_pointwise_min_empty_rhs_is_empty<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // `empty` is the bottom on the lattice meet (absorbing): `hist
+        // .pointwise_min(&empty) == empty` and `empty.pointwise_min(&hist)
+        // == empty`. Every cell of `empty` is zero, so the cellwise min
+        // collapses every cell to zero. Peer to the [`SubAssign`]
+        // (empty, ∸) absorbing law on the left-empty side of the monus
+        // monoid. Pinned over the axis-cover histogram so every cell
+        // starts positive and the collapse-to-zero reads off every
+        // ordinal.
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let met_right = cover.clone().pointwise_min(&AxisHistogram::<A>::empty());
+        assert_eq!(
+            met_right,
+            AxisHistogram::<A>::empty(),
+            "hist.pointwise_min(&empty) must equal empty on axis {}",
+            std::any::type_name::<A>(),
+        );
+        let met_left = AxisHistogram::<A>::empty().pointwise_min(&cover);
+        assert_eq!(
+            met_left,
+            AxisHistogram::<A>::empty(),
+            "empty.pointwise_min(&hist) must equal empty on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_pointwise_max_and_min_idempotent<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical lattice idempotence laws: `hist
+        // .pointwise_max(&hist) == hist` and `hist.pointwise_min(&hist)
+        // == hist`. Every cell is its own max/min with itself. Pinned
+        // over the doubled axis-cover so every cell carries a positive
+        // count > 1 (the count distribution is non-trivial across
+        // ordinals).
+        let cover: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let joined = cover.clone().pointwise_max(&cover);
+        assert_eq!(
+            joined,
+            cover,
+            "hist.pointwise_max(&hist) must equal hist on axis {}",
+            std::any::type_name::<A>(),
+        );
+        let met = cover.clone().pointwise_min(&cover);
+        assert_eq!(
+            met,
+            cover,
+            "hist.pointwise_min(&hist) must equal hist on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_pointwise_max_and_min_are_commutative<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical lattice commutativity laws: `a.pointwise_max(&b)
+        // == b.pointwise_max(&a)` and `a.pointwise_min(&b) ==
+        // b.pointwise_min(&a)` on the resulting histogram. Peer to the
+        // commutativity of cellwise `+` from the [`AddAssign`] surface.
+        // Pinned over the axis-cover (every cell = 1) and a doubled
+        // first-cell (so the count distribution differs cell by cell).
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let skewed = if let Some(first) = axis_iter::<A>().next() {
+            let mut h: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+            h.observe(first);
+            h
+        } else {
+            return;
+        };
+
+        let lhs_max = cover.clone().pointwise_max(&skewed);
+        let rhs_max = skewed.clone().pointwise_max(&cover);
+        assert_eq!(
+            lhs_max,
+            rhs_max,
+            "pointwise_max must be commutative on axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        let lhs_min = cover.clone().pointwise_min(&skewed);
+        let rhs_min = skewed.clone().pointwise_min(&cover);
+        assert_eq!(
+            lhs_min,
+            rhs_min,
+            "pointwise_min must be commutative on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_pointwise_max_and_min_cell_level<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The cell-level relation: every cell `v` of `joined =
+        // a.pointwise_max(&b)` satisfies `joined.count(v) ==
+        // a.count(v).max(b.count(v))`, and the dual on
+        // `pointwise_min`. The defining property of the cellwise
+        // lattice — peer to the cellwise-`+` law on `AddAssign` and the
+        // cellwise-`saturating_sub` law on `SubAssign`. Pinned over the
+        // axis-cover (every cell = 1) and a doubled cover (every cell =
+        // 2) — the max reads `2` on every cell, the min reads `1`.
+        let single: AxisHistogram<A> = axis_iter::<A>().collect();
+        let double: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+
+        let joined = single.clone().pointwise_max(&double);
+        let met = single.clone().pointwise_min(&double);
+        for cell in axis_iter::<A>() {
+            assert_eq!(
+                joined.count(cell),
+                single.count(cell).max(double.count(cell)),
+                "pointwise_max cell {cell:?} must equal max on axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                met.count(cell),
+                single.count(cell).min(double.count(cell)),
+                "pointwise_min cell {cell:?} must equal min on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_pointwise_max_dominates_and_min_dominated<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The pointwise dominance bounds: every cell of `pointwise_max(a,
+        // b)` is `>=` the corresponding cell of `a` and of `b` (the
+        // join is the supremum on the pointwise order), and every cell
+        // of `pointwise_min(a, b)` is `<=` the corresponding cell of
+        // `a` and of `b` (the meet is the infimum). Pinned over the
+        // axis-cover and a doubled cover so the bounds witness non-
+        // trivial inequalities cell by cell.
+        let single: AxisHistogram<A> = axis_iter::<A>().collect();
+        let double: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+
+        let joined = single.clone().pointwise_max(&double);
+        let met = single.clone().pointwise_min(&double);
+        for cell in axis_iter::<A>() {
+            assert!(
+                joined.count(cell) >= single.count(cell)
+                    && joined.count(cell) >= double.count(cell),
+                "pointwise_max cell {cell:?} must dominate both sides on axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert!(
+                met.count(cell) <= single.count(cell) && met.count(cell) <= double.count(cell),
+                "pointwise_min cell {cell:?} must be dominated by both sides on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+        // Total bounds derived from the cellwise dominance: max total
+        // never shrinks below either side's total, min total never
+        // exceeds either side's total.
+        assert!(
+            joined.total() >= single.total() && joined.total() >= double.total(),
+            "pointwise_max total must dominate both sides on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert!(
+            met.total() <= single.total() && met.total() <= double.total(),
+            "pointwise_min total must be dominated by both sides on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_pointwise_max_plus_min_equals_add<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The lattice / additive identity `max(x, y) + min(x, y) = x +
+        // y` lifted cellwise: `a.pointwise_max(&b) + &a.pointwise_min(&b)
+        // == a + &b` pointwise. The canonical decomposition tying the
+        // (max, min) lattice to the (`+`) additive monoid — pins the
+        // two algebras on the same histogram surface agree on the per-
+        // cell decomposition. Pinned over the axis-cover and a doubled
+        // cover so the equality witnesses a non-trivial cell
+        // distribution.
+        let lhs: AxisHistogram<A> = axis_iter::<A>().collect();
+        let rhs: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+
+        let joined = lhs.clone().pointwise_max(&rhs);
+        let met = lhs.clone().pointwise_min(&rhs);
+        let lattice_sum = joined.clone() + &met;
+        let additive_sum = lhs.clone() + &rhs;
+        assert_eq!(
+            lattice_sum,
+            additive_sum,
+            "pointwise_max + pointwise_min must equal a + b on axis {}",
+            std::any::type_name::<A>(),
+        );
+        // The peer identity on the totals: total(max) + total(min) =
+        // total(a) + total(b).
+        assert_eq!(
+            joined.total() + met.total(),
+            lhs.total() + rhs.total(),
+            "pointwise_max.total + pointwise_min.total must equal a.total + b.total on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_pointwise_max_and_min_absorb<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical distributive-lattice absorption laws: `a
+        // .pointwise_max(&a.pointwise_min(&b)) == a` and `a
+        // .pointwise_min(&a.pointwise_max(&b)) == a`. The histogram
+        // surface satisfies the lattice axioms uniformly across every
+        // closed axis. Pinned over the axis-cover and a doubled cover
+        // so the absorption witnesses a non-trivial cell distribution.
+        let a: AxisHistogram<A> = axis_iter::<A>().collect();
+        let b: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+
+        let absorbed_max = a.clone().pointwise_max(&a.clone().pointwise_min(&b));
+        assert_eq!(
+            absorbed_max,
+            a,
+            "a ∨ (a ∧ b) must equal a on axis {}",
+            std::any::type_name::<A>(),
+        );
+        let absorbed_min = a.clone().pointwise_min(&a.clone().pointwise_max(&b));
+        assert_eq!(
+            absorbed_min,
+            a,
+            "a ∧ (a ∨ b) must equal a on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_pointwise_max_empty_rhs_is_identity_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_pointwise_max_empty_rhs_is_identity::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_pointwise_min_empty_rhs_is_empty_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_pointwise_min_empty_rhs_is_empty::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_pointwise_max_and_min_idempotent_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_pointwise_max_and_min_idempotent::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_pointwise_max_and_min_are_commutative_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_pointwise_max_and_min_are_commutative::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_pointwise_max_and_min_cell_level_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_pointwise_max_and_min_cell_level::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_pointwise_max_dominates_and_min_dominated_for_every_closed_axis_implementor()
+    {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_pointwise_max_dominates_and_min_dominated::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_pointwise_max_plus_min_equals_add_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_pointwise_max_plus_min_equals_add::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_pointwise_max_and_min_absorb_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_pointwise_max_and_min_absorb::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_pointwise_max_per_cell_envelope_for_diff_line_kind() {
+        // Concrete pin: a per-window observatory takes the cellwise
+        // envelope across three windows so the resulting histogram
+        // reads off the high-water mark per cell, not the cellwise
+        // sum. The (Added: max(2, 0, 1) = 2, Removed: max(1, 1, 0) = 1,
+        // Context: max(0, 1, 0) = 1) distribution is the envelope; the
+        // cellwise sum (Added: 3, Removed: 2, Context: 1) reads
+        // differently — pinning the difference between addition and
+        // join on the histogram surface.
+        let window_a: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let window_b: AxisHistogram<DiffLineKind> = [DiffLineKind::Context, DiffLineKind::Removed]
+            .into_iter()
+            .collect();
+        let window_c: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+
+        let envelope = window_a
+            .clone()
+            .pointwise_max(&window_b)
+            .pointwise_max(&window_c);
+        // Cellwise max across windows reads the high-water mark.
+        assert_eq!(envelope.count(DiffLineKind::Added), 2);
+        assert_eq!(envelope.count(DiffLineKind::Removed), 1);
+        assert_eq!(envelope.count(DiffLineKind::Context), 1);
+        assert_eq!(envelope.total(), 4);
+
+        // The cellwise-sum projection differs: addition stacks
+        // observations rather than taking the envelope.
+        let stacked = window_a.clone() + &window_b + &window_c;
+        assert_eq!(stacked.count(DiffLineKind::Added), 3);
+        assert_eq!(stacked.count(DiffLineKind::Removed), 2);
+        assert_eq!(stacked.count(DiffLineKind::Context), 1);
+        assert_ne!(envelope, stacked);
+    }
+
+    #[test]
+    fn axis_histogram_pointwise_min_per_cell_floor_for_diff_line_kind() {
+        // Concrete pin on the cellwise floor / multiset-intersection
+        // projection: the per-cell minimum across two histograms reads
+        // off the count common to both — the (Added: min(5, 2) = 2,
+        // Removed: min(1, 3) = 1, Context: min(0, 1) = 0)
+        // distribution. The (max + min == a + b) lattice / additive
+        // identity also reads off concretely:
+        // max + min = (5,3,1) + (2,1,0) = (7,4,1) = (5,1,0) + (2,3,1) = a + b.
+        let a: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let b: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+
+        let floor = a.clone().pointwise_min(&b);
+        // Cellwise min reads the common floor across both histograms.
+        assert_eq!(floor.count(DiffLineKind::Added), 2);
+        assert_eq!(floor.count(DiffLineKind::Removed), 1);
+        assert_eq!(floor.count(DiffLineKind::Context), 0);
+        assert_eq!(floor.total(), 3);
+
+        let envelope = a.clone().pointwise_max(&b);
+        assert_eq!(envelope.count(DiffLineKind::Added), 5);
+        assert_eq!(envelope.count(DiffLineKind::Removed), 3);
+        assert_eq!(envelope.count(DiffLineKind::Context), 1);
+        assert_eq!(envelope.total(), 9);
+
+        // The lattice / additive identity reads off concretely on the
+        // (max + min == a + b) decomposition.
+        let lattice_sum = envelope.clone() + &floor;
+        let additive_sum = a.clone() + &b;
+        assert_eq!(lattice_sum, additive_sum);
+        assert_eq!(lattice_sum.total(), a.total() + b.total());
     }
 
     // ---- AxisHistogram scalar-action trait-uniform laws ----
