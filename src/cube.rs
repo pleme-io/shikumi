@@ -1916,6 +1916,138 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         }
         self
     }
+
+    /// Pointwise dominance ≤: `true` when every cell of `self` is
+    /// `<=` the corresponding cell of `other`. The partial-order
+    /// relation `leq` from THEORY.md §III.3 lifted onto the per-cell
+    /// observation count — the underlying order the
+    /// [`Self::pointwise_max`] / [`Self::pointwise_min`] lattice
+    /// algebra is built on. `a.is_dominated_by(&b)` reads
+    /// "`a` is pointwise weaker than `b`" / "every cell of `a` is at
+    /// most the corresponding cell of `b`" / "`a` sits below `b` on
+    /// the lattice".
+    ///
+    /// The boolean-projection idiom-peer of the lattice op pair: the
+    /// (max, min) lattice operations on the histogram surface project
+    /// the cellwise lattice through `Self`, and `is_dominated_by`
+    /// projects the underlying partial order through `bool`. Together
+    /// `(pointwise_max, pointwise_min, is_dominated_by)` closes the
+    /// `(join, meet, leq)` triple from §III.3 on the same histogram
+    /// surface.
+    ///
+    /// Before this lift, every consumer reaching the pointwise-≤
+    /// predicate — a fleet aggregator asking *"is every host's per-
+    /// kind error tally at most the rolling baseline?"*, a per-window
+    /// observatory asking *"did this window's observation profile stay
+    /// under the previous high-water mark?"*, a regression detector
+    /// asking *"is the post-change histogram dominated by the pre-
+    /// change envelope?"* — reached the projection through one of two
+    /// forms: the open-coded per-cell loop or the round-trip through
+    /// `a.clone().pointwise_max(&b) == b`. Collapsed to one method call
+    /// with a single-pass `O(axis_cardinality)` short-circuiting scan
+    /// over the existing counts vector.
+    ///
+    /// **Reflexivity**: `hist.is_dominated_by(&hist)` for every `hist`.
+    /// The canonical partial-order reflexivity law — every cell is its
+    /// own `<=` with itself.
+    ///
+    /// **Empty is the bottom**: `empty.is_dominated_by(&hist)` for
+    /// every `hist`. Every cell of `empty` is zero, so the cellwise
+    /// `<=` reads `true` on every ordinal. Peer to the (empty, max)
+    /// identity / (empty, min) absorbing laws on the lattice.
+    ///
+    /// **Antisymmetry**: `a.is_dominated_by(&b) &&
+    /// b.is_dominated_by(&a) ⇒ a == b`. The canonical partial-order
+    /// antisymmetry law — pointwise `<=` in both directions collapses
+    /// to pointwise equality, which the `Eq` derive picks up cell by
+    /// cell.
+    ///
+    /// **Transitivity**: `a.is_dominated_by(&b) &&
+    /// b.is_dominated_by(&c) ⇒ a.is_dominated_by(&c)`. The canonical
+    /// partial-order transitivity law lifted from the cellwise `<=`.
+    ///
+    /// **Dual relation**: `a.is_dominated_by(&b) ==
+    /// b.dominates(&a)`. The two predicates are perfect duals — peer
+    /// to the (max, min) lattice-op duality.
+    ///
+    /// **Join characterization**: `a.is_dominated_by(&b) ==
+    /// (a.clone().pointwise_max(&b) == b)`. The canonical "≤ iff
+    /// `a ∨ b = b`" lattice law — pins the partial order is the one
+    /// the join is built on.
+    ///
+    /// **Meet characterization**: `a.is_dominated_by(&b) ==
+    /// (a.clone().pointwise_min(&b) == a)`. The canonical "≤ iff
+    /// `a ∧ b = a`" lattice law — the dual of the join
+    /// characterization on the meet side.
+    ///
+    /// **Total bound implication**: `a.is_dominated_by(&b) ⇒ a.total()
+    /// <= b.total()`. Pointwise `<=` implies the cellwise sum is
+    /// bounded above. The converse is *not* an iff — equal totals can
+    /// occur on lattice-incomparable histograms (e.g., on a 2-cell
+    /// axis, `(2, 0)` and `(0, 2)` both have total 2 but neither
+    /// dominates the other).
+    ///
+    /// **Partiality**: the order is *partial*, not total — two
+    /// histograms can be incomparable (`!a.is_dominated_by(&b) &&
+    /// !b.is_dominated_by(&a)`) when one cell is strictly larger on
+    /// each side. This matches §III.3's `leq` partial order on the
+    /// compliance lattice (two baselines can be incomparable when each
+    /// requires controls the other doesn't).
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The trait-uniform laws pinned
+    /// in [`tests`] hold across the implementor set
+    /// (`axis_histogram_is_dominated_by_reflexive_*`,
+    /// `axis_histogram_empty_is_dominated_by_every_*`,
+    /// `axis_histogram_is_dominated_by_antisymmetric_*`,
+    /// `axis_histogram_is_dominated_by_transitive_*`,
+    /// `axis_histogram_dominates_is_dual_of_is_dominated_by_*`,
+    /// `axis_histogram_is_dominated_by_join_characterization_*`,
+    /// `axis_histogram_is_dominated_by_meet_characterization_*`,
+    /// `axis_histogram_is_dominated_by_total_bound_*`).
+    #[must_use]
+    pub fn is_dominated_by(&self, other: &Self) -> bool {
+        self.counts
+            .iter()
+            .zip(other.counts.iter())
+            .all(|(lhs, rhs)| lhs <= rhs)
+    }
+
+    /// Pointwise dominance ≥: `true` when every cell of `self` is
+    /// `>=` the corresponding cell of `other`. The dual of
+    /// [`Self::is_dominated_by`] — perfect peer on the partial-order
+    /// surface. `a.dominates(&b)` reads "`a` is pointwise stronger
+    /// than `b`" / "every cell of `a` is at least the corresponding
+    /// cell of `b`" / "`a` sits above `b` on the lattice".
+    ///
+    /// Holds pointwise equal to `b.is_dominated_by(&a)`; pinned by
+    /// the trait-uniform dual-relation law
+    /// (`axis_histogram_dominates_is_dual_of_is_dominated_by_*`).
+    ///
+    /// **Reflexivity**: `hist.dominates(&hist)` for every `hist`.
+    ///
+    /// **Empty is the bottom (dual)**: `hist.dominates(&empty)` for
+    /// every `hist`. Every cell of `empty` is zero, so the cellwise
+    /// `>=` reads `true` on every ordinal — the dual peer of
+    /// [`Self::is_dominated_by`]'s "empty is the bottom" law.
+    ///
+    /// **Join characterization (dual)**: `a.dominates(&b) ==
+    /// (a.clone().pointwise_max(&b) == a)`.
+    ///
+    /// **Meet characterization (dual)**: `a.dominates(&b) ==
+    /// (a.clone().pointwise_min(&b) == b)`.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. Pinned together with
+    /// [`Self::is_dominated_by`] through the trait-uniform laws in
+    /// [`tests`].
+    #[must_use]
+    pub fn dominates(&self, other: &Self) -> bool {
+        self.counts
+            .iter()
+            .zip(other.counts.iter())
+            .all(|(lhs, rhs)| lhs >= rhs)
+    }
 }
 
 impl<A: ClosedAxis> FromIterator<A> for AxisHistogram<A> {
@@ -10008,6 +10140,424 @@ mod tests {
         let additive_sum = a.clone() + &b;
         assert_eq!(lattice_sum, additive_sum);
         assert_eq!(lattice_sum.total(), a.total() + b.total());
+    }
+
+    // ---- AxisHistogram pointwise-dominance partial-order laws ----
+    //
+    // The `(is_dominated_by, dominates)` predicate pair projects the
+    // `leq` partial order from THEORY.md §III.3 onto the per-cell
+    // observation count — the boolean idiom-peer of the
+    // (pointwise_max, pointwise_min) lattice ops. Together
+    // `(pointwise_max, pointwise_min, is_dominated_by)` closes the
+    // `(join, meet, leq)` triple from §III.3 on the histogram surface.
+    // The trait-uniform laws below pin the partial-order axioms
+    // uniformly across every [`ClosedAxis`] implementor: reflexivity
+    // (every histogram dominates itself); empty is the bottom (the
+    // monoid identity sits at the lattice bottom); antisymmetry (two
+    // histograms each dominating the other are equal); transitivity
+    // (the relation chains pointwise); dual relation (`a.dominates(&b)
+    // iff b.is_dominated_by(&a)`); join / meet characterizations of ≤
+    // (the canonical lattice ↔ partial-order bridges); and the total
+    // bound implication (pointwise ≤ implies the per-side total is
+    // bounded above). The partial-order surface complements the
+    // (pointwise_max, pointwise_min) lattice ops on the same
+    // histogram surface — together they close `(join, meet, leq)`.
+
+    fn assert_is_dominated_by_reflexive<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical partial-order reflexivity law on the pointwise
+        // dominance order: every histogram is `<=` itself cellwise, so
+        // `hist.is_dominated_by(&hist)` reads `true` on every
+        // implementor. The dual predicate `dominates` is reflexive on
+        // the same shape. Pinned over the axis-cover histogram so
+        // every cell carries a positive count and the per-cell
+        // reflexivity reads off every ordinal — not the vacuous
+        // empty-vs-empty case.
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert!(
+            cover.is_dominated_by(&cover),
+            "hist.is_dominated_by(&hist) must read true on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert!(
+            cover.dominates(&cover),
+            "hist.dominates(&hist) must read true on axis {}",
+            std::any::type_name::<A>(),
+        );
+        // The empty histogram is trivially self-dominated — the
+        // identity sits at every partial-order endpoint.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        assert!(
+            empty.is_dominated_by(&empty),
+            "empty.is_dominated_by(&empty) must read true on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert!(
+            empty.dominates(&empty),
+            "empty.dominates(&empty) must read true on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_empty_is_dominated_by_every<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Empty is the bottom on the pointwise dominance order: every
+        // cell of `empty` is zero, so the cellwise `<=` reads `true`
+        // on every ordinal against any histogram. Peer to the (empty,
+        // max) identity / (empty, min) absorbing laws on the lattice —
+        // pins the monoid identity sits at the bottom of the partial
+        // order. Pinned over the axis-cover histogram so the relation
+        // reads off the non-vacuous case where every cell is strictly
+        // positive on the dominator side.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert!(
+            empty.is_dominated_by(&cover),
+            "empty.is_dominated_by(&cover) must read true on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert!(
+            cover.dominates(&empty),
+            "cover.dominates(&empty) must read true on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_is_dominated_by_antisymmetric<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical partial-order antisymmetry law: `a
+        // .is_dominated_by(&b) && b.is_dominated_by(&a) ⇒ a == b`.
+        // Pointwise `<=` in both directions collapses to pointwise
+        // equality, which the `Eq` derive picks up cell by cell. The
+        // load-bearing law that distinguishes a partial order from
+        // a pre-order. Pinned over two distinct constructions of the
+        // axis-cover histogram so both directions of the implication
+        // read off the same equality.
+        let lhs: AxisHistogram<A> = axis_iter::<A>().collect();
+        let rhs: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert!(lhs.is_dominated_by(&rhs));
+        assert!(rhs.is_dominated_by(&lhs));
+        assert_eq!(
+            lhs,
+            rhs,
+            "antisymmetry: mutual dominance must imply equality on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_is_dominated_by_transitive<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical partial-order transitivity law: `a
+        // .is_dominated_by(&b) && b.is_dominated_by(&c) ⇒
+        // a.is_dominated_by(&c)`. Lifted from the cellwise `<=`
+        // transitivity. Pinned over the strict chain (empty ≤ cover
+        // ≤ doubled cover) so every cell of the chain witnesses a
+        // strict inequality on at least one ordinal and transitivity
+        // reads off non-vacuously.
+        let bottom: AxisHistogram<A> = AxisHistogram::empty();
+        let middle: AxisHistogram<A> = axis_iter::<A>().collect();
+        let top: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+
+        assert!(bottom.is_dominated_by(&middle));
+        assert!(middle.is_dominated_by(&top));
+        assert!(
+            bottom.is_dominated_by(&top),
+            "transitivity: empty ≤ cover ≤ doubled cover must imply empty ≤ doubled cover on axis {}",
+            std::any::type_name::<A>(),
+        );
+        // The dual chain on `dominates` reads off symmetrically.
+        assert!(top.dominates(&middle));
+        assert!(middle.dominates(&bottom));
+        assert!(
+            top.dominates(&bottom),
+            "transitivity: doubled cover ≥ cover ≥ empty must imply doubled cover ≥ empty on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_dominates_is_dual_of_is_dominated_by<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The dual-relation law on the predicate pair:
+        // `a.dominates(&b) == b.is_dominated_by(&a)` pointwise. Peer
+        // to the (max, min) lattice-op duality. Pinned across the
+        // bottom / middle / top chain so the dual relation reads off
+        // on every pair of the chain (true on the dominated side,
+        // mirrored on the dominator side).
+        let bottom: AxisHistogram<A> = AxisHistogram::empty();
+        let middle: AxisHistogram<A> = axis_iter::<A>().collect();
+        let top: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&bottom, &middle),
+            (&bottom, &top),
+            (&middle, &top),
+            (&middle, &bottom),
+            (&top, &bottom),
+            (&top, &middle),
+            (&middle, &middle),
+        ] {
+            assert_eq!(
+                lhs.dominates(rhs),
+                rhs.is_dominated_by(lhs),
+                "dual: a.dominates(&b) must equal b.is_dominated_by(&a) on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_is_dominated_by_join_characterization<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical "≤ iff `a ∨ b = b`" lattice law: `a
+        // .is_dominated_by(&b) == (a.clone().pointwise_max(&b) == b)`.
+        // Pins the partial order is the one the join is built on.
+        // Pinned across the bottom / middle / top chain — the
+        // characterization holds on every ordered pair (forward), and
+        // on the equal-pair (vacuous). On the reversed pair (where
+        // `is_dominated_by` reads `false`), the join is not equal to
+        // the would-be-larger side — the characterization holds in the
+        // negative direction too.
+        let bottom: AxisHistogram<A> = AxisHistogram::empty();
+        let middle: AxisHistogram<A> = axis_iter::<A>().collect();
+        let top: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&bottom, &middle),
+            (&bottom, &top),
+            (&middle, &top),
+            (&middle, &middle),
+            (&middle, &bottom),
+            (&top, &middle),
+        ] {
+            let dominated = lhs.is_dominated_by(rhs);
+            let joined = lhs.clone().pointwise_max(rhs);
+            assert_eq!(
+                dominated,
+                joined == *rhs,
+                "join characterization: a.is_dominated_by(&b) must equal (a ∨ b == b) on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_is_dominated_by_meet_characterization<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical "≤ iff `a ∧ b = a`" lattice law (dual to the
+        // join characterization on the meet side): `a
+        // .is_dominated_by(&b) == (a.clone().pointwise_min(&b) == a)`.
+        // Together with the join characterization, pins the partial
+        // order is the one *both* lattice ops are built on. Pinned
+        // across the same chain so the characterization reads off the
+        // forward direction on the ordered pairs, the equal-pair
+        // (vacuous), and the negative direction on the reversed pairs.
+        let bottom: AxisHistogram<A> = AxisHistogram::empty();
+        let middle: AxisHistogram<A> = axis_iter::<A>().collect();
+        let top: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&bottom, &middle),
+            (&bottom, &top),
+            (&middle, &top),
+            (&middle, &middle),
+            (&middle, &bottom),
+            (&top, &middle),
+        ] {
+            let dominated = lhs.is_dominated_by(rhs);
+            let met = lhs.clone().pointwise_min(rhs);
+            assert_eq!(
+                dominated,
+                met == *lhs,
+                "meet characterization: a.is_dominated_by(&b) must equal (a ∧ b == a) on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_is_dominated_by_implies_total_bound<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The total bound implication: `a.is_dominated_by(&b) ⇒
+        // a.total() <= b.total()`. Pointwise `<=` is sum-monotone, so
+        // the cellwise sum is bounded above by the dominator side.
+        // The converse is *not* an iff — equal totals can occur on
+        // lattice-incomparable histograms — but the forward direction
+        // is a load-bearing bound on the per-side totals. Pinned
+        // across the bottom / middle / top chain so the bound reads
+        // off non-vacuously on the strict-chain pairs.
+        let bottom: AxisHistogram<A> = AxisHistogram::empty();
+        let middle: AxisHistogram<A> = axis_iter::<A>().collect();
+        let top: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [(&bottom, &middle), (&bottom, &top), (&middle, &top)] {
+            assert!(lhs.is_dominated_by(rhs));
+            assert!(
+                lhs.total() <= rhs.total(),
+                "total bound: a.is_dominated_by(&b) must imply a.total() <= b.total() on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_is_dominated_by_reflexive_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_dominated_by_reflexive::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_empty_is_dominated_by_every_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_empty_is_dominated_by_every::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_dominated_by_antisymmetric_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_dominated_by_antisymmetric::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_dominated_by_transitive_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_dominated_by_transitive::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_dominates_is_dual_of_is_dominated_by_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_dominates_is_dual_of_is_dominated_by::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_dominated_by_join_characterization_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_dominated_by_join_characterization::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_dominated_by_meet_characterization_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_dominated_by_meet_characterization::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_dominated_by_total_bound_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_dominated_by_implies_total_bound::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_dominated_by_partial_order_is_partial_for_diff_line_kind() {
+        // Concrete pin on the partiality of the pointwise dominance
+        // order: two histograms can be lattice-incomparable when one
+        // cell is strictly larger on each side. The (2, 1, 0) and
+        // (1, 2, 0) shapes on [`DiffLineKind`] witness incomparability
+        // — neither dominates the other, yet both have total 3. This
+        // distinguishes the partial order on the histogram surface
+        // from the total order [`Vec`]'s default lexicographic
+        // `PartialOrd` would induce (lexicographic would always pick a
+        // side); pins the histogram order is the lattice's partial
+        // order from §III.3, not a lexicographic total order.
+        //
+        // [`DiffLineKind::ALL`] declaration order is
+        // `[Removed, Added, Context]`.
+        let lhs: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let rhs: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+
+        // Per-cell distributions for the witnesses:
+        // lhs: Removed=1, Added=2, Context=0; total=3.
+        // rhs: Removed=2, Added=1, Context=0; total=3.
+        assert_eq!(lhs.count(DiffLineKind::Removed), 1);
+        assert_eq!(lhs.count(DiffLineKind::Added), 2);
+        assert_eq!(lhs.count(DiffLineKind::Context), 0);
+        assert_eq!(rhs.count(DiffLineKind::Removed), 2);
+        assert_eq!(rhs.count(DiffLineKind::Added), 1);
+        assert_eq!(rhs.count(DiffLineKind::Context), 0);
+        assert_eq!(lhs.total(), rhs.total());
+
+        // Incomparability: lhs has more `Added` than rhs, but rhs has
+        // more `Removed` than lhs — neither side dominates the other.
+        assert!(!lhs.is_dominated_by(&rhs));
+        assert!(!rhs.is_dominated_by(&lhs));
+        assert!(!lhs.dominates(&rhs));
+        assert!(!rhs.dominates(&lhs));
+
+        // The (join, meet) lattice ops are still defined on
+        // incomparable pairs: the join lifts each cell to the
+        // per-side maximum, the meet floors each cell to the per-
+        // side minimum. The join sits strictly above both sides; the
+        // meet sits strictly below.
+        let join = lhs.clone().pointwise_max(&rhs);
+        let meet = lhs.clone().pointwise_min(&rhs);
+        assert_eq!(join.count(DiffLineKind::Removed), 2);
+        assert_eq!(join.count(DiffLineKind::Added), 2);
+        assert_eq!(join.count(DiffLineKind::Context), 0);
+        assert_eq!(meet.count(DiffLineKind::Removed), 1);
+        assert_eq!(meet.count(DiffLineKind::Added), 1);
+        assert_eq!(meet.count(DiffLineKind::Context), 0);
+        assert!(lhs.is_dominated_by(&join));
+        assert!(rhs.is_dominated_by(&join));
+        assert!(meet.is_dominated_by(&lhs));
+        assert!(meet.is_dominated_by(&rhs));
+
+        // The lattice / additive identity reads off concretely on the
+        // incomparable pair too: max + min = (2,2,0) + (1,1,0) =
+        // (3,3,0) = lhs + rhs.
+        assert_eq!(join.clone() + &meet, lhs.clone() + &rhs);
     }
 
     // ---- AxisHistogram scalar-action trait-uniform laws ----
