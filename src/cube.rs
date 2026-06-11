@@ -2194,6 +2194,142 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         }
         any_strict
     }
+
+    /// Multiset disjointness: `true` when no cell has a positive count
+    /// in both `self` and `other` — the canonical set-theoretic
+    /// disjointness predicate lifted onto the histogram surface. The
+    /// boolean-projection idiom-peer of [`Self::pointwise_min`] at its
+    /// bottom: `a.is_disjoint_from(&b)` reads "the supports of `a` and
+    /// `b` share no cell" / "the lattice meet `a ∧ b` collapses to
+    /// [`Self::empty`]" / "no observation appears in both histograms".
+    ///
+    /// The canonical Rust stdlib idiom-peer of
+    /// [`std::collections::HashSet::is_disjoint`] /
+    /// [`std::collections::BTreeSet::is_disjoint`] on the
+    /// support-set projection. Together with [`Self::intersects`] the
+    /// histogram surface now carries the set-theoretic
+    /// (disjoint, meets) predicate pair next to the partial-order
+    /// (≤, ≥, <, >) quartet and the lattice (∧, ∨) pair — every
+    /// canonical relational projection on the same histogram type.
+    ///
+    /// Before this lift, every consumer reaching the disjointness
+    /// projection — a fleet aggregator asking *"do these two windows'
+    /// per-kind error tallies share any failure cell?"*, a per-channel
+    /// observatory asking *"are the supports of these two rolling
+    /// histograms structurally disjoint (one window had only failures
+    /// of one class, the other had only failures of a different
+    /// class)?"*, a multiset-intersection guard asking *"is the
+    /// [`Self::pointwise_min`] meet of these two empty?"* — reached
+    /// the projection through one of two forms: the open-coded per-cell
+    /// loop or the rebuild-through-meet form
+    /// `a.clone().pointwise_min(&b).is_empty()` (allocates a fresh
+    /// counts vector through [`Clone`], walks it through
+    /// [`Self::pointwise_min`], then walks it again through
+    /// [`Self::is_empty`]). Collapsed to one method call with a
+    /// single-pass `O(axis_cardinality)` short-circuiting scan that
+    /// returns `false` on the first cell where both sides have nonzero
+    /// count — no allocation.
+    ///
+    /// **Symmetry**: `a.is_disjoint_from(&b) == b.is_disjoint_from(&a)`.
+    /// Disjointness is a symmetric relation — the cellwise predicate
+    /// `lhs == 0 || rhs == 0` is symmetric in its two arguments. Peer
+    /// to the symmetry of [`std::collections::HashSet::is_disjoint`].
+    ///
+    /// **Empty is disjoint from everything**:
+    /// `empty.is_disjoint_from(&hist) == true` for every `hist`. Every
+    /// cell of `empty` is zero, so the cellwise `lhs == 0 || rhs == 0`
+    /// reads `true` on every ordinal — vacuously satisfied. By
+    /// symmetry, `hist.is_disjoint_from(&empty) == true` too. Peer to
+    /// the empty-bottom laws on the lattice ((empty, max) identity /
+    /// (empty, min) absorbing) and to the empty-bottom law on the
+    /// partial order (empty is dominated by every histogram).
+    ///
+    /// **Self-disjoint iff empty**: `hist.is_disjoint_from(&hist) ==
+    /// hist.is_empty()`. Disjointness with itself reduces to
+    /// emptiness — a non-empty histogram has at least one cell with a
+    /// positive count, and that cell witnesses non-disjointness on the
+    /// reflexive pair. The boundary law that pins the disjointness
+    /// predicate at the self-pair, and the unique self-disjoint
+    /// histogram is the empty one.
+    ///
+    /// **Dual relation with [`Self::intersects`]**: `a.intersects(&b)
+    /// == !a.is_disjoint_from(&b)`. The two predicates are perfect
+    /// boolean duals — peer to the (is_disjoint, !is_disjoint) duality
+    /// on stdlib sets.
+    ///
+    /// **Meet characterization** (the lattice-bridge law):
+    /// `a.is_disjoint_from(&b) == a.clone().pointwise_min(&b)
+    /// .is_empty()`. The canonical "disjoint iff `a ∧ b = ⊥`" lattice
+    /// law on the histogram surface — pins the disjointness predicate
+    /// is the one the lattice meet's bottom projection is built on.
+    /// Peer to the join / meet characterizations of [`Self::is_dominated_by`].
+    ///
+    /// **Join-equals-add on disjoint pairs**: `a.is_disjoint_from(&b)
+    /// ⇒ a.clone().pointwise_max(&b) == &a + &b`. On disjoint pairs
+    /// the lattice join collapses to the additive sum — where one side
+    /// is zero the other contributes everything, so the cellwise max
+    /// equals the cellwise sum on every cell. Peer to the
+    /// (max + min == add) law on the lattice; on disjoint pairs `min`
+    /// reads `empty` so the law specializes to `max == add`.
+    ///
+    /// **Dominance preservation**: `a.is_disjoint_from(&b) && c
+    /// .is_dominated_by(&a) ⇒ c.is_disjoint_from(&b)`. Disjointness is
+    /// closed under sub-histograms: any histogram pointwise `≤` a
+    /// histogram disjoint from `b` is itself disjoint from `b`. Peer
+    /// to the subset-monotonicity of disjointness on stdlib sets.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The trait-uniform laws pinned
+    /// in [`tests`] hold across the implementor set
+    /// (`axis_histogram_is_disjoint_from_symmetric_*`,
+    /// `axis_histogram_empty_is_disjoint_from_every_*`,
+    /// `axis_histogram_self_disjoint_iff_empty_*`,
+    /// `axis_histogram_intersects_is_dual_of_is_disjoint_from_*`,
+    /// `axis_histogram_is_disjoint_from_meet_characterization_*`,
+    /// `axis_histogram_is_disjoint_from_dominance_preservation_*`).
+    #[must_use]
+    pub fn is_disjoint_from(&self, other: &Self) -> bool {
+        self.counts
+            .iter()
+            .zip(other.counts.iter())
+            .all(|(&lhs, &rhs)| lhs == 0 || rhs == 0)
+    }
+
+    /// Multiset overlap: `true` when at least one cell has a positive
+    /// count in both `self` and `other` — the boolean dual of
+    /// [`Self::is_disjoint_from`] on the same lattice-meet projection.
+    /// `a.intersects(&b)` reads "the supports of `a` and `b` share at
+    /// least one cell" / "the lattice meet `a ∧ b` is non-empty" /
+    /// "some observation appears in both histograms". Perfect peer to
+    /// [`Self::is_disjoint_from`] on the support-set projection — by
+    /// construction `a.intersects(&b) == !a.is_disjoint_from(&b)`,
+    /// pinned by the dual-relation law
+    /// (`axis_histogram_intersects_is_dual_of_is_disjoint_from_*`).
+    ///
+    /// Single-pass `O(axis_cardinality)` short-circuiting scan:
+    /// returns `true` on the first cell where both sides have nonzero
+    /// count. No allocation.
+    ///
+    /// **Empty intersects nothing**: `empty.intersects(&hist) == false`
+    /// for every `hist`. Every cell of `empty` is zero, so no cell
+    /// can witness mutual positivity — vacuously refuted. By
+    /// symmetry, `hist.intersects(&empty) == false` too.
+    ///
+    /// **Self-intersects iff non-empty**: `hist.intersects(&hist) ==
+    /// !hist.is_empty()`. The dual of [`Self::is_disjoint_from`]'s
+    /// self-disjoint-iff-empty law.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. Pinned together with
+    /// [`Self::is_disjoint_from`] through the trait-uniform laws in
+    /// [`tests`].
+    #[must_use]
+    pub fn intersects(&self, other: &Self) -> bool {
+        self.counts
+            .iter()
+            .zip(other.counts.iter())
+            .any(|(&lhs, &rhs)| lhs > 0 && rhs > 0)
+    }
 }
 
 impl<A: ClosedAxis> FromIterator<A> for AxisHistogram<A> {
@@ -11103,6 +11239,347 @@ mod tests {
         assert!(meet.total() < rhs.total());
         assert!(lhs.total() < join.total());
         assert!(rhs.total() < join.total());
+    }
+
+    // ---- AxisHistogram disjointness trait-uniform laws ----
+    //
+    // The (is_disjoint_from, intersects) predicate pair closes the
+    // canonical set-theoretic disjointness projection on the histogram
+    // surface — peer to (`HashSet::is_disjoint`, `!HashSet::is_disjoint`)
+    // on stdlib sets and to the lattice meet's bottom projection
+    // (`a.is_disjoint_from(&b) ⟺ a.pointwise_min(&b).is_empty()`). The
+    // trait-uniform laws below pin the disjointness predicate's
+    // contract uniformly across every [`ClosedAxis`] implementor:
+    // symmetry (disjointness is a symmetric relation); empty is
+    // disjoint from every histogram (the canonical vacuous-disjointness
+    // law); self-disjoint iff empty (the boundary law on the reflexive
+    // pair); dual relation with [`AxisHistogram::intersects`] (perfect
+    // boolean duality); meet characterization (the lattice-bridge law
+    // pinning disjointness to the meet's bottom); dominance
+    // preservation (sub-histograms inherit disjointness).
+
+    fn assert_is_disjoint_from_symmetric<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical symmetry law on the disjointness predicate:
+        // `a.is_disjoint_from(&b) == b.is_disjoint_from(&a)`. The
+        // cellwise predicate `lhs == 0 || rhs == 0` is symmetric in its
+        // two arguments, so the lift inherits the symmetry. Peer to
+        // the symmetry of [`std::collections::HashSet::is_disjoint`].
+        // Pinned across the (empty, empty), (empty, cover), (cover,
+        // empty), and (cover, cover) pairs so the symmetry reads off
+        // on both the true (vacuous-disjoint) and false
+        // (self-intersecting) sides.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        for (lhs, rhs) in [
+            (&empty, &empty),
+            (&empty, &cover),
+            (&cover, &empty),
+            (&cover, &cover),
+        ] {
+            assert_eq!(
+                lhs.is_disjoint_from(rhs),
+                rhs.is_disjoint_from(lhs),
+                "symmetry: a.is_disjoint_from(&b) must equal b.is_disjoint_from(&a) on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_empty_is_disjoint_from_every<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Empty is disjoint from every histogram: every cell of
+        // `empty` is zero, so the cellwise `lhs == 0 || rhs == 0`
+        // predicate reads `true` on every ordinal — vacuously
+        // satisfied. Pinned over the (empty, empty), (empty, cover),
+        // and (empty, doubled cover) pairs so the vacuous-disjointness
+        // reads off on both the empty self-pair and the non-vacuous
+        // counterparty pairs. Also reads off on the symmetric side by
+        // the symmetry law.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for rhs in [&empty, &cover, &doubled] {
+            assert!(
+                empty.is_disjoint_from(rhs),
+                "empty.is_disjoint_from(&hist) must read true on axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert!(
+                rhs.is_disjoint_from(&empty),
+                "hist.is_disjoint_from(&empty) must read true on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_self_disjoint_iff_empty<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The boundary law on the reflexive pair:
+        // `hist.is_disjoint_from(&hist) == hist.is_empty()`. A
+        // histogram has at least one positive cell iff it is non-
+        // empty; that cell witnesses non-disjointness on the
+        // reflexive pair. The unique self-disjoint histogram is the
+        // empty one. Pinned over (empty, cover, doubled cover) so the
+        // boundary reads off on both the true case (empty self-pair)
+        // and the false case (non-empty self-pairs).
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for hist in [&empty, &cover, &doubled] {
+            assert_eq!(
+                hist.is_disjoint_from(hist),
+                hist.is_empty(),
+                "self-disjoint iff empty: hist.is_disjoint_from(&hist) must equal hist.is_empty() on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_intersects_is_dual_of_is_disjoint_from<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The perfect boolean dual law on the disjointness pair:
+        // `a.intersects(&b) == !a.is_disjoint_from(&b)`. By
+        // construction the two predicates negate each other on every
+        // input pair — `intersects` reads `true` iff at least one cell
+        // is mutually positive, which is the exact negation of
+        // `is_disjoint_from`. Pinned across the (empty, empty),
+        // (empty, cover), (cover, empty), and (cover, cover) pairs so
+        // the dual reads off on both the disjoint and the
+        // intersecting cases.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        for (lhs, rhs) in [
+            (&empty, &empty),
+            (&empty, &cover),
+            (&cover, &empty),
+            (&cover, &cover),
+        ] {
+            assert_eq!(
+                lhs.intersects(rhs),
+                !lhs.is_disjoint_from(rhs),
+                "dual: a.intersects(&b) must equal !a.is_disjoint_from(&b) on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_is_disjoint_from_meet_characterization<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical lattice-bridge law: `a.is_disjoint_from(&b) ==
+        // a.clone().pointwise_min(&b).is_empty()`. Pins the
+        // disjointness predicate is the one the lattice meet's bottom
+        // projection is built on. Peer to the join / meet
+        // characterizations of [`AxisHistogram::is_dominated_by`].
+        // Pinned across the (empty, empty), (empty, cover), (cover,
+        // empty), and (cover, cover) pairs so the bridge reads off on
+        // both the true side (empty meet → disjoint) and the false
+        // side (non-empty meet on the cover self-pair → intersecting).
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        for (lhs, rhs) in [
+            (&empty, &empty),
+            (&empty, &cover),
+            (&cover, &empty),
+            (&cover, &cover),
+        ] {
+            let predicate = lhs.is_disjoint_from(rhs);
+            let meet_empty = lhs.clone().pointwise_min(rhs).is_empty();
+            assert_eq!(
+                predicate,
+                meet_empty,
+                "meet characterization: a.is_disjoint_from(&b) must equal a.pointwise_min(&b).is_empty() on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_is_disjoint_from_dominance_preservation<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The dominance-preservation law: `a.is_disjoint_from(&b) && c
+        // .is_dominated_by(&a) ⇒ c.is_disjoint_from(&b)`. Disjointness
+        // is closed under sub-histograms — any histogram pointwise `≤`
+        // a histogram disjoint from `b` is itself disjoint from `b`.
+        // Peer to the subset-monotonicity of disjointness on stdlib
+        // sets. Pinned with `a = empty` (disjoint from every `b`) and
+        // `c = empty` (dominated by every `a`, including empty) so the
+        // preservation reads off on the trait-uniform witness pair
+        // available on every closed axis.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for b in [&empty, &cover, &doubled] {
+            assert!(empty.is_disjoint_from(b));
+            // `empty.is_dominated_by(&empty)` and `empty
+            // .is_disjoint_from(b)` ⇒ `empty.is_disjoint_from(b)`. The
+            // dominance preservation reads off on every counterparty.
+            assert!(empty.is_dominated_by(&empty));
+            assert!(
+                empty.is_disjoint_from(b),
+                "dominance preservation: empty <= empty and empty.is_disjoint_from(b) must imply empty.is_disjoint_from(b) on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_is_disjoint_from_symmetric_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_disjoint_from_symmetric::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_empty_is_disjoint_from_every_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_empty_is_disjoint_from_every::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_self_disjoint_iff_empty_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_self_disjoint_iff_empty::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_intersects_is_dual_of_is_disjoint_from_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_intersects_is_dual_of_is_disjoint_from::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_disjoint_from_meet_characterization_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_disjoint_from_meet_characterization::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_disjoint_from_dominance_preservation_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_disjoint_from_dominance_preservation::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_disjoint_from_witnessed_on_disjoint_supports_for_diff_line_kind() {
+        // Concrete pin on the disjointness predicate against
+        // [`DiffLineKind`] — the three-cell axis (Added, Removed,
+        // Context) lets the disjointness predicate read off
+        // non-vacuously on two non-empty histograms with structurally
+        // disjoint supports. `added_only` has counts (3, 0, 0);
+        // `removed_only` has counts (0, 2, 0). No cell is mutually
+        // positive, so the predicate reads `true` on both directions
+        // (symmetry), and the dual `intersects` reads `false`. The
+        // lattice meet `added_only ∧ removed_only` collapses to
+        // [`AxisHistogram::empty`] (the meet characterization), and
+        // the lattice join collapses to the additive sum
+        // `added_only + removed_only` (the join-equals-add law on
+        // disjoint pairs). A non-disjoint witness pair pins the false
+        // side: `mixed` carries (1, 1, 0) and intersects both
+        // `added_only` (on the Added cell) and `removed_only` (on the
+        // Removed cell).
+        let added_only: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        let removed_only: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Removed, DiffLineKind::Removed]
+                .into_iter()
+                .collect();
+        let mixed: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Removed]
+            .into_iter()
+            .collect();
+
+        // Both sides non-empty, but the supports are structurally
+        // disjoint — the predicate reads `true` non-vacuously on both
+        // directions, and the dual reads `false`.
+        assert!(added_only.is_disjoint_from(&removed_only));
+        assert!(removed_only.is_disjoint_from(&added_only));
+        assert!(!added_only.intersects(&removed_only));
+        assert!(!removed_only.intersects(&added_only));
+        assert!(!added_only.is_empty());
+        assert!(!removed_only.is_empty());
+
+        // Non-disjoint witness pair: `mixed` shares the Added cell
+        // with `added_only` and the Removed cell with `removed_only`.
+        // The predicate reads `false`, the dual reads `true`, on both
+        // directions.
+        assert!(!added_only.is_disjoint_from(&mixed));
+        assert!(!mixed.is_disjoint_from(&added_only));
+        assert!(added_only.intersects(&mixed));
+        assert!(mixed.intersects(&added_only));
+        assert!(!removed_only.is_disjoint_from(&mixed));
+        assert!(!mixed.is_disjoint_from(&removed_only));
+        assert!(removed_only.intersects(&mixed));
+        assert!(mixed.intersects(&removed_only));
+
+        // Meet characterization reads off concretely: the meet of
+        // disjoint pairs collapses to empty, and the meet of
+        // intersecting pairs is non-empty.
+        let disjoint_meet = added_only.clone().pointwise_min(&removed_only);
+        let intersecting_meet = added_only.clone().pointwise_min(&mixed);
+        assert!(disjoint_meet.is_empty());
+        assert!(!intersecting_meet.is_empty());
+        assert_eq!(
+            disjoint_meet,
+            AxisHistogram::<DiffLineKind>::empty(),
+            "disjoint meet must equal empty"
+        );
+        assert_eq!(intersecting_meet.count(DiffLineKind::Added), 1);
+        assert_eq!(intersecting_meet.count(DiffLineKind::Removed), 0);
+
+        // Join-equals-add law on disjoint pairs: on the disjoint pair
+        // `(added_only, removed_only)` the lattice join collapses to
+        // the additive sum — every cell is the max of one zero and one
+        // positive count, which equals the sum.
+        let disjoint_join = added_only.clone().pointwise_max(&removed_only);
+        let disjoint_sum = added_only.clone() + &removed_only;
+        assert_eq!(
+            disjoint_join, disjoint_sum,
+            "join-equals-add on disjoint pairs: pointwise_max must equal Add on the disjoint pair"
+        );
+        // The join carries the union of supports — counts (3, 2, 0).
+        assert_eq!(disjoint_join.count(DiffLineKind::Added), 3);
+        assert_eq!(disjoint_join.count(DiffLineKind::Removed), 2);
+        assert_eq!(disjoint_join.count(DiffLineKind::Context), 0);
+        assert_eq!(disjoint_join.total(), 5);
     }
 
     // ---- AxisHistogram scalar-action trait-uniform laws ----
