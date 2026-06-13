@@ -4787,6 +4787,90 @@ impl<A: ClosedAxisLabel> std::str::FromStr for AxisHistogram<A> {
     }
 }
 
+impl<A: ClosedAxisLabel> serde::Serialize for AxisHistogram<A> {
+    /// Serialize the histogram as the comma-separated
+    /// `"<label₁>=<count₁>, …, <labelₙ>=<countₙ>"` string the
+    /// [`Display`][std::fmt::Display] impl emits — the operator-facing
+    /// scalar form the same `(Display, FromStr)` pair on the
+    /// labeled-axis sub-surface (the pair landed in cce9769 and
+    /// adc2450) carries on the round-trip law `parse(display(h)) ==
+    /// Ok(h)`. Closes the canonical
+    /// (`Serialize`, `Deserialize`) serde idiom-peer of the
+    /// (`Display`, `FromStr`) stdlib pair every operator-facing
+    /// serializable typescape primitive in shikumi (`Format`,
+    /// `ShikumiErrorKind`, `ConfigSourceKind`, …) carries via
+    /// `#[serde(rename_all = "kebab-case")]` on the enum surface.
+    ///
+    /// Routes through [`serde::Serializer::collect_str`] so the
+    /// serialized representation is exactly `format!("{self}")` with
+    /// no intermediate allocation on serializers that accept a
+    /// streaming source — the YAML/JSON/TOML emitter sees one scalar
+    /// string, the round-trip with [`Self::deserialize`] is the same
+    /// bijection [`<Self as std::str::FromStr>::from_str`] already
+    /// closes.
+    ///
+    /// **Round-trip law** — for every `h: AxisHistogram<A>`,
+    /// `serde_yaml::from_str::<AxisHistogram<A>>(
+    /// &serde_yaml::to_string(&h)?)? == h` and the same on
+    /// `serde_json` — the canonical serde round-trip discipline pinned
+    /// by construction on the labeled-axis sub-surface, peer of the
+    /// `(Display, FromStr)` round-trip already pinned on the same
+    /// surface. Pinned uniformly across every [`ClosedAxisLabel`]
+    /// implementor by
+    /// [`tests::axis_histogram_serde_yaml_round_trip_for_every_closed_axis_label_implementor`]
+    /// and the `serde_json` peer test.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de, A: ClosedAxisLabel> serde::Deserialize<'de> for AxisHistogram<A> {
+    /// Deserialize the histogram from the comma-separated
+    /// `"<label>=<count>"` scalar string the
+    /// [`Serialize`][serde::Serialize] impl emits and the
+    /// [`FromStr`][std::str::FromStr] impl accepts — the operator-facing
+    /// scalar form the labeled-axis sub-surface carries on the
+    /// `(Display, FromStr)` round-trip pair, lifted to the serde
+    /// surface via [`serde::Deserializer::deserialize_str`] with a
+    /// visitor whose `visit_str` lowers to
+    /// [`<Self as std::str::FromStr>::from_str`] and routes any
+    /// [`ParseAxisHistogramError`] through
+    /// [`serde::de::Error::custom`].
+    ///
+    /// The accept surface inherits the four-variant rejection shape of
+    /// the [`FromStr`][std::str::FromStr] impl: a manifest field
+    /// carrying an unknown label, a missing `=`, an invalid count, or
+    /// a duplicated label surfaces at the serde error site with the
+    /// offending substring verbatim — the same operator-facing
+    /// localization the [`ParseAxisHistogramError`] [`Display`][std::fmt::Display]
+    /// impl carries. The accept surface also inherits the
+    /// missing-labels-default-to-zero law and the order-invariance law
+    /// — an operator can elide zero-cells (`diff_shape: "added=5"`)
+    /// or permute the pair sequence (`diff_shape: "context=3,
+    /// added=2, removed=1"`) and recover the same typed histogram.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct AxisHistogramVisitor<A: ClosedAxisLabel>(std::marker::PhantomData<fn() -> A>);
+
+        impl<A: ClosedAxisLabel> serde::de::Visitor<'_> for AxisHistogramVisitor<A> {
+            type Value = AxisHistogram<A>;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(
+                    f,
+                    "a comma-separated `<label>=<count>` histogram string for axis {}",
+                    std::any::type_name::<A>(),
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                v.parse::<AxisHistogram<A>>().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(AxisHistogramVisitor::<A>(std::marker::PhantomData))
+    }
+}
+
 /// Lift an iterator of axis observations into a typed
 /// [`AxisHistogram<A>`] — the dense per-cell tally over
 /// [`ClosedAxis::ALL`].
@@ -20938,6 +21022,148 @@ mod tests {
         }
     }
 
+    fn assert_serde_yaml_round_trip<A>()
+    where
+        A: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // The canonical serde YAML `(Serialize, Deserialize)` round-trip
+        // law on the labeled-axis histogram surface: every histogram
+        // serializes to a YAML scalar that deserializes back to a
+        // histogram equal to itself. Lowers through the same
+        // `(Display, FromStr)` pair the round-trip law above pins, so
+        // the serde idiom-peer inherits the round-trip discipline by
+        // construction. Pinned over a per-cell-distinct-count histogram
+        // so the round-trip also recovers count integrity, not just the
+        // axis-cover.
+        let mut hist = AxisHistogram::<A>::empty();
+        for (i, cell) in axis_iter::<A>().enumerate() {
+            for _ in 0..=i {
+                hist.observe(cell);
+            }
+        }
+        let yaml = serde_yaml::to_string(&hist).unwrap_or_else(|e| {
+            panic!(
+                "axis {} must serialize to YAML: {e}",
+                std::any::type_name::<A>(),
+            )
+        });
+        let parsed: AxisHistogram<A> = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+            panic!(
+                "axis {} YAML emission must deserialize back: {e}\n  yaml: {yaml:?}",
+                std::any::type_name::<A>(),
+            )
+        });
+        assert_eq!(
+            parsed,
+            hist,
+            "axis {} (Serialize, Deserialize) YAML round-trip must be identity",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_serde_json_round_trip<A>()
+    where
+        A: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // Peer of [`assert_serde_yaml_round_trip`] on the JSON
+        // serializer — the same round-trip law lowered through the
+        // serde `(Serialize, Deserialize)` pair on every
+        // [`ClosedAxisLabel`] implementor, this time over a
+        // `serde_json` round-trip. JSON emits the scalar as a quoted
+        // string; YAML may emit it as a plain or quoted scalar
+        // depending on its escape rules. Both serializers route
+        // through `serialize_str` / `deserialize_str` so the round-trip
+        // is the same bijection the labeled-axis sub-surface already
+        // carries on `(Display, FromStr)`.
+        let mut hist = AxisHistogram::<A>::empty();
+        for (i, cell) in axis_iter::<A>().enumerate() {
+            for _ in 0..=i {
+                hist.observe(cell);
+            }
+        }
+        let json = serde_json::to_string(&hist).unwrap_or_else(|e| {
+            panic!(
+                "axis {} must serialize to JSON: {e}",
+                std::any::type_name::<A>(),
+            )
+        });
+        let parsed: AxisHistogram<A> = serde_json::from_str(&json).unwrap_or_else(|e| {
+            panic!(
+                "axis {} JSON emission must deserialize back: {e}\n  json: {json}",
+                std::any::type_name::<A>(),
+            )
+        });
+        assert_eq!(
+            parsed,
+            hist,
+            "axis {} (Serialize, Deserialize) JSON round-trip must be identity",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_serde_yaml_empty_round_trip<A>()
+    where
+        A: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // The empty-histogram serde round-trip: the empty histogram
+        // serializes and deserializes back to the empty histogram —
+        // peer of the empty-histogram `(Display, FromStr)` round-trip
+        // law pinned by [`assert_from_str_empty_display_round_trips_to_empty`].
+        // Pins the round-trip law on the identity element of the
+        // histogram monoid under the serde surface.
+        let empty = AxisHistogram::<A>::empty();
+        let yaml = serde_yaml::to_string(&empty).unwrap_or_else(|e| {
+            panic!(
+                "axis {} empty must serialize to YAML: {e}",
+                std::any::type_name::<A>(),
+            )
+        });
+        let parsed: AxisHistogram<A> = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+            panic!(
+                "axis {} empty YAML emission must deserialize back: {e}\n  yaml: {yaml:?}",
+                std::any::type_name::<A>(),
+            )
+        });
+        assert_eq!(
+            parsed,
+            empty,
+            "axis {} empty (Serialize, Deserialize) YAML round-trip must be identity",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_serde_yaml_rejects_unknown_label<A>()
+    where
+        A: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // The unknown-label rejection mode is inherited by the
+        // [`Deserialize`] impl from [`FromStr`]: a YAML scalar carrying
+        // a sentinel label that does not match any canonical name on
+        // the axis surfaces as a `serde_yaml::Error` whose
+        // `Display`-rendering carries the offending substring verbatim
+        // through [`ParseAxisHistogramError::UnknownLabel`]'s
+        // operator-facing rendering — the same one-line error a
+        // [`FromStr`] consumer would see, lifted onto the serde error
+        // site without losing the verbatim-label discipline.
+        let sentinel = "__shikumi_unknown_label_sentinel__";
+        let yaml = format!("\"{sentinel}=1\"\n");
+        let result: Result<AxisHistogram<A>, _> = serde_yaml::from_str(&yaml);
+        match result {
+            Err(e) => {
+                let rendered = format!("{e}");
+                assert!(
+                    rendered.contains(sentinel),
+                    "axis {} serde YAML error must carry the unknown sentinel verbatim, got: {rendered}",
+                    std::any::type_name::<A>(),
+                );
+            }
+            Ok(other) => panic!(
+                "axis {} YAML carrying unknown label must reject, got {other:?}",
+                std::any::type_name::<A>(),
+            ),
+        }
+    }
+
     #[test]
     fn axis_histogram_display_from_str_round_trip_for_every_closed_axis_label_implementor() {
         macro_rules! check {
@@ -21152,5 +21378,169 @@ mod tests {
             label: "added".to_owned(),
         };
         assert_eq!(format!("{duplicate}"), "duplicate label \"added\"");
+    }
+
+    #[test]
+    fn axis_histogram_serde_yaml_round_trip_for_every_closed_axis_label_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_serde_yaml_round_trip::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_serde_json_round_trip_for_every_closed_axis_label_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_serde_json_round_trip::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_serde_yaml_empty_round_trip_for_every_closed_axis_label_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_serde_yaml_empty_round_trip::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_serde_yaml_rejects_unknown_label_for_every_closed_axis_label_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_serde_yaml_rejects_unknown_label::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_serde_yaml_for_diff_line_kind() {
+        // Concrete YAML pin on the serde surface for a representative
+        // call-site shape — a per-rebuild diff-shape histogram round-
+        // tripped through `serde_yaml` to recover the typed
+        // `AxisHistogram<DiffLineKind>` from an operator-supplied
+        // attestation manifest field. Pins the literal scalar
+        // representation so a future drift in the
+        // (Serialize, Deserialize) lowering (a switch from
+        // `serialize_str` to a map representation, an emission-format
+        // change, a default-zero behavior change on the deserialize
+        // side) surfaces at the concrete-axis assertion before
+        // propagating through the trait-uniform laws above.
+        let mut hist = AxisHistogram::<DiffLineKind>::empty();
+        for _ in 0..1 {
+            hist.observe(DiffLineKind::Removed);
+        }
+        for _ in 0..2 {
+            hist.observe(DiffLineKind::Added);
+        }
+        for _ in 0..3 {
+            hist.observe(DiffLineKind::Context);
+        }
+
+        // The serde emission is exactly the `Display` emission lifted
+        // to a YAML scalar — the same `"removed=1, added=2,
+        // context=3"` string the `(Display, FromStr)` pair carries.
+        // `serde_yaml` may emit the scalar in single-quoted form due
+        // to the `=` character; the round-trip law does not depend on
+        // the quoting style.
+        let yaml = serde_yaml::to_string(&hist).unwrap();
+        assert!(
+            yaml.contains("removed=1, added=2, context=3"),
+            "YAML emission must contain the canonical Display form, got: {yaml}",
+        );
+
+        // Round-trip the literal YAML emission back through deserialize.
+        let parsed: AxisHistogram<DiffLineKind> = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(parsed, hist);
+
+        // The accept surface inherits the `(FromStr)` order-invariance
+        // and missing-labels-default-to-zero laws on the serde side:
+        // an operator-authored YAML manifest can elide zero-cells and
+        // permute the pairs.
+        let elided: AxisHistogram<DiffLineKind> = serde_yaml::from_str("\"added=5\"\n").unwrap();
+        let mut expected_elided = AxisHistogram::<DiffLineKind>::empty();
+        for _ in 0..5 {
+            expected_elided.observe(DiffLineKind::Added);
+        }
+        assert_eq!(elided, expected_elided);
+
+        let permuted: AxisHistogram<DiffLineKind> =
+            serde_yaml::from_str("\"context=3, removed=1, added=2\"\n").unwrap();
+        assert_eq!(permuted, hist);
+
+        // The empty histogram round-trips on YAML.
+        let empty = AxisHistogram::<DiffLineKind>::empty();
+        let yaml_empty = serde_yaml::to_string(&empty).unwrap();
+        let parsed_empty: AxisHistogram<DiffLineKind> = serde_yaml::from_str(&yaml_empty).unwrap();
+        assert_eq!(parsed_empty, empty);
+    }
+
+    #[test]
+    fn axis_histogram_serde_json_for_diff_line_kind() {
+        // Peer of `axis_histogram_serde_yaml_for_diff_line_kind` on
+        // JSON — the same round-trip lowered through
+        // `serde_json::{to_string, from_str}`. JSON emits the scalar
+        // as an explicit quoted string, which makes the literal
+        // emission shape predictable.
+        let mut hist = AxisHistogram::<DiffLineKind>::empty();
+        for _ in 0..1 {
+            hist.observe(DiffLineKind::Removed);
+        }
+        for _ in 0..2 {
+            hist.observe(DiffLineKind::Added);
+        }
+        for _ in 0..3 {
+            hist.observe(DiffLineKind::Context);
+        }
+
+        // JSON emits the histogram as one quoted string scalar.
+        let json = serde_json::to_string(&hist).unwrap();
+        assert_eq!(json, "\"removed=1, added=2, context=3\"");
+
+        // Round-trip the literal JSON emission back through deserialize.
+        let parsed: AxisHistogram<DiffLineKind> = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, hist);
+
+        // The accept surface inherits the same laws as the YAML peer.
+        let elided: AxisHistogram<DiffLineKind> = serde_json::from_str("\"added=5\"").unwrap();
+        let mut expected_elided = AxisHistogram::<DiffLineKind>::empty();
+        for _ in 0..5 {
+            expected_elided.observe(DiffLineKind::Added);
+        }
+        assert_eq!(elided, expected_elided);
+    }
+
+    #[test]
+    fn axis_histogram_serde_yaml_unknown_label_error_carries_label_verbatim_for_diff_line_kind() {
+        // Concrete pin on the unknown-label rejection mode lifted to
+        // the serde error site: a YAML scalar carrying an unknown
+        // label surfaces as a `serde_yaml::Error` whose Display
+        // rendering carries the offending substring verbatim through
+        // the `ParseAxisHistogramError::UnknownLabel` Display
+        // rendering routed through `serde::de::Error::custom`. The
+        // rendered error string must contain both the offending label
+        // substring and the operator-facing rejection phrase
+        // (`"unknown axis label"`) the
+        // `ParseAxisHistogramError::Display` impl emits.
+        let result: Result<AxisHistogram<DiffLineKind>, _> = serde_yaml::from_str("\"bogus=1\"\n");
+        let rendered = match result {
+            Err(e) => format!("{e}"),
+            Ok(other) => panic!("must reject unknown label, got {other:?}"),
+        };
+        assert!(
+            rendered.contains("unknown axis label"),
+            "serde error must carry the operator-facing rejection phrase, got: {rendered}",
+        );
+        assert!(
+            rendered.contains("bogus"),
+            "serde error must carry the offending label verbatim, got: {rendered}",
+        );
     }
 }
