@@ -3973,6 +3973,86 @@ impl<A: ClosedAxis> std::ops::Index<A> for AxisHistogram<A> {
     }
 }
 
+impl<A: ClosedAxis> std::ops::IndexMut<A> for AxisHistogram<A> {
+    /// Per-cell mutable count handle through the canonical Rust
+    /// [`IndexMut`][std::ops::IndexMut] operator — `hist[value]` on the
+    /// left of an assignment, or as the receiver of a compound
+    /// assignment (`+=`, `-=`, `*=`, …), returns
+    /// `&mut self.counts[axis_ordinal(value)]`. The mutating peer of
+    /// [`Index<A>`][std::ops::Index] above: where `Index` reads a cell
+    /// count through `hist[cell]`, `IndexMut` writes one through
+    /// `hist[cell] = n;` or compound-assigns one through `hist[cell] +=
+    /// 1;`. The pair `(Index, IndexMut)` is the canonical Rust stdlib
+    /// collection-lookup operator quartet — every stdlib collection that
+    /// supports indexed read also supports indexed mutation at the same
+    /// operator surface ([`Vec<T>`][Vec]: `Index<usize>` + `IndexMut<usize>`,
+    /// [`slice`][prim@slice]: same, [`std::collections::HashMap<K, V>`]:
+    /// `Index<&K>` + `IndexMut<&K>`, [`std::collections::BTreeMap<K, V>`]:
+    /// same); the [`AxisHistogram`] now joins that peerage on the
+    /// [`ClosedAxis`] cell-mutation axis.
+    ///
+    /// Before this lift, every consumer reaching the cellwise-mutation
+    /// surface (a fleet aggregator resetting a single
+    /// [`crate::ShikumiErrorKind`] cell to a watermark, a per-window
+    /// observatory bumping a [`crate::WatchEventClass`] cell after a
+    /// late observation arrived, a backfill projection assigning a
+    /// known historical count to a single cell before folding the
+    /// rolling window forward) reached the cell either through the
+    /// per-call-site [`Self::observe`] loop (one observation at a time)
+    /// or through a [`FromIterator<(A, usize)>`] rebuild over the full
+    /// axis cover (which throws away every other cell). The
+    /// [`IndexMut`] surface now exposes the single-cell mutation form
+    /// every Rust reader already knows from [`Vec`] /
+    /// [`HashMap`][std::collections::HashMap]: `hist[cell] = n;`,
+    /// `hist[cell] += 1;`, `hist[cell] -= 1;`, `hist[cell] *= 2;`.
+    ///
+    /// **Operator-to-inherent bridge** — assigning through the operator
+    /// surface and reading through [`Self::count`] / the [`Index`]
+    /// operator surface agree pointwise: after `hist[cell] = n;` the
+    /// read `hist.count(cell) == n` and `hist[cell] == n` hold. The
+    /// canonical stdlib write-then-read round-trip every reader expects.
+    ///
+    /// **`+= 1` is observation** — `hist[cell] += 1;` is pointwise
+    /// equivalent to `hist.observe(cell);` (the inherent observation
+    /// method that motivates the histogram surface). The
+    /// (`IndexMut`, `observe`) duality the [`Index`] /
+    /// [`Self::count`] pair has on the read side.
+    ///
+    /// **`= 0` zeroes one cell** — `hist[cell] = 0;` zeros exactly the
+    /// `cell` slot and leaves every other slot pointwise unchanged.
+    /// The single-cell-reset peer of [`Self::empty`] (which zeros every
+    /// cell); the cell-local form of the (empty, identity) law on the
+    /// additive monoid.
+    ///
+    /// **`*= 2` doubles one cell** — `hist[cell] *= 2;` is pointwise
+    /// equivalent to folding every cell through `hist *= 2`'s
+    /// [`MulAssign<usize>`][std::ops::MulAssign] surface restricted to
+    /// the `cell` slot. The cell-local form of the scalar-action law
+    /// on the [`MulAssign<usize>`][std::ops::MulAssign] operator surface
+    /// (each cell mutated independently re-enacts the global scalar
+    /// action).
+    ///
+    /// The `A` argument is taken by value (not by reference) because
+    /// every [`ClosedAxis`] cell is [`Copy`], matching the [`Index<A>`]
+    /// peer above so the call-site shape stays `hist[Added] = 5;`
+    /// (operator-surface idiom every Rust programmer already knows)
+    /// rather than `hist[&Added] = 5;`. Total over the axis space:
+    /// defined on every cell, no out-of-range case, no panic path
+    /// beyond the inherent [`usize`] indexing into the
+    /// `axis_cardinality::<A>()`-sized counts vector (which is itself
+    /// statically bounded by [`ClosedAxis::ALL`]).
+    ///
+    /// Trait-uniform laws reach every [`ClosedAxis`] implementor through
+    /// `for_each_closed_axis_implementor!` in [`tests`]
+    /// (`axis_histogram_index_mut_write_round_trips_through_index_*`,
+    /// `axis_histogram_index_mut_add_assign_equals_observe_*`,
+    /// `axis_histogram_index_mut_zero_resets_single_cell_*`,
+    /// `axis_histogram_index_mut_mul_assign_matches_mul_assign_usize_*`).
+    fn index_mut(&mut self, value: A) -> &mut usize {
+        &mut self.counts[axis_ordinal(value)]
+    }
+}
+
 impl<A: ClosedAxis> std::cmp::PartialOrd for AxisHistogram<A> {
     /// Pointwise lattice partial order lifted to the canonical Rust
     /// stdlib [`PartialOrd`][std::cmp::PartialOrd] trait surface — the
@@ -9598,6 +9678,221 @@ mod tests {
         assert_eq!(hist[DiffLineKind::Removed], 3);
         assert_eq!(hist[DiffLineKind::Added], 2);
         assert_eq!(hist[DiffLineKind::Context], 1);
+    }
+
+    // ---- AxisHistogram::IndexMut (operator-surface mutation) trait-uniform laws ----
+    //
+    // Four trait-uniform laws reach every [`ClosedAxis`] implementor through
+    // [`for_each_closed_axis_implementor`] so the per-axis [`IndexMut`]
+    // projection's contract holds uniformly without per-axis test duplication:
+    // writing through `hist[cell] = n;` round-trips through the [`Index`]
+    // read on the same cell; `hist[cell] += 1;` agrees pointwise with
+    // [`Self::observe`]; `hist[cell] = 0;` zeroes exactly the targeted cell
+    // and leaves every other cell unchanged; `hist[cell] *= 2;` on every
+    // cell agrees pointwise with the global [`MulAssign<usize>`][std::ops::MulAssign]
+    // scalar action on the histogram.
+
+    fn assert_index_mut_write_round_trips_through_index<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical write-then-read round-trip on every cell:
+        // after `hist[cell] = n;` both the operator surface
+        // (`hist[cell]`) and the inherent surface ([`Self::count`])
+        // observe `n` on that cell. Pinned over the full axis cover
+        // (every cell hit at least once) and a non-trivial per-cell
+        // mix (`ordinal + 1`) so cells don't accidentally collide on
+        // the same count.
+        let mut hist = AxisHistogram::<A>::empty();
+        for (i, cell) in axis_iter::<A>().enumerate() {
+            hist[cell] = i + 1;
+        }
+        for (i, cell) in axis_iter::<A>().enumerate() {
+            assert_eq!(
+                hist[cell],
+                i + 1,
+                "IndexMut write must round-trip through Index on cell {cell:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                hist.count(cell),
+                i + 1,
+                "IndexMut write must round-trip through count() on cell {cell:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_index_mut_add_assign_equals_observe<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (`IndexMut`, `observe`) duality: `hist[cell] += 1;`
+        // through the operator surface is pointwise equivalent to
+        // `hist.observe(cell);` through the inherent observation
+        // method. Pinned by replaying the same observation stream
+        // through both surfaces and asserting cellwise equality on
+        // every cell of the axis. The operator-surface peer of the
+        // (`Index`, `count`) read-side duality.
+        let observations: Vec<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let mut via_observe = AxisHistogram::<A>::empty();
+        let mut via_index_mut = AxisHistogram::<A>::empty();
+        for v in &observations {
+            via_observe.observe(*v);
+            via_index_mut[*v] += 1;
+        }
+        for cell in axis_iter::<A>() {
+            assert_eq!(
+                via_index_mut[cell],
+                via_observe[cell],
+                "`hist[cell] += 1` must agree with `hist.observe(cell)` on cell {cell:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+        assert_eq!(
+            via_index_mut,
+            via_observe,
+            "`hist[cell] += 1` must equal `hist.observe(cell)` histogram-wise on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_index_mut_zero_resets_single_cell<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Cell-local reset law: `hist[cell] = 0;` zeroes exactly the
+        // targeted cell and leaves every other cell pointwise unchanged.
+        // The single-cell peer of [`Self::empty`] (which zeros every
+        // cell). Pinned by walking every cell as the reset target and
+        // asserting (target zero, others unchanged) at every step.
+        for target in axis_iter::<A>() {
+            let base: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+            let mut hist = base.clone();
+            hist[target] = 0;
+            for cell in axis_iter::<A>() {
+                let expected = if cell == target { 0 } else { base[cell] };
+                assert_eq!(
+                    hist[cell],
+                    expected,
+                    "`hist[{target:?}] = 0` must leave cell {cell:?} at {expected} on axis {}",
+                    std::any::type_name::<A>(),
+                );
+            }
+        }
+    }
+
+    fn assert_index_mut_mul_assign_matches_mul_assign_usize<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The cell-local form of the scalar-action law: doubling every
+        // cell through the operator surface (`for v in axis_iter() {
+        // hist[v] *= 2; }`) agrees pointwise with the global
+        // [`MulAssign<usize>`][std::ops::MulAssign] surface
+        // (`hist *= 2;`). The (`IndexMut`, `MulAssign<usize>`)
+        // peerage on the operator surface — cell-local doubling
+        // re-enacts global doubling cell by cell.
+        let base: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let mut via_cellwise = base.clone();
+        for v in axis_iter::<A>() {
+            via_cellwise[v] *= 2;
+        }
+        let mut via_global = base.clone();
+        via_global *= 2;
+        assert_eq!(
+            via_cellwise,
+            via_global,
+            "cellwise doubling through IndexMut must agree with `hist *= 2` on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_index_mut_write_round_trips_through_index_for_every_closed_axis_implementor()
+    {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_index_mut_write_round_trips_through_index::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_index_mut_add_assign_equals_observe_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_index_mut_add_assign_equals_observe::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_index_mut_zero_resets_single_cell_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_index_mut_zero_resets_single_cell::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_index_mut_mul_assign_matches_mul_assign_usize_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_index_mut_mul_assign_matches_mul_assign_usize::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_index_mut_supports_compound_assignments_for_diff_line_kind() {
+        // Concrete pin at the canonical Rust call-site shapes on the
+        // operator-surface mutation form — `hist[cell] = n;`,
+        // `hist[cell] += k;`, `hist[cell] -= k;`, `hist[cell] *= k;`.
+        // Every shape every Rust reader already knows from `Vec` /
+        // `HashMap` reads off on the [`AxisHistogram`] surface.
+        let mut hist = AxisHistogram::<DiffLineKind>::empty();
+
+        // Plain assignment seeds the cells at named call sites.
+        hist[DiffLineKind::Added] = 5;
+        hist[DiffLineKind::Removed] = 3;
+        hist[DiffLineKind::Context] = 1;
+        assert_eq!(hist[DiffLineKind::Added], 5);
+        assert_eq!(hist[DiffLineKind::Removed], 3);
+        assert_eq!(hist[DiffLineKind::Context], 1);
+        assert_eq!(hist.total(), 9);
+
+        // `+=` on the operator surface compounds with prior writes.
+        hist[DiffLineKind::Added] += 2;
+        assert_eq!(hist[DiffLineKind::Added], 7);
+
+        // `-=` on the operator surface removes counts at the cell —
+        // the in-place inverse of `+=` on the cell-local surface.
+        hist[DiffLineKind::Removed] -= 1;
+        assert_eq!(hist[DiffLineKind::Removed], 2);
+
+        // `*=` on the operator surface scales a single cell — the
+        // cell-local form of the global `MulAssign<usize>` action.
+        hist[DiffLineKind::Context] *= 4;
+        assert_eq!(hist[DiffLineKind::Context], 4);
+
+        // `= 0` resets exactly the targeted cell; the other cells
+        // retain their prior counts.
+        hist[DiffLineKind::Added] = 0;
+        assert_eq!(hist[DiffLineKind::Added], 0);
+        assert_eq!(hist[DiffLineKind::Removed], 2);
+        assert_eq!(hist[DiffLineKind::Context], 4);
+
+        // The total reads off the per-cell post-state through the
+        // operator surface — every cell's contribution is the value
+        // visible at `hist[cell]`.
+        assert_eq!(hist.total(), 6);
     }
 
     // ---- AxisHistogram::sum (Sum<Self> / Sum<&Self>) trait-uniform laws ----
