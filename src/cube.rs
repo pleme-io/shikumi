@@ -4270,6 +4270,158 @@ impl<A: ClosedAxis> std::ops::Mul<usize> for AxisHistogram<A> {
     }
 }
 
+impl<A: ClosedAxis> std::ops::DivAssign<usize> for AxisHistogram<A> {
+    /// Truncating per-cell division in place by `divisor` — the
+    /// canonical Rust [`DivAssign`][std::ops::DivAssign] trait idiom
+    /// for the truncating-integer-division scalar peer of
+    /// [`MulAssign<usize>`][std::ops::MulAssign] on the additive monoid
+    /// `(AxisHistogram, +, empty)`. Closes the canonical
+    /// `(Mul, MulAssign, Div, DivAssign)` scalar-action operator
+    /// quartet every primitive that carries a [`usize`]-action on a
+    /// numeric surface exposes: [`std::time::Duration`] carries both
+    /// `Duration * u32` / `*=` and `Duration / u32` / `/=` for exactly
+    /// the same reason — the multiplicative pair on one side, the
+    /// truncating-division pair on the other. The primitive site that
+    /// carries the per-cell scalar-division loop; the [`Div<usize>`]
+    /// surface below lowers through this impl so the per-cell loop
+    /// lives at exactly one site.
+    ///
+    /// **Semantics — truncating integer division.** Each cell `c` is
+    /// replaced by `c / divisor` under stdlib [`usize`]-arithmetic
+    /// (truncating toward zero, since both operands are non-negative).
+    /// The operation is **not** distributive over [`AddAssign`]
+    /// pointwise — `(a + &b) / n` may disagree with `a / n + &(b / n)`
+    /// when cells cross a divisor boundary (`(1 + 2) / 2 = 1` but
+    /// `1 / 2 + 2 / 2 = 0 + 1 = 1` agrees here, while `(1 + 1) / 2 = 1`
+    /// disagrees with `1 / 2 + 1 / 2 = 0 + 0 = 0`). The trait-uniform
+    /// laws below carry only the laws that hold under truncation; the
+    /// distributivity story lives on the [`MulAssign<usize>`] side of
+    /// the operator pair where it is exact.
+    ///
+    /// **One-divisor identity law** — `hist /= 1` leaves the histogram
+    /// unchanged. The identity element of the scalar monoid
+    /// `(usize, *, 1)` preserves the counts vector pointwise on the
+    /// truncating-division surface (every cell `c` satisfies
+    /// `c / 1 == c`). Peer to the one-factor identity law on the
+    /// [`MulAssign<usize>`] surface.
+    ///
+    /// **Cell-level truncating-division law** — every cell `v` has its
+    /// count replaced by the truncating division
+    /// `before.count(v) / divisor`: `(hist /= divisor); hist.count(v)`
+    /// reads `before.count(v) / divisor` for every cell. Peer to the
+    /// cell-level scaling law on [`MulAssign<usize>`] (which reads
+    /// `before.count(v) * factor`) on the truncating-division surface.
+    ///
+    /// **Mul-Div round-trip law on non-zero factor** — `hist *= factor;
+    /// hist /= factor;` recovers `hist` pointwise when `factor > 0` and
+    /// no per-cell multiplication overflowed: every cell `c` satisfies
+    /// `(c * factor) / factor == c` under [`usize`] arithmetic for
+    /// `factor > 0`. The canonical mul-then-div round-trip identity on
+    /// the scalar-action surface; the truncating-division step recovers
+    /// the original count because the multiplication is exact (no
+    /// fractional remainder to lose). Pinned by the trait-uniform test
+    /// `axis_histogram_div_assign_inverts_mul_assign_on_uniform_cover_for_every_closed_axis_implementor`.
+    ///
+    /// **Total under truncation** — the resulting total is bounded
+    /// above by `before.total() / divisor` and bounded below by the sum
+    /// of per-cell truncating divisions; the inequality is exact only
+    /// when no cell crosses a divisor boundary. Pinned concretely on
+    /// [`DiffLineKind`] by the
+    /// `axis_histogram_div_witnessed_on_non_trivial_cells_for_diff_line_kind`
+    /// test.
+    ///
+    /// # Panics
+    ///
+    /// Panics on `divisor == 0`, inherited from the stdlib
+    /// `usize::div(0)` panic at every cell (the underlying `/=`
+    /// operation panics on the first cell). Consistent with the
+    /// [`MulAssign`] impl, which inherits the same overflow contract
+    /// from [`usize`] arithmetic: overflow / divide-by-zero semantics
+    /// are inherited from the cell type, not re-derived on the
+    /// histogram surface.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The trait-uniform laws pinned
+    /// in [`tests`] hold across the implementor set
+    /// (`axis_histogram_div_assign_one_divisor_is_identity_*`,
+    /// `axis_histogram_div_assign_scales_cells_by_truncating_division_*`,
+    /// `axis_histogram_div_assign_inverts_mul_assign_on_uniform_cover_*`).
+    fn div_assign(&mut self, divisor: usize) {
+        for slot in &mut self.counts {
+            *slot /= divisor;
+        }
+    }
+}
+
+impl<A: ClosedAxis> std::ops::Div<usize> for AxisHistogram<A> {
+    type Output = AxisHistogram<A>;
+
+    /// Truncating per-cell division of `self` by `divisor` — the
+    /// canonical Rust [`Div`][std::ops::Div] trait idiom and the
+    /// natural infix-operator peer of
+    /// [`DivAssign<usize>`][std::ops::DivAssign]. Lowered through
+    /// [`DivAssign<usize>`]: take ownership of `self`, divide every
+    /// cell through `/=`, return the accumulator. Pointwise equal to
+    /// `DivAssign<usize>` on every call site, by construction (both
+    /// lower through `/=` underneath). The per-cell scalar-division
+    /// loop lives at exactly one site (the [`DivAssign<usize>`] impl
+    /// above).
+    ///
+    /// Closes the canonical Rust `(Mul, MulAssign, Div, DivAssign)`
+    /// scalar-action operator quartet every primitive that carries a
+    /// [`usize`]-action on a numeric surface exposes
+    /// ([`std::time::Duration`] carries the same quartet for the same
+    /// reason — the multiplicative pair on one side, the
+    /// truncating-division pair on the other). Every shikumi consumer
+    /// reaching the per-cell truncating-division surface (a
+    /// rolling-window observatory averaging
+    /// `AxisHistogram<crate::WatchEventClass>` cells across `N`
+    /// windows by `summed / N` to read off the per-window mean, a
+    /// fleet aggregator normalizing
+    /// `AxisHistogram<crate::ConfigSourceKind>` cells against a host
+    /// count via `fleet_hist / host_count` for per-host cell shares, a
+    /// per-tier observatory de-amplifying a previously-weighted
+    /// `AxisHistogram<crate::ShikumiErrorKind>` cell by the same
+    /// weighting factor) now routes through `hist / divisor` uniformly
+    /// instead of the open-coded per-cell map
+    /// `for (c, n) in hist.iter() { for _ in 0..(n / divisor) {
+    /// dst.observe(c); } }` or the rebuild-via-`FromIterator<(A,
+    /// usize)>` form `hist.iter().map(|(c, n)| (c, n /
+    /// divisor)).collect()`.
+    ///
+    /// **Equivalence with [`DivAssign<usize>`]** — for every `(self,
+    /// divisor)` with `divisor > 0`: `self.clone() / divisor` is
+    /// pointwise equal to `let mut a = self.clone(); a /= divisor; a`.
+    /// The (`Div`, `DivAssign`) duality on the scalar-action surface,
+    /// peer to the (`Mul`, `MulAssign`) duality on the multiplicative
+    /// side and the (`Add`, `AddAssign`) duality on the additive
+    /// monoid surface. Pinned by
+    /// [`tests::axis_histogram_div_equals_div_assign_for_every_closed_axis_implementor`].
+    ///
+    /// **One-divisor identity law** — `hist / 1` is pointwise equal
+    /// to `hist`. Inherits the identity law from
+    /// [`DivAssign<usize>`].
+    ///
+    /// **Mul-Div round-trip law on non-zero factor** — `(hist *
+    /// factor) / factor == hist` when `factor > 0` and no per-cell
+    /// multiplication overflowed. Inherits from
+    /// [`DivAssign<usize>`].
+    ///
+    /// # Panics
+    ///
+    /// Panics on `divisor == 0`. Inherits the panic contract from
+    /// [`DivAssign<usize>`].
+    ///
+    /// Trait-uniform laws reach every [`ClosedAxis`] implementor
+    /// through `for_each_closed_axis_implementor!` in [`tests`]
+    /// (`axis_histogram_div_equals_div_assign_*`,
+    /// `axis_histogram_div_one_divisor_is_identity_*`).
+    fn div(mut self, divisor: usize) -> Self::Output {
+        self /= divisor;
+        self
+    }
+}
+
 impl<A: ClosedAxis> std::ops::Mul<AxisHistogram<A>> for usize {
     type Output = AxisHistogram<A>;
 
@@ -16347,6 +16499,233 @@ mod tests {
         assert_eq!(via_scale_after.count(DiffLineKind::Removed), 6);
         assert_eq!(via_scale_after.count(DiffLineKind::Context), 3);
         assert_eq!(via_scale_after.total(), 15);
+    }
+
+    // ---- AxisHistogram truncating-division trait-uniform laws ----
+    //
+    // The (Div<usize>, DivAssign<usize>) scalar-action surface closes
+    // the canonical Rust `(Mul, MulAssign, Div, DivAssign)` operator
+    // quartet every primitive that carries a `usize`-action on a
+    // numeric surface exposes (peer of `std::time::Duration` carrying
+    // both `Duration * u32` / `*=` and `Duration / u32` / `/=`). The
+    // trait-uniform laws below pin the truncating-division surface's
+    // contract uniformly across every [`ClosedAxis`] implementor:
+    // the one-divisor identity (preserves the counts vector); cell-
+    // level truncating division (every cell `c` becomes `c /
+    // divisor`); the (Div, DivAssign) operator pair agrees pointwise;
+    // mul-then-div round-trips on a non-zero factor with no overflow
+    // (the canonical exact-multiplication / exact-truncating-division
+    // recovery identity).
+
+    fn assert_div_assign_one_divisor_is_identity<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The one-divisor identity law on `DivAssign<usize>`: `hist /=
+        // 1` leaves the histogram unchanged. The identity element of
+        // the scalar monoid `(usize, *, 1)` preserves the counts
+        // vector pointwise on the truncating-division surface. Pinned
+        // over the (axis-cover + once-more) histogram so every cell
+        // carries a positive count and the equality reads off every
+        // ordinal.
+        let cover: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let mut divided = cover.clone();
+        divided /= 1;
+        assert_eq!(
+            divided,
+            cover,
+            "hist /= 1 must leave hist unchanged on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_div_assign_scales_cells_by_truncating_division<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The cell-level truncating-division law on `DivAssign<usize>`:
+        // every cell `v` has its count replaced by the stdlib usize
+        // truncating-division `before.count(v) / divisor`. Pinned at
+        // divisor 3 over the (axis-cover ×7)-then-trim histogram so
+        // every cell carries a count of 7 pre-division and lands at
+        // 7 / 3 = 2 post-division (a non-trivial truncation that
+        // reads off every ordinal independently).
+        let mut pre = AxisHistogram::<A>::empty();
+        for _ in 0..7 {
+            pre += &axis_iter::<A>().collect::<AxisHistogram<A>>();
+        }
+        let divisor = 3usize;
+        let mut divided = pre.clone();
+        divided /= divisor;
+        for cell in axis_iter::<A>() {
+            assert_eq!(
+                divided.count(cell),
+                pre.count(cell) / divisor,
+                "hist /= {divisor} cell {cell:?} must equal pre.count / {divisor} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_div_assign_inverts_mul_assign_on_uniform_cover<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The mul-then-div round-trip law on the scalar-action
+        // surface: `hist *= factor; hist /= factor;` recovers `hist`
+        // pointwise when `factor > 0` and no per-cell multiplication
+        // overflowed. Every cell `c` satisfies `(c * factor) / factor
+        // == c` under usize arithmetic for `factor > 0` (the
+        // multiplication is exact; the truncating-division step has
+        // no fractional remainder to lose). Pinned at factors 1, 2,
+        // 5, 11 over the axis-cover histogram so the round-trip reads
+        // off the identity factor plus three non-trivial multipliers
+        // uniformly.
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        for factor in [1usize, 2, 5, 11] {
+            let mut round_trip = cover.clone();
+            round_trip *= factor;
+            round_trip /= factor;
+            assert_eq!(
+                round_trip,
+                cover,
+                "(hist *= {factor}; hist /= {factor}) must recover hist on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_div_equals_div_assign<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (Div, DivAssign) idiom-peer equivalence on the
+        // truncating-division surface: `hist / divisor` reads the same
+        // histogram as `let mut a = hist.clone(); a /= divisor; a`.
+        // The canonical Rust owned/in-place operator peer pair —
+        // `impl Div<usize>` and `impl DivAssign<usize>` agreeing
+        // pointwise — every stdlib truncating-division operator
+        // surface exposes (`Duration / u32 ==` a `Duration` whose
+        // internal `/=` step is the same fold). Pinned at divisors 1,
+        // 2, 5, 11 so the identity divisor and three non-trivial
+        // divisors witness the equivalence.
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for divisor in [1usize, 2, 5, 11] {
+            let via_div = hist.clone() / divisor;
+            let mut via_div_assign = hist.clone();
+            via_div_assign /= divisor;
+            assert_eq!(
+                via_div,
+                via_div_assign,
+                "hist / {divisor} must equal `let mut a = hist; a /= {divisor}; a` on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_div_assign_one_divisor_is_identity_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_div_assign_one_divisor_is_identity::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_div_assign_scales_cells_by_truncating_division_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_div_assign_scales_cells_by_truncating_division::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_div_assign_inverts_mul_assign_on_uniform_cover_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_div_assign_inverts_mul_assign_on_uniform_cover::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_div_equals_div_assign_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_div_equals_div_assign::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_div_witnessed_on_non_trivial_cells_for_diff_line_kind() {
+        // The truncating-integer-division surface on the `/` operator
+        // against [`DiffLineKind`] — the three-cell axis (Added,
+        // Removed, Context) lets the per-cell truncation read off
+        // non-vacuously across a mixed-remainder pre-state. `pre`
+        // carries counts (Added: 7, Removed: 5, Context: 4); `pre / 2`
+        // reads (Added: 3, Removed: 2, Context: 2) — every cell
+        // independently truncates toward zero under usize arithmetic.
+        // Mirrors the `axis_histogram_mul_distributes_over_add_for_diff_line_kind`
+        // pin on the multiplicative side; reads it off again on the
+        // truncating-division side to pin the dual scalar surface
+        // through one concrete cell distribution.
+        let pre: AxisHistogram<DiffLineKind> = [
+            (DiffLineKind::Added, 7usize),
+            (DiffLineKind::Removed, 5),
+            (DiffLineKind::Context, 4),
+        ]
+        .into_iter()
+        .collect();
+        let divisor = 2usize;
+
+        let via_op = pre.clone() / divisor;
+        assert_eq!(via_op.count(DiffLineKind::Added), 3);
+        assert_eq!(via_op.count(DiffLineKind::Removed), 2);
+        assert_eq!(via_op.count(DiffLineKind::Context), 2);
+        assert_eq!(via_op.total(), 7);
+
+        // (Div, DivAssign) operator-peer agreement at the concrete
+        // pin: `hist / divisor` reads the same histogram as the
+        // in-place `/=` form.
+        let mut via_assign = pre.clone();
+        via_assign /= divisor;
+        assert_eq!(via_op, via_assign);
+
+        // One-divisor identity at the concrete pin: `hist / 1 ==
+        // hist`.
+        assert_eq!(pre.clone() / 1, pre);
+
+        // Mul-Div round-trip on a non-zero factor at the concrete
+        // pin: `(hist * factor) / factor == hist` when no per-cell
+        // multiplication overflows. Witnessed at factor 4 against the
+        // pre-state, which scales to (Added: 28, Removed: 20,
+        // Context: 16) and divides back to the input exactly.
+        let factor = 4usize;
+        let round_trip = (pre.clone() * factor) / factor;
+        assert_eq!(round_trip, pre);
+
+        // Inverse-order composition: `(hist / divisor) * divisor`
+        // recovers the pre-state only when every cell is exactly
+        // divisible — at divisor 2 against (7, 5, 4), only Context
+        // (4) survives the round-trip; Added (7) and Removed (5)
+        // lose their odd remainder. Pinned to read off the truncation
+        // semantics through the operator surface (not just through
+        // the inherent-method side): `(7 / 2) * 2 = 6`, `(5 / 2) * 2
+        // = 4`, `(4 / 2) * 2 = 4`.
+        let lossy = (pre.clone() / divisor) * divisor;
+        assert_eq!(lossy.count(DiffLineKind::Added), 6);
+        assert_eq!(lossy.count(DiffLineKind::Removed), 4);
+        assert_eq!(lossy.count(DiffLineKind::Context), 4);
+        assert_ne!(lossy, pre);
     }
 
     // ---- AxisHistogram::dominant_cell trait-uniform laws ----
