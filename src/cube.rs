@@ -4270,6 +4270,66 @@ impl<A: ClosedAxis> std::ops::Mul<usize> for AxisHistogram<A> {
     }
 }
 
+impl<A: ClosedAxis> std::ops::Mul<AxisHistogram<A>> for usize {
+    type Output = AxisHistogram<A>;
+
+    /// Left-scalar peer of [`Mul<usize> for AxisHistogram<A>`][Mul] —
+    /// `n * hist` reads the same histogram as `hist * n`. Closes the
+    /// canonical Rust commutative-scalar-multiplication operator pair
+    /// every primitive that carries a [`usize`]-action on a numeric
+    /// surface exposes ([`std::time::Duration`] carries both
+    /// `Duration * u32` and `u32 * Duration` for the same reason, peer
+    /// to the right-scalar / left-scalar pair on the `(usize, +, *)`
+    /// semiring acting on the additive monoid `(AxisHistogram, +,
+    /// empty)`). The left-scalar entry surface delegates to the
+    /// right-scalar form so the per-cell scalar-multiplication loop
+    /// lives at exactly one site (the [`MulAssign<usize>`][MulAssign]
+    /// impl above); no per-cell traversal lives on this surface.
+    ///
+    /// Before this lift, every consumer wanting the left-scalar shape
+    /// (a fleet aggregator reading `weight * host_hist` to match the
+    /// natural English shape *"weight times the host's histogram"*; a
+    /// dashboard column reading `multiplier * counts` to mirror the
+    /// algebraic-textbook left-side scalar; a per-row weighted-mean
+    /// projection on a `Vec<(usize, AxisHistogram<A>)>` folding
+    /// through `acc += weight * hist` where the left-scalar reads in
+    /// declaration order) had to rewrite to the right-scalar form
+    /// `hist * weight` against the natural shape of the call site, or
+    /// open-code a `let scaled = hist.clone() * weight; scaled` rebind
+    /// against a non-mutable receiver. The lift names the projection
+    /// at one site, consumers route through `n * hist` uniformly, and
+    /// the per-cell loop lives at exactly one site underneath every
+    /// scalar-action operator entry surface (right-scalar `*`,
+    /// left-scalar `*`, in-place `*=`).
+    ///
+    /// **Commutativity law** — `n * hist` is pointwise equal to
+    /// `hist * n` for every `(n, hist)`. The canonical
+    /// commutative-scalar-multiplication identity on a [`usize`]-action
+    /// surface; pinned by the trait-uniform test
+    /// `axis_histogram_mul_left_factor_equals_mul_right_factor_for_every_closed_axis_implementor`
+    /// in [`tests`]. Inherits every law the right-scalar surface
+    /// carries — the zero-factor absorbing law (`0 * hist == empty`),
+    /// the one-factor identity law (`1 * hist == hist`), the
+    /// total-scaling law (`(n * hist).total() == n * hist.total()`),
+    /// the cell-level scaling law
+    /// (`(n * hist).count(v) == n * hist.count(v)`), the support
+    /// preservation under non-zero factor, the distributivity over the
+    /// additive monoid (`n * (a + &b) == n * a + &(n * b)`), and the
+    /// equivalence with repeated `+=` — by the commutativity
+    /// equivalence at one site.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The trait-uniform commutativity
+    /// law pinned in [`tests`] holds across the implementor set
+    /// (`axis_histogram_mul_left_factor_equals_mul_right_factor_*`).
+    ///
+    /// [Mul]: std::ops::Mul
+    /// [MulAssign]: std::ops::MulAssign
+    fn mul(self, hist: AxisHistogram<A>) -> Self::Output {
+        hist * self
+    }
+}
+
 impl<A: ClosedAxis> std::ops::Index<A> for AxisHistogram<A> {
     type Output = usize;
 
@@ -16213,6 +16273,80 @@ mod tests {
         assert_eq!(via_scaled_add.count(DiffLineKind::Removed), 2);
         assert_eq!(via_scaled_add.count(DiffLineKind::Context), 6);
         assert_eq!(via_scaled_add.total(), 13);
+    }
+
+    fn assert_mul_left_factor_equals_mul_right_factor<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The commutative-scalar-multiplication law on the `*`
+        // operator surface: `n * hist` is pointwise equal to `hist *
+        // n`. The canonical std-`Duration` peer (`u32 * Duration ==
+        // Duration * u32`) lifted to the `AxisHistogram<A>` surface —
+        // the left-scalar entry delegates to the right-scalar form so
+        // the per-cell `*=` loop lives at exactly one site. Pinned at
+        // factors 0, 1, 2, 5 so the absorbing, identity, and two
+        // non-trivial multipliers witness the commutativity uniformly
+        // across every closed-axis implementor.
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for factor in [0usize, 1, 2, 5] {
+            let via_left = factor * hist.clone();
+            let via_right = hist.clone() * factor;
+            assert_eq!(
+                via_left,
+                via_right,
+                "{factor} * hist must equal hist * {factor} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_mul_left_factor_equals_mul_right_factor_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_mul_left_factor_equals_mul_right_factor::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_mul_left_factor_distributes_over_add_for_diff_line_kind() {
+        // The semimodule distributivity law on the left-scalar
+        // operator surface: `n * (a + &b)` is pointwise equal to `n *
+        // a + &(n * b)`. The (right-scalar, left-scalar) pair of `*`
+        // surfaces composes through one consistent distributive law,
+        // peer to the right-scalar
+        // `axis_histogram_mul_distributes_over_add_for_diff_line_kind`
+        // pin on the same algebraic surface. Pinned concretely on
+        // [`DiffLineKind`] across two non-trivial histograms and a
+        // non-identity / non-absorbing factor so the distributivity
+        // reads off a non-trivial cell distribution from the
+        // left-scalar entry surface.
+        let a: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let b: AxisHistogram<DiffLineKind> = [DiffLineKind::Removed, DiffLineKind::Context]
+            .into_iter()
+            .collect();
+        let factor = 3usize;
+
+        let via_scale_after = factor * (a.clone() + &b);
+        let via_scale_first = factor * a.clone() + &(factor * b.clone());
+
+        assert_eq!(via_scale_after, via_scale_first);
+
+        // Concrete cell counts: a + b yields (Added: 2, Removed: 2,
+        // Context: 1); scaled left by 3 yields (6, 6, 3).
+        assert_eq!(via_scale_after.count(DiffLineKind::Added), 6);
+        assert_eq!(via_scale_after.count(DiffLineKind::Removed), 6);
+        assert_eq!(via_scale_after.count(DiffLineKind::Context), 3);
+        assert_eq!(via_scale_after.total(), 15);
     }
 
     // ---- AxisHistogram::dominant_cell trait-uniform laws ----
