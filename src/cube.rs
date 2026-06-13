@@ -1903,13 +1903,16 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     /// `axis_histogram_pointwise_min_cell_level_*`,
     /// `axis_histogram_pointwise_min_dominated_by_both_sides_*`,
     /// `axis_histogram_pointwise_min_absorbed_by_pointwise_max_*`).
+    ///
+    /// Lowered through [`BitAndAssign<&Self>`][std::ops::BitAndAssign]:
+    /// take ownership of `self`, fold `other` in through `&=`, return
+    /// the accumulator. The per-cell `min` loop lives at exactly one
+    /// site (the borrowed-RHS-[`BitAndAssign`] impl); this method and
+    /// the operator-surface peers ([`BitAnd`], [`BitAnd<&Self>`],
+    /// [`BitAndAssign<Self>`]) are pointwise equal by construction.
     #[must_use]
     pub fn pointwise_min(mut self, other: &Self) -> Self {
-        for (slot, &delta) in self.counts.iter_mut().zip(other.counts.iter()) {
-            if delta < *slot {
-                *slot = delta;
-            }
-        }
+        self &= other;
         self
     }
 
@@ -3592,6 +3595,176 @@ impl<A: ClosedAxis> std::ops::BitOr<AxisHistogram<A>> for AxisHistogram<A> {
     /// [`Self::pointwise_max`] on every call site.
     fn bitor(mut self, other: AxisHistogram<A>) -> Self::Output {
         self |= &other;
+        self
+    }
+}
+
+impl<A: ClosedAxis> std::ops::BitAndAssign<&AxisHistogram<A>> for AxisHistogram<A> {
+    /// Cellwise minimum of `self` and `other` in place — the canonical
+    /// Rust [`BitAndAssign`][std::ops::BitAndAssign] trait idiom for
+    /// the lattice-meet (∩) operation on the multiset surface, the
+    /// in-place peer of [`Self::pointwise_min`] and the operator-surface
+    /// lift of the same per-cell [`Ord::min`] loop. The primitive site
+    /// that carries the per-cell loop — every other meet surface on
+    /// this type ([`BitAndAssign<Self>`], [`BitAnd<Self>`],
+    /// [`BitAnd<&Self>`], and [`Self::pointwise_min`] itself) lowers
+    /// through this impl so the per-cell `min` loop lives at exactly
+    /// one site.
+    ///
+    /// Closes the meet arm of the (∪, ∩, ∖, △) set-theoretic operator
+    /// quartet on the stdlib bit-operator surface: the multiset peer of
+    /// [`std::collections::HashSet::bitand_assign`] /
+    /// [`std::collections::BTreeSet::bitand_assign`] (the `&=` on
+    /// stdlib sets), the lattice dual of [`std::ops::BitOrAssign`] (∪)
+    /// on the join arm, pairing with [`std::ops::BitXorAssign`] (△) on
+    /// the symmetric-difference arm and [`std::ops::SubAssign`] (∖) on
+    /// the arithmetic monus arm. Before this lift,
+    /// [`Self::pointwise_min`] was the only entry to the meet — the
+    /// consume-and-rebind shape forced a rebind at every call site even
+    /// when the histogram lived behind a mutable binding.
+    ///
+    /// Before this lift, every consumer reaching the cellwise-min
+    /// projection on the in-place surface — a fleet aggregator
+    /// maintaining the rolling low-water mark on
+    /// [`crate::ShikumiErrorKind`] (the per-kind floor every host at
+    /// least hit, the common-failure baseline across the fleet), a
+    /// per-window observatory carrying the running observation floor
+    /// across windows (the count every window at least observed), a
+    /// multiset-intersection projection asking *"what observations are
+    /// common to every histogram in this stream?"* on a rolling fold —
+    /// reached the projection through the consume-and-rebind
+    /// `hist = hist.pointwise_min(&other);` form. Collapsed onto the
+    /// stdlib bit-operator-assign surface so call sites read `hist &=
+    /// &other;` — the canonical Rust idiom every reader already knows
+    /// from [`HashSet::bitand_assign`].
+    ///
+    /// **Equivalence with [`Self::pointwise_min`]** — for every pair
+    /// `(self, other)`: `let mut a = self.clone(); a &= other; a` is
+    /// pointwise equal to `self.clone().pointwise_min(other)`. The
+    /// (`BitAndAssign`, `pointwise_min`) duality on the lattice-meet
+    /// operator: intersecting in place is the in-place form of the
+    /// owned-meet surface. The [`pointwise_min`][Self::pointwise_min]
+    /// impl itself lowers through this method so the equivalence is by
+    /// construction.
+    ///
+    /// **Commutativity on the monoid operation** (not on the call site):
+    /// `let mut a = x.clone(); a &= &y;` and
+    /// `let mut b = y.clone(); b &= &x;` are pointwise equal, by the
+    /// commutativity of cellwise [`Ord::min`]. The call sites differ in
+    /// which histogram is mutated; the resulting histogram does not.
+    /// Peer to the [`BitOrAssign`][std::ops::BitOrAssign] commutativity
+    /// law on the lattice-join monoid and the
+    /// [`AddAssign`][std::ops::AddAssign] commutativity law on the
+    /// additive monoid.
+    ///
+    /// **Empty-right-hand-side absorbing** — `hist &= &empty` zeros
+    /// every cell of `hist`. Every cell of `empty` is zero, so `min(c,
+    /// 0) == 0` reduces every cell to zero. The (empty, min) absorbing
+    /// law on the meet — `empty` is the bottom of the lattice, dual to
+    /// the (empty, max) identity law on the
+    /// [`BitOrAssign`][std::ops::BitOrAssign] join side: where `empty`
+    /// is the right-identity on the join, it is the right-absorber on
+    /// the meet.
+    ///
+    /// **Idempotent self-meet** — `let mut a = hist.clone(); a &= &hist`
+    /// leaves `a` pointwise equal to `hist`. The canonical lattice
+    /// idempotence law on the meet — every cell is its own min with
+    /// itself. Peer to the [`BitOrAssign`][std::ops::BitOrAssign]
+    /// self-idempotence on the join (which also leaves the histogram
+    /// unchanged — the lattice has both join-idempotence and
+    /// meet-idempotence as the defining lattice laws).
+    ///
+    /// **Cell-level min** — every cell `v` satisfies
+    /// `after.count(v) == before.count(v).min(other.count(v))`. Peer
+    /// to the [`BitOrAssign`][std::ops::BitOrAssign] cell-level max,
+    /// the [`AddAssign`][std::ops::AddAssign] cell-additivity, the
+    /// [`SubAssign`][std::ops::SubAssign] cell-saturation, and the
+    /// [`BitXorAssign`][std::ops::BitXorAssign] cell-`abs_diff` laws on
+    /// the join / additive / monus / symmetric-difference monoids.
+    ///
+    /// **Dominance under meet** — after `self &= &other`, both
+    /// `self.is_dominated_by(&original_self)` and
+    /// `self.is_dominated_by(&other)` hold. The defining lattice law
+    /// that the meet is the greatest lower bound on the dominance
+    /// partial order [`Self::is_dominated_by`] — dual to the
+    /// [`BitOrAssign`][std::ops::BitOrAssign] join-is-least-upper-bound
+    /// law.
+    ///
+    /// **Lattice / additive decomposition** — for every pair `(a, b)`:
+    /// `(a.clone() | &b) + &(a.clone() & &b) == a + &b` pointwise. The
+    /// canonical max-min/addition identity `max(x, y) + min(x, y) ==
+    /// x + y` reads off on the operator surface; pinned together with
+    /// the [`BitOrAssign`][std::ops::BitOrAssign] lift through the
+    /// trait-uniform laws.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The trait-uniform laws pinned in
+    /// [`tests`] hold across the implementor set
+    /// (`axis_histogram_bitand_assign_ref_equals_pointwise_min_*`,
+    /// `axis_histogram_bitand_assign_ref_empty_rhs_is_empty_*`,
+    /// `axis_histogram_bitand_assign_ref_self_is_identity_*`,
+    /// `axis_histogram_bitand_assign_ref_is_commutative_*`,
+    /// `axis_histogram_bitand_assign_ref_cell_level_min_*`,
+    /// `axis_histogram_bitand_assign_ref_dominated_by_both_sides_*`,
+    /// `axis_histogram_bitor_plus_bitand_equals_add_*`,
+    /// `axis_histogram_bitand_owned_equals_bitand_ref_*`,
+    /// `axis_histogram_bitand_assign_owned_equals_bitand_assign_ref_*`).
+    fn bitand_assign(&mut self, other: &AxisHistogram<A>) {
+        for (slot, &delta) in self.counts.iter_mut().zip(other.counts.iter()) {
+            if delta < *slot {
+                *slot = delta;
+            }
+        }
+    }
+}
+
+impl<A: ClosedAxis> std::ops::BitAndAssign<AxisHistogram<A>> for AxisHistogram<A> {
+    /// Cellwise minimum of `self` and `other` in place — the
+    /// owned-right-hand-side peer of [`BitAndAssign<&Self>`]. Delegates
+    /// to the borrowed form (the right-hand side is read once, by
+    /// reference, then dropped); the per-cell `min` loop lives at
+    /// exactly one site (the borrowed-RHS impl).
+    fn bitand_assign(&mut self, other: AxisHistogram<A>) {
+        *self &= &other;
+    }
+}
+
+impl<A: ClosedAxis> std::ops::BitAnd<&AxisHistogram<A>> for AxisHistogram<A> {
+    type Output = AxisHistogram<A>;
+
+    /// Cellwise minimum of `self` and `other` — the canonical Rust
+    /// [`BitAnd`][std::ops::BitAnd] trait idiom for the lattice-meet
+    /// (∩) operation on the multiset surface, on the borrowed-right-
+    /// hand-side surface. The natural infix-operator peer of
+    /// [`Self::pointwise_min`] — the same shape consumers reach for
+    /// when they want the `&` operator on histograms (`a & &b` instead
+    /// of `a.pointwise_min(&b)`).
+    ///
+    /// Lowered through [`BitAndAssign<&Self>`]: take ownership of
+    /// `self`, fold `other` in through `&=`, return the accumulator.
+    /// Pointwise equal to [`Self::pointwise_min`] on every call site,
+    /// by construction (both lower through `&=` underneath). Peer to
+    /// [`std::collections::HashSet::bitand`] /
+    /// [`std::collections::BTreeSet::bitand`] on the stdlib set surface.
+    /// Trait-uniform laws pinned in [`tests`]
+    /// (`axis_histogram_bitand_ref_equals_pointwise_min_*`,
+    /// `axis_histogram_bitand_owned_equals_bitand_ref_*`).
+    fn bitand(mut self, other: &AxisHistogram<A>) -> Self::Output {
+        self &= other;
+        self
+    }
+}
+
+impl<A: ClosedAxis> std::ops::BitAnd<AxisHistogram<A>> for AxisHistogram<A> {
+    type Output = AxisHistogram<A>;
+
+    /// Cellwise minimum of `self` and `other` — the owned-right-hand-
+    /// side peer of [`BitAnd<&Self>`]. Delegates to the borrowed form so
+    /// the per-cell `min` loop lives at exactly one site (the
+    /// [`BitAndAssign<&Self>`] impl). Pointwise equal to
+    /// [`Self::pointwise_min`] on every call site.
+    fn bitand(mut self, other: AxisHistogram<A>) -> Self::Output {
+        self &= &other;
         self
     }
 }
@@ -13615,6 +13788,478 @@ mod tests {
         // are pointwise dominated by the join.
         assert!(lhs.is_dominated_by(&via_op));
         assert!(rhs.is_dominated_by(&via_op));
+    }
+
+    // ---- AxisHistogram::BitAnd / BitAndAssign trait-uniform laws ----
+    //
+    // The (`BitAnd`, `BitAndAssign`)-on-`AxisHistogram` impls promote
+    // the lattice-meet (∩) arm of the (∪, ∩, ∖, △) set-theoretic
+    // operator quartet onto the stdlib bit-operator surface — the
+    // multiset peer of [`HashSet::bitand`] / [`HashSet::bitand_assign`]
+    // (`&` / `&=` on stdlib sets), the lattice dual of the
+    // [`BitOr`] / [`BitOrAssign`] lift on the join arm. With the meet
+    // arm landed, the operator quartet is closed on the bit-operator
+    // surface: ∪ through `|`, ∩ through `&`, △ through `^`, ∖ through
+    // the saturating `-`. Before this lift, [`Self::pointwise_min`] was
+    // the only entry to the meet — the consume-and-rebind shape forced
+    // a rebind at every call site even when the histogram lived behind
+    // a mutable binding. The trait-uniform laws below pin the operator
+    // quartet's meet arm uniformly across every [`ClosedAxis`]
+    // implementor: equivalence with the inherent method (the operator
+    // lift carries the same per-cell `min` loop the inherent method is
+    // built on); commutativity, self-idempotence, empty-RHS absorbing,
+    // and cell-level min lifted from the inherent method's
+    // trait-uniform laws; the dominated-by-under-meet law (`&=`
+    // produces a lower bound on both sides under
+    // [`Self::is_dominated_by`] — the defining lattice-meet property on
+    // the dominance partial order); the join-meet additive
+    // decomposition `(a | &b) + &(a & &b) == a + &b` on the operator
+    // surface (the canonical `max + min == sum` identity lifted
+    // cellwise — pins the lattice algebra and the additive monoid
+    // agree on the per-cell decomposition through the operator surface,
+    // not just the inherent method); and the (owned, borrowed) RHS
+    // equivalence on both the [`BitAnd`] and [`BitAndAssign`] surfaces
+    // (so the per-cell loop lives at exactly one site — the
+    // borrowed-RHS-[`BitAndAssign`] impl).
+
+    fn assert_bitand_assign_ref_equals_pointwise_min<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical operator-to-inherent bridge on `&=`: every
+        // `BitAndAssign<&Self>` call agrees pointwise with the inherent
+        // `pointwise_min` on the same arguments. Pins the operator-
+        // surface lift carries the same per-cell `min` semantics the
+        // inherent method is built on — the load-bearing correctness
+        // condition for the (`BitAndAssign`, `pointwise_min`) duality.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&empty, &empty),
+            (&empty, &cover),
+            (&cover, &empty),
+            (&cover, &doubled),
+            (&doubled, &cover),
+        ] {
+            let mut via_op = lhs.clone();
+            via_op &= rhs;
+            let via_method = lhs.clone().pointwise_min(rhs);
+            assert_eq!(
+                via_op,
+                via_method,
+                "bitand_assign ref must equal pointwise_min on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_bitand_assign_ref_empty_rhs_is_empty<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The empty-RHS absorbing law on `&=`: `hist &= &empty` zeros
+        // every cell of `hist`. Every cell of `empty` is zero, so the
+        // per-cell `min` reduces every cell to zero on every ordinal —
+        // `empty` is the bottom of the lattice, dual to the (empty,
+        // max) identity law on the join (`|=`) side. Peer to the (empty,
+        // ∸) absorbing law on the left-empty side of the monus monoid.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for hist in [&empty, &cover, &doubled] {
+            let mut applied = hist.clone();
+            applied &= &empty;
+            assert_eq!(
+                applied,
+                empty,
+                "hist &= &empty must zero hist on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_bitand_assign_ref_self_is_identity<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The idempotence law on `&=`: `let mut a = hist.clone(); a &=
+        // &hist` leaves `a` pointwise equal to `hist`. The canonical
+        // lattice idempotence law on the meet — every cell is its own
+        // min with itself. Peer to the `BitOrAssign` self-idempotence
+        // on the join (which also leaves the histogram unchanged — the
+        // lattice has both join-idempotence and meet-idempotence as
+        // the defining lattice laws).
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for hist in [&empty, &cover, &doubled] {
+            let mut applied = hist.clone();
+            applied &= hist;
+            assert_eq!(
+                applied,
+                hist.clone(),
+                "hist &= &hist must equal hist on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_bitand_assign_ref_is_commutative<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The commutativity law on `&=`: `let mut a = x.clone(); a &=
+        // &y;` and `let mut b = y.clone(); b &= &x;` are pointwise
+        // equal, by the commutativity of cellwise `Ord::min`. The call
+        // sites differ in which histogram is mutated; the resulting
+        // histogram does not. Peer to the inherent
+        // `pointwise_min`-is-commutative law on the borrowed-RHS
+        // surface and the `BitOrAssign`-is-commutative law on the
+        // lattice-join operator surface.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&empty, &empty),
+            (&empty, &cover),
+            (&cover, &empty),
+            (&cover, &doubled),
+            (&doubled, &cover),
+        ] {
+            let mut from_lhs = lhs.clone();
+            from_lhs &= rhs;
+            let mut from_rhs = rhs.clone();
+            from_rhs &= lhs;
+            assert_eq!(
+                from_lhs,
+                from_rhs,
+                "bitand_assign commutativity: lhs &= &rhs must equal rhs &= &lhs on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_bitand_assign_ref_cell_level_min<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The cell-level min law on `&=`: every cell `v` satisfies
+        // `after.count(v) == before.count(v).min(other.count(v))`. Peer
+        // to the `BitOrAssign` cell-level max, the `AddAssign`
+        // cell-additivity, the `SubAssign` cell-saturation, and the
+        // `BitXorAssign` cell-`abs_diff` laws on the join / additive /
+        // monus / symmetric-difference monoids. Pinned over the
+        // (axis-cover, doubled) pair so every cell carries a positive
+        // count on both sides and the `min` reads off every ordinal
+        // independently.
+        let before: AxisHistogram<A> = axis_iter::<A>().collect();
+        let other: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let mut after = before.clone();
+        after &= &other;
+        for cell in axis_iter::<A>() {
+            assert_eq!(
+                after.count(cell),
+                before.count(cell).min(other.count(cell)),
+                "hist &= &other cell {cell:?} must equal before.count.min(other.count) on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_bitand_assign_ref_dominated_by_both_sides<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The lattice-meet law on `&=`: after `self &= &other`, the
+        // resulting histogram is pointwise dominated by both the
+        // original `self` and `other` (the meet is the greatest lower
+        // bound on the dominance partial order
+        // [`Self::is_dominated_by`]). Reaches the (∩, ≤) lattice
+        // property the operator surface names on the same trait-uniform
+        // pin — dual to the `BitOrAssign` join-is-least-upper-bound
+        // law.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&empty, &empty),
+            (&empty, &cover),
+            (&cover, &empty),
+            (&cover, &doubled),
+            (&doubled, &cover),
+        ] {
+            let mut met = lhs.clone();
+            met &= rhs;
+            assert!(
+                met.is_dominated_by(lhs),
+                "lhs &= &rhs must be dominated by lhs on axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert!(
+                met.is_dominated_by(rhs),
+                "lhs &= &rhs must be dominated by rhs on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_bitor_plus_bitand_equals_add<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The lattice / additive decomposition law on the operator
+        // surface: for every pair `(a, b)`, `(a | &b) + &(a & &b)` is
+        // pointwise equal to `a + &b`. The canonical `max(x, y) +
+        // min(x, y) == x + y` identity lifted cellwise — pins the
+        // lattice algebra and the additive monoid agree on the per-cell
+        // decomposition through the operator surface, not just the
+        // inherent-method side
+        // (`axis_histogram_pointwise_max_plus_min_equals_add_*`). Pinned
+        // over the (axis-cover, doubled) pair so every cell carries a
+        // positive count on both sides and the decomposition reads off
+        // every ordinal non-vacuously.
+        let a: AxisHistogram<A> = axis_iter::<A>().collect();
+        let b: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let join = a.clone() | &b;
+        let meet = a.clone() & &b;
+        let lhs = join + &meet;
+        let rhs = a + &b;
+        assert_eq!(
+            lhs,
+            rhs,
+            "(a | &b) + &(a & &b) must equal a + &b on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_bitand_owned_equals_bitand_ref<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (owned, borrowed) RHS equivalence on `&`: `lhs & rhs`
+        // produces the same histogram as `lhs & &rhs`. Pins the
+        // owned-RHS impl delegates to the borrowed form so the per-cell
+        // `min` loop lives at exactly one site (the
+        // borrowed-RHS-`BitAndAssign` impl). Peer to the
+        // `axis_histogram_bitor_owned_equals_bitor_ref_*` law on the
+        // lattice-join operator surface.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&empty, &empty),
+            (&empty, &cover),
+            (&cover, &empty),
+            (&cover, &doubled),
+            (&doubled, &cover),
+        ] {
+            let via_owned = lhs.clone() & rhs.clone();
+            let via_ref = lhs.clone() & rhs;
+            assert_eq!(
+                via_owned,
+                via_ref,
+                "lhs & rhs must equal lhs & &rhs on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_bitand_assign_owned_equals_bitand_assign_ref<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (owned, borrowed) RHS equivalence on `&=`: `let mut a =
+        // lhs.clone(); a &= rhs.clone();` produces the same histogram
+        // as `let mut a = lhs.clone(); a &= &rhs;`. Pins the owned-RHS
+        // `BitAndAssign` impl delegates to the borrowed form so the
+        // per-cell `min` loop lives at exactly one site (the
+        // borrowed-RHS-`BitAndAssign` impl). Peer to the
+        // `axis_histogram_bitor_assign_owned_equals_bitor_assign_ref`
+        // family on the lattice-join operator surface.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&empty, &empty),
+            (&empty, &cover),
+            (&cover, &empty),
+            (&cover, &doubled),
+            (&doubled, &cover),
+        ] {
+            let mut via_owned = lhs.clone();
+            via_owned &= rhs.clone();
+            let mut via_ref = lhs.clone();
+            via_ref &= rhs;
+            assert_eq!(
+                via_owned,
+                via_ref,
+                "(a &= rhs) must equal (a &= &rhs) on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_bitand_assign_ref_equals_pointwise_min_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_bitand_assign_ref_equals_pointwise_min::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_bitand_assign_ref_empty_rhs_is_empty_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_bitand_assign_ref_empty_rhs_is_empty::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_bitand_assign_ref_self_is_identity_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_bitand_assign_ref_self_is_identity::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_bitand_assign_ref_is_commutative_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_bitand_assign_ref_is_commutative::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_bitand_assign_ref_cell_level_min_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_bitand_assign_ref_cell_level_min::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_bitand_assign_ref_dominated_by_both_sides_for_every_closed_axis_implementor()
+    {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_bitand_assign_ref_dominated_by_both_sides::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_bitor_plus_bitand_equals_add_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_bitor_plus_bitand_equals_add::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_bitand_owned_equals_bitand_ref_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_bitand_owned_equals_bitand_ref::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_bitand_assign_owned_equals_bitand_assign_ref_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_bitand_assign_owned_equals_bitand_assign_ref::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_bitand_witnessed_on_partial_overlap_for_diff_line_kind() {
+        // Concrete pin on the `&` operator surface against
+        // [`DiffLineKind`] — the three-cell axis (Added, Removed,
+        // Context) lets the per-cell min read off non-vacuously on a
+        // partially-overlapping pair. `lhs` carries counts (5, 2, 0);
+        // `rhs` carries (1, 4, 3). `lhs & &rhs` reads (min(5,1),
+        // min(2,4), min(0,3)) = (1, 2, 0) — every cell carries the
+        // per-cell lower bound regardless of which side dominates.
+        // Mirrors the `axis_histogram_pointwise_min_per_cell_floor`
+        // pin on the inherent-method side; reads it off again on the
+        // operator-surface side to pin the lift is the same function.
+        let lhs: AxisHistogram<DiffLineKind> =
+            [(DiffLineKind::Added, 5), (DiffLineKind::Removed, 2)]
+                .into_iter()
+                .collect();
+        let rhs: AxisHistogram<DiffLineKind> = [
+            (DiffLineKind::Added, 1),
+            (DiffLineKind::Removed, 4),
+            (DiffLineKind::Context, 3),
+        ]
+        .into_iter()
+        .collect();
+
+        let via_op = lhs.clone() & &rhs;
+        assert_eq!(via_op.count(DiffLineKind::Added), 1);
+        assert_eq!(via_op.count(DiffLineKind::Removed), 2);
+        assert_eq!(via_op.count(DiffLineKind::Context), 0);
+        assert_eq!(via_op.total(), 3);
+
+        // Operator-to-inherent equivalence at the concrete pin: `lhs &
+        // &rhs` is pointwise equal to `lhs.pointwise_min(&rhs)`.
+        let via_method = lhs.clone().pointwise_min(&rhs);
+        assert_eq!(via_op, via_method);
+
+        // Commutativity on the operator surface: `lhs & &rhs == rhs &
+        // &lhs`.
+        let via_op_rev = rhs.clone() & &lhs;
+        assert_eq!(via_op, via_op_rev);
+
+        // Idempotence on the operator surface: `lhs & &lhs == lhs`.
+        let self_met = lhs.clone() & &lhs;
+        assert_eq!(self_met, lhs);
+
+        // Empty-absorbing on the operator surface: `lhs & &empty ==
+        // empty`.
+        let empty = AxisHistogram::<DiffLineKind>::empty();
+        let absorbed = lhs.clone() & &empty;
+        assert_eq!(absorbed, empty);
+
+        // `&=` agrees with `&` on the same input.
+        let mut via_assign = lhs.clone();
+        via_assign &= &rhs;
+        assert_eq!(via_assign, via_op);
+
+        // Dominance under meet at the concrete pin: the meet is
+        // pointwise dominated by both lhs and rhs.
+        assert!(via_op.is_dominated_by(&lhs));
+        assert!(via_op.is_dominated_by(&rhs));
+
+        // Lattice / additive decomposition at the concrete pin: `(lhs
+        // | &rhs) + &(lhs & &rhs) == lhs + &rhs`. The canonical
+        // max + min == sum identity reads off through the operator
+        // surface, not just the inherent method.
+        let join = lhs.clone() | &rhs;
+        let sum_decomp = join + &via_op;
+        let sum_direct = lhs.clone() + &rhs;
+        assert_eq!(sum_decomp, sum_direct);
     }
 
     // ---- AxisHistogram scalar-action trait-uniform laws ----
