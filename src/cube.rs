@@ -2663,6 +2663,95 @@ impl<A: ClosedAxis> From<A> for AxisHistogram<A> {
     }
 }
 
+impl<A: ClosedAxis, const N: usize> From<[A; N]> for AxisHistogram<A> {
+    /// Build a histogram from a fixed-size array of axis cells — the
+    /// canonical Rust stdlib array-as-collection constructor idiom-peer
+    /// of [`Vec::from`][Vec], [`std::collections::HashSet::from`],
+    /// [`std::collections::BTreeSet::from`],
+    /// [`std::collections::VecDeque::from`], and
+    /// [`std::collections::BinaryHeap::from`] on the `[T; N]` input
+    /// surface. The const-generic-N partner of the
+    /// [`FromIterator<A>`] entry surface, hoisted to the stdlib
+    /// array-literal call site so `AxisHistogram::from([Added, Removed,
+    /// Added])` reads at the same idiom rung as `Vec::from([1, 2, 3])`
+    /// and `HashSet::from([Added, Removed])`.
+    ///
+    /// Before this lift, every consumer reaching the
+    /// (array-literal → histogram) projection (a test fixture pinning
+    /// a small handful of observations as the trial input for a
+    /// downstream invariant, an attestation manifest hard-coding the
+    /// expected post-reload `AxisHistogram<crate::WatchEventClass>`
+    /// cell for a known-good baseline, a CLI golden-output check
+    /// hard-coding the diff-line cell mix for a regression-pinned
+    /// fixture, a documentation example reaching for the smallest
+    /// readable lift from a literal observation list to a histogram)
+    /// reached one of three open-coded forms — the
+    /// `[Added, Removed, Added].into_iter().collect::<AxisHistogram<_>>()`
+    /// post-collect form (which forces an explicit turbofish at every
+    /// site because the call-site shape doesn't constrain the
+    /// collected type), the
+    /// `[Added, Removed, Added].iter().copied().collect()` borrowed-
+    /// then-copied lowering (which adds a `.copied()` step purely to
+    /// route through the borrowed-input [`FromIterator<&A>`] surface),
+    /// or the longhand `{ let mut h = AxisHistogram::empty();
+    /// h.observe(Added); h.observe(Removed); h.observe(Added); h }`
+    /// per-cell observation expansion — three distinct re-derivations
+    /// of the array-input constructor that drift apart when one site or
+    /// the other gains a structural invariant the other lacks.
+    /// Collapsed to one trait-method call routed through the existing
+    /// [`FromIterator<A>`] impl, so the per-cell `observe` loop lives
+    /// at exactly one site (the [`Extend<A>`] impl above) underneath
+    /// every array-input constructor surface.
+    ///
+    /// **Equivalence with [`FromIterator<A>`]** — for every fixed-size
+    /// array `arr: [A; N]`: `AxisHistogram::from(arr)` is pointwise
+    /// equal to `arr.into_iter().collect::<AxisHistogram<A>>()`. The
+    /// array-input constructor / iterator-input constructor duality on
+    /// the (raw-observation) entry surface — the array-literal call
+    /// site lowers to the same per-cell observation fold the
+    /// [`FromIterator<A>`] impl drives, so the two constructors
+    /// cannot drift apart by construction.
+    ///
+    /// **Empty-array identity law** — `AxisHistogram::from([])` is
+    /// pointwise equal to [`AxisHistogram::empty`]. The vacuous fold on
+    /// the array-input constructor surface, peer to the
+    /// [`Extend<A>`] empty-identity law and to the
+    /// [`FromIterator<A>`] empty-input identity. The zero-length
+    /// array literal lowers to the monoid identity at the constructor
+    /// rung.
+    ///
+    /// **Singleton-array law** — `AxisHistogram::from([cell])` is
+    /// pointwise equal to `AxisHistogram::from(cell)` (the
+    /// [`From<A>`] singleton constructor above) and to
+    /// `std::iter::once(cell).collect::<AxisHistogram<A>>()`. The
+    /// arity-1 array literal joins the singleton-constructor pin
+    /// (`From<A>`, `Into`, `iter::once(_).collect()`,
+    /// `{ empty + observe }`) as a fourth pointwise-equal lowering of
+    /// the same one-observation projection.
+    ///
+    /// **Total-equals-length law** — for every array `arr: [A; N]`:
+    /// `AxisHistogram::from(arr).total() == N`. The array's compile-
+    /// time-known length determines the resulting total exactly, peer
+    /// of the [`FromIterator<A>`] total-equals-input-length law on the
+    /// runtime-length iterator surface.
+    ///
+    /// **Cell-additive on repeated cells** — when the array contains
+    /// the same cell `k` times, the resulting histogram reads `k` at
+    /// that cell. The natural composition the histogram's monoid
+    /// `(usize, +, 0)` per cell carries, peer of the [`FromIterator<A>`]
+    /// repeated-cell additivity.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// constructor at no per-axis cost. Pinned across the implementor
+    /// set by the trait-uniform
+    /// `axis_histogram_from_cell_array_equals_from_iter_collect_*` and
+    /// `axis_histogram_from_empty_array_equals_empty_*` laws in
+    /// [`tests`].
+    fn from(values: [A; N]) -> Self {
+        values.into_iter().collect()
+    }
+}
+
 impl<A: ClosedAxis> FromIterator<(A, usize)> for AxisHistogram<A> {
     /// Build a histogram by absorbing every `(cell, count)` pair in `iter`
     /// — the canonical Rust idiom-peer of [`HashMap::from_iter`][std::collections::HashMap]
@@ -8146,6 +8235,102 @@ mod tests {
         }
     }
 
+    fn assert_from_empty_array_equals_empty<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (zero-length array → histogram) constructor law:
+        // `AxisHistogram::from([])` reads the same all-zero state as
+        // `AxisHistogram::empty()` and as `Default::default()` on every
+        // axis. The vacuous fold on the array-input constructor surface
+        // — the empty-array literal lowers to the monoid identity at
+        // the `From<[A; N]>` constructor rung, peer of the
+        // `FromIterator<A>` empty-input identity (`iter::empty().collect()`)
+        // and of the `Extend<A>` empty-input identity (`hist.extend(iter::empty())`).
+        let via_from: AxisHistogram<A> = AxisHistogram::from([]);
+        let via_empty: AxisHistogram<A> = AxisHistogram::empty();
+        let via_default: AxisHistogram<A> = AxisHistogram::default();
+        assert_eq!(
+            via_from,
+            via_empty,
+            "AxisHistogram::from([]) must equal AxisHistogram::empty() on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert_eq!(
+            via_from,
+            via_default,
+            "AxisHistogram::from([]) must equal AxisHistogram::default() on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert_eq!(
+            via_from.total(),
+            0,
+            "AxisHistogram::from([]).total() must equal 0 on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert!(
+            via_from.is_empty(),
+            "AxisHistogram::from([]) must be is_empty on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_from_cell_array_equals_from_iter_collect<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (array-literal → histogram) constructor law: for every
+        // cell of the axis, the arity-1 array literal
+        // `AxisHistogram::from([cell])` reads the same histogram as the
+        // singleton `From<A>` constructor (`AxisHistogram::from(cell)`),
+        // as `iter::once(cell).collect()`, and as the open-coded
+        // `empty + observe` lowering. Pinned uniformly across every
+        // closed-axis implementor so a future axis primitive inherits
+        // the equivalence at no per-axis cost. The arity-1 array form
+        // is the universally-available array shape — every closed axis
+        // has at least one cell — so the trait-uniform law lives at the
+        // singleton-array rung; higher-arity arrays are pinned
+        // concretely on a specific axis below.
+        for observed in axis_iter::<A>() {
+            let via_from_array: AxisHistogram<A> = AxisHistogram::from([observed]);
+            let via_from_cell: AxisHistogram<A> = AxisHistogram::from(observed);
+            let via_iter_once: AxisHistogram<A> = std::iter::once(observed).collect();
+            let via_into_iter_collect: AxisHistogram<A> = [observed].into_iter().collect();
+            assert_eq!(
+                via_from_array,
+                via_from_cell,
+                "AxisHistogram::from([cell]) must equal AxisHistogram::from(cell) on {observed:?} \
+                 for axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                via_from_array,
+                via_iter_once,
+                "AxisHistogram::from([cell]) must equal iter::once(cell).collect() on {observed:?} \
+                 for axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                via_from_array,
+                via_into_iter_collect,
+                "AxisHistogram::from([cell]) must equal [cell].into_iter().collect() on \
+                 {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                via_from_array.total(),
+                1,
+                "AxisHistogram::from([cell]).total() must equal 1 on axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                via_from_array.count(observed),
+                1,
+                "AxisHistogram::from([cell]) must observe the lifted cell on {observed:?}",
+            );
+        }
+    }
+
     fn assert_all_observed_once_yields_uniform_histogram<A>()
     where
         A: ClosedAxis + std::fmt::Debug,
@@ -8280,6 +8465,26 @@ mod tests {
     }
 
     #[test]
+    fn axis_histogram_from_empty_array_equals_empty_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_from_empty_array_equals_empty::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_from_cell_array_equals_from_iter_collect_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_from_cell_array_equals_from_iter_collect::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
     fn axis_histogram_axis_cover_is_uniform_for_every_closed_axis_implementor() {
         macro_rules! check {
             ($ty:ident) => {
@@ -8379,6 +8584,79 @@ mod tests {
         assert_eq!(via_from.total(), 1);
         assert!(!via_from.is_empty());
         assert_eq!(via_from.dominant_cell(), Some(DiffLineKind::Added));
+    }
+
+    #[test]
+    fn axis_histogram_from_cell_array_constructs_pointwise_histogram_for_diff_line_kind() {
+        // Concrete pin of the `From<[A; N]>` array constructor on
+        // [`DiffLineKind`] at arity 3 — the trait-uniform law above
+        // covers the arity-1 (singleton-array) rung uniformly across
+        // every closed axis; this test pins the higher-arity
+        // multi-cell semantics at one site so the constructor's
+        // cell-additive behavior (the same cell appearing twice in the
+        // literal contributes +2 to that cell) is readable on a
+        // concrete axis. The array literal lowers to the same per-cell
+        // observation fold the `FromIterator<A>` impl drives, so the
+        // four canonical surfaces (`AxisHistogram::from([...])`,
+        // `[...].into()`, `[...].into_iter().collect()`, the
+        // open-coded `empty + observe + observe + observe` form) are
+        // pinned here as four pointwise-equal lowerings of the same
+        // (array-literal → histogram) projection.
+        let via_from = AxisHistogram::from([
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]);
+        let via_into: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into();
+        let via_into_iter_collect: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let via_observe = {
+            let mut h: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+            h.observe(DiffLineKind::Added);
+            h.observe(DiffLineKind::Added);
+            h.observe(DiffLineKind::Removed);
+            h
+        };
+        assert_eq!(via_from, via_into);
+        assert_eq!(via_from, via_into_iter_collect);
+        assert_eq!(via_from, via_observe);
+        assert_eq!(via_from.count(DiffLineKind::Added), 2);
+        assert_eq!(via_from.count(DiffLineKind::Removed), 1);
+        assert_eq!(via_from.count(DiffLineKind::Context), 0);
+        assert_eq!(via_from.total(), 3);
+        assert!(!via_from.is_empty());
+        assert_eq!(via_from.dominant_cell(), Some(DiffLineKind::Added));
+    }
+
+    #[test]
+    fn axis_histogram_from_empty_array_equals_empty_for_diff_line_kind() {
+        // Concrete pin of the empty-array identity on [`DiffLineKind`]:
+        // `AxisHistogram::from([])` reads the same all-zero state as
+        // `AxisHistogram::empty()` and as `Default::default()`. The
+        // zero-length array literal lowers to the monoid identity at
+        // the constructor rung. Trait-uniform partner pinned across
+        // every closed-axis implementor by
+        // `axis_histogram_from_empty_array_equals_empty_for_every_closed_axis_implementor`.
+        let via_from: AxisHistogram<DiffLineKind> = AxisHistogram::from([]);
+        let via_empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        let via_default: AxisHistogram<DiffLineKind> = AxisHistogram::default();
+        assert_eq!(via_from, via_empty);
+        assert_eq!(via_from, via_default);
+        assert_eq!(via_from.total(), 0);
+        assert!(via_from.is_empty());
+        assert_eq!(via_from.count(DiffLineKind::Added), 0);
+        assert_eq!(via_from.count(DiffLineKind::Removed), 0);
+        assert_eq!(via_from.count(DiffLineKind::Context), 0);
     }
 
     #[test]
