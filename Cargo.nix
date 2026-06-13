@@ -2276,9 +2276,9 @@ rec {
       };
       "cc" = rec {
         crateName = "cc";
-        version = "1.2.63";
+        version = "1.2.64";
         edition = "2018";
-        sha256 = "0zy2bqc4nvj6bv2cipx4h4bn65wf1zqf1fw1hsh64mmvg1hh2vjm";
+        sha256 = "07shcd8faxw7csz13m3cg2mj6i8z07pqs960k181pscbjpyqgn6s";
         authors = [
           "Alex Crichton <alex@alexcrichton.com>"
         ];
@@ -5205,9 +5205,9 @@ rec {
       };
       "js-sys" = rec {
         crateName = "js-sys";
-        version = "0.3.100";
+        version = "0.3.102";
         edition = "2021";
-        sha256 = "0qi1wjakyw2rx9wwprcfx77g3lvn1b8n6yvfhj2pgym4swh5y0pj";
+        sha256 = "0cgxklnyrfpzvf32cvdl3x5d070kfsv7ykdxfl3yizwdjqq4rl03";
         libName = "js_sys";
         authors = [
           "The wasm-bindgen Developers"
@@ -5376,9 +5376,9 @@ rec {
       };
       "memchr" = rec {
         crateName = "memchr";
-        version = "2.8.1";
+        version = "2.8.2";
         edition = "2021";
-        sha256 = "1n448jx01h5z2xknj6x2dhxgr8s8fb717cf6vfqj5lmhkpj7m53b";
+        sha256 = "1i33wr49pcz2sbd12nds3n9fszay8kq5bk78gwciz462mcs49448";
         authors = [
           "Andrew Gallant <jamslam@gmail.com>"
           "bluss"
@@ -7828,7 +7828,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.22";
+        version = "0.1.23";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -8014,9 +8014,9 @@ rec {
       };
       "smallvec" = rec {
         crateName = "smallvec";
-        version = "1.15.1";
+        version = "1.15.2";
         edition = "2018";
-        sha256 = "00xxdxxpgyq5vjnpljvkmy99xij5rxgh913ii1v16kzynnivgcb7";
+        sha256 = "143wzbqf6vgapdp2z4qpl0yvlqcn17s8cnk8m28rqly808zsdmlf";
         authors = [
           "The Servo Project Developers"
         ];
@@ -8210,13 +8210,13 @@ rec {
       };
       "tatara-lisp" = rec {
         crateName = "tatara-lisp";
-        version = "0.2.20";
+        version = "0.2.21";
         edition = "2021";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "d6be1d2cb5d88bb42a5d9bcda88913d24e546e99";
-          sha256 = "01jl99v106ba771pc3s4780z217qaj2i8cg3fq1j3mj84qlh5hn9";
+          rev = "d1d4b8b17f9a36b46a3a59e39a554dad13a6c954";
+          sha256 = "089ljp9fgg9dq9v1ndmii7k8gnbrlsrd428d24ng72p55jm57y90";
         };
         libName = "tatara_lisp";
         authors = [
@@ -8252,13 +8252,13 @@ rec {
       };
       "tatara-lisp-derive" = rec {
         crateName = "tatara-lisp-derive";
-        version = "0.2.20";
+        version = "0.2.21";
         edition = "2021";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "d6be1d2cb5d88bb42a5d9bcda88913d24e546e99";
-          sha256 = "01jl99v106ba771pc3s4780z217qaj2i8cg3fq1j3mj84qlh5hn9";
+          rev = "d1d4b8b17f9a36b46a3a59e39a554dad13a6c954";
+          sha256 = "089ljp9fgg9dq9v1ndmii7k8gnbrlsrd428d24ng72p55jm57y90";
         };
         procMacro = true;
         libName = "tatara_lisp_derive";
@@ -9589,9 +9589,9 @@ rec {
       };
       "wasip2" = rec {
         crateName = "wasip2";
-        version = "1.0.3+wasi-0.2.9";
+        version = "1.0.4+wasi-0.2.12";
         edition = "2021";
-        sha256 = "1mi3w855dz99xzjqc4aa8c9q5b6z1y5c963pkk4cvmr6vdr4c1i0";
+        sha256 = "11wl7lqwq4pbmlmzr6n7bwz0hzy1z6sxc4554bkmrr86w4vznzmn";
         dependencies = [
           {
             name = "wit-bindgen";
@@ -9634,9 +9634,9 @@ rec {
       };
       "wasm-bindgen" = rec {
         crateName = "wasm-bindgen";
-        version = "0.2.123";
+        version = "0.2.125";
         edition = "2021";
-        sha256 = "0qqmx07r597gm8lbz8qngvv0phwvpzzyfh3nl84nz9qr1jqs8m52";
+        sha256 = "06nakz7nfy0ymyp7a27wfbjwx69659i12117hkgddkiv2iwkznwd";
         libName = "wasm_bindgen";
         authors = [
           "The wasm-bindgen Developers"
@@ -9685,9 +9685,9 @@ rec {
       };
       "wasm-bindgen-futures" = rec {
         crateName = "wasm-bindgen-futures";
-        version = "0.4.73";
+        version = "0.4.75";
         edition = "2021";
-        sha256 = "1bva12h8gdpqkp753czlxabs0s21lvgzm41brr4lhpdzz818fmjl";
+        sha256 = "104jssshr6cm5hmkn6c66mbkyxgaaphng6c17g0dmj7jhk918fsh";
         libName = "wasm_bindgen_futures";
         authors = [
           "The wasm-bindgen Developers"
@@ -9713,9 +9713,9 @@ rec {
       };
       "wasm-bindgen-macro" = rec {
         crateName = "wasm-bindgen-macro";
-        version = "0.2.123";
+        version = "0.2.125";
         edition = "2021";
-        sha256 = "1p50xdwmv543b52bc49vm5lcsgd9adpx647bdisg7ihfbg3hz914";
+        sha256 = "0g9w68dwcs4ylm5kxf7schi0kjdfarhc9qlnf8arxc9zn62a28af";
         procMacro = true;
         libName = "wasm_bindgen_macro";
         authors = [
@@ -9737,9 +9737,9 @@ rec {
       };
       "wasm-bindgen-macro-support" = rec {
         crateName = "wasm-bindgen-macro-support";
-        version = "0.2.123";
+        version = "0.2.125";
         edition = "2021";
-        sha256 = "0nwqyc63byl7rp9nnv45av8h85fncfmxywkvy35d9qwwkfyk93wh";
+        sha256 = "1gayzdx5iwl8gllh7ys79wg9cf4iyasl9hrzzhh5m4xx6nfgvkpy";
         libName = "wasm_bindgen_macro_support";
         authors = [
           "The wasm-bindgen Developers"
@@ -9773,10 +9773,10 @@ rec {
       };
       "wasm-bindgen-shared" = rec {
         crateName = "wasm-bindgen-shared";
-        version = "0.2.123";
+        version = "0.2.125";
         edition = "2021";
         links = "wasm_bindgen";
-        sha256 = "14lvjm3pzywm5c4962i6s5zmngic1knpggshnnxr9c97dihzgjvs";
+        sha256 = "07w7fy5qa14ys3p8v2p84h98yqinw713smibz9v7apcspd29x4r3";
         libName = "wasm_bindgen_shared";
         authors = [
           "The wasm-bindgen Developers"
@@ -9901,9 +9901,9 @@ rec {
       };
       "web-sys" = rec {
         crateName = "web-sys";
-        version = "0.3.100";
+        version = "0.3.102";
         edition = "2021";
-        sha256 = "0sffbkrpgyi1402mv4wzp9av6ky6rnb1d2m2dpf87wi7yfn7223f";
+        sha256 = "0786aybrnwsgdmcynhc2k5ii291a02rq9zk054j35csyvxr0lhx6";
         libName = "web_sys";
         authors = [
           "The wasm-bindgen Developers"
@@ -12200,9 +12200,9 @@ rec {
       };
       "zeroize" = rec {
         crateName = "zeroize";
-        version = "1.8.2";
-        edition = "2021";
-        sha256 = "1l48zxgcv34d7kjskr610zqsm6j2b4fcr2vfh9jm9j1jgvk58wdr";
+        version = "1.9.0";
+        edition = "2024";
+        sha256 = "0kpnij2v1ig6g2mhc0bnci0lrdfdhiq40afbc0fahajqc9jiag71";
         authors = [
           "The RustCrypto Project Developers"
         ];
