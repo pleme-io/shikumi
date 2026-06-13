@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "cargo_lock_sha256": "b9717cd49f7e940236d3da693af3e62065429bc410669e7f18172b4605000cb1",
+  "cargo_lock_sha256": "b64c78250ff2b088854cda5de5a197007706cdcd44309a418934299a511ff199",
   "target_resolves": {
     "base": {
       "arc-swap-1.9.1": {
@@ -84,7 +84,7 @@
           "std"
         ]
       },
-      "cc-1.2.63": {
+      "cc-1.2.64": {
         "runtime_dependencies": [
           {
             "name": "find_msvc_tools",
@@ -661,7 +661,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "memchr-2.8.1": {
+      "memchr-2.8.2": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": [
@@ -1054,7 +1054,7 @@
           },
           {
             "name": "memchr",
-            "package_key": "memchr-2.8.1",
+            "package_key": "memchr-2.8.2",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -1163,7 +1163,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.21": {
+      "shikumi-0.1.22": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -1844,7 +1844,7 @@
         "runtime_dependencies": [
           {
             "name": "memchr",
-            "package_key": "memchr-2.8.1",
+            "package_key": "memchr-2.8.2",
             "kind": "normal",
             "features": [],
             "uses_default_features": false,
@@ -1924,7 +1924,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.2.63",
+                "package_key": "cc-1.2.64",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2263,7 +2263,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.2.63",
+                "package_key": "cc-1.2.64",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2607,7 +2607,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.2.63",
+                "package_key": "cc-1.2.64",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2944,7 +2944,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.2.63",
+                "package_key": "cc-1.2.64",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3271,7 +3271,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.2.63",
+                "package_key": "cc-1.2.64",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3593,7 +3593,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.2.63",
+                "package_key": "cc-1.2.64",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3893,7 +3893,7 @@
       "edition": "2024",
       "build_script": "build.rs"
     },
-    "cc-1.2.63": {
+    "cc-1.2.64": {
       "edition": "2018"
     },
     "cfg-if-1.0.4": {
@@ -3972,7 +3972,7 @@
     "log-0.4.32": {
       "edition": "2021"
     },
-    "memchr-2.8.1": {
+    "memchr-2.8.2": {
       "edition": "2021"
     },
     "mio-1.2.1": {
@@ -4050,7 +4050,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.21": {
+    "shikumi-0.1.22": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
