@@ -3506,6 +3506,96 @@ impl<A: ClosedAxis> std::ops::Index<A> for AxisHistogram<A> {
     }
 }
 
+impl<A: ClosedAxis> std::cmp::PartialOrd for AxisHistogram<A> {
+    /// Pointwise lattice partial order lifted to the canonical Rust
+    /// stdlib [`PartialOrd`][std::cmp::PartialOrd] trait surface — the
+    /// natural-language `<`, `<=`, `>`, `>=` operators on
+    /// [`AxisHistogram`] read off the same partial-dominance order that
+    /// [`Self::is_dominated_by`] / [`Self::dominates`] /
+    /// [`Self::is_strictly_dominated_by`] / [`Self::strictly_dominates`]
+    /// expose as inherent methods. Single-pass `O(axis_cardinality)`
+    /// short-circuiting scan: tracks whether any cell has been seen
+    /// strictly less and whether any cell has been seen strictly
+    /// greater, returns [`None`] (incomparable) on the first cell where
+    /// the two flags would coexist, and reads off
+    /// [`Less`][std::cmp::Ordering::Less] /
+    /// [`Equal`][std::cmp::Ordering::Equal] /
+    /// [`Greater`][std::cmp::Ordering::Greater] at end from the two
+    /// flags.
+    ///
+    /// **Why a manual impl (not derive).** The struct derives
+    /// [`PartialEq`], [`Eq`], [`Hash`][std::hash::Hash] but
+    /// **deliberately not** [`PartialOrd`][std::cmp::PartialOrd] — the
+    /// derive would induce the [`Vec<usize>`][Vec]'s default
+    /// **lexicographic** order on the underlying counts vector, which
+    /// is *total* (always picks a side on every pair) and disagrees
+    /// with the lattice partial order [`Self::is_dominated_by`] is
+    /// built on. The pointwise dominance order is *partial* — two
+    /// histograms can be lattice-incomparable when one cell is strictly
+    /// larger on each side. Pinning the manual lift on the lattice
+    /// order rather than the lexicographic derive is what closes the
+    /// stdlib operator surface in a way that agrees with every
+    /// inherent dominance method — the trait-uniform bridges in
+    /// [`tests`] pin the agreement uniformly across every
+    /// [`ClosedAxis`] implementor.
+    ///
+    /// **Operator-to-inherent bridge** — the four stdlib operators map
+    /// onto the four inherent dominance methods pointwise:
+    /// - `a <= b` ⇔ `a.is_dominated_by(&b)`
+    /// - `a >= b` ⇔ `a.dominates(&b)`
+    /// - `a < b` ⇔ `a.is_strictly_dominated_by(&b)`
+    /// - `a > b` ⇔ `a.strictly_dominates(&b)`
+    ///
+    /// Pinned across every implementor through
+    /// [`tests::axis_histogram_partial_cmp_matches_dominance_quartet_for_every_closed_axis_implementor`].
+    ///
+    /// **Partial-cmp-to-inherent bridge** — the return value matches
+    /// the dominance method that holds:
+    /// - `a.partial_cmp(&b) == Some(Equal)` ⇔ `a == b`
+    /// - `a.partial_cmp(&b) == Some(Less)` ⇔
+    ///   `a.is_strictly_dominated_by(&b)`
+    /// - `a.partial_cmp(&b) == Some(Greater)` ⇔
+    ///   `a.strictly_dominates(&b)`
+    /// - `a.partial_cmp(&b) == None` ⇔
+    ///   `!a.is_dominated_by(&b) && !b.is_dominated_by(&a)`
+    ///
+    /// The [`None`] case is the *partial* case the derive would
+    /// collapse — pins the lift carries the partiality of the
+    /// underlying lattice order through the [`Option`] return.
+    ///
+    /// **Consistency with [`PartialEq`]**: `a == b` ⇒
+    /// `a.partial_cmp(&b) == Some(Equal)`. Every cell equal means
+    /// neither `saw_less` nor `saw_greater` flips, so the end-of-scan
+    /// match returns
+    /// [`Some(Equal)`][std::cmp::Ordering::Equal] — the canonical
+    /// stdlib consistency contract between
+    /// [`PartialEq`] and [`PartialOrd`][std::cmp::PartialOrd].
+    ///
+    /// **Why no [`Ord`][std::cmp::Ord]**: the histogram surface is a
+    /// genuine partial order (the partiality witness is the
+    /// `(2, 1, 0)` / `(1, 2, 0)` pair on [`crate::DiffLineKind`] —
+    /// neither side dominates the other yet both have equal totals),
+    /// so the [`Ord`] trait — which requires total order — is
+    /// structurally inappropriate. The stdlib precedent is
+    /// [`f32`] / [`f64`]: both implement
+    /// [`PartialOrd`][std::cmp::PartialOrd] (with [`None`] for NaN
+    /// comparisons) but not [`Ord`].
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        use std::cmp::Ordering;
+        let mut ord = Ordering::Equal;
+        for (lhs, rhs) in self.counts.iter().zip(other.counts.iter()) {
+            match (ord, lhs.cmp(rhs)) {
+                (Ordering::Equal, cell) => ord = cell,
+                (Ordering::Less, Ordering::Greater) | (Ordering::Greater, Ordering::Less) => {
+                    return None;
+                }
+                _ => {}
+            }
+        }
+        Some(ord)
+    }
+}
+
 /// Lift an iterator of axis observations into a typed
 /// [`AxisHistogram<A>`] — the dense per-cell tally over
 /// [`ClosedAxis::ALL`].
@@ -11353,6 +11443,374 @@ mod tests {
         assert!(meet.total() < rhs.total());
         assert!(lhs.total() < join.total());
         assert!(rhs.total() < join.total());
+    }
+
+    // ---- AxisHistogram PartialOrd stdlib-trait bridge laws ----
+    //
+    // The `impl PartialOrd for AxisHistogram<A>` lifts the inherent
+    // pointwise-dominance quartet (is_dominated_by, dominates,
+    // is_strictly_dominated_by, strictly_dominates) onto the canonical
+    // Rust stdlib operator surface (`<=`, `>=`, `<`, `>`) and the
+    // `partial_cmp` return value (`Option<Ordering>`). The trait-uniform
+    // laws below pin the lift's contract uniformly across every
+    // [`ClosedAxis`] implementor: reflexivity at `Equal` (every
+    // histogram compares equal to itself through the trait surface);
+    // empty is the lattice bottom (`empty.partial_cmp(&nonempty) ==
+    // Some(Less)` and dually); the operator-to-inherent bridge (every
+    // stdlib operator agrees with its inherent peer pointwise); the
+    // partial-cmp-to-inherent bridge (`Some(Less)` iff
+    // `is_strictly_dominated_by`, `Some(Greater)` iff
+    // `strictly_dominates`, `Some(Equal)` iff `==`); antisymmetry on
+    // ordered pairs (`Some(Less)` flips to `Some(Greater)` under
+    // argument swap). Together with the inherent dominance laws these
+    // pin the manual PartialOrd impl agrees with the lattice order on
+    // every axis, not the lexicographic [`Vec`] derive — the
+    // load-bearing distinction the concrete pin on [`DiffLineKind`]
+    // witnesses non-vacuously.
+
+    fn assert_partial_cmp_reflexive_equal<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        use std::cmp::Ordering;
+        // The canonical PartialOrd reflexivity-at-Equal law: every
+        // histogram compares to itself as Some(Equal) through the
+        // stdlib trait surface, agreeing with the PartialEq reflexivity
+        // (a == a). Pinned over both the empty and axis-cover
+        // histograms so the reflexivity reads off on the lattice bottom
+        // and the single-observation envelope. Two distinct (but
+        // structurally equal) constructions on each side so the
+        // operator-surface reflexivity peer reads off the cellwise
+        // comparison rather than a same-binding tautology.
+        let empty_lhs: AxisHistogram<A> = AxisHistogram::empty();
+        let empty_rhs: AxisHistogram<A> = AxisHistogram::empty();
+        let cover_lhs: AxisHistogram<A> = axis_iter::<A>().collect();
+        let cover_rhs: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            empty_lhs.partial_cmp(&empty_rhs),
+            Some(Ordering::Equal),
+            "empty.partial_cmp(&empty) must be Some(Equal) on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert_eq!(
+            cover_lhs.partial_cmp(&cover_rhs),
+            Some(Ordering::Equal),
+            "cover.partial_cmp(&cover) must be Some(Equal) on axis {}",
+            std::any::type_name::<A>(),
+        );
+        // Operator-surface reflexivity peer: `<=` and `>=` read off the
+        // reflexive case on every histogram, evaluated across two
+        // distinct bindings so the comparison is not a same-binding
+        // tautology.
+        assert!(empty_lhs <= empty_rhs);
+        assert!(empty_lhs >= empty_rhs);
+        assert!(cover_lhs <= cover_rhs);
+        assert!(cover_lhs >= cover_rhs);
+    }
+
+    fn assert_partial_cmp_empty_is_lattice_bottom<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        use std::cmp::Ordering;
+        // Empty is the lattice bottom through the stdlib trait surface:
+        // `empty.partial_cmp(&cover) == Some(Less)` (strictly less on
+        // every axis with at least one cell; the axis-cover construction
+        // populates every cell with count `1`), and dually
+        // `cover.partial_cmp(&empty) == Some(Greater)`. Peer to the
+        // empty-bottom laws on the inherent dominance surface
+        // (`empty.is_strictly_dominated_by(&cover)` and
+        // `cover.strictly_dominates(&empty)`).
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            empty.partial_cmp(&cover),
+            Some(Ordering::Less),
+            "empty.partial_cmp(&cover) must be Some(Less) on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert_eq!(
+            cover.partial_cmp(&empty),
+            Some(Ordering::Greater),
+            "cover.partial_cmp(&empty) must be Some(Greater) on axis {}",
+            std::any::type_name::<A>(),
+        );
+        // Operator-surface bottom peer: `empty < cover` and `cover >
+        // empty` read off the strict bottom relation on every axis.
+        assert!(empty < cover);
+        assert!(cover > empty);
+        assert!(empty <= cover);
+        assert!(cover >= empty);
+    }
+
+    fn assert_partial_cmp_matches_dominance_quartet<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical operator-to-inherent bridge: every stdlib
+        // PartialOrd operator agrees pointwise with its inherent
+        // dominance peer across the bottom / middle / top chain. The
+        // four-way correspondence:
+        // - `a <= b` ⇔ `a.is_dominated_by(&b)`
+        // - `a >= b` ⇔ `a.dominates(&b)`
+        // - `a < b`  ⇔ `a.is_strictly_dominated_by(&b)`
+        // - `a > b`  ⇔ `a.strictly_dominates(&b)`
+        // Pins the manual PartialOrd impl agrees with the lattice order
+        // the inherent methods are built on — the load-bearing
+        // correctness condition that the lift carries the right
+        // semantics (not the Vec lexicographic order the derive would
+        // have given).
+        let bottom: AxisHistogram<A> = AxisHistogram::empty();
+        let middle: AxisHistogram<A> = axis_iter::<A>().collect();
+        let top: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&bottom, &bottom),
+            (&bottom, &middle),
+            (&bottom, &top),
+            (&middle, &bottom),
+            (&middle, &middle),
+            (&middle, &top),
+            (&top, &bottom),
+            (&top, &middle),
+            (&top, &top),
+        ] {
+            assert_eq!(
+                lhs <= rhs,
+                lhs.is_dominated_by(rhs),
+                "`<=` operator must match is_dominated_by on axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                lhs >= rhs,
+                lhs.dominates(rhs),
+                "`>=` operator must match dominates on axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                lhs < rhs,
+                lhs.is_strictly_dominated_by(rhs),
+                "`<` operator must match is_strictly_dominated_by on axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                lhs > rhs,
+                lhs.strictly_dominates(rhs),
+                "`>` operator must match strictly_dominates on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_partial_cmp_return_matches_inherent<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        use std::cmp::Ordering;
+        // The partial-cmp-return-to-inherent bridge: the four-way
+        // discriminator on `Option<Ordering>` agrees with the inherent
+        // strict-dominance / equality / incomparability classification.
+        // - `Some(Equal)`   ⇔ `a == b`
+        // - `Some(Less)`    ⇔ `a.is_strictly_dominated_by(&b)`
+        // - `Some(Greater)` ⇔ `a.strictly_dominates(&b)`
+        // - `None`          ⇔ `!a.is_dominated_by(&b) && !b.is_dominated_by(&a)`
+        // Pinned across the same chain so every triplet of related
+        // histograms exercises every arm of the discriminator.
+        let bottom: AxisHistogram<A> = AxisHistogram::empty();
+        let middle: AxisHistogram<A> = axis_iter::<A>().collect();
+        let top: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&bottom, &bottom),
+            (&bottom, &middle),
+            (&middle, &top),
+            (&top, &bottom),
+            (&middle, &middle),
+        ] {
+            match lhs.partial_cmp(rhs) {
+                Some(Ordering::Equal) => assert_eq!(
+                    lhs,
+                    rhs,
+                    "Some(Equal) must witness equality on axis {}",
+                    std::any::type_name::<A>(),
+                ),
+                Some(Ordering::Less) => assert!(
+                    lhs.is_strictly_dominated_by(rhs),
+                    "Some(Less) must witness is_strictly_dominated_by on axis {}",
+                    std::any::type_name::<A>(),
+                ),
+                Some(Ordering::Greater) => assert!(
+                    lhs.strictly_dominates(rhs),
+                    "Some(Greater) must witness strictly_dominates on axis {}",
+                    std::any::type_name::<A>(),
+                ),
+                None => {
+                    assert!(!lhs.is_dominated_by(rhs));
+                    assert!(!rhs.is_dominated_by(lhs));
+                }
+            }
+        }
+    }
+
+    fn assert_partial_cmp_antisymmetric_on_ordered_pairs<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        use std::cmp::Ordering;
+        // The canonical PartialOrd antisymmetry law on ordered pairs:
+        // swapping the arguments inverts the Ordering. `Some(Less)`
+        // flips to `Some(Greater)`, `Some(Equal)` is its own dual,
+        // `Some(Greater)` flips to `Some(Less)`. Pinned across the
+        // bottom / middle / top chain so the antisymmetry reads off on
+        // every ordered pair.
+        let bottom: AxisHistogram<A> = AxisHistogram::empty();
+        let middle: AxisHistogram<A> = axis_iter::<A>().collect();
+        let top: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&bottom, &middle),
+            (&bottom, &top),
+            (&middle, &top),
+            (&middle, &middle),
+        ] {
+            let forward = lhs.partial_cmp(rhs);
+            let reverse = rhs.partial_cmp(lhs);
+            let expected = forward.map(Ordering::reverse);
+            assert_eq!(
+                reverse,
+                expected,
+                "antisymmetry: rhs.partial_cmp(&lhs) must equal forward.reverse() on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_partial_cmp_reflexive_equal_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_partial_cmp_reflexive_equal::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_partial_cmp_empty_is_lattice_bottom_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_partial_cmp_empty_is_lattice_bottom::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_partial_cmp_matches_dominance_quartet_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_partial_cmp_matches_dominance_quartet::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_partial_cmp_return_matches_inherent_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_partial_cmp_return_matches_inherent::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_partial_cmp_antisymmetric_on_ordered_pairs_for_every_closed_axis_implementor()
+    {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_partial_cmp_antisymmetric_on_ordered_pairs::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_partial_cmp_incomparable_returns_none_for_diff_line_kind() {
+        // Concrete pin on the load-bearing distinction between the
+        // manual PartialOrd impl on the lattice partial order and the
+        // [`Vec`] derive's lexicographic total order: the (2, 1, 0)
+        // and (1, 2, 0) shapes on [`DiffLineKind`] — the same
+        // incomparable pair the non-strict / strict partiality
+        // witnesses use — return `None` through the stdlib trait
+        // surface. The Vec derive would have returned `Some(Less)` or
+        // `Some(Greater)` (lexicographic always picks a side); the
+        // manual lift carries the partiality of the underlying lattice
+        // order through the `Option` return. Pins the stdlib operator
+        // surface agrees with the lattice partial order on every axis,
+        // not the structural Vec lexicographic order — the
+        // load-bearing correctness condition the manual impl is built
+        // for.
+        //
+        // [`DiffLineKind::ALL`] declaration order is
+        // `[Removed, Added, Context]`.
+        let lhs: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let rhs: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+
+        // Per-cell distributions for the witnesses:
+        // lhs: Removed=1, Added=2, Context=0.
+        // rhs: Removed=2, Added=1, Context=0.
+        // Neither side dominates the other — both `<=` reads false on
+        // at least one cell, so the partial_cmp scan sees both a Less
+        // and a Greater on different cells and short-circuits to None.
+        assert_eq!(
+            lhs.partial_cmp(&rhs),
+            None,
+            "incomparable lhs/rhs must partial_cmp to None",
+        );
+        assert_eq!(
+            rhs.partial_cmp(&lhs),
+            None,
+            "incomparable rhs/lhs must partial_cmp to None",
+        );
+
+        // Concrete bridge to the inherent dominance quartet: the
+        // operator-side incomparability matches the inherent-side
+        // incomparability pointwise.
+        assert!(!lhs.is_dominated_by(&rhs));
+        assert!(!rhs.is_dominated_by(&lhs));
+        assert!(!lhs.is_strictly_dominated_by(&rhs));
+        assert!(!rhs.is_strictly_dominated_by(&lhs));
+        assert!(!lhs.dominates(&rhs));
+        assert!(!rhs.dominates(&lhs));
+        assert!(!lhs.strictly_dominates(&rhs));
+        assert!(!rhs.strictly_dominates(&lhs));
+
+        // The lattice envelopes resolve under the stdlib operator
+        // surface: each side is strictly less than the join and the
+        // meet is strictly less than each side — pins partial_cmp
+        // resolves to Some(Less) / Some(Greater) on the comparable
+        // pairs that bracket the incomparable pair.
+        let join = lhs.clone().pointwise_max(&rhs);
+        let meet = lhs.clone().pointwise_min(&rhs);
+        assert!(lhs < join);
+        assert!(rhs < join);
+        assert!(meet < lhs);
+        assert!(meet < rhs);
+        assert!(join > lhs);
+        assert!(join > rhs);
+        assert!(lhs > meet);
+        assert!(rhs > meet);
     }
 
     // ---- AxisHistogram disjointness trait-uniform laws ----
