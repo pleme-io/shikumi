@@ -2439,9 +2439,7 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     /// `axis_histogram_symmetric_difference_dominance_specializes_to_sub_*`).
     #[must_use]
     pub fn symmetric_difference(mut self, other: &Self) -> Self {
-        for (slot, &delta) in self.counts.iter_mut().zip(other.counts.iter()) {
-            *slot = (*slot).abs_diff(delta);
-        }
+        self ^= other;
         self
     }
 }
@@ -3298,6 +3296,152 @@ impl<A: ClosedAxis> std::ops::Sub<AxisHistogram<A>> for AxisHistogram<A> {
     /// [`SubAssign<&Self>`] on every call site.
     fn sub(mut self, other: AxisHistogram<A>) -> Self::Output {
         self -= &other;
+        self
+    }
+}
+
+impl<A: ClosedAxis> std::ops::BitXorAssign<&AxisHistogram<A>> for AxisHistogram<A> {
+    /// Cellwise absolute-difference of `self` and `other` in place — the
+    /// canonical Rust [`BitXorAssign`][std::ops::BitXorAssign] trait idiom
+    /// for the symmetric-difference (△) operation on the multiset
+    /// surface, the in-place peer of [`Self::symmetric_difference`] and
+    /// the operator-surface lift of the same per-cell
+    /// [`usize::abs_diff`] loop. The primitive site that carries the
+    /// per-cell loop — every other symmetric-difference surface on this
+    /// type ([`BitXorAssign<Self>`], [`BitXor<Self>`], [`BitXor<&Self>`],
+    /// and [`Self::symmetric_difference`] itself) lowers through this
+    /// impl so the per-cell `abs_diff` loop lives at exactly one site.
+    ///
+    /// Promotes the (∪, ∩, ∖, △) set-theoretic operator quartet onto
+    /// the stdlib bit-operator surface: the multiset peer of
+    /// [`std::collections::HashSet::bitxor_assign`] /
+    /// [`std::collections::BTreeSet::bitxor_assign`] (the `^=` on stdlib
+    /// sets), with [`AxisHistogram::pointwise_max`] (∪),
+    /// [`AxisHistogram::pointwise_min`] (∩), [`std::ops::Sub`] (∖) on
+    /// the inherent / arithmetic-operator side and [`Self::bitxor`] (△)
+    /// on the bit-operator side. Closes the missing operator-surface arm
+    /// of the symmetric-difference quartet established by the inherent
+    /// method.
+    ///
+    /// Before this lift, every consumer reaching the cellwise-absolute-
+    /// difference projection on the in-place surface — an L1 / Manhattan-
+    /// distance accumulator folding a just-observed window's gap-against-
+    /// baseline into a rolling absolute-deviation aggregate, a fleet
+    /// observatory backing the regression-detector's `|today - yesterday|`
+    /// projection on a per-host `AxisHistogram<crate::ShikumiErrorKind>`
+    /// cell, a per-tier observatory computing the cellwise multiset gap
+    /// between two tier-snapshots without distinguishing direction —
+    /// reached the projection through the consume-and-rebind
+    /// `hist = hist.symmetric_difference(&other);` form (the only inherent
+    /// shape, which forces a rebind at every call site even when the
+    /// histogram lives behind a mutable binding). Collapsed onto the
+    /// stdlib bit-operator-assign surface so call sites read `hist ^=
+    /// &other;` — the canonical Rust idiom every reader already knows
+    /// from [`HashSet::bitxor_assign`].
+    ///
+    /// **Equivalence with [`Self::symmetric_difference`]** — for every
+    /// pair `(self, other)`: `let mut a = self.clone(); a ^= other; a`
+    /// is pointwise equal to `self.clone().symmetric_difference(other)`.
+    /// The (`BitXorAssign`, `symmetric_difference`) duality on the
+    /// symmetric-difference operator: extending in place is the in-place
+    /// form of the owned-symmetric-difference surface. The
+    /// [`symmetric_difference`][Self::symmetric_difference] impl itself
+    /// lowers through this method so the equivalence is by construction.
+    ///
+    /// **Symmetry on the monoid operation** (not on the call site):
+    /// `let mut a = x.clone(); a ^= &y;` and
+    /// `let mut b = y.clone(); b ^= &x;` are pointwise equal, by the
+    /// symmetry of cellwise [`usize::abs_diff`]. The call sites differ
+    /// in which histogram is mutated; the resulting histogram does not.
+    /// Peer to the [`AddAssign`][std::ops::AddAssign] commutativity law
+    /// on the additive monoid.
+    ///
+    /// **Empty-right-hand-side identity** — `hist ^= &empty` leaves
+    /// `hist` unchanged. Every cell of `empty` is zero, so `|c - 0| ==
+    /// c` reduces to the original count on every ordinal. Peer to the
+    /// [`AddAssign`][std::ops::AddAssign] empty-RHS-identity law on the
+    /// additive monoid and to the [`HashSet`][std::collections::HashSet]
+    /// empty-RHS-identity law on the stdlib set surface.
+    ///
+    /// **Self-cancellation absorbing law** — `let mut a = hist.clone();
+    /// a ^= &hist` zeros every cell of `a`, pointwise equal to
+    /// [`AxisHistogram::empty`]. The exponent-2 self-inverse law on the
+    /// symmetric-difference monoid: every histogram is its own inverse
+    /// under `^=`, which is exactly the structure that makes
+    /// `(AxisHistogram, ^=, empty)` a commutative group of exponent 2
+    /// on the support-set projection. Peer to the [`SubAssign`][std::ops::SubAssign]
+    /// self-subtraction absorbing law on the monus monoid.
+    ///
+    /// **Cell-level absolute-difference** — every cell `v` satisfies
+    /// `after.count(v) == before.count(v).abs_diff(other.count(v))`.
+    /// Peer to the [`AddAssign`][std::ops::AddAssign] cell-additivity
+    /// law and the [`SubAssign`][std::ops::SubAssign] cell-saturation
+    /// law on the additive / monus monoids.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The trait-uniform laws pinned in
+    /// [`tests`] hold across the implementor set
+    /// (`axis_histogram_bitxor_assign_ref_equals_symmetric_difference_*`,
+    /// `axis_histogram_bitxor_assign_ref_empty_rhs_is_identity_*`,
+    /// `axis_histogram_bitxor_assign_ref_self_yields_empty_*`,
+    /// `axis_histogram_bitxor_assign_ref_is_symmetric_*`,
+    /// `axis_histogram_bitxor_assign_ref_cell_level_abs_diff_*`,
+    /// `axis_histogram_bitxor_owned_equals_bitxor_ref_*`,
+    /// `axis_histogram_bitxor_assign_owned_equals_bitxor_assign_ref_*`).
+    fn bitxor_assign(&mut self, other: &AxisHistogram<A>) {
+        for (slot, &delta) in self.counts.iter_mut().zip(other.counts.iter()) {
+            *slot = (*slot).abs_diff(delta);
+        }
+    }
+}
+
+impl<A: ClosedAxis> std::ops::BitXorAssign<AxisHistogram<A>> for AxisHistogram<A> {
+    /// Cellwise absolute-difference of `self` and `other` in place — the
+    /// owned-right-hand-side peer of [`BitXorAssign<&Self>`]. Delegates
+    /// to the borrowed form (the right-hand side is read once, by
+    /// reference, then dropped); the per-cell `abs_diff` loop lives at
+    /// exactly one site (the borrowed-RHS impl).
+    fn bitxor_assign(&mut self, other: AxisHistogram<A>) {
+        *self ^= &other;
+    }
+}
+
+impl<A: ClosedAxis> std::ops::BitXor<&AxisHistogram<A>> for AxisHistogram<A> {
+    type Output = AxisHistogram<A>;
+
+    /// Cellwise absolute-difference of `self` and `other` — the
+    /// canonical Rust [`BitXor`][std::ops::BitXor] trait idiom for the
+    /// symmetric-difference (△) operation on the multiset surface, on
+    /// the borrowed-right-hand-side surface. The natural infix-operator
+    /// peer of [`Self::symmetric_difference`] — the same shape consumers
+    /// reach for when they want the `^` operator on histograms (`a ^ &b`
+    /// instead of `a.symmetric_difference(&b)`).
+    ///
+    /// Lowered through [`BitXorAssign<&Self>`]: take ownership of
+    /// `self`, fold `other` in through `^=`, return the accumulator.
+    /// Pointwise equal to [`Self::symmetric_difference`] on every call
+    /// site, by construction (both lower through `^=` underneath). Peer
+    /// to [`std::collections::HashSet::bitxor`] /
+    /// [`std::collections::BTreeSet::bitxor`] on the stdlib set surface.
+    /// Trait-uniform laws pinned in [`tests`]
+    /// (`axis_histogram_bitxor_ref_equals_symmetric_difference_*`,
+    /// `axis_histogram_bitxor_owned_equals_bitxor_ref_*`).
+    fn bitxor(mut self, other: &AxisHistogram<A>) -> Self::Output {
+        self ^= other;
+        self
+    }
+}
+
+impl<A: ClosedAxis> std::ops::BitXor<AxisHistogram<A>> for AxisHistogram<A> {
+    type Output = AxisHistogram<A>;
+
+    /// Cellwise absolute-difference of `self` and `other` — the
+    /// owned-right-hand-side peer of [`BitXor<&Self>`]. Delegates to the
+    /// borrowed form so the per-cell `abs_diff` loop lives at exactly
+    /// one site (the [`BitXorAssign<&Self>`] impl). Pointwise equal to
+    /// [`Self::symmetric_difference`] on every call site.
+    fn bitxor(mut self, other: AxisHistogram<A>) -> Self::Output {
+        self ^= &other;
         self
     }
 }
@@ -12551,6 +12695,365 @@ mod tests {
         let meet_sym_rhs = meet.clone().symmetric_difference(&rhs);
         let meet_sub_rhs = rhs.clone() - &meet;
         assert_eq!(meet_sym_rhs, meet_sub_rhs);
+    }
+
+    // ---- AxisHistogram BitXor / BitXorAssign operator-surface laws ----
+    //
+    // The (BitXor, BitXorAssign) quartet (× owned/borrowed RHS) lifts
+    // the inherent [`AxisHistogram::symmetric_difference`] onto the
+    // stdlib bit-operator surface — the canonical `^` / `^=` idiom
+    // every stdlib set carries
+    // ([`std::collections::HashSet::bitxor`] /
+    // [`std::collections::BTreeSet::bitxor`]) lifted onto the multiset
+    // (count-valued) surface. Closes the missing operator-surface arm
+    // of the set-theoretic operator quartet `(∪, ∩, ∖, △)`: the
+    // arithmetic ∖ arm was already on the operator surface through
+    // [`std::ops::Sub`]; the △ arm now joins it on the bit-operator
+    // surface through [`std::ops::BitXor`], so the lift gives the
+    // multiset a uniform "every set-theoretic operator has an operator
+    // surface" property at the [`ClosedAxis`] typescape. The
+    // trait-uniform laws below pin the operator quartet's contract
+    // uniformly across every [`ClosedAxis`] implementor: equivalence
+    // with the inherent method (the operator lift carries the same
+    // per-cell `abs_diff` loop the inherent method is built on);
+    // symmetry, self-cancellation, empty-RHS identity, and cell-level
+    // absolute-difference lifted from the inherent method's
+    // trait-uniform laws; and the (owned, borrowed) RHS equivalence on
+    // both the [`BitXor`] and [`BitXorAssign`] surfaces (so the
+    // per-cell loop lives at exactly one site — the
+    // borrowed-RHS-[`BitXorAssign`] impl).
+
+    fn assert_bitxor_assign_ref_equals_symmetric_difference<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical operator-to-inherent bridge on `^=`: every
+        // `BitXorAssign<&Self>` call agrees pointwise with the inherent
+        // `symmetric_difference` on the same arguments. Pins the
+        // operator-surface lift carries the same per-cell `abs_diff`
+        // semantics the inherent method is built on — the load-bearing
+        // correctness condition for the (`BitXorAssign`,
+        // `symmetric_difference`) duality.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&empty, &empty),
+            (&empty, &cover),
+            (&cover, &empty),
+            (&cover, &doubled),
+            (&doubled, &cover),
+        ] {
+            let mut via_op = lhs.clone();
+            via_op ^= rhs;
+            let via_method = lhs.clone().symmetric_difference(rhs);
+            assert_eq!(
+                via_op,
+                via_method,
+                "bitxor_assign ref must equal symmetric_difference on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_bitxor_assign_ref_empty_rhs_is_identity<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The empty-RHS identity law on `^=`: `hist ^= &empty` leaves
+        // `hist` unchanged. Every cell of `empty` is zero, so the
+        // per-cell `abs_diff` reduces to the original count on every
+        // ordinal. Peer to the `AddAssign` empty-RHS-identity law on
+        // the additive monoid.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for hist in [&empty, &cover, &doubled] {
+            let mut applied = hist.clone();
+            applied ^= &empty;
+            assert_eq!(
+                applied,
+                hist.clone(),
+                "hist ^= &empty must leave hist unchanged on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_bitxor_assign_ref_self_yields_empty<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The self-cancellation absorbing law on `^=`: `let mut a =
+        // hist.clone(); a ^= &hist` zeros every cell of `a`, pointwise
+        // equal to `AxisHistogram::empty()`. The exponent-2 self-inverse
+        // law on the symmetric-difference monoid carries through the
+        // operator surface — every histogram is its own inverse under
+        // `^=`. Peer to the `SubAssign` self-subtraction absorbing law
+        // on the monus monoid.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for hist in [&empty, &cover, &doubled] {
+            let mut applied = hist.clone();
+            applied ^= hist;
+            assert_eq!(
+                applied,
+                AxisHistogram::<A>::empty(),
+                "hist ^= &hist must equal AxisHistogram::empty() on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_bitxor_assign_ref_is_symmetric<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The symmetry law on `^=`: `let mut a = x.clone(); a ^= &y;`
+        // and `let mut b = y.clone(); b ^= &x;` are pointwise equal,
+        // by the symmetry of cellwise `usize::abs_diff`. The call
+        // sites differ in which histogram is mutated; the resulting
+        // histogram does not. Peer to the inherent
+        // `symmetric_difference`-is-symmetric law on the borrowed-RHS
+        // surface.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&empty, &empty),
+            (&empty, &cover),
+            (&cover, &empty),
+            (&cover, &doubled),
+            (&doubled, &cover),
+        ] {
+            let mut from_lhs = lhs.clone();
+            from_lhs ^= rhs;
+            let mut from_rhs = rhs.clone();
+            from_rhs ^= lhs;
+            assert_eq!(
+                from_lhs,
+                from_rhs,
+                "bitxor_assign symmetry: lhs ^= &rhs must equal rhs ^= &lhs on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_bitxor_assign_ref_cell_level_abs_diff<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The cell-level absolute-difference law on `^=`: every cell
+        // `v` satisfies `after.count(v) ==
+        // before.count(v).abs_diff(other.count(v))`. Peer to the
+        // `AddAssign` cell-additivity law and the `SubAssign`
+        // cell-saturation law on the additive / monus monoids. Pinned
+        // over the (axis-cover, doubled) pair so every cell carries a
+        // positive count on both sides and the `abs_diff` reads off
+        // every ordinal independently.
+        let before: AxisHistogram<A> = axis_iter::<A>().collect();
+        let other: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let mut after = before.clone();
+        after ^= &other;
+        for cell in axis_iter::<A>() {
+            assert_eq!(
+                after.count(cell),
+                before.count(cell).abs_diff(other.count(cell)),
+                "hist ^= &other cell {cell:?} must equal before.count.abs_diff(other.count) on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_bitxor_owned_equals_bitxor_ref<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (owned, borrowed) RHS equivalence on `^`: `lhs ^ rhs`
+        // produces the same histogram as `lhs ^ &rhs`. Pins the
+        // owned-RHS impl delegates to the borrowed form so the
+        // per-cell `abs_diff` loop lives at exactly one site (the
+        // borrowed-RHS-`BitXorAssign` impl). Peer to the
+        // `axis_histogram_sub_owned_equals_sub_ref_*` law on the
+        // subtraction operator surface.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&empty, &empty),
+            (&empty, &cover),
+            (&cover, &empty),
+            (&cover, &doubled),
+            (&doubled, &cover),
+        ] {
+            let via_owned = lhs.clone() ^ rhs.clone();
+            let via_ref = lhs.clone() ^ rhs;
+            assert_eq!(
+                via_owned,
+                via_ref,
+                "lhs ^ rhs must equal lhs ^ &rhs on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_bitxor_assign_owned_equals_bitxor_assign_ref<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (owned, borrowed) RHS equivalence on `^=`: `let mut a =
+        // lhs.clone(); a ^= rhs.clone();` produces the same histogram
+        // as `let mut a = lhs.clone(); a ^= &rhs;`. Pins the owned-RHS
+        // `BitXorAssign` impl delegates to the borrowed form so the
+        // per-cell `abs_diff` loop lives at exactly one site (the
+        // borrowed-RHS-`BitXorAssign` impl). Peer to the
+        // `axis_histogram_sub_assign_owned_equals_sub_assign_ref` family
+        // on the subtraction operator surface.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&empty, &empty),
+            (&empty, &cover),
+            (&cover, &empty),
+            (&cover, &doubled),
+            (&doubled, &cover),
+        ] {
+            let mut via_owned = lhs.clone();
+            via_owned ^= rhs.clone();
+            let mut via_ref = lhs.clone();
+            via_ref ^= rhs;
+            assert_eq!(
+                via_owned,
+                via_ref,
+                "(a ^= rhs) must equal (a ^= &rhs) on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_bitxor_assign_ref_equals_symmetric_difference_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_bitxor_assign_ref_equals_symmetric_difference::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_bitxor_assign_ref_empty_rhs_is_identity_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_bitxor_assign_ref_empty_rhs_is_identity::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_bitxor_assign_ref_self_yields_empty_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_bitxor_assign_ref_self_yields_empty::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_bitxor_assign_ref_is_symmetric_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_bitxor_assign_ref_is_symmetric::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_bitxor_assign_ref_cell_level_abs_diff_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_bitxor_assign_ref_cell_level_abs_diff::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_bitxor_owned_equals_bitxor_ref_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_bitxor_owned_equals_bitxor_ref::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_bitxor_assign_owned_equals_bitxor_assign_ref_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_bitxor_assign_owned_equals_bitxor_assign_ref::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_bitxor_witnessed_on_partial_overlap_for_diff_line_kind() {
+        // Concrete pin on the `^` operator surface against
+        // [`DiffLineKind`] — the three-cell axis (Added, Removed,
+        // Context) lets the per-cell absolute difference read off non-
+        // vacuously on a partially-overlapping pair. `lhs` carries
+        // counts (5, 2, 0); `rhs` carries (1, 4, 3). `lhs ^ &rhs`
+        // reads (|5-1|, |2-4|, |0-3|) = (4, 2, 3) — every cell carries
+        // the unsigned magnitude of the per-cell gap regardless of
+        // sign. Mirrors the
+        // `axis_histogram_symmetric_difference_witnessed_on_partial_overlap_for_diff_line_kind`
+        // pin on the inherent-method side; reads it off again on the
+        // operator-surface side to pin the lift is the same function.
+        let lhs: AxisHistogram<DiffLineKind> =
+            [(DiffLineKind::Added, 5), (DiffLineKind::Removed, 2)]
+                .into_iter()
+                .collect();
+        let rhs: AxisHistogram<DiffLineKind> = [
+            (DiffLineKind::Added, 1),
+            (DiffLineKind::Removed, 4),
+            (DiffLineKind::Context, 3),
+        ]
+        .into_iter()
+        .collect();
+
+        let via_op = lhs.clone() ^ &rhs;
+        assert_eq!(via_op.count(DiffLineKind::Added), 4);
+        assert_eq!(via_op.count(DiffLineKind::Removed), 2);
+        assert_eq!(via_op.count(DiffLineKind::Context), 3);
+        assert_eq!(via_op.total(), 9);
+
+        // Operator-to-inherent equivalence at the concrete pin: `lhs ^
+        // &rhs` is pointwise equal to `lhs.symmetric_difference(&rhs)`.
+        let via_method = lhs.clone().symmetric_difference(&rhs);
+        assert_eq!(via_op, via_method);
+
+        // Symmetry on the operator surface: `lhs ^ &rhs == rhs ^ &lhs`.
+        let via_op_rev = rhs.clone() ^ &lhs;
+        assert_eq!(via_op, via_op_rev);
+
+        // Self-cancellation on the operator surface: `lhs ^ &lhs ==
+        // empty`.
+        let self_canceled = lhs.clone() ^ &lhs;
+        assert_eq!(self_canceled, AxisHistogram::<DiffLineKind>::empty());
+
+        // `^=` agrees with `^` on the same input.
+        let mut via_assign = lhs.clone();
+        via_assign ^= &rhs;
+        assert_eq!(via_assign, via_op);
     }
 
     // ---- AxisHistogram scalar-action trait-uniform laws ----
