@@ -4469,6 +4469,125 @@ impl<A: ClosedAxis> std::cmp::PartialOrd for AxisHistogram<A> {
     }
 }
 
+impl<A: ClosedAxisLabel> std::fmt::Display for AxisHistogram<A> {
+    /// Operator-facing per-cell emission of the histogram —
+    /// `"label₁=count₁, label₂=count₂, …, labelₙ=countₙ"` in declaration
+    /// order over [`ClosedAxis::ALL`], with `labelᵢ` taken from
+    /// [`ClosedAxisLabel::as_str`]. The canonical Rust stdlib
+    /// [`Display`][std::fmt::Display] idiom-peer of the derived
+    /// [`Debug`][std::fmt::Debug] impl on the [`AxisHistogram`] surface —
+    /// where [`Debug`] reaches the structural form
+    /// (`AxisHistogram { counts: [1, 2, 0], _marker: PhantomData }`,
+    /// which exposes the backing-vec ordinal — useful for diagnostics,
+    /// useless to an operator who reads axis cells by their canonical
+    /// label), [`Display`] reaches the *labeled* per-cell form every
+    /// attestation manifest, structured-log field, and CLI dump emits.
+    /// Closes the canonical (`Debug`, `Display`) trait pair on the
+    /// [`AxisHistogram`] surface every stdlib collection-like type
+    /// carries — peer to the same pair on numeric monoid types
+    /// ([`std::time::Duration`], [`std::num::Wrapping`], etc.) where
+    /// `Debug` exposes the structural form and `Display` exposes the
+    /// canonical operator-facing form.
+    ///
+    /// The natural typed primitive for operator-facing emission of a
+    /// histogram — a tracing field `tracing::info!(hist = %tally, …)`
+    /// rendering the per-cell distribution into a single structured-log
+    /// field without re-deriving the `(cell, count)` join at the call
+    /// site, an attestation manifest YAML field `chain_shape: "defaults=1,
+    /// env=0, file=2"` carrying the chain-shape histogram as a single
+    /// scalar string (round-trippable through
+    /// [`axis_from_label`]/[`AxisHistogram::observe`] over the comma-split
+    /// pairs without naming `axis_iter` at the loader), a CLI
+    /// `config-show --histogram` line `removed=2, added=5, context=37`
+    /// emitting the diff-shape histogram per file rebuild without a
+    /// per-axis hand-rolled formatter. Before this lift, every such
+    /// consumer reached the operator-facing emission through one of three
+    /// forms: an open-coded `hist.iter().map(|(v, c)|
+    /// format!("{}={}", v.as_str(), c)).collect::<Vec<_>>().join(", ")`
+    /// (a two-allocation per-call site rebuild — one [`String`] per
+    /// cell, one [`Vec`] over them), a custom `Display`-emitting newtype
+    /// wrapper at each consumer site that re-derived the (cell, count)
+    /// join (the wrapper-per-consumer pattern), or an inlined
+    /// `for`-loop with a manual leading-separator flag (the open-coded
+    /// `is_first` discipline rebuilt at every site). The lift names the
+    /// projection at one site, single-pass through the [`std::fmt::Write`]
+    /// surface, with no intermediate [`String`] / [`Vec`] allocation.
+    ///
+    /// **Format.** `axis_cardinality::<A>()` pairs of `<label>=<count>`
+    /// separated by `", "`, in declaration order over [`ClosedAxis::ALL`],
+    /// with `<label>` taken verbatim from [`ClosedAxisLabel::as_str`].
+    /// Zero-count cells are emitted alongside positive-count cells; the
+    /// emission walks the *full* axis, not just the observed support
+    /// (peer to the length law on [`AxisHistogram::iter`]). The empty
+    /// histogram emits every cell at zero (`"defaults=0, env=0, file=0"`
+    /// on the [`crate::ConfigSourceKind`] axis), not the empty string —
+    /// the operator distinguishes "empty observation window" from "axis
+    /// has no cells" by reading the `=0` cells, and the round-trip law
+    /// below depends on every cell appearing in the emission.
+    ///
+    /// **Round-trip law** —
+    /// `axis_from_label::<A>(label_substring) == Some(cell)` for every
+    /// `<label>=<count>` pair emitted on every histogram. The
+    /// operator-facing emission round-trips through
+    /// [`ClosedAxisLabel::from_canonical_str`] on the label side; a
+    /// loader recovers the typed `(cell, count)` pairs by splitting the
+    /// emitted string on `", "`, splitting each pair on `'='`, parsing
+    /// the label via [`axis_from_label`], and parsing the count as
+    /// [`usize`]. Pinned uniformly across every [`ClosedAxisLabel`]
+    /// implementor by
+    /// [`tests::axis_histogram_display_labels_round_trip_through_axis_from_label_for_every_closed_axis_label_implementor`].
+    ///
+    /// **Length law** — the emission contains exactly
+    /// `axis_cardinality::<A>() - 1` separator substrings (`", "`), one
+    /// per gap between adjacent pairs. Pinned uniformly across every
+    /// [`ClosedAxisLabel`] implementor by
+    /// [`tests::axis_histogram_display_emits_axis_cardinality_pairs_for_every_closed_axis_label_implementor`].
+    ///
+    /// **Empty-histogram law** — the empty histogram emits every cell
+    /// with `=0` (every pair's count substring reads `"0"`). Pinned
+    /// uniformly across every [`ClosedAxisLabel`] implementor by
+    /// [`tests::axis_histogram_display_empty_emits_zero_for_every_cell_for_every_closed_axis_label_implementor`].
+    ///
+    /// **Total law** — summing the per-cell counts parsed off the
+    /// emission yields [`AxisHistogram::total`]. The operator-facing
+    /// emission preserves the total observation count by construction
+    /// (every cell contributes its count, no cell drops). Pinned
+    /// concretely on [`crate::DiffLineKind`] by
+    /// [`tests::axis_histogram_display_total_matches_inherent_for_diff_line_kind`].
+    ///
+    /// **Trait-bound asymmetry with [`Debug`]/[`Hash`]/[`PartialOrd`]** —
+    /// every other trait derived or impl'd on [`AxisHistogram`]
+    /// ([`Debug`], [`Clone`], [`PartialEq`], [`Eq`], [`Hash`],
+    /// [`PartialOrd`], [`Default`]) reaches every [`ClosedAxis`]
+    /// implementor uniformly, since their bounds carry no labeling
+    /// requirement. [`Display`] is the one operator surface that needs
+    /// the *canonical-name* projection [`ClosedAxisLabel::as_str`]
+    /// carries, so the impl is gated on the labeled-axis sub-trait
+    /// [`ClosedAxisLabel`]. Every closed-enum axis primitive on the
+    /// typescape (the twenty [`ClosedAxisLabel`] implementors enumerated
+    /// by [`for_each_closed_axis_label_implementor`] in [`tests`])
+    /// inherits the [`Display`] impl through that bound; the product
+    /// cube axes ([`crate::FormatCoordinates`],
+    /// [`crate::AttributionCoordinates`],
+    /// [`crate::ErrorLocalizationCoordinates`],
+    /// [`crate::AttributionSourceKindCoordinates`],
+    /// [`crate::AttributionNameKindCoordinates`]) do not — they carry no
+    /// canonical operator-facing label today, and reaching a cube-cell
+    /// label through a joint `(axis-name, cell-label)` projection is a
+    /// separate lift.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut first = true;
+        for (cell, count) in self.iter() {
+            if !first {
+                f.write_str(", ")?;
+            }
+            first = false;
+            write!(f, "{}={}", cell.as_str(), count)?;
+        }
+        Ok(())
+    }
+}
+
 /// Lift an iterator of axis observations into a typed
 /// [`AxisHistogram<A>`] — the dense per-cell tally over
 /// [`ClosedAxis::ALL`].
@@ -20157,6 +20276,271 @@ mod tests {
         assert_eq!(
             window, fresh,
             "post-clear absorb reaches the same value as a fresh observe sequence",
+        );
+    }
+
+    // ---- AxisHistogram::fmt::Display (operator-facing emission) laws ----
+    //
+    // Four laws reach every [`ClosedAxisLabel`] implementor through
+    // [`for_each_closed_axis_label_implementor`] so the per-axis
+    // [`Display`] projection's contract holds uniformly without per-axis
+    // test duplication: the emission carries exactly
+    // [`axis_cardinality::<A>() - 1`] separator substrings; every label
+    // substring round-trips through [`axis_from_label`]; the empty
+    // histogram emits every cell at `=0`; the labels in the emission
+    // appear in declaration order over [`ClosedAxis::ALL`].
+
+    fn assert_display_emits_axis_cardinality_pairs<A>()
+    where
+        A: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // The length law on the operator-facing emission: the emitted
+        // string contains exactly `axis_cardinality::<A>() - 1` `", "`
+        // separator substrings, regardless of the per-cell counts. Pinned
+        // over the axis-cover histogram (every cell positive) so a stray
+        // `is_first` flag flip would surface as either an extra leading
+        // separator or a dropped pair.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        let s = format!("{hist}");
+        let cardinality = axis_cardinality::<A>();
+        let expected_separators = cardinality.saturating_sub(1);
+        let observed_separators = s.matches(", ").count();
+        assert_eq!(
+            observed_separators,
+            expected_separators,
+            "axis {} display must carry exactly axis_cardinality - 1 separators (got {observed_separators} in {s:?})",
+            std::any::type_name::<A>(),
+        );
+        // The `=` separator inside each pair appears exactly once per
+        // axis cell — `axis_cardinality::<A>()` total occurrences across
+        // the emission.
+        assert_eq!(
+            s.matches('=').count(),
+            cardinality,
+            "axis {} display must carry exactly axis_cardinality '=' separators (one per cell)",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_display_labels_round_trip_through_axis_from_label<A>()
+    where
+        A: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // The round-trip law on the operator-facing emission: every
+        // `<label>=<count>` pair's label substring parses back to the
+        // emitting cell via [`axis_from_label`]. The (Display,
+        // axis_from_label) duality on the labeled-axis surface — the
+        // emission is the round-trippable form a loader can recover the
+        // typed `(cell, count)` pairs from without a custom parser.
+        // Pinned over an axis where every cell carries a distinct
+        // positive count so the round-trip also recovers count integrity.
+        let mut hist = AxisHistogram::<A>::empty();
+        for (i, cell) in axis_iter::<A>().enumerate() {
+            for _ in 0..=i {
+                hist.observe(cell);
+            }
+        }
+        let s = format!("{hist}");
+        let parsed: Vec<(A, usize)> = s
+            .split(", ")
+            .map(|pair| {
+                let (label, count) = pair.split_once('=').unwrap_or_else(|| {
+                    panic!(
+                        "axis {} display pair {pair:?} missing '=' separator",
+                        std::any::type_name::<A>(),
+                    )
+                });
+                let cell = axis_from_label::<A>(label).unwrap_or_else(|| {
+                    panic!(
+                        "axis {} display label {label:?} must parse through axis_from_label",
+                        std::any::type_name::<A>(),
+                    )
+                });
+                let count: usize = count.parse().unwrap_or_else(|e| {
+                    panic!(
+                        "axis {} display count {count:?} must parse as usize: {e}",
+                        std::any::type_name::<A>(),
+                    )
+                });
+                (cell, count)
+            })
+            .collect();
+        let original: Vec<(A, usize)> = hist.iter().collect();
+        assert_eq!(
+            parsed,
+            original,
+            "axis {} display must round-trip through axis_from_label + usize::parse",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_display_empty_emits_zero_for_every_cell<A>()
+    where
+        A: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // The empty-histogram emission law: every cell appears in the
+        // emission with `=0`. The operator distinguishes "empty
+        // observation window" from "axis has no cells" by reading the
+        // emitted `=0` cells — the empty string would lose that
+        // distinction. Peer of the length law on [`AxisHistogram::iter`]:
+        // the iter walks the full axis on the empty histogram, the
+        // Display emission emits every cell of that walk.
+        let hist = AxisHistogram::<A>::empty();
+        let s = format!("{hist}");
+        for cell in axis_iter::<A>() {
+            let expected = format!("{}=0", cell.as_str());
+            assert!(
+                s.contains(&expected),
+                "axis {} empty display must contain {expected:?} (got {s:?})",
+                std::any::type_name::<A>(),
+            );
+        }
+        // Exactly `axis_cardinality::<A>()` `=0` substrings on the empty
+        // histogram — every cell is zero, no cell is dropped.
+        assert_eq!(
+            s.matches("=0").count(),
+            axis_cardinality::<A>(),
+            "axis {} empty display must carry one =0 per cell",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_display_labels_appear_in_declaration_order<A>()
+    where
+        A: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // The declaration-order law on the operator-facing emission: the
+        // labels appear in the emission in the same order they appear in
+        // [`ClosedAxis::ALL`]. Pinned by scanning for each successive
+        // cell's label and asserting that the byte offset is
+        // monotonically non-decreasing across the iteration. Peer of the
+        // declaration-order law on [`AxisHistogram::iter`] — the
+        // emission is the labeled-rendering of that walk.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        let s = format!("{hist}");
+        let mut prev_end = 0usize;
+        for cell in axis_iter::<A>() {
+            let label = cell.as_str();
+            let offset = s[prev_end..].find(label).unwrap_or_else(|| {
+                panic!(
+                    "axis {} display must contain label {label:?} after offset {prev_end}",
+                    std::any::type_name::<A>(),
+                )
+            });
+            prev_end += offset + label.len();
+        }
+    }
+
+    #[test]
+    fn axis_histogram_display_emits_axis_cardinality_pairs_for_every_closed_axis_label_implementor()
+    {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_display_emits_axis_cardinality_pairs::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_display_labels_round_trip_through_axis_from_label_for_every_closed_axis_label_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_display_labels_round_trip_through_axis_from_label::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_display_empty_emits_zero_for_every_cell_for_every_closed_axis_label_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_display_empty_emits_zero_for_every_cell::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_display_labels_appear_in_declaration_order_for_every_closed_axis_label_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_display_labels_appear_in_declaration_order::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_display_for_diff_line_kind() {
+        // Concrete pin on the operator-facing emission at a
+        // representative call-site shape: a per-rebuild diff-shape
+        // histogram emitted as a single structured-log field carrying
+        // the (removed, added, context) distribution. Pins the format
+        // literally so a future drift (label-case change, separator
+        // tweak, ordering flip) surfaces at the concrete-axis assertion
+        // before propagating through the trait-uniform laws above.
+        //
+        // [`DiffLineKind::ALL`] declaration order is
+        // `[Removed, Added, Context]`.
+        let hist: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+            DiffLineKind::Context,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(format!("{hist}"), "removed=1, added=2, context=3");
+
+        // The empty histogram emits every cell at zero, never the empty
+        // string — the operator distinguishes "no observations" from
+        // "no axis cells" by reading the `=0` cells.
+        let empty = AxisHistogram::<DiffLineKind>::empty();
+        assert_eq!(format!("{empty}"), "removed=0, added=0, context=0");
+
+        // Singleton observation reaches the singleton-cell emission with
+        // the other cells visibly at zero.
+        let singleton = AxisHistogram::<DiffLineKind>::from(DiffLineKind::Added);
+        assert_eq!(format!("{singleton}"), "removed=0, added=1, context=0");
+    }
+
+    #[test]
+    fn axis_histogram_display_total_matches_inherent_for_diff_line_kind() {
+        // The total law on the operator-facing emission: summing the
+        // per-cell counts parsed off the emission yields the inherent
+        // [`AxisHistogram::total`]. Pins the emission preserves the
+        // total observation count by construction — every cell
+        // contributes its count, no cell drops.
+        let hist: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+            DiffLineKind::Context,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        let s = format!("{hist}");
+        let parsed_total: usize = s
+            .split(", ")
+            .map(|pair| {
+                let (_, c) = pair.split_once('=').expect("pair must contain '='");
+                c.parse::<usize>().expect("count must parse")
+            })
+            .sum();
+        assert_eq!(
+            parsed_total,
+            hist.total(),
+            "display must preserve total observation count",
         );
     }
 }
