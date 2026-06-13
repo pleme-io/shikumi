@@ -346,6 +346,80 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         self.counts[axis_ordinal(value)] += 1;
     }
 
+    /// Reset every cell to zero in place — the canonical Rust stdlib
+    /// `clear()` idiom-peer of [`Vec::clear`], [`String::clear`],
+    /// [`std::collections::HashMap::clear`],
+    /// [`std::collections::HashSet::clear`],
+    /// [`std::collections::BTreeMap::clear`], and
+    /// [`std::collections::BTreeSet::clear`] on the in-place-reset
+    /// surface. Closes the ([`Self::empty`], [`Self::clear`])
+    /// constructor-vs-in-place-reset pair every stdlib collection
+    /// carries: where [`Self::empty`] / [`Self::default`] allocate a
+    /// fresh `axis_cardinality::<A>()`-sized counts vector at the
+    /// [`Default`] surface, [`Self::clear`] zeroes the existing counts
+    /// vector in place without reallocating the backing
+    /// [`Vec<usize>`][Vec].
+    ///
+    /// Pointwise equivalent to `*self = AxisHistogram::empty()` (the
+    /// reassigning form) on the post-state, but **does not realloc**
+    /// the backing counts vector — the natural in-place reset on the
+    /// rolling-window observatory surface: an aggregator carrying
+    /// observations across a rolling window calls `tally.clear()`
+    /// between windows to reset the cell counts to zero without
+    /// allocating a fresh `vec![0; axis_cardinality::<A>()]` on every
+    /// window tick, peer of the
+    /// `for (_, c) in tally.iter_mut() { *c = 0; }` open-coded
+    /// per-cell zero loop (which traverses every cell explicitly) and
+    /// of the `*tally = AxisHistogram::empty()` reassignment (which
+    /// drops the existing backing store and allocates a new one).
+    /// Before this lift, every consumer reaching the in-place reset
+    /// surface picked one of those two forms with varying call-site
+    /// verbosity and allocation behavior. The lift names the
+    /// projection at one site at the canonical stdlib `clear()`
+    /// surface, lowers through [`<[usize]>::fill`][slice::fill] (the
+    /// stdlib's own zero-the-slice primitive), and the consumer
+    /// reaches the no-realloc post-state through one method call.
+    ///
+    /// **Post-conditions.**
+    /// - [`Self::is_empty`] is `true` after the call.
+    /// - [`Self::total`] reads `0`.
+    /// - [`Self::distinct_cells`] reads `0`.
+    /// - [`Self::unobserved_cells`] reads
+    ///   [`axis_cardinality::<A>()`][axis_cardinality].
+    /// - [`Self::nonzero`] / [`Self::observed`] are empty iterators.
+    /// - [`Self::unobserved`] iterates the full axis (pointwise equal
+    ///   to [`axis_iter::<A>()`][axis_iter]).
+    /// - `self == AxisHistogram::default()` — pointwise equality with
+    ///   the monoid identity.
+    ///
+    /// **Idempotence** — `hist.clear(); hist.clear()` is pointwise
+    /// equal to `hist.clear()`. Clearing an already-empty histogram
+    /// leaves it unchanged.
+    ///
+    /// **Reassignment equivalence** — `let mut a = hist.clone();
+    /// a.clear();` is pointwise equal to `let a = AxisHistogram::<A>::
+    /// empty();`. The (`clear`, `*self = ::empty()`) duality on the
+    /// in-place vs. reassigning reset surface — both yield the monoid
+    /// identity at the value level; `clear` retains the existing
+    /// backing-store capacity.
+    ///
+    /// **Length invariance** — the backing counts vector retains its
+    /// `axis_cardinality::<A>()` length (every cell still exists at
+    /// zero), only the cell values are overwritten. Peer to
+    /// [`Vec::clear`]'s capacity-preservation invariant, lifted to the
+    /// fixed-length closed-axis surface.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The four trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_clear_is_empty_after_*`,
+    /// `axis_histogram_clear_equals_default_*`,
+    /// `axis_histogram_clear_is_idempotent_*`,
+    /// `axis_histogram_clear_on_empty_is_identity_*`).
+    pub fn clear(&mut self) {
+        self.counts.fill(0);
+    }
+
     /// Number of observations recorded on `value`. Defined on every
     /// axis cell (returns zero for cells no observation landed on);
     /// total over the axis space without an out-of-range case.
@@ -19027,6 +19101,232 @@ mod tests {
             tally.get(&host_c).copied(),
             Some(1),
             "host_c lands in its own bucket",
+        );
+    }
+
+    // ---- AxisHistogram::clear (in-place reset) trait-uniform laws ----
+    //
+    // Four trait-uniform laws reach every [`ClosedAxis`] implementor through
+    // [`for_each_closed_axis_implementor`] so the per-axis [`AxisHistogram::clear`]
+    // projection's contract holds uniformly without per-axis test duplication:
+    // `clear` reaches the empty-histogram boundary on every axis cover;
+    // `clear` lands pointwise equal to the [`Default`] / [`Self::empty`]
+    // monoid identity; `clear` is idempotent under repeated application;
+    // `clear` on the already-empty histogram is the identity.
+
+    fn assert_clear_is_empty_after<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The empty-histogram boundary law: after `hist.clear()`, every
+        // empty-side predicate reads `true` / zero on the same call site.
+        // Pinned over the axis-cover histogram (every cell carries a
+        // positive count before the reset) so the boundary transition is
+        // visible on every ordinal.
+        let mut hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert!(
+            !hist.is_empty(),
+            "axis-cover histogram must be non-empty before clear on axis {}",
+            std::any::type_name::<A>(),
+        );
+        hist.clear();
+        assert!(
+            hist.is_empty(),
+            "clear must reach is_empty on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert_eq!(
+            hist.total(),
+            0,
+            "clear must zero total on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert_eq!(
+            hist.distinct_cells(),
+            0,
+            "clear must zero distinct_cells on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert_eq!(
+            hist.unobserved_cells(),
+            axis_cardinality::<A>(),
+            "clear must lift unobserved_cells to axis_cardinality on axis {}",
+            std::any::type_name::<A>(),
+        );
+        for cell in axis_iter::<A>() {
+            assert_eq!(
+                hist[cell],
+                0,
+                "clear must zero cell {cell:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_clear_equals_default<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The monoid-identity equivalence law: `clear` lands on the same
+        // value as the [`Default`] / [`Self::empty`] constructor — both
+        // surfaces reach the all-zero histogram, the in-place form via
+        // `clear` and the constructor form via `default`. Pinned over the
+        // axis-cover histogram so the pre-state is non-trivial.
+        let mut via_clear: AxisHistogram<A> = axis_iter::<A>().collect();
+        via_clear.clear();
+        assert_eq!(
+            via_clear,
+            AxisHistogram::<A>::default(),
+            "clear must equal Default on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert_eq!(
+            via_clear,
+            AxisHistogram::<A>::empty(),
+            "clear must equal empty() on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_clear_is_idempotent<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The idempotence law on the in-place-reset surface: a second
+        // `clear` after a first one leaves the histogram pointwise
+        // unchanged. The fixed-point property every stdlib `clear`
+        // carries (the zero state is a fixed point of the operator).
+        let mut hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        hist.clear();
+        let after_one = hist.clone();
+        hist.clear();
+        assert_eq!(
+            hist,
+            after_one,
+            "clear must be idempotent on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_clear_on_empty_is_identity<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The empty-input identity law on the in-place-reset surface:
+        // clearing the already-empty histogram leaves it pointwise
+        // unchanged. Peer of the empty-identity law on [`Self::merge`]
+        // (`hist.merge(&AxisHistogram::empty()) == hist`) and the
+        // empty-iterator law on [`Extend<A>::extend`] — the operator
+        // is the identity on the monoid identity.
+        let mut hist = AxisHistogram::<A>::empty();
+        let before = hist.clone();
+        hist.clear();
+        assert_eq!(
+            hist,
+            before,
+            "clear on empty must be identity on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_clear_is_empty_after_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_clear_is_empty_after::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_clear_equals_default_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_clear_equals_default::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_clear_is_idempotent_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_clear_is_idempotent::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_clear_on_empty_is_identity_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_clear_on_empty_is_identity::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_clear_preserves_backing_capacity_for_diff_line_kind() {
+        // Concrete pin on the in-place-reset surface at the rolling-
+        // window observatory call-site shape: a per-window
+        // `AxisHistogram<DiffLineKind>` tally that absorbs observations
+        // through the window, then resets to zero between windows
+        // without reallocating. The `Vec::clear`-style capacity-
+        // preservation invariant — pinned on a concrete axis so the
+        // post-state reads off in named cells, and the backing-store
+        // length stays at [`axis_cardinality`] across the reset.
+        let mut window: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(window[DiffLineKind::Added], 2);
+        assert_eq!(window[DiffLineKind::Removed], 1);
+        assert_eq!(window[DiffLineKind::Context], 1);
+        assert_eq!(window.total(), 4);
+
+        window.clear();
+
+        // Every named cell reads zero through the operator surface; the
+        // typed-empty-histogram boundary is reached.
+        assert_eq!(window[DiffLineKind::Added], 0);
+        assert_eq!(window[DiffLineKind::Removed], 0);
+        assert_eq!(window[DiffLineKind::Context], 0);
+        assert_eq!(window.total(), 0);
+        assert!(window.is_empty());
+        assert_eq!(window, AxisHistogram::<DiffLineKind>::empty());
+
+        // The reset window absorbs the next batch without per-cell
+        // re-initialization — the same backing store reads off the new
+        // observations directly.
+        window.observe(DiffLineKind::Removed);
+        window.observe(DiffLineKind::Removed);
+        assert_eq!(window[DiffLineKind::Removed], 2);
+        assert_eq!(window[DiffLineKind::Added], 0);
+        assert_eq!(window.total(), 2);
+
+        // Iterating the reset histogram still walks every cell of the
+        // closed axis (length invariance) — `clear` zeroes values,
+        // never length.
+        let mut fresh = AxisHistogram::<DiffLineKind>::empty();
+        fresh.observe(DiffLineKind::Removed);
+        fresh.observe(DiffLineKind::Removed);
+        assert_eq!(
+            window.iter().count(),
+            fresh.iter().count(),
+            "clear preserves iterator length over the closed axis",
+        );
+        assert_eq!(
+            window, fresh,
+            "post-clear absorb reaches the same value as a fresh observe sequence",
         );
     }
 }
