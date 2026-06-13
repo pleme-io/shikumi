@@ -4588,6 +4588,205 @@ impl<A: ClosedAxisLabel> std::fmt::Display for AxisHistogram<A> {
     }
 }
 
+/// Typed parse-failure mode of [`<AxisHistogram<A> as
+/// FromStr>::from_str`][std::str::FromStr] on the labeled-axis
+/// histogram surface — one variant per structurally distinct rejection
+/// reason the parser can surface, each carrying the offending
+/// substring verbatim so a caller can localize the failure without
+/// re-derived bookkeeping at the call site.
+///
+/// **Why a structured enum, not [`String`] / [`crate::ShikumiError`]**:
+/// the parser has four distinct rejection reasons (missing `=`,
+/// unknown label, invalid count, duplicate label), each load-bearing
+/// on a different downstream branch (a CLI surfaces a localized
+/// underline pointing at the offending pair, a structured-log emitter
+/// keys an alert by error variant, a deserialization fallback retries
+/// only on the recoverable `UnknownLabel` case). Collapsing all four
+/// into one stringly-typed [`crate::ShikumiError::Parse`] would lose
+/// the downstream branch axis at the type level — peer of the
+/// load-bearing structuring [`crate::ShikumiErrorKind`] carries on
+/// [`crate::ShikumiError`].
+///
+/// **Trait surface.** Implements [`Debug`][std::fmt::Debug] (derive),
+/// [`Clone`] (derive — every variant's payload is [`String`]),
+/// [`PartialEq`] / [`Eq`] (derive — supports test-equality assertions
+/// without an `assert_matches!` macro), [`Display`][std::fmt::Display]
+/// (operator-facing one-line rendering of the failure), and
+/// [`std::error::Error`] (canonical Rust error trait surface —
+/// satisfies the `Result<_, Box<dyn Error>>` and `eyre::Result<_>`
+/// bounds every downstream consumer expects). `#[non_exhaustive]` to
+/// pin variant-addition forward-compatibility — a future parser
+/// rejection mode (e.g. an `EmptyCount`, a `LabelCaseViolation` on a
+/// stricter-case axis) lands as a new variant without a SemVer-major
+/// bump.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ParseAxisHistogramError {
+    /// A `<label>=<count>` pair was missing the `=` separator. The
+    /// `pair` field carries the offending substring verbatim (the
+    /// comma-split token before the missing `=`) so a caller can
+    /// localize the failure to the surrounding context.
+    MissingEquals {
+        /// The offending pair substring, verbatim.
+        pair: String,
+    },
+    /// A label substring did not match any canonical name on the axis
+    /// — [`ClosedAxisLabel::from_canonical_str`] returned [`None`]. The
+    /// `label` field carries the offending substring verbatim.
+    UnknownLabel {
+        /// The offending label substring, verbatim.
+        label: String,
+    },
+    /// A count substring did not parse as [`usize`] —
+    /// [`str::parse::<usize>`][str::parse] failed. The `label` field
+    /// carries the cell whose count failed to parse; the `count` field
+    /// carries the offending count substring verbatim.
+    InvalidCount {
+        /// The label whose count failed to parse.
+        label: String,
+        /// The offending count substring, verbatim.
+        count: String,
+    },
+    /// A label appeared more than once in the input. The `label` field
+    /// carries the duplicated canonical name. The parser rejects rather
+    /// than silently overwriting because two different counts on the
+    /// same cell name a load-bearing ambiguity the caller resolves
+    /// upstream.
+    DuplicateLabel {
+        /// The duplicated canonical label.
+        label: String,
+    },
+}
+
+impl std::fmt::Display for ParseAxisHistogramError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingEquals { pair } => {
+                write!(f, "missing '=' separator in pair {pair:?}")
+            }
+            Self::UnknownLabel { label } => {
+                write!(f, "unknown axis label {label:?}")
+            }
+            Self::InvalidCount { label, count } => {
+                write!(
+                    f,
+                    "invalid count {count:?} for label {label:?} (expected usize)"
+                )
+            }
+            Self::DuplicateLabel { label } => {
+                write!(f, "duplicate label {label:?}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ParseAxisHistogramError {}
+
+impl<A: ClosedAxisLabel> std::str::FromStr for AxisHistogram<A> {
+    type Err = ParseAxisHistogramError;
+
+    /// Operator-facing parse of the histogram from the
+    /// `"label₁=count₁, label₂=count₂, …, labelₙ=countₙ"` form
+    /// emitted by [`<AxisHistogram<A> as Display>::fmt`][std::fmt::Display]
+    /// — the canonical Rust stdlib [`FromStr`][std::str::FromStr]
+    /// idiom-peer of the [`Display`][std::fmt::Display] impl on the
+    /// [`AxisHistogram`] surface. Closes the canonical
+    /// (`Display`, `FromStr`) round-trip pair every stdlib serializable
+    /// type carries — peer to the same pair on numeric monoid types
+    /// ([`std::time::Duration`] only carries a custom inherent parser
+    /// for its richer alias surface, but every primitive numeric type
+    /// closes the pair), on [`std::net::IpAddr`], on [`std::net::SocketAddr`],
+    /// and on every `Uuid` / `Url` / similar serializable type in the
+    /// surrounding ecosystem.
+    ///
+    /// **Round-trip law** — for every `h: AxisHistogram<A>`,
+    /// `format!("{h}").parse::<AxisHistogram<A>>() == Ok(h)`. The
+    /// canonical stdlib [`(Display, FromStr)`][std::fmt::Display]
+    /// round-trip discipline pinned by construction on the
+    /// labeled-axis sub-surface. Pinned uniformly across every
+    /// [`ClosedAxisLabel`] implementor by
+    /// [`tests::axis_histogram_display_from_str_round_trip_for_every_closed_axis_label_implementor`].
+    ///
+    /// **Acceptance shape.** Accepts the comma-separated `<label>=<count>`
+    /// form Display emits, in any order over the axis labels (the parser
+    /// does not require declaration-order arrival — a caller building
+    /// the input by hand or a permuted serializer's output both parse).
+    /// Labels are matched case-insensitively over ASCII via
+    /// [`ClosedAxisLabel::from_canonical_str`] (the same case-folding
+    /// the trait's `from_canonical_str` carries). The empty input
+    /// string parses to [`AxisHistogram::empty`] — the natural identity
+    /// case, peer of the empty-histogram emission law on Display.
+    /// Missing labels default to count `0` on the produced histogram
+    /// so a caller can elide zero-cells on the input side without
+    /// losing the round-trip law.
+    ///
+    /// **Rejection shape.** Four structurally distinct rejection
+    /// reasons, each surfaced as a [`ParseAxisHistogramError`]
+    /// variant carrying the offending substring verbatim:
+    /// - [`ParseAxisHistogramError::MissingEquals`] — a pair lacked
+    ///   the `=` separator.
+    /// - [`ParseAxisHistogramError::UnknownLabel`] — a label did not
+    ///   match any canonical name on the axis.
+    /// - [`ParseAxisHistogramError::InvalidCount`] — a count substring
+    ///   did not parse as [`usize`].
+    /// - [`ParseAxisHistogramError::DuplicateLabel`] — a label appeared
+    ///   more than once.
+    ///
+    /// **Order-invariance law** — for every permutation `π` of the
+    /// pair sequence on a Display emission, `format!("{h}").parse::<
+    /// AxisHistogram<A>>() == permute(format!("{h}"), π).parse::<
+    /// AxisHistogram<A>>()`. The parser accumulates into a per-ordinal
+    /// counts slot indexed by [`axis_ordinal`], so the input order
+    /// only governs the iteration order, not the produced histogram.
+    /// Pinned concretely on [`crate::DiffLineKind`] by
+    /// [`tests::axis_histogram_from_str_is_order_invariant_for_diff_line_kind`].
+    ///
+    /// **Missing-labels-default-to-zero law** — for every subset
+    /// `S ⊆ ClosedAxis::ALL` and every count assignment over `S`,
+    /// the parsed histogram reads zero on every cell outside `S`. The
+    /// elided-cell convenience peers the empty-input identity law:
+    /// the parser distinguishes "this cell appeared with `=0`" from
+    /// "this cell was elided" by producing the same zero count on
+    /// either input. Pinned concretely on [`crate::DiffLineKind`] by
+    /// [`tests::axis_histogram_from_str_missing_labels_default_to_zero_for_diff_line_kind`].
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut hist = Self::empty();
+        if s.is_empty() {
+            return Ok(hist);
+        }
+        let cardinality = axis_cardinality::<A>();
+        let mut seen = vec![false; cardinality];
+        for pair in s.split(", ") {
+            let (label, count) =
+                pair.split_once('=')
+                    .ok_or_else(|| ParseAxisHistogramError::MissingEquals {
+                        pair: pair.to_owned(),
+                    })?;
+            let cell = <A as ClosedAxisLabel>::from_canonical_str(label).ok_or_else(|| {
+                ParseAxisHistogramError::UnknownLabel {
+                    label: label.to_owned(),
+                }
+            })?;
+            let count: usize =
+                count
+                    .parse()
+                    .map_err(|_| ParseAxisHistogramError::InvalidCount {
+                        label: label.to_owned(),
+                        count: count.to_owned(),
+                    })?;
+            let ordinal = axis_ordinal(cell);
+            if seen[ordinal] {
+                return Err(ParseAxisHistogramError::DuplicateLabel {
+                    label: label.to_owned(),
+                });
+            }
+            seen[ordinal] = true;
+            hist.counts[ordinal] = count;
+        }
+        Ok(hist)
+    }
+}
+
 /// Lift an iterator of axis observations into a typed
 /// [`AxisHistogram<A>`] — the dense per-cell tally over
 /// [`ClosedAxis::ALL`].
@@ -20542,5 +20741,416 @@ mod tests {
             hist.total(),
             "display must preserve total observation count",
         );
+    }
+
+    // ---- AxisHistogram FromStr (parse-back) trait-uniform laws ----
+    //
+    // The canonical Rust stdlib `(Display, FromStr)` round-trip pair on
+    // the labeled-axis histogram surface. Pins the parser's
+    // round-trip law, accept-Display-output law, missing-cells-default-
+    // to-zero law, order-invariance law, empty-input-identity law, and
+    // the four typed rejection modes uniformly across every
+    // `ClosedAxisLabel` implementor through
+    // `for_each_closed_axis_label_implementor!`. The concrete pins on
+    // `DiffLineKind` literal-format the parser's accept and reject
+    // surfaces so a future drift surfaces at the concrete-axis assertion
+    // before propagating through the trait-uniform laws.
+
+    fn assert_display_from_str_round_trip<A>()
+    where
+        A: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // The canonical stdlib `(Display, FromStr)` round-trip law on
+        // the labeled-axis histogram surface: every histogram parses
+        // back through its Display emission to a histogram equal to
+        // itself. Pinned over a per-cell-distinct-count histogram so
+        // the round-trip also recovers count integrity, not just the
+        // axis-cover.
+        let mut hist = AxisHistogram::<A>::empty();
+        for (i, cell) in axis_iter::<A>().enumerate() {
+            for _ in 0..=i {
+                hist.observe(cell);
+            }
+        }
+        let s = format!("{hist}");
+        let parsed: AxisHistogram<A> = s.parse().unwrap_or_else(|e| {
+            panic!(
+                "axis {} display must parse back through FromStr: {e}",
+                std::any::type_name::<A>(),
+            )
+        });
+        assert_eq!(
+            parsed,
+            hist,
+            "axis {} (Display, FromStr) round-trip must be identity",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_from_str_empty_is_empty_histogram<A>()
+    where
+        A: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // The empty-input identity law on the parser: the empty input
+        // string parses to the empty histogram (every cell at zero).
+        // Peer of the empty-histogram emission law on Display — the
+        // operator can elide the per-cell zero-emission entirely on the
+        // input side without losing the round-trip.
+        let parsed: AxisHistogram<A> = "".parse().unwrap_or_else(|e| {
+            panic!(
+                "axis {} empty input must parse to empty histogram: {e}",
+                std::any::type_name::<A>(),
+            )
+        });
+        assert_eq!(
+            parsed,
+            AxisHistogram::<A>::empty(),
+            "axis {} empty input must parse to AxisHistogram::empty",
+            std::any::type_name::<A>(),
+        );
+        assert!(
+            parsed.is_empty(),
+            "axis {} empty-input parsed histogram must satisfy is_empty",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_from_str_empty_display_round_trips_to_empty<A>()
+    where
+        A: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // The empty-histogram `(Display, FromStr)` round-trip: the
+        // empty histogram's Display emission (every cell at `=0`)
+        // parses back to the empty histogram. Pins the round-trip law
+        // on the identity element of the histogram monoid.
+        let empty = AxisHistogram::<A>::empty();
+        let s = format!("{empty}");
+        let parsed: AxisHistogram<A> = s.parse().unwrap_or_else(|e| {
+            panic!(
+                "axis {} empty Display must parse back: {e}",
+                std::any::type_name::<A>(),
+            )
+        });
+        assert_eq!(
+            parsed,
+            empty,
+            "axis {} empty Display ↔ FromStr round-trip must be identity",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_from_str_rejects_unknown_label<A>()
+    where
+        A: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // The unknown-label rejection mode: a label substring that does
+        // not match any canonical name on the axis surfaces as
+        // `ParseAxisHistogramError::UnknownLabel { label }` carrying the
+        // offending substring verbatim. Pinned with a sentinel label
+        // (`"__shikumi_unknown_label_sentinel__"`) chosen so it cannot
+        // collide with any canonical name (every canonical name on the
+        // typescape today is lowercase ASCII without underscores
+        // matching the sentinel pattern).
+        let sentinel = "__shikumi_unknown_label_sentinel__";
+        let input = format!("{sentinel}=1");
+        let result: Result<AxisHistogram<A>, ParseAxisHistogramError> = input.parse();
+        match result {
+            Err(ParseAxisHistogramError::UnknownLabel { label }) => {
+                assert_eq!(
+                    label,
+                    sentinel,
+                    "axis {} unknown-label error must carry the offending substring verbatim",
+                    std::any::type_name::<A>(),
+                );
+            }
+            other => panic!(
+                "axis {} must reject unknown label with UnknownLabel variant, got {other:?}",
+                std::any::type_name::<A>(),
+            ),
+        }
+    }
+
+    fn assert_from_str_rejects_missing_equals<A>()
+    where
+        A: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // The missing-equals rejection mode: a pair without `=`
+        // surfaces as `ParseAxisHistogramError::MissingEquals { pair }`
+        // carrying the offending substring verbatim. Pinned with the
+        // first axis cell's canonical label as the pair body (a valid
+        // label but no `=count` suffix).
+        let first_cell = axis_iter::<A>()
+            .next()
+            .expect("axis must have at least one cell");
+        let input = first_cell.as_str().to_owned();
+        let result: Result<AxisHistogram<A>, ParseAxisHistogramError> = input.parse();
+        match result {
+            Err(ParseAxisHistogramError::MissingEquals { pair }) => {
+                assert_eq!(
+                    pair,
+                    input,
+                    "axis {} missing-equals error must carry the offending pair verbatim",
+                    std::any::type_name::<A>(),
+                );
+            }
+            other => panic!(
+                "axis {} must reject missing '=' with MissingEquals variant, got {other:?}",
+                std::any::type_name::<A>(),
+            ),
+        }
+    }
+
+    fn assert_from_str_rejects_invalid_count<A>()
+    where
+        A: ClosedAxisLabel + std::fmt::Debug,
+    {
+        // The invalid-count rejection mode: a count substring that
+        // does not parse as `usize` surfaces as
+        // `ParseAxisHistogramError::InvalidCount { label, count }`
+        // carrying both the offending count substring and the label
+        // it was attached to. Pinned with the first axis cell's
+        // canonical label paired with a non-numeric count `"oops"`.
+        let first_cell = axis_iter::<A>()
+            .next()
+            .expect("axis must have at least one cell");
+        let label = first_cell.as_str();
+        let input = format!("{label}=oops");
+        let result: Result<AxisHistogram<A>, ParseAxisHistogramError> = input.parse();
+        match result {
+            Err(ParseAxisHistogramError::InvalidCount { label: l, count: c }) => {
+                assert_eq!(
+                    l,
+                    label,
+                    "axis {} invalid-count error must carry the offending label verbatim",
+                    std::any::type_name::<A>(),
+                );
+                assert_eq!(
+                    c,
+                    "oops",
+                    "axis {} invalid-count error must carry the offending count verbatim",
+                    std::any::type_name::<A>(),
+                );
+            }
+            other => panic!(
+                "axis {} must reject invalid count with InvalidCount variant, got {other:?}",
+                std::any::type_name::<A>(),
+            ),
+        }
+    }
+
+    #[test]
+    fn axis_histogram_display_from_str_round_trip_for_every_closed_axis_label_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_display_from_str_round_trip::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_from_str_empty_is_empty_histogram_for_every_closed_axis_label_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_from_str_empty_is_empty_histogram::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_from_str_empty_display_round_trips_to_empty_for_every_closed_axis_label_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_from_str_empty_display_round_trips_to_empty::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_from_str_rejects_unknown_label_for_every_closed_axis_label_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_from_str_rejects_unknown_label::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_from_str_rejects_missing_equals_for_every_closed_axis_label_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_from_str_rejects_missing_equals::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_from_str_rejects_invalid_count_for_every_closed_axis_label_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_from_str_rejects_invalid_count::<$ty>();
+            };
+        }
+        for_each_closed_axis_label_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_from_str_for_diff_line_kind() {
+        // Concrete literal pin on the parser's accept surface for a
+        // representative call-site shape — a per-rebuild diff-shape
+        // histogram parsed from an operator-supplied attestation
+        // manifest field. Pins the format literally so a future drift
+        // (case-folding tweak, separator change, default-zero behavior
+        // change) surfaces at the concrete-axis assertion before
+        // propagating through the trait-uniform laws above.
+        //
+        // [`DiffLineKind::ALL`] declaration order is
+        // `[Removed, Added, Context]`.
+
+        // Round-trip the literal Display emission.
+        let parsed: AxisHistogram<DiffLineKind> = "removed=1, added=2, context=3".parse().unwrap();
+        let mut expected = AxisHistogram::<DiffLineKind>::empty();
+        for _ in 0..1 {
+            expected.observe(DiffLineKind::Removed);
+        }
+        for _ in 0..2 {
+            expected.observe(DiffLineKind::Added);
+        }
+        for _ in 0..3 {
+            expected.observe(DiffLineKind::Context);
+        }
+        assert_eq!(parsed, expected);
+        // The round-trip closes both directions: parsed.to_string() ==
+        // the input we just parsed from.
+        assert_eq!(format!("{parsed}"), "removed=1, added=2, context=3");
+
+        // Empty input parses to the empty histogram.
+        let empty: AxisHistogram<DiffLineKind> = "".parse().unwrap();
+        assert_eq!(empty, AxisHistogram::<DiffLineKind>::empty());
+
+        // The empty-histogram Display emission round-trips to the empty
+        // histogram on this concrete axis.
+        let from_zero_emission: AxisHistogram<DiffLineKind> =
+            "removed=0, added=0, context=0".parse().unwrap();
+        assert_eq!(from_zero_emission, AxisHistogram::<DiffLineKind>::empty());
+
+        // Case-insensitive labels (the trait's `from_canonical_str` is
+        // case-insensitive ASCII).
+        let case_folded: AxisHistogram<DiffLineKind> =
+            "REMOVED=1, Added=2, ConTeXt=3".parse().unwrap();
+        assert_eq!(case_folded, expected);
+    }
+
+    #[test]
+    fn axis_histogram_from_str_is_order_invariant_for_diff_line_kind() {
+        // The order-invariance law on the parser: a permuted Display
+        // emission parses to the same histogram. The parser
+        // accumulates into per-ordinal slots indexed by `axis_ordinal`,
+        // so the input order only governs the iteration order, not
+        // the produced histogram.
+        let canonical: AxisHistogram<DiffLineKind> =
+            "removed=1, added=2, context=3".parse().unwrap();
+        let permuted_a: AxisHistogram<DiffLineKind> =
+            "added=2, context=3, removed=1".parse().unwrap();
+        let permuted_b: AxisHistogram<DiffLineKind> =
+            "context=3, removed=1, added=2".parse().unwrap();
+        assert_eq!(canonical, permuted_a);
+        assert_eq!(canonical, permuted_b);
+    }
+
+    #[test]
+    fn axis_histogram_from_str_missing_labels_default_to_zero_for_diff_line_kind() {
+        // The missing-labels-default-to-zero law on the parser: a
+        // subset input (some cells elided) produces a histogram with
+        // zero on every elided cell. The (elided, =0) duality on the
+        // input side.
+        let singleton: AxisHistogram<DiffLineKind> = "added=5".parse().unwrap();
+        let mut expected = AxisHistogram::<DiffLineKind>::empty();
+        for _ in 0..5 {
+            expected.observe(DiffLineKind::Added);
+        }
+        assert_eq!(singleton, expected);
+        assert_eq!(singleton.count(DiffLineKind::Removed), 0);
+        assert_eq!(singleton.count(DiffLineKind::Context), 0);
+
+        // An (elided cell, explicit =0 cell) pair on the same axis
+        // produces the same histogram — pins the duality from the
+        // other direction.
+        let with_explicit_zero: AxisHistogram<DiffLineKind> =
+            "removed=0, added=5, context=0".parse().unwrap();
+        assert_eq!(singleton, with_explicit_zero);
+    }
+
+    #[test]
+    fn axis_histogram_from_str_rejects_duplicate_label_for_diff_line_kind() {
+        // The duplicate-label rejection mode: a label appearing more
+        // than once in the input surfaces as
+        // `ParseAxisHistogramError::DuplicateLabel { label }` carrying
+        // the duplicated canonical name verbatim. Two different
+        // counts on the same cell name a load-bearing ambiguity the
+        // caller resolves upstream — the parser does not silently
+        // overwrite or sum.
+        let result: Result<AxisHistogram<DiffLineKind>, _> = "added=1, added=2".parse();
+        match result {
+            Err(ParseAxisHistogramError::DuplicateLabel { label }) => {
+                assert_eq!(label, "added");
+            }
+            other => panic!("must reject duplicate label, got {other:?}"),
+        }
+
+        // Case-folding does not change the duplicate-label detection:
+        // the parser routes through `axis_ordinal`, not through the
+        // raw label substring, so `Added` and `added` collide on the
+        // same ordinal and the second occurrence surfaces as a
+        // duplicate. The error carries the *second* occurrence's
+        // verbatim label (the parser short-circuits on the first
+        // duplicate).
+        let result: Result<AxisHistogram<DiffLineKind>, _> = "added=1, Added=2".parse();
+        match result {
+            Err(ParseAxisHistogramError::DuplicateLabel { label }) => {
+                assert_eq!(label, "Added");
+            }
+            other => panic!("must reject case-folded duplicate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_axis_histogram_error_display_renders_each_variant() {
+        // The operator-facing `Display` on `ParseAxisHistogramError`
+        // renders each variant's payload at one site, so a caller
+        // formatting the error into a CLI line or a structured-log
+        // field reaches a one-line operator-facing rendering without
+        // re-deriving the per-variant match.
+        let missing = ParseAxisHistogramError::MissingEquals {
+            pair: "addedone".to_owned(),
+        };
+        assert_eq!(
+            format!("{missing}"),
+            "missing '=' separator in pair \"addedone\"",
+        );
+
+        let unknown = ParseAxisHistogramError::UnknownLabel {
+            label: "bogus".to_owned(),
+        };
+        assert_eq!(format!("{unknown}"), "unknown axis label \"bogus\"");
+
+        let invalid = ParseAxisHistogramError::InvalidCount {
+            label: "added".to_owned(),
+            count: "oops".to_owned(),
+        };
+        assert_eq!(
+            format!("{invalid}"),
+            "invalid count \"oops\" for label \"added\" (expected usize)",
+        );
+
+        let duplicate = ParseAxisHistogramError::DuplicateLabel {
+            label: "added".to_owned(),
+        };
+        assert_eq!(format!("{duplicate}"), "duplicate label \"added\"");
     }
 }
