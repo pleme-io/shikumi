@@ -2609,6 +2609,60 @@ impl<A: ClosedAxis> Extend<A> for AxisHistogram<A> {
     }
 }
 
+impl<A: ClosedAxis> From<A> for AxisHistogram<A> {
+    /// Lift one axis cell into the singleton histogram that observes
+    /// it exactly once — the canonical Rust idiom-peer of stdlib's
+    /// blanket scalar-into-collection conversions
+    /// (`impl From<T> for Vec<T>` semantically, the singleton
+    /// `BinaryHeap::from`/`HashSet::from` shapes). The 0-arg analog of
+    /// [`Self::empty`] on the (cell → histogram) constructor surface.
+    ///
+    /// Before this lift, every consumer building a one-observation
+    /// histogram (a test fixture pinning the singleton-dominant-cell
+    /// law on a specific cell, an attestation manifest recording
+    /// "this window saw exactly this one cell", a sliding-window
+    /// observatory seeding the next window with the first observation
+    /// in isolation, a CLI `config-diff` initializing the running
+    /// tally with the first diff line as it walks the stream) wrote
+    /// `std::iter::once(value).collect::<AxisHistogram<A>>()` or
+    /// `let mut h = AxisHistogram::empty(); h.observe(value); h` —
+    /// two distinct re-derivations of the singleton constructor that
+    /// drift apart when one site or the other gains a structural
+    /// invariant the other lacks. The lift names the (cell → singleton
+    /// histogram) projection at one site so `value.into()` and
+    /// `AxisHistogram::from(value)` are both available on the natural
+    /// stdlib idiom surface.
+    ///
+    /// **Singleton law** — `AxisHistogram::from(value)` is pointwise
+    /// equal to `std::iter::once(value).collect::<AxisHistogram<A>>()`:
+    /// `count(value, hist) == 1`, every other cell at 0, `total() == 1`,
+    /// [`Self::is_empty`] = `false`, [`Self::dominant_cell`] =
+    /// `Some(value)`. Peer to the trait-uniform
+    /// `assert_singleton_histogram_pins_observed_cell` and
+    /// `assert_dominant_cell_singleton_picks_observed_cell` laws in
+    /// [`tests`] — the singleton constructor those laws walk uniformly
+    /// is now nameable as `From::from` rather than as the open-coded
+    /// `iter::once(_).collect()` lowering.
+    ///
+    /// **Cell-coverage symmetry** — for every cell `c` of the axis,
+    /// `AxisHistogram::from(c)` produces a histogram with exactly that
+    /// cell observed once; iterating over `axis_iter::<A>().map(From::from)`
+    /// produces the dense sequence of every per-cell singleton
+    /// histogram on the axis in declaration order — the natural
+    /// generator the trait-uniform singleton laws walk underneath.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// constructor at no per-axis cost. Pinned across the implementor
+    /// set by the trait-uniform
+    /// `axis_histogram_from_cell_equals_iter_once_collect_*` law in
+    /// [`tests`].
+    fn from(value: A) -> Self {
+        let mut hist = Self::empty();
+        hist.observe(value);
+        hist
+    }
+}
+
 impl<A: ClosedAxis> FromIterator<(A, usize)> for AxisHistogram<A> {
     /// Build a histogram by absorbing every `(cell, count)` pair in `iter`
     /// — the canonical Rust idiom-peer of [`HashMap::from_iter`][std::collections::HashMap]
@@ -8043,6 +8097,55 @@ mod tests {
         }
     }
 
+    fn assert_from_cell_equals_iter_once_collect<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (cell → singleton histogram) constructor law: for every
+        // cell of the axis, `AxisHistogram::from(cell)` and
+        // `value.into()` produce a histogram pointwise equal to the
+        // open-coded `std::iter::once(cell).collect()` form that the
+        // singleton-histogram law above walks. The two singleton
+        // constructors cannot drift apart by construction — pinned
+        // uniformly across every closed-axis implementor so a future
+        // axis primitive inherits the equivalence at no per-axis cost.
+        for observed in axis_iter::<A>() {
+            let via_from: AxisHistogram<A> = AxisHistogram::from(observed);
+            let via_into: AxisHistogram<A> = observed.into();
+            let via_iter_once: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                via_from,
+                via_iter_once,
+                "AxisHistogram::from(cell) must equal iter::once(cell).collect() on {observed:?} \
+                 for axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                via_into,
+                via_iter_once,
+                "Into::into for cell must equal iter::once(cell).collect() on {observed:?} \
+                 for axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                via_from.total(),
+                1,
+                "From-built singleton total must equal 1 on axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                via_from.count(observed),
+                1,
+                "From-built singleton must observe the lifted cell on {observed:?}",
+            );
+            assert_eq!(
+                via_from.dominant_cell(),
+                Some(observed),
+                "From-built singleton dominant_cell must be the lifted cell on {observed:?}",
+            );
+        }
+    }
+
     fn assert_all_observed_once_yields_uniform_histogram<A>()
     where
         A: ClosedAxis + std::fmt::Debug,
@@ -8167,6 +8270,16 @@ mod tests {
     }
 
     #[test]
+    fn axis_histogram_from_cell_equals_iter_once_collect_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_from_cell_equals_iter_once_collect::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
     fn axis_histogram_axis_cover_is_uniform_for_every_closed_axis_implementor() {
         macro_rules! check {
             ($ty:ident) => {
@@ -8235,6 +8348,37 @@ mod tests {
         assert_eq!(via_fn.count(DiffLineKind::Added), 2);
         assert_eq!(via_fn.count(DiffLineKind::Context), 1);
         assert_eq!(via_fn.total(), 4);
+    }
+
+    #[test]
+    fn axis_histogram_from_cell_constructs_singleton_for_diff_line_kind() {
+        // Concrete pin of the `From<A>` singleton constructor on
+        // [`DiffLineKind`]: lifting a single cell through `From`/`Into`
+        // matches the `iter::once + collect` and `empty + observe`
+        // lowerings pointwise. Names the singleton-constructor
+        // contract at one site explicitly so the surface shape
+        // (`value.into()`, `AxisHistogram::from(value)`,
+        // `iter::once(value).collect()`,
+        // `{ let mut h = empty(); h.observe(value); h }`) is readable
+        // as four pointwise-equal lowerings of the same projection.
+        let via_from = AxisHistogram::from(DiffLineKind::Added);
+        let via_into: AxisHistogram<DiffLineKind> = DiffLineKind::Added.into();
+        let via_iter_once: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Added).collect();
+        let via_observe = {
+            let mut h: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+            h.observe(DiffLineKind::Added);
+            h
+        };
+        assert_eq!(via_from, via_into);
+        assert_eq!(via_from, via_iter_once);
+        assert_eq!(via_from, via_observe);
+        assert_eq!(via_from.count(DiffLineKind::Added), 1);
+        assert_eq!(via_from.count(DiffLineKind::Removed), 0);
+        assert_eq!(via_from.count(DiffLineKind::Context), 0);
+        assert_eq!(via_from.total(), 1);
+        assert!(!via_from.is_empty());
+        assert_eq!(via_from.dominant_cell(), Some(DiffLineKind::Added));
     }
 
     #[test]
