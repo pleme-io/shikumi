@@ -2330,6 +2330,120 @@ impl<A: ClosedAxis> AxisHistogram<A> {
             .zip(other.counts.iter())
             .any(|(&lhs, &rhs)| lhs > 0 && rhs > 0)
     }
+
+    /// Cellwise absolute difference of `self` and `other` — the
+    /// symmetric-difference (△) on the histogram surface. Every cell
+    /// becomes `|self.count(v) - other.count(v)|`, the unsigned
+    /// magnitude of the per-cell gap between the two histograms. The
+    /// canonical Rust idiom-peer of
+    /// [`std::collections::HashSet::symmetric_difference`] /
+    /// [`std::collections::BTreeSet::symmetric_difference`] lifted
+    /// onto the multiset surface, complementary to
+    /// [`Self::pointwise_max`] (the join, ∪),
+    /// [`Self::pointwise_min`] (the meet, ∩), and
+    /// [`std::ops::Sub`] (the saturating difference, ∖) on the same
+    /// histogram. The four together close the canonical set-theoretic
+    /// operator quartet `(∪, ∩, ∖, △)` at the histogram surface.
+    ///
+    /// Before this lift, every consumer reaching the cellwise-absolute-
+    /// difference projection — a fleet aggregator asking *"what is the
+    /// per-`ShikumiErrorKind` gap between today's window and yesterday's
+    /// window?"* on `AxisHistogram<crate::ShikumiErrorKind>`, a per-
+    /// channel observatory computing the L1 / Manhattan distance
+    /// between two rolling histograms (`a.symmetric_difference(&b)
+    /// .total()` is the canonical L1 metric on multisets), a
+    /// regression detector reporting the per-cell delta between a
+    /// pre-change envelope and a post-change envelope without
+    /// distinguishing the direction of change — reached the
+    /// projection through one of three forms: the open-coded per-cell
+    /// loop with the absolute-difference branch, the lattice-bridge
+    /// form `a.clone().pointwise_max(&b) - a.clone().pointwise_min(&b)`
+    /// (allocates two intermediate histograms, walks the counts vector
+    /// three times — twice to write the join and meet, once to fold
+    /// the meet back through saturating subtraction), or the sum-of-
+    /// directed-differences form
+    /// `(a.clone() - &b) + &(b.clone() - &a)` (allocates two
+    /// intermediate histograms, exploits the disjoint-supports
+    /// identity that `(a - b)` and `(b - a)` are always disjoint, so
+    /// their join equals their sum on every input). Collapsed to one
+    /// method call with a single-pass `O(axis_cardinality)` scan over
+    /// the existing counts vector that writes `|slot - delta|` in
+    /// place — no allocation.
+    ///
+    /// **Symmetry**: `a.symmetric_difference(&b)` is pointwise equal
+    /// to `b.symmetric_difference(&a)`. The cellwise absolute-
+    /// difference `|lhs - rhs|` is symmetric in its two arguments —
+    /// the perfect peer of the symmetry of
+    /// [`std::collections::HashSet::symmetric_difference`].
+    ///
+    /// **Self-cancellation**: `hist.clone().symmetric_difference(&hist)
+    /// == AxisHistogram::empty()`. Every cell of the reflexive pair
+    /// has `|c - c| == 0`, so the symmetric difference collapses to
+    /// the bottom of the lattice on every reflexive input. The
+    /// canonical boundary law on the symmetric-difference monoid:
+    /// every histogram is its own inverse under `△`, which is
+    /// exactly the structure that makes `(AxisHistogram, △, empty)`
+    /// a commutative group of exponent 2 on the support-set
+    /// projection (and a commutative monoid on the multiset
+    /// magnitude).
+    ///
+    /// **Empty is the identity**: `hist.clone().symmetric_difference
+    /// (&AxisHistogram::empty()) == hist` and `AxisHistogram::empty()
+    /// .symmetric_difference(&hist) == hist`. Every cell of `empty`
+    /// is zero, so `|c - 0| == c` and `|0 - c| == c` reduce to the
+    /// original count — the empty histogram is the two-sided identity
+    /// of the symmetric-difference monoid, exactly as
+    /// `HashSet::new()` is the two-sided identity of stdlib set
+    /// symmetric difference.
+    ///
+    /// **Lattice-bridge identity**: `a.clone().symmetric_difference
+    /// (&b) == a.clone().pointwise_max(&b) - &a.clone()
+    /// .pointwise_min(&b)`. The canonical "△ = ∪ ∖ ∩" identity on
+    /// every cell: `|lhs - rhs| == max(lhs, rhs) - min(lhs, rhs)`.
+    /// Pins the symmetric difference is the gap between the join and
+    /// the meet of the same pair on every cell.
+    ///
+    /// **Add-bridge identity**: `a.clone().symmetric_difference(&b) +
+    /// &(a.clone().pointwise_min(&b) * 2) == &a + &b`. The
+    /// `(max - min) + 2 * min == max + min` identity, with `max + min
+    /// == a + b` (the join-plus-meet equals add law on the lattice)
+    /// — pins the symmetric difference is the additive complement of
+    /// twice the meet against the additive sum.
+    ///
+    /// **Disjoint-pair specialization**: `a.is_disjoint_from(&b) ⇒
+    /// a.clone().symmetric_difference(&b) == &a + &b`. On disjoint
+    /// pairs the meet collapses to empty, so the lattice-bridge
+    /// identity reduces to `△ == ∪ - 0 == ∪`, and the
+    /// join-equals-add law on disjoint pairs further reduces this to
+    /// `△ == +`. The canonical specialization of the symmetric-
+    /// difference monoid to the partition-of-supports case.
+    ///
+    /// **Dominance specialization**: `a.is_dominated_by(&b) ⇒
+    /// a.clone().symmetric_difference(&b) == b.clone() - &a` (and by
+    /// symmetry, also `== b.clone().symmetric_difference(&a)`). When
+    /// every cell of `a` is `<=` the corresponding cell of `b`, the
+    /// cellwise absolute difference reduces to the directed (saturating)
+    /// difference `b - a` on every cell. The canonical specialization
+    /// of the symmetric-difference operator to the comparable-pair
+    /// case on the partial-order surface.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The trait-uniform laws pinned
+    /// in [`tests`] hold across the implementor set
+    /// (`axis_histogram_symmetric_difference_is_symmetric_*`,
+    /// `axis_histogram_symmetric_difference_self_cancels_to_empty_*`,
+    /// `axis_histogram_symmetric_difference_empty_is_identity_*`,
+    /// `axis_histogram_symmetric_difference_lattice_bridge_*`,
+    /// `axis_histogram_symmetric_difference_add_bridge_*`,
+    /// `axis_histogram_symmetric_difference_disjoint_equals_add_*`,
+    /// `axis_histogram_symmetric_difference_dominance_specializes_to_sub_*`).
+    #[must_use]
+    pub fn symmetric_difference(mut self, other: &Self) -> Self {
+        for (slot, &delta) in self.counts.iter_mut().zip(other.counts.iter()) {
+            *slot = (*slot).abs_diff(delta);
+        }
+        self
+    }
 }
 
 impl<A: ClosedAxis> FromIterator<A> for AxisHistogram<A> {
@@ -11580,6 +11694,405 @@ mod tests {
         assert_eq!(disjoint_join.count(DiffLineKind::Removed), 2);
         assert_eq!(disjoint_join.count(DiffLineKind::Context), 0);
         assert_eq!(disjoint_join.total(), 5);
+    }
+
+    // ---- AxisHistogram symmetric-difference trait-uniform laws ----
+    //
+    // The [`AxisHistogram::symmetric_difference`] lift closes the
+    // canonical set-theoretic operator quartet `(∪, ∩, ∖, △)` at the
+    // histogram surface — peer to
+    // (`HashSet::union`, `HashSet::intersection`, `HashSet::difference`,
+    // `HashSet::symmetric_difference`) on stdlib sets, with
+    // [`AxisHistogram::pointwise_max`] / [`AxisHistogram::pointwise_min`] /
+    // [`std::ops::Sub`] / [`AxisHistogram::symmetric_difference`]
+    // carrying the quartet on the multiset side. The trait-uniform laws
+    // below pin the symmetric-difference operator's contract uniformly
+    // across every [`ClosedAxis`] implementor: symmetry (the cellwise
+    // absolute difference is symmetric); self-cancellation (every
+    // histogram is its own inverse — `(AxisHistogram, △, empty)` is a
+    // commutative monoid with exponent-2 self-inverses on the support-
+    // set projection); empty is the two-sided identity (the empty
+    // histogram is the canonical identity element of the symmetric-
+    // difference monoid); the lattice-bridge identity (`△ = ∪ ∖ ∩`
+    // cellwise); the add-bridge identity (`△ + 2·∩ = +`); the
+    // disjoint-pair specialization (`△ = +` on disjoint inputs); and
+    // the dominance specialization (`△ = ∖` on comparable pairs on
+    // the partial-order surface).
+
+    fn assert_symmetric_difference_is_symmetric<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical symmetry law on the symmetric-difference
+        // operator: `a.symmetric_difference(&b) ==
+        // b.symmetric_difference(&a)` pointwise. The cellwise
+        // absolute-difference `|lhs - rhs|` is symmetric in its two
+        // arguments, so the lift inherits the symmetry. Peer to the
+        // symmetry of [`std::collections::HashSet::symmetric_difference`].
+        // Pinned across the (empty, empty), (empty, cover), (cover,
+        // empty), and (cover, doubled) pairs so the symmetry reads off
+        // on both the vacuous (empty result) and non-vacuous sides.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&empty, &empty),
+            (&empty, &cover),
+            (&cover, &empty),
+            (&cover, &doubled),
+            (&doubled, &cover),
+        ] {
+            assert_eq!(
+                lhs.clone().symmetric_difference(rhs),
+                rhs.clone().symmetric_difference(lhs),
+                "symmetry: a.symmetric_difference(&b) must equal b.symmetric_difference(&a) on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_symmetric_difference_self_cancels_to_empty<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical self-cancellation law on the symmetric-
+        // difference monoid: `hist.clone().symmetric_difference(&hist)
+        // == AxisHistogram::empty()`. Every cell of the reflexive pair
+        // has `|c - c| == 0`, so the symmetric difference collapses to
+        // the bottom of the lattice on every reflexive input. The
+        // boundary law that makes every histogram its own inverse
+        // under `△`. Pinned over (empty, cover, doubled) so the
+        // boundary reads off on both the empty self-pair (vacuous
+        // empty) and non-empty self-pairs (collapse-to-empty).
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for hist in [&empty, &cover, &doubled] {
+            assert_eq!(
+                hist.clone().symmetric_difference(hist),
+                AxisHistogram::<A>::empty(),
+                "self-cancellation: hist.symmetric_difference(&hist) must equal AxisHistogram::empty() on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_symmetric_difference_empty_is_identity<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical two-sided-identity law on the symmetric-
+        // difference monoid: `hist.clone().symmetric_difference(&empty)
+        // == hist` and `empty.symmetric_difference(&hist) == hist`.
+        // Every cell of `empty` is zero, so `|c - 0| == c` and `|0 - c|
+        // == c` reduce to the original count on every ordinal — the
+        // empty histogram is the two-sided identity of the symmetric-
+        // difference monoid, exactly as `HashSet::new()` is the two-
+        // sided identity of stdlib set symmetric difference. Pinned
+        // over (empty, cover, doubled) so the identity reads off on
+        // both the empty input (vacuous) and the non-empty inputs.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for hist in [&empty, &cover, &doubled] {
+            assert_eq!(
+                hist.clone().symmetric_difference(&empty),
+                hist.clone(),
+                "right identity: hist.symmetric_difference(&empty) must equal hist on axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                empty.clone().symmetric_difference(hist),
+                hist.clone(),
+                "left identity: empty.symmetric_difference(&hist) must equal hist on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_symmetric_difference_lattice_bridge<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical "△ = ∪ ∖ ∩" lattice-bridge identity:
+        // `a.symmetric_difference(&b) == a.pointwise_max(&b) -
+        // a.pointwise_min(&b)` on every input pair. Pins the symmetric
+        // difference is the gap between the join and the meet of the
+        // same pair on every cell — every cell satisfies `|lhs - rhs|
+        // == max(lhs, rhs) - min(lhs, rhs)`. Pinned across (empty,
+        // empty), (empty, cover), (cover, empty), and (cover, doubled)
+        // so the bridge reads off on both the vacuous (empty bridge) and
+        // non-vacuous sides.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&empty, &empty),
+            (&empty, &cover),
+            (&cover, &empty),
+            (&cover, &doubled),
+            (&doubled, &cover),
+        ] {
+            let sym_diff = lhs.clone().symmetric_difference(rhs);
+            let join = lhs.clone().pointwise_max(rhs);
+            let meet = lhs.clone().pointwise_min(rhs);
+            let bridge = join - &meet;
+            assert_eq!(
+                sym_diff,
+                bridge,
+                "lattice bridge: a.symmetric_difference(&b) must equal a.pointwise_max(&b) - a.pointwise_min(&b) on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_symmetric_difference_add_bridge<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The canonical add-bridge identity: `a.symmetric_difference(&b)
+        // + 2 * a.pointwise_min(&b) == a + b`. The
+        // `(max - min) + 2 * min == max + min` identity, with the
+        // `(max + min == add)` lattice-additive identity (pinned at
+        // `axis_histogram_pointwise_max_plus_min_equals_add_*`)
+        // composing the two halves: the symmetric difference plus
+        // twice the meet recovers the additive sum on every input
+        // pair. Pinned across (empty, empty), (empty, cover), (cover,
+        // empty), and (cover, doubled).
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [
+            (&empty, &empty),
+            (&empty, &cover),
+            (&cover, &empty),
+            (&cover, &doubled),
+            (&doubled, &cover),
+        ] {
+            let sym_diff = lhs.clone().symmetric_difference(rhs);
+            let meet = lhs.clone().pointwise_min(rhs);
+            let twice_meet = meet * 2;
+            let recovered = sym_diff + &twice_meet;
+            let sum = lhs.clone() + rhs;
+            assert_eq!(
+                recovered,
+                sum,
+                "add bridge: a.symmetric_difference(&b) + 2 * a.pointwise_min(&b) must equal a + b on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_symmetric_difference_disjoint_equals_add<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The disjoint-pair specialization: `a.is_disjoint_from(&b) ⇒
+        // a.symmetric_difference(&b) == a + b`. On disjoint pairs the
+        // meet collapses to empty (by the meet characterization of
+        // disjointness), so the lattice-bridge identity reduces to
+        // `△ == ∪ - 0 == ∪`, and the join-equals-add law on disjoint
+        // pairs further reduces this to `△ == +`. Pinned on the
+        // trait-uniform disjoint witness pair (empty, cover): empty is
+        // disjoint from every histogram, including cover, so the
+        // specialization reads off non-vacuously on every axis. Also
+        // pinned on (empty, empty) for the vacuous (both-empty) case
+        // where the specialization reads `empty == empty`.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        for (lhs, rhs) in [(&empty, &empty), (&empty, &cover), (&cover, &empty)] {
+            assert!(
+                lhs.is_disjoint_from(rhs),
+                "witness pair must be disjoint on axis {}",
+                std::any::type_name::<A>(),
+            );
+            let sym_diff = lhs.clone().symmetric_difference(rhs);
+            let sum = lhs.clone() + rhs;
+            assert_eq!(
+                sym_diff,
+                sum,
+                "disjoint specialization: a.is_disjoint_from(&b) ⇒ a.symmetric_difference(&b) must equal a + b on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_symmetric_difference_dominance_specializes_to_sub<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The dominance specialization on the comparable-pair surface:
+        // `a.is_dominated_by(&b) ⇒ a.symmetric_difference(&b) ==
+        // b - a` (and by symmetry, also `== b.symmetric_difference(&a)`).
+        // When every cell of `a` is `<=` the corresponding cell of `b`,
+        // the cellwise absolute difference `|a - b|` reduces to the
+        // directed (saturating) difference `b - a` on every cell.
+        // Pinned on the trait-uniform comparable witness pair (empty,
+        // cover): empty is dominated by every histogram on the lattice
+        // (the bottom), so the specialization reads off non-vacuously
+        // on every axis as `cover.symmetric_difference(&empty) ==
+        // cover - empty == cover`.
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        let doubled: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for (lhs, rhs) in [(&empty, &cover), (&empty, &doubled), (&cover, &doubled)] {
+            assert!(
+                lhs.is_dominated_by(rhs),
+                "witness pair must be comparable on axis {}",
+                std::any::type_name::<A>(),
+            );
+            let sym_diff = lhs.clone().symmetric_difference(rhs);
+            let directed = rhs.clone() - lhs;
+            assert_eq!(
+                sym_diff,
+                directed,
+                "dominance specialization: a.is_dominated_by(&b) ⇒ a.symmetric_difference(&b) must equal b - a on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_symmetric_difference_is_symmetric_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_symmetric_difference_is_symmetric::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_symmetric_difference_self_cancels_to_empty_for_every_closed_axis_implementor()
+    {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_symmetric_difference_self_cancels_to_empty::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_symmetric_difference_empty_is_identity_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_symmetric_difference_empty_is_identity::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_symmetric_difference_lattice_bridge_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_symmetric_difference_lattice_bridge::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_symmetric_difference_add_bridge_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_symmetric_difference_add_bridge::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_symmetric_difference_disjoint_equals_add_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_symmetric_difference_disjoint_equals_add::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_symmetric_difference_dominance_specializes_to_sub_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_symmetric_difference_dominance_specializes_to_sub::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_symmetric_difference_witnessed_on_partial_overlap_for_diff_line_kind() {
+        // Concrete pin on the symmetric-difference operator against
+        // [`DiffLineKind`] — the three-cell axis (Added, Removed,
+        // Context) lets the per-cell absolute difference read off non-
+        // vacuously on a partially-overlapping pair. `lhs` carries
+        // counts (5, 2, 0); `rhs` carries (1, 4, 3). The symmetric
+        // difference reads (|5-1|, |2-4|, |0-3|) = (4, 2, 3) — every
+        // cell carries the unsigned magnitude of the per-cell gap
+        // regardless of sign. The lattice bridge reads off concretely:
+        // join = (5, 4, 3), meet = (1, 2, 0), join - meet = (4, 2, 3) ==
+        // sym_diff. The add bridge reads off concretely: meet * 2 =
+        // (2, 4, 0), sym_diff + meet * 2 = (6, 6, 3) == lhs + rhs.
+        // The total reads `lhs.symmetric_difference(&rhs).total() == 9`,
+        // the L1 / Manhattan distance between the two histograms.
+        let lhs: AxisHistogram<DiffLineKind> =
+            [(DiffLineKind::Added, 5), (DiffLineKind::Removed, 2)]
+                .into_iter()
+                .collect();
+        let rhs: AxisHistogram<DiffLineKind> = [
+            (DiffLineKind::Added, 1),
+            (DiffLineKind::Removed, 4),
+            (DiffLineKind::Context, 3),
+        ]
+        .into_iter()
+        .collect();
+
+        let sym_diff = lhs.clone().symmetric_difference(&rhs);
+        assert_eq!(sym_diff.count(DiffLineKind::Added), 4);
+        assert_eq!(sym_diff.count(DiffLineKind::Removed), 2);
+        assert_eq!(sym_diff.count(DiffLineKind::Context), 3);
+        assert_eq!(sym_diff.total(), 9);
+
+        // Symmetry: swapping the arguments yields the same histogram.
+        let sym_diff_rev = rhs.clone().symmetric_difference(&lhs);
+        assert_eq!(sym_diff, sym_diff_rev);
+
+        // Lattice bridge: `△ = ∪ - ∩` cellwise.
+        let join = lhs.clone().pointwise_max(&rhs);
+        let meet = lhs.clone().pointwise_min(&rhs);
+        assert_eq!(join.count(DiffLineKind::Added), 5);
+        assert_eq!(join.count(DiffLineKind::Removed), 4);
+        assert_eq!(join.count(DiffLineKind::Context), 3);
+        assert_eq!(meet.count(DiffLineKind::Added), 1);
+        assert_eq!(meet.count(DiffLineKind::Removed), 2);
+        assert_eq!(meet.count(DiffLineKind::Context), 0);
+        let bridge = join.clone() - &meet;
+        assert_eq!(bridge, sym_diff);
+
+        // Add bridge: `△ + 2·∩ == +`.
+        let twice_meet = meet.clone() * 2;
+        let recovered = sym_diff.clone() + &twice_meet;
+        let sum = lhs.clone() + &rhs;
+        assert_eq!(recovered, sum);
+        assert_eq!(sum.count(DiffLineKind::Added), 6);
+        assert_eq!(sum.count(DiffLineKind::Removed), 6);
+        assert_eq!(sum.count(DiffLineKind::Context), 3);
+
+        // Dominance specialization: `meet` is dominated by both `lhs`
+        // and `rhs`, so the symmetric difference against either
+        // collapses to the directed saturating difference.
+        assert!(meet.is_dominated_by(&lhs));
+        assert!(meet.is_dominated_by(&rhs));
+        let meet_sym_lhs = meet.clone().symmetric_difference(&lhs);
+        let meet_sub_lhs = lhs.clone() - &meet;
+        assert_eq!(meet_sym_lhs, meet_sub_lhs);
+        let meet_sym_rhs = meet.clone().symmetric_difference(&rhs);
+        let meet_sub_rhs = rhs.clone() - &meet;
+        assert_eq!(meet_sym_rhs, meet_sub_rhs);
     }
 
     // ---- AxisHistogram scalar-action trait-uniform laws ----
