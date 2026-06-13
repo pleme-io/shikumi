@@ -2867,6 +2867,115 @@ impl<A: ClosedAxis> Extend<(A, usize)> for AxisHistogram<A> {
     }
 }
 
+impl<A: ClosedAxis, const N: usize> From<[(A, usize); N]> for AxisHistogram<A> {
+    /// Build a histogram from a fixed-size array of pre-counted
+    /// `(cell, count)` pairs — the canonical Rust stdlib
+    /// pair-input-array constructor idiom-peer of
+    /// [`HashMap::from`][std::collections::HashMap] /
+    /// [`BTreeMap::from`][std::collections::BTreeMap] on the
+    /// `[(K, V); N]` input surface. The const-generic-N partner of
+    /// the [`FromIterator<(A, usize)>`] entry surface, hoisted to
+    /// the stdlib array-literal call site so
+    /// `AxisHistogram::from([(Added, 12), (Removed, 4)])` reads at
+    /// the same idiom rung as
+    /// `HashMap::from([("a", 1), ("b", 2)])` and
+    /// `BTreeMap::from([("a", 1), ("b", 2)])`.
+    ///
+    /// Before this lift, every consumer reaching the
+    /// (pre-counted pair-array → histogram) projection (an
+    /// attestation manifest hard-coding the expected per-cell
+    /// counts as a baseline `[(DiffLineKind::Added, 12),
+    /// (DiffLineKind::Removed, 4)]`, a checkpoint-restoration test
+    /// pinning a snapshotted observation tally, a CLI golden-output
+    /// fixture pre-counted from a known input set, a documentation
+    /// example reaching for the smallest readable lift from a
+    /// `(cell, count)` literal to a histogram) reached one of three
+    /// open-coded forms — the
+    /// `[(Added, 12), (Removed, 4)].into_iter().collect::<AxisHistogram<_>>()`
+    /// post-collect form (which forces an explicit turbofish at
+    /// every site because the call-site shape doesn't constrain the
+    /// collected type), the per-pair `let mut h = AxisHistogram::empty();
+    /// h.extend([(Added, 12), (Removed, 4)]); h` two-step form, or
+    /// the longhand per-cell `{ let mut h = AxisHistogram::empty();
+    /// for _ in 0..12 { h.observe(Added); } for _ in 0..4 {
+    /// h.observe(Removed); } h }` per-observation expansion (which
+    /// is O(total) rather than O(distinct cells)). Collapsed to one
+    /// trait-method call routed through the existing
+    /// [`FromIterator<(A, usize)>`] impl, so the per-pair fold loop
+    /// lives at exactly one site (the [`Extend<(A, usize)>`] impl
+    /// above) underneath every pair-input constructor surface.
+    ///
+    /// **Equivalence with [`FromIterator<(A, usize)>`]** — for every
+    /// fixed-size array `arr: [(A, usize); N]`:
+    /// `AxisHistogram::from(arr)` is pointwise equal to
+    /// `arr.into_iter().collect::<AxisHistogram<A>>()`. The
+    /// pair-input array constructor / pair-input iterator
+    /// constructor duality on the (pre-counted-pair) entry surface
+    /// — the pair-array literal lowers to the same per-pair
+    /// `+= count` fold the [`FromIterator<(A, usize)>`] impl
+    /// drives, so the two constructors cannot drift apart by
+    /// construction.
+    ///
+    /// **Empty-array identity law** — `AxisHistogram::from([])`
+    /// disambiguated to `AxisHistogram::<A>::from([] as [(A, usize); 0])`
+    /// is pointwise equal to [`AxisHistogram::empty`]. The vacuous
+    /// fold on the pair-input array constructor surface, peer to
+    /// the [`Extend<(A, usize)>`] empty-identity law and to the
+    /// [`FromIterator<(A, usize)>`] empty-input identity. The zero-
+    /// length pair array lowers to the monoid identity at the
+    /// constructor rung — and lands on the same all-zero state as
+    /// the raw-observation empty array `AxisHistogram::from([] as [A; 0])`.
+    ///
+    /// **Zero-count pair law** — `AxisHistogram::from([(cell, 0)])`
+    /// is pointwise equal to [`AxisHistogram::empty`] for every
+    /// cell. A pair with count zero is the additive identity on its
+    /// cell; the per-pair fold adds zero without bumping the counts
+    /// vector. Peer of the [`Extend<(A, usize)>`] zero-count law.
+    ///
+    /// **Singleton-pair-one law** — `AxisHistogram::from([(cell, 1)])`
+    /// is pointwise equal to `AxisHistogram::from([cell])`,
+    /// `AxisHistogram::from(cell)`, and
+    /// `std::iter::once(cell).collect::<AxisHistogram<A>>()`. The
+    /// arity-1 pair-array literal at count 1 joins the singleton-
+    /// constructor pin as a fifth pointwise-equal lowering of the
+    /// same one-observation projection — bridging the
+    /// raw-observation entry surface to the pre-counted-pair entry
+    /// surface at the singleton boundary.
+    ///
+    /// **Cell-additive on repeated cells** — when the array contains
+    /// the same cell `k` times as `(cell, n_1), …, (cell, n_k)`,
+    /// the resulting histogram reads `n_1 + … + n_k` at that cell.
+    /// The natural composition the histogram's monoid
+    /// `(usize, +, 0)` per cell carries, peer of the
+    /// [`FromIterator<(A, usize)>`] repeated-cell additivity and
+    /// of the raw-observation array form's repeated-cell additivity.
+    /// The salient asymmetry with [`HashMap::from`] survives at the
+    /// array rung: the histogram's per-cell algebra is additive,
+    /// not last-wins, because the pair-input surface inherits the
+    /// algebra observations compose under.
+    ///
+    /// **Total-equals-pair-sum law** — for every array
+    /// `arr: [(A, usize); N]`:
+    /// `AxisHistogram::from(arr).total() ==
+    /// arr.iter().map(|(_, n)| n).sum::<usize>()`. The array's
+    /// compile-time-known pair set determines the resulting total
+    /// exactly as the sum of pair counts, peer of the
+    /// [`From<[A; N]>`] `total == N` law on the raw-observation
+    /// surface — both lower to the same scalar additivity on the
+    /// [`Self::total`] projection.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// constructor at no per-axis cost. Pinned across the
+    /// implementor set by the trait-uniform
+    /// `axis_histogram_from_pair_array_equals_from_iter_collect_*`,
+    /// `axis_histogram_from_singleton_pair_one_equals_singleton_cell_*`,
+    /// and `axis_histogram_from_zero_count_pair_equals_empty_*` laws
+    /// in [`tests`].
+    fn from(values: [(A, usize); N]) -> Self {
+        values.into_iter().collect()
+    }
+}
+
 impl<'a, A: ClosedAxis> FromIterator<&'a A> for AxisHistogram<A> {
     /// Build a histogram by recording every borrowed observation in `iter`
     /// — the canonical Rust stdlib borrowed-input
@@ -8240,37 +8349,46 @@ mod tests {
         A: ClosedAxis + std::fmt::Debug,
     {
         // The (zero-length array → histogram) constructor law:
-        // `AxisHistogram::from([])` reads the same all-zero state as
-        // `AxisHistogram::empty()` and as `Default::default()` on every
-        // axis. The vacuous fold on the array-input constructor surface
-        // — the empty-array literal lowers to the monoid identity at
-        // the `From<[A; N]>` constructor rung, peer of the
-        // `FromIterator<A>` empty-input identity (`iter::empty().collect()`)
-        // and of the `Extend<A>` empty-input identity (`hist.extend(iter::empty())`).
-        let via_from: AxisHistogram<A> = AxisHistogram::from([]);
+        // `AxisHistogram::from([] as [A; 0])` reads the same all-zero
+        // state as `AxisHistogram::empty()` and as `Default::default()`
+        // on every axis. The vacuous fold on the array-input
+        // constructor surface — the empty-array literal lowers to the
+        // monoid identity at the `From<[A; N]>` constructor rung, peer
+        // of the `FromIterator<A>` empty-input identity
+        // (`iter::empty().collect()`) and of the `Extend<A>` empty-
+        // input identity (`hist.extend(iter::empty())`).
+        //
+        // The element-type ascription (`[] as [A; 0]`) disambiguates
+        // the empty array from the peer `From<[(A, usize); 0]>`
+        // pair-array constructor — both impls accept an arity-0 array
+        // literal, and the bare `[]` is ambiguous between them. The
+        // ascription pins the raw-observation surface explicitly; the
+        // pair-input peer carries its own empty-pair-array identity
+        // test below.
+        let via_from: AxisHistogram<A> = AxisHistogram::from([] as [A; 0]);
         let via_empty: AxisHistogram<A> = AxisHistogram::empty();
         let via_default: AxisHistogram<A> = AxisHistogram::default();
         assert_eq!(
             via_from,
             via_empty,
-            "AxisHistogram::from([]) must equal AxisHistogram::empty() on axis {}",
+            "AxisHistogram::from([] as [A; 0]) must equal AxisHistogram::empty() on axis {}",
             std::any::type_name::<A>(),
         );
         assert_eq!(
             via_from,
             via_default,
-            "AxisHistogram::from([]) must equal AxisHistogram::default() on axis {}",
+            "AxisHistogram::from([] as [A; 0]) must equal AxisHistogram::default() on axis {}",
             std::any::type_name::<A>(),
         );
         assert_eq!(
             via_from.total(),
             0,
-            "AxisHistogram::from([]).total() must equal 0 on axis {}",
+            "AxisHistogram::from([] as [A; 0]).total() must equal 0 on axis {}",
             std::any::type_name::<A>(),
         );
         assert!(
             via_from.is_empty(),
-            "AxisHistogram::from([]) must be is_empty on axis {}",
+            "AxisHistogram::from([] as [A; 0]) must be is_empty on axis {}",
             std::any::type_name::<A>(),
         );
     }
@@ -8641,13 +8759,16 @@ mod tests {
     #[test]
     fn axis_histogram_from_empty_array_equals_empty_for_diff_line_kind() {
         // Concrete pin of the empty-array identity on [`DiffLineKind`]:
-        // `AxisHistogram::from([])` reads the same all-zero state as
-        // `AxisHistogram::empty()` and as `Default::default()`. The
-        // zero-length array literal lowers to the monoid identity at
-        // the constructor rung. Trait-uniform partner pinned across
-        // every closed-axis implementor by
+        // `AxisHistogram::from([] as [DiffLineKind; 0])` reads the
+        // same all-zero state as `AxisHistogram::empty()` and as
+        // `Default::default()`. The zero-length array literal lowers
+        // to the monoid identity at the constructor rung. The
+        // element-type ascription disambiguates from the peer
+        // `From<[(A, usize); 0]>` empty pair-array constructor.
+        // Trait-uniform partner pinned across every closed-axis
+        // implementor by
         // `axis_histogram_from_empty_array_equals_empty_for_every_closed_axis_implementor`.
-        let via_from: AxisHistogram<DiffLineKind> = AxisHistogram::from([]);
+        let via_from: AxisHistogram<DiffLineKind> = AxisHistogram::from([] as [DiffLineKind; 0]);
         let via_empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
         let via_default: AxisHistogram<DiffLineKind> = AxisHistogram::default();
         assert_eq!(via_from, via_empty);
@@ -9375,6 +9496,293 @@ mod tests {
         let restored: AxisHistogram<DiffLineKind> = pairs.into_iter().collect();
 
         assert_eq!(prior, restored);
+    }
+
+    // ---- AxisHistogram::From<[(A, usize); N]> trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor through
+    // [`for_each_closed_axis_implementor`] so the per-axis pair-input array
+    // constructor's contract holds uniformly without per-axis test
+    // duplication: the empty pair-array reads the empty histogram (vacuous
+    // fold at the constructor rung); a singleton pair `[(cell, 1)]` reads
+    // the same histogram as the singleton-cell constructor `from(cell)` and
+    // as the iter-once collect (bridging the raw-observation and pre-counted-
+    // pair entry surfaces at the singleton boundary); a zero-count pair
+    // `[(cell, 0)]` reads the empty histogram on every cell (the additive
+    // identity at the pair rung). The three laws close the `From<[A; N]>` /
+    // `From<[(A, usize); N]>` peerage at the trait surface, peer of the
+    // existing `From<[A; N]>` / `From<A>` / `FromIterator` / `Extend`
+    // constructor peerage.
+
+    fn assert_from_empty_pair_array_equals_empty<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The zero-length pair-array constructor law: the empty pair
+        // literal `[]` typed as `[(A, usize); 0]` lowers to the same
+        // all-zero state as `AxisHistogram::empty()` and as
+        // `Default::default()`. Vacuous fold on the pair-input array
+        // surface, peer of the `From<[A; N]>` empty-array identity law
+        // on the raw-observation surface and of the `Extend<(A, usize)>`
+        // empty-input identity law on the pair-input fold surface.
+        let via_from: AxisHistogram<A> = AxisHistogram::from([] as [(A, usize); 0]);
+        let via_empty: AxisHistogram<A> = AxisHistogram::empty();
+        let via_default: AxisHistogram<A> = AxisHistogram::default();
+        assert_eq!(
+            via_from,
+            via_empty,
+            "AxisHistogram::from([] as [(A, usize); 0]) must equal AxisHistogram::empty() on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert_eq!(
+            via_from,
+            via_default,
+            "AxisHistogram::from([] as [(A, usize); 0]) must equal AxisHistogram::default() on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert_eq!(
+            via_from.total(),
+            0,
+            "AxisHistogram::from([] as [(A, usize); 0]).total() must equal 0 on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert!(
+            via_from.is_empty(),
+            "AxisHistogram::from([] as [(A, usize); 0]) must be is_empty on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_from_singleton_pair_one_equals_singleton_cell<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The singleton-pair-one bridging law: for every cell of the
+        // axis, the arity-1 pair-array literal `[(cell, 1)]` at count 1
+        // reads the same histogram as the singleton-cell constructor
+        // `AxisHistogram::from(cell)`, as the arity-1 raw-observation
+        // array `AxisHistogram::from([cell])`, as
+        // `iter::once(cell).collect()`, and as the open-coded `empty +
+        // observe(cell)` lowering. The pair-input entry surface meets
+        // the raw-observation entry surface at the singleton boundary —
+        // five pointwise-equal lowerings of the same one-observation
+        // projection across both entry surfaces. Pinned uniformly across
+        // every closed-axis implementor so a future axis primitive
+        // inherits the bridging law at no per-axis cost.
+        for observed in axis_iter::<A>() {
+            let via_pair_array: AxisHistogram<A> = AxisHistogram::from([(observed, 1usize)]);
+            let via_cell: AxisHistogram<A> = AxisHistogram::from(observed);
+            let via_cell_array: AxisHistogram<A> = AxisHistogram::from([observed]);
+            let via_iter_once: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                via_pair_array,
+                via_cell,
+                "AxisHistogram::from([(cell, 1)]) must equal AxisHistogram::from(cell) \
+                 on {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                via_pair_array,
+                via_cell_array,
+                "AxisHistogram::from([(cell, 1)]) must equal AxisHistogram::from([cell]) \
+                 on {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                via_pair_array,
+                via_iter_once,
+                "AxisHistogram::from([(cell, 1)]) must equal iter::once(cell).collect() \
+                 on {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                via_pair_array.total(),
+                1,
+                "AxisHistogram::from([(cell, 1)]).total() must equal 1 on axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                via_pair_array.count(observed),
+                1,
+                "AxisHistogram::from([(cell, 1)]) must observe the lifted cell on {observed:?}",
+            );
+        }
+    }
+
+    fn assert_from_zero_count_pair_equals_empty<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The zero-count pair-array constructor law: for every cell of
+        // the axis, the arity-1 pair-array literal `[(cell, 0)]` reads
+        // the same all-zero state as `AxisHistogram::empty()`. A pair
+        // with count zero is the additive identity on its cell at the
+        // constructor rung, peer of the `Extend<(A, usize)>` zero-count
+        // law on the in-place fold surface. Pinned over every cell of
+        // the axis so the identity reads off at every ordinal.
+        let via_empty: AxisHistogram<A> = AxisHistogram::empty();
+        for observed in axis_iter::<A>() {
+            let via_zero_pair: AxisHistogram<A> = AxisHistogram::from([(observed, 0usize)]);
+            assert_eq!(
+                via_zero_pair,
+                via_empty,
+                "AxisHistogram::from([(cell, 0)]) must equal AxisHistogram::empty() \
+                 on {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert_eq!(
+                via_zero_pair.total(),
+                0,
+                "AxisHistogram::from([(cell, 0)]).total() must equal 0 on {observed:?} \
+                 for axis {}",
+                std::any::type_name::<A>(),
+            );
+            assert!(
+                via_zero_pair.is_empty(),
+                "AxisHistogram::from([(cell, 0)]) must be is_empty on {observed:?} \
+                 for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_from_empty_pair_array_equals_empty_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_from_empty_pair_array_equals_empty::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_from_singleton_pair_one_equals_singleton_cell_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_from_singleton_pair_one_equals_singleton_cell::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_from_zero_count_pair_equals_empty_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_from_zero_count_pair_equals_empty::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_from_pair_array_constructs_pointwise_histogram_for_diff_line_kind() {
+        // Concrete pin of the `From<[(A, usize); N]>` pair-input array
+        // constructor on [`DiffLineKind`] at arity 3 — the trait-
+        // uniform laws above cover the arity-0 (empty), arity-1 at
+        // count 1 (singleton-bridge), and arity-1 at count 0 (zero-
+        // count) rungs uniformly across every closed axis; this test
+        // pins the higher-arity multi-cell semantics at one site so the
+        // constructor's per-pair `+= count` behavior is readable on a
+        // concrete axis. The pair-array literal lowers to the same
+        // per-pair fold the [`FromIterator<(A, usize)>`] impl drives,
+        // so the four canonical surfaces (`AxisHistogram::from([(c, n), …])`,
+        // `[(c, n), …].into()`, `[(c, n), …].into_iter().collect()`,
+        // the open-coded `let mut h = empty(); h.extend([(c, n), …]); h`
+        // form) are pinned here as four pointwise-equal lowerings of
+        // the same (pair-array → histogram) projection.
+        let via_from = AxisHistogram::from([
+            (DiffLineKind::Added, 12),
+            (DiffLineKind::Removed, 4),
+            (DiffLineKind::Context, 53),
+        ]);
+        let via_into: AxisHistogram<DiffLineKind> = [
+            (DiffLineKind::Added, 12),
+            (DiffLineKind::Removed, 4),
+            (DiffLineKind::Context, 53),
+        ]
+        .into();
+        let via_into_iter_collect: AxisHistogram<DiffLineKind> = [
+            (DiffLineKind::Added, 12),
+            (DiffLineKind::Removed, 4),
+            (DiffLineKind::Context, 53),
+        ]
+        .into_iter()
+        .collect();
+        let via_extend = {
+            let mut h: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+            h.extend([
+                (DiffLineKind::Added, 12),
+                (DiffLineKind::Removed, 4),
+                (DiffLineKind::Context, 53),
+            ]);
+            h
+        };
+        assert_eq!(via_from, via_into);
+        assert_eq!(via_from, via_into_iter_collect);
+        assert_eq!(via_from, via_extend);
+        assert_eq!(via_from.count(DiffLineKind::Added), 12);
+        assert_eq!(via_from.count(DiffLineKind::Removed), 4);
+        assert_eq!(via_from.count(DiffLineKind::Context), 53);
+        assert_eq!(via_from.total(), 69);
+        assert!(!via_from.is_empty());
+        assert_eq!(via_from.dominant_cell(), Some(DiffLineKind::Context));
+    }
+
+    #[test]
+    fn axis_histogram_from_pair_array_is_additive_on_repeated_cells_for_diff_line_kind() {
+        // Concrete pin of the pair-input array constructor's cell-
+        // additive behavior on [`DiffLineKind`]: when the literal
+        // contains the same cell multiple times as `(cell, n1), …,
+        // (cell, nk)`, the resulting histogram reads `n1 + … + nk` at
+        // that cell — the natural composition the histogram's monoid
+        // `(usize, +, 0)` per cell carries, salient asymmetry with
+        // [`HashMap::from`]'s last-wins semantics. Pinned over a mix
+        // of repeated and unique cells so both the additive and the
+        // single-entry rungs read off the concrete histogram.
+        let via_from = AxisHistogram::from([
+            (DiffLineKind::Added, 2),
+            (DiffLineKind::Added, 3),
+            (DiffLineKind::Added, 5),
+            (DiffLineKind::Removed, 1),
+        ]);
+        // Cell-additive: 2 + 3 + 5 == 10 on Added.
+        assert_eq!(via_from.count(DiffLineKind::Added), 10);
+        assert_eq!(via_from.count(DiffLineKind::Removed), 1);
+        assert_eq!(via_from.count(DiffLineKind::Context), 0);
+        // Total-equals-pair-sum law: 2 + 3 + 5 + 1 == 11.
+        assert_eq!(via_from.total(), 11);
+        assert_eq!(via_from.dominant_cell(), Some(DiffLineKind::Added));
+    }
+
+    #[test]
+    fn axis_histogram_from_pair_array_equals_observe_expansion_for_diff_line_kind() {
+        // The pair-input array constructor expansion-equivalence on
+        // the per-cell surface: building from `[(cell, n), …]` is
+        // pointwise equal to building from the expanded raw-
+        // observation stream `iter::repeat(cell).take(n)` chained
+        // across pairs. The lift replaces the O(total) re-expansion
+        // every consumer used to open-code with an O(distinct cells)
+        // single-pass fold at the constructor rung; this pin reads
+        // the equivalence at one named site over a non-trivial pair
+        // mix so a future regression on either side surfaces here.
+        let pairs: [(DiffLineKind, usize); 3] = [
+            (DiffLineKind::Added, 12),
+            (DiffLineKind::Removed, 4),
+            (DiffLineKind::Context, 53),
+        ];
+
+        let via_from_array = AxisHistogram::from(pairs);
+
+        let via_expansion: AxisHistogram<DiffLineKind> = pairs
+            .iter()
+            .copied()
+            .flat_map(|(c, n)| std::iter::repeat_n(c, n))
+            .collect();
+
+        assert_eq!(via_from_array, via_expansion);
     }
 
     // ---- AxisHistogram IntoIterator (&Self / Self) trait-uniform laws ----
