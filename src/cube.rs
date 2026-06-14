@@ -525,6 +525,211 @@ impl ModalityClass {
             Self::StrictModalTiedAntimodal | Self::TiedModalTiedAntimodal
         )
     }
+
+    /// Canonical operator-facing lowercase kebab-case name of the
+    /// variant — `"empty"`, `"strict-modal-strict-antimodal"`,
+    /// `"tied-modal-strict-antimodal"`, `"strict-modal-tied-antimodal"`,
+    /// or `"tied-modal-tied-antimodal"`.
+    ///
+    /// Single source of truth for the variant-tag canonical-name surface
+    /// on [`ModalityClass`]. The five names follow the canonical
+    /// `(strict|tied)-modal-(strict|tied)-antimodal` shape verbatim
+    /// matching the variant identifier (the empty-boundary variant
+    /// collapses to the bare `"empty"` keyword), so a renderer reading
+    /// the classifier-corner key sees the same modal/antimodal axis
+    /// structure the variant identifier exposes.
+    ///
+    /// Idiom-peer of [`PartitionFace::as_str`] on the sibling typed
+    /// variant-tag primitive (the partition-face projection of
+    /// [`PartitionOrdinal`]) — both surface the canonical-name surface
+    /// at one inherent `const` projection, returning `&'static str` so
+    /// the rendering path is allocation-free. Where [`PartitionFace`]
+    /// additionally satisfies [`ClosedAxisLabel`] through its
+    /// [`ClosedAxis`] impl, [`ModalityClass`] stays off the
+    /// [`ClosedAxis`] trait surface (an
+    /// [`AxisHistogram<ModalityClass>`] is well-typed but semantically
+    /// inverted — the substrate-observation invariant gates
+    /// [`ClosedAxis`] on substrate axes only) and surfaces the
+    /// canonical-name discipline through the inherent
+    /// (`as_str`, `from_canonical_str`, `Display`, `FromStr`)
+    /// quartet rather than the trait.
+    ///
+    /// **Round-trip law** —
+    /// `ModalityClass::from_canonical_str(v.as_str()) == Some(v)` for
+    /// every `v: ModalityClass`. Pinned by
+    /// [`tests::modality_class_as_str_round_trips_via_from_canonical_str`].
+    /// Composes with the case-insensitivity law below: the lowercase
+    /// rendered label parses back regardless of the input casing on the
+    /// parse side.
+    ///
+    /// **Distinctness** — `a.as_str() != b.as_str()` for distinct
+    /// `a, b: ModalityClass`. The labels inject into the canonical-name
+    /// space; a duplicated label would collapse two classifier corners
+    /// onto one rollup key. Pinned by
+    /// [`tests::modality_class_as_str_labels_pairwise_distinct`].
+    ///
+    /// **Non-emptiness** — `!v.as_str().is_empty()` for every variant.
+    /// Composes with the empty-parse-rejection law on
+    /// [`Self::from_canonical_str`]: no canonical label is empty, so
+    /// the parse rejects `""` by construction. Pinned by
+    /// [`tests::modality_class_as_str_labels_nonempty`].
+    ///
+    /// **Consumers** — a fleet-wide per-classifier-corner rollup table
+    /// keyed by canonical name (`HashMap<String, usize>` on a
+    /// structured-log emitter that can't carry typed enum keys, a YAML
+    /// attestation manifest field carrying the corner the window landed
+    /// in, a dashboard column header) reads the variant's stable
+    /// canonical name through one inherent call without re-deriving
+    /// the 5-arm `match` at every emitter. The
+    /// `axis_histogram_modality_class_classifies_all_five_corners_on_diff_line_kind`
+    /// behavioral pin and the
+    /// `axis_histogram_modality_class_total_classification_partitions_every_shape`
+    /// total-partition witness on the histogram-side surface compose
+    /// with this label projection: the five labels partition the
+    /// canonical-name image of [`Self::ALL`] pointwise.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Empty => "empty",
+            Self::StrictModalStrictAntimodal => "strict-modal-strict-antimodal",
+            Self::TiedModalStrictAntimodal => "tied-modal-strict-antimodal",
+            Self::StrictModalTiedAntimodal => "strict-modal-tied-antimodal",
+            Self::TiedModalTiedAntimodal => "tied-modal-tied-antimodal",
+        }
+    }
+
+    /// Case-insensitive ASCII parse of the canonical name produced by
+    /// [`Self::as_str`]. Returns [`None`] for any other input.
+    ///
+    /// Linear scan of [`Self::ALL`] matching pointwise via
+    /// [`str::eq_ignore_ascii_case`] — structural in the same shape as
+    /// the default [`ClosedAxisLabel::from_canonical_str`] impl, so the
+    /// (`as_str`, `from_canonical_str`) pair on [`ModalityClass`]
+    /// behaves indistinguishably from the trait pair on every
+    /// [`ClosedAxisLabel`] implementor at the consumer call site (a
+    /// future refactor lifting the variant-tag surface onto the trait
+    /// — gated on the substrate-observation invariant relaxation — is
+    /// pure trait-impl plumbing, not a semantic change). [`Option`]
+    /// rather than [`Result`] because the no-canonical-label case is
+    /// the only failure mode at this surface; the typed
+    /// [`ParseModalityClassError`] error type is reserved for the
+    /// [`FromStr`][std::str::FromStr] impl below where the
+    /// [`std::error::Error`] bound forces a typed error.
+    ///
+    /// **Round-trip law** —
+    /// `ModalityClass::from_canonical_str(v.as_str()) == Some(v)` for
+    /// every `v: ModalityClass`. The pin sits on the [`Self::as_str`]
+    /// doc; the law holds by construction over [`Self::ALL`].
+    ///
+    /// **Case insensitivity** —
+    /// `ModalityClass::from_canonical_str(v.as_str().to_ascii_uppercase())
+    /// == Some(v)` for every variant. Pinned by
+    /// [`tests::modality_class_from_canonical_str_is_case_insensitive`].
+    ///
+    /// **Empty-string rejection** —
+    /// `ModalityClass::from_canonical_str("") == None`. Composes with
+    /// the non-emptiness law on [`Self::as_str`]: no canonical label
+    /// is empty, so the parse rejects the empty string structurally.
+    /// Pinned by
+    /// [`tests::modality_class_from_canonical_str_rejects_empty_string`].
+    #[must_use]
+    pub fn from_canonical_str(s: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|v| v.as_str().eq_ignore_ascii_case(s))
+    }
+}
+
+impl std::fmt::Display for ModalityClass {
+    /// Operator-facing rendering of the variant tag — delegates to
+    /// [`ModalityClass::as_str`] pointwise.
+    ///
+    /// Closes the canonical Rust stdlib
+    /// (`Debug`, `Display`) duality on the variant-tag surface every
+    /// stdlib-style closed enum carries: where `Debug` (derived above)
+    /// renders the Rust identifier (`StrictModalStrictAntimodal`),
+    /// `Display` renders the canonical operator-facing label
+    /// (`strict-modal-strict-antimodal`). Lockstep with the
+    /// idiom-peer pair on [`PartitionFace`] on the sibling
+    /// variant-tag projection.
+    ///
+    /// **Round-trip with [`FromStr`][std::str::FromStr]** —
+    /// `v.to_string().parse::<ModalityClass>().unwrap() == v` for every
+    /// `v: ModalityClass`. Pinned by
+    /// [`tests::modality_class_from_str_round_trips_through_display`].
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Typed parse failure of [`<ModalityClass as
+/// std::str::FromStr>::from_str`] — the offending input was not a
+/// canonical name on the [`ModalityClass`] surface.
+///
+/// The five-variant classifier carries a small closed label set
+/// (`"empty"`, `"strict-modal-strict-antimodal"`,
+/// `"tied-modal-strict-antimodal"`, `"strict-modal-tied-antimodal"`,
+/// `"tied-modal-tied-antimodal"`), so the parser's single rejection
+/// mode is "input did not match any canonical name". This struct
+/// carries the offending substring verbatim in the `label` field so a
+/// downstream consumer can localize the failure to the surrounding
+/// context (a YAML attestation manifest field, a structured-log
+/// classifier key, a CLI argument).
+///
+/// `#[non_exhaustive]` to pin variant-addition forward-compatibility:
+/// a future stricter parse rule (e.g. an `EmptyInput` distinguished
+/// from `UnknownLabel`, a `CaseViolation` on a stricter-case parse
+/// path) lands as a new variant without a SemVer-major bump. Mirrors
+/// the same discipline as [`ParseAxisHistogramError`] on the
+/// histogram-side parse surface.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ParseModalityClassError {
+    /// The offending input substring, verbatim. Carries the casing the
+    /// caller passed; the parse is case-insensitive on the canonical
+    /// label set, so this string is whatever the caller's source
+    /// emitted (an upstream serializer, an operator-typed CLI argument,
+    /// a config-file field value).
+    pub label: String,
+}
+
+impl std::fmt::Display for ParseModalityClassError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "unknown modality class label {:?}", self.label)
+    }
+}
+
+impl std::error::Error for ParseModalityClassError {}
+
+impl std::str::FromStr for ModalityClass {
+    type Err = ParseModalityClassError;
+
+    /// Operator-facing parse of the variant tag from the canonical
+    /// label [`ModalityClass::as_str`] emits — the canonical Rust
+    /// stdlib [`FromStr`][std::str::FromStr] idiom-peer of the
+    /// [`Display`][std::fmt::Display] impl on the variant-tag surface.
+    /// Closes the (`Display`, `FromStr`) round-trip pair every
+    /// operator-facing typescape primitive carries — peer to the same
+    /// pair on [`AxisHistogram`] (cce9769 / adc2450) on the histogram
+    /// surface, and structurally identical to the
+    /// (`as_str`, `from_canonical_str`) inherent pair above. Delegates
+    /// to [`ModalityClass::from_canonical_str`] for the
+    /// case-insensitive lookup, lifting the [`Option<Self>`] failure
+    /// to a typed [`ParseModalityClassError`] so the
+    /// [`std::error::Error`] bound is satisfied at consumer sites
+    /// requiring `Result<_, Box<dyn Error>>` (`eyre::Result<_>`,
+    /// structured-log error fields, deserialization error chaining).
+    ///
+    /// **Round-trip law** —
+    /// `v.to_string().parse::<ModalityClass>().unwrap() == v` for every
+    /// `v: ModalityClass`. Pinned by
+    /// [`tests::modality_class_from_str_round_trips_through_display`].
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_canonical_str(s).ok_or_else(|| ParseModalityClassError {
+            label: s.to_owned(),
+        })
+    }
 }
 
 impl<A: ClosedAxis> AxisHistogram<A> {
@@ -28721,5 +28926,283 @@ mod tests {
         let hist_b: AxisHistogram<DiffLineKind> = multiset_b.iter().copied().collect();
         assert_eq!(hist_a.modality_degree(), hist_b.modality_degree());
         assert_eq!(hist_a.modality_class(), hist_b.modality_class());
+    }
+
+    #[test]
+    fn modality_class_as_str_pins_canonical_kebab_case_labels() {
+        // Pin the canonical name of every variant verbatim — the five
+        // labels form the operator-facing surface every downstream
+        // serializer/deserializer keys on, so a typo or a rename here
+        // breaks every consumer at one site. Lockstep with the
+        // round-trip / case-insensitivity / distinctness laws below.
+        assert_eq!(ModalityClass::Empty.as_str(), "empty");
+        assert_eq!(
+            ModalityClass::StrictModalStrictAntimodal.as_str(),
+            "strict-modal-strict-antimodal",
+        );
+        assert_eq!(
+            ModalityClass::TiedModalStrictAntimodal.as_str(),
+            "tied-modal-strict-antimodal",
+        );
+        assert_eq!(
+            ModalityClass::StrictModalTiedAntimodal.as_str(),
+            "strict-modal-tied-antimodal",
+        );
+        assert_eq!(
+            ModalityClass::TiedModalTiedAntimodal.as_str(),
+            "tied-modal-tied-antimodal",
+        );
+    }
+
+    #[test]
+    fn modality_class_as_str_round_trips_via_from_canonical_str() {
+        // Round-trip law: ModalityClass::from_canonical_str(v.as_str())
+        // == Some(v) for every v: ModalityClass. The inherent pair
+        // mirrors the trait pair on ClosedAxisLabel structurally; the
+        // law holds by construction over Self::ALL.
+        for &v in ModalityClass::ALL {
+            let rendered = v.as_str();
+            let parsed = ModalityClass::from_canonical_str(rendered);
+            assert_eq!(
+                parsed,
+                Some(v),
+                "round-trip failed for {v:?}: as_str={rendered:?} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_from_canonical_str_is_case_insensitive() {
+        // Case-insensitivity law: the rendered label uppercased parses
+        // back to the same variant. The inherent from_canonical_str
+        // uses eq_ignore_ascii_case, so the law is structural; this
+        // pin re-states it once on the ModalityClass surface so a
+        // future implementation tightening that drops the case-fold
+        // breaks here rather than at the consumer.
+        for &v in ModalityClass::ALL {
+            let upper = v.as_str().to_ascii_uppercase();
+            assert_eq!(
+                ModalityClass::from_canonical_str(&upper),
+                Some(v),
+                "case-insensitive round-trip failed for {v:?}: uppercase {upper:?} did not parse back",
+            );
+            let mut mixed = String::with_capacity(upper.len());
+            for (i, c) in v.as_str().chars().enumerate() {
+                if i % 2 == 0 {
+                    mixed.extend(c.to_uppercase());
+                } else {
+                    mixed.push(c);
+                }
+            }
+            assert_eq!(
+                ModalityClass::from_canonical_str(&mixed),
+                Some(v),
+                "mixed-case round-trip failed for {v:?}: {mixed:?} did not parse back",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_as_str_labels_pairwise_distinct() {
+        // Distinctness law: a.as_str() != b.as_str() for a != b:
+        // ModalityClass. The labels are an injection from the variant
+        // tag into the canonical-name space; a duplicated label would
+        // collapse two classifier corners onto the same parse result
+        // and silently break the round-trip law on at least one
+        // variant. Quadratic walk over the five-entry ALL slice — the
+        // cost is fixed and negligible.
+        let labels: Vec<(ModalityClass, &'static str)> = ModalityClass::ALL
+            .iter()
+            .copied()
+            .map(|v| (v, v.as_str()))
+            .collect();
+        for (i, (a, label_a)) in labels.iter().enumerate() {
+            for (b, label_b) in labels.iter().skip(i + 1) {
+                assert_ne!(
+                    label_a, label_b,
+                    "distinct variants {a:?} and {b:?} must have distinct labels (both {label_a:?})",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn modality_class_as_str_labels_nonempty() {
+        // Non-emptiness law: every variant's canonical label is a
+        // non-empty string. Composes with the empty-string rejection
+        // law on from_canonical_str — no canonical label can be empty,
+        // so the parse rejects "" by construction.
+        for &v in ModalityClass::ALL {
+            assert!(
+                !v.as_str().is_empty(),
+                "as_str must never return empty for variant {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_from_canonical_str_rejects_empty_string() {
+        // Empty-parse-rejection law: from_canonical_str("") == None.
+        // Composes with the non-emptiness law above — because no
+        // canonical label is empty, the parse rejects "" structurally.
+        // The pin holds the inherent parse honest at one site so a
+        // future override accidentally accepting "" breaks here.
+        assert_eq!(ModalityClass::from_canonical_str(""), None);
+    }
+
+    #[test]
+    fn modality_class_from_canonical_str_rejects_unknown_labels() {
+        // The parse rejects any input not matching some variant's
+        // canonical name. Pinned across several near-misses
+        // (snake_case identifier, partial match dropping an axis
+        // state, off-by-one kebab segment, surrounding whitespace,
+        // trailing newline, arbitrary non-label) so a regression that
+        // silently maps unknown inputs to some default is caught here.
+        // The PascalCase variant identifier "Empty" / single-word
+        // labels parse case-insensitively via the inherent fold
+        // (eq_ignore_ascii_case) — case is not part of the canonical
+        // discipline, so those forms succeed and are not exercised
+        // here.
+        for unknown in [
+            "StrictModalStrictAntimodal", // PascalCase multi-word: rejected by kebab separator.
+            "strict_modal_strict_antimodal", // snake_case multi-word: rejected by kebab separator.
+            "strict-modal-antimodal",     // partial -- missing axis state.
+            "tied-modal",                 // partial -- single axis.
+            "kebab-other-thing",          // unrelated kebab token.
+            " empty ",                    // surrounding whitespace.
+            "empty\n",                    // trailing newline.
+            "tied-modal-tied-antimodal-x", // suffix beyond canonical name.
+            "x-tied-modal-tied-antimodal", // prefix beyond canonical name.
+        ] {
+            assert_eq!(
+                ModalityClass::from_canonical_str(unknown),
+                None,
+                "unknown input {unknown:?} must not parse to any variant",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_display_delegates_to_as_str() {
+        // Display delegates to as_str pointwise — the rendered string
+        // is exactly the canonical label, no surrounding ceremony.
+        // Pinned across every variant so an accidental Display override
+        // (e.g. emitting Debug or adding a wrapper) is caught here.
+        for &v in ModalityClass::ALL {
+            assert_eq!(
+                format!("{v}"),
+                v.as_str(),
+                "Display must render canonical label for {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_from_str_round_trips_through_display() {
+        // (Display, FromStr) round-trip pair on the variant-tag surface
+        // — the canonical Rust stdlib duality every operator-facing
+        // serializable typescape primitive carries. Pinned across every
+        // variant via str::parse on the Display-rendered string.
+        for &v in ModalityClass::ALL {
+            let rendered = v.to_string();
+            let parsed: ModalityClass = rendered
+                .parse()
+                .expect("Display output must parse via FromStr");
+            assert_eq!(
+                parsed, v,
+                "round-trip via (Display, FromStr) failed for {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_from_str_is_case_insensitive() {
+        // The FromStr impl inherits case-insensitivity from
+        // from_canonical_str. Pinned at the consumer-facing
+        // str::parse surface across every variant.
+        for &v in ModalityClass::ALL {
+            let upper = v.as_str().to_ascii_uppercase();
+            let parsed: ModalityClass = upper
+                .parse()
+                .expect("uppercase label must parse via FromStr");
+            assert_eq!(parsed, v, "uppercase FromStr round-trip failed for {v:?}",);
+        }
+    }
+
+    #[test]
+    fn modality_class_from_str_reports_unknown_label_verbatim() {
+        // The FromStr error carries the offending input verbatim in
+        // the `label` field so a downstream consumer can localize the
+        // failure to the surrounding context (a YAML attestation
+        // manifest field, a structured-log field value, a CLI
+        // argument). Pinned across two distinct unknown labels so a
+        // regression that returns a constant placeholder rather than
+        // the offending input breaks here.
+        for unknown in ["totally-unknown", "EmptyKebabViolation"] {
+            let err = unknown
+                .parse::<ModalityClass>()
+                .expect_err("unknown label must error");
+            assert_eq!(
+                err.label, unknown,
+                "ParseModalityClassError must carry offending label verbatim",
+            );
+            // The Display impl mentions the offending label so the
+            // operator-facing error message localizes the failure.
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(unknown),
+                "Display of ParseModalityClassError must mention offending label {unknown:?}, got {rendered:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_parse_error_satisfies_std_error_trait() {
+        // The ParseModalityClassError satisfies std::error::Error so
+        // a `Result<_, Box<dyn Error>>` or `eyre::Result<_>` consumer
+        // can chain the error through the canonical Rust error
+        // surface. Pinned by upcasting to `&dyn std::error::Error`
+        // through a type-checked binding; a regression that drops the
+        // `impl Error for …` declaration fails compilation here.
+        let err = "totally-unknown"
+            .parse::<ModalityClass>()
+            .expect_err("unknown label must error");
+        let as_error: &dyn std::error::Error = &err;
+        // `source()` returns None (no underlying cause), and `to_string`
+        // produces the Display rendering through the `Error: Display`
+        // supertrait bound.
+        assert!(as_error.source().is_none());
+        assert_eq!(as_error.to_string(), err.to_string());
+    }
+
+    #[test]
+    fn modality_class_as_str_image_equals_for_each_classifier_corner_set() {
+        // The five canonical labels exhaust the as_str image of
+        // ModalityClass::ALL — total/disjoint witness over the label
+        // image. Pinned as a HashSet equality between the canonical
+        // five-label image and the as_str projection of ALL: a future
+        // variant addition that forgets to extend as_str produces a
+        // duplicate or missing label and breaks this assertion at one
+        // site.
+        use std::collections::HashSet;
+        let image: HashSet<&'static str> = ModalityClass::ALL
+            .iter()
+            .copied()
+            .map(ModalityClass::as_str)
+            .collect();
+        let expected: HashSet<&'static str> = [
+            "empty",
+            "strict-modal-strict-antimodal",
+            "tied-modal-strict-antimodal",
+            "strict-modal-tied-antimodal",
+            "tied-modal-tied-antimodal",
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            image, expected,
+            "as_str image must equal the canonical five-label set",
+        );
+        assert_eq!(image.len(), ModalityClass::ALL.len());
     }
 }
