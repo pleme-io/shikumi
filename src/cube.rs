@@ -3907,6 +3907,163 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         nonzero.next().is_some() && nonzero.next().is_none()
     }
 
+    /// `true` exactly when the histogram has at least one observed cell
+    /// *and* at least one unobserved cell — the **partial-cover
+    /// predicate** on the histogram surface. The "neither empty nor
+    /// full" middle leg that closes the
+    /// `(is_empty, has_partial_cover, is_full_cover)` coverage
+    /// trichotomy.
+    ///
+    /// Pointwise equivalent to four documented surface predicates that
+    /// previously had no single named boolean —
+    /// `!self.is_empty() && !self.is_full_cover()` (the structural
+    /// conjunction-of-negations form, the defining shape), `0 <
+    /// self.distinct_cells() && self.distinct_cells() <
+    /// axis_cardinality::<A>()` (the support-cardinality
+    /// strict-interval form on the named scalar peer), `0 <
+    /// self.unobserved_cells() && self.unobserved_cells() <
+    /// axis_cardinality::<A>()` (the coverage-gap strict-interval form
+    /// on the complementary scalar), and `self.observed().next().is_some()
+    /// && self.unobserved().next().is_some()` (the dual-iterator
+    /// non-emptiness form, which allocates both iterators just to
+    /// check their non-emptiness) — collapsed to one method call with
+    /// a single-pass scan that short-circuits once it has witnessed
+    /// both a zero count and a nonzero count (the early-exit form
+    /// bounds the cost at one zero-witness plus one nonzero-witness
+    /// rather than two full walks of the counts vector or both
+    /// iterator allocations).
+    ///
+    /// **The coverage-cardinality boundary triple.** Peer to
+    /// [`Self::is_empty`] (support cardinality `0` — *no* cell
+    /// observed) and [`Self::is_full_cover`] (support cardinality
+    /// `axis_cardinality::<A>()` — *every* cell observed). The
+    /// boolean surface now carries the natural triple
+    /// `(is_empty, has_partial_cover, is_full_cover)` on the coverage
+    /// boundary — "did the chain see *nothing*?", "did the chain see
+    /// *some* but not *all*?", "did the chain see *everything*?" —
+    /// each independently checkable in one method call. The three
+    /// predicates form a strict partition on every implementor with
+    /// `axis_cardinality::<A>() >= 1`: exactly one fires on any
+    /// histogram (the partition cells are pairwise disjoint and
+    /// jointly exhaustive). On a zero-cardinality axis (none in the
+    /// typescape today, but structurally permitted by [`ClosedAxis`]),
+    /// `is_empty` and `is_full_cover` both read `true` vacuously and
+    /// `has_partial_cover` reads `false` — the degenerate-axis
+    /// double-boundary the existing [`Self::is_full_cover`] doc
+    /// already names.
+    ///
+    /// **Empty-histogram convention** — returns `false` on every
+    /// implementor: no cell observed, so the "at least one observed"
+    /// half of the conjunction fails uniformly. The named boundary
+    /// `is_empty` carries that case; `has_partial_cover` reads the
+    /// strict "between" case only.
+    ///
+    /// **Full-cover convention** — returns `false` on every
+    /// implementor: every cell observed, so the "at least one
+    /// unobserved" half of the conjunction fails uniformly. The named
+    /// boundary `is_full_cover` carries that case.
+    ///
+    /// **Singleton-observation convention** — every singleton
+    /// observation lands the support cardinality at exactly `1`. On
+    /// every implementor with `axis_cardinality::<A>() >= 2` (every
+    /// implementor today), `has_partial_cover` reads `true` uniformly
+    /// on singletons (one observed, the rest unobserved). On a
+    /// hypothetical cardinality-1 axis, the singleton is the
+    /// full-cover witness and `has_partial_cover` reads `false` — the
+    /// witness for the "structural-empty cell of the trichotomy on
+    /// cardinality 1" boundary.
+    ///
+    /// **Companion invariants** with [`Self::is_empty`],
+    /// [`Self::is_full_cover`], [`Self::distinct_cells`],
+    /// [`Self::unobserved_cells`], [`Self::has_singular_support`], and
+    /// [`Self::merge`]:
+    /// - `has_partial_cover() ⇔ !is_empty() && !is_full_cover()` —
+    ///   the defining equivalence on the boolean-boundary pair.
+    /// - `has_partial_cover() ⇔ 0 < distinct_cells() && distinct_cells() <
+    ///   axis_cardinality::<A>()` — the support-cardinality
+    ///   strict-interval form on the named scalar peer.
+    /// - `has_partial_cover() ⇔ 0 < unobserved_cells() &&
+    ///   unobserved_cells() < axis_cardinality::<A>()` — the
+    ///   coverage-gap form on the complementary scalar peer.
+    /// - `(is_empty, has_partial_cover, is_full_cover)` is a strict
+    ///   partition on every implementor with cardinality ≥ 1: pairwise
+    ///   disjoint *and* jointly exhaustive. Stated as
+    ///   `u8::from(is_empty()) + u8::from(has_partial_cover()) + u8::from(is_full_cover()) == 1`
+    ///   — exactly one corner fires uniformly across the implementor
+    ///   set. The peer to the [`Self::has_singular_support`] companion
+    ///   "(false, false, false) partial-coverage corner" invariant: the
+    ///   `has_partial_cover` lift names that corner directly.
+    /// - `has_singular_support() ⇒ has_partial_cover()` on every
+    ///   implementor with `axis_cardinality::<A>() >= 2` (the entire
+    ///   implementor set today): support `1` is strictly between `0`
+    ///   and cardinality. The converse fails on every multi-cell
+    ///   non-full-cover shape (e.g. observing two cells on a
+    ///   cardinality-3 axis).
+    /// - Merge behavior is *monotone-OR over the boundary corners
+    ///   only*: `merge(self, other).is_full_cover() >= self.is_full_cover()
+    ///   || other.is_full_cover()` already pins the full-cover monotone
+    ///   law on [`Self::is_full_cover`]; for the partial-cover middle
+    ///   leg the behavior is *non-monotonic* — merging two partial
+    ///   covers can produce a partial cover (when the union of
+    ///   supports is still strictly partial) or a full cover (when
+    ///   the union exhausts the axis), and merging a partial cover
+    ///   with an empty cover preserves partial-cover. The
+    ///   empty-identity law holds:
+    ///   `merge(self, empty).has_partial_cover() ==
+    ///   self.has_partial_cover()`.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the twenty-six
+    /// closed-enum axis primitives plus the five product cubes —
+    /// thirty-one today, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]) inherits the
+    /// predicate at no per-axis cost. The three trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_has_partial_cover_empty_is_false_*`,
+    /// `axis_histogram_has_partial_cover_singleton_iff_cardinality_at_least_two_*`,
+    /// `axis_histogram_has_partial_cover_axis_cover_is_false_*`), plus
+    /// the coverage-trichotomy partition law
+    /// `axis_histogram_coverage_trichotomy_partitions_every_histogram_*`
+    /// that pins the (`is_empty`, `has_partial_cover`, `is_full_cover`)
+    /// boolean exactly-one-fires law across every implementor on every
+    /// histogram in the implementor's canonical shape set (empty,
+    /// singleton, axis-cover).
+    ///
+    /// **The partial-cover middle leg.** Where the existing
+    /// [`Self::is_empty`] reads the "nothing observed" corner and
+    /// [`Self::is_full_cover`] reads the "everything observed" corner,
+    /// `has_partial_cover` reads the "some but not all observed"
+    /// corner — the structural middle that closes the coverage
+    /// trichotomy. Before this lift, every consumer asking *"did this
+    /// window see some kinds but not all?"* re-derived the predicate
+    /// inline as `!hist.is_empty() && !hist.is_full_cover()` (two
+    /// method calls, a negation, and a conjunction across two named
+    /// boundaries), as `0 < hist.distinct_cells() && hist.distinct_cells()
+    /// < axis_cardinality::<C>()` (importing [`axis_cardinality`] and
+    /// turbofish-naming the axis), or as `hist.observed().next().is_some()
+    /// && hist.unobserved().next().is_some()` (allocating both
+    /// iterators). The lift names the middle leg directly at one site —
+    /// the typed boolean every "coverage-progress" diagnostic, partial-
+    /// cover attestation, and "neither blank nor exhaustive" dashboard
+    /// cell reads off as a single method call, and the coverage-
+    /// trichotomy partition becomes a pinned structural law over every
+    /// implementor.
+    #[must_use]
+    pub fn has_partial_cover(&self) -> bool {
+        let mut saw_zero = false;
+        let mut saw_nonzero = false;
+        for &c in &self.counts {
+            if c == 0 {
+                saw_zero = true;
+            } else {
+                saw_nonzero = true;
+            }
+            if saw_zero && saw_nonzero {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Pointwise sum with `other` — the monoid operation. Every cell
     /// becomes `self.count(v) + other.count(v)`. Commutative,
     /// associative, identity at [`Self::empty`]. The natural shape for
@@ -25119,6 +25276,420 @@ mod tests {
         assert_eq!(
             mixed_with_empty.has_singular_support(),
             mixed_lhs.has_singular_support(),
+        );
+    }
+
+    // ---- AxisHistogram::has_partial_cover trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the partial-cover
+    // predicate's contract holds uniformly without per-axis test
+    // duplication: empty → false; singleton → true iff axis
+    // cardinality ≥ 2; uniform axis-cover → false. The
+    // coverage-trichotomy partition law (exactly one of
+    // `(is_empty, has_partial_cover, is_full_cover)` fires on every
+    // implementor on every canonical shape) reaches the same
+    // implementor set as a fourth trait-uniform pin. Concrete pins on
+    // the defining equivalence, the support-cardinality strict-
+    // interval equivalence, the implication-from-singular-support, and
+    // the merge non-monotonicity follow below on [`DiffLineKind`].
+
+    fn assert_has_partial_cover_empty_is_false<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The empty histogram has support cardinality `0`, not strictly
+        // between `0` and `axis_cardinality::<A>()`, so the partial-
+        // cover predicate reads `false`. The named boundary
+        // [`AxisHistogram::is_empty`] carries that corner; the
+        // partial-cover middle leg reads `true` only on the strict
+        // "some-but-not-all" interior of the trichotomy.
+        let hist = AxisHistogram::<A>::empty();
+        assert!(
+            !hist.has_partial_cover(),
+            "empty histogram has_partial_cover must be false on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_has_partial_cover_singleton_iff_cardinality_at_least_two<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation lands the support cardinality at exactly `1`.
+        // On every implementor with `axis_cardinality::<A>() >= 2`
+        // (every implementor today), `1` is strictly between `0` and
+        // `axis_cardinality::<A>()`, so the predicate reads `true`
+        // uniformly. On a hypothetical cardinality-1 axis (none in the
+        // typescape today, but structurally permitted by
+        // [`ClosedAxis`]), the singleton coincides with the
+        // full-cover witness and reads `false`. Stated as the
+        // conditional law so the witness is uniform across the
+        // implementor set without case-splitting on cardinality at the
+        // test site.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.has_partial_cover(),
+                axis_cardinality::<A>() >= 2,
+                "singleton has_partial_cover must equal (axis_cardinality >= 2) \
+                 for observed cell {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_has_partial_cover_axis_cover_is_false<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once raises the support
+        // cardinality to `axis_cardinality::<A>()` — the structural
+        // full-cover witness on every implementor. The partial-cover
+        // predicate fails uniformly: the "at least one unobserved"
+        // half of the conjunction is empty on full cover. Closes the
+        // full-cover boundary corner on the (is_empty,
+        // has_partial_cover, is_full_cover) trichotomy: axis-cover
+        // sits at the is_full_cover corner, disjoint from
+        // has_partial_cover.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert!(
+            !hist.has_partial_cover(),
+            "uniform axis-cover has_partial_cover must be false on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_coverage_trichotomy_partitions_every_canonical_shape<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The `(is_empty, has_partial_cover, is_full_cover)` boolean
+        // triple is a *strict partition* — pairwise disjoint *and*
+        // jointly exhaustive — on every cardinality-≥ 1 implementor.
+        // Encoded as the arithmetic invariant `is_empty + partial +
+        // is_full_cover == 1`: exactly one corner fires on every
+        // histogram. Pinned on three canonical shapes — empty,
+        // singleton, axis-cover — across every implementor through
+        // [`for_each_closed_axis_implementor`]. Concrete `partial-
+        // multi` interior witnesses (cardinality-≥ 2 only) follow
+        // below on [`DiffLineKind`].
+        let empty = AxisHistogram::<A>::empty();
+        let singleton: AxisHistogram<A> = axis_iter::<A>()
+            .next()
+            .map(|v| std::iter::once(v).collect())
+            .expect("every ClosedAxis implementor has at least one variant");
+        let axis_cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        for hist in [&empty, &singleton, &axis_cover] {
+            let e = u8::from(hist.is_empty());
+            let p = u8::from(hist.has_partial_cover());
+            let f = u8::from(hist.is_full_cover());
+            assert_eq!(
+                e + p + f,
+                1,
+                "(is_empty, has_partial_cover, is_full_cover) must be a strict \
+                 partition (exactly one corner fires) on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_partial_cover_empty_is_false_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_partial_cover_empty_is_false::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_partial_cover_singleton_iff_cardinality_at_least_two_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_partial_cover_singleton_iff_cardinality_at_least_two::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_partial_cover_axis_cover_is_false_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_partial_cover_axis_cover_is_false::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_coverage_trichotomy_partitions_every_histogram_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_coverage_trichotomy_partitions_every_canonical_shape::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_partial_cover_equals_not_empty_and_not_full_cover() {
+        // The defining equivalence: `has_partial_cover` reads the same
+        // boolean as the open-coded `!is_empty() && !is_full_cover()`
+        // form every consumer would otherwise re-derive inline. Pinned
+        // pointwise across the canonical observation-mix shapes
+        // (empty, singleton, multi-observation-single-cell, partial-
+        // skew, partial-uniform, axis-cover) so a future regression in
+        // either side surfaces here.
+        let inputs: [&[DiffLineKind]; 6] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.has_partial_cover(),
+                !hist.is_empty() && !hist.is_full_cover(),
+                "has_partial_cover must equal (!is_empty && !is_full_cover) \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_partial_cover_equals_distinct_cells_strict_interval() {
+        // The support-cardinality strict-interval form: `has_partial_cover`
+        // reads the same boolean as `0 < distinct_cells() &&
+        // distinct_cells() < axis_cardinality::<A>()`. Pins the
+        // structural form on the named scalar peer: the strict open
+        // interval `(0, axis_cardinality::<A>())` of distinct-cell
+        // counts is exactly the partial-cover interior of the
+        // trichotomy. Pinned pointwise across the same observation-mix
+        // shapes so the support-cardinality form is exercised at every
+        // branch.
+        let cardinality = axis_cardinality::<DiffLineKind>();
+        let inputs: [&[DiffLineKind]; 6] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let distinct = hist.distinct_cells();
+            assert_eq!(
+                hist.has_partial_cover(),
+                0 < distinct && distinct < cardinality,
+                "has_partial_cover must equal (0 < distinct_cells < axis_cardinality) \
+                 on input of length {}; distinct={}, cardinality={}",
+                input.len(),
+                distinct,
+                cardinality,
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_coverage_trichotomy_partition_on_diff_line_kind() {
+        // The strict-partition law over the
+        // (is_empty, has_partial_cover, is_full_cover) triple, pinned
+        // at every distinct boundary corner reachable on
+        // `DiffLineKind` (cardinality 3): empty → (true, false, false),
+        // singleton → (false, true, false), axis-cover →
+        // (false, false, true), partial-multi (two observed cells out
+        // of three) → (false, true, false) — the interior witness on
+        // the partial-cover middle leg. On every shape, exactly one
+        // corner of the trichotomy fires; the
+        // `is_empty + has_partial_cover + is_full_cover == 1`
+        // arithmetic invariant pins the strict-partition law at one
+        // site (peer to the
+        // `support_cardinality_boundary_triple_is_pairwise_disjoint`
+        // pin above, which closes only the disjoint half of the
+        // partition over the singular-support boundary).
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert_eq!(
+            (
+                empty.is_empty(),
+                empty.has_partial_cover(),
+                empty.is_full_cover(),
+            ),
+            (true, false, false),
+        );
+
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert_eq!(
+            (
+                singleton.is_empty(),
+                singleton.has_partial_cover(),
+                singleton.is_full_cover(),
+            ),
+            (false, true, false),
+        );
+
+        let partial_multi: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Added, DiffLineKind::Removed]
+                .into_iter()
+                .collect();
+        assert_eq!(
+            (
+                partial_multi.is_empty(),
+                partial_multi.has_partial_cover(),
+                partial_multi.is_full_cover(),
+            ),
+            (false, true, false),
+        );
+
+        let axis_cover: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        assert_eq!(
+            (
+                axis_cover.is_empty(),
+                axis_cover.has_partial_cover(),
+                axis_cover.is_full_cover(),
+            ),
+            (false, false, true),
+        );
+
+        for hist in [&empty, &singleton, &partial_multi, &axis_cover] {
+            let e = u8::from(hist.is_empty());
+            let p = u8::from(hist.has_partial_cover());
+            let f = u8::from(hist.is_full_cover());
+            assert_eq!(
+                e + p + f,
+                1,
+                "(is_empty, has_partial_cover, is_full_cover) strict-partition \
+                 invariant must hold (exactly one corner fires)",
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_support_implies_has_partial_cover_on_cardinality_at_least_two() {
+        // The implication law: `has_singular_support ⇒ has_partial_cover`
+        // on every implementor with `axis_cardinality::<A>() >= 2`
+        // (every implementor today). Support cardinality `1` is
+        // strictly between `0` and `axis_cardinality::<A>()` whenever
+        // the axis carries at least 2 cells, so the singular-support
+        // corner sits on the partial-cover middle leg of the
+        // trichotomy. The converse fails on every multi-cell
+        // non-full-cover shape (observing two cells on `DiffLineKind`
+        // reads `has_singular_support = false` but
+        // `has_partial_cover = true`). Pinned at the implication side
+        // (singleton, multi-observation-single-cell — both read
+        // singular and partial) and at the converse-fails side
+        // (partial-multi — reads partial but not singular).
+        let solo: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert!(solo.has_singular_support());
+        assert!(solo.has_partial_cover());
+
+        let many_solo: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        assert!(many_solo.has_singular_support());
+        assert!(many_solo.has_partial_cover());
+
+        let partial_multi: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Added, DiffLineKind::Removed]
+                .into_iter()
+                .collect();
+        assert!(!partial_multi.has_singular_support());
+        assert!(partial_multi.has_partial_cover());
+    }
+
+    #[test]
+    fn axis_histogram_has_partial_cover_after_merge_is_non_monotone() {
+        // The merge behavior on `has_partial_cover` is *non-monotonic*
+        // on the middle leg: merging two partial-cover histograms can
+        // produce a partial-cover merge (when the union of supports
+        // stays strictly partial) or a full-cover merge (when the
+        // union exhausts the axis), and merging an empty histogram
+        // with a partial-cover histogram preserves partial-cover (the
+        // empty-identity law). Pinned with three witnesses spanning
+        // the merge surface, plus the empty-identity law.
+        //
+        // `DiffLineKind::ALL` declaration order is
+        // `[Removed, Added, Context]` (axis_cardinality = 3).
+
+        // Witness 1: partial ⊕ partial on overlapping supports →
+        // partial merge (union of supports stays strictly partial:
+        // {Added} ∪ {Added, Removed} = {Added, Removed}, still
+        // partial on a cardinality-3 axis).
+        let only_added: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Added).collect();
+        let added_and_removed: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Added, DiffLineKind::Removed]
+                .into_iter()
+                .collect();
+        assert!(only_added.has_partial_cover());
+        assert!(added_and_removed.has_partial_cover());
+        let merged_partial = only_added.clone().merge(&added_and_removed);
+        assert!(merged_partial.has_partial_cover());
+
+        // Witness 2: partial ⊕ partial on disjoint supports whose
+        // union covers the axis → full-cover merge (loses partial-
+        // cover on the middle leg).
+        let removed_added: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Removed, DiffLineKind::Added]
+                .into_iter()
+                .collect();
+        let only_context: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Context).collect();
+        assert!(removed_added.has_partial_cover());
+        assert!(only_context.has_partial_cover());
+        let merged_full = removed_added.clone().merge(&only_context);
+        assert!(!merged_full.has_partial_cover());
+        assert!(merged_full.is_full_cover());
+
+        // Witness 3: empty ⊕ empty → empty merge (still on the
+        // is_empty corner, not on the partial-cover middle leg).
+        let empty_hist: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        let merged_empty = empty_hist.clone().merge(&empty_hist);
+        assert!(!merged_empty.has_partial_cover());
+        assert!(merged_empty.is_empty());
+
+        // Empty-identity law: merging with the empty histogram leaves
+        // `has_partial_cover` unchanged on every input. Pinned with a
+        // partial-cover input and an empty input.
+        let partial_with_empty = only_added.clone().merge(&empty_hist);
+        assert_eq!(
+            partial_with_empty.has_partial_cover(),
+            only_added.has_partial_cover(),
+        );
+        let empty_with_empty = empty_hist.clone().merge(&empty_hist);
+        assert_eq!(
+            empty_with_empty.has_partial_cover(),
+            empty_hist.has_partial_cover(),
         );
     }
 
