@@ -4064,6 +4064,154 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         false
     }
 
+    /// `true` exactly when the histogram has *exactly one unobserved
+    /// cell* — the **singular-gap predicate** on the histogram surface.
+    /// The structural dual of [`Self::has_singular_support`] on the
+    /// `(observed, unobserved)` cellwise partition: where the support
+    /// side names the support-cardinality-`1` corner (one observed,
+    /// the rest unobserved), the gap side names the unobserved-
+    /// cardinality-`1` corner (one unobserved, the rest observed) —
+    /// "did the chain see all but one kind?".
+    ///
+    /// Pointwise equivalent to two documented surface predicates the
+    /// support-cardinality scalar surface already exposes —
+    /// `self.unobserved_cells() == 1` (the unobserved-side defining
+    /// equivalence on the named scalar peer) and
+    /// `self.distinct_cells() == axis_cardinality::<A>() - 1` on the
+    /// support side via the
+    /// `distinct_cells + unobserved_cells == axis_cardinality`
+    /// partition invariant (the equation closes on every implementor
+    /// today, so the two forms read off the same boolean). Collapsed
+    /// to one method call with a single-pass scan that short-circuits
+    /// on the second zero (the early-exit form bounds the cost at one
+    /// zero-witness plus one second-zero-witness rather than a full
+    /// walk of the counts vector or an allocation of the
+    /// [`Self::unobserved`] iterator just to count its prefix).
+    ///
+    /// **Empty-histogram convention** — the empty histogram has every
+    /// cell unobserved, so the unobserved-cardinality reads
+    /// `axis_cardinality::<A>()`. `has_singular_gap` reads `true` iff
+    /// `axis_cardinality::<A>() == 1` (no implementor today carries
+    /// cardinality 1, so empty reads `false` uniformly across the
+    /// implementor set). Stated as the conditional law so the witness
+    /// is uniform across the implementor set without case-splitting on
+    /// cardinality at the test site. The dual-boundary witness of
+    /// `has_singular_support`'s axis-cover convention on the opposite
+    /// end of the support-cardinality interval.
+    ///
+    /// **Full-cover convention** — observing every cell exactly once
+    /// drives the unobserved-cardinality to `0`, so `has_singular_gap`
+    /// reads `false` uniformly on every implementor. The named
+    /// boundary [`Self::is_full_cover`] carries that case;
+    /// `has_singular_gap` reads the *one-cell-missing* case strictly.
+    ///
+    /// **Singleton-observation convention** — every singleton
+    /// observation lands the support cardinality at exactly `1`, so
+    /// the unobserved-cardinality reads `axis_cardinality::<A>() - 1`.
+    /// On a cardinality-`2` axis (the smallest non-trivial case),
+    /// `axis_cardinality - 1 == 1` exactly, so `has_singular_gap` reads
+    /// `true` uniformly on every singleton; on cardinality ≥ `3` it
+    /// reads `false` uniformly. Stated as the conditional law
+    /// `singleton.has_singular_gap() == (axis_cardinality::<A>() == 2)`
+    /// so the witness is uniform across the implementor set without
+    /// case-splitting on cardinality at the test site.
+    ///
+    /// **Cardinality-2 coincidence with `has_singular_support`** — on
+    /// every implementor with `axis_cardinality::<A>() == 2`,
+    /// `has_singular_gap()` and [`Self::has_singular_support`] read
+    /// the *same* boolean pointwise: one observed cell *is* one
+    /// unobserved cell when the axis carries exactly two cells. On
+    /// cardinality ≥ `3` the two are disjoint at every histogram
+    /// (support `1` ≠ `axis_cardinality - 1 ≥ 2`). The cardinality-`2`
+    /// coincidence is the structural witness for the dual-boundary
+    /// collapse on the smallest non-trivial axis (pinned on
+    /// [`PartitionFace`] in [`tests`]); the cardinality-`3`
+    /// disjointness is pinned on [`DiffLineKind`] in [`tests`].
+    ///
+    /// **Companion invariants** with [`Self::is_empty`],
+    /// [`Self::is_full_cover`], [`Self::has_partial_cover`],
+    /// [`Self::has_singular_support`], [`Self::distinct_cells`], and
+    /// [`Self::unobserved_cells`]:
+    /// - `has_singular_gap() ⇔ unobserved_cells() == 1` — the
+    ///   defining equivalence on the unobserved-cardinality scalar
+    ///   peer; reading "the support carries exactly one missing kind"
+    ///   off one named boolean instead of an equality against a
+    ///   `usize` on the unobserved-cardinality scalar.
+    /// - `has_singular_gap() ⇔ distinct_cells() == axis_cardinality::<A>() - 1`
+    ///   on every implementor with `axis_cardinality::<A>() >= 1` — the
+    ///   support-side dual form via the
+    ///   `distinct_cells + unobserved_cells == axis_cardinality`
+    ///   partition invariant. Peer of the
+    ///   `has_singular_support() ⇔ distinct_cells() == 1` equivalence
+    ///   on the opposite end of the support-cardinality interval:
+    ///   `has_singular_support` reads support cardinality `1`,
+    ///   `has_singular_gap` reads support cardinality `axis_cardinality - 1`.
+    /// - `has_singular_gap() ⇒ has_partial_cover()` on every
+    ///   implementor with `axis_cardinality::<A>() >= 2`: one
+    ///   unobserved cell means at least one observed
+    ///   (cardinality `- 1 >= 1`) and at least one unobserved, so the
+    ///   histogram sits strictly between empty and full cover. Peer
+    ///   of `has_singular_support() ⇒ has_partial_cover()` on the
+    ///   opposite end of the support-cardinality interval — both
+    ///   singular boundaries land on the partial-cover middle leg of
+    ///   the `(is_empty, has_partial_cover, is_full_cover)`
+    ///   trichotomy.
+    /// - `has_singular_gap() ⇒ !is_full_cover()` always: full cover
+    ///   has zero unobserved cells, singular gap has exactly one.
+    /// - `has_singular_gap() ∧ is_empty()` ⇒ `axis_cardinality::<A>() == 1`
+    ///   — on every implementor with `axis_cardinality::<A>() >= 2`
+    ///   (every implementor today), `has_singular_gap()` and
+    ///   `is_empty()` are disjoint: empty has every cell unobserved
+    ///   (cardinality, not `1`), so the conjunction reads `false`
+    ///   uniformly.
+    /// - `has_singular_gap() ⇔ has_singular_support()` on every
+    ///   implementor with `axis_cardinality::<A>() == 2` — the
+    ///   structural cardinality-`2` coincidence: one observed cell
+    ///   coincides pointwise with one unobserved cell on the smallest
+    ///   non-trivial axis. On cardinality ≥ `3` the two are
+    ///   pointwise disjoint.
+    /// - The merge behavior is *non-monotonic*: merging two
+    ///   singular-gap histograms whose missing cells differ fills
+    ///   both gaps and lands the merge at full cover (loses singular
+    ///   gap); merging two singular-gap histograms whose missing cells
+    ///   coincide preserves the singular gap; merging a singular-gap
+    ///   histogram with an empty histogram preserves the singular gap
+    ///   (empty-identity law:
+    ///   `merge(self, empty).has_singular_gap() == self.has_singular_gap()`).
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the twenty
+    /// closed-enum axis primitives plus the five product cubes —
+    /// twenty-five today, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]) inherits the
+    /// predicate at no per-axis cost. The three trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_has_singular_gap_empty_iff_cardinality_is_one_*`,
+    /// `axis_histogram_has_singular_gap_singleton_iff_cardinality_is_two_*`,
+    /// `axis_histogram_has_singular_gap_axis_cover_is_false_*`).
+    ///
+    /// **The dual-singular pair on the support-cardinality interval.**
+    /// Before this lift, every consumer asking *"is the chain one cell
+    /// short of full coverage?"* re-derived the predicate inline as
+    /// `hist.unobserved_cells() == 1` (an equality against a `usize`
+    /// on the unobserved-cardinality scalar peer), as
+    /// `hist.distinct_cells() == axis_cardinality::<C>() - 1` (importing
+    /// [`axis_cardinality`], turbofish-naming the axis, and writing the
+    /// `- 1` arithmetic at the call site), or as
+    /// `hist.unobserved().count() == 1` (allocating the [`Self::unobserved`]
+    /// iterator just to count its prefix). The lift names the dual
+    /// boundary directly at one site — the typed boolean every "almost-
+    /// covered", "one kind missing", "single-gap attestation" dashboard
+    /// cell reads off as a single method call, and the dual-singular
+    /// pair `(has_singular_support, has_singular_gap)` on the support-
+    /// cardinality interval becomes a typed pair pinned by the
+    /// cardinality-`2` coincidence and cardinality-`3` disjointness
+    /// laws across every closed-axis implementor.
+    #[must_use]
+    pub fn has_singular_gap(&self) -> bool {
+        let mut zeros = self.counts.iter().filter(|&&c| c == 0);
+        zeros.next().is_some() && zeros.next().is_none()
+    }
+
     /// Pointwise sum with `other` — the monoid operation. Every cell
     /// becomes `self.count(v) + other.count(v)`. Commutative,
     /// associative, identity at [`Self::empty`]. The natural shape for
@@ -25690,6 +25838,390 @@ mod tests {
         assert_eq!(
             empty_with_empty.has_partial_cover(),
             empty_hist.has_partial_cover(),
+        );
+    }
+
+    // ---- AxisHistogram::has_singular_gap trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the singular-gap
+    // predicate's contract holds uniformly without per-axis test
+    // duplication: empty → true iff axis cardinality == 1; singleton →
+    // true iff axis cardinality == 2; uniform axis-cover → false.
+    // Concrete pins on the defining equivalence (against the
+    // [`AxisHistogram::unobserved_cells`] named scalar peer), the
+    // support-side dual form (`distinct_cells == axis_cardinality - 1`),
+    // the cardinality-≥ 3 disjointness law with
+    // [`AxisHistogram::has_singular_support`] (on [`DiffLineKind`]), the
+    // cardinality-2 coincidence law with
+    // [`AxisHistogram::has_singular_support`] (on [`PartitionFace`]), the
+    // implication into [`AxisHistogram::has_partial_cover`] on the
+    // partial-cover middle leg of the coverage trichotomy, and the
+    // merge non-monotonicity follow below.
+
+    fn assert_has_singular_gap_empty_iff_cardinality_is_one<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The empty histogram has every cell unobserved, so its
+        // unobserved-cardinality reads `axis_cardinality::<A>()`. The
+        // singular-gap predicate fires iff that reads `1` — i.e. iff
+        // the axis carries exactly one cell. Stated as the conditional
+        // law so the witness is uniform across the implementor set
+        // (every closed-axis primitive in the typescape today carries
+        // `axis_cardinality >= 2`, so empty reads `false` uniformly)
+        // without case-splitting on cardinality at the test site. The
+        // dual-boundary witness of `has_singular_support_axis_cover_iff_cardinality_is_one`
+        // on the opposite end of the support-cardinality interval.
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.has_singular_gap(),
+            axis_cardinality::<A>() == 1,
+            "empty histogram has_singular_gap must equal (axis_cardinality == 1) \
+             on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_has_singular_gap_singleton_iff_cardinality_is_two<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell lands distinct_cells at exactly `1`,
+        // so the unobserved-cardinality reads `axis_cardinality::<A>() - 1`.
+        // The singular-gap predicate fires iff that reads `1` — i.e.
+        // iff the axis carries exactly two cells. Stated as the
+        // conditional law so the witness is uniform across the
+        // implementor set without case-splitting on cardinality at the
+        // test site. Every cardinality-2 closed-axis primitive
+        // (e.g. `PartitionFace`, `SecretRefShape`) reads `true` on
+        // every singleton; every cardinality-≥ 3 primitive reads
+        // `false` uniformly.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.has_singular_gap(),
+                axis_cardinality::<A>() == 2,
+                "singleton has_singular_gap must equal (axis_cardinality == 2) \
+                 for observed cell {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_has_singular_gap_axis_cover_is_false<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once drives the unobserved-
+        // cardinality to `0`, so the singular-gap predicate reads
+        // `false` uniformly on every implementor (the structural
+        // full-cover witness). Closes the full-cover boundary corner
+        // on the singular-gap surface: axis-cover sits at the
+        // `is_full_cover` corner, disjoint from `has_singular_gap`.
+        // Peer of `has_partial_cover_axis_cover_is_false` on the dual-
+        // singular side of the support-cardinality interval.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert!(
+            !hist.has_singular_gap(),
+            "uniform axis-cover has_singular_gap must be false on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_gap_empty_iff_cardinality_is_one_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_singular_gap_empty_iff_cardinality_is_one::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_gap_singleton_iff_cardinality_is_two_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_singular_gap_singleton_iff_cardinality_is_two::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_gap_axis_cover_is_false_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_singular_gap_axis_cover_is_false::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_gap_equals_unobserved_cells_is_one() {
+        // The defining equivalence: `has_singular_gap` reads the same
+        // boolean as the open-coded `unobserved_cells() == 1` form
+        // every consumer would otherwise re-derive inline. Pinned
+        // pointwise across the canonical observation-mix shapes (empty,
+        // singleton, singleton-multi-observation, partial-skew, partial-
+        // uniform, axis-cover) so a future regression in either side
+        // surfaces here. Peer of
+        // `axis_histogram_has_singular_support_equals_distinct_cells_is_one`
+        // on the unobserved-cardinality scalar.
+        let inputs: [&[DiffLineKind]; 6] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.has_singular_gap(),
+                hist.unobserved_cells() == 1,
+                "has_singular_gap must equal (unobserved_cells == 1) \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_gap_equals_distinct_cells_is_one_less_than_cardinality() {
+        // The support-side dual form: `has_singular_gap` reads the same
+        // boolean as `distinct_cells() == axis_cardinality::<A>() - 1`
+        // via the `distinct_cells + unobserved_cells == axis_cardinality`
+        // partition invariant. Pins the dual structural form on the
+        // support-cardinality scalar peer: support cardinality `cardinality
+        // - 1` is exactly the singular-gap corner of the support
+        // interval. Peer of
+        // `axis_histogram_has_singular_support_equals_distinct_cells_is_one`
+        // on the opposite end of the support-cardinality interval.
+        let cardinality = axis_cardinality::<DiffLineKind>();
+        let inputs: [&[DiffLineKind]; 6] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let distinct = hist.distinct_cells();
+            assert_eq!(
+                hist.has_singular_gap(),
+                distinct + 1 == cardinality,
+                "has_singular_gap must equal (distinct_cells + 1 == axis_cardinality) \
+                 on input of length {}; distinct={}, cardinality={}",
+                input.len(),
+                distinct,
+                cardinality,
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_gap_and_has_singular_support_disjoint_on_cardinality_three() {
+        // On every implementor with `axis_cardinality >= 3` (DiffLineKind
+        // is the smallest cardinality-3 axis on the typescape, with
+        // cardinality 3), `has_singular_support` (distinct_cells == 1)
+        // and `has_singular_gap` (distinct_cells == cardinality - 1
+        // == 2) are pointwise disjoint: their support-cardinality
+        // witnesses are 1 and 2 respectively, never equal. Pinned at
+        // every distinct support-cardinality witness reachable on
+        // DiffLineKind (empty, singleton, two-cell, three-cell axis-
+        // cover): the conjunction `support && gap` reads `false`
+        // uniformly. The structural disjointness witness on the
+        // smallest-cardinality-3 implementor.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        let two_cell: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Removed]
+            .into_iter()
+            .collect();
+        let axis_cover: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        for hist in [&empty, &singleton, &two_cell, &axis_cover] {
+            assert!(
+                !(hist.has_singular_support() && hist.has_singular_gap()),
+                "has_singular_support and has_singular_gap must be pointwise \
+                 disjoint on cardinality-3 axes (distinct_cells={})",
+                hist.distinct_cells(),
+            );
+        }
+        // The two-cell shape is the unique singular-gap witness on
+        // DiffLineKind: one cell unobserved (Context), two observed.
+        // Pinned alongside the disjointness law so the cardinality-3
+        // dual-singular partition is exercised at its only interior
+        // witness.
+        assert!(!two_cell.has_singular_support());
+        assert!(two_cell.has_singular_gap());
+        // Singleton is the unique singular-support witness on
+        // DiffLineKind: one observed, two unobserved.
+        assert!(singleton.has_singular_support());
+        assert!(!singleton.has_singular_gap());
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_gap_equals_has_singular_support_on_cardinality_two() {
+        // On every implementor with `axis_cardinality == 2`
+        // (PartitionFace and SecretRefShape today), `has_singular_gap`
+        // and `has_singular_support` read the *same* boolean pointwise:
+        // one observed cell *is* one unobserved cell when the axis
+        // carries exactly two cells (support 1 == cardinality - 1 == 1
+        // on cardinality 2). The structural cardinality-2 coincidence
+        // witness on the dual-boundary collapse. Pinned at every
+        // canonical shape reachable on `PartitionFace`: empty,
+        // singleton on each face, axis-cover. The two predicates agree
+        // pointwise on every shape.
+        let empty: AxisHistogram<PartitionFace> = AxisHistogram::empty();
+        let realizable_only: AxisHistogram<PartitionFace> =
+            std::iter::once(PartitionFace::Realizable).collect();
+        let unrealizable_only: AxisHistogram<PartitionFace> =
+            std::iter::once(PartitionFace::Unrealizable).collect();
+        let axis_cover: AxisHistogram<PartitionFace> = axis_iter::<PartitionFace>().collect();
+        for hist in [&empty, &realizable_only, &unrealizable_only, &axis_cover] {
+            assert_eq!(
+                hist.has_singular_gap(),
+                hist.has_singular_support(),
+                "has_singular_gap and has_singular_support must coincide \
+                 pointwise on cardinality-2 axes (distinct_cells={})",
+                hist.distinct_cells(),
+            );
+        }
+        // Each singleton on a cardinality-2 axis sits on both singular
+        // corners simultaneously (support 1 == cardinality - 1 == 1):
+        // pinned as the dual-singular collapse witness.
+        assert!(realizable_only.has_singular_support());
+        assert!(realizable_only.has_singular_gap());
+        assert!(unrealizable_only.has_singular_support());
+        assert!(unrealizable_only.has_singular_gap());
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_gap_implies_has_partial_cover_on_cardinality_at_least_two() {
+        // The implication law: `has_singular_gap ⇒ has_partial_cover`
+        // on every implementor with `axis_cardinality::<A>() >= 2`
+        // (every implementor today). One unobserved cell means at
+        // least one observed (cardinality - 1 >= 1) and at least one
+        // unobserved, so the singular-gap corner sits on the partial-
+        // cover middle leg of the
+        // `(is_empty, has_partial_cover, is_full_cover)` trichotomy.
+        // Peer of
+        // `axis_histogram_has_singular_support_implies_has_partial_cover_on_cardinality_at_least_two`
+        // on the opposite end of the support-cardinality interval —
+        // both singular boundaries land on the partial-cover middle
+        // leg. Pinned at the implication side (two-cell partial on
+        // DiffLineKind, both singletons on PartitionFace) and at the
+        // converse-fails side (partial-skew with two distinct observed
+        // cells on DiffLineKind reads partial but not singular-gap).
+        let two_cell: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Removed]
+            .into_iter()
+            .collect();
+        assert!(two_cell.has_singular_gap());
+        assert!(two_cell.has_partial_cover());
+
+        let realizable_only: AxisHistogram<PartitionFace> =
+            std::iter::once(PartitionFace::Realizable).collect();
+        assert!(realizable_only.has_singular_gap());
+        assert!(realizable_only.has_partial_cover());
+
+        // Converse-fails witness on DiffLineKind: the singleton has
+        // partial cover but two unobserved cells (not 1), so reads
+        // singular-gap = false.
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert!(singleton.has_partial_cover());
+        assert!(!singleton.has_singular_gap());
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_gap_after_merge_is_non_monotone() {
+        // The merge behavior on `has_singular_gap` is *non-monotonic*:
+        // merging two singular-gap histograms whose missing cells
+        // *differ* fills both gaps and lands the merge at full cover
+        // (loses singular gap); merging two singular-gap histograms
+        // whose missing cells *coincide* preserves the singular gap;
+        // merging an empty histogram with a singular-gap histogram
+        // preserves the singular gap (the empty-identity law). Pinned
+        // with three witnesses spanning the merge surface, plus the
+        // empty-identity law.
+        //
+        // `DiffLineKind::ALL` declaration order is
+        // `[Removed, Added, Context]` (axis_cardinality = 3). Each
+        // two-cell shape sits on the singular-gap corner (one cell
+        // missing).
+
+        // Witness 1: gap ⊕ gap on coinciding missing cells →
+        // singular-gap merge preserved (both miss Context, the union
+        // of supports is still {Removed, Added}, still one cell short).
+        let missing_context_a: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Removed, DiffLineKind::Added]
+                .into_iter()
+                .collect();
+        let missing_context_b: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Added, DiffLineKind::Removed]
+                .into_iter()
+                .collect();
+        assert!(missing_context_a.has_singular_gap());
+        assert!(missing_context_b.has_singular_gap());
+        let merged_coinciding = missing_context_a.clone().merge(&missing_context_b);
+        assert!(merged_coinciding.has_singular_gap());
+
+        // Witness 2: gap ⊕ gap on differing missing cells →
+        // full-cover merge (one misses Context, the other misses
+        // Removed; their union is the full axis).
+        let missing_removed: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Added, DiffLineKind::Context]
+                .into_iter()
+                .collect();
+        assert!(missing_context_a.has_singular_gap());
+        assert!(missing_removed.has_singular_gap());
+        let merged_differing = missing_context_a.clone().merge(&missing_removed);
+        assert!(!merged_differing.has_singular_gap());
+        assert!(merged_differing.is_full_cover());
+
+        // Witness 3: empty ⊕ empty → empty merge (still on the
+        // is_empty corner, not on the singular-gap boundary —
+        // unobserved cells == axis_cardinality, not 1).
+        let empty_hist: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        let merged_empty = empty_hist.clone().merge(&empty_hist);
+        assert!(!merged_empty.has_singular_gap());
+        assert!(merged_empty.is_empty());
+
+        // Empty-identity law: merging with the empty histogram leaves
+        // `has_singular_gap` unchanged on every input. Pinned with a
+        // singular-gap input and an empty input.
+        let gap_with_empty = missing_context_a.clone().merge(&empty_hist);
+        assert_eq!(
+            gap_with_empty.has_singular_gap(),
+            missing_context_a.has_singular_gap(),
+        );
+        let empty_with_empty = empty_hist.clone().merge(&empty_hist);
+        assert_eq!(
+            empty_with_empty.has_singular_gap(),
+            empty_hist.has_singular_gap(),
         );
     }
 
