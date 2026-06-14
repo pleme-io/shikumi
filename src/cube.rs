@@ -732,6 +732,94 @@ impl std::str::FromStr for ModalityClass {
     }
 }
 
+impl serde::Serialize for ModalityClass {
+    /// Serialize the variant tag as the canonical operator-facing
+    /// kebab-case label [`Self::as_str`] emits — the same scalar the
+    /// [`Display`][std::fmt::Display] impl writes. Routes through
+    /// [`serde::Serializer::collect_str`] so the serialized
+    /// representation is exactly `format!("{self}")` with no
+    /// intermediate allocation on serializers that accept a streaming
+    /// source (YAML, JSON, TOML emitters lower the scalar straight
+    /// from the `&'static str` returned by [`Self::as_str`]).
+    ///
+    /// Closes the canonical (`Serialize`, `Deserialize`) serde
+    /// idiom-peer of the (`Display`, `FromStr`) stdlib pair on the
+    /// variant-tag surface — peer of the same lift on
+    /// [`AxisHistogram`] (commit 2311303) on the histogram surface,
+    /// and idiom-peer of the implicit lift on every
+    /// [`crate::Format`]/[`crate::ShikumiErrorKind`]/[`crate::ConfigSourceKind`]/
+    /// [`crate::FigmentSourceKind`] surface that carries
+    /// `#[serde(rename_all = "kebab-case")]` on the enum derive.
+    /// [`ModalityClass`] stays *off* the
+    /// `#[serde(rename_all)]`-derive path so the canonical-name
+    /// surface stays gated on the single inherent
+    /// [`Self::as_str`] projection: a future variant-name refactor
+    /// touches one site (the `match` in [`Self::as_str`]) rather than
+    /// a derive attribute *and* its consumers — same forcing function
+    /// the (`Display`, `FromStr`) pair already pins.
+    ///
+    /// **Round-trip law** — for every `v: ModalityClass`,
+    /// `serde_yaml::from_str::<ModalityClass>(&serde_yaml::to_string(&v)?)? == v`
+    /// and the same on `serde_json`. Pinned by
+    /// [`tests::modality_class_serde_yaml_round_trips_over_every_variant`]
+    /// and the `serde_json` peer test.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ModalityClass {
+    /// Deserialize the variant tag from the canonical operator-facing
+    /// kebab-case label [`Self::as_str`] emits — the operator-facing
+    /// scalar form the variant-tag surface carries on the
+    /// (`Display`, `FromStr`) round-trip pair, lifted to the serde
+    /// surface via [`serde::Deserializer::deserialize_str`] with a
+    /// visitor whose `visit_str` lowers to
+    /// [`<Self as std::str::FromStr>::from_str`] and routes any
+    /// [`ParseModalityClassError`] through
+    /// [`serde::de::Error::custom`].
+    ///
+    /// **Case insensitivity inherits from [`FromStr`]** — an
+    /// operator-authored manifest field carrying the uppercase or
+    /// mixed-case form of a canonical label parses on the serde side
+    /// without a per-emitter case-fold, because the deserialize path
+    /// lowers through [`Self::from_canonical_str`] which compares via
+    /// [`str::eq_ignore_ascii_case`]. Pinned by
+    /// [`tests::modality_class_serde_yaml_is_case_insensitive`].
+    ///
+    /// **Unknown-label rejection carries the offending label
+    /// verbatim** — a manifest field carrying an unknown classifier
+    /// corner name surfaces at the serde error site with the offending
+    /// substring verbatim in the rendered message, lifted through
+    /// [`ParseModalityClassError::label`] and the typed
+    /// [`Display`][std::fmt::Display] impl on the parse error. Pinned
+    /// by
+    /// [`tests::modality_class_serde_yaml_unknown_label_error_carries_label_verbatim`].
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ModalityClassVisitor;
+
+        impl serde::de::Visitor<'_> for ModalityClassVisitor {
+            type Value = ModalityClass;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(
+                    "a canonical ModalityClass kebab-case label \
+                     (`empty`, `strict-modal-strict-antimodal`, \
+                     `tied-modal-strict-antimodal`, \
+                     `strict-modal-tied-antimodal`, \
+                     `tied-modal-tied-antimodal`)",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                v.parse::<ModalityClass>().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(ModalityClassVisitor)
+    }
+}
+
 impl<A: ClosedAxis> AxisHistogram<A> {
     /// The all-zero histogram — every cell at zero, [`Self::total`] = 0,
     /// [`Self::is_empty`] = `true`. The monoid identity under
@@ -29204,5 +29292,127 @@ mod tests {
             "as_str image must equal the canonical five-label set",
         );
         assert_eq!(image.len(), ModalityClass::ALL.len());
+    }
+
+    #[test]
+    fn modality_class_serde_yaml_round_trips_over_every_variant() {
+        // Canonical serde YAML (Serialize, Deserialize) round-trip law
+        // on the variant-tag surface — every variant serializes to a
+        // YAML scalar that deserializes back to itself. Lowers through
+        // the same (Display, FromStr) pair the round-trip law on
+        // ModalityClass already pins, so the serde idiom-peer inherits
+        // the round-trip discipline by construction. Pinned across
+        // every variant of ModalityClass::ALL so a future serialize
+        // override that drifts from the canonical-label projection
+        // breaks here at one site rather than at every emitter.
+        for &v in ModalityClass::ALL {
+            let yaml = serde_yaml::to_string(&v)
+                .unwrap_or_else(|e| panic!("must serialize {v:?} to YAML: {e}"));
+            let parsed: ModalityClass = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+                panic!("YAML emission for {v:?} must deserialize back: {e}\n  yaml: {yaml:?}")
+            });
+            assert_eq!(
+                parsed, v,
+                "serde YAML round-trip must be identity for {v:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_serde_json_round_trips_over_every_variant() {
+        // Peer of the YAML round-trip on the JSON serializer — JSON
+        // emits the scalar as a quoted string, which makes the literal
+        // emission shape predictable across every variant. The
+        // round-trip lowers through the same (Display, FromStr)
+        // bijection the YAML peer carries.
+        for &v in ModalityClass::ALL {
+            let json = serde_json::to_string(&v)
+                .unwrap_or_else(|e| panic!("must serialize {v:?} to JSON: {e}"));
+            // JSON emits the variant tag as a single quoted string
+            // wrapping the canonical label verbatim. Pin the literal
+            // shape so a future drift in the lowering (a switch from
+            // serialize_str to a struct/map representation) surfaces
+            // here at the concrete-variant assertion.
+            assert_eq!(
+                json,
+                format!("\"{}\"", v.as_str()),
+                "JSON emission for {v:?} must be the quoted canonical label",
+            );
+            let parsed: ModalityClass = serde_json::from_str(&json).unwrap_or_else(|e| {
+                panic!("JSON emission for {v:?} must deserialize back: {e}\n  json: {json}")
+            });
+            assert_eq!(
+                parsed, v,
+                "serde JSON round-trip must be identity for {v:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_serde_yaml_is_case_insensitive() {
+        // The Deserialize impl inherits case-insensitivity from FromStr
+        // (through from_canonical_str's str::eq_ignore_ascii_case). A
+        // YAML scalar carrying the uppercase form of a canonical label
+        // parses to the same variant. Pinned across every variant so a
+        // regression that adds a stricter-case deserialize path breaks
+        // here at one site.
+        for &v in ModalityClass::ALL {
+            let upper = v.as_str().to_ascii_uppercase();
+            let yaml = format!("\"{upper}\"\n");
+            let parsed: ModalityClass = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+                panic!("uppercase YAML scalar for {v:?} must deserialize: {e}\n  yaml: {yaml:?}")
+            });
+            assert_eq!(
+                parsed, v,
+                "uppercase serde YAML round-trip must recover {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_serde_yaml_unknown_label_error_carries_label_verbatim() {
+        // The unknown-label rejection mode lifted to the serde error
+        // site: a YAML scalar carrying a sentinel that does not match
+        // any canonical name surfaces as a serde_yaml::Error whose
+        // Display rendering carries the offending substring verbatim
+        // through the ParseModalityClassError Display impl routed
+        // through serde::de::Error::custom. Pinned so a future
+        // refactor of the deserialize-error path that drops the
+        // verbatim-label discipline breaks here at one site.
+        let sentinel = "__shikumi_unknown_modality_class_sentinel__";
+        let yaml = format!("\"{sentinel}\"\n");
+        let result: Result<ModalityClass, _> = serde_yaml::from_str(&yaml);
+        match result {
+            Err(e) => {
+                let rendered = format!("{e}");
+                assert!(
+                    rendered.contains(sentinel),
+                    "serde YAML error must carry the unknown sentinel verbatim, got: {rendered}",
+                );
+            }
+            Ok(other) => panic!("YAML carrying unknown label must reject, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn modality_class_serde_yaml_emits_canonical_label_substring_for_every_variant() {
+        // Concrete YAML pin on the serde emission shape: every variant
+        // serializes to a YAML scalar that contains the canonical
+        // as_str label as a substring. The exact quoting style is
+        // left to serde_yaml (kebab-case scalars carrying `-` may
+        // emit unquoted or single-quoted depending on the emitter
+        // path), but the canonical label must appear verbatim. A
+        // future drift in the lowering (a switch from serialize_str
+        // to a tagged map representation, an emission-format change
+        // that re-cases the label) surfaces here at one site across
+        // every variant.
+        for &v in ModalityClass::ALL {
+            let yaml = serde_yaml::to_string(&v).unwrap();
+            assert!(
+                yaml.contains(v.as_str()),
+                "YAML emission for {v:?} must contain canonical label {:?}, got: {yaml:?}",
+                v.as_str(),
+            );
+        }
     }
 }
