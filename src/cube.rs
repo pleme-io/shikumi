@@ -526,6 +526,73 @@ impl ModalityClass {
         )
     }
 
+    /// `true` exactly when the modal axis is *strictly unique* — the
+    /// two variants [`Self::StrictModalStrictAntimodal`] and
+    /// [`Self::StrictModalTiedAntimodal`]. The enum-level peer of
+    /// [`AxisHistogram::is_strictly_modally_unique`] projected from
+    /// the variant tag.
+    ///
+    /// On every histogram `h`,
+    /// `h.modality_class().is_strictly_modally_unique() == h.is_strictly_modally_unique()`,
+    /// pinned trait-uniformly across every [`ClosedAxis`] implementor
+    /// by
+    /// [`tests::axis_histogram_modality_class_is_strictly_modally_unique_agrees_with_histogram_is_strictly_modally_unique_for_every_closed_axis_implementor`].
+    /// `false` on [`Self::Empty`] (matching
+    /// [`AxisHistogram::is_strictly_modally_unique`] returning `false`
+    /// on the empty histogram — the modal level set is empty, not
+    /// singleton).
+    ///
+    /// **Closes the modal-axis boolean partition pair** —
+    /// `(is_strictly_modally_unique, is_modally_tied)` on
+    /// [`ModalityClass`] now mirrors the same pair on
+    /// [`AxisHistogram`]: every non-empty variant lands on exactly one
+    /// of the two predicates, and the empty variant reads `false` on
+    /// both (the empty-boundary convention shared with the histogram
+    /// surface). A consumer holding a cached [`ModalityClass`] branches
+    /// on either side of the modal-axis partition without re-routing
+    /// through the originating histogram.
+    #[must_use]
+    pub const fn is_strictly_modally_unique(self) -> bool {
+        matches!(
+            self,
+            Self::StrictModalStrictAntimodal | Self::StrictModalTiedAntimodal
+        )
+    }
+
+    /// `true` exactly when the antimodal axis is *strictly unique* —
+    /// the two variants [`Self::StrictModalStrictAntimodal`] and
+    /// [`Self::TiedModalStrictAntimodal`]. The enum-level peer of
+    /// [`AxisHistogram::is_strictly_antimodally_unique`] projected
+    /// from the variant tag.
+    ///
+    /// On every histogram `h`,
+    /// `h.modality_class().is_strictly_antimodally_unique() == h.is_strictly_antimodally_unique()`,
+    /// pinned trait-uniformly across every [`ClosedAxis`] implementor
+    /// by
+    /// [`tests::axis_histogram_modality_class_is_strictly_antimodally_unique_agrees_with_histogram_is_strictly_antimodally_unique_for_every_closed_axis_implementor`].
+    /// `false` on [`Self::Empty`] (matching
+    /// [`AxisHistogram::is_strictly_antimodally_unique`] returning
+    /// `false` on the empty histogram — the antimodal level set is
+    /// empty, not singleton). Orthogonal-axis peer to
+    /// [`Self::is_strictly_modally_unique`].
+    ///
+    /// **Closes the antimodal-axis boolean partition pair** —
+    /// `(is_strictly_antimodally_unique, is_antimodally_tied)` on
+    /// [`ModalityClass`] now mirrors the same pair on
+    /// [`AxisHistogram`]: every non-empty variant lands on exactly one
+    /// of the two predicates, and the empty variant reads `false` on
+    /// both. Together with the modal-axis pair above, the four
+    /// `(modal-strict | modal-tied) × (antimodal-strict | antimodal-tied)`
+    /// boolean reads pattern-match the four non-empty classifier
+    /// corners at one paired projection on the variant tag.
+    #[must_use]
+    pub const fn is_strictly_antimodally_unique(self) -> bool {
+        matches!(
+            self,
+            Self::StrictModalStrictAntimodal | Self::TiedModalStrictAntimodal
+        )
+    }
+
     /// Canonical operator-facing lowercase kebab-case name of the
     /// variant — `"empty"`, `"strict-modal-strict-antimodal"`,
     /// `"tied-modal-strict-antimodal"`, `"strict-modal-tied-antimodal"`,
@@ -28476,6 +28543,101 @@ mod tests {
         }
     }
 
+    #[test]
+    fn modality_class_is_strictly_modally_unique_fires_exactly_on_strict_modal_variants() {
+        // The Self::is_strictly_modally_unique const projection fires
+        // exactly on StrictModalStrictAntimodal and
+        // StrictModalTiedAntimodal — the two variants whose modal axis
+        // is strictly unique. The empty variant reads false (the
+        // empty-boundary convention shared with the histogram
+        // surface). Closes the modal-axis (strict-unique, tied)
+        // partition pair on the variant tag.
+        for &class in ModalityClass::ALL {
+            let expected = matches!(
+                class,
+                ModalityClass::StrictModalStrictAntimodal | ModalityClass::StrictModalTiedAntimodal,
+            );
+            assert_eq!(
+                class.is_strictly_modally_unique(),
+                expected,
+                "is_strictly_modally_unique projection on class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_is_strictly_antimodally_unique_fires_exactly_on_strict_antimodal_variants() {
+        // The Self::is_strictly_antimodally_unique const projection
+        // fires exactly on StrictModalStrictAntimodal and
+        // TiedModalStrictAntimodal — the two variants whose antimodal
+        // axis is strictly unique. The empty variant reads false.
+        // Orthogonal-axis peer to the modal-side law above; closes
+        // the antimodal-axis (strict-unique, tied) partition pair on
+        // the variant tag.
+        for &class in ModalityClass::ALL {
+            let expected = matches!(
+                class,
+                ModalityClass::StrictModalStrictAntimodal | ModalityClass::TiedModalStrictAntimodal,
+            );
+            assert_eq!(
+                class.is_strictly_antimodally_unique(),
+                expected,
+                "is_strictly_antimodally_unique projection on class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_strict_and_tied_modal_predicates_partition_non_empty_variants() {
+        // On every non-empty variant, exactly one of the modal-axis
+        // predicates fires — `is_strictly_modally_unique` XOR
+        // `is_modally_tied`. The empty variant reads `false` on both
+        // (the empty-boundary convention). Pins the partition law at
+        // one site so a future rename of either side that drifts the
+        // predicate boundaries breaks here.
+        for &class in ModalityClass::ALL {
+            let strict = class.is_strictly_modally_unique();
+            let tied = class.is_modally_tied();
+            if matches!(class, ModalityClass::Empty) {
+                assert!(
+                    !strict && !tied,
+                    "Empty must read false on both modal predicates (got strict={strict}, tied={tied})",
+                );
+            } else {
+                assert!(
+                    strict ^ tied,
+                    "non-empty class {class:?} must land on exactly one modal predicate \
+                     (got strict={strict}, tied={tied})",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn modality_class_strict_and_tied_antimodal_predicates_partition_non_empty_variants() {
+        // Orthogonal peer of the modal-axis partition law above. On
+        // every non-empty variant, exactly one of the antimodal-axis
+        // predicates fires — `is_strictly_antimodally_unique` XOR
+        // `is_antimodally_tied`. The empty variant reads `false` on
+        // both.
+        for &class in ModalityClass::ALL {
+            let strict = class.is_strictly_antimodally_unique();
+            let tied = class.is_antimodally_tied();
+            if matches!(class, ModalityClass::Empty) {
+                assert!(
+                    !strict && !tied,
+                    "Empty must read false on both antimodal predicates (got strict={strict}, tied={tied})",
+                );
+            } else {
+                assert!(
+                    strict ^ tied,
+                    "non-empty class {class:?} must land on exactly one antimodal predicate \
+                     (got strict={strict}, tied={tied})",
+                );
+            }
+        }
+    }
+
     fn assert_modality_class_empty_is_empty_variant<A>()
     where
         A: ClosedAxis + std::fmt::Debug,
@@ -28690,6 +28852,83 @@ mod tests {
         );
     }
 
+    fn assert_modality_class_is_strictly_modally_unique_agrees_with_histogram_is_strictly_modally_unique<
+        A,
+    >()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Peer-projection on the modal-uniqueness axis:
+        // hist.modality_class().is_strictly_modally_unique() ==
+        // hist.is_strictly_modally_unique() on every histogram shape.
+        // Closes the (strict-unique, tied) modal-axis partition pair
+        // on the variant-tag projection.
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.modality_class().is_strictly_modally_unique(),
+            empty.is_strictly_modally_unique(),
+            "strictly_modally_unique agreement on empty histogram for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.modality_class().is_strictly_modally_unique(),
+                singleton.is_strictly_modally_unique(),
+                "strictly_modally_unique agreement on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.modality_class().is_strictly_modally_unique(),
+            cover.is_strictly_modally_unique(),
+            "strictly_modally_unique agreement on uniform axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_modality_class_is_strictly_antimodally_unique_agrees_with_histogram_is_strictly_antimodally_unique<
+        A,
+    >()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Peer-projection on the antimodal-uniqueness axis:
+        // hist.modality_class().is_strictly_antimodally_unique() ==
+        // hist.is_strictly_antimodally_unique() on every histogram
+        // shape. Orthogonal-axis peer to the modal-uniqueness law
+        // above; closes the (strict-unique, tied) antimodal-axis
+        // partition pair on the variant-tag projection.
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.modality_class().is_strictly_antimodally_unique(),
+            empty.is_strictly_antimodally_unique(),
+            "strictly_antimodally_unique agreement on empty histogram for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.modality_class().is_strictly_antimodally_unique(),
+                singleton.is_strictly_antimodally_unique(),
+                "strictly_antimodally_unique agreement on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.modality_class().is_strictly_antimodally_unique(),
+            cover.is_strictly_antimodally_unique(),
+            "strictly_antimodally_unique agreement on uniform axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
     #[test]
     fn axis_histogram_modality_class_empty_is_empty_variant_for_every_closed_axis_implementor() {
         macro_rules! check {
@@ -28762,6 +29001,28 @@ mod tests {
         macro_rules! check {
             ($ty:ident) => {
                 assert_modality_class_is_antimodally_tied_agrees_with_histogram_is_antimodally_tied::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_class_is_strictly_modally_unique_agrees_with_histogram_is_strictly_modally_unique_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_class_is_strictly_modally_unique_agrees_with_histogram_is_strictly_modally_unique::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_class_is_strictly_antimodally_unique_agrees_with_histogram_is_strictly_antimodally_unique_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_class_is_strictly_antimodally_unique_agrees_with_histogram_is_strictly_antimodally_unique::<$ty>();
             };
         }
         for_each_closed_axis_implementor!(check);
