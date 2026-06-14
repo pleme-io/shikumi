@@ -4700,6 +4700,88 @@ impl<A: ClosedAxis> std::ops::Mul<&AxisHistogram<A>> for usize {
     }
 }
 
+impl<A: ClosedAxis> std::ops::Mul<usize> for &AxisHistogram<A> {
+    type Output = AxisHistogram<A>;
+
+    /// Borrowed-receiver peer of [`Mul<usize> for AxisHistogram<A>`][Mul] —
+    /// `&hist * n` reads the same histogram as `hist.clone() * n` but
+    /// keeps the caller's ownership of `hist`. Closes the canonical
+    /// Rust (owned-receiver, borrowed-receiver) idiom-peer pair on the
+    /// right-scalar entry surface, the symmetric peer of the
+    /// (owned-RHS, borrowed-RHS) pair the left-scalar surface carries
+    /// at [`Mul<AxisHistogram<A>> for usize`][LeftMul] /
+    /// [`Mul<&AxisHistogram<A>> for usize`][LeftMulRef]. The four
+    /// corners of the scalar-multiplication ownership matrix —
+    /// `hist * n`, `&hist * n`, `n * hist`, `n * &hist` — now all
+    /// route through the in-place [`MulAssign<usize>`][MulAssign]
+    /// primitive at exactly one site; the per-cell scalar-multiplication
+    /// loop lives at one site underneath every entry surface
+    /// (right-scalar owned, right-scalar borrowed, left-scalar owned,
+    /// left-scalar borrowed, in-place).
+    ///
+    /// Before this lift, every consumer wanting the right-scalar shape
+    /// against a borrowed histogram (a per-tier observatory reading
+    /// `&cached_hist * multiplier` against an [`arc_swap::Guard`]-loaded
+    /// snapshot it must not consume; a rolling-window aggregator
+    /// reading `&windows[i] * weight` against an indexed slice of
+    /// histograms it iterates non-destructively; a fleet aggregator
+    /// reading `&host_hist * weight` over a `&BTreeMap<HostId,
+    /// AxisHistogram<A>>` it does not own) had to rewrite to one of
+    /// three forms — the hand-applied clone form `cached_hist.clone() *
+    /// multiplier` (which duplicates the clone at every call site);
+    /// the left-scalar borrowed-RHS rewrite `multiplier * &cached_hist`
+    /// (which inverts the natural English / textbook reading "the
+    /// histogram times the weight" the right-scalar surface expresses);
+    /// the open-coded per-cell rebuild over the cell iterator (which
+    /// re-expands every observation through repeated `observe`,
+    /// O(weight · total)). The lift names the projection at one site,
+    /// consumers route through `&hist * n` uniformly, and the per-cell
+    /// loop lives at exactly one site (the [`MulAssign<usize>`][MulAssign]
+    /// impl) underneath every scalar-action entry surface.
+    ///
+    /// **Borrowed-owned receiver agreement law** — `&hist * n` is
+    /// pointwise equal to `hist.clone() * n` for every `(hist, n)`. The
+    /// canonical (owned-receiver, borrowed-receiver) idiom-peer
+    /// agreement on a [`usize`]-action surface; the symmetric peer of
+    /// the (owned-RHS, borrowed-RHS) agreement
+    /// `n * &hist == n * hist.clone()` on the left-scalar surface.
+    /// Pinned by the trait-uniform test
+    /// `axis_histogram_mul_right_factor_borrowed_equals_owned_for_every_closed_axis_implementor`
+    /// in [`tests`]. Inherits every law the owned-receiver right-scalar
+    /// surface carries — the (`Mul`, `MulAssign`) equivalence
+    /// (`(&hist * n).clone() == { let mut a = hist.clone(); a *= n; a }`),
+    /// the zero-factor absorbing law (`&hist * 0 == empty`), the
+    /// one-factor identity law (`&hist * 1 == hist.clone()`), the
+    /// total-scaling law (`(&hist * n).total() == hist.total() * n`),
+    /// the cell-level scaling law
+    /// (`(&hist * n).count(v) == hist.count(v) * n`), the
+    /// distributivity over the additive monoid
+    /// (`&(a + &b) * n == &a * n + &(&b * n)`), and the equivalence
+    /// with repeated `+=` — by the borrowed-owned agreement at one
+    /// site.
+    ///
+    /// **Symmetric commutativity peer** — `&hist * n` is pointwise
+    /// equal to `n * &hist` for every `(hist, n)`, by the commutativity
+    /// law on the right-scalar surface composed with the borrowed-
+    /// receiver agreement. The borrowed-receiver pair (`&hist * n`,
+    /// `n * &hist`) reads the same histogram, just as the owned-
+    /// receiver pair (`hist * n`, `n * hist`) does on the owned side.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The trait-uniform borrowed-
+    /// owned receiver agreement law pinned in [`tests`] holds across
+    /// the implementor set
+    /// (`axis_histogram_mul_right_factor_borrowed_equals_owned_*`).
+    ///
+    /// [Mul]: std::ops::Mul
+    /// [MulAssign]: std::ops::MulAssign
+    /// [LeftMul]: std::ops::Mul
+    /// [LeftMulRef]: std::ops::Mul
+    fn mul(self, factor: usize) -> Self::Output {
+        self.clone() * factor
+    }
+}
+
 impl<A: ClosedAxis> std::ops::Index<A> for AxisHistogram<A> {
     type Output = usize;
 
@@ -16804,6 +16886,137 @@ mod tests {
 
         // Concrete cell counts: a + b yields (Added: 2, Removed: 2,
         // Context: 1); scaled left by 3 yields (6, 6, 3).
+        assert_eq!(via_scale_after.count(DiffLineKind::Added), 6);
+        assert_eq!(via_scale_after.count(DiffLineKind::Removed), 6);
+        assert_eq!(via_scale_after.count(DiffLineKind::Context), 3);
+        assert_eq!(via_scale_after.total(), 15);
+    }
+
+    fn assert_mul_right_factor_borrowed_equals_owned<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (owned-receiver, borrowed-receiver) idiom-peer agreement
+        // law on the right-scalar `*` operator surface: `&hist * n` is
+        // pointwise equal to `hist.clone() * n`. The symmetric peer of
+        // the (`Mul<Owned> for usize`, `Mul<&Owned> for usize`)
+        // borrowed-RHS agreement on the left-scalar surface — same
+        // projection, two receiver-ownership shapes, both lowering
+        // through the in-place `MulAssign<usize>` form at one site so
+        // the per-cell `*=` loop lives at one site underneath every
+        // right-scalar entry. Pinned at factors 0, 1, 2, 5 so the
+        // absorbing, identity, and two non-trivial multipliers witness
+        // the borrowed-owned agreement uniformly across every closed-
+        // axis implementor.
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for factor in [0usize, 1, 2, 5] {
+            let via_borrowed = &hist * factor;
+            let via_owned = hist.clone() * factor;
+            assert_eq!(
+                via_borrowed,
+                via_owned,
+                "&hist * {factor} must equal hist.clone() * {factor} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_mul_right_factor_borrowed_equals_owned_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_mul_right_factor_borrowed_equals_owned::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    fn assert_mul_right_factor_borrowed_equals_left_factor_borrowed<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The symmetric commutativity-peer law on the borrowed-
+        // receiver surfaces: `&hist * n` is pointwise equal to
+        // `n * &hist`. The borrowed-side peer of the owned-receiver
+        // commutativity law `hist * n == n * hist` — same projection
+        // routed through the borrowed entries on both sides, both
+        // lowering through one per-cell `*=` traversal underneath. The
+        // four entry surfaces (`hist * n`, `&hist * n`, `n * hist`,
+        // `n * &hist`) now agree pointwise at the operator-surface
+        // level. Pinned at factors 0, 1, 2, 5 so the absorbing,
+        // identity, and two non-trivial multipliers witness the
+        // borrowed-side commutativity uniformly across every closed-
+        // axis implementor.
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for factor in [0usize, 1, 2, 5] {
+            let via_right = &hist * factor;
+            let via_left = factor * &hist;
+            assert_eq!(
+                via_right,
+                via_left,
+                "&hist * {factor} must equal {factor} * &hist on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_mul_right_factor_borrowed_equals_left_factor_borrowed_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_mul_right_factor_borrowed_equals_left_factor_borrowed::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_mul_right_factor_borrowed_distributes_over_add_for_diff_line_kind() {
+        // The semimodule distributivity law on the borrowed-receiver
+        // right-scalar operator surface: `&(a + &b) * n` is pointwise
+        // equal to `&a * n + &(&b * n)`. The (right-scalar-owned,
+        // right-scalar-borrowed) pair of `*` surfaces composes through
+        // one consistent distributive law, peer to the
+        // `axis_histogram_mul_distributes_over_add_for_diff_line_kind`
+        // pin on the owned-receiver right-scalar side and the
+        // `axis_histogram_mul_left_factor_borrowed_distributes_over_add_for_diff_line_kind`
+        // pin on the borrowed-RHS left-scalar surface. Pinned
+        // concretely on [`DiffLineKind`] across two non-trivial
+        // histograms and a non-identity / non-absorbing factor so the
+        // distributivity reads off a non-trivial cell distribution
+        // from the borrowed-receiver right-scalar entry, with `a` and
+        // `b` retained intact across the projection (the borrowed-
+        // receiver form's ownership contract).
+        let a: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let b: AxisHistogram<DiffLineKind> = [DiffLineKind::Removed, DiffLineKind::Context]
+            .into_iter()
+            .collect();
+        let factor = 3usize;
+
+        let sum_ab = a.clone() + &b;
+        let via_scale_after = &sum_ab * factor;
+        let via_scale_first = &a * factor + &(&b * factor);
+
+        assert_eq!(via_scale_after, via_scale_first);
+
+        // Borrowed-receiver contract: `a` and `b` survive the
+        // projection intact (the original counts read back through
+        // their owned surfaces after the borrowed-receiver scalar
+        // action).
+        assert_eq!(a.count(DiffLineKind::Added), 2);
+        assert_eq!(a.count(DiffLineKind::Removed), 1);
+        assert_eq!(b.count(DiffLineKind::Removed), 1);
+        assert_eq!(b.count(DiffLineKind::Context), 1);
+
+        // Concrete cell counts: a + b yields (Added: 2, Removed: 2,
+        // Context: 1); scaled right by 3 yields (6, 6, 3).
         assert_eq!(via_scale_after.count(DiffLineKind::Added), 6);
         assert_eq!(via_scale_after.count(DiffLineKind::Removed), 6);
         assert_eq!(via_scale_after.count(DiffLineKind::Context), 3);
