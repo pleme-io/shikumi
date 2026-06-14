@@ -669,6 +669,86 @@ impl ModalityClass {
         matches!(self, Self::TiedModalTiedAntimodal)
     }
 
+    /// `true` exactly on [`Self::TiedModalStrictAntimodal`] — the
+    /// single variant where the modal axis is tied while the antimodal
+    /// axis is strictly unique. The "only the modal tie-break is
+    /// exercised" off-diagonal corner of the
+    /// `(modal-strict | modal-tied) × (antimodal-strict | antimodal-tied)`
+    /// 2×2 classifier partition.
+    ///
+    /// Pointwise equal to
+    /// `self.is_modally_tied() && self.is_strictly_antimodally_unique()`,
+    /// pinned by
+    /// [`tests::modality_class_is_only_modally_tied_equals_modal_tied_and_antimodal_strict_conjunction`].
+    /// `false` on [`Self::Empty`] (matching the empty-boundary
+    /// convention every per-axis named boolean carries: the empty
+    /// histogram surfaces `false` on every per-axis tied / strict-unique
+    /// read, so the conjunction reads `false` as well). Disjoint from
+    /// the other three single-variant corner predicates
+    /// ([`Self::is_doubly_strict_unique`], [`Self::is_doubly_tied`],
+    /// [`Self::is_only_antimodally_tied`]) —
+    /// [`tests::modality_class_four_corner_predicates_are_pairwise_disjoint`]
+    /// pins the full 4-way pairwise-disjointness law.
+    ///
+    /// **Closes the off-diagonal-corner
+    /// (`only_modally_tied`, `only_antimodally_tied`) projection pair**
+    /// — together with [`Self::is_only_antimodally_tied`], the two
+    /// booleans name the two variants where the modal and antimodal
+    /// classifications *disagree*
+    /// ([`Self::TiedModalStrictAntimodal`] and
+    /// [`Self::StrictModalTiedAntimodal`]) at one `const` projection on
+    /// the variant tag, peering with the diagonal-corner pair
+    /// ([`Self::is_doubly_strict_unique`], [`Self::is_doubly_tied`])
+    /// that names the two agreement-corner variants. Together the four
+    /// single-variant predicates name every non-empty classifier corner
+    /// — a consumer holding a cached [`ModalityClass`] branching on the
+    /// "only the modal axis exercises its tie-break?" question now
+    /// reads one `const` projection rather than the conjunction of two
+    /// per-axis predicates, or `matches!` on the variant tag.
+    #[must_use]
+    pub const fn is_only_modally_tied(self) -> bool {
+        matches!(self, Self::TiedModalStrictAntimodal)
+    }
+
+    /// `true` exactly on [`Self::StrictModalTiedAntimodal`] — the
+    /// single variant where the antimodal axis is tied while the modal
+    /// axis is strictly unique. The "only the antimodal tie-break is
+    /// exercised" off-diagonal corner of the
+    /// `(modal-strict | modal-tied) × (antimodal-strict | antimodal-tied)`
+    /// 2×2 classifier partition; the orthogonal off-diagonal peer of
+    /// [`Self::is_only_modally_tied`].
+    ///
+    /// Pointwise equal to
+    /// `self.is_antimodally_tied() && self.is_strictly_modally_unique()`,
+    /// pinned by
+    /// [`tests::modality_class_is_only_antimodally_tied_equals_antimodal_tied_and_modal_strict_conjunction`].
+    /// `false` on [`Self::Empty`] (matching the empty-boundary
+    /// convention shared with the histogram surface — the empty
+    /// histogram surfaces `false` on every per-axis read, so the
+    /// conjunction reads `false` as well). Disjoint from the other
+    /// three single-variant corner predicates
+    /// ([`Self::is_doubly_strict_unique`], [`Self::is_doubly_tied`],
+    /// [`Self::is_only_modally_tied`]) —
+    /// [`tests::modality_class_four_corner_predicates_are_pairwise_disjoint`]
+    /// pins the full 4-way pairwise-disjointness law.
+    ///
+    /// Together with [`Self::is_only_modally_tied`],
+    /// [`Self::is_doubly_strict_unique`], and [`Self::is_doubly_tied`],
+    /// **closes the four single-variant corner projections** — on every
+    /// non-empty variant exactly one of the four predicates fires,
+    /// pinned by
+    /// [`tests::modality_class_four_corner_predicates_partition_non_empty_variants`].
+    /// The empty boundary remains the single variant where all four
+    /// read `false`. A consumer branching on the four non-empty
+    /// corners now reads four parallel single-variant projections rather
+    /// than re-routing through `match` on the variant tag or
+    /// re-deriving conjunctions of the per-axis predicates at the call
+    /// site.
+    #[must_use]
+    pub const fn is_only_antimodally_tied(self) -> bool {
+        matches!(self, Self::StrictModalTiedAntimodal)
+    }
+
     /// Canonical operator-facing lowercase kebab-case name of the
     /// variant — `"empty"`, `"strict-modal-strict-antimodal"`,
     /// `"tied-modal-strict-antimodal"`, `"strict-modal-tied-antimodal"`,
@@ -28807,6 +28887,146 @@ mod tests {
                 !(strict && tied),
                 "doubly-strict-unique and doubly-tied must be disjoint \
                  (got strict={strict}, tied={tied}) on class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_is_only_modally_tied_fires_exactly_on_tied_modal_strict_antimodal() {
+        // The Self::is_only_modally_tied const projection fires exactly
+        // on the single TiedModalStrictAntimodal variant — the off-
+        // diagonal corner of the 2×2 partition where only the modal
+        // axis tie-break is exercised (the antimodal axis remains
+        // strictly unique). Every other variant (including the empty
+        // boundary, the orthogonal off-diagonal corner, and both
+        // diagonal corners) reads false. The single-variant matches!()
+        // is the canonical "only the modal tie-break is exercised"
+        // boolean projected from the variant tag at one const call.
+        for &class in ModalityClass::ALL {
+            let expected = matches!(class, ModalityClass::TiedModalStrictAntimodal);
+            assert_eq!(
+                class.is_only_modally_tied(),
+                expected,
+                "is_only_modally_tied projection on class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_is_only_antimodally_tied_fires_exactly_on_strict_modal_tied_antimodal() {
+        // The Self::is_only_antimodally_tied const projection fires
+        // exactly on the single StrictModalTiedAntimodal variant — the
+        // orthogonal off-diagonal corner of the 2×2 partition where
+        // only the antimodal axis tie-break is exercised (the modal
+        // axis remains strictly unique). Every other variant (including
+        // the empty boundary, the orthogonal off-diagonal corner, and
+        // both diagonal corners) reads false. Orthogonal-corner peer of
+        // is_only_modally_tied.
+        for &class in ModalityClass::ALL {
+            let expected = matches!(class, ModalityClass::StrictModalTiedAntimodal);
+            assert_eq!(
+                class.is_only_antimodally_tied(),
+                expected,
+                "is_only_antimodally_tied projection on class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_is_only_modally_tied_equals_modal_tied_and_antimodal_strict_conjunction() {
+        // Defining-equivalence law: is_only_modally_tied() reads
+        // pointwise the same as the conjunction of the modal-tied and
+        // antimodal-strict per-axis predicates across every variant of
+        // ModalityClass::ALL — empty, the four non-empty corners, and
+        // (forward-compatibly under #[non_exhaustive]) every future
+        // variant. Pins the off-diagonal-corner projection at the
+        // per-axis conjunction it collapses.
+        for &class in ModalityClass::ALL {
+            let conj = class.is_modally_tied() && class.is_strictly_antimodally_unique();
+            assert_eq!(
+                class.is_only_modally_tied(),
+                conj,
+                "is_only_modally_tied must equal the (modal-tied, antimodal-strict) \
+                 conjunction on class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_is_only_antimodally_tied_equals_antimodal_tied_and_modal_strict_conjunction()
+    {
+        // Defining-equivalence law: is_only_antimodally_tied() reads
+        // pointwise the same as the conjunction of the antimodal-tied
+        // and modal-strict per-axis predicates across every variant.
+        // Orthogonal off-diagonal peer of the only-modally-tied
+        // equivalence law above.
+        for &class in ModalityClass::ALL {
+            let conj = class.is_antimodally_tied() && class.is_strictly_modally_unique();
+            assert_eq!(
+                class.is_only_antimodally_tied(),
+                conj,
+                "is_only_antimodally_tied must equal the (antimodal-tied, modal-strict) \
+                 conjunction on class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_four_corner_predicates_are_pairwise_disjoint() {
+        // Pairwise-disjointness law: the four single-variant corner
+        // projections (is_doubly_strict_unique, is_doubly_tied,
+        // is_only_modally_tied, is_only_antimodally_tied) match
+        // disjoint single-element subsets of ModalityClass::ALL, so on
+        // every variant at most one fires. Pinning the full 4-way
+        // pairwise-disjointness at one site so a future rename of any
+        // pair that drifts the predicate boundaries breaks here rather
+        // than silently double-counting a classifier corner in a
+        // rollup. Extends
+        // modality_class_is_doubly_strict_unique_and_is_doubly_tied_are_disjoint
+        // from the 2-way diagonal-pair case to the full 4-corner
+        // partition.
+        for &class in ModalityClass::ALL {
+            let predicates = [
+                ("is_doubly_strict_unique", class.is_doubly_strict_unique()),
+                ("is_doubly_tied", class.is_doubly_tied()),
+                ("is_only_modally_tied", class.is_only_modally_tied()),
+                ("is_only_antimodally_tied", class.is_only_antimodally_tied()),
+            ];
+            for (i, (lhs_name, lhs)) in predicates.iter().enumerate() {
+                for (rhs_name, rhs) in predicates.iter().skip(i + 1) {
+                    assert!(
+                        !(*lhs && *rhs),
+                        "{lhs_name} and {rhs_name} must be disjoint \
+                         (got lhs={lhs}, rhs={rhs}) on class {class:?}",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn modality_class_four_corner_predicates_partition_non_empty_variants() {
+        // Totality law: on every non-empty variant exactly one of the
+        // four single-variant corner predicates fires; on the empty
+        // boundary all four read false. Together with the pairwise-
+        // disjointness law above, the four predicates form a true
+        // partition of the four non-empty corners of the 2×2
+        // classifier — the empty boundary remains the single off-
+        // partition variant carrying the shared "false on every per-
+        // axis named boolean" convention. A consumer rolling up the
+        // four corners can now count each non-empty histogram exactly
+        // once across the four parallel const reads without re-routing
+        // through match on the variant tag.
+        for &class in ModalityClass::ALL {
+            let fires = u32::from(class.is_doubly_strict_unique())
+                + u32::from(class.is_doubly_tied())
+                + u32::from(class.is_only_modally_tied())
+                + u32::from(class.is_only_antimodally_tied());
+            let expected = u32::from(!class.is_empty());
+            assert_eq!(
+                fires, expected,
+                "exactly one corner predicate must fire on every non-empty variant \
+                 (got fires={fires}) on class {class:?}",
             );
         }
     }
