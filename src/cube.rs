@@ -593,6 +593,82 @@ impl ModalityClass {
         )
     }
 
+    /// `true` exactly on [`Self::StrictModalStrictAntimodal`] — the
+    /// single variant where the modal *and* antimodal axes are both
+    /// strictly unique. The "no tie-break exercised on either axis"
+    /// diagonal corner of the
+    /// `(modal-strict | modal-tied) × (antimodal-strict | antimodal-tied)`
+    /// 2×2 classifier partition.
+    ///
+    /// Pointwise equal to
+    /// `self.is_strictly_modally_unique() && self.is_strictly_antimodally_unique()`,
+    /// pinned by
+    /// [`tests::modality_class_is_doubly_strict_unique_equals_strict_modal_and_strict_antimodal_conjunction`].
+    /// `false` on [`Self::Empty`] (matching the empty-boundary
+    /// convention every per-axis named boolean carries: the empty
+    /// histogram surfaces `false` on every strict-unique / tied read).
+    /// Disjoint from [`Self::is_doubly_tied`] —
+    /// [`tests::modality_class_is_doubly_strict_unique_and_is_doubly_tied_are_disjoint`]
+    /// pins that the two diagonal-corner predicates never fire on the
+    /// same variant.
+    ///
+    /// **Closes the diagonal-corner (`doubly_strict`, `doubly_tied`)
+    /// projection pair** — together with [`Self::is_doubly_tied`], the
+    /// two booleans name the two variants where the modal and
+    /// antimodal classifications *agree*
+    /// ([`Self::StrictModalStrictAntimodal`] and
+    /// [`Self::TiedModalTiedAntimodal`]) at one `const` projection on
+    /// the variant tag, peering with the four orthogonal-axis
+    /// predicates ([`Self::is_strictly_modally_unique`],
+    /// [`Self::is_modally_tied`],
+    /// [`Self::is_strictly_antimodally_unique`],
+    /// [`Self::is_antimodally_tied`]) that close the per-axis
+    /// partition pairs. A consumer holding a cached [`ModalityClass`]
+    /// branching on the "tie-break exercised on neither axis?"
+    /// question now reads one `const` projection rather than the
+    /// conjunction of two per-axis predicates.
+    #[must_use]
+    pub const fn is_doubly_strict_unique(self) -> bool {
+        matches!(self, Self::StrictModalStrictAntimodal)
+    }
+
+    /// `true` exactly on [`Self::TiedModalTiedAntimodal`] — the single
+    /// variant where the modal *and* antimodal axes are both tied. The
+    /// "both tie-breaks exercised" diagonal corner of the
+    /// `(modal-strict | modal-tied) × (antimodal-strict | antimodal-tied)`
+    /// 2×2 classifier partition; the orthogonal-corner peer of
+    /// [`Self::is_doubly_strict_unique`].
+    ///
+    /// Pointwise equal to
+    /// `self.is_modally_tied() && self.is_antimodally_tied()`, pinned
+    /// by
+    /// [`tests::modality_class_is_doubly_tied_equals_modal_tied_and_antimodal_tied_conjunction`].
+    /// `false` on [`Self::Empty`] (matching the empty-boundary
+    /// convention shared with the histogram surface — the empty
+    /// histogram surfaces `false` on every per-axis tied read, so the
+    /// conjunction reads `false` as well). Disjoint from
+    /// [`Self::is_doubly_strict_unique`] —
+    /// [`tests::modality_class_is_doubly_strict_unique_and_is_doubly_tied_are_disjoint`]
+    /// pins that the two diagonal-corner predicates never fire on the
+    /// same variant.
+    ///
+    /// Fires uniformly on every uniform-count multi-cell histogram
+    /// shape (every observed cell shares the same count, so the modal
+    /// and antimodal level sets coincide on the support of size
+    /// `distinct_cells() >= 2`) — including every uniform axis cover
+    /// on an axis with cardinality `>= 2`, lockstep with the
+    /// `axis_histogram_modality_class_uniform_count_non_empty_lands_in_both_tied_or_both_strict`
+    /// uniform-count collapse law on the histogram-side surface. A
+    /// consumer monitoring "is the rolling window in the
+    /// fully-degenerate uniform-plateau corner?" now reads one `const`
+    /// projection on the cached class without re-routing through
+    /// [`AxisHistogram::is_uniform_count`] or the conjunction of the
+    /// two per-axis tied reads.
+    #[must_use]
+    pub const fn is_doubly_tied(self) -> bool {
+        matches!(self, Self::TiedModalTiedAntimodal)
+    }
+
     /// Canonical operator-facing lowercase kebab-case name of the
     /// variant — `"empty"`, `"strict-modal-strict-antimodal"`,
     /// `"tied-modal-strict-antimodal"`, `"strict-modal-tied-antimodal"`,
@@ -28635,6 +28711,103 @@ mod tests {
                      (got strict={strict}, tied={tied})",
                 );
             }
+        }
+    }
+
+    #[test]
+    fn modality_class_is_doubly_strict_unique_fires_exactly_on_strict_modal_strict_antimodal() {
+        // The Self::is_doubly_strict_unique const projection fires
+        // exactly on the single StrictModalStrictAntimodal variant —
+        // the diagonal corner of the 2×2 partition where neither
+        // tie-break is exercised. Every other variant (including the
+        // empty boundary) reads false. The single-variant matches!()
+        // is the canonical "no tie-break exercised on either axis"
+        // boolean projected from the variant tag at one const call.
+        for &class in ModalityClass::ALL {
+            let expected = matches!(class, ModalityClass::StrictModalStrictAntimodal);
+            assert_eq!(
+                class.is_doubly_strict_unique(),
+                expected,
+                "is_doubly_strict_unique projection on class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_is_doubly_tied_fires_exactly_on_tied_modal_tied_antimodal() {
+        // The Self::is_doubly_tied const projection fires exactly on
+        // the single TiedModalTiedAntimodal variant — the diagonal
+        // corner of the 2×2 partition where both tie-breaks are
+        // exercised (the canonical uniform-count multi-cell shape's
+        // landing corner). Every other variant (including the empty
+        // boundary) reads false. Orthogonal-corner peer of
+        // is_doubly_strict_unique.
+        for &class in ModalityClass::ALL {
+            let expected = matches!(class, ModalityClass::TiedModalTiedAntimodal);
+            assert_eq!(
+                class.is_doubly_tied(),
+                expected,
+                "is_doubly_tied projection on class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_is_doubly_strict_unique_equals_strict_modal_and_strict_antimodal_conjunction()
+    {
+        // Defining-equivalence law: is_doubly_strict_unique() reads
+        // pointwise the same as the conjunction of the two per-axis
+        // strict-unique predicates across every variant of
+        // ModalityClass::ALL — empty, the four non-empty corners, and
+        // (forward-compatibly under #[non_exhaustive]) every future
+        // variant. Pins the diagonal-corner projection at the per-axis
+        // conjunction it collapses.
+        for &class in ModalityClass::ALL {
+            let conj = class.is_strictly_modally_unique() && class.is_strictly_antimodally_unique();
+            assert_eq!(
+                class.is_doubly_strict_unique(),
+                conj,
+                "is_doubly_strict_unique must equal the per-axis strict-unique conjunction \
+                 on class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_is_doubly_tied_equals_modal_tied_and_antimodal_tied_conjunction() {
+        // Defining-equivalence law: is_doubly_tied() reads pointwise
+        // the same as the conjunction of the two per-axis tied
+        // predicates across every variant. Orthogonal-corner peer of
+        // the doubly-strict-unique equivalence law above.
+        for &class in ModalityClass::ALL {
+            let conj = class.is_modally_tied() && class.is_antimodally_tied();
+            assert_eq!(
+                class.is_doubly_tied(),
+                conj,
+                "is_doubly_tied must equal the per-axis tied conjunction on class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_is_doubly_strict_unique_and_is_doubly_tied_are_disjoint() {
+        // Disjointness law: the two diagonal-corner predicates never
+        // fire on the same variant — by construction each matches a
+        // single-element disjoint subset of ModalityClass::ALL
+        // (StrictModalStrictAntimodal vs. TiedModalTiedAntimodal). The
+        // remaining three variants (Empty, TiedModalStrictAntimodal,
+        // StrictModalTiedAntimodal) read false on both. Pinning the
+        // disjointness at one site so a future rename of either side
+        // that drifts the predicate boundaries breaks here rather than
+        // silently double-counting a classifier corner in a rollup.
+        for &class in ModalityClass::ALL {
+            let strict = class.is_doubly_strict_unique();
+            let tied = class.is_doubly_tied();
+            assert!(
+                !(strict && tied),
+                "doubly-strict-unique and doubly-tied must be disjoint \
+                 (got strict={strict}, tied={tied}) on class {class:?}",
+            );
         }
     }
 
