@@ -4212,6 +4212,190 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         zeros.next().is_some() && zeros.next().is_none()
     }
 
+    /// `true` exactly when the histogram's support sits *strictly between*
+    /// the two singular-cardinality boundaries — at least *two* observed
+    /// cells *and* at least *two* unobserved cells. The
+    /// **strict-partial-cover predicate** on the histogram surface: the
+    /// interior of the
+    /// `(is_empty, has_singular_support, has_strict_partial_cover,
+    /// has_singular_gap, is_full_cover)` 5-corner partition of the
+    /// support-cardinality scalar, sitting strictly inside the
+    /// `has_partial_cover` middle leg of the coarser coverage trichotomy.
+    ///
+    /// Pointwise equivalent to four documented surface predicates that
+    /// previously had no single named boolean —
+    /// `self.has_partial_cover() && !self.has_singular_support() &&
+    /// !self.has_singular_gap()` (the structural conjunction form on the
+    /// existing named-boundary triad), `1 < self.distinct_cells() &&
+    /// self.distinct_cells() + 1 < axis_cardinality::<A>()` (the
+    /// support-cardinality strict-interval form on the named scalar peer
+    /// with both singular boundaries excluded), `1 < self.unobserved_cells()
+    /// && self.unobserved_cells() + 1 < axis_cardinality::<A>()` (the
+    /// gap-cardinality strict-interval form on the complementary scalar
+    /// peer), and `self.nonzero().nth(1).is_some() &&
+    /// self.unobserved().nth(1).is_some()` (the dual-iterator
+    /// at-least-two-of-each form, which allocates both iterators just to
+    /// peek their second elements) — collapsed to one method call with a
+    /// single-pass scan that short-circuits once it has witnessed both *two*
+    /// zero counts and *two* nonzero counts (the early-exit form bounds
+    /// the cost at four witness cells rather than two full walks of the
+    /// counts vector or two iterator allocations).
+    ///
+    /// **The 5-corner support-cardinality partition.** The boolean surface
+    /// on the support-cardinality scalar now carries the strict 5-corner
+    /// partition
+    /// `(is_empty, has_singular_support, has_strict_partial_cover,
+    /// has_singular_gap, is_full_cover)` — "did the chain see *nothing*?",
+    /// "did the chain see *exactly one* kind?", "did the chain see *some
+    /// but not the singular boundaries*?", "did the chain see *all but
+    /// one* kind?", "did the chain see *every* kind?" — each
+    /// independently checkable in one method call. On every implementor
+    /// with `axis_cardinality::<A>() >= 3` (every cardinality-3+
+    /// implementor on the typescape today) the five corners are pairwise
+    /// disjoint *and* jointly exhaustive: exactly one fires on any
+    /// histogram. On cardinality `2` the two singular corners coincide
+    /// (the cardinality-`2` collapse already pinned on
+    /// [`Self::has_singular_gap`]); on cardinality `1` the empty and
+    /// full-cover corners coincide; on cardinality `0` (no implementor
+    /// today, but structurally permitted by [`ClosedAxis`]) every corner
+    /// collapses onto empty / full-cover. The strict-interior corner
+    /// `has_strict_partial_cover` is the boundary-free middle of the
+    /// partition — every "neither blank, nor singularly-observed, nor
+    /// singularly-missing, nor exhausted" diagnostic, attestation, or
+    /// dashboard cell branches on this corner directly.
+    ///
+    /// **Empty-histogram convention** — returns `false` on every
+    /// implementor: no cell observed, so the "at least two observed" half
+    /// of the conjunction fails uniformly. The named boundary
+    /// [`Self::is_empty`] carries that case.
+    ///
+    /// **Full-cover convention** — returns `false` on every implementor:
+    /// every cell observed, so the "at least two unobserved" half of the
+    /// conjunction fails uniformly. The named boundary
+    /// [`Self::is_full_cover`] carries that case.
+    ///
+    /// **Singleton-observation convention** — every singleton observation
+    /// lands the support cardinality at exactly `1`, so the "at least two
+    /// observed" half fails uniformly. The named boundary
+    /// [`Self::has_singular_support`] carries that case;
+    /// `has_strict_partial_cover` reads `false` on every singleton across
+    /// every implementor.
+    ///
+    /// **Cardinality-conditional reachability.** The strict interior of
+    /// the support-cardinality scalar is reachable only on
+    /// `axis_cardinality::<A>() >= 4` axes: on cardinality `0`, `1`, `2`,
+    /// or `3`, the support values `[0, axis_cardinality]` reach only the
+    /// four named boundary corners (the singular boundaries collide with
+    /// each other on cardinality `2` and sit adjacent at supports `1` and
+    /// `cardinality - 1 == 2` on cardinality `3`), so the
+    /// `[2, axis_cardinality - 2]` strict interior is empty as a set of
+    /// support cardinalities. On every implementor with cardinality `>= 4`
+    /// the strict interior carries witnesses — e.g. on [`Format`]
+    /// (cardinality 4) the strict interior fires at support cardinality
+    /// exactly `2`; on [`crate::AttributionRule`] (cardinality 5) at
+    /// supports `2` and `3`; on [`crate::ShikumiErrorKind`] (cardinality
+    /// 6) at supports `2`, `3`, and `4`.
+    ///
+    /// **Companion invariants** with [`Self::is_empty`],
+    /// [`Self::is_full_cover`], [`Self::has_partial_cover`],
+    /// [`Self::has_singular_support`], [`Self::has_singular_gap`],
+    /// [`Self::distinct_cells`], [`Self::unobserved_cells`], and
+    /// [`Self::merge`]:
+    /// - `has_strict_partial_cover() ⇔ has_partial_cover() &&
+    ///   !has_singular_support() && !has_singular_gap()` — the defining
+    ///   equivalence on the existing named-boundary triad: the strict
+    ///   interior is exactly the partial-cover middle leg minus its two
+    ///   singular-cardinality corners.
+    /// - `has_strict_partial_cover() ⇔ 1 < distinct_cells() &&
+    ///   distinct_cells() + 1 < axis_cardinality::<A>()` — the
+    ///   support-cardinality strict-interval form on the named scalar
+    ///   peer with *both* singular boundaries excluded. Peer of
+    ///   `has_partial_cover() ⇔ 0 < distinct_cells() && distinct_cells()
+    ///   < axis_cardinality::<A>()` on the coarser middle leg of the
+    ///   coverage trichotomy.
+    /// - `has_strict_partial_cover() ⇔ 1 < unobserved_cells() &&
+    ///   unobserved_cells() + 1 < axis_cardinality::<A>()` — the
+    ///   gap-cardinality strict-interval form via the
+    ///   `distinct_cells + unobserved_cells == axis_cardinality`
+    ///   partition invariant.
+    /// - `has_strict_partial_cover() ⇒ has_partial_cover()` always:
+    ///   the strict interior sits inside the partial-cover middle leg.
+    ///   The converse fails at both singular corners — the two singular
+    ///   boundaries `has_singular_support` and `has_singular_gap` carry
+    ///   the cells of the partial-cover middle leg that
+    ///   `has_strict_partial_cover` excludes.
+    /// - `(has_singular_support, has_strict_partial_cover,
+    ///   has_singular_gap)` is pairwise disjoint on every implementor
+    ///   with `axis_cardinality::<A>() >= 3`: distinct support
+    ///   cardinalities (1, `[2, cardinality - 2]`, `cardinality - 1`)
+    ///   never overlap. Together with the two boundary corners, the five
+    ///   predicates partition every histogram on every cardinality-`>= 3`
+    ///   axis.
+    /// - The merge behavior is *non-monotonic*: merging two
+    ///   strict-interior histograms can produce a strict-interior merge
+    ///   (when the union of supports stays strictly between the singular
+    ///   boundaries), a singular-gap merge (when the union covers all
+    ///   but one cell), or a full-cover merge (when the union exhausts
+    ///   the axis); merging two non-strict-interior histograms can
+    ///   produce a strict-interior merge when the union grows past the
+    ///   singular-support corner without reaching the singular-gap
+    ///   corner. The empty-identity law holds:
+    ///   `merge(self, empty).has_strict_partial_cover() ==
+    ///   self.has_strict_partial_cover()`.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the twenty
+    /// closed-enum axis primitives plus the five product cubes — twenty-
+    /// five today, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]) inherits the
+    /// predicate at no per-axis cost. The three trait-uniform laws pinned
+    /// in [`tests`] hold across the implementor set
+    /// (`axis_histogram_has_strict_partial_cover_empty_is_false_*`,
+    /// `axis_histogram_has_strict_partial_cover_singleton_is_false_*`,
+    /// `axis_histogram_has_strict_partial_cover_axis_cover_is_false_*`).
+    ///
+    /// **The boundary-free interior of the support-cardinality scalar.**
+    /// Where [`Self::has_partial_cover`] reads the *coarse* "neither
+    /// empty nor full" middle leg of the (`is_empty`,
+    /// `has_partial_cover`, `is_full_cover`) coverage trichotomy,
+    /// `has_strict_partial_cover` reads the *strict* interior of the
+    /// support-cardinality interval — the partial-cover middle leg with
+    /// both singular-cardinality corners (`has_singular_support` and
+    /// `has_singular_gap`) excluded. Before this lift, every consumer
+    /// asking *"is the chain in the interior of the support-cardinality
+    /// scalar — neither on a singular boundary nor on a coverage
+    /// boundary?"* re-derived the predicate inline as
+    /// `hist.has_partial_cover() && !hist.has_singular_support() &&
+    /// !hist.has_singular_gap()` (three method calls and two negations
+    /// across three named predicates), as `1 < hist.distinct_cells() &&
+    /// hist.distinct_cells() + 1 < axis_cardinality::<C>()` (importing
+    /// [`axis_cardinality`], turbofish-naming the axis, and writing the
+    /// `+ 1 <` strict-bound arithmetic at the call site), or as
+    /// `hist.nonzero().nth(1).is_some() && hist.unobserved().nth(1).is_some()`
+    /// (allocating both iterators just to peek at their second elements).
+    /// The lift names the strict interior directly at one site — the
+    /// typed boolean every "support is in the interior of the
+    /// `[2, cardinality - 2]` range" attestation reads off as a single
+    /// method call, and the 5-corner support-cardinality strict partition
+    /// (`is_empty`, `has_singular_support`, `has_strict_partial_cover`,
+    /// `has_singular_gap`, `is_full_cover`) becomes a pinned structural
+    /// law on every cardinality-`>= 3` implementor.
+    #[must_use]
+    pub fn has_strict_partial_cover(&self) -> bool {
+        let mut zeros: u8 = 0;
+        let mut nonzeros: u8 = 0;
+        for &c in &self.counts {
+            if c == 0 {
+                zeros = zeros.saturating_add(1);
+            } else {
+                nonzeros = nonzeros.saturating_add(1);
+            }
+            if zeros >= 2 && nonzeros >= 2 {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Pointwise sum with `other` — the monoid operation. Every cell
     /// becomes `self.count(v) + other.count(v)`. Commutative,
     /// associative, identity at [`Self::empty`]. The natural shape for
@@ -26222,6 +26406,515 @@ mod tests {
         assert_eq!(
             empty_with_empty.has_singular_gap(),
             empty_hist.has_singular_gap(),
+        );
+    }
+
+    // ---- AxisHistogram::has_strict_partial_cover trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the
+    // strict-partial-cover predicate's contract holds uniformly without
+    // per-axis test duplication: empty → false, singleton → false, axis-
+    // cover → false. Concrete pins on the defining structural form
+    // (against the existing named-boundary triad on [`Format`]
+    // cardinality 4), the support-cardinality strict-interval form
+    // (against `1 < distinct_cells && distinct_cells + 1 < cardinality`
+    // on [`ShikumiErrorKind`] cardinality 6), the cardinality-`<= 3`
+    // vacuity laws (`DiffLineKind` and `PartitionFace` — both read
+    // `false` uniformly across every canonical shape because the
+    // `[2, cardinality - 2]` strict interval is empty as a set of
+    // support cardinalities), the implication into
+    // [`AxisHistogram::has_partial_cover`] on the partial-cover middle
+    // leg, the pairwise disjointness with the two singular boundaries on
+    // cardinality `>= 3`, the support-cardinality 5-corner partition pin
+    // on [`ShikumiErrorKind`], and the merge non-monotonicity follow
+    // below.
+
+    fn assert_has_strict_partial_cover_empty_is_false<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The empty histogram has zero observed cells, so the "at least
+        // two observed" half of the conjunction fails uniformly. The
+        // named boundary `is_empty` carries that case; the strict
+        // interior reads `false` uniformly across the implementor set
+        // independently of cardinality.
+        let hist = AxisHistogram::<A>::empty();
+        assert!(
+            !hist.has_strict_partial_cover(),
+            "empty histogram has_strict_partial_cover must be false on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_has_strict_partial_cover_singleton_is_false<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Every singleton observation lands the support cardinality at
+        // exactly `1`, so the "at least two observed" half of the
+        // conjunction fails uniformly. The named boundary
+        // `has_singular_support` carries that case; the strict interior
+        // reads `false` uniformly across the implementor set on every
+        // singleton independently of cardinality.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert!(
+                !hist.has_strict_partial_cover(),
+                "singleton has_strict_partial_cover must be false \
+                 for observed cell {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_has_strict_partial_cover_axis_cover_is_false<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once drives the unobserved-
+        // cardinality to `0`, so the "at least two unobserved" half of
+        // the conjunction fails uniformly. The named boundary
+        // `is_full_cover` carries that case; the strict interior reads
+        // `false` uniformly across the implementor set independently of
+        // cardinality. Peer of `has_partial_cover_axis_cover_is_false`
+        // and `has_singular_gap_axis_cover_is_false` on the full-cover
+        // boundary corner of the support-cardinality scalar.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert!(
+            !hist.has_strict_partial_cover(),
+            "uniform axis-cover has_strict_partial_cover must be false on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_has_strict_partial_cover_empty_is_false_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_strict_partial_cover_empty_is_false::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_strict_partial_cover_singleton_is_false_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_strict_partial_cover_singleton_is_false::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_strict_partial_cover_axis_cover_is_false_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_strict_partial_cover_axis_cover_is_false::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_strict_partial_cover_equals_has_partial_cover_and_not_singular_boundaries()
+     {
+        // The defining structural form: `has_strict_partial_cover` reads
+        // the same boolean as the open-coded
+        // `has_partial_cover() && !has_singular_support() && !has_singular_gap()`
+        // form every consumer would otherwise re-derive inline across
+        // three named predicates and two negations. Pinned pointwise
+        // across the canonical observation-mix shapes on [`Format`]
+        // (cardinality 4 — the smallest implementor on the typescape
+        // today where the strict interior carries a witness; the strict
+        // interval `[2, 2]` of support cardinalities reaches one cell,
+        // exactly at support cardinality `2`). The five reachable
+        // shapes on Format are empty (support 0), singleton (support 1),
+        // two-cell (support 2 — the unique strict-interior witness on
+        // cardinality 4), three-cell (support 3 == cardinality - 1 —
+        // singular-gap), and axis-cover (support 4 — full-cover).
+        let inputs: [&[Format]; 5] = [
+            &[],
+            &[Format::Yaml],
+            &[Format::Yaml, Format::Toml],
+            &[Format::Yaml, Format::Toml, Format::Lisp],
+            &[Format::Yaml, Format::Toml, Format::Lisp, Format::Nix],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<Format> = input.iter().copied().collect();
+            assert_eq!(
+                hist.has_strict_partial_cover(),
+                hist.has_partial_cover()
+                    && !hist.has_singular_support()
+                    && !hist.has_singular_gap(),
+                "has_strict_partial_cover must equal \
+                 (has_partial_cover && !has_singular_support && !has_singular_gap) \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_strict_partial_cover_equals_distinct_cells_strict_interior() {
+        // The support-cardinality strict-interval form on the named
+        // scalar peer: `has_strict_partial_cover` reads the same boolean
+        // as `1 < distinct_cells() && distinct_cells() + 1 <
+        // axis_cardinality::<A>()` — the strict open interval
+        // `(1, axis_cardinality::<A>() - 1)` of distinct-cell counts is
+        // exactly the strict interior of the support-cardinality scalar.
+        // Pinned on [`ShikumiErrorKind`] (cardinality 6) so the strict
+        // interior is exercised at multiple distinct support values
+        // (2, 3, 4) rather than the cardinality-4 single-witness case.
+        // Peer of `axis_histogram_has_partial_cover_equals_distinct_cells_strict_interval`
+        // on the coarser middle leg of the coverage trichotomy.
+        let cardinality = axis_cardinality::<ShikumiErrorKind>();
+        let inputs: [&[ShikumiErrorKind]; 7] = [
+            &[],
+            &[ShikumiErrorKind::NotFound],
+            &[ShikumiErrorKind::NotFound, ShikumiErrorKind::Parse],
+            &[
+                ShikumiErrorKind::NotFound,
+                ShikumiErrorKind::Parse,
+                ShikumiErrorKind::Watch,
+            ],
+            &[
+                ShikumiErrorKind::NotFound,
+                ShikumiErrorKind::Parse,
+                ShikumiErrorKind::Watch,
+                ShikumiErrorKind::Io,
+            ],
+            &[
+                ShikumiErrorKind::NotFound,
+                ShikumiErrorKind::Parse,
+                ShikumiErrorKind::Watch,
+                ShikumiErrorKind::Io,
+                ShikumiErrorKind::Figment,
+            ],
+            &[
+                ShikumiErrorKind::NotFound,
+                ShikumiErrorKind::Parse,
+                ShikumiErrorKind::Watch,
+                ShikumiErrorKind::Io,
+                ShikumiErrorKind::Figment,
+                ShikumiErrorKind::Extract,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<ShikumiErrorKind> = input.iter().copied().collect();
+            let distinct = hist.distinct_cells();
+            assert_eq!(
+                hist.has_strict_partial_cover(),
+                1 < distinct && distinct + 1 < cardinality,
+                "has_strict_partial_cover must equal \
+                 (1 < distinct_cells && distinct_cells + 1 < axis_cardinality) \
+                 on input of length {}; distinct={}, cardinality={}",
+                input.len(),
+                distinct,
+                cardinality,
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_strict_partial_cover_vacuous_on_cardinality_three() {
+        // On every cardinality-3 axis (DiffLineKind today), the
+        // `[2, cardinality - 2] == [2, 1]` strict interval of support
+        // cardinalities is empty as a set: the two singular boundaries
+        // sit adjacent at supports `1` and `cardinality - 1 == 2`, with
+        // no room for a strict interior. So `has_strict_partial_cover`
+        // reads `false` uniformly on every reachable shape, independently
+        // of the histogram content. Pinned at every distinct shape on
+        // DiffLineKind (empty, singleton, two-cell partial = singular-
+        // gap on cardinality 3, axis-cover) so the cardinality-3 vacuity
+        // law is exercised at every reachable support value.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        let two_cell: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Removed]
+            .into_iter()
+            .collect();
+        let axis_cover: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        for hist in [&empty, &singleton, &two_cell, &axis_cover] {
+            assert!(
+                !hist.has_strict_partial_cover(),
+                "has_strict_partial_cover must be false uniformly on cardinality-3 \
+                 axes (distinct_cells={})",
+                hist.distinct_cells(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_strict_partial_cover_vacuous_on_cardinality_two() {
+        // On every cardinality-2 axis (PartitionFace and SecretRefShape
+        // today), the `[2, cardinality - 2] == [2, 0]` strict interval is
+        // empty as a set: there is no room between the two boundary
+        // corners. So `has_strict_partial_cover` reads `false` uniformly
+        // on every reachable shape independently of the histogram
+        // content. Pinned at every distinct shape on PartitionFace
+        // (empty, two singletons sitting on both singular boundaries
+        // simultaneously per the cardinality-2 collapse, axis-cover) so
+        // the cardinality-2 vacuity law is exercised at every reachable
+        // support value.
+        let empty: AxisHistogram<PartitionFace> = AxisHistogram::empty();
+        let realizable_only: AxisHistogram<PartitionFace> =
+            std::iter::once(PartitionFace::Realizable).collect();
+        let unrealizable_only: AxisHistogram<PartitionFace> =
+            std::iter::once(PartitionFace::Unrealizable).collect();
+        let axis_cover: AxisHistogram<PartitionFace> = axis_iter::<PartitionFace>().collect();
+        for hist in [&empty, &realizable_only, &unrealizable_only, &axis_cover] {
+            assert!(
+                !hist.has_strict_partial_cover(),
+                "has_strict_partial_cover must be false uniformly on cardinality-2 \
+                 axes (distinct_cells={})",
+                hist.distinct_cells(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_strict_partial_cover_implies_has_partial_cover() {
+        // The implication law: `has_strict_partial_cover ⇒
+        // has_partial_cover` always. The strict interior sits inside the
+        // partial-cover middle leg of the coverage trichotomy by
+        // construction. The converse fails at both singular corners — the
+        // singleton on Format reads `has_partial_cover = true` but
+        // `has_strict_partial_cover = false` (sits on the singular-
+        // support boundary). Pinned on Format with one interior witness
+        // (the implication side) and two boundary witnesses (the
+        // converse-fails sides, singular-support and singular-gap).
+        let two_cell: AxisHistogram<Format> = [Format::Yaml, Format::Toml].into_iter().collect();
+        assert!(two_cell.has_strict_partial_cover());
+        assert!(two_cell.has_partial_cover());
+
+        let singleton: AxisHistogram<Format> = std::iter::once(Format::Yaml).collect();
+        assert!(!singleton.has_strict_partial_cover());
+        assert!(singleton.has_partial_cover());
+
+        let three_cell: AxisHistogram<Format> = [Format::Yaml, Format::Toml, Format::Lisp]
+            .into_iter()
+            .collect();
+        assert!(!three_cell.has_strict_partial_cover());
+        assert!(three_cell.has_partial_cover());
+    }
+
+    #[test]
+    fn axis_histogram_has_strict_partial_cover_disjoint_from_singular_boundaries() {
+        // The pairwise disjointness law on the singular-cardinality
+        // boundary triple: `(has_singular_support, has_strict_partial_cover,
+        // has_singular_gap)` is pairwise disjoint on every implementor
+        // with `axis_cardinality::<A>() >= 3`. The three predicates fire
+        // on support cardinalities `1`, `[2, cardinality - 2]`, and
+        // `cardinality - 1` respectively — three non-overlapping
+        // intervals. Pinned on [`ShikumiErrorKind`] (cardinality 6) at
+        // every reachable support cardinality (0 through 6).
+        let inputs: [&[ShikumiErrorKind]; 7] = [
+            &[],
+            &[ShikumiErrorKind::NotFound],
+            &[ShikumiErrorKind::NotFound, ShikumiErrorKind::Parse],
+            &[
+                ShikumiErrorKind::NotFound,
+                ShikumiErrorKind::Parse,
+                ShikumiErrorKind::Watch,
+            ],
+            &[
+                ShikumiErrorKind::NotFound,
+                ShikumiErrorKind::Parse,
+                ShikumiErrorKind::Watch,
+                ShikumiErrorKind::Io,
+            ],
+            &[
+                ShikumiErrorKind::NotFound,
+                ShikumiErrorKind::Parse,
+                ShikumiErrorKind::Watch,
+                ShikumiErrorKind::Io,
+                ShikumiErrorKind::Figment,
+            ],
+            &[
+                ShikumiErrorKind::NotFound,
+                ShikumiErrorKind::Parse,
+                ShikumiErrorKind::Watch,
+                ShikumiErrorKind::Io,
+                ShikumiErrorKind::Figment,
+                ShikumiErrorKind::Extract,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<ShikumiErrorKind> = input.iter().copied().collect();
+            let support = u8::from(hist.has_singular_support());
+            let interior = u8::from(hist.has_strict_partial_cover());
+            let gap = u8::from(hist.has_singular_gap());
+            assert!(
+                support + interior + gap <= 1,
+                "(has_singular_support, has_strict_partial_cover, has_singular_gap) \
+                 must be pairwise disjoint on cardinality-≥ 3 axes \
+                 (support+interior+gap = {} on input of length {})",
+                support + interior + gap,
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_support_cardinality_five_corner_partition_on_shikumi_error_kind() {
+        // The strict 5-corner partition law over
+        // `(is_empty, has_singular_support, has_strict_partial_cover,
+        // has_singular_gap, is_full_cover)`, pinned at every distinct
+        // support cardinality reachable on [`ShikumiErrorKind`]
+        // (cardinality 6): support 0 → empty, support 1 → singular-
+        // support, supports 2/3/4 → strict-interior, support 5 →
+        // singular-gap, support 6 → full-cover. On every shape, exactly
+        // one corner fires; the `e + s + i + g + f == 1` arithmetic
+        // invariant pins the strict-partition law at one site (peer to
+        // the `coverage_trichotomy_partitions_every_histogram` pin on the
+        // coarser 3-corner trichotomy). The pin closes the
+        // support-cardinality scalar surface as a 5-cell strict partition
+        // on cardinality-≥ 3 axes.
+        let shapes: [&[ShikumiErrorKind]; 7] = [
+            &[],
+            &[ShikumiErrorKind::NotFound],
+            &[ShikumiErrorKind::NotFound, ShikumiErrorKind::Parse],
+            &[
+                ShikumiErrorKind::NotFound,
+                ShikumiErrorKind::Parse,
+                ShikumiErrorKind::Watch,
+            ],
+            &[
+                ShikumiErrorKind::NotFound,
+                ShikumiErrorKind::Parse,
+                ShikumiErrorKind::Watch,
+                ShikumiErrorKind::Io,
+            ],
+            &[
+                ShikumiErrorKind::NotFound,
+                ShikumiErrorKind::Parse,
+                ShikumiErrorKind::Watch,
+                ShikumiErrorKind::Io,
+                ShikumiErrorKind::Figment,
+            ],
+            &[
+                ShikumiErrorKind::NotFound,
+                ShikumiErrorKind::Parse,
+                ShikumiErrorKind::Watch,
+                ShikumiErrorKind::Io,
+                ShikumiErrorKind::Figment,
+                ShikumiErrorKind::Extract,
+            ],
+        ];
+        for shape in shapes {
+            let hist: AxisHistogram<ShikumiErrorKind> = shape.iter().copied().collect();
+            let empty = u8::from(hist.is_empty());
+            let support = u8::from(hist.has_singular_support());
+            let interior = u8::from(hist.has_strict_partial_cover());
+            let gap = u8::from(hist.has_singular_gap());
+            let full = u8::from(hist.is_full_cover());
+            assert_eq!(
+                empty + support + interior + gap + full,
+                1,
+                "(is_empty, has_singular_support, has_strict_partial_cover, \
+                 has_singular_gap, is_full_cover) must be a strict partition \
+                 (exactly one corner fires) on shape of length {}; \
+                 (empty,support,interior,gap,full) = ({},{},{},{},{})",
+                shape.len(),
+                empty,
+                support,
+                interior,
+                gap,
+                full,
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_strict_partial_cover_after_merge_is_non_monotone() {
+        // The merge behavior on `has_strict_partial_cover` is
+        // *non-monotonic*: merging two strict-interior histograms can
+        // produce a strict-interior merge (when the union of supports
+        // stays strictly between the singular boundaries), a singular-
+        // gap merge (when the union covers all but one cell), or a
+        // full-cover merge (when the union exhausts the axis); merging
+        // an empty histogram with a strict-interior histogram preserves
+        // strict-interior (the empty-identity law). Pinned with three
+        // witnesses spanning the merge surface on [`ShikumiErrorKind`]
+        // (cardinality 6, where the strict interior reaches supports 2,
+        // 3, and 4), plus the empty-identity law.
+
+        // Witness 1: strict-interior ⊕ strict-interior on overlapping
+        // supports → strict-interior merge (union of supports stays in
+        // the `[2, 4]` strict interval on cardinality 6).
+        let two_cell: AxisHistogram<ShikumiErrorKind> =
+            [ShikumiErrorKind::NotFound, ShikumiErrorKind::Parse]
+                .into_iter()
+                .collect();
+        let two_cell_overlap: AxisHistogram<ShikumiErrorKind> =
+            [ShikumiErrorKind::Parse, ShikumiErrorKind::Watch]
+                .into_iter()
+                .collect();
+        assert!(two_cell.has_strict_partial_cover());
+        assert!(two_cell_overlap.has_strict_partial_cover());
+        let merged_strict = two_cell.clone().merge(&two_cell_overlap);
+        assert!(merged_strict.has_strict_partial_cover());
+
+        // Witness 2: strict-interior ⊕ strict-interior on disjoint
+        // supports whose union reaches `cardinality - 1` → singular-gap
+        // merge (loses the strict interior on the singular-gap
+        // boundary). Two two-cell shapes with disjoint supports of size
+        // 2 each whose union has size 4 — still strict interior — then
+        // adding another cell to reach support 5 = singular-gap.
+        let four_cell: AxisHistogram<ShikumiErrorKind> = [
+            ShikumiErrorKind::NotFound,
+            ShikumiErrorKind::Parse,
+            ShikumiErrorKind::Watch,
+            ShikumiErrorKind::Io,
+        ]
+        .into_iter()
+        .collect();
+        let one_cell: AxisHistogram<ShikumiErrorKind> =
+            std::iter::once(ShikumiErrorKind::Figment).collect();
+        assert!(four_cell.has_strict_partial_cover());
+        let merged_gap = four_cell.clone().merge(&one_cell);
+        assert!(!merged_gap.has_strict_partial_cover());
+        assert!(merged_gap.has_singular_gap());
+
+        // Witness 3: strict-interior ⊕ disjoint cover → full-cover
+        // merge (loses the strict interior on the full-cover boundary).
+        let three_cell: AxisHistogram<ShikumiErrorKind> = [
+            ShikumiErrorKind::NotFound,
+            ShikumiErrorKind::Parse,
+            ShikumiErrorKind::Watch,
+        ]
+        .into_iter()
+        .collect();
+        let other_three_cell: AxisHistogram<ShikumiErrorKind> = [
+            ShikumiErrorKind::Io,
+            ShikumiErrorKind::Figment,
+            ShikumiErrorKind::Extract,
+        ]
+        .into_iter()
+        .collect();
+        assert!(three_cell.has_strict_partial_cover());
+        assert!(other_three_cell.has_strict_partial_cover());
+        let merged_full = three_cell.clone().merge(&other_three_cell);
+        assert!(!merged_full.has_strict_partial_cover());
+        assert!(merged_full.is_full_cover());
+
+        // Empty-identity law: merging with the empty histogram leaves
+        // `has_strict_partial_cover` unchanged on every input. Pinned
+        // with a strict-interior input and an empty input.
+        let empty_hist: AxisHistogram<ShikumiErrorKind> = AxisHistogram::empty();
+        let strict_with_empty = two_cell.clone().merge(&empty_hist);
+        assert_eq!(
+            strict_with_empty.has_strict_partial_cover(),
+            two_cell.has_strict_partial_cover(),
+        );
+        let empty_with_empty = empty_hist.clone().merge(&empty_hist);
+        assert_eq!(
+            empty_with_empty.has_strict_partial_cover(),
+            empty_hist.has_strict_partial_cover(),
         );
     }
 
