@@ -4782,6 +4782,84 @@ impl<A: ClosedAxis> std::ops::Mul<usize> for &AxisHistogram<A> {
     }
 }
 
+impl<A: ClosedAxis> std::ops::Div<usize> for &AxisHistogram<A> {
+    type Output = AxisHistogram<A>;
+
+    /// Borrowed-receiver peer of [`Div<usize> for AxisHistogram<A>`][Div]
+    /// — `&hist / divisor` reads the same histogram as `hist.clone() /
+    /// divisor` but keeps the caller's ownership of `hist`. Closes the
+    /// canonical Rust (owned-receiver, borrowed-receiver) idiom-peer
+    /// pair on the truncating-division entry surface, the
+    /// truncating-division dual of the same pair on the
+    /// scalar-multiplication surface ([`Mul<usize> for
+    /// AxisHistogram<A>`][Mul] / [`Mul<usize> for
+    /// &AxisHistogram<A>`][MulRef]). The two corners of the
+    /// truncating-division receiver-ownership matrix — `hist / divisor`,
+    /// `&hist / divisor` — now both route through the in-place
+    /// [`DivAssign<usize>`][DivAssign] primitive at exactly one site;
+    /// the per-cell truncating-division loop lives at one site
+    /// underneath every entry surface (owned-receiver, borrowed-
+    /// receiver, in-place).
+    ///
+    /// Before this lift, every consumer wanting the truncating-division
+    /// shape against a borrowed histogram (a rolling-window observatory
+    /// averaging `&cached_hist / N` against an
+    /// [`arc_swap::Guard`]-loaded snapshot it must not consume; a fleet
+    /// aggregator normalizing `&host_hist / host_count` over a
+    /// `&BTreeMap<HostId, AxisHistogram<A>>` it does not own; a
+    /// per-tier observatory de-amplifying `&weighted_hist / weight`
+    /// against an indexed slice of histograms it iterates non-
+    /// destructively) had to rewrite to the hand-applied clone form
+    /// `cached_hist.clone() / N` (which duplicates the clone at every
+    /// call site) or the open-coded per-cell map
+    /// `cached_hist.iter().map(|(c, n)| (c, n / N)).collect()` (which
+    /// re-expands every observation through repeated `observe`,
+    /// O(divisor · total)). The lift names the projection at one site,
+    /// consumers route through `&hist / divisor` uniformly, and the
+    /// per-cell loop lives at exactly one site (the
+    /// [`DivAssign<usize>`][DivAssign] impl) underneath every
+    /// truncating-division entry surface.
+    ///
+    /// **Borrowed-owned receiver agreement law** — `&hist / divisor`
+    /// is pointwise equal to `hist.clone() / divisor` for every
+    /// `(hist, divisor)` with `divisor > 0`. The canonical
+    /// (owned-receiver, borrowed-receiver) idiom-peer agreement on a
+    /// [`usize`]-action surface; the truncating-division dual of the
+    /// borrowed-owned receiver agreement
+    /// `&hist * n == hist.clone() * n` on the multiplicative side.
+    /// Pinned by the trait-uniform test
+    /// `axis_histogram_div_right_divisor_borrowed_equals_owned_for_every_closed_axis_implementor`
+    /// in [`tests`]. Inherits every law the owned-receiver
+    /// truncating-division surface carries — the (`Div`, `DivAssign`)
+    /// equivalence
+    /// (`(&hist / divisor).clone() == { let mut a = hist.clone(); a /= divisor; a }`),
+    /// the one-divisor identity law (`&hist / 1 == hist.clone()`), the
+    /// Mul-Div round-trip law on a non-zero factor with no overflow
+    /// (`&(hist * factor) / factor == hist` when `factor > 0`), and
+    /// the cell-level truncating-division law
+    /// (`(&hist / divisor).count(v) == hist.count(v) / divisor`) — by
+    /// the borrowed-owned agreement at one site.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The trait-uniform borrowed-
+    /// owned receiver agreement law pinned in [`tests`] holds across
+    /// the implementor set
+    /// (`axis_histogram_div_right_divisor_borrowed_equals_owned_*`).
+    ///
+    /// # Panics
+    ///
+    /// Panics on `divisor == 0`. Inherits the panic contract from
+    /// [`DivAssign<usize>`][DivAssign].
+    ///
+    /// [Div]: std::ops::Div
+    /// [DivAssign]: std::ops::DivAssign
+    /// [Mul]: std::ops::Mul
+    /// [MulRef]: std::ops::Mul
+    fn div(self, divisor: usize) -> Self::Output {
+        self.clone() / divisor
+    }
+}
+
 impl<A: ClosedAxis> std::ops::Index<A> for AxisHistogram<A> {
     type Output = usize;
 
@@ -17248,6 +17326,93 @@ mod tests {
         assert_eq!(lossy.count(DiffLineKind::Removed), 4);
         assert_eq!(lossy.count(DiffLineKind::Context), 4);
         assert_ne!(lossy, pre);
+    }
+
+    fn assert_div_right_divisor_borrowed_equals_owned<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (owned-receiver, borrowed-receiver) idiom-peer agreement
+        // law on the truncating-division `/` operator surface: `&hist
+        // / divisor` is pointwise equal to `hist.clone() / divisor`.
+        // The truncating-division dual of the `&hist * n ==
+        // hist.clone() * n` borrowed-owned receiver agreement law on
+        // the multiplicative side — same projection, two receiver-
+        // ownership shapes, both lowering through the in-place
+        // `DivAssign<usize>` form at one site so the per-cell `/=`
+        // loop lives at one site underneath every truncating-division
+        // entry. Pinned at divisors 1, 2, 5, 11 so the identity and
+        // three non-trivial divisors witness the borrowed-owned
+        // agreement uniformly across every closed-axis implementor.
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for divisor in [1usize, 2, 5, 11] {
+            let via_borrowed = &hist / divisor;
+            let via_owned = hist.clone() / divisor;
+            assert_eq!(
+                via_borrowed,
+                via_owned,
+                "&hist / {divisor} must equal hist.clone() / {divisor} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_div_right_divisor_borrowed_equals_owned_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_div_right_divisor_borrowed_equals_owned::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_div_right_divisor_borrowed_witnessed_on_non_trivial_cells_for_diff_line_kind()
+    {
+        // The borrowed-receiver truncating-division surface on the `/`
+        // operator against [`DiffLineKind`] — the dual of
+        // `axis_histogram_div_witnessed_on_non_trivial_cells_for_diff_line_kind`
+        // on the borrowed-receiver entry, peer to
+        // `axis_histogram_mul_right_factor_borrowed_distributes_over_add_for_diff_line_kind`
+        // on the borrowed-receiver scalar-multiplication side. `pre`
+        // carries counts (Added: 7, Removed: 5, Context: 4); `&pre /
+        // 2` reads (Added: 3, Removed: 2, Context: 2) — every cell
+        // independently truncates toward zero under usize arithmetic
+        // through the borrowed-receiver entry, with `pre` retained
+        // intact across the projection (the borrowed-receiver form's
+        // ownership contract).
+        let pre: AxisHistogram<DiffLineKind> = [
+            (DiffLineKind::Added, 7usize),
+            (DiffLineKind::Removed, 5),
+            (DiffLineKind::Context, 4),
+        ]
+        .into_iter()
+        .collect();
+        let divisor = 2usize;
+
+        let via_borrowed = &pre / divisor;
+        assert_eq!(via_borrowed.count(DiffLineKind::Added), 3);
+        assert_eq!(via_borrowed.count(DiffLineKind::Removed), 2);
+        assert_eq!(via_borrowed.count(DiffLineKind::Context), 2);
+        assert_eq!(via_borrowed.total(), 7);
+
+        // Borrowed-receiver contract: `pre` survives the projection
+        // intact (the original counts read back through their owned
+        // surface after the borrowed-receiver truncating division).
+        assert_eq!(pre.count(DiffLineKind::Added), 7);
+        assert_eq!(pre.count(DiffLineKind::Removed), 5);
+        assert_eq!(pre.count(DiffLineKind::Context), 4);
+        assert_eq!(pre.total(), 16);
+
+        // (owned-receiver, borrowed-receiver) idiom-peer agreement at
+        // the concrete pin: `&pre / divisor` reads the same histogram
+        // as `pre.clone() / divisor`.
+        assert_eq!(via_borrowed, pre.clone() / divisor);
+
+        // One-divisor identity at the concrete pin on the borrowed-
+        // receiver entry: `&pre / 1 == pre.clone()`.
+        assert_eq!(&pre / 1, pre);
     }
 
     // ---- AxisHistogram Euclidean-remainder trait-uniform laws ----
