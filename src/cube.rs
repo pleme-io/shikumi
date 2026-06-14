@@ -1737,6 +1737,150 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         ))
     }
 
+    /// The **cardinality of the antimodal level set** — the number of
+    /// axis cells whose observation count equals the histogram's trough.
+    /// Returns `0` exactly when [`Self::is_empty`] is `true`; otherwise
+    /// returns the count of cells `c` with `count(c) == trough_count() >
+    /// 0`.
+    ///
+    /// The "how many cells share the trough" scalar projection on the
+    /// histogram surface — the *cardinality peer* of
+    /// [`Self::recessive_cell`] (which picks one tied cell by declaration
+    /// order) and the *multiplicity peer* of [`Self::trough_count`]
+    /// (which reads the shared count itself). Closes the trough-side
+    /// projection quadruple `(recessive_cell, trough_count,
+    /// recessive_observation, trough_multiplicity)` — *"which cell
+    /// (one), what count (one), fused pair (one), how many cells (k)"* —
+    /// every consumer-facing summary now reads each projection at one
+    /// method call. Structural dual of [`Self::peak_multiplicity`] on
+    /// the majority side: body is the same single-pass argmin fold over
+    /// `iter().filter(c > 0)` (running min reset-on-fall, increment-on-
+    /// tie) — pointwise the antimodal-side answer to the "how many cells
+    /// share the extreme observation count?" question the majority side
+    /// names through [`Self::peak_multiplicity`].
+    ///
+    /// The natural typed primitive for diagnostic dumps, dashboards,
+    /// attestation manifests, and outlier classifiers asking *"is the
+    /// recessive cell unique, or is the trough shared?"*: the
+    /// *unique-trough* classifier on a per-window
+    /// `AxisHistogram<crate::ShikumiErrorKind>` (the "rarest Io fired
+    /// once alone" vs "Io and Parse both fired once each as the trough"
+    /// diagnostic), the *tie-detector* on a chain's
+    /// [`crate::ConfigSourceChain::file_format_histogram`] (the "is one
+    /// format strictly rarest, or are two tied at the bottom?" gate),
+    /// the *antimodality-degree* attestation on
+    /// [`crate::ConfigSourceChain::layer_kind_histogram`] (the "the
+    /// chain's lightest layer kind fired uniquely / k-way-tied" cell on
+    /// the operator table). Before this lift, every such consumer
+    /// re-derived the projection inline as
+    /// `hist.iter().filter(|&(_, c)| c > 0 && c == hist.trough_count()).count()`
+    /// — a two-pass scan (one to find the trough, one to count ties at
+    /// it), with the silent re-derivation of [`Self::trough_count`] at
+    /// every call site and the implicit dependence on the
+    /// `count > 0` guard to exclude zero-count cells (which would
+    /// otherwise be trivially tied with `trough_count()` on the empty
+    /// histogram, since `trough_count() == 0` would shadow every cell as
+    /// a false-positive tie — the same `c > 0` guard load-bearing on
+    /// the modal side through [`Self::peak_multiplicity`]). The lift
+    /// collapses the projection to one method call with a single-pass
+    /// `O(axis_cardinality)` scan that tracks the running min and
+    /// reset-on-fall count in one fold, excluding zero-count cells by
+    /// construction (`c == 0` skip, `c < min` reset, `c == min`
+    /// increment, with `min` initialized to `usize::MAX` so the first
+    /// positive count promotes the running min off the sentinel).
+    ///
+    /// **Empty-histogram convention** — returns `0` (not `Option<usize>`)
+    /// matching the [`Self::peak_count`], [`Self::trough_count`],
+    /// [`Self::total`], [`Self::distinct_cells`], [`Self::spread`], and
+    /// [`Self::peak_multiplicity`] empty conventions; the scalar peer
+    /// septuple `(total, distinct_cells, peak_count, trough_count,
+    /// spread, peak_multiplicity, trough_multiplicity)` is uniformly
+    /// `(0, 0, 0, 0, 0, 0, 0)` on the empty histogram. The dual-form
+    /// [`Self::recessive_cell`] carries `Option<A>` because the *cell*
+    /// is undefined when no observation has landed; every scalar
+    /// projection on the histogram reads `0` on empty.
+    ///
+    /// **Unique-trough predicate.** `trough_multiplicity() == 1` is the
+    /// typed *strictly-recessive* predicate on the histogram surface:
+    /// the recessive cell stands alone at the trough (no tie). Pointwise
+    /// equivalent to the open-coded `hist.iter().filter(|&(_, c)|
+    /// c > 0 && c == hist.trough_count()).count() == 1` form, but
+    /// surfaced as a named scalar that future predicates and gates
+    /// route through. The contrapositive `trough_multiplicity() >= 2`
+    /// is the *tied-trough* predicate — the declaration-order tie-break
+    /// in [`Self::recessive_cell`] is actually exercised exactly when
+    /// this fires, peer to the [`Self::peak_multiplicity`] tie-detector
+    /// on the modal side.
+    ///
+    /// **Companion invariants** with [`Self::trough_count`],
+    /// [`Self::recessive_cell`], [`Self::distinct_cells`],
+    /// [`Self::is_empty`], [`Self::is_uniform_count`], and
+    /// [`Self::peak_multiplicity`]:
+    /// - `trough_multiplicity() == 0` ⇔ [`Self::is_empty`] is `true`
+    ///   (peer to the empty-histogram boundary [`Self::trough_count`],
+    ///   [`Self::peak_multiplicity`], and [`Self::distinct_cells`] all
+    ///   carry).
+    /// - `trough_multiplicity() <= distinct_cells()` always: the
+    ///   antimodal level set is a subset of the observed support, so
+    ///   its cardinality is bounded above by the support cardinality.
+    ///   Equality holds iff [`Self::is_uniform_count`] is `true` (every
+    ///   observed cell is at the same count, so every observed cell is
+    ///   in the antimodal level set — and simultaneously in the modal
+    ///   level set, since peak and trough coincide).
+    /// - `trough_multiplicity() >= 1` whenever the histogram is
+    ///   non-empty: the recessive cell witnesses one member of the
+    ///   antimodal level set, so the count is at least `1`.
+    /// - `is_uniform_count() ⇒ trough_multiplicity() ==
+    ///   peak_multiplicity() == distinct_cells()` — on a uniformly-
+    ///   observed-count histogram, every observed cell sits at the
+    ///   shared peak *and* the shared trough (the peak and trough
+    ///   coincide), so both multiplicities collapse to the support
+    ///   cardinality. The structural equality between the modal and
+    ///   antimodal level sets on the uniform-count shape.
+    /// - `has_singular_support() ⇒ trough_multiplicity() == 1` — a
+    ///   single observed cell is the only member of the antimodal
+    ///   level set on that histogram (and simultaneously the only
+    ///   member of the modal level set).
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The three trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_trough_multiplicity_empty_is_zero_*`,
+    /// `axis_histogram_trough_multiplicity_singleton_is_one_*`,
+    /// `axis_histogram_trough_multiplicity_axis_cover_is_axis_cardinality_*`).
+    ///
+    /// Peer to [`Self::recessive_cell`] (the *cell* projection picking
+    /// one tied member), [`Self::trough_count`] (the *count* shared by
+    /// the antimodal level set), and [`Self::recessive_observation`]
+    /// (the fused `(cell, count)` pair): the histogram's trough surface
+    /// now carries the (cell, count, fused-pair, multiplicity)
+    /// quadruple — every operator-facing summary reads the named
+    /// projection it needs at one method call each, and the
+    /// *tie-detector* `trough_multiplicity() >= 2` predicate reads off
+    /// as a single scalar comparison. Closes the
+    /// `(peak_multiplicity, trough_multiplicity)` modality-degree pair
+    /// on the multiplicity surface, the bilateral peer of the
+    /// `(peak_count, trough_count)` extremal-count pair on the scalar
+    /// surface and the `(dominant_cell, recessive_cell)` extremal-cell
+    /// pair on the cell surface.
+    #[must_use]
+    pub fn trough_multiplicity(&self) -> usize {
+        let mut min = usize::MAX;
+        let mut multiplicity = 0usize;
+        for &c in &self.counts {
+            if c == 0 {
+                continue;
+            }
+            if c < min {
+                min = c;
+                multiplicity = 1;
+            } else if c == min {
+                multiplicity += 1;
+            }
+        }
+        multiplicity
+    }
+
     /// The **observed-distribution spread** — the difference between the
     /// maximum and minimum observation counts over the histogram's
     /// observed support. Equal to
@@ -21180,6 +21324,297 @@ mod tests {
             with_empty.recessive_observation(),
             added_two.recessive_observation(),
         );
+    }
+
+    // ---- AxisHistogram::trough_multiplicity trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // trough_multiplicity projection's contract holds uniformly without
+    // per-axis test duplication: empty → 0 (no trough, no level set);
+    // singleton → 1 on every cell K (one observed cell stands alone at
+    // its own trough); uniform axis-cover → axis_cardinality::<A>()
+    // (every cell observed exactly once, peak and trough coincide at
+    // the shared count of 1 — the antimodal level set covers the entire
+    // axis). Concrete strict-trough, tied-trough, defining-equivalence,
+    // distinct-cells-bound, and modal-trough-coincidence pins follow
+    // below on [`DiffLineKind`].
+
+    fn assert_trough_multiplicity_empty_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.trough_multiplicity(),
+            0,
+            "empty histogram trough_multiplicity must be 0 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_trough_multiplicity_singleton_is_one<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has trough_multiplicity = 1 —
+        // exactly one cell sits at the trough (the observed cell
+        // itself, count 1; every other cell carries count 0 and is
+        // excluded from the antimodal level set by the `c > 0` guard).
+        // The singleton-support antimodality boundary uniformly across
+        // every closed-axis implementor.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.trough_multiplicity(),
+                1,
+                "singleton trough_multiplicity must equal 1 \
+                 for observed cell {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_trough_multiplicity_axis_cover_is_axis_cardinality<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once produces a uniform
+        // histogram; peak and trough coincide at the shared count of 1,
+        // so every cell sits in the antimodal level set and the
+        // antimodal level set covers the entire axis:
+        // trough_multiplicity == axis_cardinality::<A>(). The
+        // structural witness for the `is_uniform_count ⇒
+        // trough_multiplicity == distinct_cells` companion law at the
+        // maximum-coverage shape (where distinct_cells equals
+        // axis_cardinality), and the modal/antimodal coincidence on
+        // every uniform-count histogram (peak_multiplicity and
+        // trough_multiplicity both read off the same value). Pinned
+        // uniformly across every closed-axis implementor.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            hist.trough_multiplicity(),
+            axis_cardinality::<A>(),
+            "uniform axis-cover histogram trough_multiplicity must equal \
+             axis_cardinality {} on axis {}",
+            axis_cardinality::<A>(),
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_trough_multiplicity_empty_is_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_trough_multiplicity_empty_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_trough_multiplicity_singleton_is_one_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_trough_multiplicity_singleton_is_one::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_trough_multiplicity_axis_cover_is_axis_cardinality_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_trough_multiplicity_axis_cover_is_axis_cardinality::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_trough_multiplicity_equals_open_coded_antimodal_level_set_count() {
+        // The defining equivalence: trough_multiplicity() equals the
+        // open-coded `iter().filter(|&(_, c)| c > 0 && c ==
+        // trough_count()).count()` form pointwise on every histogram.
+        // Pin across the canonical observation-mix shapes (empty,
+        // singleton, unique-min, tied-min, three-way uniform) so a
+        // future regression in either side surfaces here. The `c > 0`
+        // guard matters at the empty boundary: without it the filter
+        // would sweep every zero-count cell into the antimodal level
+        // set on the empty histogram (where trough_count is 0), so the
+        // open-coded form would diverge from the named scalar's `0`
+        // reading — the same load-bearing guard
+        // [`Self::peak_multiplicity`] depends on at the empty boundary.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let trough = hist.trough_count();
+            let open_coded = hist.iter().filter(|&(_, c)| c > 0 && c == trough).count();
+            assert_eq!(
+                hist.trough_multiplicity(),
+                open_coded,
+                "trough_multiplicity must equal open-coded antimodal-level-set count \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_trough_multiplicity_distinguishes_strict_trough_from_tied_trough() {
+        // The unique-trough / tied-trough classifier law: a strictly
+        // recessive histogram reads trough_multiplicity == 1 (the
+        // recessive cell stands alone at the trough — the declaration-
+        // order tie-break is not exercised), and a tied-trough
+        // histogram reads trough_multiplicity >= 2 (the tie-break is
+        // exercised). Pinned on a strict-trough shape (one cell
+        // lighter than the others), a two-way tied-trough shape (two
+        // cells at the same trough), and a three-way tied-trough
+        // shape (the uniform-axis-cover over three cells, where peak
+        // and trough coincide).
+        let strict_trough: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(strict_trough.trough_multiplicity(), 1);
+
+        let two_way_tied: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(two_way_tied.trough_multiplicity(), 2);
+
+        let three_way_tied: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(three_way_tied.trough_multiplicity(), 3);
+    }
+
+    #[test]
+    fn axis_histogram_trough_multiplicity_is_bounded_above_by_distinct_cells() {
+        // The structural-bound law: the antimodal level set is a
+        // subset of the observed support, so its cardinality is
+        // bounded above by distinct_cells. Equality holds iff
+        // is_uniform_count is true (peak and trough coincide, so
+        // every observed cell is in the antimodal level set). Pinned
+        // across the canonical shapes (empty, singleton, strict-trough,
+        // tied-trough-equal-to-support, tied-trough-strict-subset-of-
+        // support) so both the bound and the equality case get tight
+        // witnesses.
+        let strict_subset: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        let uniform_two_cell: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Added, DiffLineKind::Removed]
+                .into_iter()
+                .collect();
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert!(
+                hist.trough_multiplicity() <= hist.distinct_cells(),
+                "trough_multiplicity {} must be <= distinct_cells {} on input of length {}",
+                hist.trough_multiplicity(),
+                hist.distinct_cells(),
+                input.len(),
+            );
+            if hist.is_uniform_count() {
+                assert_eq!(
+                    hist.trough_multiplicity(),
+                    hist.distinct_cells(),
+                    "trough_multiplicity must equal distinct_cells on uniform-count \
+                     histogram (input of length {})",
+                    input.len(),
+                );
+                // On uniform-count histograms, peak and trough
+                // coincide on the count surface, so the multiplicity
+                // surface collapses to a single value too: the modal
+                // and antimodal level sets are the same set.
+                assert_eq!(
+                    hist.trough_multiplicity(),
+                    hist.peak_multiplicity(),
+                    "trough_multiplicity must equal peak_multiplicity on \
+                     uniform-count histogram (input of length {})",
+                    input.len(),
+                );
+            }
+        }
+        // Direct pin on the strict-subset shape: distinct_cells = 3
+        // (Removed: 1, Added: 2, Context: 1), trough_multiplicity = 2
+        // — Removed and Context tie at count 1, strictly below Added
+        // at 2 — so the antimodal level set is a strict subset of the
+        // observed support (2 < 3); the strict-trough (singleton
+        // antimodal level set) witness lives on the
+        // (Added, Added, Removed) shape inside the loop above.
+        assert_eq!(strict_subset.distinct_cells(), 3);
+        assert_eq!(strict_subset.trough_multiplicity(), 2);
+        // Direct pin on the uniform-two-cell shape: distinct_cells = 2,
+        // trough_multiplicity = 2 (every observed cell tied at 1 — peak
+        // and trough coincide).
+        assert_eq!(uniform_two_cell.distinct_cells(), 2);
+        assert_eq!(uniform_two_cell.trough_multiplicity(), 2);
+    }
+
+    #[test]
+    fn axis_histogram_trough_multiplicity_is_zero_iff_is_empty() {
+        // Boundary pin: trough_multiplicity == 0 iff is_empty is true.
+        // The companion-invariant peer to the same boundary equivalence
+        // trough_count, peak_multiplicity, and distinct_cells all carry
+        // — every scalar projection on the histogram surface uses `0`
+        // as its empty-witness, and every non-empty histogram
+        // contributes at least one cell to the antimodal level set.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_empty());
+        assert_eq!(empty.trough_multiplicity(), 0);
+
+        let singleton: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        assert!(!singleton.is_empty());
+        assert!(singleton.trough_multiplicity() >= 1);
     }
 
     // ---- AxisHistogram::spread trait-uniform laws ----
