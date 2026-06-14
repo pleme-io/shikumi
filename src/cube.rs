@@ -1507,6 +1507,118 @@ impl<A: ClosedAxis> AxisHistogram<A> {
             .unwrap_or(0)
     }
 
+    /// The **recessive observation** — the `(cell, count)` pair at the
+    /// histogram's trough. `None` when [`Self::is_empty`] is `true`;
+    /// otherwise `Some((cell, count))` where `cell ==
+    /// recessive_cell().unwrap()` and `count == trough_count()`. Closes
+    /// the *fused* form of the `(recessive_cell, trough_count)` minority
+    /// pair the histogram surface previously carried as two coordinated
+    /// reads of shape `(Option<A>, usize)`, dual to the
+    /// [`Self::dominant_observation`] fusion on the majority side.
+    ///
+    /// The natural typed primitive for diagnostic dumps, dashboards,
+    /// and attestation manifests that need *both* the rarest-observed
+    /// cell and its observation count in the same diagnostic — the
+    /// dashboard line reading `"rarest format: lisp (×1)"` from a
+    /// chain's [`crate::ConfigSourceChain::file_format_histogram`], the
+    /// `"trough error class: Io (×1) — heavy-tail tip"` summary against
+    /// a per-window `AxisHistogram<crate::ShikumiErrorKind>`, the
+    /// structured-log field `{rarest_kind, count}` recording the
+    /// trough diff-line class from
+    /// [`crate::ConfigDiff::kind_histogram`]. Before this lift, every
+    /// such consumer paired two method calls —
+    /// `(hist.recessive_cell(), hist.trough_count())` — yielding the
+    /// awkward `(Option<A>, usize)` shape where the `usize` carries no
+    /// structural signal about the empty case (it reads `0` on empty
+    /// by the `trough_count` empty convention, but the consumer has to
+    /// check the `Option<A>` separately to know whether the `0`
+    /// reflects "no observations" or some cell at count zero — the
+    /// latter never happens since `trough_count` searches the positive
+    /// support, so a non-empty histogram always reads `trough_count >=
+    /// 1`, but the type system does not enforce that). The lift
+    /// collapses the pair into the natural `Option<(A, usize)>` shape
+    /// with one discriminant at the empty boundary, one method call,
+    /// and one single-pass scan over the counts vector (the same fold
+    /// [`Self::recessive_cell`] runs, but returning the pair instead
+    /// of stripping the count).
+    ///
+    /// **Tie-breaking** — pointwise inherits the
+    /// [`Self::recessive_cell`] declaration-order tie-break: when
+    /// multiple cells share the trough count, the cell earliest in
+    /// [`ClosedAxis::ALL`] wins. The fused pair therefore reads
+    /// identically to the open-coded
+    /// `recessive_cell().map(|c| (c, trough_count()))` form on every
+    /// histogram — the lift adds no semantic, only structural
+    /// composition.
+    ///
+    /// **Companion invariants** with [`Self::recessive_cell`],
+    /// [`Self::trough_count`], and [`Self::is_empty`]:
+    /// - `recessive_observation().map(|(c, _)| c) == recessive_cell()`
+    ///   always — the cell projection of the fused pair equals
+    ///   [`Self::recessive_cell`] pointwise on every histogram (both
+    ///   sides agree on the empty case at `None == None` and on the
+    ///   non-empty case at `Some(first-min) == Some(first-min)`).
+    /// - `recessive_observation().map_or(0, |(_, n)| n) ==
+    ///   trough_count()` always — the count projection of the fused
+    ///   pair equals [`Self::trough_count`] pointwise on every
+    ///   histogram (empty: `None.map_or(0, …) == 0 == trough_count`;
+    ///   non-empty: `Some(trough).map_or(0, …) == trough == trough_count`).
+    /// - `recessive_observation().is_none() ⇔ is_empty()` —
+    ///   one-discriminant empty boundary on the fused pair.
+    /// - When non-empty, the pair's count equals
+    ///   `self.count(self.recessive_observation().unwrap().0)` — the
+    ///   trough-count consistency law.
+    /// - When non-empty, the pair's count is at least `1` — the
+    ///   recessive-count floor (every observed cell carries at least
+    ///   one observation by construction, inherited from
+    ///   [`Self::trough_count`]).
+    /// - `recessive_observation().map_or(0, |(_, n)| n) <= dominant_observation().map_or(0, |(_, n)| n)`
+    ///   always — the trough-count is bounded above by the peak-count
+    ///   on every histogram, lifted to the fused-pair surface from
+    ///   the `trough_count <= peak_count` invariant.
+    /// - The merge composition is *non-monotonic* in count (in
+    ///   deliberate contrast to [`Self::dominant_observation`]'s
+    ///   count-monotonicity under [`Self::merge`]): merging can either
+    ///   grow the trough (overlapping supports) or shrink it (disjoint
+    ///   supports introduce a new low-count cell). The empty-identity
+    ///   law still holds:
+    ///   `merge(self, empty).recessive_observation() ==
+    ///   self.recessive_observation()`.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the twenty
+    /// closed-enum axis primitives plus the five product cubes —
+    /// twenty-five today, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]) inherits the
+    /// projection at no per-axis cost. The three trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_recessive_observation_empty_is_none_*`,
+    /// `axis_histogram_recessive_observation_singleton_picks_observed_pair_*`,
+    /// `axis_histogram_recessive_observation_axis_cover_picks_first_pair_*`).
+    ///
+    /// Peer to [`Self::recessive_cell`] (the *cell* projection of the
+    /// minority pair) and [`Self::trough_count`] (the *count*
+    /// projection of the minority pair): the histogram surface now
+    /// carries the (cell, count, pair) triple on both the peak and
+    /// trough sides — every consumer that needs either side reads the
+    /// named projection, every consumer that needs both sides reads
+    /// the fused pair at one method call. The
+    /// `(dominant_observation, recessive_observation)` lattice on the
+    /// fused-pair surface mirrors the
+    /// `(dominant_cell, recessive_cell)` lattice on the cell surface
+    /// and the `(peak_count, trough_count)` lattice on the scalar
+    /// surface.
+    #[must_use]
+    pub fn recessive_observation(&self) -> Option<(A, usize)> {
+        let mut iter = self.iter().filter(|&(_, c)| c > 0);
+        let first = iter.next()?;
+        Some(iter.fold(
+            first,
+            |best, current| {
+                if current.1 < best.1 { current } else { best }
+            },
+        ))
+    }
+
     /// The **observed-distribution spread** — the difference between the
     /// maximum and minimum observation counts over the histogram's
     /// observed support. Equal to
@@ -20331,6 +20443,366 @@ mod tests {
         // Identity (empty-rhs): merge leaves the trough unchanged.
         let with_empty = added_two.clone().merge(&empty_hist);
         assert_eq!(with_empty.trough_count(), added_two.trough_count());
+    }
+
+    // ---- AxisHistogram::recessive_observation trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // recessive_observation fused-pair projection's contract holds
+    // uniformly without per-axis test duplication: empty → None;
+    // singleton → Some((K, 1)) on every cell K; uniform axis-cover →
+    // Some((first cell, 1)) — the minority pair recovered uniformly
+    // through the declaration-order tie-break inherited from
+    // `recessive_cell`. Concrete projection-agreement, fused-form
+    // equivalence, internal-consistency, peak-bound, and merge non-
+    // monotonicity pins follow below on [`DiffLineKind`].
+
+    fn assert_recessive_observation_empty_is_none<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.recessive_observation(),
+            None,
+            "empty histogram recessive_observation must be None on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_recessive_observation_singleton_picks_observed_pair<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug + PartialEq,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has recessive_observation =
+        // Some((cell, 1)) — the fused (cell, count) pair recovered
+        // uniformly from a one-observation history (the support is
+        // a singleton {cell}, so the trough coincides with the peak
+        // on the same cell).
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.recessive_observation(),
+                Some((observed, 1)),
+                "singleton recessive_observation must equal Some(({observed:?}, 1)) \
+                 on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_recessive_observation_axis_cover_picks_first_pair<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug + PartialEq,
+    {
+        // Observing every cell exactly once produces a uniform
+        // histogram (every cell at 1, trough count tied across the
+        // axis); recessive_observation must return Some((first cell,
+        // 1)) — the declaration-order tie-break inherited from
+        // `recessive_cell` on the cell projection, paired with the
+        // tie-broken trough count of 1 on the count projection. Pinned
+        // uniformly across every closed-axis implementor.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        let first = axis_iter::<A>().next().expect(
+            "every ClosedAxis implementor has at least one variant per the ClosedAxis contract",
+        );
+        assert_eq!(
+            hist.recessive_observation(),
+            Some((first, 1)),
+            "uniform axis-cover histogram recessive_observation must be \
+             Some((first cell in declaration order, 1)) on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_recessive_observation_empty_is_none_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_recessive_observation_empty_is_none::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_recessive_observation_singleton_picks_observed_pair_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_recessive_observation_singleton_picks_observed_pair::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_recessive_observation_axis_cover_picks_first_pair_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_recessive_observation_axis_cover_picks_first_pair::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_recessive_observation_cell_projection_equals_recessive_cell() {
+        // The fused-pair → cell projection agreement law:
+        // recessive_observation().map(|(c, _)| c) == recessive_cell()
+        // pointwise on every histogram. Pin across the canonical
+        // observation-mix shapes (empty, singleton, unique-min,
+        // tied-min, three-way uniform) so a future regression in
+        // either side (e.g. tie-break drifting between `recessive_cell`
+        // and `recessive_observation`) surfaces here. The empty case
+        // collapses both sides to `None == None`; the non-empty cases
+        // pin the first-min declaration-order tie-break across both
+        // primitives.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Removed],
+            &[
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.recessive_observation().map(|(c, _)| c),
+                hist.recessive_cell(),
+                "recessive_observation cell projection must equal recessive_cell on \
+                 input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_recessive_observation_count_projection_equals_trough_count() {
+        // The fused-pair → count projection agreement law:
+        // recessive_observation().map_or(0, |(_, n)| n) == trough_count()
+        // pointwise on every histogram. The empty boundary collapses
+        // `None.map_or(0, …) == 0 == trough_count` (vacuous agreement);
+        // non-empty histograms collapse `Some(trough).map_or(0, …) ==
+        // trough == trough_count` (defining agreement). Pin across the
+        // canonical observation-mix shapes so a future regression in
+        // either side (e.g. recessive_observation drifting from the
+        // trough count by counting the wrong cell) surfaces here.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Removed],
+            &[
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.recessive_observation().map_or(0, |(_, n)| n),
+                hist.trough_count(),
+                "recessive_observation count projection must equal trough_count on \
+                 input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_recessive_observation_fused_pair_agrees_with_open_coded_paired_form() {
+        // The fused-pair lift's defining equivalence: when non-empty,
+        // recessive_observation() == Some((recessive_cell().unwrap(),
+        // trough_count())). The empty case is the one-discriminant
+        // boundary where the fused pair carries `None` instead of the
+        // awkward `(None, 0)` pair the open-coded form yields. Pin
+        // across the canonical observation-mix shapes — and pin the
+        // empty-case boundary separately on the `is_none()` form so
+        // both branches of the discriminant get a witness.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.recessive_observation().is_none());
+        assert!(empty.is_empty());
+
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let open_coded = hist.recessive_cell().map(|c| (c, hist.trough_count()));
+            assert_eq!(
+                hist.recessive_observation(),
+                open_coded,
+                "recessive_observation must equal the open-coded \
+                 recessive_cell().map(|c| (c, trough_count())) form on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_recessive_observation_count_equals_count_of_pair_cell() {
+        // The trough-count consistency law: on every non-empty
+        // histogram, the count in the fused pair equals
+        // `self.count(pair.0)` (the pair's cell, looked up through the
+        // count indexer). Confirms the fused pair is internally
+        // consistent — the count carried by the pair really is the
+        // count of the cell the pair names, not some other cell's
+        // count. Empty case pinned separately on `is_none()`.
+        let inputs: [&[DiffLineKind]; 4] = [
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let (cell, count) = hist
+                .recessive_observation()
+                .expect("non-empty histogram always has a recessive observation");
+            assert_eq!(
+                hist.count(cell),
+                count,
+                "recessive_observation pair count must equal count(pair.cell) on \
+                 input of length {}",
+                input.len(),
+            );
+            // Recessive-count floor: every non-empty histogram has a
+            // recessive count of at least 1.
+            assert!(
+                count >= 1,
+                "recessive_observation pair count must be >= 1 on non-empty input \
+                 of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_recessive_observation_count_is_bounded_above_by_dominant_observation_count() {
+        // The (recessive, dominant)-pair structural-bound law on the
+        // fused-pair surface: the trough-count component of
+        // recessive_observation is bounded above by the peak-count
+        // component of dominant_observation on every histogram — the
+        // fused-pair lift of the `trough_count <= peak_count` invariant
+        // every consumer reads on the scalar surface. Pin across the
+        // canonical observation-mix shapes (empty, singleton, uniform,
+        // strict-skew) so both branches of the bound (equality on the
+        // uniform-observed-count shapes, strict inequality on the
+        // skewed shapes) get a witness.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let recessive_n = hist.recessive_observation().map_or(0, |(_, n)| n);
+            let dominant_n = hist.dominant_observation().map_or(0, |(_, n)| n);
+            assert!(
+                recessive_n <= dominant_n,
+                "recessive_observation count {recessive_n} must be <= \
+                 dominant_observation count {dominant_n} on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_recessive_observation_after_merge_count_is_non_monotonic() {
+        // The (merge, recessive_observation) composition: in
+        // deliberate contrast to dominant_observation's strict
+        // count-monotonicity under `merge`, the recessive_observation's
+        // count projection is *non-monotonic* (inherited from
+        // trough_count's non-monotonicity). Pin with overlapping-
+        // support (grow), disjoint-support (shrink-or-equal), and
+        // identity (empty-rhs) shapes so each branch of the non-
+        // monotonic behavior gets a tight witness, plus the
+        // empty-identity law on the full fused-pair shape.
+        let added_two: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Added]
+            .into_iter()
+            .collect();
+        let added_three: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        let removed_one: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        let empty_hist: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+
+        // Overlapping (identical) supports {Added}: trough grows from
+        // (2, 3) → 5, strictly past each side's recessive count.
+        let overlap = added_two.clone().merge(&added_three);
+        let (overlap_cell, overlap_count) =
+            overlap.recessive_observation().expect("non-empty merge");
+        assert_eq!(overlap_cell, DiffLineKind::Added);
+        assert_eq!(overlap_count, 5);
+        assert!(overlap_count > added_two.recessive_observation().map_or(0, |(_, n)| n));
+        assert!(overlap_count > added_three.recessive_observation().map_or(0, |(_, n)| n));
+
+        // Disjoint supports {Added:2} and {Removed:1}: the merged
+        // support {Added:2, Removed:1} pulls the merged trough down to
+        // 1 — strictly below the higher side's recessive count (2).
+        let disjoint = added_two.clone().merge(&removed_one);
+        let (_, disjoint_count) = disjoint.recessive_observation().expect("non-empty merge");
+        assert_eq!(disjoint_count, 1);
+        assert!(disjoint_count < added_two.recessive_observation().map_or(0, |(_, n)| n));
+
+        // Identity (empty-rhs): merge leaves the recessive
+        // observation pair unchanged on the full fused-pair shape (the
+        // lhs's pair survives the empty-rhs merge intact).
+        let with_empty = added_two.clone().merge(&empty_hist);
+        assert_eq!(
+            with_empty.recessive_observation(),
+            added_two.recessive_observation(),
+        );
     }
 
     // ---- AxisHistogram::spread trait-uniform laws ----
