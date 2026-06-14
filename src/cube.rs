@@ -4860,6 +4860,98 @@ impl<A: ClosedAxis> std::ops::Div<usize> for &AxisHistogram<A> {
     }
 }
 
+impl<A: ClosedAxis> std::ops::Rem<usize> for &AxisHistogram<A> {
+    type Output = AxisHistogram<A>;
+
+    /// Borrowed-receiver peer of [`Rem<usize> for AxisHistogram<A>`][Rem]
+    /// — `&hist % divisor` reads the same histogram as `hist.clone() %
+    /// divisor` but keeps the caller's ownership of `hist`. Closes the
+    /// canonical Rust (owned-receiver, borrowed-receiver) idiom-peer
+    /// pair on the Euclidean-remainder entry surface, the
+    /// Euclidean-remainder dual of the same pair on the
+    /// truncating-division surface ([`Div<usize> for
+    /// AxisHistogram<A>`][Div] / [`Div<usize> for
+    /// &AxisHistogram<A>`][DivRef]) and the same pair on the
+    /// scalar-multiplication surface ([`Mul<usize> for
+    /// AxisHistogram<A>`][Mul] / [`Mul<usize> for
+    /// &AxisHistogram<A>`][MulRef]). The two corners of the
+    /// Euclidean-remainder receiver-ownership matrix — `hist %
+    /// divisor`, `&hist % divisor` — now both route through the
+    /// in-place [`RemAssign<usize>`][RemAssign] primitive at exactly
+    /// one site; the per-cell Euclidean-remainder loop lives at one
+    /// site underneath every entry surface (owned-receiver,
+    /// borrowed-receiver, in-place). Completes the canonical Rust
+    /// `(Mul, MulAssign, Div, DivAssign, Rem, RemAssign)`
+    /// integer-arithmetic operator sextet on the borrowed-receiver
+    /// side: every primitive `usize`-action surface (`*=`, `*`, `/=`,
+    /// `/`, `%=`, `%`) carries the borrowed-receiver peer for the two
+    /// fallible-divisor entries (`/`, `%`) that the prior runs had
+    /// closed on the multiplicative side.
+    ///
+    /// Before this lift, every consumer wanting the Euclidean-remainder
+    /// shape against a borrowed histogram (a rolling-window observatory
+    /// reading `&cached_hist % window` against an
+    /// [`arc_swap::Guard`]-loaded snapshot it must not consume to read
+    /// off the per-cell windowed residual; a fleet aggregator reading
+    /// `&host_hist % bucket` over a `&BTreeMap<HostId,
+    /// AxisHistogram<A>>` it does not own to read off the per-cell
+    /// per-bucket residual; a per-tier observatory de-amplifying
+    /// `&weighted_hist % weight` against an indexed slice of histograms
+    /// it iterates non-destructively to read off the per-cell
+    /// quantization residual) had to rewrite to the hand-applied clone
+    /// form `cached_hist.clone() % window` (which duplicates the clone
+    /// at every call site) or the open-coded subtractive rebuild
+    /// `cached_hist - &(cached_hist.clone() / window * window)` (which
+    /// re-expands the div-rem identity at every call site, allocating
+    /// two intermediate histograms per cell). The lift names the
+    /// projection at one site, consumers route through `&hist %
+    /// divisor` uniformly, and the per-cell loop lives at exactly one
+    /// site (the [`RemAssign<usize>`][RemAssign] impl) underneath every
+    /// Euclidean-remainder entry surface.
+    ///
+    /// **Borrowed-owned receiver agreement law** — `&hist % divisor` is
+    /// pointwise equal to `hist.clone() % divisor` for every `(hist,
+    /// divisor)` with `divisor > 0`. The canonical (owned-receiver,
+    /// borrowed-receiver) idiom-peer agreement on a [`usize`]-action
+    /// surface; the Euclidean-remainder dual of the borrowed-owned
+    /// receiver agreement `&hist / divisor == hist.clone() / divisor`
+    /// on the truncating-division side and `&hist * n == hist.clone() *
+    /// n` on the multiplicative side. Pinned by the trait-uniform test
+    /// `axis_histogram_rem_right_divisor_borrowed_equals_owned_for_every_closed_axis_implementor`
+    /// in [`tests`]. Inherits every law the owned-receiver
+    /// Euclidean-remainder surface carries — the (`Rem`, `RemAssign`)
+    /// equivalence
+    /// (`(&hist % divisor).clone() == { let mut a = hist.clone(); a %= divisor; a }`),
+    /// the one-divisor zero law (`&hist % 1 == empty`), the div-rem
+    /// identity (`(&hist / divisor) * divisor + (&hist % divisor) ==
+    /// hist` for `divisor > 0`), the remainder-bound law
+    /// (`(&hist % divisor).count(v) < divisor` for every cell), and the
+    /// cell-level Euclidean-remainder law
+    /// (`(&hist % divisor).count(v) == hist.count(v) % divisor`) — by
+    /// the borrowed-owned agreement at one site.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The trait-uniform borrowed-
+    /// owned receiver agreement law pinned in [`tests`] holds across
+    /// the implementor set
+    /// (`axis_histogram_rem_right_divisor_borrowed_equals_owned_*`).
+    ///
+    /// # Panics
+    ///
+    /// Panics on `divisor == 0`. Inherits the panic contract from
+    /// [`RemAssign<usize>`][RemAssign].
+    ///
+    /// [Rem]: std::ops::Rem
+    /// [RemAssign]: std::ops::RemAssign
+    /// [Div]: std::ops::Div
+    /// [DivRef]: std::ops::Div
+    /// [Mul]: std::ops::Mul
+    /// [MulRef]: std::ops::Mul
+    fn rem(self, divisor: usize) -> Self::Output {
+        self.clone() % divisor
+    }
+}
+
 impl<A: ClosedAxis> std::ops::Index<A> for AxisHistogram<A> {
     type Output = usize;
 
@@ -17673,6 +17765,118 @@ mod tests {
         // `pre % 2` carries a count strictly less than 2.
         for cell in axis_iter::<DiffLineKind>() {
             assert!(via_op.count(cell) < divisor);
+        }
+    }
+
+    fn assert_rem_right_divisor_borrowed_equals_owned<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (owned-receiver, borrowed-receiver) idiom-peer agreement
+        // law on the Euclidean-remainder `%` operator surface: `&hist %
+        // divisor` is pointwise equal to `hist.clone() % divisor`. The
+        // Euclidean-remainder dual of the `&hist / divisor ==
+        // hist.clone() / divisor` borrowed-owned receiver agreement law
+        // on the truncating-division side and the `&hist * n ==
+        // hist.clone() * n` borrowed-owned receiver agreement law on
+        // the multiplicative side — same projection, two receiver-
+        // ownership shapes, both lowering through the in-place
+        // `RemAssign<usize>` form at one site so the per-cell `%=` loop
+        // lives at one site underneath every Euclidean-remainder entry.
+        // Pinned at divisors 1, 2, 5, 11 so the zero-divisor identity
+        // (`% 1` zeros every cell) and three non-trivial divisors
+        // witness the borrowed-owned agreement uniformly across every
+        // closed-axis implementor.
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for divisor in [1usize, 2, 5, 11] {
+            let via_borrowed = &hist % divisor;
+            let via_owned = hist.clone() % divisor;
+            assert_eq!(
+                via_borrowed,
+                via_owned,
+                "&hist % {divisor} must equal hist.clone() % {divisor} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_rem_right_divisor_borrowed_equals_owned_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_rem_right_divisor_borrowed_equals_owned::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_rem_right_divisor_borrowed_witnessed_on_non_trivial_cells_for_diff_line_kind()
+    {
+        // The borrowed-receiver Euclidean-remainder surface on the `%`
+        // operator against [`DiffLineKind`] — the dual of
+        // `axis_histogram_rem_witnessed_on_non_trivial_cells_for_diff_line_kind`
+        // on the borrowed-receiver entry, peer to
+        // `axis_histogram_div_right_divisor_borrowed_witnessed_on_non_trivial_cells_for_diff_line_kind`
+        // on the borrowed-receiver truncating-division side. `pre`
+        // carries counts (Added: 7, Removed: 5, Context: 4); `&pre % 2`
+        // reads (Added: 1, Removed: 1, Context: 0) — every cell
+        // independently reduces under usize Euclidean-remainder
+        // arithmetic through the borrowed-receiver entry, with `pre`
+        // retained intact across the projection (the borrowed-receiver
+        // form's ownership contract).
+        let pre: AxisHistogram<DiffLineKind> = [
+            (DiffLineKind::Added, 7usize),
+            (DiffLineKind::Removed, 5),
+            (DiffLineKind::Context, 4),
+        ]
+        .into_iter()
+        .collect();
+        let divisor = 2usize;
+
+        let via_borrowed = &pre % divisor;
+        assert_eq!(via_borrowed.count(DiffLineKind::Added), 1);
+        assert_eq!(via_borrowed.count(DiffLineKind::Removed), 1);
+        assert_eq!(via_borrowed.count(DiffLineKind::Context), 0);
+        assert_eq!(via_borrowed.total(), 2);
+
+        // Borrowed-receiver contract: `pre` survives the projection
+        // intact (the original counts read back through their owned
+        // surface after the borrowed-receiver Euclidean-remainder).
+        assert_eq!(pre.count(DiffLineKind::Added), 7);
+        assert_eq!(pre.count(DiffLineKind::Removed), 5);
+        assert_eq!(pre.count(DiffLineKind::Context), 4);
+        assert_eq!(pre.total(), 16);
+
+        // (owned-receiver, borrowed-receiver) idiom-peer agreement at
+        // the concrete pin: `&pre % divisor` reads the same histogram
+        // as `pre.clone() % divisor`.
+        assert_eq!(via_borrowed, pre.clone() % divisor);
+
+        // One-divisor zero law at the concrete pin on the borrowed-
+        // receiver entry: `&pre % 1` is pointwise equal to the empty
+        // histogram. Uses `black_box` to pin the constant against
+        // const-folding so the panic-free divisor traversal is
+        // observably exercised.
+        let one_divisor = std::hint::black_box(1usize);
+        assert_eq!(&pre % one_divisor, AxisHistogram::<DiffLineKind>::empty());
+
+        // Div-Rem identity at the concrete pin through the borrowed-
+        // receiver entry on both sides:
+        // `(&pre / 2) * 2 + (&pre % 2) == pre` recovers the pre-state
+        // pointwise. Reads off the canonical Euclidean-division
+        // decomposition through the borrowed-receiver Div and Rem
+        // surfaces composed.
+        let div_part = (&pre / divisor) * divisor;
+        let rem_part = &pre % divisor;
+        let recomposed = div_part + &rem_part;
+        assert_eq!(recomposed, pre);
+
+        // Remainder bound at the concrete pin through the borrowed-
+        // receiver entry: every cell of `&pre % 2` carries a count
+        // strictly less than 2.
+        for cell in axis_iter::<DiffLineKind>() {
+            assert!(via_borrowed.count(cell) < divisor);
         }
     }
 
