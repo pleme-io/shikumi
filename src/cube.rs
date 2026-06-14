@@ -2293,6 +2293,168 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         self.trough_multiplicity() == 1
     }
 
+    /// `true` exactly when the histogram's *modal* level set has
+    /// cardinality two or more — at least two observed cells sit at the
+    /// peak. The **modal tie-break** predicate on the histogram's
+    /// multiplicity surface: the typed boolean witness for the question
+    /// *"is the [`Self::dominant_cell`] declaration-order tie-break
+    /// actually being exercised on this window, or is the modal cell
+    /// uniquely held?"*
+    ///
+    /// Pointwise equivalent to two surface forms that previously had no
+    /// single named boolean — `self.peak_multiplicity() >= 2` (the
+    /// multiplicity-scalar inequality form, the canonical open-coded
+    /// expression of the predicate), and `self.modality_degree().0 >= 2`
+    /// (the modality-pair projection-inequality form, reading the modal
+    /// component of the fused pair). Both forms do a full single-pass
+    /// scan of the contiguous counts vector before the comparison; the
+    /// named predicate carries the *same* single-pass scan body without
+    /// changing asymptotic cost, but lifts the predicate to a named
+    /// boolean every operator-facing summary, attestation manifest, and
+    /// dashboard cell reads off at one method call.
+    ///
+    /// The natural typed primitive for the *"is the tie-break being
+    /// exercised on the dominant kind right now?"* question every
+    /// reload-window diagnostic, attestation manifest, and dashboard
+    /// cell asks: the `AxisHistogram<crate::ShikumiErrorKind>` reload-
+    /// summary line (`"modally tied: Parse / Io / Watch tied at 12×
+    /// each — declaration-order tie-break exercised, Parse declared
+    /// first"` vs. the strict-modal `"Parse alone at 12×"` line —
+    /// reading the tie-break-disclosure branch off one predicate
+    /// instead of composing `peak_multiplicity() >= 2`), the
+    /// [`crate::ConfigSourceChain::file_format_histogram`] gate (`"file-
+    /// format chain has a tied dominant format — picking by declaration
+    /// order"` — the input to the operator-facing "which format wins
+    /// the chain?" disclosure), the `AxisHistogram<crate::DiffLineKind>`
+    /// rebuild-summary (`"diff is modally tied across Added / Removed
+    /// — neither side dominates"` vs. a strictly-modal one-sided
+    /// diff).
+    ///
+    /// **The strict / tied modal partition on the non-empty side.** Peer
+    /// to [`Self::is_strictly_modally_unique`] (the modal-uniqueness
+    /// predicate, `peak_multiplicity() == 1`): on every *non-empty*
+    /// histogram the two predicates strictly partition the modal axis
+    /// (exactly one fires), exposing the "is the peak uniquely held or
+    /// shared?" question as a closed two-way classification. The four
+    /// possibilities on the closed modal-multiplicity surface:
+    ///
+    /// |                              | `is_strictly_modally_unique` | `is_modally_tied` |
+    /// |------------------------------|------------------------------|-------------------|
+    /// | empty histogram              | `false`                      | `false`           |
+    /// | non-empty, peak uniquely held| `true`                       | `false`           |
+    /// | non-empty, peak shared       | `false`                      | `true`            |
+    /// | (impossible)                 | `true`                       | `true`            |
+    ///
+    /// On every non-empty histogram, `is_modally_tied() ==
+    /// !is_strictly_modally_unique()` (the inequality `>= 2` is the
+    /// strict complement of the equality `== 1` on the strictly-
+    /// positive `peak_multiplicity` value). On the empty histogram
+    /// (`peak_multiplicity == 0`), *both* read `false` — the empty
+    /// boundary is below both branches of the modal classification,
+    /// peer to [`Self::is_strictly_modally_unique`] and
+    /// [`Self::has_singular_support`] reading `false` on empty.
+    ///
+    /// **Empty-histogram convention** — returns `false`: the empty
+    /// histogram has [`Self::peak_multiplicity`] `0`, so the inequality
+    /// `0 >= 2` fails. Symmetric with [`Self::is_strictly_modally_unique`]
+    /// reading `false` on empty, so the modal-classification pair
+    /// `(is_strictly_modally_unique, is_modally_tied)` reads
+    /// `(false, false)` uniformly on the empty histogram across every
+    /// implementor.
+    ///
+    /// **Singleton-observation convention** — every singleton-support
+    /// histogram has [`Self::peak_multiplicity`] `1` (the lone observed
+    /// cell stands alone at its own peak), so `is_modally_tied` reads
+    /// `false` uniformly on every singleton across every implementor
+    /// (the modal cell is uniquely held by construction — no tie-break
+    /// to exercise).
+    ///
+    /// **Axis-cover convention** — observing every cell exactly once
+    /// raises [`Self::peak_multiplicity`] to `axis_cardinality::<A>()`,
+    /// so `is_modally_tied` reads `true` iff
+    /// `axis_cardinality::<A>() >= 2`. Every closed-axis implementor on
+    /// the typescape today carries `axis_cardinality >= 2`, so the
+    /// uniform axis-cover reads `true` uniformly across the implementor
+    /// set — peer to the identical convention on
+    /// [`Self::is_strictly_modally_unique`] which reads `false` there.
+    /// Stated as the conditional law so the witness is uniform across
+    /// the implementor set without case-splitting on cardinality at the
+    /// test site.
+    ///
+    /// **Companion invariants** with [`Self::peak_multiplicity`],
+    /// [`Self::modality_degree`], [`Self::dominant_cell`],
+    /// [`Self::dominant_observation`], [`Self::is_empty`],
+    /// [`Self::has_singular_support`], [`Self::is_uniform_count`], and
+    /// [`Self::is_strictly_modally_unique`]:
+    /// - `is_modally_tied() ⇔ peak_multiplicity() >= 2` — the defining
+    ///   equivalence on the multiplicity scalar peer.
+    /// - `is_modally_tied() ⇔ modality_degree().0 >= 2` — the modal-
+    ///   component form on the fused pair.
+    /// - `is_modally_tied() ⇒ !is_empty()` — the empty histogram has
+    ///   no modal cell, so the tie predicate never fires there. Reads
+    ///   off a one-step non-emptiness witness on the tied-modal side
+    ///   of the histogram, peer to the non-emptiness witness on the
+    ///   strictly-modally-unique side.
+    /// - `!is_empty() ⇒ is_modally_tied() ⇔ !is_strictly_modally_unique()` —
+    ///   the strict modal partition on every non-empty histogram: the
+    ///   peak is either uniquely held or shared, never both. On the
+    ///   empty histogram both predicates read `false`, so the
+    ///   equivalence does *not* extend to the empty boundary
+    ///   (`is_modally_tied()` is `false`, `!is_strictly_modally_unique()`
+    ///   is `true`).
+    /// - `has_singular_support() ⇒ !is_modally_tied()` — a single
+    ///   observed cell is the only member of the modal level set, so
+    ///   the tie predicate never fires on a singleton-support
+    ///   histogram. The contrapositive `is_modally_tied() ⇒
+    ///   !has_singular_support()` reads off a one-step multi-cell-
+    ///   support witness on the tied-modal side: a fired tie predicate
+    ///   means at least two observed cells.
+    /// - `is_uniform_count() ∧ !is_empty() ⇒ is_modally_tied() ⇔
+    ///   !has_singular_support()` — when every observed cell shares the
+    ///   same count, the modal level set equals the support, so the
+    ///   tie predicate collapses to the multi-cell-support predicate.
+    ///   On a singleton-support uniform shape both read `false`; on
+    ///   every multi-cell uniform shape (including every uniform axis-
+    ///   cover with cardinality `>= 2`) both read `true`.
+    /// - When `is_modally_tied()` reads `true`,
+    ///   `dominant_observation()` is `Some((c, n))` for some `c` that
+    ///   is the *first* of two or more cells tied at count `n`, and the
+    ///   declaration-order tie-break in [`Self::dominant_cell`] *is*
+    ///   exercised — the dominant cell is *one of* `peak_multiplicity()`
+    ///   members of the modal level set rather than the sole inhabitant.
+    ///   The boolean lifts the "is the tie-break exercised?" question
+    ///   off the histogram surface at one method call, on the modal
+    ///   side.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the twenty
+    /// closed-enum axis primitives plus the five product cubes —
+    /// twenty-five today, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]) inherits the
+    /// predicate at no per-axis cost. The trait-uniform laws pinned in
+    /// [`tests`] hold across the implementor set
+    /// (`axis_histogram_is_modally_tied_empty_is_false_*`,
+    /// `axis_histogram_is_modally_tied_singleton_is_false_*`,
+    /// `axis_histogram_is_modally_tied_axis_cover_iff_cardinality_at_least_two_*`,
+    /// `axis_histogram_is_modally_tied_equals_open_coded_peak_multiplicity_ge_two_*`).
+    ///
+    /// Peer to [`Self::is_empty`], [`Self::is_uniform_count`],
+    /// [`Self::has_singular_support`], [`Self::is_full_cover`],
+    /// [`Self::is_strictly_modally_unique`], and
+    /// [`Self::is_strictly_antimodally_unique`] on the histogram's
+    /// named-boolean predicate surface: the surface now carries the
+    /// *strict modal partition* boolean pair
+    /// `(is_strictly_modally_unique, is_modally_tied)` — "is the peak
+    /// uniquely held?", "is the peak shared?" — at one named-boolean
+    /// pair on the non-empty side. The natural next compounding move
+    /// on this surface is the antimodal-side peer `is_antimodally_tied`
+    /// reading `trough_multiplicity() >= 2`, closing the
+    /// `(is_strictly_antimodally_unique, is_antimodally_tied)` strict
+    /// antimodal partition pair.
+    #[must_use]
+    pub fn is_modally_tied(&self) -> bool {
+        self.peak_multiplicity() >= 2
+    }
+
     /// The **observed-distribution spread** — the difference between the
     /// maximum and minimum observation counts over the histogram's
     /// observed support. Equal to
@@ -26461,5 +26623,415 @@ mod tests {
         );
         assert!(!cover.is_strictly_modally_unique());
         assert!(!cover.is_strictly_antimodally_unique());
+    }
+
+    // ---- AxisHistogram::is_modally_tied trait-uniform laws ----
+    //
+    // Four trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // modal-tie predicate's contract holds uniformly without per-axis
+    // test duplication: empty → false; singleton → false; uniform axis-
+    // cover → (axis_cardinality >= 2); and the defining equivalence
+    // with the open-coded `peak_multiplicity() >= 2` form. Concrete
+    // projection-equality, partition-with-strict-uniqueness, non-
+    // emptiness witness, and uniform-count collapse pins follow below
+    // on [`DiffLineKind`].
+
+    fn assert_is_modally_tied_empty_is_false<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The empty histogram has peak_multiplicity 0 (the inequality
+        // `0 >= 2` fails), so the modal-tie predicate reads false.
+        // Empty-boundary peer to
+        // [`AxisHistogram::is_strictly_modally_unique`] also reading
+        // false on the empty histogram — the modal-classification
+        // boolean *pair* `(is_strictly_modally_unique, is_modally_tied)`
+        // reads (false, false) uniformly on the empty boundary at one
+        // site, inherited from
+        // [`AxisHistogram::peak_multiplicity`] reading 0.
+        let hist = AxisHistogram::<A>::empty();
+        assert!(
+            !hist.is_modally_tied(),
+            "empty histogram is_modally_tied must be false on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_is_modally_tied_singleton_is_false<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has peak_multiplicity 1 (the lone
+        // observed cell stands alone at its own peak), so the modal-
+        // tie predicate reads false uniformly across every
+        // implementor. The minimal-nonempty boundary witness for the
+        // strict modal partition: on every singleton the peak is
+        // uniquely held, so the tie-break is structurally not
+        // exercised. Peer to the identical convention on
+        // [`AxisHistogram::is_strictly_modally_unique`] reading true
+        // on every singleton, so the modal-classification pair reads
+        // (true, false) uniformly on every singleton.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert!(
+                !hist.is_modally_tied(),
+                "singleton is_modally_tied must be false for observed cell \
+                 {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_is_modally_tied_axis_cover_iff_cardinality_at_least_two<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once raises peak_multiplicity
+        // to `axis_cardinality::<A>()`, so the modal-tie predicate
+        // reads true iff the axis carries two or more cells. Stated as
+        // an equivalence so the law is uniform across the implementor
+        // set (every closed-axis primitive in the typescape today
+        // carries `axis_cardinality >= 2`, so axis-cover reads true
+        // uniformly) without case-splitting on cardinality at the
+        // test site. Peer to the dual law on
+        // [`AxisHistogram::is_strictly_modally_unique`] which reads
+        // true iff `axis_cardinality::<A>() == 1` — the two laws
+        // together pin the strict-modal partition on the axis-cover
+        // shape across every implementor.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            hist.is_modally_tied(),
+            axis_cardinality::<A>() >= 2,
+            "axis-cover is_modally_tied must equal (axis_cardinality >= 2) \
+             on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_is_modally_tied_equals_open_coded_peak_multiplicity_ge_two<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Defining-equivalence law: is_modally_tied() is pointwise
+        // equal to (peak_multiplicity() >= 2) on every histogram shape —
+        // empty, singleton, full axis cover, and (where the axis has
+        // at least two variants) a tied-modal sub-cover that
+        // exercises the shared-peak branch. Reached across every
+        // implementor through the macro.
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.is_modally_tied(),
+            empty.peak_multiplicity() >= 2,
+            "is_modally_tied must equal (peak_multiplicity >= 2) on empty \
+             histogram for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.is_modally_tied(),
+                singleton.peak_multiplicity() >= 2,
+                "is_modally_tied must equal (peak_multiplicity >= 2) on \
+                 singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.is_modally_tied(),
+            cover.peak_multiplicity() >= 2,
+            "is_modally_tied must equal (peak_multiplicity >= 2) on uniform \
+             axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        // Tied sub-cover: observe the first two cells once each (when
+        // the axis has at least two variants) to drive a shared peak
+        // at multiplicity 2. On a singleton axis, the loop body
+        // collapses to the singleton case above.
+        let mut variants = axis_iter::<A>();
+        if let (Some(first), Some(second)) = (variants.next(), variants.next()) {
+            let mut tied = AxisHistogram::<A>::empty();
+            tied.observe(first);
+            tied.observe(second);
+            assert_eq!(
+                tied.is_modally_tied(),
+                tied.peak_multiplicity() >= 2,
+                "is_modally_tied must equal (peak_multiplicity >= 2) on a \
+                 tied-modal sub-cover ({first:?} x1, {second:?} x1) for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_is_modally_tied_empty_is_false_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_modally_tied_empty_is_false::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_modally_tied_singleton_is_false_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_modally_tied_singleton_is_false::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_modally_tied_axis_cover_iff_cardinality_at_least_two_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_modally_tied_axis_cover_iff_cardinality_at_least_two::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_modally_tied_equals_open_coded_peak_multiplicity_ge_two_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_is_modally_tied_equals_open_coded_peak_multiplicity_ge_two::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_is_modally_tied_reads_modal_component_of_modality_degree() {
+        // Projection-equality form: the predicate reads the modal
+        // component of the fused (peak, trough) pair from
+        // `modality_degree`. Pin pointwise across the four classifier
+        // corners — strictly unimodal-anti-unimodal (1, 1), modally
+        // tied-anti-unimodal (k, 1) with k >= 2, strictly unimodal-
+        // antimodally tied (1, l) with l >= 2, and modal/antimodal
+        // coincidence on a uniform sub-cover (k, k) — so the form
+        // holds when the peak is shared (corners 2 and 4 fire the
+        // predicate true) and when it is uniquely held (corners 1 and
+        // 3 read false). All on [`DiffLineKind`].
+        let unique_peak_unique_trough = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ];
+        let h1: AxisHistogram<DiffLineKind> = unique_peak_unique_trough.iter().copied().collect();
+        assert_eq!(h1.modality_degree(), (1, 1));
+        assert!(!h1.is_modally_tied());
+        assert_eq!(h1.is_modally_tied(), h1.modality_degree().0 >= 2);
+
+        let tied_peak_unique_trough = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ];
+        let h2: AxisHistogram<DiffLineKind> = tied_peak_unique_trough.iter().copied().collect();
+        assert_eq!(h2.modality_degree(), (2, 1));
+        assert!(h2.is_modally_tied());
+        assert_eq!(h2.is_modally_tied(), h2.modality_degree().0 >= 2);
+
+        let unique_peak_tied_trough = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ];
+        let h3: AxisHistogram<DiffLineKind> = unique_peak_tied_trough.iter().copied().collect();
+        assert_eq!(h3.modality_degree(), (1, 2));
+        assert!(!h3.is_modally_tied());
+        assert_eq!(h3.is_modally_tied(), h3.modality_degree().0 >= 2);
+
+        let uniform_sub_cover = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+        ];
+        let h4: AxisHistogram<DiffLineKind> = uniform_sub_cover.iter().copied().collect();
+        assert_eq!(h4.modality_degree(), (2, 2));
+        assert!(h4.is_modally_tied());
+        assert_eq!(h4.is_modally_tied(), h4.modality_degree().0 >= 2);
+    }
+
+    #[test]
+    fn axis_histogram_is_modally_tied_strictly_partitions_modal_axis_on_non_empty() {
+        // The strict-modal partition law: on every non-empty
+        // histogram, exactly one of (is_strictly_modally_unique,
+        // is_modally_tied) fires — the peak is either uniquely held or
+        // shared, never both, and never neither. The non-empty XOR
+        // pinned across the canonical modal shapes (singleton-multi-
+        // observation, strict-peak two-cell, tied-peak two-cell,
+        // three-way tied). The empty boundary breaks the equivalence:
+        // both predicates read false there.
+        let cases: [&[DiffLineKind]; 4] = [
+            // singleton-multi-observation: peak_multiplicity == 1
+            &[DiffLineKind::Added, DiffLineKind::Added],
+            // strict-peak two-cell: peak_multiplicity == 1
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            // tied-peak two-cell: peak_multiplicity == 2
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            // three-way uniform: peak_multiplicity == 3
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in cases {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert!(!hist.is_empty());
+            assert_ne!(
+                hist.is_strictly_modally_unique(),
+                hist.is_modally_tied(),
+                "non-empty histogram must fire exactly one of \
+                 (is_strictly_modally_unique, is_modally_tied) on input of length {}",
+                input.len(),
+            );
+            assert_eq!(
+                hist.is_modally_tied(),
+                !hist.is_strictly_modally_unique(),
+                "is_modally_tied must equal !is_strictly_modally_unique on \
+                 non-empty input of length {}",
+                input.len(),
+            );
+        }
+
+        // The empty histogram boundary: both predicates read false,
+        // breaking the XOR equivalence — the strict partition holds
+        // only on the non-empty side of the histogram surface.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_empty());
+        assert!(!empty.is_strictly_modally_unique());
+        assert!(!empty.is_modally_tied());
+    }
+
+    #[test]
+    fn axis_histogram_is_modally_tied_witnesses_non_empty_when_true() {
+        // Contrapositive of (is_empty ⇒ !is_modally_tied): whenever
+        // the modal-tie predicate fires, the histogram is non-empty.
+        // The boolean lifts a one-step non-emptiness witness on the
+        // tied-modal side, peer to the same witness on the strictly-
+        // modally-unique side.
+        let cases: [&[DiffLineKind]; 3] = [
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in cases {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert!(hist.is_modally_tied());
+            assert!(!hist.is_empty());
+        }
+
+        // The empty histogram itself: predicate reads false, peer to
+        // the peak_multiplicity (0) empty-boundary convention.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_empty());
+        assert!(!empty.is_modally_tied());
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_support_implies_not_is_modally_tied() {
+        // The one-way implication on the singular-support boundary: a
+        // single observed cell is the only member of the modal level
+        // set, so the tie predicate never fires on a singleton-
+        // support histogram. The contrapositive (is_modally_tied ⇒
+        // !has_singular_support) lifts a one-step multi-cell-support
+        // witness off the tied-modal side: a fired tie predicate
+        // means at least two observed cells.
+        for observed in [
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ] {
+            let hist: AxisHistogram<DiffLineKind> = std::iter::once(observed).collect();
+            assert!(hist.has_singular_support());
+            assert!(!hist.is_modally_tied());
+        }
+
+        // Tied-modal two-cell shape witnesses the contrapositive:
+        // is_modally_tied is true, has_singular_support is false.
+        let two_cell_tied: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Added, DiffLineKind::Removed]
+                .into_iter()
+                .collect();
+        assert!(two_cell_tied.is_modally_tied());
+        assert!(!two_cell_tied.has_singular_support());
+    }
+
+    #[test]
+    fn axis_histogram_is_modally_tied_under_uniform_count_collapses_to_multi_cell_support() {
+        // Conditional collapse law: when every observed cell shares
+        // the same count, the modal level set equals the support, so
+        // the tie predicate collapses to (!has_singular_support()) on
+        // the non-empty side. Pinned on three uniform-count shapes
+        // (singleton-multi-observation, two-cell uniform sub-cover,
+        // full axis cover) — only the singleton shape fires both
+        // predicates false; the multi-cell uniform shapes fire both
+        // true.
+        let singleton_multi = [DiffLineKind::Added, DiffLineKind::Added];
+        let h_singleton: AxisHistogram<DiffLineKind> = singleton_multi.iter().copied().collect();
+        assert!(h_singleton.is_uniform_count());
+        assert!(!h_singleton.is_empty());
+        assert_eq!(
+            h_singleton.is_modally_tied(),
+            !h_singleton.has_singular_support(),
+        );
+        assert!(!h_singleton.is_modally_tied());
+
+        let two_cell_uniform = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+        ];
+        let h_two: AxisHistogram<DiffLineKind> = two_cell_uniform.iter().copied().collect();
+        assert!(h_two.is_uniform_count());
+        assert!(!h_two.is_empty());
+        assert_eq!(h_two.is_modally_tied(), !h_two.has_singular_support(),);
+        assert!(h_two.is_modally_tied());
+
+        let cover: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert!(cover.is_uniform_count());
+        assert!(!cover.is_empty());
+        assert_eq!(cover.is_modally_tied(), !cover.has_singular_support(),);
+        assert!(cover.is_modally_tied());
     }
 }
