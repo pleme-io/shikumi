@@ -1388,6 +1388,124 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         ))
     }
 
+    /// The **cardinality of the modal level set** — the number of axis
+    /// cells whose observation count equals the histogram's peak. Returns
+    /// `0` exactly when [`Self::is_empty`] is `true`; otherwise returns
+    /// the count of cells `c` with `count(c) == peak_count() > 0`.
+    ///
+    /// The "how many cells share the peak" scalar projection on the
+    /// histogram surface — the *cardinality peer* of [`Self::dominant_cell`]
+    /// (which picks one tied cell by declaration order) and the
+    /// *multiplicity peer* of [`Self::peak_count`] (which reads the
+    /// shared count itself). Closes the modal-side projection triple
+    /// `(dominant_cell, peak_count, peak_multiplicity)` — *"which cell
+    /// (one), what count (one), how many cells (k)"* — every consumer-
+    /// facing summary now reads each projection at one method call.
+    ///
+    /// The natural typed primitive for diagnostic dumps, dashboards,
+    /// attestation manifests, and outlier classifiers asking *"is the
+    /// dominant cell unique, or is the peak shared?"*: the *unique-modal*
+    /// classifier on a per-window `AxisHistogram<crate::ShikumiErrorKind>`
+    /// (the "Parse fired 12× alone" vs "Parse and Io fired 12× each"
+    /// diagnostic), the *tie-detector* on a chain's
+    /// [`crate::ConfigSourceChain::file_format_histogram`] (the "is one
+    /// format strictly dominant, or are two tied at the top?" gate), the
+    /// *modality-degree* attestation on
+    /// [`crate::ConfigSourceChain::layer_kind_histogram`] (the "the
+    /// chain's heaviest layer kind fired uniquely / k-way-tied" cell on
+    /// the operator table). Before this lift, every such consumer
+    /// re-derived the projection inline as
+    /// `hist.iter().filter(|&(_, c)| c > 0 && c == hist.peak_count()).count()`
+    /// — a two-pass scan (one to find the peak, one to count ties at
+    /// it), with the silent re-derivation of [`Self::peak_count`] at
+    /// every call site and the implicit dependence on the
+    /// `count > 0` guard to exclude zero-count cells (which would
+    /// otherwise be trivially tied with `peak_count()` on the empty
+    /// histogram, since `peak_count() == 0` would shadow every cell as a
+    /// false-positive tie). The lift collapses the projection to one
+    /// method call with a single-pass `O(axis_cardinality)` scan that
+    /// tracks the running max and reset-on-rise count in one fold,
+    /// excluding zero-count cells by construction (the first nonzero
+    /// count promotes the count past `0`, after which `c > max`
+    /// resets and `c == max && c > 0` increments).
+    ///
+    /// **Empty-histogram convention** — returns `0` (not `Option<usize>`)
+    /// matching the [`Self::peak_count`], [`Self::trough_count`],
+    /// [`Self::total`], [`Self::distinct_cells`], and [`Self::spread`]
+    /// empty conventions; the scalar peer sextuple
+    /// `(total, distinct_cells, peak_count, trough_count, spread,
+    /// peak_multiplicity)` is uniformly `(0, 0, 0, 0, 0, 0)` on the
+    /// empty histogram. The dual-form [`Self::dominant_cell`] carries
+    /// `Option<A>` because the *cell* is undefined when no observation
+    /// has landed; every scalar projection on the histogram reads `0` on
+    /// empty.
+    ///
+    /// **Unique-modal predicate.** `peak_multiplicity() == 1` is the
+    /// typed *strictly-dominant* predicate on the histogram surface:
+    /// the dominant cell stands alone at the peak (no tie). Pointwise
+    /// equivalent to the open-coded `hist.iter().filter(|&(_, c)|
+    /// c > 0 && c == hist.peak_count()).count() == 1` form, but
+    /// surfaced as a named scalar that future predicates and gates
+    /// route through. The contrapositive `peak_multiplicity() >= 2` is
+    /// the *tied-modal* predicate — the declaration-order tie-break in
+    /// [`Self::dominant_cell`] is actually exercised exactly when this
+    /// fires.
+    ///
+    /// **Companion invariants** with [`Self::peak_count`],
+    /// [`Self::dominant_cell`], [`Self::distinct_cells`],
+    /// [`Self::is_empty`], and [`Self::is_uniform_count`]:
+    /// - `peak_multiplicity() == 0` ⇔ [`Self::is_empty`] is `true`
+    ///   (peer to the empty-histogram boundary [`Self::peak_count`] and
+    ///   [`Self::distinct_cells`] both carry).
+    /// - `peak_multiplicity() <= distinct_cells()` always: the modal
+    ///   level set is a subset of the observed support, so its
+    ///   cardinality is bounded above by the support cardinality.
+    ///   Equality holds iff [`Self::is_uniform_count`] is `true`
+    ///   (every observed cell is at the same count, so every observed
+    ///   cell is in the modal level set).
+    /// - `peak_multiplicity() >= 1` whenever the histogram is
+    ///   non-empty: the dominant cell witnesses one member of the
+    ///   modal level set, so the count is at least `1`.
+    /// - `is_uniform_count() ⇒ peak_multiplicity() == distinct_cells()`
+    ///   — on a uniformly-observed-count histogram, every observed
+    ///   cell sits at the shared peak. Pointwise equivalent to
+    ///   `distinct_cells() == 1` whenever
+    ///   `has_singular_support()` is true.
+    /// - `has_singular_support() ⇒ peak_multiplicity() == 1` — a
+    ///   single observed cell is the only member of the modal level
+    ///   set on that histogram.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The three trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_peak_multiplicity_empty_is_zero_*`,
+    /// `axis_histogram_peak_multiplicity_singleton_is_one_*`,
+    /// `axis_histogram_peak_multiplicity_axis_cover_is_axis_cardinality_*`).
+    ///
+    /// Peer to [`Self::dominant_cell`] (the *cell* projection picking
+    /// one tied member), [`Self::peak_count`] (the *count* shared by
+    /// the modal level set), and [`Self::dominant_observation`] (the
+    /// fused `(cell, count)` pair): the histogram's modal surface now
+    /// carries the (cell, count, fused-pair, multiplicity) quadruple —
+    /// every operator-facing summary reads the named projection it
+    /// needs at one method call each, and the *tie-detector*
+    /// `peak_multiplicity() >= 2` predicate reads off as a single
+    /// scalar comparison.
+    #[must_use]
+    pub fn peak_multiplicity(&self) -> usize {
+        let mut max = 0usize;
+        let mut multiplicity = 0usize;
+        for &c in &self.counts {
+            if c > max {
+                max = c;
+                multiplicity = 1;
+            } else if c == max && c > 0 {
+                multiplicity += 1;
+            }
+        }
+        multiplicity
+    }
+
     /// The minimum observation count across the histogram's *observed*
     /// support — the **height of the histogram's trough**. Returns `0`
     /// exactly when [`Self::is_empty`] is `true`; otherwise returns the
@@ -20179,6 +20297,265 @@ mod tests {
             with_empty.dominant_observation(),
             added_two.dominant_observation(),
         );
+    }
+
+    // ---- AxisHistogram::peak_multiplicity trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // peak_multiplicity projection's contract holds uniformly without
+    // per-axis test duplication: empty → 0 (no peak, no level set);
+    // singleton → 1 on every cell K (one observed cell stands alone at
+    // its own peak); uniform axis-cover → axis_cardinality::<A>()
+    // (every cell observed exactly once, every cell tied at the shared
+    // peak of 1 — the modal level set covers the entire axis).
+    // Concrete strict-modal, tied-modal, defining-equivalence,
+    // distinct-cells-bound, and merge-interaction pins follow below on
+    // [`DiffLineKind`].
+
+    fn assert_peak_multiplicity_empty_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.peak_multiplicity(),
+            0,
+            "empty histogram peak_multiplicity must be 0 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_peak_multiplicity_singleton_is_one<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has peak_multiplicity = 1 — exactly
+        // one cell sits at the peak (the observed cell itself, count 1).
+        // The singleton-support modality boundary uniformly across every
+        // closed-axis implementor.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.peak_multiplicity(),
+                1,
+                "singleton peak_multiplicity must equal 1 \
+                 for observed cell {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_peak_multiplicity_axis_cover_is_axis_cardinality<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once produces a uniform
+        // histogram; every cell sits at the shared peak of 1, so the
+        // modal level set covers the entire axis: peak_multiplicity ==
+        // axis_cardinality::<A>(). The structural witness for the
+        // `is_uniform_count ⇒ peak_multiplicity == distinct_cells`
+        // companion law at the maximum-coverage shape (where
+        // distinct_cells equals axis_cardinality). Pinned uniformly
+        // across every closed-axis implementor.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            hist.peak_multiplicity(),
+            axis_cardinality::<A>(),
+            "uniform axis-cover histogram peak_multiplicity must equal \
+             axis_cardinality {} on axis {}",
+            axis_cardinality::<A>(),
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_peak_multiplicity_empty_is_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_multiplicity_empty_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_multiplicity_singleton_is_one_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_multiplicity_singleton_is_one::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_multiplicity_axis_cover_is_axis_cardinality_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_multiplicity_axis_cover_is_axis_cardinality::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_multiplicity_equals_open_coded_modal_level_set_count() {
+        // The defining equivalence: peak_multiplicity() equals the
+        // open-coded `iter().filter(|&(_, c)| c > 0 && c ==
+        // peak_count()).count()` form pointwise on every histogram. Pin
+        // across the canonical observation-mix shapes (empty, singleton,
+        // unique-max, tied-max, three-way uniform) so a future
+        // regression in either side surfaces here. The `c > 0` guard
+        // matters at the empty boundary: without it the filter would
+        // sweep every zero-count cell into the modal level set on the
+        // empty histogram (where peak_count is 0), so the open-coded
+        // form would diverge from the named scalar's `0` reading.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let peak = hist.peak_count();
+            let open_coded = hist.iter().filter(|&(_, c)| c > 0 && c == peak).count();
+            assert_eq!(
+                hist.peak_multiplicity(),
+                open_coded,
+                "peak_multiplicity must equal open-coded modal-level-set count \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_multiplicity_distinguishes_strict_modal_from_tied_modal() {
+        // The unique-modal / tied-modal classifier law: a strictly
+        // dominant histogram reads peak_multiplicity == 1 (the
+        // dominant cell stands alone at the peak — the declaration-
+        // order tie-break is not exercised), and a tied-modal
+        // histogram reads peak_multiplicity >= 2 (the tie-break is
+        // exercised). Pinned on a strict-modal shape (one cell heavier
+        // than the others), a two-way tied-modal shape (two cells at
+        // the same peak), and a three-way tied-modal shape (the
+        // uniform-axis-cover over three cells).
+        let strict_modal: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(strict_modal.peak_multiplicity(), 1);
+
+        let two_way_tied: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Added, DiffLineKind::Removed]
+                .into_iter()
+                .collect();
+        assert_eq!(two_way_tied.peak_multiplicity(), 2);
+
+        let three_way_tied: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(three_way_tied.peak_multiplicity(), 3);
+    }
+
+    #[test]
+    fn axis_histogram_peak_multiplicity_is_bounded_above_by_distinct_cells() {
+        // The structural-bound law: the modal level set is a subset of
+        // the observed support, so its cardinality is bounded above by
+        // distinct_cells. Equality holds iff is_uniform_count is true.
+        // Pinned across the canonical shapes (empty, singleton,
+        // strict-modal, tied-modal-equal-to-support, tied-modal-strict-
+        // subset-of-support) so both the bound and the equality case
+        // get tight witnesses.
+        let strict_subset: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        let uniform_two_cell: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Added, DiffLineKind::Removed]
+                .into_iter()
+                .collect();
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[DiffLineKind::Added, DiffLineKind::Removed],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert!(
+                hist.peak_multiplicity() <= hist.distinct_cells(),
+                "peak_multiplicity {} must be <= distinct_cells {} on input of length {}",
+                hist.peak_multiplicity(),
+                hist.distinct_cells(),
+                input.len(),
+            );
+            if hist.is_uniform_count() {
+                assert_eq!(
+                    hist.peak_multiplicity(),
+                    hist.distinct_cells(),
+                    "peak_multiplicity must equal distinct_cells on uniform-count \
+                     histogram (input of length {})",
+                    input.len(),
+                );
+            }
+        }
+        // Direct pin on the strict-subset shape: distinct_cells = 3,
+        // peak_multiplicity = 1 (Added strictly dominates).
+        assert_eq!(strict_subset.distinct_cells(), 3);
+        assert_eq!(strict_subset.peak_multiplicity(), 1);
+        // Direct pin on the uniform-two-cell shape: distinct_cells = 2,
+        // peak_multiplicity = 2 (every observed cell tied at 1).
+        assert_eq!(uniform_two_cell.distinct_cells(), 2);
+        assert_eq!(uniform_two_cell.peak_multiplicity(), 2);
+    }
+
+    #[test]
+    fn axis_histogram_peak_multiplicity_is_zero_iff_is_empty() {
+        // Boundary pin: peak_multiplicity == 0 iff is_empty is true.
+        // The companion-invariant peer to the same boundary equivalence
+        // peak_count and distinct_cells both carry — every scalar
+        // projection on the histogram surface uses `0` as its
+        // empty-witness, and every non-empty histogram contributes at
+        // least one cell to the modal level set.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_empty());
+        assert_eq!(empty.peak_multiplicity(), 0);
+
+        let singleton: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        assert!(!singleton.is_empty());
+        assert!(singleton.peak_multiplicity() >= 1);
     }
 
     // ---- AxisHistogram::trough_count trait-uniform laws ----
