@@ -329,6 +329,204 @@ impl<A: ClosedAxis> Default for AxisHistogram<A> {
     }
 }
 
+/// The **closed modal/antimodal classification** of an [`AxisHistogram`]
+/// on the `(strict / tied) × (modal / antimodal)` two-axis multiplicity
+/// surface, with the empty boundary lifted to its own variant.
+///
+/// Returned by [`AxisHistogram::modality_class`]; pattern-matched
+/// exhaustively at every dashboard / attestation manifest / alarm-routing
+/// site that previously composed the four named boolean predicates
+/// ([`AxisHistogram::is_strictly_modally_unique`],
+/// [`AxisHistogram::is_modally_tied`],
+/// [`AxisHistogram::is_strictly_antimodally_unique`],
+/// [`AxisHistogram::is_antimodally_tied`]) into a 4- or 5-way `if` ladder
+/// over the four predicates. The enum closes that boolean algebra at one
+/// named variant per classifier corner, plus the empty-histogram boundary
+/// as the fifth variant — the compiler enforces exhaustiveness at every
+/// match site, so a future renderer landing on the typescape *cannot*
+/// silently drop the empty-boundary or any classifier-corner branch.
+///
+/// **Five variants, structurally exhaustive over the multiplicity
+/// surface.** Every histogram's [`AxisHistogram::modality_degree`] pair
+/// `(peak_mult, trough_mult)` falls into exactly one variant; the
+/// classification is total and disjoint by construction:
+///
+/// | `modality_degree()`        | `ModalityClass` variant                          | Modal axis        | Antimodal axis    |
+/// |----------------------------|--------------------------------------------------|-------------------|-------------------|
+/// | `(0, 0)`                   | [`Self::Empty`]                                  | (n/a)             | (n/a)             |
+/// | `(1, 1)`                   | [`Self::StrictModalStrictAntimodal`]             | strictly unique   | strictly unique   |
+/// | `(k, 1)` with `k >= 2`     | [`Self::TiedModalStrictAntimodal`]               | tied (`k`-way)    | strictly unique   |
+/// | `(1, l)` with `l >= 2`     | [`Self::StrictModalTiedAntimodal`]               | strictly unique   | tied (`l`-way)    |
+/// | `(k, l)` with `k, l >= 2`  | [`Self::TiedModalTiedAntimodal`]                 | tied (`k`-way)    | tied (`l`-way)    |
+///
+/// The variants are named on the *defining axis-pair shape*
+/// `({Strict|Tied}Modal{Strict|Tied}Antimodal)` rather than on the
+/// example shapes that fire them (e.g. "uniform-count" or "skewed") so
+/// the variant identity stays stable under future shape-classifier
+/// additions: a `is_balanced` or `is_skewed` predicate landing on the
+/// histogram surface refines the *predicates*, not the variant identity
+/// of the closed multiplicity classification.
+///
+/// **Peer-bound to the boolean primitives.** The enum carries inherent
+/// `const` predicates [`Self::is_empty`], [`Self::is_modally_tied`], and
+/// [`Self::is_antimodally_tied`] — the enum-level peers of the
+/// histogram-surface predicates of the same name — so consumers holding
+/// a `ModalityClass` value (e.g. a cached classification on a per-window
+/// summary struct) read off the modal/antimodal axis booleans without
+/// re-routing through the originating histogram. The peer-equivalence
+/// laws (`hist.modality_class().is_modally_tied() == hist.is_modally_tied()`
+/// and the antimodal twin) are pinned trait-uniformly across every
+/// [`ClosedAxis`] implementor.
+///
+/// **Closed-axis primitive trait.** The enum carries [`Copy`] (no
+/// allocation, fits in a `u8` discriminant), [`Eq`] + [`Hash`] (usable
+/// as a [`std::collections::HashMap`] key for per-classifier-corner
+/// rollup counters, e.g. a fleet-wide
+/// `HashMap<ModalityClass, usize>` tallying how many reload windows
+/// landed in each classifier corner), and `Debug` (operator-facing
+/// summary line emission). It is *not* a [`ClosedAxis`] itself — that
+/// would imply an [`AxisHistogram<ModalityClass>`] surface, which is
+/// well-typed but semantically inverted (counting how many histograms
+/// land in each class is a meta-observation, not a substrate
+/// observation); the [`ClosedAxis`] trait stays gated on substrate-
+/// observation axes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ModalityClass {
+    /// The **empty-histogram boundary** — `modality_degree() == (0, 0)`.
+    ///
+    /// The histogram has no observed cells; the modal and antimodal
+    /// level sets are both empty. Below both branches of the
+    /// strict/tied modal partition *and* the strict/tied antimodal
+    /// partition: every named boolean ([`AxisHistogram::is_strictly_modally_unique`],
+    /// [`AxisHistogram::is_modally_tied`],
+    /// [`AxisHistogram::is_strictly_antimodally_unique`],
+    /// [`AxisHistogram::is_antimodally_tied`]) reads `false` on this
+    /// variant. Lifted to its own variant rather than folded into one
+    /// of the four classifier corners so the empty boundary is a typed
+    /// witness every dashboard / attestation / alarm site can branch on
+    /// directly, without a separate [`AxisHistogram::is_empty`]
+    /// pre-check at every match site.
+    Empty,
+    /// **Both extremes uniquely held** — `modality_degree() == (1, 1)`.
+    ///
+    /// The dominant cell stands alone at the peak count, the recessive
+    /// cell stands alone at the trough count, and neither
+    /// declaration-order tie-break (in [`AxisHistogram::dominant_cell`]
+    /// nor [`AxisHistogram::recessive_cell`]) is exercised. Includes
+    /// every singleton-support histogram (where peak and trough
+    /// coincide on the lone observed cell) and every strictly-skewed
+    /// non-uniform shape whose peak and trough are both uniquely held.
+    StrictModalStrictAntimodal,
+    /// **Peak shared, trough uniquely held** —
+    /// `modality_degree() == (k, 1)` with `k >= 2`.
+    ///
+    /// The modal level set has `k >= 2` members (the
+    /// [`AxisHistogram::dominant_cell`] declaration-order tie-break
+    /// *is* exercised), but the trough is uniquely held by a single
+    /// recessive cell. Fires on shapes with a heavy multi-cell plateau
+    /// at the peak and one strictly-rarer tail cell.
+    TiedModalStrictAntimodal,
+    /// **Peak uniquely held, trough shared** —
+    /// `modality_degree() == (1, l)` with `l >= 2`.
+    ///
+    /// The dominant cell stands alone at the peak, but the antimodal
+    /// level set has `l >= 2` members (the
+    /// [`AxisHistogram::recessive_cell`] declaration-order tie-break
+    /// *is* exercised). Fires on shapes with a single dominant cell
+    /// and a multi-cell flat trough.
+    StrictModalTiedAntimodal,
+    /// **Both extremes shared** —
+    /// `modality_degree() == (k, l)` with `k >= 2` and `l >= 2`.
+    ///
+    /// Both tie-breaks are exercised: the modal level set has `k >= 2`
+    /// members and the antimodal level set has `l >= 2` members. The
+    /// canonical example is every **uniform-count multi-cell** shape
+    /// (every observed cell shares the same count, so peak and trough
+    /// collapse onto the same level set of size `distinct_cells()`) —
+    /// including every uniform axis-cover on an axis with cardinality
+    /// `>= 2`. Also covers non-uniform shapes carrying both a
+    /// multi-cell peak plateau and a multi-cell trough plateau.
+    TiedModalTiedAntimodal,
+}
+
+impl ModalityClass {
+    /// Every [`ModalityClass`] variant, in declaration order:
+    /// `Empty`, `StrictModalStrictAntimodal`, `TiedModalStrictAntimodal`,
+    /// `StrictModalTiedAntimodal`, `TiedModalTiedAntimodal`.
+    ///
+    /// Lets a per-classifier-corner rollup table iterate the variants
+    /// uniformly (`for class in ModalityClass::ALL { … }`) without
+    /// re-deriving the 5-entry list at the call site. Peer to the
+    /// [`PartitionFace::ALL`] convention on the sibling typed primitive.
+    /// Length 5 — pinned by [`tests::modality_class_all_has_five_entries`].
+    pub const ALL: &'static [Self] = &[
+        Self::Empty,
+        Self::StrictModalStrictAntimodal,
+        Self::TiedModalStrictAntimodal,
+        Self::StrictModalTiedAntimodal,
+        Self::TiedModalTiedAntimodal,
+    ];
+
+    /// `true` exactly on [`Self::Empty`] — the enum-level peer of
+    /// [`AxisHistogram::is_empty`] projected from the variant tag.
+    ///
+    /// On every histogram `h`,
+    /// `h.modality_class().is_empty() == h.is_empty()`, pinned
+    /// trait-uniformly across every [`ClosedAxis`] implementor by
+    /// [`tests::axis_histogram_modality_class_is_empty_agrees_with_histogram_is_empty_for_every_closed_axis_implementor`].
+    /// Lets a consumer holding a cached `ModalityClass` value (e.g. on a
+    /// per-window summary struct) branch on the empty boundary without
+    /// re-routing through the originating histogram.
+    #[must_use]
+    pub const fn is_empty(self) -> bool {
+        matches!(self, Self::Empty)
+    }
+
+    /// `true` exactly when the modal axis is tied — the two variants
+    /// [`Self::TiedModalStrictAntimodal`] and
+    /// [`Self::TiedModalTiedAntimodal`]. The enum-level peer of
+    /// [`AxisHistogram::is_modally_tied`] projected from the variant
+    /// tag.
+    ///
+    /// On every histogram `h`,
+    /// `h.modality_class().is_modally_tied() == h.is_modally_tied()`,
+    /// pinned trait-uniformly across every [`ClosedAxis`] implementor
+    /// by
+    /// [`tests::axis_histogram_modality_class_is_modally_tied_agrees_with_histogram_is_modally_tied_for_every_closed_axis_implementor`].
+    /// `false` on [`Self::Empty`] (matching
+    /// [`AxisHistogram::is_modally_tied`] returning `false` on the
+    /// empty histogram).
+    #[must_use]
+    pub const fn is_modally_tied(self) -> bool {
+        matches!(
+            self,
+            Self::TiedModalStrictAntimodal | Self::TiedModalTiedAntimodal
+        )
+    }
+
+    /// `true` exactly when the antimodal axis is tied — the two
+    /// variants [`Self::StrictModalTiedAntimodal`] and
+    /// [`Self::TiedModalTiedAntimodal`]. The enum-level peer of
+    /// [`AxisHistogram::is_antimodally_tied`] projected from the
+    /// variant tag.
+    ///
+    /// On every histogram `h`,
+    /// `h.modality_class().is_antimodally_tied() == h.is_antimodally_tied()`,
+    /// pinned trait-uniformly across every [`ClosedAxis`] implementor
+    /// by
+    /// [`tests::axis_histogram_modality_class_is_antimodally_tied_agrees_with_histogram_is_antimodally_tied_for_every_closed_axis_implementor`].
+    /// `false` on [`Self::Empty`] (matching
+    /// [`AxisHistogram::is_antimodally_tied`] returning `false` on the
+    /// empty histogram).
+    #[must_use]
+    pub const fn is_antimodally_tied(self) -> bool {
+        matches!(
+            self,
+            Self::StrictModalTiedAntimodal | Self::TiedModalTiedAntimodal
+        )
+    }
+}
+
 impl<A: ClosedAxis> AxisHistogram<A> {
     /// The all-zero histogram — every cell at zero, [`Self::total`] = 0,
     /// [`Self::is_empty`] = `true`. The monoid identity under
@@ -2636,6 +2834,197 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     #[must_use]
     pub fn is_antimodally_tied(&self) -> bool {
         self.trough_multiplicity() >= 2
+    }
+
+    /// The **closed modal/antimodal classification** of the histogram on
+    /// the [`ModalityClass`] enum surface — the typed witness fusing
+    /// the four named boolean predicates
+    /// ([`Self::is_strictly_modally_unique`], [`Self::is_modally_tied`],
+    /// [`Self::is_strictly_antimodally_unique`],
+    /// [`Self::is_antimodally_tied`]) into one exhaustive five-variant
+    /// pattern-match every dashboard / attestation manifest / alarm-
+    /// routing site previously composed inline as a `if` ladder over
+    /// the four predicates.
+    ///
+    /// Pointwise equivalent to the open-coded form
+    ///
+    /// ```text
+    /// match self.modality_degree() {
+    ///     (0, 0)                   => ModalityClass::Empty,
+    ///     (1, 1)                   => ModalityClass::StrictModalStrictAntimodal,
+    ///     (_, 1)                   => ModalityClass::TiedModalStrictAntimodal,
+    ///     (1, _)                   => ModalityClass::StrictModalTiedAntimodal,
+    ///     _                        => ModalityClass::TiedModalTiedAntimodal,
+    /// }
+    /// ```
+    ///
+    /// every consumer asking *"which of the five corners of the
+    /// strict/tied × modal/antimodal classifier does this window fall
+    /// into?"* previously had to either (a) compose two of the four
+    /// named booleans into a non-exhaustive 4-way `if` ladder (silently
+    /// dropping the empty-boundary branch in many call sites because
+    /// the booleans all read `false` on empty, leaking the boundary
+    /// into the wrong fall-through arm), or (b) re-derive the modality
+    /// pair inline and match on it (re-implementing the (1, 1), (k, 1),
+    /// (1, l), (k, l) cases at every call site). The named projection
+    /// closes both gaps: the empty boundary is its own typed variant
+    /// (no fall-through silent drop), and the classifier corners share
+    /// a single match site (no re-derivation drift).
+    ///
+    /// The natural typed primitive for the modality-classifier surface
+    /// every operator-facing rebuild line, structured-diagnostic
+    /// legend, and per-window summary struct carries: the
+    /// `AxisHistogram<crate::ShikumiErrorKind>` reload-window summary
+    /// (`"modality_class = StrictModalTiedAntimodal — Parse alone at
+    /// 12×, Watch / Io / Extract tied at 1× each"` — one named
+    /// classifier-corner emission rather than the four-line boolean
+    /// dump), the chain-shape rollup on
+    /// [`crate::ConfigSourceChain::file_format_histogram`]
+    /// (`"modality_class = TiedModalTiedAntimodal — chain is uniformly
+    /// distributed across formats"`), the
+    /// `AxisHistogram<crate::DiffLineKind>` rebuild-summary
+    /// (`"modality_class = TiedModalStrictAntimodal — Added / Removed
+    /// tied at the peak, Context the rarest"`). A per-classifier-corner
+    /// rollup counter (e.g. a fleet-wide
+    /// `HashMap<ModalityClass, usize>` tallying how many reload windows
+    /// landed in each corner over a deployment window) reaches the
+    /// closed-classification map-key surface at one call site,
+    /// inheriting the [`Eq`] + [`Hash`] + [`Copy`] guarantees on
+    /// [`ModalityClass`] without an interposing hand-rolled
+    /// classification key.
+    ///
+    /// **Exhaustiveness witness.** The returned [`ModalityClass`] is
+    /// exhaustively pattern-matchable across its five variants — the
+    /// compiler enforces that every match site enumerates all five
+    /// corners (or uses an explicit `_` wildcard with intent). A future
+    /// renderer landing on the typescape *cannot* silently drop the
+    /// empty-boundary branch or any classifier corner, peer to the
+    /// structural exhaustiveness on every other closed-enum primitive
+    /// in the typescape.
+    ///
+    /// **Single-pass cost.** The body delegates to
+    /// [`Self::modality_degree`], which is itself a single-pass
+    /// argmax/argmin fused scan over the contiguous counts vector
+    /// (`O(axis_cardinality)`), then a 5-arm `match` on the resulting
+    /// `(usize, usize)` pair (`O(1)`). The lift is pure naming +
+    /// exhaustiveness pinning, not algorithmic — the named projection
+    /// carries the *same* single-pass scan body as the open-coded
+    /// 4-call form `(is_strictly_modally_unique, is_modally_tied,
+    /// is_strictly_antimodally_unique, is_antimodally_tied)` collapsed
+    /// into one method call.
+    ///
+    /// **Empty-histogram convention** — returns [`ModalityClass::Empty`]
+    /// uniformly on every implementor's empty histogram. The empty
+    /// boundary lifts to its own typed variant rather than folding into
+    /// one of the four classifier corners; every named boolean
+    /// ([`Self::is_strictly_modally_unique`], [`Self::is_modally_tied`],
+    /// [`Self::is_strictly_antimodally_unique`],
+    /// [`Self::is_antimodally_tied`]) reads `false` on the empty
+    /// histogram, so the [`ModalityClass::is_empty`] projection is the
+    /// unique typed witness for the boundary without a separate
+    /// [`Self::is_empty`] pre-check at the match site.
+    ///
+    /// **Singleton-observation convention** — every singleton-support
+    /// histogram has [`Self::modality_degree`] `(1, 1)`, so
+    /// `modality_class` reads [`ModalityClass::StrictModalStrictAntimodal`]
+    /// uniformly on every singleton across every implementor — the
+    /// minimal-non-empty boundary witness for the both-extremes-uniquely-
+    /// held corner.
+    ///
+    /// **Axis-cover convention** — observing every cell exactly once
+    /// raises both [`Self::peak_multiplicity`] and
+    /// [`Self::trough_multiplicity`] to `axis_cardinality::<A>()`, so
+    /// `modality_class` reads [`ModalityClass::TiedModalTiedAntimodal`]
+    /// iff `axis_cardinality::<A>() >= 2`. Every closed-axis
+    /// implementor on the typescape today carries
+    /// `axis_cardinality >= 2`, so the uniform axis-cover reads the
+    /// both-tied variant uniformly across the implementor set. Stated
+    /// as the conditional law so the witness is uniform across the
+    /// implementor set without case-splitting on cardinality at the
+    /// test site.
+    ///
+    /// **Peer-projection law.** On every histogram `h`, the variant
+    /// returned by `h.modality_class()` agrees with the histogram-
+    /// surface boolean predicates pointwise:
+    /// - `h.modality_class().is_empty() ⇔ h.is_empty()`,
+    /// - `h.modality_class().is_modally_tied() ⇔ h.is_modally_tied()`,
+    /// - `h.modality_class().is_antimodally_tied() ⇔ h.is_antimodally_tied()`.
+    ///
+    /// The closed enum-surface predicates ([`ModalityClass::is_empty`],
+    /// [`ModalityClass::is_modally_tied`],
+    /// [`ModalityClass::is_antimodally_tied`]) are the projections of
+    /// the histogram-surface predicates of the same name, lifted onto
+    /// the typed variant tag — a consumer holding a cached
+    /// `ModalityClass` value reads off the modal / antimodal / empty
+    /// boundary booleans without re-routing through the originating
+    /// histogram. Pinned trait-uniformly across every [`ClosedAxis`]
+    /// implementor.
+    ///
+    /// **Companion invariants** with [`Self::modality_degree`],
+    /// [`Self::peak_multiplicity`], [`Self::trough_multiplicity`],
+    /// [`Self::is_empty`], [`Self::is_uniform_count`], and
+    /// [`Self::has_singular_support`]:
+    /// - `modality_class() == ModalityClass::Empty ⇔ is_empty()` —
+    ///   the empty-boundary witness is unique.
+    /// - `modality_class() == ModalityClass::StrictModalStrictAntimodal
+    ///   ⇔ modality_degree() == (1, 1)` — both extremes uniquely
+    ///   held.
+    /// - `modality_class() == ModalityClass::TiedModalStrictAntimodal
+    ///   ⇔ modality_degree().0 >= 2 ∧ modality_degree().1 == 1`.
+    /// - `modality_class() == ModalityClass::StrictModalTiedAntimodal
+    ///   ⇔ modality_degree().0 == 1 ∧ modality_degree().1 >= 2`.
+    /// - `modality_class() == ModalityClass::TiedModalTiedAntimodal
+    ///   ⇔ modality_degree().0 >= 2 ∧ modality_degree().1 >= 2`.
+    /// - `has_singular_support() ⇒ modality_class() ==
+    ///   ModalityClass::StrictModalStrictAntimodal` — a single
+    ///   observed cell sits alone at both extremes.
+    /// - `is_uniform_count() ∧ !is_empty() ⇒ modality_class() ∈
+    ///   { StrictModalStrictAntimodal, TiedModalTiedAntimodal }` —
+    ///   when every observed cell shares the same count, peak and
+    ///   trough coincide on the support, so the modal and antimodal
+    ///   tie booleans collapse to the same value (`!has_singular_support()`).
+    ///   A uniform singleton fires [`ModalityClass::StrictModalStrictAntimodal`];
+    ///   every uniform-count multi-cell shape fires
+    ///   [`ModalityClass::TiedModalTiedAntimodal`] — peer to the
+    ///   identical-axis collapse law on
+    ///   [`Self::is_antimodally_tied`] and [`Self::is_modally_tied`]
+    ///   under uniform count.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the twenty
+    /// closed-enum axis primitives plus the five product cubes —
+    /// twenty-five today, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]) inherits the
+    /// projection at no per-axis cost. The seven trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_modality_class_empty_is_empty_variant_*`,
+    /// `axis_histogram_modality_class_singleton_is_strict_modal_strict_antimodal_*`,
+    /// `axis_histogram_modality_class_axis_cover_is_tied_modal_tied_antimodal_iff_cardinality_at_least_two_*`,
+    /// `axis_histogram_modality_class_equals_open_coded_modality_degree_match_*`,
+    /// `axis_histogram_modality_class_is_empty_agrees_with_histogram_is_empty_*`,
+    /// `axis_histogram_modality_class_is_modally_tied_agrees_with_histogram_is_modally_tied_*`,
+    /// `axis_histogram_modality_class_is_antimodally_tied_agrees_with_histogram_is_antimodally_tied_*`).
+    ///
+    /// Peer to [`Self::modality_degree`] (the fused scalar-pair
+    /// projection of the multiplicities) on the histogram's named
+    /// classification surface: the histogram now carries the scalar-
+    /// pair `(peak_mult, trough_mult)` projection alongside the closed-
+    /// enum [`ModalityClass`] projection, with the named-boolean
+    /// surface (`is_strictly_modally_unique`, `is_modally_tied`,
+    /// `is_strictly_antimodally_unique`, `is_antimodally_tied`) sitting
+    /// between them as the four-primitive boolean algebra both
+    /// projections close. Every operator-facing summary reads the
+    /// projection it needs at one method call — scalar pair, named
+    /// boolean, or closed classifier corner — without re-derivation
+    /// drift.
+    #[must_use]
+    pub fn modality_class(&self) -> ModalityClass {
+        match self.modality_degree() {
+            (0, 0) => ModalityClass::Empty,
+            (1, 1) => ModalityClass::StrictModalStrictAntimodal,
+            (_, 1) => ModalityClass::TiedModalStrictAntimodal,
+            (1, _) => ModalityClass::StrictModalTiedAntimodal,
+            _ => ModalityClass::TiedModalTiedAntimodal,
+        }
     }
 
     /// The **observed-distribution spread** — the difference between the
@@ -27694,5 +28083,643 @@ mod tests {
         .collect();
         assert!(cover.is_uniform_count());
         assert_eq!(cover.is_modally_tied(), cover.is_antimodally_tied());
+    }
+
+    #[test]
+    fn modality_class_all_has_five_entries() {
+        // The five-variant closed multiplicity classification
+        // (Empty, StrictModalStrictAntimodal, TiedModalStrictAntimodal,
+        // StrictModalTiedAntimodal, TiedModalTiedAntimodal) — pinned by
+        // a length-5 invariant on ModalityClass::ALL. Lockstep with the
+        // discriminant exhaustiveness law below: a sixth corner landing
+        // on the typescape extends both the variant set and the ALL
+        // slice in one commit, and this pin catches the discipline
+        // violation before silent dropouts at every classifier-corner
+        // rollup site.
+        assert_eq!(ModalityClass::ALL.len(), 5);
+        assert_eq!(
+            ModalityClass::ALL,
+            &[
+                ModalityClass::Empty,
+                ModalityClass::StrictModalStrictAntimodal,
+                ModalityClass::TiedModalStrictAntimodal,
+                ModalityClass::StrictModalTiedAntimodal,
+                ModalityClass::TiedModalTiedAntimodal,
+            ],
+        );
+    }
+
+    #[test]
+    fn modality_class_all_entries_are_pairwise_distinct() {
+        // Disjoint-variant invariant on the closed enum surface — every
+        // pair of distinct variants compares unequal. Pinned at the
+        // enum surface so a future merge of two variants (or an
+        // accidental duplicate variant tag) caught at one site rather
+        // than through downstream test failures on the
+        // modality_class equivalence laws.
+        for (i, &a) in ModalityClass::ALL.iter().enumerate() {
+            for (j, &b) in ModalityClass::ALL.iter().enumerate() {
+                if i == j {
+                    assert_eq!(a, b, "variant must equal itself at index {i}");
+                } else {
+                    assert_ne!(a, b, "variants at indices {i} and {j} must differ");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn modality_class_is_empty_fires_exactly_on_empty_variant() {
+        // The Self::is_empty const projection on ModalityClass fires
+        // exactly on Self::Empty and nowhere else — the empty boundary
+        // is the unique typed witness on the variant tag. Lockstep with
+        // the histogram-side trait-uniform agreement law below.
+        for &class in ModalityClass::ALL {
+            assert_eq!(
+                class.is_empty(),
+                matches!(class, ModalityClass::Empty),
+                "is_empty must fire iff variant == Empty for class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_is_modally_tied_fires_exactly_on_tied_modal_variants() {
+        // The Self::is_modally_tied const projection fires exactly on
+        // TiedModalStrictAntimodal and TiedModalTiedAntimodal — the
+        // two variants whose modal axis is tied. Pinned across every
+        // variant so a future rename of either tied-modal variant or
+        // accidental addition of a sixth tied-modal corner is caught
+        // at one site.
+        for &class in ModalityClass::ALL {
+            let expected = matches!(
+                class,
+                ModalityClass::TiedModalStrictAntimodal | ModalityClass::TiedModalTiedAntimodal,
+            );
+            assert_eq!(
+                class.is_modally_tied(),
+                expected,
+                "is_modally_tied projection on class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_is_antimodally_tied_fires_exactly_on_tied_antimodal_variants() {
+        // The Self::is_antimodally_tied const projection fires exactly
+        // on StrictModalTiedAntimodal and TiedModalTiedAntimodal — the
+        // two variants whose antimodal axis is tied. Pinned across
+        // every variant; orthogonal axis-pair to the modal-side law.
+        for &class in ModalityClass::ALL {
+            let expected = matches!(
+                class,
+                ModalityClass::StrictModalTiedAntimodal | ModalityClass::TiedModalTiedAntimodal,
+            );
+            assert_eq!(
+                class.is_antimodally_tied(),
+                expected,
+                "is_antimodally_tied projection on class {class:?}",
+            );
+        }
+    }
+
+    fn assert_modality_class_empty_is_empty_variant<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The empty histogram boundary lifts to the typed
+        // ModalityClass::Empty variant uniformly across every
+        // implementor, inherited from modality_degree returning
+        // (0, 0) on every implementor's empty histogram.
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.modality_class(),
+            ModalityClass::Empty,
+            "empty histogram modality_class must be Empty on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_modality_class_singleton_is_strict_modal_strict_antimodal<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Every singleton-support histogram has modality_degree (1, 1)
+        // (the lone observed cell stands alone at both peak and
+        // trough), so modality_class reads
+        // StrictModalStrictAntimodal uniformly across every
+        // implementor — the minimal-non-empty boundary witness for the
+        // both-extremes-uniquely-held corner.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.modality_class(),
+                ModalityClass::StrictModalStrictAntimodal,
+                "singleton modality_class for observed cell {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_modality_class_axis_cover_is_tied_modal_tied_antimodal_iff_cardinality_at_least_two<
+        A,
+    >()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once raises both
+        // peak_multiplicity and trough_multiplicity to
+        // axis_cardinality::<A>(); modality_class reads
+        // TiedModalTiedAntimodal iff the axis carries two or more
+        // cells, and StrictModalStrictAntimodal iff the axis carries
+        // exactly one cell. Stated as an equivalence so the law is
+        // uniform across the implementor set without case-splitting
+        // on cardinality at the test site — every closed-axis
+        // primitive on the typescape today carries
+        // axis_cardinality >= 2, so the law reads
+        // TiedModalTiedAntimodal uniformly across the implementor set.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        let expected = if axis_cardinality::<A>() >= 2 {
+            ModalityClass::TiedModalTiedAntimodal
+        } else {
+            ModalityClass::StrictModalStrictAntimodal
+        };
+        assert_eq!(
+            hist.modality_class(),
+            expected,
+            "axis-cover modality_class on axis {} (cardinality {})",
+            std::any::type_name::<A>(),
+            axis_cardinality::<A>(),
+        );
+    }
+
+    fn assert_modality_class_equals_open_coded_modality_degree_match<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Defining-equivalence law: modality_class() is pointwise the
+        // five-arm match on modality_degree() the named projection
+        // collapses, across every histogram shape — empty, singleton,
+        // full axis cover. Reached across every implementor through
+        // the macro.
+        let shapes: [AxisHistogram<A>; 3] = [
+            AxisHistogram::<A>::empty(),
+            std::iter::once(axis_iter::<A>().next().expect("non-empty axis"))
+                .collect::<AxisHistogram<A>>(),
+            axis_iter::<A>().collect::<AxisHistogram<A>>(),
+        ];
+        for hist in &shapes {
+            let expected = match hist.modality_degree() {
+                (0, 0) => ModalityClass::Empty,
+                (1, 1) => ModalityClass::StrictModalStrictAntimodal,
+                (_, 1) => ModalityClass::TiedModalStrictAntimodal,
+                (1, _) => ModalityClass::StrictModalTiedAntimodal,
+                _ => ModalityClass::TiedModalTiedAntimodal,
+            };
+            assert_eq!(
+                hist.modality_class(),
+                expected,
+                "modality_class must equal open-coded modality_degree match \
+                 on axis {} with degree {:?}",
+                std::any::type_name::<A>(),
+                hist.modality_degree(),
+            );
+        }
+    }
+
+    fn assert_modality_class_is_empty_agrees_with_histogram_is_empty<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The peer-projection law on the empty boundary:
+        // hist.modality_class().is_empty() == hist.is_empty() on every
+        // histogram shape. The enum-surface projection lifts the
+        // histogram-surface empty-boundary predicate onto the variant
+        // tag without re-routing through the originating histogram.
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.modality_class().is_empty(),
+            empty.is_empty(),
+            "modality_class.is_empty must equal histogram.is_empty on empty \
+             histogram for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.modality_class().is_empty(),
+                singleton.is_empty(),
+                "modality_class.is_empty must equal histogram.is_empty on \
+                 singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.modality_class().is_empty(),
+            cover.is_empty(),
+            "modality_class.is_empty must equal histogram.is_empty on uniform \
+             axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_modality_class_is_modally_tied_agrees_with_histogram_is_modally_tied<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Peer-projection on the modal axis:
+        // hist.modality_class().is_modally_tied() ==
+        // hist.is_modally_tied() on every histogram shape. The closed-
+        // enum projection lifts the histogram-surface modal-tie
+        // predicate onto the variant tag pointwise.
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.modality_class().is_modally_tied(),
+            empty.is_modally_tied(),
+            "modally_tied agreement on empty histogram for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.modality_class().is_modally_tied(),
+                singleton.is_modally_tied(),
+                "modally_tied agreement on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.modality_class().is_modally_tied(),
+            cover.is_modally_tied(),
+            "modally_tied agreement on uniform axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_modality_class_is_antimodally_tied_agrees_with_histogram_is_antimodally_tied<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Peer-projection on the antimodal axis:
+        // hist.modality_class().is_antimodally_tied() ==
+        // hist.is_antimodally_tied() on every histogram shape.
+        // Orthogonal-axis peer to the modal-side law above.
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.modality_class().is_antimodally_tied(),
+            empty.is_antimodally_tied(),
+            "antimodally_tied agreement on empty histogram for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.modality_class().is_antimodally_tied(),
+                singleton.is_antimodally_tied(),
+                "antimodally_tied agreement on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.modality_class().is_antimodally_tied(),
+            cover.is_antimodally_tied(),
+            "antimodally_tied agreement on uniform axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_modality_class_empty_is_empty_variant_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_class_empty_is_empty_variant::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_class_singleton_is_strict_modal_strict_antimodal_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_class_singleton_is_strict_modal_strict_antimodal::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_class_axis_cover_is_tied_modal_tied_antimodal_iff_cardinality_at_least_two_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_class_axis_cover_is_tied_modal_tied_antimodal_iff_cardinality_at_least_two::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_class_equals_open_coded_modality_degree_match_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_class_equals_open_coded_modality_degree_match::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_class_is_empty_agrees_with_histogram_is_empty_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_class_is_empty_agrees_with_histogram_is_empty::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_class_is_modally_tied_agrees_with_histogram_is_modally_tied_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_class_is_modally_tied_agrees_with_histogram_is_modally_tied::<$ty>(
+                );
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_class_is_antimodally_tied_agrees_with_histogram_is_antimodally_tied_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_class_is_antimodally_tied_agrees_with_histogram_is_antimodally_tied::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_class_classifies_all_five_corners_on_diff_line_kind() {
+        // Behavioral pin: each of the five ModalityClass variants is
+        // hit by at least one canonical DiffLineKind shape — the
+        // empty boundary, the (1, 1) corner via a strictly-skewed
+        // shape, the (k, 1) corner via a tied-peak shape, the (1, l)
+        // corner via a tied-trough shape, and the (k, l) corner via a
+        // uniform sub-cover. Co-located with the four classifier-corner
+        // tests on modality_degree (lines 25832-25917) so the variants
+        // and the underlying scalar-pair corners stay in lockstep
+        // across future shape additions.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert_eq!(empty.modality_class(), ModalityClass::Empty);
+
+        // (1, 1): three-of-Added, two-of-Removed, one-of-Context —
+        // peak = Added (unique at 3), trough = Context (unique at 1).
+        let strict_strict: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .iter()
+        .copied()
+        .collect();
+        assert_eq!(strict_strict.modality_degree(), (1, 1));
+        assert_eq!(
+            strict_strict.modality_class(),
+            ModalityClass::StrictModalStrictAntimodal,
+        );
+
+        // (k, 1): two-of-Added, two-of-Removed, one-of-Context —
+        // peak shared by Added/Removed (k=2), trough = Context (l=1).
+        let tied_strict: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .iter()
+        .copied()
+        .collect();
+        assert_eq!(tied_strict.modality_degree(), (2, 1));
+        assert_eq!(
+            tied_strict.modality_class(),
+            ModalityClass::TiedModalStrictAntimodal,
+        );
+
+        // (1, l): three-of-Added, one-of-Removed, one-of-Context —
+        // peak = Added (k=1), trough shared by Removed/Context (l=2).
+        let strict_tied: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .iter()
+        .copied()
+        .collect();
+        assert_eq!(strict_tied.modality_degree(), (1, 2));
+        assert_eq!(
+            strict_tied.modality_class(),
+            ModalityClass::StrictModalTiedAntimodal,
+        );
+
+        // (k, l): two-of-Added, two-of-Removed — uniform sub-cover
+        // collapses peak and trough onto the same level set; (k, l) =
+        // (2, 2).
+        let tied_tied: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+        ]
+        .iter()
+        .copied()
+        .collect();
+        assert_eq!(tied_tied.modality_degree(), (2, 2));
+        assert_eq!(
+            tied_tied.modality_class(),
+            ModalityClass::TiedModalTiedAntimodal,
+        );
+    }
+
+    #[test]
+    fn axis_histogram_modality_class_uniform_count_non_empty_lands_in_both_tied_or_both_strict() {
+        // Uniform-count collapse on the closed enum surface: when
+        // every observed cell shares the same count, peak and trough
+        // coincide on the support, so modality_class lands in one of
+        // two variants — StrictModalStrictAntimodal on the singleton
+        // shape (where peak and trough collapse onto the lone cell),
+        // or TiedModalTiedAntimodal on every multi-cell uniform-count
+        // shape (where both level sets equal the support). Lockstep
+        // with the existing uniform-count collapse laws on
+        // is_modally_tied and is_antimodally_tied — the closed-enum
+        // surface reads the same boundary at one classifier-corner
+        // emission rather than two named-boolean reads.
+        let singleton_multi: AxisHistogram<DiffLineKind> =
+            [DiffLineKind::Added, DiffLineKind::Added]
+                .iter()
+                .copied()
+                .collect();
+        assert!(singleton_multi.is_uniform_count());
+        assert!(singleton_multi.has_singular_support());
+        assert_eq!(
+            singleton_multi.modality_class(),
+            ModalityClass::StrictModalStrictAntimodal,
+        );
+
+        let two_cell_uniform: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+        ]
+        .iter()
+        .copied()
+        .collect();
+        assert!(two_cell_uniform.is_uniform_count());
+        assert!(!two_cell_uniform.has_singular_support());
+        assert_eq!(
+            two_cell_uniform.modality_class(),
+            ModalityClass::TiedModalTiedAntimodal,
+        );
+
+        let cover: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert!(cover.is_uniform_count());
+        assert!(!cover.has_singular_support());
+        assert_eq!(
+            cover.modality_class(),
+            ModalityClass::TiedModalTiedAntimodal
+        );
+    }
+
+    #[test]
+    fn axis_histogram_modality_class_total_classification_partitions_every_shape() {
+        // Total/disjoint witness on the closed enum: every histogram
+        // shape lands in exactly one of the five variants — the
+        // classification is a partition over the histogram surface,
+        // not a multi-class tagging. Pinned across the six canonical
+        // shape representatives (empty, singleton, strict/strict,
+        // tied/strict, strict/tied, tied/tied) on DiffLineKind, each
+        // landing in its named corner and never any other. The
+        // five-variant exhaustiveness check (every variant must be
+        // hit by some test shape) is pinned by the classifies_all_five_corners
+        // test above; this law adds the disjointness side.
+        let representatives: [(&[DiffLineKind], ModalityClass); 6] = [
+            (&[], ModalityClass::Empty),
+            (
+                &[DiffLineKind::Added],
+                ModalityClass::StrictModalStrictAntimodal,
+            ),
+            (
+                &[
+                    DiffLineKind::Added,
+                    DiffLineKind::Added,
+                    DiffLineKind::Added,
+                    DiffLineKind::Removed,
+                    DiffLineKind::Removed,
+                    DiffLineKind::Context,
+                ],
+                ModalityClass::StrictModalStrictAntimodal,
+            ),
+            (
+                &[
+                    DiffLineKind::Added,
+                    DiffLineKind::Added,
+                    DiffLineKind::Removed,
+                    DiffLineKind::Removed,
+                    DiffLineKind::Context,
+                ],
+                ModalityClass::TiedModalStrictAntimodal,
+            ),
+            (
+                &[
+                    DiffLineKind::Added,
+                    DiffLineKind::Added,
+                    DiffLineKind::Added,
+                    DiffLineKind::Removed,
+                    DiffLineKind::Context,
+                ],
+                ModalityClass::StrictModalTiedAntimodal,
+            ),
+            (
+                &[
+                    DiffLineKind::Added,
+                    DiffLineKind::Added,
+                    DiffLineKind::Removed,
+                    DiffLineKind::Removed,
+                ],
+                ModalityClass::TiedModalTiedAntimodal,
+            ),
+        ];
+        for (input, expected) in representatives {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let actual = hist.modality_class();
+            assert_eq!(
+                actual, expected,
+                "shape {input:?} must classify as {expected:?}, got {actual:?}",
+            );
+            for &other in ModalityClass::ALL {
+                if other != expected {
+                    assert_ne!(
+                        actual, other,
+                        "shape {input:?} must NOT classify as {other:?}",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn axis_histogram_modality_class_observation_order_invariant() {
+        // The classification is invariant under observation order on
+        // the multiset of inputs (because modality_degree is, because
+        // peak_multiplicity and trough_multiplicity are, because the
+        // underlying contiguous counts vector is invariant under
+        // observation order). Pinned by collecting the same multiset
+        // in two orders and asserting equal classifications. Peer to
+        // the identical invariant on modality_degree
+        // (axis_histogram_modality_degree_observation_order_invariant).
+        let multiset_a = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ];
+        let multiset_b = [
+            DiffLineKind::Context,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Added,
+        ];
+        let hist_a: AxisHistogram<DiffLineKind> = multiset_a.iter().copied().collect();
+        let hist_b: AxisHistogram<DiffLineKind> = multiset_b.iter().copied().collect();
+        assert_eq!(hist_a.modality_degree(), hist_b.modality_degree());
+        assert_eq!(hist_a.modality_class(), hist_b.modality_class());
     }
 }
