@@ -4422,6 +4422,147 @@ impl<A: ClosedAxis> std::ops::Div<usize> for AxisHistogram<A> {
     }
 }
 
+impl<A: ClosedAxis> std::ops::RemAssign<usize> for AxisHistogram<A> {
+    /// Truncating per-cell remainder in place by `divisor` — the
+    /// canonical Rust [`RemAssign`][std::ops::RemAssign] trait idiom
+    /// for the Euclidean-remainder peer of
+    /// [`DivAssign<usize>`][std::ops::DivAssign] on the additive monoid
+    /// `(AxisHistogram, +, empty)`. Closes the canonical
+    /// `(Mul, MulAssign, Div, DivAssign, Rem, RemAssign)` integer-
+    /// arithmetic operator sextet every primitive that carries a
+    /// [`usize`]-action on a numeric surface exposes ([`usize`],
+    /// [`u32`], [`i32`], …): the multiplicative pair, the truncating-
+    /// division pair, and the Euclidean-remainder pair compose into one
+    /// integer-arithmetic operator surface. The primitive site that
+    /// carries the per-cell scalar-remainder loop; the [`Rem<usize>`]
+    /// surface below lowers through this impl so the per-cell loop
+    /// lives at exactly one site.
+    ///
+    /// **Semantics — Euclidean remainder.** Each cell `c` is replaced
+    /// by `c % divisor` under stdlib [`usize`]-arithmetic. Cells with
+    /// `c < divisor` are preserved; cells with `c >= divisor` lose the
+    /// `(c / divisor) * divisor` multiple and retain the
+    /// `c - (c / divisor) * divisor` remainder.
+    ///
+    /// **One-divisor zero law** — `hist %= 1` zeros every cell of the
+    /// histogram, equal pointwise to [`AxisHistogram::empty`]. The
+    /// identity element of the scalar monoid `(usize, *, 1)` is the
+    /// absorbing element of the remainder monoid `(usize, %, _)`:
+    /// every cell `c` satisfies `c % 1 == 0`. Peer to the zero-factor
+    /// absorbing law on the [`MulAssign<usize>`] surface and dual to
+    /// the one-divisor identity law on the [`DivAssign<usize>`]
+    /// surface.
+    ///
+    /// **Cell-level remainder law** — every cell `v` has its count
+    /// replaced by the stdlib usize Euclidean-remainder
+    /// `before.count(v) % divisor`: `(hist %= divisor); hist.count(v)`
+    /// reads `before.count(v) % divisor` for every cell. Peer to the
+    /// cell-level truncating-division law on [`DivAssign<usize>`] and
+    /// the cell-level scaling law on [`MulAssign<usize>`].
+    ///
+    /// **Div-Rem identity law** — `(hist / divisor) * divisor + (hist %
+    /// divisor) == hist` for `divisor > 0`. The canonical defining
+    /// equation of the Euclidean-division pair lifted from the cell
+    /// type to the histogram surface: every cell `c` satisfies
+    /// `(c / divisor) * divisor + (c % divisor) == c` under [`usize`]
+    /// arithmetic, and the lift through the additive monoid agrees
+    /// pointwise. Pinned by the trait-uniform test
+    /// `axis_histogram_rem_assign_completes_div_rem_identity_for_every_closed_axis_implementor`.
+    ///
+    /// **Remainder bound** — every cell `v` satisfies
+    /// `(hist %= divisor).count(v) < divisor` for `divisor > 0`. The
+    /// canonical Euclidean-remainder bound lifted pointwise. Pinned by
+    /// the trait-uniform test
+    /// `axis_histogram_rem_assign_bounds_cells_below_divisor_for_every_closed_axis_implementor`.
+    ///
+    /// # Panics
+    ///
+    /// Panics on `divisor == 0`, inherited from the stdlib
+    /// `usize::rem(0)` panic at every cell (the underlying `%=`
+    /// operation panics on the first cell). Consistent with the
+    /// [`DivAssign<usize>`] impl, which inherits the same overflow
+    /// contract from [`usize`] arithmetic: overflow / divide-by-zero
+    /// semantics are inherited from the cell type, not re-derived on
+    /// the histogram surface.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The trait-uniform laws pinned
+    /// in [`tests`] hold across the implementor set
+    /// (`axis_histogram_rem_assign_one_divisor_zeros_histogram_*`,
+    /// `axis_histogram_rem_assign_scales_cells_by_remainder_*`,
+    /// `axis_histogram_rem_assign_completes_div_rem_identity_*`,
+    /// `axis_histogram_rem_assign_bounds_cells_below_divisor_*`).
+    fn rem_assign(&mut self, divisor: usize) {
+        for slot in &mut self.counts {
+            *slot %= divisor;
+        }
+    }
+}
+
+impl<A: ClosedAxis> std::ops::Rem<usize> for AxisHistogram<A> {
+    type Output = AxisHistogram<A>;
+
+    /// Truncating per-cell remainder of `self` by `divisor` — the
+    /// canonical Rust [`Rem`][std::ops::Rem] trait idiom and the
+    /// natural infix-operator peer of
+    /// [`RemAssign<usize>`][std::ops::RemAssign]. Lowered through
+    /// [`RemAssign<usize>`]: take ownership of `self`, reduce every
+    /// cell through `%=`, return the accumulator. Pointwise equal to
+    /// `RemAssign<usize>` on every call site, by construction (both
+    /// lower through `%=` underneath). The per-cell scalar-remainder
+    /// loop lives at exactly one site (the [`RemAssign<usize>`] impl
+    /// above).
+    ///
+    /// Closes the canonical Rust `(Mul, MulAssign, Div, DivAssign,
+    /// Rem, RemAssign)` integer-arithmetic operator sextet every
+    /// primitive that carries a [`usize`]-action on a numeric surface
+    /// exposes (the same sextet [`usize`], [`u32`], [`i32`] carry at
+    /// the cell level — multiplicative pair, truncating-division pair,
+    /// Euclidean-remainder pair). Every shikumi consumer reaching the
+    /// per-cell remainder surface (a fleet aggregator computing
+    /// `hist - (hist / window) * window` to read off the
+    /// rolling-window residual across an
+    /// `AxisHistogram<crate::ConfigSourceKind>` cell, a per-tier
+    /// observatory partitioning an
+    /// `AxisHistogram<crate::WatchEventClass>` cell into bucket-
+    /// multiples and bucket-residuals against a per-tier bucket size)
+    /// now routes through `hist % divisor` uniformly instead of the
+    /// open-coded `hist - (hist.clone() / divisor) * divisor` rebuild
+    /// or the per-cell-map form
+    /// `hist.iter().map(|(c, n)| (c, n % divisor)).collect()`.
+    ///
+    /// **Equivalence with [`RemAssign<usize>`]** — for every `(self,
+    /// divisor)` with `divisor > 0`: `self.clone() % divisor` is
+    /// pointwise equal to `let mut a = self.clone(); a %= divisor;
+    /// a`. The (`Rem`, `RemAssign`) duality on the Euclidean-remainder
+    /// surface, peer to the (`Div`, `DivAssign`) duality on the
+    /// truncating-division side and the (`Mul`, `MulAssign`) duality
+    /// on the multiplicative side. Pinned by
+    /// [`tests::axis_histogram_rem_equals_rem_assign_for_every_closed_axis_implementor`].
+    ///
+    /// **One-divisor zero law** — `hist % 1` is pointwise equal to
+    /// [`AxisHistogram::empty`]. Inherits the absorbing law from
+    /// [`RemAssign<usize>`].
+    ///
+    /// **Div-Rem identity law** — `(hist / divisor) * divisor + (hist
+    /// % divisor) == hist` for `divisor > 0`. Inherits from
+    /// [`RemAssign<usize>`].
+    ///
+    /// # Panics
+    ///
+    /// Panics on `divisor == 0`. Inherits the panic contract from
+    /// [`RemAssign<usize>`].
+    ///
+    /// Trait-uniform laws reach every [`ClosedAxis`] implementor
+    /// through `for_each_closed_axis_implementor!` in [`tests`]
+    /// (`axis_histogram_rem_equals_rem_assign_*`,
+    /// `axis_histogram_rem_one_divisor_zeros_histogram_*`).
+    fn rem(mut self, divisor: usize) -> Self::Output {
+        self %= divisor;
+        self
+    }
+}
+
 impl<A: ClosedAxis> std::ops::Mul<AxisHistogram<A>> for usize {
     type Output = AxisHistogram<A>;
 
@@ -16726,6 +16867,267 @@ mod tests {
         assert_eq!(lossy.count(DiffLineKind::Removed), 4);
         assert_eq!(lossy.count(DiffLineKind::Context), 4);
         assert_ne!(lossy, pre);
+    }
+
+    // ---- AxisHistogram Euclidean-remainder trait-uniform laws ----
+    //
+    // The (Rem<usize>, RemAssign<usize>) scalar-action surface closes
+    // the canonical Rust `(Mul, MulAssign, Div, DivAssign, Rem,
+    // RemAssign)` integer-arithmetic operator sextet every primitive
+    // that carries a `usize`-action on a numeric surface exposes (the
+    // same sextet `usize`, `u32`, `i32` carry at the cell level). The
+    // trait-uniform laws below pin the Euclidean-remainder surface's
+    // contract uniformly across every [`ClosedAxis`] implementor: the
+    // one-divisor zero law (every cell `c % 1 == 0`); cell-level
+    // Euclidean remainder (every cell `c` becomes `c % divisor`); the
+    // (Rem, RemAssign) operator pair agrees pointwise; the div-rem
+    // identity `(hist / d) * d + (hist % d) == hist` (the canonical
+    // defining equation of the Euclidean-division pair); the
+    // remainder-bound law (`(hist % d).count(v) < d` for every cell).
+
+    fn assert_rem_assign_one_divisor_zeros_histogram<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The one-divisor zero law on `RemAssign<usize>`: `hist %= 1`
+        // zeros every cell of the histogram. The identity element of
+        // the scalar monoid `(usize, *, 1)` is the absorbing element
+        // of the remainder monoid `(usize, %, _)`: every cell `c`
+        // satisfies `c % 1 == 0`. Pinned over the (axis-cover +
+        // once-more) histogram so every cell carries a positive count
+        // pre-rem and the equality reads off every ordinal.
+        let cover: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let mut reduced = cover;
+        reduced %= 1;
+        assert_eq!(
+            reduced,
+            AxisHistogram::<A>::empty(),
+            "hist %= 1 must zero every cell on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_rem_assign_scales_cells_by_remainder<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The cell-level Euclidean-remainder law on `RemAssign<usize>`:
+        // every cell `v` has its count replaced by the stdlib usize
+        // remainder `before.count(v) % divisor`. Pinned at divisor 3
+        // over the (axis-cover ×7)-then-trim histogram so every cell
+        // carries a count of 7 pre-rem and lands at 7 % 3 = 1 post-rem
+        // (a non-trivial remainder that reads off every ordinal
+        // independently).
+        let mut pre = AxisHistogram::<A>::empty();
+        for _ in 0..7 {
+            pre += &axis_iter::<A>().collect::<AxisHistogram<A>>();
+        }
+        let divisor = 3usize;
+        let mut reduced = pre.clone();
+        reduced %= divisor;
+        for cell in axis_iter::<A>() {
+            assert_eq!(
+                reduced.count(cell),
+                pre.count(cell) % divisor,
+                "hist %= {divisor} cell {cell:?} must equal pre.count % {divisor} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_rem_assign_completes_div_rem_identity<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The div-rem identity law on the Euclidean-division pair:
+        // `(hist / divisor) * divisor + (hist % divisor) == hist` for
+        // `divisor > 0`. The canonical defining equation of the
+        // Euclidean-division pair lifted from the cell type to the
+        // histogram surface: every cell `c` satisfies `(c / divisor) *
+        // divisor + (c % divisor) == c` under usize arithmetic, and
+        // the lift through the additive monoid agrees pointwise.
+        // Pinned at divisors 2, 3, 5, 11 over the (axis-cover ×7)
+        // histogram so every cell carries a count of 7 pre-decomposition
+        // and the identity reads across both even and odd divisors
+        // independently.
+        let mut pre = AxisHistogram::<A>::empty();
+        for _ in 0..7 {
+            pre += &axis_iter::<A>().collect::<AxisHistogram<A>>();
+        }
+        for divisor in [2usize, 3, 5, 11] {
+            let recomposed = (pre.clone() / divisor) * divisor + &(pre.clone() % divisor);
+            assert_eq!(
+                recomposed,
+                pre,
+                "(hist / {divisor}) * {divisor} + (hist % {divisor}) must equal hist on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_rem_assign_bounds_cells_below_divisor<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The remainder-bound law on `RemAssign<usize>`: every cell
+        // `(hist %= divisor).count(v) < divisor` for `divisor > 0`.
+        // The canonical Euclidean-remainder bound lifted pointwise.
+        // Pinned at divisors 2, 3, 5, 11 over the (axis-cover ×7)
+        // histogram so the bound reads across both small and large
+        // remainder ranges.
+        let mut pre = AxisHistogram::<A>::empty();
+        for _ in 0..7 {
+            pre += &axis_iter::<A>().collect::<AxisHistogram<A>>();
+        }
+        for divisor in [2usize, 3, 5, 11] {
+            let mut reduced = pre.clone();
+            reduced %= divisor;
+            for cell in axis_iter::<A>() {
+                assert!(
+                    reduced.count(cell) < divisor,
+                    "hist %= {divisor} cell {cell:?} count {} must be < {divisor} on axis {}",
+                    reduced.count(cell),
+                    std::any::type_name::<A>(),
+                );
+            }
+        }
+    }
+
+    fn assert_rem_equals_rem_assign<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The (Rem, RemAssign) idiom-peer equivalence on the
+        // Euclidean-remainder surface: `hist % divisor` reads the same
+        // histogram as `let mut a = hist.clone(); a %= divisor; a`.
+        // The canonical Rust owned/in-place operator peer pair —
+        // `impl Rem<usize>` and `impl RemAssign<usize>` agreeing
+        // pointwise — every stdlib Euclidean-remainder operator
+        // surface exposes (`usize % usize ==` a `usize` whose internal
+        // `%=` step is the same fold). Pinned at divisors 2, 3, 5, 11
+        // so the small-divisor and larger-divisor cases both witness
+        // the equivalence.
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        for divisor in [2usize, 3, 5, 11] {
+            let via_rem = hist.clone() % divisor;
+            let mut via_rem_assign = hist.clone();
+            via_rem_assign %= divisor;
+            assert_eq!(
+                via_rem,
+                via_rem_assign,
+                "hist % {divisor} must equal `let mut a = hist; a %= {divisor}; a` on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_rem_assign_one_divisor_zeros_histogram_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_rem_assign_one_divisor_zeros_histogram::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_rem_assign_scales_cells_by_remainder_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_rem_assign_scales_cells_by_remainder::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_rem_assign_completes_div_rem_identity_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_rem_assign_completes_div_rem_identity::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_rem_assign_bounds_cells_below_divisor_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_rem_assign_bounds_cells_below_divisor::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_rem_equals_rem_assign_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_rem_equals_rem_assign::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_rem_witnessed_on_non_trivial_cells_for_diff_line_kind() {
+        // The Euclidean-remainder surface on the `%` operator against
+        // [`DiffLineKind`] — the three-cell axis (Added, Removed,
+        // Context) lets the per-cell remainder read off non-vacuously
+        // across a mixed-remainder pre-state. `pre` carries counts
+        // (Added: 7, Removed: 5, Context: 4); `pre % 2` reads
+        // (Added: 1, Removed: 1, Context: 0) — every cell independently
+        // reduces under usize Euclidean-remainder arithmetic. Mirrors
+        // the `axis_histogram_div_witnessed_on_non_trivial_cells_for_diff_line_kind`
+        // pin on the truncating-division side; reads it off again on
+        // the Euclidean-remainder side to pin the dual scalar surface
+        // through one concrete cell distribution.
+        let pre: AxisHistogram<DiffLineKind> = [
+            (DiffLineKind::Added, 7usize),
+            (DiffLineKind::Removed, 5),
+            (DiffLineKind::Context, 4),
+        ]
+        .into_iter()
+        .collect();
+        let divisor = 2usize;
+
+        let via_op = pre.clone() % divisor;
+        assert_eq!(via_op.count(DiffLineKind::Added), 1);
+        assert_eq!(via_op.count(DiffLineKind::Removed), 1);
+        assert_eq!(via_op.count(DiffLineKind::Context), 0);
+        assert_eq!(via_op.total(), 2);
+
+        // (Rem, RemAssign) operator-peer agreement at the concrete
+        // pin: `hist % divisor` reads the same histogram as the
+        // in-place `%=` form.
+        let mut via_assign = pre.clone();
+        via_assign %= divisor;
+        assert_eq!(via_op, via_assign);
+
+        // One-divisor zero law at the concrete pin: `hist % 1` is
+        // pointwise equal to the empty histogram.
+        let one_divisor = std::hint::black_box(1usize);
+        assert_eq!(
+            pre.clone() % one_divisor,
+            AxisHistogram::<DiffLineKind>::empty()
+        );
+
+        // Div-Rem identity at the concrete pin:
+        // `(pre / 2) * 2 + (pre % 2) == pre` reads (6 + 1, 4 + 1,
+        // 4 + 0) = (7, 5, 4) — the canonical Euclidean-division
+        // decomposition recovers the pre-state pointwise.
+        let div_part = (pre.clone() / divisor) * divisor;
+        let rem_part = pre.clone() % divisor;
+        let recomposed = div_part + &rem_part;
+        assert_eq!(recomposed, pre);
+
+        // Remainder bound at the concrete pin: every cell of
+        // `pre % 2` carries a count strictly less than 2.
+        for cell in axis_iter::<DiffLineKind>() {
+            assert!(via_op.count(cell) < divisor);
+        }
     }
 
     // ---- AxisHistogram::dominant_cell trait-uniform laws ----
