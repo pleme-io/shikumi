@@ -1881,6 +1881,145 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         multiplicity
     }
 
+    /// The **modality-degree pair** — the fused
+    /// `(peak_multiplicity, trough_multiplicity)` projection on the
+    /// histogram's multiplicity surface. Returns `(0, 0)` exactly when
+    /// [`Self::is_empty`] is `true`; otherwise returns the cardinality
+    /// of the modal level set in `.0` and the cardinality of the
+    /// antimodal level set in `.1`.
+    ///
+    /// Closes the multiplicity-surface fusion the same way
+    /// [`Self::dominant_observation`] and [`Self::recessive_observation`]
+    /// close the (cell, count) fusion on the modal and antimodal cell
+    /// surfaces. Where [`Self::peak_multiplicity`] reads *"how many
+    /// cells share the peak?"* and [`Self::trough_multiplicity`] reads
+    /// *"how many cells share the trough?"*, `modality_degree` reads the
+    /// fused pair in a **single pass** over the contiguous counts
+    /// vector — half the work of two independent
+    /// `O(axis_cardinality)` scans — and names the joint projection at
+    /// one site so a future *modality summary* dashboard line, a
+    /// *modality-degree* attestation cell, or a *peer-tied* gate reads
+    /// off one method call rather than two.
+    ///
+    /// The natural typed primitive for the modality-summary surface
+    /// every operator-facing rebuild line, structured-diagnostic
+    /// legend, and attestation manifest carries: the per-window
+    /// `AxisHistogram<crate::ShikumiErrorKind>` reload-summary line
+    /// (`"3 of 6 error classes fired at the peak (Parse / Io / Watch
+    /// at 12× each); 1 class fired at the trough (Extract at 1×) —
+    /// modality_degree = (3, 1)"`), the chain-shape summary on
+    /// [`crate::ConfigSourceChain::file_format_histogram`] (`"2 formats
+    /// share the chain peak, 1 sits at the trough"`), the
+    /// `AxisHistogram<crate::DiffLineKind>` rebuild-summary
+    /// (`"modality_degree = (2, 1) — added and removed tied at the
+    /// peak, context the rarest"`). Before this lift, every consumer
+    /// asking the joint *"how multiply tied are both extremes?"*
+    /// question routed through two method calls (`peak_multiplicity()`
+    /// and `trough_multiplicity()`), each doing a full single-pass
+    /// scan over the counts vector — `O(2 · axis_cardinality)`
+    /// pointwise. The fused projection collapses the work to one pass
+    /// that tracks the running max + reset-on-rise modal multiplicity
+    /// and the running min (initialized to `usize::MAX` so the first
+    /// positive count promotes the sentinel) + reset-on-fall
+    /// antimodal multiplicity simultaneously, excluding zero-count
+    /// cells by construction so the empty boundary reads `(0, 0)`
+    /// uniformly.
+    ///
+    /// **Empty-histogram convention** — returns `(0, 0)`, matching
+    /// the [`Self::peak_multiplicity`] and [`Self::trough_multiplicity`]
+    /// empty conventions pointwise. The fused scalar peer reads `(0, 0)`
+    /// on every histogram on which `is_empty()` reads `true`, and
+    /// strictly `(k, l)` with `k >= 1` and `l >= 1` on every non-empty
+    /// histogram.
+    ///
+    /// **Definitional equivalence.** For every histogram `h`,
+    /// `h.modality_degree() == (h.peak_multiplicity(), h.trough_multiplicity())`
+    /// pointwise. The named primitive is *behaviorally indistinguishable*
+    /// from the open-coded two-call pair on every input — the lift is
+    /// pure efficiency + naming, with no semantic surface change.
+    /// Pinned by the trait-uniform
+    /// `axis_histogram_modality_degree_equals_open_coded_peak_trough_multiplicity_pair_*`
+    /// law across every [`ClosedAxis`] implementor.
+    ///
+    /// **Modality classifier.** The fused pair lifts the *"how tied is
+    /// the distribution at both extremes?"* question to a single
+    /// scalar-pair read every operator-facing dashboard and
+    /// attestation manifest routes through:
+    /// - `(1, 1)` — *strictly unimodal, strictly anti-unimodal*: both
+    ///   the dominant and recessive cells stand alone (the
+    ///   declaration-order tie-break in [`Self::dominant_cell`] and
+    ///   [`Self::recessive_cell`] is not exercised on either side).
+    /// - `(k, 1)` with `k >= 2` — *modally tied, anti-unimodal*: the
+    ///   peak is shared by `k` cells, but the trough is uniquely held.
+    /// - `(1, l)` with `l >= 2` — *strictly unimodal, antimodally tied*:
+    ///   the peak is uniquely held, but the trough is shared by `l`
+    ///   cells.
+    /// - `(k, k)` with `k == distinct_cells()` — *modal/antimodal
+    ///   coincidence*: every observed cell sits at both the peak and
+    ///   the trough simultaneously, the [`Self::is_uniform_count`]
+    ///   shape — peak and trough collapse to the same value.
+    ///
+    /// **Companion invariants** with [`Self::peak_multiplicity`],
+    /// [`Self::trough_multiplicity`], [`Self::distinct_cells`],
+    /// [`Self::is_empty`], and [`Self::is_uniform_count`]:
+    /// - `modality_degree() == (0, 0)` ⇔ [`Self::is_empty`] is `true`
+    ///   (peer to the empty-histogram boundary equivalence both
+    ///   underlying multiplicities carry).
+    /// - `modality_degree().0 <= distinct_cells()` and
+    ///   `modality_degree().1 <= distinct_cells()` always (both level
+    ///   sets are subsets of the observed support).
+    /// - `is_uniform_count() ⇒ modality_degree().0 ==
+    ///   modality_degree().1 == distinct_cells()` — on a
+    ///   uniformly-observed-count histogram, both level sets coincide
+    ///   with the support; the peak and the trough collapse to the
+    ///   same value, so every observed cell is in both level sets.
+    /// - `has_singular_support() ⇒ modality_degree() == (1, 1)` — a
+    ///   single observed cell is the only member of both level sets.
+    /// - Both components are `>= 1` whenever the histogram is non-empty.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The four trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_modality_degree_empty_is_zero_pair_*`,
+    /// `axis_histogram_modality_degree_singleton_is_one_pair_*`,
+    /// `axis_histogram_modality_degree_axis_cover_is_axis_cardinality_pair_*`,
+    /// `axis_histogram_modality_degree_equals_open_coded_peak_trough_multiplicity_pair_*`).
+    ///
+    /// Peer to [`Self::dominant_observation`] (the fused modal `(cell,
+    /// count)` pair) and [`Self::recessive_observation`] (the fused
+    /// antimodal `(cell, count)` pair): the histogram's modality
+    /// surface now carries three fused projection pairs — modal
+    /// `(cell, count)`, antimodal `(cell, count)`, and modal/antimodal
+    /// `(multiplicity, multiplicity)` — every operator-facing summary
+    /// reads the joint pair it needs at one method call each, and the
+    /// *modality summary* dashboard line collapses to a single
+    /// scalar-pair read on the closed multiplicity surface.
+    #[must_use]
+    pub fn modality_degree(&self) -> (usize, usize) {
+        let mut max = 0usize;
+        let mut peak_mult = 0usize;
+        let mut min = usize::MAX;
+        let mut trough_mult = 0usize;
+        for &c in &self.counts {
+            if c == 0 {
+                continue;
+            }
+            if c > max {
+                max = c;
+                peak_mult = 1;
+            } else if c == max {
+                peak_mult += 1;
+            }
+            if c < min {
+                min = c;
+                trough_mult = 1;
+            } else if c == min {
+                trough_mult += 1;
+            }
+        }
+        (peak_mult, trough_mult)
+    }
+
     /// The **observed-distribution spread** — the difference between the
     /// maximum and minimum observation counts over the histogram's
     /// observed support. Equal to
@@ -24895,5 +25034,375 @@ mod tests {
             rendered.contains("bogus"),
             "serde error must carry the offending label verbatim, got: {rendered}",
         );
+    }
+
+    // ---- AxisHistogram::modality_degree trait-uniform laws ----
+    //
+    // Four trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // modality_degree projection's contract holds uniformly without
+    // per-axis test duplication: empty → (0, 0); singleton → (1, 1);
+    // uniform axis-cover → (axis_cardinality, axis_cardinality); and
+    // the defining equivalence with the open-coded
+    // `(peak_multiplicity(), trough_multiplicity())` pair. Concrete
+    // shape pins on the four modality classifier corners follow on
+    // [`DiffLineKind`].
+
+    fn assert_modality_degree_empty_is_zero_pair<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.modality_degree(),
+            (0, 0),
+            "empty histogram modality_degree must be (0, 0) on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_modality_degree_singleton_is_one_pair<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has modality_degree = (1, 1). The
+        // support has one member, both modal and antimodal level sets
+        // are exactly that singleton. Pins the singleton law uniformly
+        // across every implementor.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.modality_degree(),
+                (1, 1),
+                "singleton modality_degree must be (1, 1) for observed cell {observed:?} \
+                 on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_modality_degree_axis_cover_is_axis_cardinality_pair<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once produces a uniform
+        // histogram (every cell at 1, peak == trough == 1); both modal
+        // and antimodal level sets equal the entire axis, so
+        // modality_degree == (axis_cardinality, axis_cardinality).
+        // Pinned uniformly: every closed-axis implementor's uniform
+        // axis-cover witnesses the modal/antimodal coincidence on the
+        // full support.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        let n = axis_cardinality::<A>();
+        assert_eq!(
+            hist.modality_degree(),
+            (n, n),
+            "uniform axis-cover histogram modality_degree must be (n, n) where \
+             n = axis_cardinality on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_modality_degree_equals_open_coded_peak_trough_multiplicity_pair<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Defining-equivalence law: modality_degree() is pointwise
+        // equal to (peak_multiplicity(), trough_multiplicity()) on
+        // every histogram shape — empty, singleton, full axis cover,
+        // and (where the axis has at least two variants) a strict
+        // two-cell sub-cover with unequal counts that exercises both
+        // tied-trough (one) and unique-peak (one) branches. Reached
+        // across every implementor through the macro.
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.modality_degree(),
+            (empty.peak_multiplicity(), empty.trough_multiplicity()),
+            "modality_degree must equal the (peak_multiplicity, trough_multiplicity) \
+             pair on empty histogram for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.modality_degree(),
+                (
+                    singleton.peak_multiplicity(),
+                    singleton.trough_multiplicity(),
+                ),
+                "modality_degree must equal the (peak_multiplicity, trough_multiplicity) \
+                 pair on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.modality_degree(),
+            (cover.peak_multiplicity(), cover.trough_multiplicity()),
+            "modality_degree must equal the (peak_multiplicity, trough_multiplicity) \
+             pair on uniform axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        // Skewed shape: bump the first cell twice past the second cell
+        // (when the axis has at least two variants) to drive a strict
+        // peak/trough split. On a singleton axis, the loop body
+        // collapses to the singleton case above.
+        let mut variants = axis_iter::<A>();
+        if let (Some(first), Some(second)) = (variants.next(), variants.next()) {
+            let mut skewed = AxisHistogram::<A>::empty();
+            skewed.observe(first);
+            skewed.observe(first);
+            skewed.observe(second);
+            assert_eq!(
+                skewed.modality_degree(),
+                (skewed.peak_multiplicity(), skewed.trough_multiplicity()),
+                "modality_degree must equal the (peak_multiplicity, trough_multiplicity) \
+                 pair on a strict-peak/strict-trough skewed shape ({first:?} ×2, \
+                 {second:?} ×1) for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_empty_is_zero_pair_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_degree_empty_is_zero_pair::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_singleton_is_one_pair_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_degree_singleton_is_one_pair::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_axis_cover_is_axis_cardinality_pair_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_degree_axis_cover_is_axis_cardinality_pair::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_equals_open_coded_peak_trough_multiplicity_pair_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_degree_equals_open_coded_peak_trough_multiplicity_pair::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_classifies_strictly_unimodal_anti_unimodal_corner() {
+        // Modality classifier corner (1, 1): both peak and trough are
+        // uniquely held — strictly unimodal and strictly anti-unimodal.
+        // The declaration-order tie-break in dominant_cell /
+        // recessive_cell is not exercised on either side. Witness:
+        // Added ×3, Removed ×2, Context ×1 — three distinct counts,
+        // each at exactly one cell, so peak (3) is uniquely at Added
+        // and trough (1) is uniquely at Context.
+        let input = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ];
+        let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+        assert_eq!(hist.count(DiffLineKind::Added), 3);
+        assert_eq!(hist.count(DiffLineKind::Removed), 2);
+        assert_eq!(hist.count(DiffLineKind::Context), 1);
+        assert_eq!(hist.modality_degree(), (1, 1));
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_classifies_modally_tied_anti_unimodal_corner() {
+        // Modality classifier corner (k, 1) with k >= 2: the peak is
+        // shared, the trough is uniquely held. Witness: Added ×2,
+        // Removed ×2, Context ×1 — peak (2) tied between Added and
+        // Removed, trough (1) uniquely at Context.
+        let input = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ];
+        let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+        assert_eq!(hist.modality_degree(), (2, 1));
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_classifies_strictly_unimodal_antimodally_tied_corner() {
+        // Modality classifier corner (1, l) with l >= 2: the peak is
+        // uniquely held, the trough is shared. Witness: Added ×3,
+        // Removed ×1, Context ×1 — peak (3) uniquely at Added, trough
+        // (1) tied between Removed and Context.
+        let input = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ];
+        let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+        assert_eq!(hist.modality_degree(), (1, 2));
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_classifies_modal_antimodal_coincidence_corner() {
+        // Modality classifier corner (k, k) with k == distinct_cells():
+        // modal/antimodal coincidence — every observed cell sits at
+        // both peak and trough, the is_uniform_count shape. Two
+        // witnesses: the full uniform axis-cover (3 distinct, each ×1)
+        // and a strict sub-cover uniform (2 distinct, each ×2).
+        let axis_cover: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        assert!(axis_cover.is_uniform_count());
+        let (peak_mult, trough_mult) = axis_cover.modality_degree();
+        assert_eq!(peak_mult, trough_mult);
+        assert_eq!(peak_mult, axis_cover.distinct_cells());
+
+        let sub_cover_uniform: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert!(sub_cover_uniform.is_uniform_count());
+        assert_eq!(sub_cover_uniform.modality_degree(), (2, 2));
+        assert_eq!(
+            sub_cover_uniform.modality_degree().0,
+            sub_cover_uniform.distinct_cells(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_observation_order_invariant() {
+        // The fused projection is invariant under observation order:
+        // permuting the input stream cannot change the modality degree
+        // (since the histogram itself is order-invariant). Pinned
+        // concretely across three permutations of the same multiset.
+        let multiset_a = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ];
+        let multiset_b = [
+            DiffLineKind::Context,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Added,
+        ];
+        let multiset_c = [
+            DiffLineKind::Removed,
+            DiffLineKind::Added,
+            DiffLineKind::Context,
+            DiffLineKind::Added,
+        ];
+        let a: AxisHistogram<DiffLineKind> = multiset_a.iter().copied().collect();
+        let b: AxisHistogram<DiffLineKind> = multiset_b.iter().copied().collect();
+        let c: AxisHistogram<DiffLineKind> = multiset_c.iter().copied().collect();
+        assert_eq!(a, b);
+        assert_eq!(b, c);
+        assert_eq!(a.modality_degree(), b.modality_degree());
+        assert_eq!(b.modality_degree(), c.modality_degree());
+        assert_eq!(a.modality_degree(), (1, 2));
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_after_merge_reflects_combined_counts() {
+        // The (merge, modality_degree) composition: the merge of two
+        // histograms can transform the modality classifier — Pin a
+        // shape where lhs reads (1, 1) at counts (2, 1) on Added and
+        // Removed, rhs reads (1, 1) at counts (2, 1) on Context and
+        // Added; the merge reads (2, 1) at counts Added×3, Context×2,
+        // Removed×1 — Added now strictly dominant, Context the unique
+        // middle, Removed the unique trough. Wait — let me recompute:
+        // counts are Added=2+1=3, Removed=1+0=1, Context=0+2=2. Peak=3
+        // at Added (multiplicity 1), trough=1 at Removed (multiplicity
+        // 1). So merged modality_degree = (1, 1) — strictly unimodal
+        // both sides. The composition pin: even though neither side
+        // alone is strictly unimodal, the merged shape is.
+        let lhs: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let rhs: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Context,
+            DiffLineKind::Context,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        let merged = lhs.merge(&rhs);
+        assert_eq!(merged.count(DiffLineKind::Added), 3);
+        assert_eq!(merged.count(DiffLineKind::Context), 2);
+        assert_eq!(merged.count(DiffLineKind::Removed), 1);
+        assert_eq!(merged.modality_degree(), (1, 1));
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_components_bounded_above_by_distinct_cells() {
+        // Structural bound: both components are subsets of the
+        // observed support, so each is bounded above by
+        // distinct_cells. Pin across four shapes (empty, singleton,
+        // strict skew, uniform sub-cover).
+        let cases: [&[DiffLineKind]; 4] = [
+            &[],
+            &[DiffLineKind::Context],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in cases {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let (peak_mult, trough_mult) = hist.modality_degree();
+            let support = hist.distinct_cells();
+            assert!(
+                peak_mult <= support,
+                "peak_mult {peak_mult} must be <= distinct_cells {support} on input \
+                 of length {}",
+                input.len(),
+            );
+            assert!(
+                trough_mult <= support,
+                "trough_mult {trough_mult} must be <= distinct_cells {support} on input \
+                 of length {}",
+                input.len(),
+            );
+        }
     }
 }
