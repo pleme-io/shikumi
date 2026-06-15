@@ -1307,6 +1307,77 @@ impl SupportCardinalityClass {
         )
     }
 
+    /// `true` exactly on the two boundary corners ([`Self::Empty`]
+    /// and [`Self::FullCover`]) — the **boundary compound predicate**
+    /// on the typed-class surface. The structural dual of
+    /// [`Self::is_partial_cover`]: lifts the *"neither some-but-not-all
+    /// observed"* compound — i.e. the *"observation universe is either
+    /// fully blank or fully exhaustive"* compound — to one `const`
+    /// projection on the variant tag.
+    ///
+    /// Pointwise equal to three documented surface forms — each
+    /// names the same compound differently:
+    /// - `self.is_empty() || self.is_full_cover()` (the
+    ///   union-of-boundary-variants form on the two named single-
+    ///   variant peers).
+    /// - `!self.is_partial_cover()` (the strict-complement form on
+    ///   the named middle compound — `is_boundary` and
+    ///   `is_partial_cover` form a strict bipartition of the five-
+    ///   corner surface).
+    /// - `matches!(self, Self::Empty | Self::FullCover)` (the
+    ///   structural variant-tag form).
+    ///
+    /// Before this lift, every consumer holding a cached
+    /// [`SupportCardinalityClass`] (e.g. on a per-window summary
+    /// struct stored alongside the originating
+    /// [`AxisHistogram`]) and asking the "fully blank or fully
+    /// exhaustive" question routed through the disjunction of the
+    /// two boundary predicates, the negation of the middle compound,
+    /// or a re-derived match on the variant tag. The lift names the
+    /// boundary leg directly at one `const` projection on the class
+    /// surface, completing the (`is_boundary`, `is_partial_cover`)
+    /// **strict bipartition** of the five-corner support-cardinality
+    /// surface — every variant lands in exactly one of the two
+    /// compounds.
+    ///
+    /// **Companion invariants** with [`Self::is_empty`],
+    /// [`Self::is_full_cover`], and [`Self::is_partial_cover`]:
+    /// - `is_boundary() ⇔ is_empty() || is_full_cover()` — the
+    ///   defining equivalence on the two-corner boundary union
+    ///   (pinned by
+    ///   [`tests::support_cardinality_class_is_boundary_equals_is_empty_or_is_full_cover`]).
+    /// - `is_boundary() ⇔ !is_partial_cover()` — the strict-
+    ///   complement equivalence on the middle compound (pinned by
+    ///   [`tests::support_cardinality_class_is_boundary_equals_complement_of_is_partial_cover`]).
+    /// - `(is_boundary, is_partial_cover)` is a strict bipartition
+    ///   on every variant: pairwise disjoint *and* jointly
+    ///   exhaustive. Stated as
+    ///   `u8::from(is_boundary()) + u8::from(is_partial_cover()) == 1`
+    ///   — exactly one compound fires uniformly across the five
+    ///   variants (pinned by
+    ///   [`tests::support_cardinality_class_is_boundary_and_is_partial_cover_form_strict_bipartition`]).
+    /// - Implication chain over the two boundary single-variant
+    ///   predicates: `is_empty() ⇒ is_boundary()` and
+    ///   `is_full_cover() ⇒ is_boundary()` (pinned by
+    ///   [`tests::support_cardinality_class_two_boundary_variant_predicates_imply_is_boundary`]).
+    ///
+    /// **Cross-surface bridge law** —
+    /// `(hist.is_empty() || hist.is_full_cover()) ==
+    ///  hist.support_cardinality_class().is_boundary()` for every
+    /// `hist: AxisHistogram<A>` on every [`ClosedAxis`] implementor,
+    /// pinned trait-uniformly through the
+    /// `for_each_closed_axis_implementor!` macro by
+    /// [`tests::axis_histogram_support_cardinality_class_is_boundary_agrees_with_histogram_is_empty_or_is_full_cover_for_every_closed_axis_implementor`].
+    /// The bridge closes the (class, histogram) duality on the
+    /// boundary leg — peer to the `is_partial_cover` bridge already
+    /// pinned on the middle leg, and the
+    /// `(is_empty, is_partial_cover, is_full_cover)` trichotomy
+    /// already pinned on the histogram surface.
+    #[must_use]
+    pub const fn is_boundary(self) -> bool {
+        matches!(self, Self::Empty | Self::FullCover)
+    }
+
     /// Canonical operator-facing kebab-case label for the variant
     /// tag — `"empty"`, `"singular-support"`,
     /// `"strict-partial-cover"`, `"singular-gap"`, `"full-cover"`.
@@ -32470,6 +32541,96 @@ mod tests {
     }
 
     #[test]
+    fn support_cardinality_class_is_boundary_fires_on_two_corner_variants() {
+        // Behavioral pin on the variant-tag projection — the
+        // compound predicate fires on exactly the two boundary
+        // corners (Empty, FullCover) and reads `false` on all three
+        // middle variants (SingularSupport, StrictPartialCover,
+        // SingularGap). The structural dual of the "three middle,
+        // two boundaries" partition `is_partial_cover` carries.
+        assert!(SupportCardinalityClass::Empty.is_boundary());
+        assert!(!SupportCardinalityClass::SingularSupport.is_boundary());
+        assert!(!SupportCardinalityClass::StrictPartialCover.is_boundary());
+        assert!(!SupportCardinalityClass::SingularGap.is_boundary());
+        assert!(SupportCardinalityClass::FullCover.is_boundary());
+    }
+
+    #[test]
+    fn support_cardinality_class_is_boundary_equals_is_empty_or_is_full_cover() {
+        // Defining equivalence on the two-corner boundary union:
+        // `is_boundary() == is_empty() || is_full_cover()` for every
+        // variant. Pins the union-of-boundary-variants form on the
+        // two named single-variant peers.
+        for &class in SupportCardinalityClass::ALL {
+            assert_eq!(
+                class.is_boundary(),
+                class.is_empty() || class.is_full_cover(),
+                "is_boundary must equal the is_empty-or-is_full_cover \
+                 boundary-union form on {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_is_boundary_equals_complement_of_is_partial_cover() {
+        // Strict-complement equivalence on the middle compound:
+        // `is_boundary() == !is_partial_cover()` for every variant.
+        // Pins the dual relationship — the (is_boundary,
+        // is_partial_cover) pair is the strict negation pair on the
+        // five-corner surface.
+        for &class in SupportCardinalityClass::ALL {
+            assert_eq!(
+                class.is_boundary(),
+                !class.is_partial_cover(),
+                "is_boundary must equal !is_partial_cover on {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_is_boundary_and_is_partial_cover_form_strict_bipartition() {
+        // Strict-bipartition law on the typed-class surface:
+        // `(is_boundary, is_partial_cover)` is a strict bipartition —
+        // exactly one of the two compounds fires on every variant.
+        // The structural dual of the `(is_empty, is_partial_cover,
+        // is_full_cover)` trichotomy already pinned: where the
+        // trichotomy separates the three named corners, the
+        // bipartition fuses the two boundary corners into one
+        // compound and the three middle corners into the other.
+        for &class in SupportCardinalityClass::ALL {
+            let fires = u32::from(class.is_boundary()) + u32::from(class.is_partial_cover());
+            assert_eq!(
+                fires, 1,
+                "exactly one of (is_boundary, is_partial_cover) must fire on every \
+                 variant (got fires={fires}) on class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_two_boundary_variant_predicates_imply_is_boundary() {
+        // Implication chain: each of the two boundary single-
+        // variant predicates implies the compound `is_boundary`. The
+        // structural witness of the union-of-boundary-variants form
+        // on each implicant — peer to the implication chain over the
+        // three middle variants pinned on `is_partial_cover`.
+        for &class in SupportCardinalityClass::ALL {
+            if class.is_empty() {
+                assert!(
+                    class.is_boundary(),
+                    "is_empty must imply is_boundary on {class:?}",
+                );
+            }
+            if class.is_full_cover() {
+                assert!(
+                    class.is_boundary(),
+                    "is_full_cover must imply is_boundary on {class:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
     fn support_cardinality_class_as_str_round_trips_via_from_canonical_str() {
         for &v in SupportCardinalityClass::ALL {
             assert_eq!(
@@ -32737,6 +32898,50 @@ mod tests {
         );
     }
 
+    fn assert_support_cardinality_class_is_boundary_agrees_with_histogram_is_empty_or_is_full_cover<
+        A,
+    >()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Cross-surface bridge on the boundary compound:
+        // hist.support_cardinality_class().is_boundary() ==
+        // hist.is_empty() || hist.is_full_cover() — unconditional,
+        // holds across every implementor regardless of cardinality.
+        // Pins the class-side compound to the histogram-side
+        // disjunction pointwise on every canonical observation shape
+        // (empty, every singleton, axis-cover). Peer to the
+        // `is_partial_cover` bridge pinned trait-uniformly below.
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.support_cardinality_class().is_boundary(),
+            empty.is_empty() || empty.is_full_cover(),
+            "support_cardinality_class.is_boundary must equal is_empty || is_full_cover on \
+             empty for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.support_cardinality_class().is_boundary(),
+                singleton.is_empty() || singleton.is_full_cover(),
+                "support_cardinality_class.is_boundary must equal is_empty || is_full_cover on \
+                 singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.support_cardinality_class().is_boundary(),
+            cover.is_empty() || cover.is_full_cover(),
+            "support_cardinality_class.is_boundary must equal is_empty || is_full_cover on \
+             axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
     fn assert_support_cardinality_class_is_partial_cover_agrees_with_histogram_has_partial_cover<
         A,
     >()
@@ -32841,6 +33046,17 @@ mod tests {
         macro_rules! check {
             ($ty:ident) => {
                 assert_support_cardinality_class_is_partial_cover_agrees_with_histogram_has_partial_cover::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_support_cardinality_class_is_boundary_agrees_with_histogram_is_empty_or_is_full_cover_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_cardinality_class_is_boundary_agrees_with_histogram_is_empty_or_is_full_cover::<$ty>();
             };
         }
         for_each_closed_axis_implementor!(check);
