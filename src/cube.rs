@@ -1480,6 +1480,135 @@ impl SupportCardinalityClass {
         matches!(self, Self::SingularSupport | Self::SingularGap)
     }
 
+    /// `true` exactly on the two low-support corners ([`Self::Empty`]
+    /// and [`Self::SingularSupport`]) — the **low-support compound
+    /// predicate** on the typed-class surface. Names the *"support
+    /// magnitude at most one cell"* compound — the pair of class
+    /// variants whose support cardinality lies at the bottom of the
+    /// support-cardinality interval (support 0 on [`Self::Empty`];
+    /// support 1 on [`Self::SingularSupport`]).
+    ///
+    /// Pointwise equal to three documented surface forms — each
+    /// names the same compound differently:
+    /// - `self.is_empty() || self.is_singular_support()` (the
+    ///   union-of-low-variants form on the two named single-variant
+    ///   peers).
+    /// - `matches!(self, Self::Empty | Self::SingularSupport)` (the
+    ///   structural variant-tag form).
+    /// - The bottom half of the (`is_boundary`, `is_singular`)
+    ///   decomposition: `is_low_support` is the variant-tag pair that
+    ///   the (`boundary` ∩ bottom-corner, `singular` ∩ bottom-corner)
+    ///   pair fuses into when projected by support magnitude.
+    ///
+    /// Closes the (`is_low_support`, `is_strict_partial_cover`,
+    /// `is_high_support`) **strict ternary partition** of the five-
+    /// corner support-cardinality surface by support magnitude
+    /// direction — every variant lands in exactly one of the three
+    /// compounds:
+    /// - `is_low_support`: `Empty | SingularSupport` (support 0 or 1
+    ///   — the bottom of the support-cardinality interval).
+    /// - `is_strict_partial_cover`: `StrictPartialCover` (support
+    ///   2..=`axis_cardinality - 2` — the strict interior on
+    ///   cardinality-`>= 4` axes).
+    /// - `is_high_support`: `SingularGap | FullCover` (support
+    ///   `axis_cardinality - 1` or `axis_cardinality` — the top of
+    ///   the support-cardinality interval).
+    ///
+    /// This second strict ternary partition is **orthogonal** to the
+    /// (`is_boundary`, `is_singular`, `is_strict_partial_cover`)
+    /// ternary partition by distance from boundary — both share the
+    /// `is_strict_partial_cover` middle leg but split the four
+    /// non-interior corners on different axes:
+    /// - distance partition: bottom-pair `{Empty, FullCover}`,
+    ///   middle-pair `{SingularSupport, SingularGap}`.
+    /// - magnitude partition: bottom-pair `{Empty, SingularSupport}`,
+    ///   top-pair `{SingularGap, FullCover}`.
+    ///
+    /// The two partitions cross to recover the four named single-
+    /// variant peers on the non-interior corners:
+    /// `is_low_support ∩ is_boundary = is_empty`,
+    /// `is_low_support ∩ is_singular = is_singular_support`,
+    /// `is_high_support ∩ is_singular = is_singular_gap`,
+    /// `is_high_support ∩ is_boundary = is_full_cover`.
+    ///
+    /// **Companion invariants** with [`Self::is_high_support`],
+    /// [`Self::is_strict_partial_cover`], [`Self::is_empty`], and
+    /// [`Self::is_singular_support`]:
+    /// - `is_low_support() ⇔ is_empty() || is_singular_support()` —
+    ///   the defining equivalence on the union of the two named
+    ///   single-variant peers (pinned by
+    ///   [`tests::support_cardinality_class_is_low_support_equals_empty_or_singular_support`]).
+    /// - `is_low_support()` and `is_high_support()` are disjoint —
+    ///   no variant fires both (pinned by
+    ///   [`tests::support_cardinality_class_is_low_support_and_is_high_support_are_disjoint`]).
+    /// - `(is_low_support, is_strict_partial_cover, is_high_support)`
+    ///   is a strict ternary partition on every variant: pairwise
+    ///   disjoint *and* jointly exhaustive. Stated as
+    ///   `u8::from(is_low_support()) + u8::from(is_strict_partial_cover()) + u8::from(is_high_support()) == 1`
+    ///   — exactly one compound fires uniformly across the five
+    ///   variants (pinned by
+    ///   [`tests::support_cardinality_class_is_low_support_is_strict_partial_cover_is_high_support_form_strict_ternary_partition`]).
+    /// - Implication chain over the two low single-variant
+    ///   predicates: `is_empty() ⇒ is_low_support()` and
+    ///   `is_singular_support() ⇒ is_low_support()` (pinned by
+    ///   [`tests::support_cardinality_class_two_low_variant_predicates_imply_is_low_support`]).
+    #[must_use]
+    pub const fn is_low_support(self) -> bool {
+        matches!(self, Self::Empty | Self::SingularSupport)
+    }
+
+    /// `true` exactly on the two high-support corners
+    /// ([`Self::SingularGap`] and [`Self::FullCover`]) — the **high-
+    /// support compound predicate** on the typed-class surface. The
+    /// mirror peer of [`Self::is_low_support`] across the
+    /// [`Self::StrictPartialCover`] middle leg: names the *"support
+    /// magnitude at least `axis_cardinality - 1`"* compound — the
+    /// pair of class variants whose support cardinality lies at the
+    /// top of the support-cardinality interval (support
+    /// `axis_cardinality - 1` on [`Self::SingularGap`]; support
+    /// `axis_cardinality` on [`Self::FullCover`]).
+    ///
+    /// Pointwise equal to three documented surface forms — each
+    /// names the same compound differently:
+    /// - `self.is_singular_gap() || self.is_full_cover()` (the
+    ///   union-of-high-variants form on the two named single-variant
+    ///   peers).
+    /// - `matches!(self, Self::SingularGap | Self::FullCover)` (the
+    ///   structural variant-tag form).
+    /// - The top half of the (`is_boundary`, `is_singular`)
+    ///   decomposition: `is_high_support` is the variant-tag pair
+    ///   that the (`boundary` ∩ top-corner, `singular` ∩ top-corner)
+    ///   pair fuses into when projected by support magnitude.
+    ///
+    /// Closes the (`is_low_support`, `is_strict_partial_cover`,
+    /// `is_high_support`) **strict ternary partition** of the five-
+    /// corner support-cardinality surface by support magnitude
+    /// direction — see [`Self::is_low_support`] for the full
+    /// orthogonal-partition account.
+    ///
+    /// **Companion invariants** with [`Self::is_low_support`],
+    /// [`Self::is_strict_partial_cover`], [`Self::is_singular_gap`],
+    /// and [`Self::is_full_cover`]:
+    /// - `is_high_support() ⇔ is_singular_gap() || is_full_cover()`
+    ///   — the defining equivalence on the union of the two named
+    ///   single-variant peers (pinned by
+    ///   [`tests::support_cardinality_class_is_high_support_equals_singular_gap_or_full_cover`]).
+    /// - `is_low_support()` and `is_high_support()` are disjoint —
+    ///   no variant fires both (pinned by
+    ///   [`tests::support_cardinality_class_is_low_support_and_is_high_support_are_disjoint`]).
+    /// - `(is_low_support, is_strict_partial_cover, is_high_support)`
+    ///   is a strict ternary partition on every variant: pairwise
+    ///   disjoint *and* jointly exhaustive (pinned by
+    ///   [`tests::support_cardinality_class_is_low_support_is_strict_partial_cover_is_high_support_form_strict_ternary_partition`]).
+    /// - Implication chain over the two high single-variant
+    ///   predicates: `is_singular_gap() ⇒ is_high_support()` and
+    ///   `is_full_cover() ⇒ is_high_support()` (pinned by
+    ///   [`tests::support_cardinality_class_two_high_variant_predicates_imply_is_high_support`]).
+    #[must_use]
+    pub const fn is_high_support(self) -> bool {
+        matches!(self, Self::SingularGap | Self::FullCover)
+    }
+
     /// Canonical operator-facing kebab-case label for the variant
     /// tag — `"empty"`, `"singular-support"`,
     /// `"strict-partial-cover"`, `"singular-gap"`, `"full-cover"`.
@@ -32837,6 +32966,200 @@ mod tests {
                     "is_singular_gap must imply is_singular on {class:?}",
                 );
             }
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_is_low_support_fires_on_two_low_variants() {
+        // Behavioral pin on the variant-tag projection — the
+        // compound predicate fires on exactly the two low-support
+        // corners (Empty, SingularSupport) and reads `false` on all
+        // three other variants (StrictPartialCover, SingularGap,
+        // FullCover). The cells at support magnitude 0 or 1 — the
+        // bottom of the support-cardinality interval.
+        assert!(SupportCardinalityClass::Empty.is_low_support());
+        assert!(SupportCardinalityClass::SingularSupport.is_low_support());
+        assert!(!SupportCardinalityClass::StrictPartialCover.is_low_support());
+        assert!(!SupportCardinalityClass::SingularGap.is_low_support());
+        assert!(!SupportCardinalityClass::FullCover.is_low_support());
+    }
+
+    #[test]
+    fn support_cardinality_class_is_high_support_fires_on_two_high_variants() {
+        // Behavioral pin on the variant-tag projection — the
+        // compound predicate fires on exactly the two high-support
+        // corners (SingularGap, FullCover) and reads `false` on all
+        // three other variants (Empty, SingularSupport,
+        // StrictPartialCover). The cells at support magnitude
+        // `axis_cardinality - 1` or `axis_cardinality` — the top of
+        // the support-cardinality interval.
+        assert!(!SupportCardinalityClass::Empty.is_high_support());
+        assert!(!SupportCardinalityClass::SingularSupport.is_high_support());
+        assert!(!SupportCardinalityClass::StrictPartialCover.is_high_support());
+        assert!(SupportCardinalityClass::SingularGap.is_high_support());
+        assert!(SupportCardinalityClass::FullCover.is_high_support());
+    }
+
+    #[test]
+    fn support_cardinality_class_is_low_support_equals_empty_or_singular_support() {
+        // Defining equivalence on the union of the two named
+        // single-variant peers: `is_low_support() == is_empty()
+        // || is_singular_support()` for every variant. Pins the
+        // union-of-low-variants form.
+        for &class in SupportCardinalityClass::ALL {
+            assert_eq!(
+                class.is_low_support(),
+                class.is_empty() || class.is_singular_support(),
+                "is_low_support must equal is_empty || is_singular_support on {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_is_high_support_equals_singular_gap_or_full_cover() {
+        // Defining equivalence on the union of the two named
+        // single-variant peers: `is_high_support() == is_singular_gap()
+        // || is_full_cover()` for every variant. Pins the
+        // union-of-high-variants form — the mirror peer of the
+        // low-support defining equivalence across the
+        // StrictPartialCover middle leg.
+        for &class in SupportCardinalityClass::ALL {
+            assert_eq!(
+                class.is_high_support(),
+                class.is_singular_gap() || class.is_full_cover(),
+                "is_high_support must equal is_singular_gap || is_full_cover on {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_is_low_support_and_is_high_support_are_disjoint() {
+        // Disjointness law: the two magnitude-direction compound
+        // predicates never fire on the same variant. The bottom and
+        // top halves of the support-cardinality interval are
+        // strictly separated by the StrictPartialCover middle leg.
+        for &class in SupportCardinalityClass::ALL {
+            assert!(
+                !(class.is_low_support() && class.is_high_support()),
+                "is_low_support and is_high_support must be disjoint on {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_is_low_support_is_strict_partial_cover_is_high_support_form_strict_ternary_partition()
+     {
+        // Strict-ternary-partition law on the typed-class surface:
+        // `(is_low_support, is_strict_partial_cover, is_high_support)`
+        // is a strict partition — exactly one of the three compounds
+        // fires on every variant. The second strict ternary partition
+        // of the five-corner support-cardinality surface, *orthogonal*
+        // to the (`is_boundary`, `is_singular`, `is_strict_partial_cover`)
+        // ternary partition by distance from boundary: both partitions
+        // share the StrictPartialCover middle leg but split the four
+        // non-interior corners on different axes (distance partition:
+        // {Empty, FullCover} / {SingularSupport, SingularGap};
+        // magnitude partition: {Empty, SingularSupport} / {SingularGap,
+        // FullCover}).
+        for &class in SupportCardinalityClass::ALL {
+            let fires = u32::from(class.is_low_support())
+                + u32::from(class.is_strict_partial_cover())
+                + u32::from(class.is_high_support());
+            assert_eq!(
+                fires, 1,
+                "exactly one of (is_low_support, is_strict_partial_cover, is_high_support) must \
+                 fire on every variant (got fires={fires}) on class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_two_low_variant_predicates_imply_is_low_support() {
+        // Implication chain: each of the two low single-variant
+        // predicates implies the compound `is_low_support`. The
+        // structural witness of the union-of-low-variants form on
+        // each implicant — peer to the implication chain over the
+        // two boundary variants pinned on `is_boundary` and the two
+        // singular variants pinned on `is_singular`.
+        for &class in SupportCardinalityClass::ALL {
+            if class.is_empty() {
+                assert!(
+                    class.is_low_support(),
+                    "is_empty must imply is_low_support on {class:?}",
+                );
+            }
+            if class.is_singular_support() {
+                assert!(
+                    class.is_low_support(),
+                    "is_singular_support must imply is_low_support on {class:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_two_high_variant_predicates_imply_is_high_support() {
+        // Implication chain: each of the two high single-variant
+        // predicates implies the compound `is_high_support`. The
+        // structural witness of the union-of-high-variants form on
+        // each implicant — the mirror peer of the low-support
+        // implication chain across the StrictPartialCover middle leg.
+        for &class in SupportCardinalityClass::ALL {
+            if class.is_singular_gap() {
+                assert!(
+                    class.is_high_support(),
+                    "is_singular_gap must imply is_high_support on {class:?}",
+                );
+            }
+            if class.is_full_cover() {
+                assert!(
+                    class.is_high_support(),
+                    "is_full_cover must imply is_high_support on {class:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_is_low_support_decomposes_distance_partition_bottom_corners() {
+        // Cross-partition factorization law on the two non-interior
+        // bottom corners: `is_low_support ∩ is_boundary = is_empty`
+        // and `is_low_support ∩ is_singular = is_singular_support`.
+        // Pins the structural recovery of the two named single-
+        // variant peers as intersections of the two orthogonal
+        // ternary partitions on the bottom side.
+        for &class in SupportCardinalityClass::ALL {
+            assert_eq!(
+                class.is_low_support() && class.is_boundary(),
+                class.is_empty(),
+                "is_low_support && is_boundary must equal is_empty on {class:?}",
+            );
+            assert_eq!(
+                class.is_low_support() && class.is_singular(),
+                class.is_singular_support(),
+                "is_low_support && is_singular must equal is_singular_support on {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_is_high_support_decomposes_distance_partition_top_corners() {
+        // Mirror peer of the bottom-corner factorization law:
+        // `is_high_support ∩ is_boundary = is_full_cover` and
+        // `is_high_support ∩ is_singular = is_singular_gap`. Pins
+        // the structural recovery of the two named single-variant
+        // peers on the top side.
+        for &class in SupportCardinalityClass::ALL {
+            assert_eq!(
+                class.is_high_support() && class.is_boundary(),
+                class.is_full_cover(),
+                "is_high_support && is_boundary must equal is_full_cover on {class:?}",
+            );
+            assert_eq!(
+                class.is_high_support() && class.is_singular(),
+                class.is_singular_gap(),
+                "is_high_support && is_singular must equal is_singular_gap on {class:?}",
+            );
         }
     }
 
