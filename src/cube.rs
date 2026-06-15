@@ -1378,6 +1378,108 @@ impl SupportCardinalityClass {
         matches!(self, Self::Empty | Self::FullCover)
     }
 
+    /// `true` exactly on the two singular corners
+    /// ([`Self::SingularSupport`] and [`Self::SingularGap`]) — the
+    /// **singular compound predicate** on the typed-class surface.
+    /// Names the *"exactly-one-cell-off-boundary"* compound — the
+    /// pair of class variants whose support cardinality lies
+    /// exactly one cell away from a boundary corner (support 1, one
+    /// cell off [`Self::Empty`]; support `axis_cardinality - 1`,
+    /// one cell off [`Self::FullCover`]).
+    ///
+    /// Pointwise equal to three documented surface forms — each
+    /// names the same compound differently:
+    /// - `self.is_singular_support() || self.is_singular_gap()` (the
+    ///   union-of-singular-variants form on the two named single-
+    ///   variant peers).
+    /// - `self.is_partial_cover() && !self.is_strict_partial_cover()`
+    ///   (the partial-cover-minus-strict-interior form: the singular
+    ///   compound is exactly the partial-cover middle leg with the
+    ///   strict-interior `StrictPartialCover` variant excised).
+    /// - `matches!(self, Self::SingularSupport | Self::SingularGap)`
+    ///   (the structural variant-tag form).
+    ///
+    /// Before this lift, every consumer holding a cached
+    /// [`SupportCardinalityClass`] (e.g. on a per-window summary
+    /// struct stored alongside the originating
+    /// [`AxisHistogram`]) and asking the "did the chain land
+    /// exactly one cell off the boundary?" question routed through
+    /// the disjunction of the two singular predicates, the
+    /// difference of two named compounds, or a re-derived match on
+    /// the variant tag. The lift names the
+    /// *exactly-one-cell-off-boundary* compound directly at one
+    /// `const` projection on the class surface, closing the
+    /// (`is_boundary`, `is_singular`, `is_strict_partial_cover`)
+    /// **strict ternary partition** of the five-corner support-
+    /// cardinality surface — every variant lands in exactly one of
+    /// the three compounds:
+    /// - `is_boundary`: `Empty | FullCover` (the two extremal
+    ///   corners — distance 0 from boundary).
+    /// - `is_singular`: `SingularSupport | SingularGap` (the two
+    ///   near-boundary cells — distance 1 from boundary).
+    /// - `is_strict_partial_cover`: `StrictPartialCover` (the strict
+    ///   interior — distance >= 2 from each boundary on
+    ///   cardinality-`>= 4` axes).
+    ///
+    /// The ternary partition strictly refines the
+    /// (`is_boundary`, `is_partial_cover`) bipartition: `is_partial_cover`
+    /// decomposes into `is_singular ∪ is_strict_partial_cover`.
+    ///
+    /// **Companion invariants** with [`Self::is_boundary`],
+    /// [`Self::is_partial_cover`], [`Self::is_singular_support`],
+    /// [`Self::is_singular_gap`], and [`Self::is_strict_partial_cover`]:
+    /// - `is_singular() ⇔ is_singular_support() || is_singular_gap()`
+    ///   — the defining equivalence on the union of the two named
+    ///   single-variant peers (pinned by
+    ///   [`tests::support_cardinality_class_is_singular_equals_singular_support_or_singular_gap`]).
+    /// - `is_singular()` ⇒ `is_partial_cover()` — every singular
+    ///   variant lands in the partial-cover middle leg (the
+    ///   ternary partition refines the bipartition; pinned by
+    ///   [`tests::support_cardinality_class_is_singular_implies_is_partial_cover`]).
+    /// - `is_singular()` ⇒ `!is_boundary()` — the two singular
+    ///   cells are strictly off the boundary corners (pinned by
+    ///   [`tests::support_cardinality_class_is_singular_implies_not_is_boundary`]).
+    /// - `(is_boundary, is_singular, is_strict_partial_cover)` is a
+    ///   strict ternary partition on every variant: pairwise
+    ///   disjoint *and* jointly exhaustive. Stated as the sum
+    ///   `u8::from(is_boundary()) + u8::from(is_singular()) + u8::from(is_strict_partial_cover()) == 1`
+    ///   — exactly one compound fires uniformly across the five
+    ///   variants (pinned by
+    ///   [`tests::support_cardinality_class_is_boundary_is_singular_is_strict_partial_cover_form_strict_ternary_partition`]).
+    /// - Implication chain over the two singular single-variant
+    ///   predicates: `is_singular_support() ⇒ is_singular()` and
+    ///   `is_singular_gap() ⇒ is_singular()` (pinned by
+    ///   [`tests::support_cardinality_class_two_singular_variant_predicates_imply_is_singular`]).
+    ///
+    /// **Cross-surface bridge law** —
+    /// `(hist.has_singular_support() || hist.has_singular_gap()) ==
+    ///  hist.support_cardinality_class().is_singular()` for every
+    /// `hist: AxisHistogram<A>` on every [`ClosedAxis`] implementor,
+    /// pinned trait-uniformly through the
+    /// `for_each_closed_axis_implementor!` macro by
+    /// [`tests::axis_histogram_support_cardinality_class_is_singular_agrees_with_histogram_has_singular_support_or_has_singular_gap_for_every_closed_axis_implementor`].
+    /// The bridge closes the (class, histogram) duality on the
+    /// singular near-boundary leg — peer to the `is_boundary` /
+    /// `is_partial_cover` bridges already pinned trait-uniformly.
+    ///
+    /// **Cardinality-2 collapse.** On cardinality-2 axes (e.g.
+    /// [`crate::PartitionFace`], [`crate::SecretRefShape`]) the two
+    /// singular boundaries [`Self::SingularSupport`] (support 1) and
+    /// [`Self::SingularGap`] (support `axis_cardinality - 1` = 1)
+    /// share the same support cardinality; the projection
+    /// [`AxisHistogram::support_cardinality_class`] lands on
+    /// [`Self::SingularSupport`] by the bottom-boundary-first
+    /// priority, and `is_singular()` reads `true` on that variant.
+    /// The histogram-side disjunction
+    /// `has_singular_support() || has_singular_gap()` also reads
+    /// `true` (both predicates fire under the dual-singular
+    /// collapse), so the cross-surface bridge holds pointwise on
+    /// cardinality-2 axes by construction.
+    #[must_use]
+    pub const fn is_singular(self) -> bool {
+        matches!(self, Self::SingularSupport | Self::SingularGap)
+    }
+
     /// Canonical operator-facing kebab-case label for the variant
     /// tag — `"empty"`, `"singular-support"`,
     /// `"strict-partial-cover"`, `"singular-gap"`, `"full-cover"`.
@@ -32631,6 +32733,114 @@ mod tests {
     }
 
     #[test]
+    fn support_cardinality_class_is_singular_fires_on_two_near_boundary_variants() {
+        // Behavioral pin on the variant-tag projection — the
+        // compound predicate fires on exactly the two singular
+        // near-boundary corners (SingularSupport, SingularGap) and
+        // reads `false` on all three other variants (Empty,
+        // StrictPartialCover, FullCover). The cells at distance 1
+        // from the boundary on the support-cardinality interval.
+        assert!(!SupportCardinalityClass::Empty.is_singular());
+        assert!(SupportCardinalityClass::SingularSupport.is_singular());
+        assert!(!SupportCardinalityClass::StrictPartialCover.is_singular());
+        assert!(SupportCardinalityClass::SingularGap.is_singular());
+        assert!(!SupportCardinalityClass::FullCover.is_singular());
+    }
+
+    #[test]
+    fn support_cardinality_class_is_singular_equals_singular_support_or_singular_gap() {
+        // Defining equivalence on the union of the two named
+        // single-variant peers: `is_singular() ==
+        // is_singular_support() || is_singular_gap()` for every
+        // variant. Pins the union-of-singular-variants form.
+        for &class in SupportCardinalityClass::ALL {
+            assert_eq!(
+                class.is_singular(),
+                class.is_singular_support() || class.is_singular_gap(),
+                "is_singular must equal is_singular_support || is_singular_gap on {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_is_singular_implies_is_partial_cover() {
+        // The ternary partition refines the bipartition:
+        // `is_singular()` ⇒ `is_partial_cover()` on every variant.
+        // Every singular cell lands in the partial-cover middle leg
+        // (`is_partial_cover = is_singular ∪ is_strict_partial_cover`).
+        for &class in SupportCardinalityClass::ALL {
+            if class.is_singular() {
+                assert!(
+                    class.is_partial_cover(),
+                    "is_singular must imply is_partial_cover on {class:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_is_singular_implies_not_is_boundary() {
+        // The two singular cells lie strictly off the boundary
+        // corners: `is_singular()` ⇒ `!is_boundary()` on every
+        // variant. The ternary partition is disjoint on the
+        // (boundary, singular) pair.
+        for &class in SupportCardinalityClass::ALL {
+            if class.is_singular() {
+                assert!(
+                    !class.is_boundary(),
+                    "is_singular must imply !is_boundary on {class:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_is_boundary_is_singular_is_strict_partial_cover_form_strict_ternary_partition()
+     {
+        // Strict-ternary-partition law on the typed-class surface:
+        // `(is_boundary, is_singular, is_strict_partial_cover)` is a
+        // strict partition — exactly one of the three compounds fires
+        // on every variant. The structural refinement of the
+        // (`is_boundary`, `is_partial_cover`) bipartition: the
+        // middle leg `is_partial_cover` decomposes into
+        // `is_singular ∪ is_strict_partial_cover`, splitting the
+        // three middle variants by distance from boundary.
+        for &class in SupportCardinalityClass::ALL {
+            let fires = u32::from(class.is_boundary())
+                + u32::from(class.is_singular())
+                + u32::from(class.is_strict_partial_cover());
+            assert_eq!(
+                fires, 1,
+                "exactly one of (is_boundary, is_singular, is_strict_partial_cover) must fire \
+                 on every variant (got fires={fires}) on class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_two_singular_variant_predicates_imply_is_singular() {
+        // Implication chain: each of the two singular single-variant
+        // predicates implies the compound `is_singular`. The
+        // structural witness of the union-of-singular-variants form
+        // on each implicant — peer to the implication chain over the
+        // two boundary variants pinned on `is_boundary`.
+        for &class in SupportCardinalityClass::ALL {
+            if class.is_singular_support() {
+                assert!(
+                    class.is_singular(),
+                    "is_singular_support must imply is_singular on {class:?}",
+                );
+            }
+            if class.is_singular_gap() {
+                assert!(
+                    class.is_singular(),
+                    "is_singular_gap must imply is_singular on {class:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
     fn support_cardinality_class_as_str_round_trips_via_from_canonical_str() {
         for &v in SupportCardinalityClass::ALL {
             assert_eq!(
@@ -32942,6 +33152,53 @@ mod tests {
         );
     }
 
+    fn assert_support_cardinality_class_is_singular_agrees_with_histogram_has_singular_support_or_has_singular_gap<
+        A,
+    >()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Cross-surface bridge on the singular near-boundary leg:
+        // hist.support_cardinality_class().is_singular() ==
+        // hist.has_singular_support() || hist.has_singular_gap() —
+        // unconditional, holds across every implementor regardless
+        // of cardinality. On cardinality-2 axes both histogram-side
+        // predicates fire under the dual-singular collapse and the
+        // class-side projection lands on SingularSupport (priority
+        // bottom-boundary-first), so the bridge holds pointwise on
+        // those axes too. Pins the class-side compound to the
+        // histogram-side disjunction pointwise on every canonical
+        // observation shape (empty, every singleton, axis-cover).
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.support_cardinality_class().is_singular(),
+            empty.has_singular_support() || empty.has_singular_gap(),
+            "support_cardinality_class.is_singular must equal \
+             has_singular_support || has_singular_gap on empty for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.support_cardinality_class().is_singular(),
+                singleton.has_singular_support() || singleton.has_singular_gap(),
+                "support_cardinality_class.is_singular must equal \
+                 has_singular_support || has_singular_gap on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.support_cardinality_class().is_singular(),
+            cover.has_singular_support() || cover.has_singular_gap(),
+            "support_cardinality_class.is_singular must equal \
+             has_singular_support || has_singular_gap on axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
     fn assert_support_cardinality_class_is_partial_cover_agrees_with_histogram_has_partial_cover<
         A,
     >()
@@ -33057,6 +33314,17 @@ mod tests {
         macro_rules! check {
             ($ty:ident) => {
                 assert_support_cardinality_class_is_boundary_agrees_with_histogram_is_empty_or_is_full_cover::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_support_cardinality_class_is_singular_agrees_with_histogram_has_singular_support_or_has_singular_gap_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_cardinality_class_is_singular_agrees_with_histogram_has_singular_support_or_has_singular_gap::<$ty>();
             };
         }
         for_each_closed_axis_implementor!(check);
