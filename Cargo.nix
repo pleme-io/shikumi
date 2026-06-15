@@ -1452,7 +1452,7 @@ rec {
           }
           {
             name = "h2";
-            packageId = "h2 0.4.14";
+            packageId = "h2 0.4.15";
             usesDefaultFeatures = false;
           }
           {
@@ -3676,11 +3676,11 @@ rec {
         features = {
         };
       };
-      "h2 0.4.14" = rec {
+      "h2 0.4.15" = rec {
         crateName = "h2";
-        version = "0.4.14";
+        version = "0.4.15";
         edition = "2021";
-        sha256 = "0cw7jk7kn2vn6f8w8ssh6gis1mljnfjxd606gvi4sjpyjayfy7qp";
+        sha256 = "0mgilh1g8gydcchqi6acs5l6j0gwg5jwpa64sj4b3ncb9v497c3c";
         authors = [
           "Carl Lerche <me@carllerche.com>"
           "Sean McArthur <sean@seanmonstar.com>"
@@ -4167,7 +4167,7 @@ rec {
           }
           {
             name = "h2";
-            packageId = "h2 0.4.14";
+            packageId = "h2 0.4.15";
             optional = true;
           }
           {
@@ -7822,7 +7822,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.65";
+        version = "0.1.66";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -8209,8 +8209,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "0d291a23ec0fdfbb5f4beda43597679b86c118bb";
-          sha256 = "0hwz51nqj6k04wfr85lvggmzvwn86dpjnwkdn7y96kxc08rmf0nn";
+          rev = "a47ff2e86c8043a20a9f5d53b2c75f2572f524df";
+          sha256 = "10x2gb6aa9qsr1s3rlj8d4fj4j8arwfc14j1dfxaz5cnvf1d03yx";
         };
         libName = "tatara_lisp";
         authors = [
@@ -8251,8 +8251,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "0d291a23ec0fdfbb5f4beda43597679b86c118bb";
-          sha256 = "0hwz51nqj6k04wfr85lvggmzvwn86dpjnwkdn7y96kxc08rmf0nn";
+          rev = "a47ff2e86c8043a20a9f5d53b2c75f2572f524df";
+          sha256 = "10x2gb6aa9qsr1s3rlj8d4fj4j8arwfc14j1dfxaz5cnvf1d03yx";
         };
         procMacro = true;
         libName = "tatara_lisp_derive";
