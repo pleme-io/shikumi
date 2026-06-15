@@ -5391,6 +5391,126 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         zeros == 0 || nonzeros >= 2
     }
 
+    /// `true` exactly when the histogram sits on a **coverage boundary**
+    /// — either no cell observed ([`Self::is_empty`]) or every cell
+    /// observed ([`Self::is_full_cover`]). The **boundary predicate** on
+    /// the histogram surface: the histogram-side peer of
+    /// [`SupportCardinalityClass::is_boundary`], naming the boundary
+    /// leg of the (`is_boundary`, `is_singular`, `is_strict_partial_cover`)
+    /// distance-from-boundary ternary partition of the 5-corner
+    /// support-cardinality scalar, *and* the bipartition leg of the
+    /// (`has_boundary`, `has_partial_cover`) strict bipartition of the
+    /// histogram surface — the union-of-extremes complement of the
+    /// `has_partial_cover` middle leg.
+    ///
+    /// Pointwise equivalent to three documented surface forms — each
+    /// names the same compound differently:
+    /// - `self.is_empty() || self.is_full_cover()` (the
+    ///   union-of-coverage-boundaries form on the two named histogram-
+    ///   side peers — the canonical disjunction).
+    /// - `!self.has_partial_cover()` (the strict-complement form on
+    ///   the named middle compound — `has_boundary` and
+    ///   `has_partial_cover` form a strict bipartition of the histogram
+    ///   surface, peer to the class-side
+    ///   (`is_boundary`, `is_partial_cover`) bipartition already pinned
+    ///   on [`SupportCardinalityClass`]).
+    /// - The class-side projection of
+    ///   [`SupportCardinalityClass::is_boundary`]:
+    ///   `hist.has_boundary() ==
+    ///    hist.support_cardinality_class().is_boundary()` — the
+    ///   cross-surface bridge law pinned trait-uniformly across every
+    ///   [`ClosedAxis`] implementor.
+    ///
+    /// Collapsed to one method call with a single-pass scan that
+    /// short-circuits the *moment* a zero count *and* a nonzero count
+    /// have both been witnessed (the early-exit form bounds the cost at
+    /// two witness cells — one zero, one nonzero — rather than two full
+    /// walks of the counts vector across the
+    /// `is_empty` + `is_full_cover` disjunction or a structural
+    /// re-derivation of `has_partial_cover` followed by a negation).
+    /// Structural dual of [`Self::has_partial_cover`], whose early-exit
+    /// returns `true` on the same witness pair: `has_boundary` and
+    /// `has_partial_cover` short-circuit on exactly the same condition,
+    /// returning opposite booleans — the strict bipartition holds by
+    /// construction at the scan level.
+    ///
+    /// **Empty-histogram convention** — reads `true` on every implementor:
+    /// no cell observed means [`Self::is_empty`] reads `true`, which
+    /// fires `has_boundary` via the `is_empty()` disjunct on the bridge.
+    /// The named boundary [`Self::is_empty`] carries the empty case.
+    ///
+    /// **Axis-cover convention** — reads `true` uniformly on every
+    /// implementor: observing every cell exactly once is
+    /// [`Self::is_full_cover`], which fires `has_boundary` via the
+    /// `is_full_cover()` disjunct on the bridge.
+    ///
+    /// **Singleton-observation convention** — reads `true` iff
+    /// `axis_cardinality::<A>() == 1` (no implementor today carries
+    /// cardinality `1`, so singleton reads `false` uniformly across the
+    /// implementor set). A singleton has exactly one observed cell, so
+    /// on cardinality `>= 2` it lands in `has_partial_cover` (some-
+    /// but-not-all), strictly off both boundaries.
+    ///
+    /// **Companion invariants** with [`Self::is_empty`],
+    /// [`Self::is_full_cover`], [`Self::has_partial_cover`],
+    /// [`Self::distinct_cells`], and [`Self::support_cardinality_class`]:
+    /// - `has_boundary() ⇔ is_empty() || is_full_cover()` — the
+    ///   defining union-of-coverage-boundaries equivalence on the two
+    ///   named histogram-side peers (pinned by
+    ///   [`tests::axis_histogram_has_boundary_equals_is_empty_or_is_full_cover`]).
+    /// - `has_boundary() ⇔ !has_partial_cover()` — the strict-
+    ///   complement equivalence on the named middle compound (pinned by
+    ///   [`tests::axis_histogram_has_boundary_equals_complement_of_has_partial_cover`]).
+    /// - `(has_boundary, has_partial_cover)` is a strict bipartition on
+    ///   every implementor: pairwise disjoint *and* jointly exhaustive.
+    ///   Stated as
+    ///   `u8::from(has_boundary()) + u8::from(has_partial_cover()) == 1`
+    ///   — exactly one compound fires on any histogram (pinned by
+    ///   [`tests::axis_histogram_has_boundary_and_has_partial_cover_form_strict_bipartition_for_every_closed_axis_implementor`]).
+    ///   The histogram-side peer of the class-side bipartition already
+    ///   pinned on [`SupportCardinalityClass`] by
+    ///   [`tests::support_cardinality_class_is_boundary_and_is_partial_cover_form_strict_bipartition`].
+    /// - Implication chain over the two boundary peers:
+    ///   `is_empty() ⇒ has_boundary()` and
+    ///   `is_full_cover() ⇒ has_boundary()` (pinned by
+    ///   [`tests::axis_histogram_two_coverage_boundary_predicates_imply_has_boundary_for_every_closed_axis_implementor`]).
+    ///
+    /// **Cross-surface bridge law** —
+    /// `hist.has_boundary() ==
+    ///  hist.support_cardinality_class().is_boundary()` for every
+    /// `hist: AxisHistogram<A>` on every [`ClosedAxis`] implementor,
+    /// pinned trait-uniformly through the
+    /// `for_each_closed_axis_implementor!` macro by
+    /// [`tests::axis_histogram_has_boundary_agrees_with_class_is_boundary_for_every_closed_axis_implementor`].
+    /// The bridge closes the (histogram, class) duality on the
+    /// boundary leg from the histogram side — peer to the
+    /// [`SupportCardinalityClass::is_boundary`] bridge already pinned
+    /// from the class side via the verbose
+    /// `is_empty() || is_full_cover()` disjunction. The two surfaces
+    /// now carry one named boolean each on the boundary leg, pinned
+    /// end-to-end.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the closed-
+    /// enum axis primitives plus the product cubes, reached uniformly
+    /// through `for_each_closed_axis_implementor!` in [`tests`])
+    /// inherits the predicate at no per-axis cost.
+    #[must_use]
+    pub fn has_boundary(&self) -> bool {
+        let mut saw_zero = false;
+        let mut saw_nonzero = false;
+        for &c in &self.counts {
+            if c == 0 {
+                saw_zero = true;
+            } else {
+                saw_nonzero = true;
+            }
+            if saw_zero && saw_nonzero {
+                return false;
+            }
+        }
+        true
+    }
+
     /// The **support-cardinality corner** of the histogram on the
     /// five-cell partition of the `[0, axis_cardinality::<A>()]`
     /// support-cardinality interval — the typed closed-classifier
@@ -34351,6 +34471,195 @@ mod tests {
             };
         }
         for_each_closed_axis_implementor!(check);
+    }
+
+    fn assert_has_boundary_agrees_with_class_is_boundary<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Cross-surface bridge (histogram side):
+        // hist.has_boundary() ==
+        // hist.support_cardinality_class().is_boundary() —
+        // unconditional, holds across every implementor regardless of
+        // cardinality. The two surfaces carry one named boolean each on
+        // the boundary leg of the (is_boundary, is_singular,
+        // is_strict_partial_cover) distance-from-boundary ternary
+        // partition.
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.has_boundary(),
+            empty.support_cardinality_class().is_boundary(),
+            "has_boundary must equal support_cardinality_class().is_boundary() \
+             on empty for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.has_boundary(),
+                singleton.support_cardinality_class().is_boundary(),
+                "has_boundary must equal support_cardinality_class().is_boundary() \
+                 on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.has_boundary(),
+            cover.support_cardinality_class().is_boundary(),
+            "has_boundary must equal support_cardinality_class().is_boundary() \
+             on axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_has_boundary_and_has_partial_cover_form_strict_bipartition<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The histogram-side strict bipartition: exactly one of
+        // has_boundary() and has_partial_cover() fires on any shape.
+        // Mirrors the class-side bipartition pinned by
+        // `support_cardinality_class_is_boundary_and_is_partial_cover_form_strict_bipartition`.
+        // Stronger than disjointness — names the joint-exhaustiveness
+        // law on the histogram surface directly.
+        let check = |hist: &AxisHistogram<A>, label: &str| {
+            let sum = u8::from(hist.has_boundary()) + u8::from(hist.has_partial_cover());
+            assert_eq!(
+                sum,
+                1,
+                "(has_boundary, has_partial_cover) must sum to 1 on {label} for axis {} \
+                 (got {sum})",
+                std::any::type_name::<A>(),
+            );
+        };
+
+        check(&AxisHistogram::<A>::empty(), "empty");
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            let label = format!("singleton {observed:?}");
+            check(&singleton, &label);
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        check(&cover, "axis-cover");
+    }
+
+    fn assert_two_coverage_boundary_predicates_imply_has_boundary<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Implication chain over the two coverage-boundary peers:
+        // is_empty() => has_boundary() and is_full_cover() => has_boundary().
+        let empty = AxisHistogram::<A>::empty();
+        if empty.is_empty() {
+            assert!(
+                empty.has_boundary(),
+                "is_empty must imply has_boundary on empty for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        if cover.is_full_cover() {
+            assert!(
+                cover.has_boundary(),
+                "is_full_cover must imply has_boundary on axis-cover for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_boundary_agrees_with_class_is_boundary_for_every_closed_axis_implementor()
+    {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_boundary_agrees_with_class_is_boundary::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_boundary_and_has_partial_cover_form_strict_bipartition_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_boundary_and_has_partial_cover_form_strict_bipartition::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_two_coverage_boundary_predicates_imply_has_boundary_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_two_coverage_boundary_predicates_imply_has_boundary::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_boundary_equals_is_empty_or_is_full_cover() {
+        // The defining union-of-coverage-boundaries equivalence on the
+        // two named histogram-side peers. Pinned pointwise across the
+        // canonical observation-mix shapes on [`ShikumiErrorKind`]
+        // (cardinality 6 — the strict interior is well-exercised here).
+        type A = ShikumiErrorKind;
+        let cells: Vec<A> = axis_iter::<A>().collect();
+        let inputs: Vec<Vec<A>> = vec![
+            vec![],
+            vec![cells[0]],
+            vec![cells[0], cells[1]],
+            vec![cells[0], cells[1], cells[2]],
+            vec![cells[0], cells[1], cells[2], cells[3]],
+            vec![cells[0], cells[1], cells[2], cells[3], cells[4]],
+            cells.clone(),
+        ];
+        for input in &inputs {
+            let hist: AxisHistogram<A> = input.iter().copied().collect();
+            assert_eq!(
+                hist.has_boundary(),
+                hist.is_empty() || hist.is_full_cover(),
+                "has_boundary must equal (is_empty || is_full_cover) on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_boundary_equals_complement_of_has_partial_cover() {
+        // The strict-complement equivalence on the named middle compound:
+        // has_boundary and has_partial_cover form a strict bipartition,
+        // so has_boundary reads the negation of has_partial_cover
+        // pointwise. Pinned on [`ShikumiErrorKind`] (cardinality 6) so
+        // every support cardinality 0..=6 is exercised.
+        type A = ShikumiErrorKind;
+        let cells: Vec<A> = axis_iter::<A>().collect();
+        let inputs: Vec<Vec<A>> = vec![
+            vec![],
+            vec![cells[0]],
+            vec![cells[0], cells[1]],
+            vec![cells[0], cells[1], cells[2]],
+            vec![cells[0], cells[1], cells[2], cells[3]],
+            vec![cells[0], cells[1], cells[2], cells[3], cells[4]],
+            cells.clone(),
+        ];
+        for input in &inputs {
+            let hist: AxisHistogram<A> = input.iter().copied().collect();
+            assert_eq!(
+                hist.has_boundary(),
+                !hist.has_partial_cover(),
+                "has_boundary must equal !has_partial_cover on input of length {}",
+                input.len(),
+            );
+        }
     }
 
     #[test]
