@@ -5511,6 +5511,175 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         true
     }
 
+    /// `true` exactly when the histogram sits on a **singular
+    /// near-boundary** — either exactly one cell observed
+    /// ([`Self::has_singular_support`]) or exactly one cell unobserved
+    /// ([`Self::has_singular_gap`]). The **singular predicate** on the
+    /// histogram surface: the histogram-side peer of
+    /// [`SupportCardinalityClass::is_singular`], naming the
+    /// *exactly-one-cell-off-boundary* leg of the
+    /// (`has_boundary`, `has_singular`, `has_strict_partial_cover`)
+    /// distance-from-boundary ternary partition of the 5-corner support-
+    /// cardinality scalar on the histogram surface. The middle leg
+    /// `has_partial_cover` of the coarser (`has_boundary`,
+    /// `has_partial_cover`) bipartition decomposes through this lift as
+    /// `has_partial_cover == has_singular ∪ has_strict_partial_cover` —
+    /// the *one-cell-off-boundary* refinement of the strict-interior leg.
+    ///
+    /// Pointwise equivalent to four documented surface forms — each
+    /// names the same compound differently:
+    /// - `self.has_singular_support() || self.has_singular_gap()` (the
+    ///   union-of-singular-boundaries form on the two named histogram-
+    ///   side peers — the canonical disjunction).
+    /// - `self.has_partial_cover() && !self.has_strict_partial_cover()`
+    ///   (the partial-cover-minus-strict-interior form: the singular
+    ///   compound is exactly the partial-cover middle leg with the
+    ///   strict-interior `has_strict_partial_cover` predicate excised).
+    /// - The class-side projection of
+    ///   [`SupportCardinalityClass::is_singular`]:
+    ///   `hist.has_singular() ==
+    ///    hist.support_cardinality_class().is_singular()` — the
+    ///   cross-surface bridge law pinned trait-uniformly across every
+    ///   [`ClosedAxis`] implementor.
+    /// - `self.distinct_cells() == 1 || self.unobserved_cells() == 1`
+    ///   (the dual-scalar equality form on the two named cardinality
+    ///   peers — exactly one observed *or* exactly one unobserved cell,
+    ///   on the `distinct_cells + unobserved_cells == axis_cardinality`
+    ///   partition invariant).
+    ///
+    /// Collapsed to one method call with a single-pass scan that
+    /// short-circuits the *moment* both a *second* zero count *and* a
+    /// *second* nonzero count have been witnessed (the early-exit form
+    /// bounds the cost at four witness cells — two zeros and two
+    /// nonzeros — rather than two full walks of the counts vector
+    /// across the `has_singular_support` + `has_singular_gap`
+    /// disjunction or a structural re-derivation of `has_partial_cover`
+    /// followed by `!has_strict_partial_cover()`). Structural dual of
+    /// [`Self::has_strict_partial_cover`], whose early-exit returns
+    /// `true` on the same witness pair: `has_singular` and
+    /// `has_strict_partial_cover` short-circuit on exactly the same
+    /// condition with opposite branches — once two zeros and two
+    /// nonzeros are seen, the strict-interior corner of the partial-
+    /// cover middle leg is locked in and the singular pair is excluded.
+    ///
+    /// **Empty-histogram convention** — reads `false` on every
+    /// implementor with `axis_cardinality::<A>() >= 2` (every
+    /// implementor today): empty has every cell unobserved (zeros =
+    /// cardinality, nonzeros = 0), so neither `has_singular_support`
+    /// (nonzeros == 1) nor `has_singular_gap` (zeros == 1) fires. The
+    /// named boundary [`Self::is_empty`] carries the empty case via the
+    /// peer compound [`Self::has_boundary`].
+    ///
+    /// **Axis-cover convention** — reads `false` uniformly on every
+    /// implementor with `axis_cardinality::<A>() >= 2`: observing every
+    /// cell exactly once is [`Self::is_full_cover`] (zeros = 0,
+    /// nonzeros = cardinality), so neither singular boundary fires. The
+    /// named boundary [`Self::is_full_cover`] carries the axis-cover
+    /// case via the peer compound [`Self::has_boundary`].
+    ///
+    /// **Singleton-observation convention** — reads `true` uniformly on
+    /// every implementor with `axis_cardinality::<A>() >= 2`. A
+    /// singleton has nonzeros == 1, so `has_singular_support` fires; on
+    /// cardinality-2 the same shape also has zeros == 1 (the dual-
+    /// singular collapse pinned by
+    /// `axis_histogram_has_singular_gap_equals_has_singular_support_on_cardinality_two`),
+    /// so `has_singular_gap` fires too and the disjunction holds via
+    /// either disjunct.
+    ///
+    /// **Companion invariants** with [`Self::has_singular_support`],
+    /// [`Self::has_singular_gap`], [`Self::has_partial_cover`],
+    /// [`Self::has_strict_partial_cover`], [`Self::has_boundary`], and
+    /// [`Self::support_cardinality_class`]:
+    /// - `has_singular() ⇔ has_singular_support() || has_singular_gap()`
+    ///   — the defining union-of-singular-boundaries equivalence on the
+    ///   two named histogram-side peers (pinned by
+    ///   [`tests::axis_histogram_has_singular_equals_has_singular_support_or_has_singular_gap`]).
+    /// - `has_singular() ⇔ has_partial_cover() &&
+    ///   !has_strict_partial_cover()` — the partial-cover-minus-strict-
+    ///   interior form on the named middle compound and its strict-
+    ///   interior refinement (pinned by
+    ///   [`tests::axis_histogram_has_singular_equals_has_partial_cover_and_not_has_strict_partial_cover`]).
+    /// - `has_singular() ⇒ has_partial_cover()` always: every singular
+    ///   shape lands in the partial-cover middle leg of the coarser
+    ///   (`has_boundary`, `has_partial_cover`) bipartition — the
+    ///   ternary partition refines the bipartition (pinned by
+    ///   [`tests::axis_histogram_has_singular_implies_has_partial_cover_for_every_closed_axis_implementor`]).
+    /// - `has_singular() ⇒ !has_boundary()` always on every implementor
+    ///   with `axis_cardinality::<A>() >= 2`: the two singular near-
+    ///   boundary corners sit strictly off the coverage boundaries
+    ///   (pinned by
+    ///   [`tests::axis_histogram_has_singular_implies_not_has_boundary_for_every_closed_axis_implementor`]).
+    /// - `(has_boundary, has_singular, has_strict_partial_cover)` is a
+    ///   strict ternary partition on every implementor with
+    ///   `axis_cardinality::<A>() >= 2`: pairwise disjoint *and*
+    ///   jointly exhaustive. Stated as
+    ///   `u8::from(has_boundary()) + u8::from(has_singular()) + u8::from(has_strict_partial_cover()) == 1`
+    ///   — exactly one compound fires on any histogram (pinned by
+    ///   [`tests::axis_histogram_has_boundary_has_singular_has_strict_partial_cover_form_strict_ternary_partition_for_every_closed_axis_implementor`]).
+    ///   The histogram-side peer of the class-side ternary partition
+    ///   already pinned on [`SupportCardinalityClass`] by
+    ///   [`tests::support_cardinality_class_is_boundary_is_singular_is_strict_partial_cover_form_strict_ternary_partition`].
+    /// - Implication chain over the two singular peers:
+    ///   `has_singular_support() ⇒ has_singular()` and
+    ///   `has_singular_gap() ⇒ has_singular()` (pinned by
+    ///   [`tests::axis_histogram_two_singular_boundary_predicates_imply_has_singular_for_every_closed_axis_implementor`]).
+    ///
+    /// **Cross-surface bridge law** —
+    /// `hist.has_singular() ==
+    ///  hist.support_cardinality_class().is_singular()` for every
+    /// `hist: AxisHistogram<A>` on every [`ClosedAxis`] implementor,
+    /// pinned trait-uniformly through the
+    /// `for_each_closed_axis_implementor!` macro by
+    /// [`tests::axis_histogram_has_singular_agrees_with_class_is_singular_for_every_closed_axis_implementor`].
+    /// The bridge closes the (histogram, class) duality on the
+    /// singular near-boundary leg from the histogram side — peer to the
+    /// [`SupportCardinalityClass::is_singular`] bridge already pinned
+    /// from the class side via the verbose
+    /// `has_singular_support() || has_singular_gap()` disjunction (the
+    /// existing `axis_histogram_support_cardinality_class_is_singular_agrees_with_histogram_has_singular_support_or_has_singular_gap_for_every_closed_axis_implementor`
+    /// pin). The two surfaces now carry one named boolean each on the
+    /// singular near-boundary leg, pinned end-to-end. With this lift,
+    /// the (histogram, class) duality on the distance-from-boundary
+    /// ternary partition closes on every leg: `has_boundary` /
+    /// `is_boundary` on the boundary corner, `has_singular` /
+    /// `is_singular` on the singular near-boundary corner, and
+    /// `has_strict_partial_cover` / `is_strict_partial_cover` on the
+    /// strict-interior corner.
+    ///
+    /// **Cardinality-2 dual-singular collapse.** On cardinality-2 axes
+    /// (e.g. [`crate::PartitionFace`], [`crate::SecretRefShape`]) the
+    /// two singular boundaries [`Self::has_singular_support`] (nonzeros
+    /// == 1) and [`Self::has_singular_gap`] (zeros == 1) fire on the
+    /// same shape (the singleton has one observed cell *and* one
+    /// unobserved cell). `has_singular` reads `true` on the singleton
+    /// via either disjunct of the union form, and the cross-surface
+    /// bridge holds pointwise: the class-side projection lands on
+    /// [`SupportCardinalityClass::SingularSupport`] by the bottom-
+    /// boundary-first branching priority, and
+    /// [`SupportCardinalityClass::is_singular`] reads `true` on that
+    /// variant.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the closed-
+    /// enum axis primitives plus the product cubes, reached uniformly
+    /// through `for_each_closed_axis_implementor!` in [`tests`])
+    /// inherits the predicate at no per-axis cost.
+    #[must_use]
+    pub fn has_singular(&self) -> bool {
+        let mut zeros: u8 = 0;
+        let mut nonzeros: u8 = 0;
+        for &c in &self.counts {
+            if c == 0 {
+                zeros = zeros.saturating_add(1);
+            } else {
+                nonzeros = nonzeros.saturating_add(1);
+            }
+            if zeros >= 2 && nonzeros >= 2 {
+                return false;
+            }
+        }
+        zeros == 1 || nonzeros == 1
+    }
+
     /// The **support-cardinality corner** of the histogram on the
     /// five-cell partition of the `[0, axis_cardinality::<A>()]`
     /// support-cardinality interval — the typed closed-classifier
@@ -34572,6 +34741,194 @@ mod tests {
         }
     }
 
+    fn assert_has_singular_agrees_with_class_is_singular<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Cross-surface bridge (histogram side):
+        // hist.has_singular() ==
+        // hist.support_cardinality_class().is_singular() —
+        // unconditional, holds across every implementor regardless of
+        // cardinality (every implementor today carries cardinality >= 2,
+        // so the empty / axis-cover / singleton shapes pin the bridge
+        // directly; the cardinality-2 dual-singular collapse leaves the
+        // bridge intact because the class-side projection lands the
+        // singleton on SingularSupport and is_singular reads true on
+        // that variant). The two surfaces carry one named boolean each
+        // on the singular near-boundary leg of the
+        // (has_boundary, has_singular, has_strict_partial_cover)
+        // distance-from-boundary ternary partition.
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.has_singular(),
+            empty.support_cardinality_class().is_singular(),
+            "has_singular must equal support_cardinality_class().is_singular() \
+             on empty for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.has_singular(),
+                singleton.support_cardinality_class().is_singular(),
+                "has_singular must equal support_cardinality_class().is_singular() \
+                 on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.has_singular(),
+            cover.support_cardinality_class().is_singular(),
+            "has_singular must equal support_cardinality_class().is_singular() \
+             on axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_has_boundary_has_singular_has_strict_partial_cover_form_strict_ternary_partition<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The histogram-side strict ternary partition: exactly one of
+        // has_boundary(), has_singular(), and has_strict_partial_cover()
+        // fires on any shape. Mirrors the class-side ternary partition
+        // pinned by
+        // `support_cardinality_class_is_boundary_is_singular_is_strict_partial_cover_form_strict_ternary_partition`.
+        // Strictly refines the (has_boundary, has_partial_cover)
+        // bipartition: the middle leg decomposes into
+        // has_singular ∪ has_strict_partial_cover.
+        let check = |hist: &AxisHistogram<A>, label: &str| {
+            let sum = u8::from(hist.has_boundary())
+                + u8::from(hist.has_singular())
+                + u8::from(hist.has_strict_partial_cover());
+            assert_eq!(
+                sum,
+                1,
+                "(has_boundary, has_singular, has_strict_partial_cover) must sum to 1 on \
+                 {label} for axis {} (got {sum})",
+                std::any::type_name::<A>(),
+            );
+        };
+
+        check(&AxisHistogram::<A>::empty(), "empty");
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            let label = format!("singleton {observed:?}");
+            check(&singleton, &label);
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        check(&cover, "axis-cover");
+    }
+
+    fn assert_two_singular_boundary_predicates_imply_has_singular<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Implication chain over the two singular-boundary peers:
+        // has_singular_support() => has_singular() and
+        // has_singular_gap() => has_singular() on every canonical
+        // shape. Peer of `assert_two_coverage_boundary_predicates_imply_has_boundary`
+        // on the singular near-boundary leg.
+        let check = |hist: &AxisHistogram<A>, label: &str| {
+            if hist.has_singular_support() {
+                assert!(
+                    hist.has_singular(),
+                    "has_singular_support must imply has_singular on {label} for axis {}",
+                    std::any::type_name::<A>(),
+                );
+            }
+            if hist.has_singular_gap() {
+                assert!(
+                    hist.has_singular(),
+                    "has_singular_gap must imply has_singular on {label} for axis {}",
+                    std::any::type_name::<A>(),
+                );
+            }
+        };
+
+        check(&AxisHistogram::<A>::empty(), "empty");
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            let label = format!("singleton {observed:?}");
+            check(&singleton, &label);
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        check(&cover, "axis-cover");
+    }
+
+    fn assert_has_singular_implies_has_partial_cover<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The ternary partition refines the bipartition:
+        // has_singular() => has_partial_cover() on every canonical
+        // shape. Every singular near-boundary shape lands in the
+        // partial-cover middle leg of the
+        // (has_boundary, has_partial_cover) bipartition. Peer of the
+        // class-side implication pinned by
+        // `support_cardinality_class_is_singular_implies_is_partial_cover`.
+        let check = |hist: &AxisHistogram<A>, label: &str| {
+            if hist.has_singular() {
+                assert!(
+                    hist.has_partial_cover(),
+                    "has_singular must imply has_partial_cover on {label} for axis {}",
+                    std::any::type_name::<A>(),
+                );
+            }
+        };
+
+        check(&AxisHistogram::<A>::empty(), "empty");
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            let label = format!("singleton {observed:?}");
+            check(&singleton, &label);
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        check(&cover, "axis-cover");
+    }
+
+    fn assert_has_singular_implies_not_has_boundary<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The ternary partition is disjoint on the
+        // (has_boundary, has_singular) pair: has_singular() =>
+        // !has_boundary() on every canonical shape (every implementor
+        // today carries axis_cardinality >= 2, so the two singular
+        // corners sit strictly off the coverage boundaries). Peer of
+        // the class-side disjointness pinned by
+        // `support_cardinality_class_is_singular_implies_not_is_boundary`.
+        let check = |hist: &AxisHistogram<A>, label: &str| {
+            if hist.has_singular() {
+                assert!(
+                    !hist.has_boundary(),
+                    "has_singular must imply !has_boundary on {label} for axis {}",
+                    std::any::type_name::<A>(),
+                );
+            }
+        };
+
+        check(&AxisHistogram::<A>::empty(), "empty");
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            let label = format!("singleton {observed:?}");
+            check(&singleton, &label);
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        check(&cover, "axis-cover");
+    }
+
     #[test]
     fn axis_histogram_has_boundary_agrees_with_class_is_boundary_for_every_closed_axis_implementor()
     {
@@ -34657,6 +35014,120 @@ mod tests {
                 hist.has_boundary(),
                 !hist.has_partial_cover(),
                 "has_boundary must equal !has_partial_cover on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_agrees_with_class_is_singular_for_every_closed_axis_implementor()
+    {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_singular_agrees_with_class_is_singular::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_boundary_has_singular_has_strict_partial_cover_form_strict_ternary_partition_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_boundary_has_singular_has_strict_partial_cover_form_strict_ternary_partition::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_two_singular_boundary_predicates_imply_has_singular_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_two_singular_boundary_predicates_imply_has_singular::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_implies_has_partial_cover_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_singular_implies_has_partial_cover::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_implies_not_has_boundary_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_singular_implies_not_has_boundary::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_equals_has_singular_support_or_has_singular_gap() {
+        // The defining union-of-singular-boundaries equivalence on the
+        // two named histogram-side peers. Pinned pointwise across the
+        // canonical observation-mix shapes on [`ShikumiErrorKind`]
+        // (cardinality 6 — the strict interior is well-exercised here).
+        type A = ShikumiErrorKind;
+        let cells: Vec<A> = axis_iter::<A>().collect();
+        let inputs: Vec<Vec<A>> = vec![
+            vec![],
+            vec![cells[0]],
+            vec![cells[0], cells[1]],
+            vec![cells[0], cells[1], cells[2]],
+            vec![cells[0], cells[1], cells[2], cells[3]],
+            vec![cells[0], cells[1], cells[2], cells[3], cells[4]],
+            cells.clone(),
+        ];
+        for input in &inputs {
+            let hist: AxisHistogram<A> = input.iter().copied().collect();
+            assert_eq!(
+                hist.has_singular(),
+                hist.has_singular_support() || hist.has_singular_gap(),
+                "has_singular must equal (has_singular_support || has_singular_gap) on input \
+                 of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_singular_equals_has_partial_cover_and_not_has_strict_partial_cover() {
+        // The partial-cover-minus-strict-interior equivalence: the
+        // singular compound is exactly the partial-cover middle leg
+        // with the strict-interior `has_strict_partial_cover` predicate
+        // excised. Pinned pointwise on [`ShikumiErrorKind`] (cardinality
+        // 6) so every support cardinality 0..=6 is exercised — the
+        // strict interior fires at supports 2, 3, 4 and the singular
+        // boundaries at supports 1 and 5.
+        type A = ShikumiErrorKind;
+        let cells: Vec<A> = axis_iter::<A>().collect();
+        let inputs: Vec<Vec<A>> = vec![
+            vec![],
+            vec![cells[0]],
+            vec![cells[0], cells[1]],
+            vec![cells[0], cells[1], cells[2]],
+            vec![cells[0], cells[1], cells[2], cells[3]],
+            vec![cells[0], cells[1], cells[2], cells[3], cells[4]],
+            cells.clone(),
+        ];
+        for input in &inputs {
+            let hist: AxisHistogram<A> = input.iter().copied().collect();
+            assert_eq!(
+                hist.has_singular(),
+                hist.has_partial_cover() && !hist.has_strict_partial_cover(),
+                "has_singular must equal (has_partial_cover && !has_strict_partial_cover) \
+                 on input of length {}",
                 input.len(),
             );
         }
