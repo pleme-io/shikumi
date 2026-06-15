@@ -1202,6 +1202,111 @@ impl SupportCardinalityClass {
         matches!(self, Self::FullCover)
     }
 
+    /// `true` exactly on the three middle variants
+    /// ([`Self::SingularSupport`], [`Self::StrictPartialCover`],
+    /// [`Self::SingularGap`]) — the **partial-cover compound
+    /// predicate** on the typed-class surface. The enum-level peer
+    /// of [`AxisHistogram::has_partial_cover`]: lifts the
+    /// "some but not all observed" middle leg of the support-
+    /// cardinality five-corner partition to one `const` projection
+    /// on the variant tag.
+    ///
+    /// Pointwise equal to four documented surface forms — each
+    /// names the same compound differently:
+    /// - `!self.is_empty() && !self.is_full_cover()` (the
+    ///   complement-of-boundaries form on the named single-variant
+    ///   peers).
+    /// - `self.is_singular_support() || self.is_strict_partial_cover()
+    ///   || self.is_singular_gap()` (the union-of-middle-variants
+    ///   form on the three named single-variant peers).
+    /// - `matches!(self, Self::SingularSupport | Self::StrictPartialCover
+    ///   | Self::SingularGap)` (the structural variant-tag form).
+    /// - The class-side projection of
+    ///   [`AxisHistogram::has_partial_cover`]:
+    ///   `hist.has_partial_cover() ==
+    ///    hist.support_cardinality_class().is_partial_cover()` —
+    ///   the cross-surface bridge law pinned trait-uniformly across
+    ///   every [`ClosedAxis`] implementor.
+    ///
+    /// Before this lift, every consumer holding a cached
+    /// [`SupportCardinalityClass`] (e.g. on a per-window summary
+    /// struct stored alongside the originating
+    /// [`AxisHistogram`]) and asking the "neither blank nor
+    /// exhaustive" question routed through the disjunction of the
+    /// three middle predicates, the conjunction of the two negated
+    /// boundary predicates, or a re-derived match on the variant
+    /// tag — and the original
+    /// [`AxisHistogram::has_partial_cover`] histogram-surface peer
+    /// was unreachable on the cached class without re-routing
+    /// through the originating histogram. The lift names the
+    /// middle leg directly at one `const` projection on the class
+    /// surface, and the (`is_empty`, `is_partial_cover`,
+    /// `is_full_cover`) trichotomy becomes a structural partition
+    /// on the typed-class surface peering with the histogram-side
+    /// (`is_empty`, `has_partial_cover`, `is_full_cover`)
+    /// trichotomy that
+    /// [`tests::axis_histogram_coverage_trichotomy_partitions_every_histogram_for_every_closed_axis_implementor`]
+    /// already pins.
+    ///
+    /// **Companion invariants** with [`Self::is_empty`],
+    /// [`Self::is_full_cover`], [`Self::is_singular_support`],
+    /// [`Self::is_strict_partial_cover`], and
+    /// [`Self::is_singular_gap`]:
+    /// - `is_partial_cover() ⇔ !is_empty() && !is_full_cover()` —
+    ///   the defining equivalence on the two-corner boundary
+    ///   complement (pinned by
+    ///   [`tests::support_cardinality_class_is_partial_cover_equals_not_empty_and_not_full_cover`]).
+    /// - `is_partial_cover() ⇔ is_singular_support()
+    ///    || is_strict_partial_cover() || is_singular_gap()` —
+    ///   the union-of-middle-variants form on the three named
+    ///   single-variant peers (pinned by
+    ///   [`tests::support_cardinality_class_is_partial_cover_equals_three_middle_variant_disjunction`]).
+    /// - `(is_empty, is_partial_cover, is_full_cover)` is a strict
+    ///   partition on every variant: pairwise disjoint *and*
+    ///   jointly exhaustive. Stated as
+    ///   `u8::from(is_empty()) + u8::from(is_partial_cover()) + u8::from(is_full_cover()) == 1`
+    ///   — exactly one corner fires uniformly across the five
+    ///   variants (pinned by
+    ///   [`tests::support_cardinality_class_trichotomy_partitions_every_variant`]).
+    ///   The class-side peer of the histogram-side trichotomy
+    ///   already pinned on every implementor by
+    ///   [`tests::axis_histogram_coverage_trichotomy_partitions_every_histogram_for_every_closed_axis_implementor`].
+    /// - Implication chain over the three middle variants:
+    ///   `is_singular_support() ⇒ is_partial_cover()`,
+    ///   `is_strict_partial_cover() ⇒ is_partial_cover()`, and
+    ///   `is_singular_gap() ⇒ is_partial_cover()` (pinned by
+    ///   [`tests::support_cardinality_class_three_middle_variant_predicates_imply_is_partial_cover`]).
+    ///
+    /// **Cross-surface bridge law** —
+    /// `hist.has_partial_cover() ==
+    ///  hist.support_cardinality_class().is_partial_cover()` for
+    /// every `hist: AxisHistogram<A>` on every [`ClosedAxis`]
+    /// implementor, pinned trait-uniformly through the
+    /// `for_each_closed_axis_implementor!` macro by
+    /// [`tests::axis_histogram_support_cardinality_class_is_partial_cover_agrees_with_histogram_has_partial_cover_for_every_closed_axis_implementor`].
+    /// The bridge closes the (class, histogram) duality on the
+    /// partial-cover middle leg — peer to the
+    /// `is_empty` / `is_full_cover` bridges already pinned on the
+    /// two boundary corners.
+    ///
+    /// **Empty-boundary convention** — reads `false` on
+    /// [`Self::Empty`] (matching the same convention every
+    /// histogram-surface boundary predicate carries on the empty
+    /// histogram: the empty histogram surfaces `false` on the
+    /// histogram-side `has_partial_cover` peer pointwise).
+    ///
+    /// **Full-cover convention** — reads `false` on
+    /// [`Self::FullCover`] (matching the same convention: the
+    /// full-cover histogram surfaces `false` on the histogram-side
+    /// `has_partial_cover` peer pointwise).
+    #[must_use]
+    pub const fn is_partial_cover(self) -> bool {
+        matches!(
+            self,
+            Self::SingularSupport | Self::StrictPartialCover | Self::SingularGap,
+        )
+    }
+
     /// Canonical operator-facing kebab-case label for the variant
     /// tag — `"empty"`, `"singular-support"`,
     /// `"strict-partial-cover"`, `"singular-gap"`, `"full-cover"`.
@@ -32267,6 +32372,104 @@ mod tests {
     }
 
     #[test]
+    fn support_cardinality_class_is_partial_cover_fires_on_three_middle_variants() {
+        // Behavioral pin on the variant-tag projection — the
+        // compound predicate fires on exactly the three middle
+        // variants (SingularSupport, StrictPartialCover, SingularGap)
+        // and reads `false` on both boundary corners (Empty,
+        // FullCover). The "three middle, two boundaries" partition
+        // of the five-corner surface.
+        assert!(!SupportCardinalityClass::Empty.is_partial_cover());
+        assert!(SupportCardinalityClass::SingularSupport.is_partial_cover());
+        assert!(SupportCardinalityClass::StrictPartialCover.is_partial_cover());
+        assert!(SupportCardinalityClass::SingularGap.is_partial_cover());
+        assert!(!SupportCardinalityClass::FullCover.is_partial_cover());
+    }
+
+    #[test]
+    fn support_cardinality_class_is_partial_cover_equals_not_empty_and_not_full_cover() {
+        // Defining equivalence on the two-corner boundary
+        // complement: `is_partial_cover() == !is_empty() &&
+        // !is_full_cover()` for every variant. Pins the boundary
+        // form of the compound predicate.
+        for &class in SupportCardinalityClass::ALL {
+            assert_eq!(
+                class.is_partial_cover(),
+                !class.is_empty() && !class.is_full_cover(),
+                "is_partial_cover must equal the not-empty-and-not-full-cover \
+                 boundary-complement form on {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_is_partial_cover_equals_three_middle_variant_disjunction() {
+        // Union-of-middle-variants form: `is_partial_cover() ==
+        // is_singular_support() || is_strict_partial_cover() ||
+        // is_singular_gap()` for every variant. Pins the
+        // disjunction form on the three named single-variant peers.
+        for &class in SupportCardinalityClass::ALL {
+            assert_eq!(
+                class.is_partial_cover(),
+                class.is_singular_support()
+                    || class.is_strict_partial_cover()
+                    || class.is_singular_gap(),
+                "is_partial_cover must equal the three-middle-variant disjunction \
+                 form on {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_trichotomy_partitions_every_variant() {
+        // Coverage-trichotomy partition law on the typed-class
+        // surface: `(is_empty, is_partial_cover, is_full_cover)` is
+        // a strict partition — exactly one of the three corners
+        // fires on every variant. The class-side peer of the
+        // histogram-side trichotomy already pinned across every
+        // ClosedAxis implementor by
+        // axis_histogram_coverage_trichotomy_partitions_every_histogram_for_every_closed_axis_implementor.
+        for &class in SupportCardinalityClass::ALL {
+            let fires = u32::from(class.is_empty())
+                + u32::from(class.is_partial_cover())
+                + u32::from(class.is_full_cover());
+            assert_eq!(
+                fires, 1,
+                "exactly one of (is_empty, is_partial_cover, is_full_cover) \
+                 must fire on every variant (got fires={fires}) on class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_three_middle_variant_predicates_imply_is_partial_cover() {
+        // Implication chain: each of the three middle single-
+        // variant predicates implies the compound `is_partial_cover`.
+        // The structural witness of the union-of-middle-variants
+        // form on each implicant.
+        for &class in SupportCardinalityClass::ALL {
+            if class.is_singular_support() {
+                assert!(
+                    class.is_partial_cover(),
+                    "is_singular_support must imply is_partial_cover on {class:?}",
+                );
+            }
+            if class.is_strict_partial_cover() {
+                assert!(
+                    class.is_partial_cover(),
+                    "is_strict_partial_cover must imply is_partial_cover on {class:?}",
+                );
+            }
+            if class.is_singular_gap() {
+                assert!(
+                    class.is_partial_cover(),
+                    "is_singular_gap must imply is_partial_cover on {class:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
     fn support_cardinality_class_as_str_round_trips_via_from_canonical_str() {
         for &v in SupportCardinalityClass::ALL {
             assert_eq!(
@@ -32534,6 +32737,49 @@ mod tests {
         );
     }
 
+    fn assert_support_cardinality_class_is_partial_cover_agrees_with_histogram_has_partial_cover<
+        A,
+    >()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Cross-surface bridge on the partial-cover middle leg:
+        // hist.support_cardinality_class().is_partial_cover() ==
+        // hist.has_partial_cover() — unconditional, holds across
+        // every implementor regardless of cardinality. Pins the
+        // class-side peer to the histogram-side method pointwise on
+        // every canonical observation shape (empty, every singleton,
+        // axis-cover).
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.support_cardinality_class().is_partial_cover(),
+            empty.has_partial_cover(),
+            "support_cardinality_class.is_partial_cover must equal has_partial_cover on \
+             empty for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.support_cardinality_class().is_partial_cover(),
+                singleton.has_partial_cover(),
+                "support_cardinality_class.is_partial_cover must equal has_partial_cover on \
+                 singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.support_cardinality_class().is_partial_cover(),
+            cover.has_partial_cover(),
+            "support_cardinality_class.is_partial_cover must equal has_partial_cover on \
+             axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
     #[test]
     fn axis_histogram_support_cardinality_class_empty_is_empty_variant_for_every_closed_axis_implementor()
      {
@@ -32584,6 +32830,17 @@ mod tests {
         macro_rules! check {
             ($ty:ident) => {
                 assert_support_cardinality_class_is_full_cover_agrees_with_histogram_is_full_cover::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_support_cardinality_class_is_partial_cover_agrees_with_histogram_has_partial_cover_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_cardinality_class_is_partial_cover_agrees_with_histogram_has_partial_cover::<$ty>();
             };
         }
         for_each_closed_axis_implementor!(check);
