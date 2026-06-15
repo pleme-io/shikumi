@@ -1043,6 +1043,289 @@ impl<'de> serde::Deserialize<'de> for ModalityClass {
     }
 }
 
+/// The **support-cardinality classification** of an [`AxisHistogram`]
+/// on the `(observed, unobserved)` cell-partition surface — the
+/// five-corner exhaustive partition of the support-cardinality
+/// interval `[0, axis_cardinality::<A>()]`.
+///
+/// Returned by [`AxisHistogram::support_cardinality_class`];
+/// pattern-matched exhaustively at every dashboard / attestation
+/// manifest / alarm-routing site that previously composed the five
+/// named boolean predicates ([`AxisHistogram::is_empty`],
+/// [`AxisHistogram::has_singular_support`],
+/// [`AxisHistogram::has_strict_partial_cover`],
+/// [`AxisHistogram::has_singular_gap`],
+/// [`AxisHistogram::is_full_cover`]) into a five-way `if` ladder. The
+/// enum closes that boolean algebra at one named variant per corner,
+/// so the compiler enforces exhaustiveness at every match site — a
+/// future renderer landing on the typescape *cannot* silently drop
+/// any of the five corners.
+///
+/// **Five variants, structurally exhaustive over the
+/// support-cardinality interval.** Every histogram's
+/// [`AxisHistogram::distinct_cells`] count `s` against the
+/// [`axis_cardinality::<A>()`] bound `n` falls into exactly one
+/// variant; the classification is total by construction. The
+/// branching priority ([`Self::Empty`], [`Self::FullCover`],
+/// [`Self::SingularSupport`], [`Self::SingularGap`],
+/// [`Self::StrictPartialCover`]) makes the classification a
+/// strict partition on cardinality-`>= 3` axes and reads off the
+/// dominant boundary corner on the degenerate cardinality-`<= 2`
+/// axes (cardinality 2 where the singular boundaries collapse onto
+/// support 1 — the classification lands on [`Self::SingularSupport`]
+/// by the bottom-boundary-first priority).
+///
+/// **Peer-bound to the boolean primitives.** The enum carries five
+/// inherent `const` predicates ([`Self::is_empty`],
+/// [`Self::is_singular_support`], [`Self::is_strict_partial_cover`],
+/// [`Self::is_singular_gap`], [`Self::is_full_cover`]) — the
+/// enum-level peers of the histogram-surface predicates of the same
+/// name — so consumers holding a [`SupportCardinalityClass`] value
+/// (e.g. a cached classification on a per-window summary struct)
+/// read off the corner booleans without re-routing through the
+/// originating histogram. The peer-equivalence laws on
+/// [`Self::is_empty`] and [`Self::is_full_cover`] hold uniformly
+/// across every [`ClosedAxis`] implementor; the three singular /
+/// strict-partial peer laws hold uniformly on cardinality-`>= 3`
+/// axes where the support-cardinality scalar is a strict five-cell
+/// partition.
+///
+/// **Closed-axis primitive trait.** The enum carries [`Copy`] (no
+/// allocation, fits in a `u8` discriminant), [`Eq`] + [`Hash`] (usable
+/// as a [`std::collections::HashMap`] key for per-corner rollup
+/// counters, e.g. a fleet-wide
+/// `HashMap<SupportCardinalityClass, usize>` tallying how many
+/// reload windows landed in each support-cardinality corner), and
+/// [`Debug`] (operator-facing summary line emission). Like
+/// [`ModalityClass`], it is *not* a [`ClosedAxis`] itself — the
+/// substrate-observation invariant gates [`ClosedAxis`] on
+/// substrate-observation axes only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SupportCardinalityClass {
+    /// **No observed cells** — `distinct_cells() == 0`. The
+    /// empty-histogram boundary. Lifts [`AxisHistogram::is_empty`]
+    /// to the typed variant tag.
+    Empty,
+    /// **Exactly one observed cell** —
+    /// `distinct_cells() == 1`. The bottom singular boundary of the
+    /// support-cardinality interval. Lifts
+    /// [`AxisHistogram::has_singular_support`] to the typed variant
+    /// tag. On a cardinality-2 axis the bottom and top singular
+    /// boundaries coincide; the classification lands on
+    /// [`Self::SingularSupport`] there by the bottom-boundary-first
+    /// branching priority.
+    SingularSupport,
+    /// **At least two observed cells *and* at least two unobserved
+    /// cells** — `2 <= distinct_cells() <= axis_cardinality::<A>() - 2`.
+    /// The strict interior of the support-cardinality interval,
+    /// strictly between the two singular boundaries. Lifts
+    /// [`AxisHistogram::has_strict_partial_cover`] to the typed
+    /// variant tag. Only reachable on cardinality-`>= 4` axes; the
+    /// variant reads vacuously absent on cardinality-`<= 3` axes.
+    StrictPartialCover,
+    /// **Exactly one unobserved cell** —
+    /// `distinct_cells() == axis_cardinality::<A>() - 1`. The top
+    /// singular boundary of the support-cardinality interval. Lifts
+    /// [`AxisHistogram::has_singular_gap`] to the typed variant
+    /// tag. Only reachable on cardinality-`>= 3` axes; collapses
+    /// onto [`Self::SingularSupport`] on cardinality 2 (where the
+    /// bottom-boundary-first priority wins) and is unreachable on
+    /// cardinality `<= 1`.
+    SingularGap,
+    /// **Every cell observed** —
+    /// `distinct_cells() == axis_cardinality::<A>()`. The full-cover
+    /// boundary. Lifts [`AxisHistogram::is_full_cover`] to the typed
+    /// variant tag.
+    FullCover,
+}
+
+impl SupportCardinalityClass {
+    /// Every [`SupportCardinalityClass`] variant, in declaration
+    /// order: `Empty`, `SingularSupport`, `StrictPartialCover`,
+    /// `SingularGap`, `FullCover`. Peer to
+    /// [`ModalityClass::ALL`] on the sibling typed classifier.
+    /// Length 5 — pinned by
+    /// [`tests::support_cardinality_class_all_has_five_entries`].
+    pub const ALL: &'static [Self] = &[
+        Self::Empty,
+        Self::SingularSupport,
+        Self::StrictPartialCover,
+        Self::SingularGap,
+        Self::FullCover,
+    ];
+
+    /// `true` exactly on [`Self::Empty`] — the enum-level peer of
+    /// [`AxisHistogram::is_empty`] projected from the variant tag.
+    #[must_use]
+    pub const fn is_empty(self) -> bool {
+        matches!(self, Self::Empty)
+    }
+
+    /// `true` exactly on [`Self::SingularSupport`] — the enum-level
+    /// peer of [`AxisHistogram::has_singular_support`] projected
+    /// from the variant tag. Agrees with the histogram-surface
+    /// predicate pointwise on cardinality-`>= 3` axes; on
+    /// cardinality 2, the histogram-surface predicate also reads
+    /// `true` on [`Self::SingularGap`] (the cardinality-2
+    /// dual-singular collapse).
+    #[must_use]
+    pub const fn is_singular_support(self) -> bool {
+        matches!(self, Self::SingularSupport)
+    }
+
+    /// `true` exactly on [`Self::StrictPartialCover`] — the
+    /// enum-level peer of [`AxisHistogram::has_strict_partial_cover`]
+    /// projected from the variant tag. Agrees with the
+    /// histogram-surface predicate pointwise on every axis.
+    #[must_use]
+    pub const fn is_strict_partial_cover(self) -> bool {
+        matches!(self, Self::StrictPartialCover)
+    }
+
+    /// `true` exactly on [`Self::SingularGap`] — the enum-level
+    /// peer of [`AxisHistogram::has_singular_gap`] projected from
+    /// the variant tag. Agrees with the histogram-surface predicate
+    /// pointwise on cardinality-`>= 3` axes; on cardinality 2, the
+    /// histogram-surface predicate also reads `true` on
+    /// [`Self::SingularSupport`] (the cardinality-2 dual-singular
+    /// collapse).
+    #[must_use]
+    pub const fn is_singular_gap(self) -> bool {
+        matches!(self, Self::SingularGap)
+    }
+
+    /// `true` exactly on [`Self::FullCover`] — the enum-level peer
+    /// of [`AxisHistogram::is_full_cover`] projected from the
+    /// variant tag.
+    #[must_use]
+    pub const fn is_full_cover(self) -> bool {
+        matches!(self, Self::FullCover)
+    }
+
+    /// Canonical operator-facing kebab-case label for the variant
+    /// tag — `"empty"`, `"singular-support"`,
+    /// `"strict-partial-cover"`, `"singular-gap"`, `"full-cover"`.
+    /// Idiom-peer of [`ModalityClass::as_str`] on the sibling typed
+    /// classifier.
+    ///
+    /// **Round-trip law** —
+    /// `SupportCardinalityClass::from_canonical_str(v.as_str()) ==
+    /// Some(v)` for every `v: SupportCardinalityClass`. Pinned by
+    /// [`tests::support_cardinality_class_as_str_round_trips_via_from_canonical_str`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Empty => "empty",
+            Self::SingularSupport => "singular-support",
+            Self::StrictPartialCover => "strict-partial-cover",
+            Self::SingularGap => "singular-gap",
+            Self::FullCover => "full-cover",
+        }
+    }
+
+    /// Case-insensitive ASCII parse of the canonical name produced
+    /// by [`Self::as_str`]. Returns [`None`] for any other input.
+    /// Idiom-peer of [`ModalityClass::from_canonical_str`].
+    #[must_use]
+    pub fn from_canonical_str(s: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|v| v.as_str().eq_ignore_ascii_case(s))
+    }
+}
+
+impl std::fmt::Display for SupportCardinalityClass {
+    /// Operator-facing rendering — delegates to
+    /// [`SupportCardinalityClass::as_str`] pointwise. Closes the
+    /// canonical `(Debug, Display)` duality every stdlib-style closed
+    /// enum carries; idiom-peer of the same impl on
+    /// [`ModalityClass`].
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Typed parse failure of
+/// [`<SupportCardinalityClass as std::str::FromStr>::from_str`] —
+/// the offending input was not a canonical name on the
+/// [`SupportCardinalityClass`] surface. Carries the offending
+/// substring verbatim in the `label` field. Idiom-peer of
+/// [`ParseModalityClassError`] on the sibling typed classifier.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ParseSupportCardinalityClassError {
+    /// The offending input substring, verbatim.
+    pub label: String,
+}
+
+impl std::fmt::Display for ParseSupportCardinalityClassError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "unknown support cardinality class label {:?}",
+            self.label
+        )
+    }
+}
+
+impl std::error::Error for ParseSupportCardinalityClassError {}
+
+impl std::str::FromStr for SupportCardinalityClass {
+    type Err = ParseSupportCardinalityClassError;
+
+    /// Parse the variant tag from the canonical kebab-case label
+    /// [`SupportCardinalityClass::as_str`] emits — the
+    /// [`FromStr`][std::str::FromStr] idiom-peer of the
+    /// [`Display`][std::fmt::Display] impl. Idiom-peer of the same
+    /// pair on [`ModalityClass`].
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_canonical_str(s).ok_or_else(|| ParseSupportCardinalityClassError {
+            label: s.to_owned(),
+        })
+    }
+}
+
+impl serde::Serialize for SupportCardinalityClass {
+    /// Serialize the variant tag as the canonical kebab-case label
+    /// [`Self::as_str`] emits. Closes the
+    /// `(Serialize, Deserialize)` serde idiom-peer of the
+    /// `(Display, FromStr)` stdlib pair on the variant-tag surface;
+    /// idiom-peer of the same lift on [`ModalityClass`].
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for SupportCardinalityClass {
+    /// Deserialize the variant tag from the canonical kebab-case
+    /// label [`Self::as_str`] emits via
+    /// [`serde::Deserializer::deserialize_str`] lowering to
+    /// [`<Self as std::str::FromStr>::from_str`]. Idiom-peer of the
+    /// same impl on [`ModalityClass`].
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct SupportCardinalityClassVisitor;
+
+        impl serde::de::Visitor<'_> for SupportCardinalityClassVisitor {
+            type Value = SupportCardinalityClass;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(
+                    "a canonical SupportCardinalityClass kebab-case label \
+                     (`empty`, `singular-support`, `strict-partial-cover`, \
+                     `singular-gap`, `full-cover`)",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                v.parse::<SupportCardinalityClass>().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(SupportCardinalityClassVisitor)
+    }
+}
+
 impl<A: ClosedAxis> AxisHistogram<A> {
     /// The all-zero histogram — every cell at zero, [`Self::total`] = 0,
     /// [`Self::is_empty`] = `true`. The monoid identity under
@@ -4394,6 +4677,83 @@ impl<A: ClosedAxis> AxisHistogram<A> {
             }
         }
         false
+    }
+
+    /// The **support-cardinality corner** of the histogram on the
+    /// five-cell partition of the `[0, axis_cardinality::<A>()]`
+    /// support-cardinality interval — the typed closed-classifier
+    /// projection of the five boolean primitives ([`Self::is_empty`],
+    /// [`Self::has_singular_support`],
+    /// [`Self::has_strict_partial_cover`],
+    /// [`Self::has_singular_gap`], [`Self::is_full_cover`]) onto a
+    /// single named variant tag.
+    ///
+    /// Before this lift, every consumer asking "which corner of the
+    /// support-cardinality interval did this window land in?" composed
+    /// the five boolean reads into a five-way `if` ladder
+    /// (`if hist.is_empty() { … } else if hist.has_singular_support() { … }
+    ///  else if hist.has_strict_partial_cover() { … }
+    ///  else if hist.has_singular_gap() { … }
+    ///  else { … }`) — five method calls per shape, manually ordered
+    /// to disambiguate the cardinality-2 collapse where
+    /// `has_singular_support` and `has_singular_gap` both fire on the
+    /// same shape, and silently dropping a corner if a future branch
+    /// was added without updating every site. Collapsed to one
+    /// inherent call returning a closed enum whose variants are
+    /// disjoint by construction, with the cardinality-2 disambiguation
+    /// baked into the branching priority (bottom-boundary-first: a
+    /// shape that fires both `has_singular_support` and
+    /// `has_singular_gap` lands on [`SupportCardinalityClass::SingularSupport`]).
+    /// The compiler enforces exhaustiveness at every `match` site, so
+    /// a future renderer landing on the typescape cannot silently
+    /// drop a corner.
+    ///
+    /// **Five-corner partition on cardinality-`>= 3` axes.** The
+    /// returned variant is the unique
+    /// [`SupportCardinalityClass`] whose enum-level predicate (e.g.
+    /// [`SupportCardinalityClass::is_singular_support`]) agrees with
+    /// the corresponding histogram-surface boolean predicate on
+    /// every cardinality-`>= 3` axis. On cardinality-2 axes
+    /// (`PartitionFace`, `SecretRefShape`) the histogram-surface
+    /// `has_singular_support` and `has_singular_gap` predicates both
+    /// fire on the support-1 shape (the cardinality-2 dual-singular
+    /// collapse pinned by the existing
+    /// `axis_histogram_has_singular_gap_equals_has_singular_support_on_cardinality_two`
+    /// law); the projection lands on
+    /// [`SupportCardinalityClass::SingularSupport`] by the
+    /// bottom-boundary-first branching priority. The peer-projection
+    /// laws on [`SupportCardinalityClass::is_empty`] and
+    /// [`SupportCardinalityClass::is_full_cover`] hold uniformly
+    /// across every implementor regardless of cardinality.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. Empty histograms land on
+    /// [`SupportCardinalityClass::Empty`] uniformly; singleton
+    /// histograms land on [`SupportCardinalityClass::SingularSupport`]
+    /// uniformly; uniform axis-cover histograms land on
+    /// [`SupportCardinalityClass::FullCover`] uniformly.
+    ///
+    /// Peer to [`Self::modality_class`] on the modal/antimodal
+    /// surface — the histogram now carries two closed-classifier
+    /// projections in lockstep: [`Self::modality_class`] over the
+    /// modal/antimodal multiplicity surface and
+    /// [`Self::support_cardinality_class`] over the support-
+    /// cardinality interval.
+    #[must_use]
+    pub fn support_cardinality_class(&self) -> SupportCardinalityClass {
+        let support = self.distinct_cells();
+        let cardinality = axis_cardinality::<A>();
+        if support == 0 {
+            SupportCardinalityClass::Empty
+        } else if support == cardinality {
+            SupportCardinalityClass::FullCover
+        } else if support == 1 {
+            SupportCardinalityClass::SingularSupport
+        } else if support + 1 == cardinality {
+            SupportCardinalityClass::SingularGap
+        } else {
+            SupportCardinalityClass::StrictPartialCover
+        }
     }
 
     /// Pointwise sum with `other` — the monoid operation. Every cell
@@ -31862,6 +32222,486 @@ mod tests {
                 yaml.contains(v.as_str()),
                 "YAML emission for {v:?} must contain canonical label {:?}, got: {yaml:?}",
                 v.as_str(),
+            );
+        }
+    }
+
+    // ---- SupportCardinalityClass surface ---------------------------------
+
+    #[test]
+    fn support_cardinality_class_all_has_five_entries() {
+        // Five-cell partition of the support-cardinality interval —
+        // Empty / SingularSupport / StrictPartialCover / SingularGap
+        // / FullCover. Peer to ModalityClass::ALL on the sibling
+        // typed classifier.
+        assert_eq!(SupportCardinalityClass::ALL.len(), 5);
+    }
+
+    #[test]
+    fn support_cardinality_class_all_entries_are_pairwise_distinct() {
+        for (i, a) in SupportCardinalityClass::ALL.iter().enumerate() {
+            for (j, b) in SupportCardinalityClass::ALL.iter().enumerate() {
+                if i != j {
+                    assert_ne!(a, b, "ALL[{i}] = {a:?} must differ from ALL[{j}] = {b:?}",);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_corner_predicates_partition_every_variant() {
+        // Each variant fires exactly one of the five corner predicates,
+        // so the boolean-projection vector is a singleton across ALL.
+        for &class in SupportCardinalityClass::ALL {
+            let fires = u32::from(class.is_empty())
+                + u32::from(class.is_singular_support())
+                + u32::from(class.is_strict_partial_cover())
+                + u32::from(class.is_singular_gap())
+                + u32::from(class.is_full_cover());
+            assert_eq!(
+                fires, 1,
+                "exactly one corner predicate must fire on every variant \
+                 (got fires={fires}) on class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_as_str_round_trips_via_from_canonical_str() {
+        for &v in SupportCardinalityClass::ALL {
+            assert_eq!(
+                SupportCardinalityClass::from_canonical_str(v.as_str()),
+                Some(v),
+                "as_str / from_canonical_str round-trip for {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_as_str_labels_pairwise_distinct() {
+        for (i, a) in SupportCardinalityClass::ALL.iter().enumerate() {
+            for (j, b) in SupportCardinalityClass::ALL.iter().enumerate() {
+                if i != j {
+                    assert_ne!(
+                        a.as_str(),
+                        b.as_str(),
+                        "as_str must distinguish ALL[{i}] = {a:?} from ALL[{j}] = {b:?}",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_as_str_labels_nonempty() {
+        for &v in SupportCardinalityClass::ALL {
+            assert!(
+                !v.as_str().is_empty(),
+                "as_str label must be nonempty for {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_from_canonical_str_is_case_insensitive() {
+        for &v in SupportCardinalityClass::ALL {
+            assert_eq!(
+                SupportCardinalityClass::from_canonical_str(&v.as_str().to_ascii_uppercase()),
+                Some(v),
+                "case-insensitive parse must recover {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_from_canonical_str_rejects_empty_string() {
+        assert_eq!(SupportCardinalityClass::from_canonical_str(""), None);
+    }
+
+    #[test]
+    fn support_cardinality_class_from_str_round_trips_through_display() {
+        for &v in SupportCardinalityClass::ALL {
+            let rendered = v.to_string();
+            let parsed: SupportCardinalityClass = rendered.parse().unwrap();
+            assert_eq!(parsed, v, "Display / FromStr round-trip for {v:?}");
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_from_str_rejects_unknown_label_with_label_verbatim() {
+        let sentinel = "__shikumi_unknown_support_cardinality_class_sentinel__";
+        match sentinel.parse::<SupportCardinalityClass>() {
+            Err(e) => {
+                assert_eq!(e.label, sentinel);
+                let rendered = format!("{e}");
+                assert!(
+                    rendered.contains(sentinel),
+                    "Display impl must carry the unknown sentinel verbatim, got: {rendered}",
+                );
+            }
+            Ok(other) => panic!("unknown label must reject, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_serde_yaml_round_trips_over_every_variant() {
+        for &v in SupportCardinalityClass::ALL {
+            let yaml = serde_yaml::to_string(&v).unwrap();
+            let parsed: SupportCardinalityClass = serde_yaml::from_str(&yaml)
+                .unwrap_or_else(|e| panic!("YAML round-trip for {v:?} failed: {e}"));
+            assert_eq!(
+                parsed, v,
+                "serde YAML round-trip must be identity for {v:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_serde_json_round_trips_over_every_variant() {
+        for &v in SupportCardinalityClass::ALL {
+            let json = serde_json::to_string(&v).unwrap();
+            assert_eq!(
+                json,
+                format!("\"{}\"", v.as_str()),
+                "JSON emission for {v:?} must be the quoted canonical label",
+            );
+            let parsed: SupportCardinalityClass = serde_json::from_str(&json).unwrap_or_else(|e| {
+                panic!("JSON emission for {v:?} must deserialize back: {e}\n  json: {json}")
+            });
+            assert_eq!(
+                parsed, v,
+                "serde JSON round-trip must be identity for {v:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_serde_yaml_is_case_insensitive() {
+        for &v in SupportCardinalityClass::ALL {
+            let upper = v.as_str().to_ascii_uppercase();
+            let yaml = format!("\"{upper}\"\n");
+            let parsed: SupportCardinalityClass = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+                panic!("uppercase YAML scalar for {v:?} must deserialize: {e}\n  yaml: {yaml:?}")
+            });
+            assert_eq!(parsed, v);
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_serde_yaml_unknown_label_error_carries_label_verbatim() {
+        let sentinel = "__shikumi_unknown_support_cardinality_class_sentinel__";
+        let yaml = format!("\"{sentinel}\"\n");
+        let result: Result<SupportCardinalityClass, _> = serde_yaml::from_str(&yaml);
+        match result {
+            Err(e) => {
+                let rendered = format!("{e}");
+                assert!(
+                    rendered.contains(sentinel),
+                    "serde YAML error must carry the unknown sentinel verbatim, got: {rendered}",
+                );
+            }
+            Ok(other) => panic!("YAML carrying unknown label must reject, got {other:?}"),
+        }
+    }
+
+    fn assert_support_cardinality_class_empty_is_empty_variant<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Empty histogram lifts to SupportCardinalityClass::Empty
+        // uniformly across every implementor.
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.support_cardinality_class(),
+            SupportCardinalityClass::Empty,
+            "empty support_cardinality_class must be Empty on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_support_cardinality_class_singleton_is_singular_support<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Every singleton has distinct_cells() == 1, which on a
+        // cardinality-2 axis ALSO satisfies support + 1 == cardinality
+        // — the bottom-boundary-first branching priority lands on
+        // SingularSupport. On cardinality-1 axes (none in the
+        // typescape today) the singleton would be the full cover —
+        // but no such axis exists, so this law holds uniformly.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            let class = hist.support_cardinality_class();
+            // On any cardinality-1 axis the singleton is the full
+            // cover; otherwise it's singular support.
+            let expected = if axis_cardinality::<A>() == 1 {
+                SupportCardinalityClass::FullCover
+            } else {
+                SupportCardinalityClass::SingularSupport
+            };
+            assert_eq!(
+                class,
+                expected,
+                "singleton support_cardinality_class for {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_support_cardinality_class_axis_cover_is_full_cover<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once raises distinct_cells()
+        // to axis_cardinality::<A>(), so the class reads FullCover
+        // uniformly.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            hist.support_cardinality_class(),
+            SupportCardinalityClass::FullCover,
+            "axis-cover support_cardinality_class on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_support_cardinality_class_is_empty_agrees_with_histogram_is_empty<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Peer-projection on the empty boundary:
+        // hist.support_cardinality_class().is_empty() ==
+        // hist.is_empty() — unconditional, holds across every
+        // implementor regardless of cardinality.
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.support_cardinality_class().is_empty(),
+            empty.is_empty(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.support_cardinality_class().is_empty(),
+                singleton.is_empty(),
+                "support_cardinality_class.is_empty must equal is_empty on \
+                 singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.support_cardinality_class().is_empty(),
+            cover.is_empty(),
+            "support_cardinality_class.is_empty must equal is_empty on \
+             axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_support_cardinality_class_is_full_cover_agrees_with_histogram_is_full_cover<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Peer-projection on the full-cover boundary:
+        // hist.support_cardinality_class().is_full_cover() ==
+        // hist.is_full_cover() — unconditional, holds across every
+        // implementor regardless of cardinality.
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.support_cardinality_class().is_full_cover(),
+            empty.is_full_cover(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.support_cardinality_class().is_full_cover(),
+                singleton.is_full_cover(),
+                "support_cardinality_class.is_full_cover must equal is_full_cover on \
+                 singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.support_cardinality_class().is_full_cover(),
+            cover.is_full_cover(),
+            "support_cardinality_class.is_full_cover must equal is_full_cover on \
+             axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_support_cardinality_class_empty_is_empty_variant_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_cardinality_class_empty_is_empty_variant::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_support_cardinality_class_singleton_is_singular_support_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_cardinality_class_singleton_is_singular_support::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_support_cardinality_class_axis_cover_is_full_cover_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_cardinality_class_axis_cover_is_full_cover::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_support_cardinality_class_is_empty_agrees_with_histogram_is_empty_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_cardinality_class_is_empty_agrees_with_histogram_is_empty::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_support_cardinality_class_is_full_cover_agrees_with_histogram_is_full_cover_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_cardinality_class_is_full_cover_agrees_with_histogram_is_full_cover::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_support_cardinality_class_classifies_all_five_corners_on_shikumi_error_kind()
+    {
+        // Behavioral pin on a cardinality-6 axis where the strict
+        // 5-cell partition holds (cardinality >= 3 is sufficient,
+        // cardinality >= 4 is required for StrictPartialCover to be
+        // reachable). Each of the five variants is hit by at least
+        // one canonical shape.
+        type A = ShikumiErrorKind;
+
+        let empty: AxisHistogram<A> = AxisHistogram::empty();
+        assert_eq!(
+            empty.support_cardinality_class(),
+            SupportCardinalityClass::Empty,
+        );
+
+        // Distinct cells, in declaration order.
+        let cells: Vec<A> = axis_iter::<A>().collect();
+        assert!(cells.len() >= 5, "test requires a cardinality-5+ axis");
+
+        let singleton: AxisHistogram<A> = std::iter::once(cells[0]).collect();
+        assert_eq!(
+            singleton.support_cardinality_class(),
+            SupportCardinalityClass::SingularSupport,
+        );
+
+        // Strict partial cover: observe two distinct cells (support
+        // 2 on a cardinality-6 axis; both singular boundaries
+        // missed).
+        let strict: AxisHistogram<A> = [cells[0], cells[1]].iter().copied().collect();
+        assert_eq!(
+            strict.support_cardinality_class(),
+            SupportCardinalityClass::StrictPartialCover,
+        );
+
+        // Singular gap: observe every cell except the last.
+        let singular_gap: AxisHistogram<A> = cells[..cells.len() - 1].iter().copied().collect();
+        assert_eq!(
+            singular_gap.support_cardinality_class(),
+            SupportCardinalityClass::SingularGap,
+        );
+
+        // Full cover: observe every cell.
+        let full: AxisHistogram<A> = cells.iter().copied().collect();
+        assert_eq!(
+            full.support_cardinality_class(),
+            SupportCardinalityClass::FullCover,
+        );
+    }
+
+    #[test]
+    fn axis_histogram_support_cardinality_class_equals_open_coded_branch_match_on_shikumi_error_kind()
+     {
+        // Defining-equivalence law: the projection collapses the
+        // five-arm boolean ladder on the underlying support-
+        // cardinality scalar (the (is_empty, has_singular_support,
+        // has_strict_partial_cover, has_singular_gap, is_full_cover)
+        // 5-corner partition pinned by
+        // axis_histogram_support_cardinality_five_corner_partition_on_shikumi_error_kind).
+        // Pinned across every reachable support cardinality on a
+        // cardinality-6 axis where the partition is strict.
+        type A = ShikumiErrorKind;
+        let cells: Vec<A> = axis_iter::<A>().collect();
+        let n = cells.len();
+        for s in 0..=n {
+            let hist: AxisHistogram<A> = cells[..s].iter().copied().collect();
+            let class = hist.support_cardinality_class();
+            let expected = if hist.is_empty() {
+                SupportCardinalityClass::Empty
+            } else if hist.is_full_cover() {
+                SupportCardinalityClass::FullCover
+            } else if hist.has_singular_support() {
+                SupportCardinalityClass::SingularSupport
+            } else if hist.has_singular_gap() {
+                SupportCardinalityClass::SingularGap
+            } else {
+                SupportCardinalityClass::StrictPartialCover
+            };
+            assert_eq!(
+                class,
+                expected,
+                "support_cardinality_class disagrees with open-coded ladder \
+                 at support {s} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_support_cardinality_class_cardinality_two_singleton_lands_on_singular_support()
+     {
+        // Cardinality-2 collapse witness: on PartitionFace
+        // (cardinality 2) the support-1 shape fires both
+        // has_singular_support and has_singular_gap (the dual-
+        // singular collapse). The branching priority lands on
+        // SingularSupport. Symmetrically witnessed on SecretRefShape
+        // (the other cardinality-2 axis).
+        for face in axis_iter::<PartitionFace>() {
+            let hist: AxisHistogram<PartitionFace> = std::iter::once(face).collect();
+            assert!(hist.has_singular_support());
+            assert!(hist.has_singular_gap());
+            assert_eq!(
+                hist.support_cardinality_class(),
+                SupportCardinalityClass::SingularSupport,
+            );
+        }
+        for shape in axis_iter::<SecretRefShape>() {
+            let hist: AxisHistogram<SecretRefShape> = std::iter::once(shape).collect();
+            assert!(hist.has_singular_support());
+            assert!(hist.has_singular_gap());
+            assert_eq!(
+                hist.support_cardinality_class(),
+                SupportCardinalityClass::SingularSupport,
             );
         }
     }
