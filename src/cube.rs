@@ -5150,6 +5150,247 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         false
     }
 
+    /// `true` exactly when the histogram's support sits at the bottom of
+    /// the support-cardinality interval — at most one observed cell. The
+    /// **low-support predicate** on the histogram surface: the
+    /// histogram-side peer of
+    /// [`SupportCardinalityClass::is_low_support`], naming the bottom
+    /// leg of the
+    /// (`has_low_support`, `has_strict_partial_cover`, `has_high_support`)
+    /// magnitude-direction ternary partition of the 5-corner
+    /// support-cardinality scalar.
+    ///
+    /// Pointwise equivalent to three documented surface forms — each
+    /// names the same compound differently:
+    /// - `self.is_empty() || self.has_singular_support()` (the
+    ///   union-of-low-boundaries form on the two named histogram-side
+    ///   peers — the canonical disjunction).
+    /// - `self.distinct_cells() <= 1` (the support-cardinality
+    ///   scalar form on the named scalar peer — the "support magnitude
+    ///   at most one" form).
+    /// - The class-side projection of
+    ///   [`SupportCardinalityClass::is_low_support`]:
+    ///   `hist.has_low_support() ==
+    ///    hist.support_cardinality_class().is_low_support()` — the
+    ///   cross-surface bridge law pinned trait-uniformly across every
+    ///   [`ClosedAxis`] implementor.
+    ///
+    /// Collapsed to one method call with a single-pass scan that
+    /// short-circuits on the second nonzero count (the early-exit form
+    /// bounds the cost at two nonzero-witness cells rather than two full
+    /// walks of the counts vector across the
+    /// `is_empty` + `has_singular_support` disjunction, or a separate
+    /// pass through [`Self::distinct_cells`] to read off the scalar
+    /// inequality).
+    ///
+    /// **Empty-histogram convention** — reads `true` on every implementor:
+    /// no cell observed, so the "at most one observed" predicate holds
+    /// vacuously. The named boundary [`Self::is_empty`] carries that
+    /// case via the union-of-low-boundaries form.
+    ///
+    /// **Singleton-observation convention** — reads `true` uniformly on
+    /// every singleton across every implementor: a singleton has exactly
+    /// one observed cell. The named boundary
+    /// [`Self::has_singular_support`] carries that case.
+    ///
+    /// **Axis-cover convention** — reads `true` iff
+    /// `axis_cardinality::<A>() <= 1` (no implementor today carries
+    /// cardinality `<= 1`, so axis-cover reads `false` uniformly across
+    /// the implementor set).
+    ///
+    /// **Companion invariants** with [`Self::is_empty`],
+    /// [`Self::has_singular_support`], [`Self::has_strict_partial_cover`],
+    /// [`Self::has_high_support`], [`Self::distinct_cells`], and
+    /// [`Self::support_cardinality_class`]:
+    /// - `has_low_support() ⇔ is_empty() || has_singular_support()` —
+    ///   the defining union-of-low-boundaries equivalence on the two
+    ///   named histogram-side peers (pinned by
+    ///   [`tests::axis_histogram_has_low_support_equals_is_empty_or_has_singular_support`]).
+    /// - `has_low_support() ⇔ distinct_cells() <= 1` — the
+    ///   support-cardinality scalar form on the named scalar peer
+    ///   (pinned by
+    ///   [`tests::axis_histogram_has_low_support_equals_distinct_cells_at_most_one`]).
+    /// - `(has_low_support, has_strict_partial_cover, has_high_support)`
+    ///   is a strict ternary partition on every implementor with
+    ///   `axis_cardinality::<A>() >= 2`: pairwise disjoint *and* jointly
+    ///   exhaustive. Stated as
+    ///   `u8::from(has_low_support()) + u8::from(has_strict_partial_cover()) + u8::from(has_high_support()) == 1`
+    ///   — exactly one fires on any histogram (pinned by
+    ///   [`tests::axis_histogram_has_low_support_has_strict_partial_cover_has_high_support_form_strict_ternary_partition_for_every_closed_axis_implementor`]).
+    /// - `has_low_support()` and `has_high_support()` are disjoint on
+    ///   every implementor with `axis_cardinality::<A>() >= 2`:
+    ///   distinct support magnitudes (`<= 1` vs. `>= cardinality - 1`
+    ///   with cardinality `>= 2` excluding the singleton) never overlap
+    ///   (pinned by
+    ///   [`tests::axis_histogram_has_low_support_and_has_high_support_are_disjoint_for_every_closed_axis_implementor`]).
+    /// - `is_empty() ⇒ has_low_support()` and
+    ///   `has_singular_support() ⇒ has_low_support()` — the implication
+    ///   chain over the two boundary peers (pinned by
+    ///   [`tests::axis_histogram_two_low_boundary_predicates_imply_has_low_support_for_every_closed_axis_implementor`]).
+    ///
+    /// **Cross-surface bridge law** —
+    /// `hist.has_low_support() ==
+    ///  hist.support_cardinality_class().is_low_support()` for every
+    /// `hist: AxisHistogram<A>` on every [`ClosedAxis`] implementor,
+    /// pinned trait-uniformly through the
+    /// `for_each_closed_axis_implementor!` macro by
+    /// [`tests::axis_histogram_has_low_support_agrees_with_class_is_low_support_for_every_closed_axis_implementor`].
+    /// The bridge closes the (histogram, class) duality on the
+    /// magnitude-direction ternary partition's bottom leg from the
+    /// histogram side — peer to the
+    /// [`SupportCardinalityClass::is_low_support`] bridge already
+    /// pinned from the class side via the disjunction
+    /// `is_empty() || has_singular_support()`. The two surfaces now
+    /// carry one named boolean each on the bottom leg, pinned end-to-
+    /// end.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// predicate at no per-axis cost.
+    #[must_use]
+    pub fn has_low_support(&self) -> bool {
+        let mut nonzeros: u8 = 0;
+        for &c in &self.counts {
+            if c > 0 {
+                nonzeros = nonzeros.saturating_add(1);
+                if nonzeros >= 2 {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// `true` exactly when the histogram's support sits at the top of
+    /// the support-cardinality interval — at most one unobserved cell,
+    /// excising the cardinality-2 dual-singular-collapse case where the
+    /// singleton coincides with the cardinality-1 unobserved-cell shape.
+    /// The **high-support predicate** on the histogram surface: the
+    /// histogram-side peer of
+    /// [`SupportCardinalityClass::is_high_support`], naming the top leg
+    /// of the
+    /// (`has_low_support`, `has_strict_partial_cover`, `has_high_support`)
+    /// magnitude-direction ternary partition of the 5-corner support-
+    /// cardinality scalar.
+    ///
+    /// Pointwise equivalent to three documented surface forms — each
+    /// names the same compound differently:
+    /// - `self.is_full_cover() || (self.has_singular_gap() && !self.has_singular_support())`
+    ///   (the strict-singular-gap-or-full-cover form on three named
+    ///   histogram-side peers — the canonical disjunction with the
+    ///   cardinality-2 collapse excised via the
+    ///   `!has_singular_support()` clause).
+    /// - `self.distinct_cells() + 1 >= axis_cardinality::<A>() && self.distinct_cells() >= 2`
+    ///   (the support-cardinality scalar form on the named scalar peer
+    ///   — "support magnitude at least `cardinality - 1`" with the
+    ///   cardinality-2 singleton excised via the
+    ///   `distinct_cells() >= 2` clause).
+    /// - The class-side projection of
+    ///   [`SupportCardinalityClass::is_high_support`]:
+    ///   `hist.has_high_support() ==
+    ///    hist.support_cardinality_class().is_high_support()` — the
+    ///   cross-surface bridge law pinned trait-uniformly across every
+    ///   [`ClosedAxis`] implementor.
+    ///
+    /// Collapsed to one method call with a single-pass scan that short-
+    /// circuits on the second *zero* count (the early-exit form bounds
+    /// the cost at two zero-witness cells rather than three method
+    /// calls and two negations across the
+    /// `is_full_cover` + `has_singular_gap` + `has_singular_support`
+    /// strict-singular-gap form).
+    ///
+    /// **Empty-histogram convention** — reads `false` on every
+    /// implementor with `axis_cardinality::<A>() >= 2`: every cell
+    /// unobserved means `unobserved_cells() == axis_cardinality::<A>()`,
+    /// not `<= 1`. The named boundary [`Self::is_empty`] carries the
+    /// empty case via the disjoint [`Self::has_low_support`] peer on
+    /// the opposite end of the magnitude interval.
+    ///
+    /// **Singleton-observation convention** — reads `true` iff
+    /// `axis_cardinality::<A>() == 1` (no implementor today carries
+    /// cardinality `1`, so singleton reads `false` uniformly across the
+    /// implementor set). The `!has_singular_support()` clause in the
+    /// disjunction form excises every cardinality-2 singleton — where
+    /// the histogram-side `has_singular_gap()` predicate fires
+    /// spuriously under the dual-singular collapse — and lands the
+    /// shape on `has_low_support` (the singleton always sits at the
+    /// bottom of the magnitude interval, not the top).
+    ///
+    /// **Axis-cover convention** — reads `true` uniformly on every
+    /// implementor: observing every cell exactly once is
+    /// [`Self::is_full_cover`], which fires `has_high_support` via the
+    /// `is_full_cover()` disjunct on the bridge.
+    ///
+    /// **Companion invariants** with [`Self::is_full_cover`],
+    /// [`Self::has_singular_gap`], [`Self::has_singular_support`],
+    /// [`Self::has_strict_partial_cover`], [`Self::has_low_support`],
+    /// [`Self::distinct_cells`], and [`Self::support_cardinality_class`]:
+    /// - `has_high_support() ⇔ is_full_cover()
+    ///   || (has_singular_gap() && !has_singular_support())` — the
+    ///   defining strict-singular-gap-or-full-cover equivalence on
+    ///   three named histogram-side peers (pinned by
+    ///   [`tests::axis_histogram_has_high_support_equals_full_cover_or_strict_singular_gap`]).
+    /// - `(has_low_support, has_strict_partial_cover, has_high_support)`
+    ///   is a strict ternary partition on every implementor with
+    ///   `axis_cardinality::<A>() >= 2` (pinned by
+    ///   [`tests::axis_histogram_has_low_support_has_strict_partial_cover_has_high_support_form_strict_ternary_partition_for_every_closed_axis_implementor`]).
+    /// - `is_full_cover() ⇒ has_high_support()` — the implication
+    ///   chain over the full-cover top peer (pinned by
+    ///   [`tests::axis_histogram_full_cover_implies_has_high_support_for_every_closed_axis_implementor`]).
+    ///
+    /// **Cross-surface bridge law** —
+    /// `hist.has_high_support() ==
+    ///  hist.support_cardinality_class().is_high_support()` for every
+    /// `hist: AxisHistogram<A>` on every [`ClosedAxis`] implementor,
+    /// pinned trait-uniformly through the
+    /// `for_each_closed_axis_implementor!` macro by
+    /// [`tests::axis_histogram_has_high_support_agrees_with_class_is_high_support_for_every_closed_axis_implementor`].
+    /// The bridge closes the (histogram, class) duality on the
+    /// magnitude-direction ternary partition's top leg from the
+    /// histogram side — peer to the
+    /// [`SupportCardinalityClass::is_high_support`] bridge already
+    /// pinned from the class side via the strict-singular-gap
+    /// disjunction.
+    ///
+    /// **Cardinality-2 collapse — bottom-boundary-first.** On
+    /// cardinality-2 axes (e.g. [`crate::PartitionFace`],
+    /// [`crate::SecretRefShape`]) every singleton histogram has exactly
+    /// one observed cell *and* exactly one unobserved cell —
+    /// [`Self::has_singular_support`] and [`Self::has_singular_gap`]
+    /// both fire pointwise. The class-side projection
+    /// [`Self::support_cardinality_class`] resolves the collision via
+    /// bottom-boundary-first priority (the shape lands on
+    /// [`SupportCardinalityClass::SingularSupport`], where
+    /// [`SupportCardinalityClass::is_high_support`] reads `false`).
+    /// `has_high_support` matches that resolution by requiring *strict*
+    /// singular gap: the `!has_singular_support()` clause rules out
+    /// every cardinality-2 singleton, and the bridge holds pointwise
+    /// on cardinality-2 axes by construction.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// predicate at no per-axis cost.
+    #[must_use]
+    pub fn has_high_support(&self) -> bool {
+        let mut zeros: u8 = 0;
+        let mut nonzeros: u8 = 0;
+        for &c in &self.counts {
+            if c == 0 {
+                zeros = zeros.saturating_add(1);
+                if zeros >= 2 {
+                    return false;
+                }
+            } else {
+                nonzeros = nonzeros.saturating_add(1);
+            }
+        }
+        // Loop ended with zeros <= 1. zeros == 0 → full cover (high).
+        // zeros == 1 → exactly one unobserved cell. On cardinality-2
+        // axes that's the dual-singular-collapse singleton (nonzeros
+        // == 1) — excised here. On cardinality-`>= 3` axes nonzeros
+        // is `cardinality - 1 >= 2`, so the shape lands on
+        // SingularGap (high).
+        zeros == 0 || nonzeros >= 2
+    }
+
     /// The **support-cardinality corner** of the histogram on the
     /// five-cell partition of the `[0, axis_cardinality::<A>()]`
     /// support-cardinality interval — the typed closed-classifier
@@ -33842,6 +34083,420 @@ mod tests {
             };
         }
         for_each_closed_axis_implementor!(check);
+    }
+
+    fn assert_has_low_support_agrees_with_class_is_low_support<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Cross-surface bridge (histogram side):
+        // hist.has_low_support() ==
+        // hist.support_cardinality_class().is_low_support() —
+        // unconditional, holds across every implementor regardless of
+        // cardinality. The two surfaces carry one named boolean each on
+        // the magnitude partition's bottom leg.
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.has_low_support(),
+            empty.support_cardinality_class().is_low_support(),
+            "has_low_support must equal support_cardinality_class().is_low_support() \
+             on empty for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.has_low_support(),
+                singleton.support_cardinality_class().is_low_support(),
+                "has_low_support must equal support_cardinality_class().is_low_support() \
+                 on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.has_low_support(),
+            cover.support_cardinality_class().is_low_support(),
+            "has_low_support must equal support_cardinality_class().is_low_support() \
+             on axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_has_high_support_agrees_with_class_is_high_support<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Cross-surface bridge (histogram side):
+        // hist.has_high_support() ==
+        // hist.support_cardinality_class().is_high_support() —
+        // unconditional. On cardinality-2 axes the bridge holds by
+        // construction: the strict-singular-gap formulation of
+        // has_high_support excises the dual-singular collapse case
+        // (singleton on cardinality 2), where the class-side
+        // projection lands on SingularSupport (bottom-boundary-first
+        // priority) and is_high_support reads false.
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.has_high_support(),
+            empty.support_cardinality_class().is_high_support(),
+            "has_high_support must equal support_cardinality_class().is_high_support() \
+             on empty for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.has_high_support(),
+                singleton.support_cardinality_class().is_high_support(),
+                "has_high_support must equal support_cardinality_class().is_high_support() \
+                 on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.has_high_support(),
+            cover.support_cardinality_class().is_high_support(),
+            "has_high_support must equal support_cardinality_class().is_high_support() \
+             on axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_has_low_support_and_has_high_support_are_disjoint<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // On every cardinality-`>= 2` implementor (every implementor
+        // today), `has_low_support` and `has_high_support` are
+        // pointwise disjoint — no shape lands in both legs of the
+        // magnitude partition. The strict-singular-gap formulation of
+        // `has_high_support` excises the cardinality-2 singleton case
+        // (where the raw "unobserved <= 1" form would otherwise
+        // overlap "distinct <= 1") and lands the singleton on
+        // `has_low_support` only.
+        let empty = AxisHistogram::<A>::empty();
+        assert!(
+            !(empty.has_low_support() && empty.has_high_support()),
+            "has_low_support and has_high_support must be disjoint \
+             on empty for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert!(
+                !(singleton.has_low_support() && singleton.has_high_support()),
+                "has_low_support and has_high_support must be disjoint \
+                 on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert!(
+            !(cover.has_low_support() && cover.has_high_support()),
+            "has_low_support and has_high_support must be disjoint \
+             on axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_has_low_support_has_strict_partial_cover_has_high_support_form_strict_ternary_partition<
+        A,
+    >()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Stronger than disjointness: the three histogram-side
+        // magnitude legs form a strict ternary partition on every
+        // implementor with cardinality `>= 2` — exactly one of the
+        // three predicates fires on any histogram. Mirrors the
+        // class-side strict ternary partition pinned by
+        // `support_cardinality_class_is_low_support_is_strict_partial_cover_is_high_support_form_strict_ternary_partition`.
+        let check = |hist: &AxisHistogram<A>, label: &str| {
+            let sum = u8::from(hist.has_low_support())
+                + u8::from(hist.has_strict_partial_cover())
+                + u8::from(hist.has_high_support());
+            assert_eq!(
+                sum,
+                1,
+                "(has_low_support, has_strict_partial_cover, has_high_support) must \
+                 sum to 1 on {label} for axis {} (got {sum})",
+                std::any::type_name::<A>(),
+            );
+        };
+
+        check(&AxisHistogram::<A>::empty(), "empty");
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            let label = format!("singleton {observed:?}");
+            check(&singleton, &label);
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        check(&cover, "axis-cover");
+    }
+
+    fn assert_two_low_boundary_predicates_imply_has_low_support<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Implication chain over the two low boundary peers:
+        // is_empty() => has_low_support() and
+        // has_singular_support() => has_low_support().
+        let empty = AxisHistogram::<A>::empty();
+        if empty.is_empty() {
+            assert!(
+                empty.has_low_support(),
+                "is_empty must imply has_low_support on empty for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            if singleton.has_singular_support() {
+                assert!(
+                    singleton.has_low_support(),
+                    "has_singular_support must imply has_low_support on singleton \
+                     {observed:?} for axis {}",
+                    std::any::type_name::<A>(),
+                );
+            }
+        }
+    }
+
+    fn assert_full_cover_implies_has_high_support<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Implication chain over the full-cover top peer:
+        // is_full_cover() => has_high_support().
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        if cover.is_full_cover() {
+            assert!(
+                cover.has_high_support(),
+                "is_full_cover must imply has_high_support on axis-cover for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_low_support_agrees_with_class_is_low_support_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_low_support_agrees_with_class_is_low_support::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_high_support_agrees_with_class_is_high_support_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_high_support_agrees_with_class_is_high_support::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_low_support_and_has_high_support_are_disjoint_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_low_support_and_has_high_support_are_disjoint::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_low_support_has_strict_partial_cover_has_high_support_form_strict_ternary_partition_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_has_low_support_has_strict_partial_cover_has_high_support_form_strict_ternary_partition::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_two_low_boundary_predicates_imply_has_low_support_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_two_low_boundary_predicates_imply_has_low_support::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_full_cover_implies_has_high_support_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_full_cover_implies_has_high_support::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_has_low_support_equals_is_empty_or_has_singular_support() {
+        // The defining union-of-low-boundaries equivalence on the two
+        // named histogram-side peers. Pinned pointwise across the
+        // canonical observation-mix shapes on [`ShikumiErrorKind`]
+        // (cardinality 6 — the strict interior is well-exercised here).
+        type A = ShikumiErrorKind;
+        let cells: Vec<A> = axis_iter::<A>().collect();
+        let inputs: Vec<Vec<A>> = vec![
+            vec![],
+            vec![cells[0]],
+            vec![cells[0], cells[1]],
+            vec![cells[0], cells[1], cells[2]],
+            vec![cells[0], cells[1], cells[2], cells[3]],
+            vec![cells[0], cells[1], cells[2], cells[3], cells[4]],
+            cells.clone(),
+        ];
+        for input in &inputs {
+            let hist: AxisHistogram<A> = input.iter().copied().collect();
+            assert_eq!(
+                hist.has_low_support(),
+                hist.is_empty() || hist.has_singular_support(),
+                "has_low_support must equal (is_empty || has_singular_support) on input of \
+                 length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_low_support_equals_distinct_cells_at_most_one() {
+        // The support-cardinality scalar form: has_low_support reads
+        // the same boolean as `distinct_cells() <= 1`. Pinned on
+        // ShikumiErrorKind (cardinality 6) so all support values
+        // 0..=6 are exercised.
+        type A = ShikumiErrorKind;
+        let cells: Vec<A> = axis_iter::<A>().collect();
+        let inputs: Vec<Vec<A>> = vec![
+            vec![],
+            vec![cells[0]],
+            vec![cells[0], cells[1]],
+            vec![cells[0], cells[1], cells[2]],
+            vec![cells[0], cells[1], cells[2], cells[3]],
+            vec![cells[0], cells[1], cells[2], cells[3], cells[4]],
+            cells.clone(),
+        ];
+        for input in &inputs {
+            let hist: AxisHistogram<A> = input.iter().copied().collect();
+            assert_eq!(
+                hist.has_low_support(),
+                hist.distinct_cells() <= 1,
+                "has_low_support must equal (distinct_cells <= 1) on input of length {}; \
+                 distinct={}",
+                input.len(),
+                hist.distinct_cells(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_high_support_equals_full_cover_or_strict_singular_gap() {
+        // The defining strict-singular-gap-or-full-cover equivalence
+        // on three named histogram-side peers, with the cardinality-2
+        // dual-singular collapse excised by the
+        // `!has_singular_support()` clause. Pinned pointwise on
+        // [`ShikumiErrorKind`] (cardinality 6).
+        type A = ShikumiErrorKind;
+        let cells: Vec<A> = axis_iter::<A>().collect();
+        let inputs: Vec<Vec<A>> = vec![
+            vec![],
+            vec![cells[0]],
+            vec![cells[0], cells[1]],
+            vec![cells[0], cells[1], cells[2]],
+            vec![cells[0], cells[1], cells[2], cells[3]],
+            vec![cells[0], cells[1], cells[2], cells[3], cells[4]],
+            cells.clone(),
+        ];
+        for input in &inputs {
+            let hist: AxisHistogram<A> = input.iter().copied().collect();
+            assert_eq!(
+                hist.has_high_support(),
+                hist.is_full_cover() || (hist.has_singular_gap() && !hist.has_singular_support()),
+                "has_high_support must equal \
+                 (is_full_cover || (has_singular_gap && !has_singular_support)) \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_high_support_on_cardinality_two_axis_excludes_singleton() {
+        // On a cardinality-2 axis (PartitionFace), every singleton has
+        // exactly one observed cell AND exactly one unobserved cell —
+        // has_singular_support and has_singular_gap both fire. The
+        // strict-singular-gap formulation excises the collapse and
+        // lands the singleton on has_low_support (not has_high_support).
+        type A = PartitionFace;
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert!(
+                singleton.has_singular_support(),
+                "cardinality-2 singleton must fire has_singular_support",
+            );
+            assert!(
+                singleton.has_singular_gap(),
+                "cardinality-2 singleton must fire has_singular_gap (dual-singular collapse)",
+            );
+            assert!(
+                singleton.has_low_support(),
+                "cardinality-2 singleton must land on has_low_support",
+            );
+            assert!(
+                !singleton.has_high_support(),
+                "cardinality-2 singleton must NOT fire has_high_support \
+                 (the strict-singular-gap clause excises the collapse)",
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_has_high_support_on_cardinality_three_axis_fires_on_singular_gap() {
+        // On a cardinality-3 axis (DiffLineKind), the singular boundaries
+        // are disjoint: a support-2 shape fires has_singular_gap but not
+        // has_singular_support, so has_high_support reads true.
+        type A = DiffLineKind;
+        let cells: Vec<A> = axis_iter::<A>().collect();
+        let support_two: AxisHistogram<A> = [cells[0], cells[1]].iter().copied().collect();
+        assert!(
+            !support_two.has_singular_support(),
+            "support-2 on cardinality 3 must NOT fire has_singular_support",
+        );
+        assert!(
+            support_two.has_singular_gap(),
+            "support-2 on cardinality 3 must fire has_singular_gap",
+        );
+        assert!(
+            !support_two.has_low_support(),
+            "support-2 on cardinality 3 must NOT fire has_low_support",
+        );
+        assert!(
+            support_two.has_high_support(),
+            "support-2 on cardinality 3 must fire has_high_support",
+        );
     }
 
     #[test]
