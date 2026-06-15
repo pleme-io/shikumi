@@ -1552,6 +1552,35 @@ impl SupportCardinalityClass {
     ///   predicates: `is_empty() ⇒ is_low_support()` and
     ///   `is_singular_support() ⇒ is_low_support()` (pinned by
     ///   [`tests::support_cardinality_class_two_low_variant_predicates_imply_is_low_support`]).
+    ///
+    /// **Cross-surface bridge law** —
+    /// `(hist.is_empty() || hist.has_singular_support()) ==
+    ///  hist.support_cardinality_class().is_low_support()` for every
+    /// `hist: AxisHistogram<A>` on every [`ClosedAxis`] implementor,
+    /// pinned trait-uniformly through the
+    /// `for_each_closed_axis_implementor!` macro by
+    /// [`tests::axis_histogram_support_cardinality_class_is_low_support_agrees_with_histogram_is_empty_or_has_singular_support_for_every_closed_axis_implementor`].
+    /// The bridge closes the (class, histogram) duality on the
+    /// magnitude-direction ternary partition's bottom leg — peer to
+    /// the `is_boundary` / `is_singular` / `is_partial_cover` bridges
+    /// already pinned on the distance-from-boundary partition's three
+    /// legs, and to the [`Self::is_high_support`] bridge pinned on the
+    /// magnitude partition's mirror top leg.
+    ///
+    /// **Cardinality-2 collapse.** On cardinality-2 axes (e.g.
+    /// [`crate::PartitionFace`], [`crate::SecretRefShape`]) the
+    /// histogram-side disjunction `is_empty() || has_singular_support()`
+    /// reads `true` on the empty histogram (`is_empty()` fires) and on
+    /// every singleton histogram (`has_singular_support()` fires under
+    /// the dual-singular collapse where the lone observed cell also
+    /// witnesses the lone unobserved cell). The class-side
+    /// projection lands the empty histogram on [`Self::Empty`] and the
+    /// singleton on [`Self::SingularSupport`] (bottom-boundary-first
+    /// priority resolves the cardinality-2 collapse), and
+    /// `is_low_support()` reads `true` on both variants. The bridge
+    /// therefore holds pointwise on cardinality-2 axes by construction
+    /// — the dual-singular collapse is benign on the bottom leg
+    /// because `has_singular_support()` already absorbs the collapse.
     #[must_use]
     pub const fn is_low_support(self) -> bool {
         matches!(self, Self::Empty | Self::SingularSupport)
@@ -1604,6 +1633,41 @@ impl SupportCardinalityClass {
     ///   predicates: `is_singular_gap() ⇒ is_high_support()` and
     ///   `is_full_cover() ⇒ is_high_support()` (pinned by
     ///   [`tests::support_cardinality_class_two_high_variant_predicates_imply_is_high_support`]).
+    ///
+    /// **Cross-surface bridge law** —
+    /// `(hist.is_full_cover() || (hist.has_singular_gap() && !hist.has_singular_support())) ==
+    ///  hist.support_cardinality_class().is_high_support()` for every
+    /// `hist: AxisHistogram<A>` on every [`ClosedAxis`] implementor,
+    /// pinned trait-uniformly through the
+    /// `for_each_closed_axis_implementor!` macro by
+    /// [`tests::axis_histogram_support_cardinality_class_is_high_support_agrees_with_histogram_is_full_cover_or_strict_singular_gap_for_every_closed_axis_implementor`].
+    /// The bridge closes the (class, histogram) duality on the
+    /// magnitude-direction ternary partition's top leg — mirror peer
+    /// of the [`Self::is_low_support`] bridge across the
+    /// [`Self::StrictPartialCover`] middle leg.
+    ///
+    /// **Cardinality-2 collapse — strict-singular-gap form.** On
+    /// cardinality-2 axes (e.g. [`crate::PartitionFace`],
+    /// [`crate::SecretRefShape`]) the histogram-side predicate
+    /// `has_singular_gap()` fires spuriously on every singleton
+    /// histogram (the lone unobserved cell witnesses the singular gap
+    /// while the lone observed cell witnesses the singular support
+    /// simultaneously — the dual-singular collapse). The class-side
+    /// projection lands every cardinality-2 singleton on
+    /// [`Self::SingularSupport`] (bottom-boundary-first priority),
+    /// where `is_high_support()` reads `false`. The bridge therefore
+    /// excises the collapse by requiring *strict* singular gap on the
+    /// histogram side: `has_singular_gap() && !has_singular_support()`
+    /// rules out the cardinality-2 singleton case (where both
+    /// histogram-side predicates fire), and the bridge holds
+    /// pointwise on cardinality-2 axes by construction. On
+    /// cardinality-`>= 3` axes the two histogram-side predicates are
+    /// disjoint by construction (a histogram cannot simultaneously
+    /// have exactly one observed cell and exactly one unobserved cell
+    /// when the axis has ≥ 3 cells), so the `!has_singular_support()`
+    /// clause is vacuous and the bridge reduces pointwise to
+    /// `is_full_cover() || has_singular_gap()` on those axes — the
+    /// expected mirror peer of the `is_low_support` bridge.
     #[must_use]
     pub const fn is_high_support(self) -> bool {
         matches!(self, Self::SingularGap | Self::FullCover)
@@ -33522,6 +33586,111 @@ mod tests {
         );
     }
 
+    fn assert_support_cardinality_class_is_low_support_agrees_with_histogram_is_empty_or_has_singular_support<
+        A,
+    >()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Cross-surface bridge on the magnitude-direction ternary
+        // partition's bottom leg:
+        // hist.support_cardinality_class().is_low_support() ==
+        // hist.is_empty() || hist.has_singular_support() —
+        // unconditional, holds across every implementor regardless of
+        // cardinality. On cardinality-2 axes `has_singular_support`
+        // already absorbs the dual-singular collapse (it fires on
+        // singletons), and the class-side projection lands singletons
+        // on SingularSupport (priority bottom-boundary-first), so the
+        // bridge holds pointwise on those axes too. Pins the
+        // class-side compound to the histogram-side disjunction
+        // pointwise on every canonical observation shape (empty,
+        // every singleton, axis-cover).
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.support_cardinality_class().is_low_support(),
+            empty.is_empty() || empty.has_singular_support(),
+            "support_cardinality_class.is_low_support must equal \
+             is_empty || has_singular_support on empty for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.support_cardinality_class().is_low_support(),
+                singleton.is_empty() || singleton.has_singular_support(),
+                "support_cardinality_class.is_low_support must equal \
+                 is_empty || has_singular_support on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.support_cardinality_class().is_low_support(),
+            cover.is_empty() || cover.has_singular_support(),
+            "support_cardinality_class.is_low_support must equal \
+             is_empty || has_singular_support on axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_support_cardinality_class_is_high_support_agrees_with_histogram_is_full_cover_or_strict_singular_gap<
+        A,
+    >()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Cross-surface bridge on the magnitude-direction ternary
+        // partition's top leg:
+        // hist.support_cardinality_class().is_high_support() ==
+        // hist.is_full_cover()
+        //     || (hist.has_singular_gap() && !hist.has_singular_support())
+        // — unconditional, holds across every implementor regardless
+        // of cardinality. The `!has_singular_support()` clause excises
+        // the cardinality-2 dual-singular collapse case where the
+        // histogram-side `has_singular_gap` predicate fires spuriously
+        // on singletons (while the class-side projection lands them
+        // on SingularSupport, not in the high set). On cardinality-`>= 3`
+        // axes the two histogram-side singular predicates are disjoint
+        // by construction, so the bridge reduces pointwise to
+        // `is_full_cover() || has_singular_gap()` — the expected
+        // mirror peer of the `is_low_support` bridge. Pins the
+        // class-side compound to the histogram-side disjunction
+        // pointwise on every canonical observation shape (empty,
+        // every singleton, axis-cover).
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.support_cardinality_class().is_high_support(),
+            empty.is_full_cover() || (empty.has_singular_gap() && !empty.has_singular_support()),
+            "support_cardinality_class.is_high_support must equal \
+             is_full_cover || (has_singular_gap && !has_singular_support) on empty for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.support_cardinality_class().is_high_support(),
+                singleton.is_full_cover()
+                    || (singleton.has_singular_gap() && !singleton.has_singular_support()),
+                "support_cardinality_class.is_high_support must equal \
+                 is_full_cover || (has_singular_gap && !has_singular_support) on singleton \
+                 {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.support_cardinality_class().is_high_support(),
+            cover.is_full_cover() || (cover.has_singular_gap() && !cover.has_singular_support()),
+            "support_cardinality_class.is_high_support must equal \
+             is_full_cover || (has_singular_gap && !has_singular_support) on axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
     fn assert_support_cardinality_class_is_partial_cover_agrees_with_histogram_has_partial_cover<
         A,
     >()
@@ -33648,6 +33817,28 @@ mod tests {
         macro_rules! check {
             ($ty:ident) => {
                 assert_support_cardinality_class_is_singular_agrees_with_histogram_has_singular_support_or_has_singular_gap::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_support_cardinality_class_is_low_support_agrees_with_histogram_is_empty_or_has_singular_support_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_cardinality_class_is_low_support_agrees_with_histogram_is_empty_or_has_singular_support::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_support_cardinality_class_is_high_support_agrees_with_histogram_is_full_cover_or_strict_singular_gap_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_cardinality_class_is_high_support_agrees_with_histogram_is_full_cover_or_strict_singular_gap::<$ty>();
             };
         }
         for_each_closed_axis_implementor!(check);
