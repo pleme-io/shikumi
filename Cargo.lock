@@ -4,8 +4,8 @@ version = 4
 
 [[package]]
 name = "akeyless-api"
-version = "0.1.0"
-source = "git+https://github.com/pleme-io/akeyless-api#7101af4d986f83d66b924e9f907eb04c0951c2b9"
+version = "0.1.1"
+source = "git+https://github.com/pleme-io/akeyless-api#4f455966ecba8789dd1932cf6a725dff2d7031f1"
 dependencies = [
  "reqwest",
  "serde",
@@ -2279,7 +2279,7 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.66"
+version = "0.1.67"
 dependencies = [
  "akeyless-api",
  "arc-swap",
@@ -2401,8 +2401,8 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp"
-version = "0.2.64"
-source = "git+https://github.com/pleme-io/tatara#cc4b4acbe34d9657001b94debd20575651d1c7d4"
+version = "0.2.65"
+source = "git+https://github.com/pleme-io/tatara#9b4b47b412180eb4d2f149f03e4f01ec42c65407"
 dependencies = [
  "blake3",
  "serde",
@@ -2413,8 +2413,8 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp-derive"
-version = "0.2.64"
-source = "git+https://github.com/pleme-io/tatara#cc4b4acbe34d9657001b94debd20575651d1c7d4"
+version = "0.2.65"
+source = "git+https://github.com/pleme-io/tatara#9b4b47b412180eb4d2f149f03e4f01ec42c65407"
 dependencies = [
  "proc-macro2",
  "quote",
