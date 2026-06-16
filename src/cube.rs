@@ -1952,6 +1952,128 @@ impl SupportBoundaryDistance {
     pub const fn is_strict_interior(self) -> bool {
         matches!(self, Self::StrictInterior)
     }
+
+    /// Canonical operator-facing kebab-case label for the variant
+    /// tag — `"boundary"`, `"singular"`, `"strict-interior"`.
+    /// Idiom-peer of [`SupportCardinalityClass::as_str`] and
+    /// [`ModalityClass::as_str`] on the sibling typed classifiers.
+    ///
+    /// **Round-trip law** —
+    /// `SupportBoundaryDistance::from_canonical_str(v.as_str()) ==
+    /// Some(v)` for every `v: SupportBoundaryDistance`. Pinned by
+    /// [`tests::support_boundary_distance_as_str_round_trips_via_from_canonical_str`].
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Boundary => "boundary",
+            Self::Singular => "singular",
+            Self::StrictInterior => "strict-interior",
+        }
+    }
+
+    /// Case-insensitive ASCII parse of the canonical name produced
+    /// by [`Self::as_str`]. Returns [`None`] for any other input.
+    /// Idiom-peer of [`SupportCardinalityClass::from_canonical_str`]
+    /// and [`ModalityClass::from_canonical_str`].
+    #[must_use]
+    pub fn from_canonical_str(s: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|v| v.as_str().eq_ignore_ascii_case(s))
+    }
+}
+
+impl std::fmt::Display for SupportBoundaryDistance {
+    /// Operator-facing rendering — delegates to
+    /// [`SupportBoundaryDistance::as_str`] pointwise. Closes the
+    /// canonical `(Debug, Display)` duality every stdlib-style closed
+    /// enum carries; idiom-peer of the same impl on
+    /// [`SupportCardinalityClass`] and [`ModalityClass`].
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Typed parse failure of
+/// [`<SupportBoundaryDistance as std::str::FromStr>::from_str`] —
+/// the offending input was not a canonical name on the
+/// [`SupportBoundaryDistance`] surface. Carries the offending
+/// substring verbatim in the `label` field. Idiom-peer of
+/// [`ParseSupportCardinalityClassError`] and
+/// [`ParseModalityClassError`] on the sibling typed classifiers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ParseSupportBoundaryDistanceError {
+    /// The offending input substring, verbatim.
+    pub label: String,
+}
+
+impl std::fmt::Display for ParseSupportBoundaryDistanceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "unknown support boundary distance label {:?}",
+            self.label
+        )
+    }
+}
+
+impl std::error::Error for ParseSupportBoundaryDistanceError {}
+
+impl std::str::FromStr for SupportBoundaryDistance {
+    type Err = ParseSupportBoundaryDistanceError;
+
+    /// Parse the variant tag from the canonical kebab-case label
+    /// [`SupportBoundaryDistance::as_str`] emits — the
+    /// [`FromStr`][std::str::FromStr] idiom-peer of the
+    /// [`Display`][std::fmt::Display] impl. Idiom-peer of the same
+    /// pair on [`SupportCardinalityClass`] and [`ModalityClass`].
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_canonical_str(s).ok_or_else(|| ParseSupportBoundaryDistanceError {
+            label: s.to_owned(),
+        })
+    }
+}
+
+impl serde::Serialize for SupportBoundaryDistance {
+    /// Serialize the variant tag as the canonical kebab-case label
+    /// [`Self::as_str`] emits. Closes the
+    /// `(Serialize, Deserialize)` serde idiom-peer of the
+    /// `(Display, FromStr)` stdlib pair on the variant-tag surface;
+    /// idiom-peer of the same lift on [`SupportCardinalityClass`]
+    /// and [`ModalityClass`].
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for SupportBoundaryDistance {
+    /// Deserialize the variant tag from the canonical kebab-case
+    /// label [`Self::as_str`] emits via
+    /// [`serde::Deserializer::deserialize_str`] lowering to
+    /// [`<Self as std::str::FromStr>::from_str`]. Idiom-peer of the
+    /// same impl on [`SupportCardinalityClass`] and [`ModalityClass`].
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct SupportBoundaryDistanceVisitor;
+
+        impl serde::de::Visitor<'_> for SupportBoundaryDistanceVisitor {
+            type Value = SupportBoundaryDistance;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(
+                    "a canonical SupportBoundaryDistance kebab-case label \
+                     (`boundary`, `singular`, `strict-interior`)",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                v.parse::<SupportBoundaryDistance>().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(SupportBoundaryDistanceVisitor)
+    }
 }
 
 impl<A: ClosedAxis> AxisHistogram<A> {
@@ -35689,6 +35811,148 @@ mod tests {
         assert!(!SupportBoundaryDistance::Boundary.is_strict_interior());
         assert!(!SupportBoundaryDistance::Singular.is_strict_interior());
         assert!(SupportBoundaryDistance::StrictInterior.is_strict_interior());
+    }
+
+    #[test]
+    fn support_boundary_distance_as_str_round_trips_via_from_canonical_str() {
+        // Idiom-peer of
+        // `support_cardinality_class_as_str_round_trips_via_from_canonical_str`
+        // and `modality_class_as_str_round_trips_via_from_canonical_str`
+        // on the sibling typed classifiers.
+        for &v in SupportBoundaryDistance::ALL {
+            assert_eq!(
+                SupportBoundaryDistance::from_canonical_str(v.as_str()),
+                Some(v),
+                "as_str / from_canonical_str round-trip for {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_as_str_labels_pairwise_distinct() {
+        for (i, a) in SupportBoundaryDistance::ALL.iter().enumerate() {
+            for (j, b) in SupportBoundaryDistance::ALL.iter().enumerate() {
+                if i != j {
+                    assert_ne!(
+                        a.as_str(),
+                        b.as_str(),
+                        "as_str must distinguish ALL[{i}] = {a:?} from ALL[{j}] = {b:?}",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_as_str_labels_nonempty() {
+        for &v in SupportBoundaryDistance::ALL {
+            assert!(
+                !v.as_str().is_empty(),
+                "as_str label must be nonempty for {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_from_canonical_str_is_case_insensitive() {
+        for &v in SupportBoundaryDistance::ALL {
+            assert_eq!(
+                SupportBoundaryDistance::from_canonical_str(&v.as_str().to_ascii_uppercase()),
+                Some(v),
+                "case-insensitive parse must recover {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_from_canonical_str_rejects_empty_string() {
+        assert_eq!(SupportBoundaryDistance::from_canonical_str(""), None);
+    }
+
+    #[test]
+    fn support_boundary_distance_from_str_round_trips_through_display() {
+        for &v in SupportBoundaryDistance::ALL {
+            let rendered = v.to_string();
+            let parsed: SupportBoundaryDistance = rendered.parse().unwrap();
+            assert_eq!(parsed, v, "Display / FromStr round-trip for {v:?}");
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_from_str_rejects_unknown_label_with_label_verbatim() {
+        let sentinel = "__shikumi_unknown_support_boundary_distance_sentinel__";
+        match sentinel.parse::<SupportBoundaryDistance>() {
+            Err(e) => {
+                assert_eq!(e.label, sentinel);
+                let rendered = format!("{e}");
+                assert!(
+                    rendered.contains(sentinel),
+                    "Display impl must carry the unknown sentinel verbatim, got: {rendered}",
+                );
+            }
+            Ok(other) => panic!("unknown label must reject, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_serde_yaml_round_trips_over_every_variant() {
+        for &v in SupportBoundaryDistance::ALL {
+            let yaml = serde_yaml::to_string(&v).unwrap();
+            let parsed: SupportBoundaryDistance = serde_yaml::from_str(&yaml)
+                .unwrap_or_else(|e| panic!("YAML round-trip for {v:?} failed: {e}"));
+            assert_eq!(
+                parsed, v,
+                "serde YAML round-trip must be identity for {v:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_serde_json_round_trips_over_every_variant() {
+        for &v in SupportBoundaryDistance::ALL {
+            let json = serde_json::to_string(&v).unwrap();
+            assert_eq!(
+                json,
+                format!("\"{}\"", v.as_str()),
+                "JSON emission for {v:?} must be the quoted canonical label",
+            );
+            let parsed: SupportBoundaryDistance = serde_json::from_str(&json).unwrap_or_else(|e| {
+                panic!("JSON emission for {v:?} must deserialize back: {e}\n  json: {json}")
+            });
+            assert_eq!(
+                parsed, v,
+                "serde JSON round-trip must be identity for {v:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_serde_yaml_is_case_insensitive() {
+        for &v in SupportBoundaryDistance::ALL {
+            let upper = v.as_str().to_ascii_uppercase();
+            let yaml = format!("\"{upper}\"\n");
+            let parsed: SupportBoundaryDistance = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+                panic!("uppercase YAML scalar for {v:?} must deserialize: {e}\n  yaml: {yaml:?}")
+            });
+            assert_eq!(parsed, v);
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_serde_yaml_unknown_label_error_carries_label_verbatim() {
+        let sentinel = "__shikumi_unknown_support_boundary_distance_sentinel__";
+        let yaml = format!("\"{sentinel}\"\n");
+        let result: Result<SupportBoundaryDistance, _> = serde_yaml::from_str(&yaml);
+        match result {
+            Err(e) => {
+                let rendered = format!("{e}");
+                assert!(
+                    rendered.contains(sentinel),
+                    "serde YAML error must carry the unknown sentinel verbatim, got: {rendered}",
+                );
+            }
+            Ok(other) => panic!("YAML carrying unknown label must reject, got {other:?}"),
+        }
     }
 
     #[test]
