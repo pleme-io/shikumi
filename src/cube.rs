@@ -1673,6 +1673,64 @@ impl SupportCardinalityClass {
         matches!(self, Self::SingularGap | Self::FullCover)
     }
 
+    /// Project this variant onto its **distance-from-boundary** leg of
+    /// the strict ternary partition (`is_boundary`, `is_singular`,
+    /// `is_strict_partial_cover`) — the typed three-bucket lift of the
+    /// (`is_boundary`, `is_singular`, `is_strict_partial_cover`) leg-
+    /// predicate trio on [`Self`] to a single closed enum whose
+    /// exhaustiveness is checked by the compiler at every `match` site.
+    ///
+    /// Variant-tag mapping (closed and exhaustive over the five
+    /// [`Self`] variants):
+    /// - [`Self::Empty`] / [`Self::FullCover`] →
+    ///   [`SupportBoundaryDistance::Boundary`] (the two boundary
+    ///   corners — distance 0 from the support-cardinality boundary).
+    /// - [`Self::SingularSupport`] / [`Self::SingularGap`] →
+    ///   [`SupportBoundaryDistance::Singular`] (the two singular near-
+    ///   boundary corners — distance 1 from the boundary).
+    /// - [`Self::StrictPartialCover`] →
+    ///   [`SupportBoundaryDistance::StrictInterior`] (the strict
+    ///   interior — distance `>= 2` from each boundary, only
+    ///   reachable on cardinality-`>= 4` axes).
+    ///
+    /// **Leg-predicate bridge laws** — for every variant `c`:
+    /// - `c.support_boundary_distance().is_boundary() == c.is_boundary()`,
+    /// - `c.support_boundary_distance().is_singular() == c.is_singular()`,
+    /// - `c.support_boundary_distance().is_strict_interior() ==
+    ///    c.is_strict_partial_cover()`.
+    ///
+    /// All three pinned pointwise across [`Self::ALL`] by
+    /// [`tests::support_cardinality_class_support_boundary_distance_pointwise_matches_leg_predicates`].
+    ///
+    /// Before this lift, every consumer dispatching on the
+    /// distance-from-boundary ternary held a [`Self`] value and either
+    /// wrote a three-way `if` ladder over the three leg predicates
+    /// (`if c.is_boundary() { … } else if c.is_singular() { … } else { … }`
+    /// — three method calls, ordering matters, a future fourth leg
+    /// would silently drop), or open-coded the same three-way `match`
+    /// on the five variants (`Empty | FullCover => …, SingularSupport
+    /// | SingularGap => …, StrictPartialCover => …` — five variants
+    /// per arm, every match site re-derives the partition manually).
+    /// Collapsed to one inherent call returning a closed three-variant
+    /// enum whose exhaustiveness the compiler enforces at every
+    /// `match` site — a future renderer landing on the typescape and
+    /// dispatching on the distance-from-boundary partition cannot
+    /// silently drop a leg.
+    ///
+    /// Peer to the existing leg-predicate trio on the same scalar; the
+    /// magnitude-direction partition (`is_low_support`,
+    /// `is_strict_partial_cover`, `is_high_support`) is the orthogonal
+    /// ternary on the same surface and will admit the same kind of
+    /// typed projection in a future lift.
+    #[must_use]
+    pub const fn support_boundary_distance(self) -> SupportBoundaryDistance {
+        match self {
+            Self::Empty | Self::FullCover => SupportBoundaryDistance::Boundary,
+            Self::SingularSupport | Self::SingularGap => SupportBoundaryDistance::Singular,
+            Self::StrictPartialCover => SupportBoundaryDistance::StrictInterior,
+        }
+    }
+
     /// Canonical operator-facing kebab-case label for the variant
     /// tag — `"empty"`, `"singular-support"`,
     /// `"strict-partial-cover"`, `"singular-gap"`, `"full-cover"`.
@@ -1794,6 +1852,105 @@ impl<'de> serde::Deserialize<'de> for SupportCardinalityClass {
         }
 
         deserializer.deserialize_str(SupportCardinalityClassVisitor)
+    }
+}
+
+/// Typed three-bucket projection of the support-cardinality scalar by
+/// **distance from the support-cardinality boundary** — the closed
+/// enum lift of the (`is_boundary`, `is_singular`,
+/// `is_strict_partial_cover`) strict ternary partition on
+/// [`SupportCardinalityClass`]. Each of the five class variants lands
+/// in exactly one bucket; the compiler enforces exhaustiveness at
+/// every `match` site on the ternary.
+///
+/// Bucket mapping (closed and exhaustive over the five
+/// [`SupportCardinalityClass`] variants):
+/// - [`Self::Boundary`] — both boundary corners
+///   ([`SupportCardinalityClass::Empty`],
+///   [`SupportCardinalityClass::FullCover`]). Distance 0 from a
+///   boundary.
+/// - [`Self::Singular`] — both singular near-boundary corners
+///   ([`SupportCardinalityClass::SingularSupport`],
+///   [`SupportCardinalityClass::SingularGap`]). Distance 1 from a
+///   boundary.
+/// - [`Self::StrictInterior`] — the strict interior
+///   ([`SupportCardinalityClass::StrictPartialCover`]). Distance
+///   `>= 2` from each boundary, only reachable on cardinality-`>= 4`
+///   axes.
+///
+/// Peer to [`SupportCardinalityClass`] on the same scalar — the
+/// typed-class surface carries the five-corner classifier
+/// ([`SupportCardinalityClass`]), the typed-bucket surface carries
+/// the three-leg classifier ([`Self`]). The forward projection
+/// [`SupportCardinalityClass::support_boundary_distance`] is closed
+/// and exhaustive; its histogram-side peer
+/// [`AxisHistogram::support_boundary_distance`] routes through the
+/// existing [`AxisHistogram::support_cardinality_class`] projection.
+///
+/// The orthogonal magnitude-direction ternary partition
+/// (`is_low_support`, `is_strict_partial_cover`, `is_high_support`)
+/// is named at the leg-predicate level on
+/// [`SupportCardinalityClass`] but has no typed-enum projection yet;
+/// the same lift is the natural next compounding move.
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Ord, PartialOrd)]
+pub enum SupportBoundaryDistance {
+    /// The two boundary corners of the support-cardinality interval —
+    /// [`SupportCardinalityClass::Empty`] and
+    /// [`SupportCardinalityClass::FullCover`]. Distance 0 from the
+    /// boundary. Lifts the
+    /// [`SupportCardinalityClass::is_boundary`] leg predicate to the
+    /// typed variant tag.
+    Boundary,
+    /// The two singular near-boundary corners of the support-
+    /// cardinality interval —
+    /// [`SupportCardinalityClass::SingularSupport`] and
+    /// [`SupportCardinalityClass::SingularGap`]. Distance 1 from the
+    /// boundary. Lifts the [`SupportCardinalityClass::is_singular`]
+    /// leg predicate to the typed variant tag.
+    Singular,
+    /// The strict interior of the support-cardinality interval —
+    /// [`SupportCardinalityClass::StrictPartialCover`]. Distance
+    /// `>= 2` from each boundary. Only reachable on cardinality-`>= 4`
+    /// axes; vacuously absent on cardinality-`<= 3` axes. Lifts the
+    /// [`SupportCardinalityClass::is_strict_partial_cover`] leg
+    /// predicate to the typed variant tag.
+    StrictInterior,
+}
+
+impl SupportBoundaryDistance {
+    /// Every [`SupportBoundaryDistance`] variant, in declaration order:
+    /// `Boundary`, `Singular`, `StrictInterior`. Length 3 — pinned by
+    /// [`tests::support_boundary_distance_all_has_three_entries`].
+    /// Idiom-peer of [`SupportCardinalityClass::ALL`] and
+    /// [`ModalityClass::ALL`] on the sibling typed classifiers.
+    pub const ALL: &'static [Self] = &[Self::Boundary, Self::Singular, Self::StrictInterior];
+
+    /// `true` exactly on [`Self::Boundary`] — the typed-bucket peer of
+    /// [`SupportCardinalityClass::is_boundary`] projected from the
+    /// variant tag.
+    #[must_use]
+    pub const fn is_boundary(self) -> bool {
+        matches!(self, Self::Boundary)
+    }
+
+    /// `true` exactly on [`Self::Singular`] — the typed-bucket peer of
+    /// [`SupportCardinalityClass::is_singular`] projected from the
+    /// variant tag.
+    #[must_use]
+    pub const fn is_singular(self) -> bool {
+        matches!(self, Self::Singular)
+    }
+
+    /// `true` exactly on [`Self::StrictInterior`] — the typed-bucket
+    /// peer of [`SupportCardinalityClass::is_strict_partial_cover`]
+    /// projected from the variant tag. Named `is_strict_interior` on
+    /// the typed-bucket surface (the bucket-level reading of the
+    /// distance-from-boundary axis); the class-side leg predicate
+    /// keeps its `is_strict_partial_cover` name since it sits on the
+    /// single-variant peer of [`SupportCardinalityClass::StrictPartialCover`].
+    #[must_use]
+    pub const fn is_strict_interior(self) -> bool {
+        matches!(self, Self::StrictInterior)
     }
 }
 
@@ -5755,6 +5912,79 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         } else {
             SupportCardinalityClass::StrictPartialCover
         }
+    }
+
+    /// The **distance-from-boundary bucket** of the histogram on the
+    /// three-cell partition of the [`SupportCardinalityClass`]
+    /// surface — the typed three-bucket projection peer of the three
+    /// histogram-side leg predicates [`Self::has_boundary`],
+    /// [`Self::has_singular`], [`Self::has_strict_partial_cover`].
+    ///
+    /// Routes through the existing [`Self::support_cardinality_class`]
+    /// projection and the class-side
+    /// [`SupportCardinalityClass::support_boundary_distance`] variant-
+    /// tag projection — the bucket the histogram lands in is exactly
+    /// the bucket of its support-cardinality class. Equivalent to
+    /// three documented surface forms — each names the same bucket
+    /// differently:
+    /// - `self.support_cardinality_class().support_boundary_distance()`
+    ///   (the chained projection through the existing class surface —
+    ///   the definitional form).
+    /// - A three-way `match` on
+    ///   `(has_boundary(), has_singular(), has_strict_partial_cover())`
+    ///   (the histogram-side leg-predicate form: exactly one of the
+    ///   three booleans fires on every shape by the strict ternary
+    ///   partition law).
+    /// - A three-way `match` on the five histogram-side primitives
+    ///   `(is_empty(), has_singular_support(), has_strict_partial_cover(),
+    ///   has_singular_gap(), is_full_cover())` (the histogram-side
+    ///   leaf form — five method calls and the cardinality-2 collapse
+    ///   to disambiguate).
+    ///
+    /// **Bucket-predicate bridge laws** — for every histogram `h` on
+    /// every [`ClosedAxis`] implementor:
+    /// - `h.support_boundary_distance().is_boundary() == h.has_boundary()`,
+    /// - `h.support_boundary_distance().is_singular() == h.has_singular()`,
+    /// - `h.support_boundary_distance().is_strict_interior() ==
+    ///    h.has_strict_partial_cover()`.
+    ///
+    /// All three pinned trait-uniformly through
+    /// `for_each_closed_axis_implementor!` by the
+    /// `axis_histogram_support_boundary_distance_*_agrees_with_*`
+    /// tests below — composing the class-side leg-predicate bridges
+    /// already pinned by
+    /// [`tests::axis_histogram_has_boundary_agrees_with_class_is_boundary_for_every_closed_axis_implementor`],
+    /// [`tests::axis_histogram_has_singular_agrees_with_class_is_singular_for_every_closed_axis_implementor`],
+    /// and the existing `has_strict_partial_cover` bridge with the
+    /// class-side variant-tag projection
+    /// [`SupportCardinalityClass::support_boundary_distance`].
+    ///
+    /// Before this lift, every consumer dispatching on the
+    /// distance-from-boundary ternary held an [`AxisHistogram`] value
+    /// and either composed the three histogram-side leg predicates
+    /// (`if hist.has_boundary() { … } else if hist.has_singular() { … }
+    /// else { … }` — three method calls with implicit ordering on a
+    /// strict partition), routed through `support_cardinality_class()`
+    /// and dispatched on the five-variant class (five-arm `match`,
+    /// fused arms per bucket), or open-coded a five-way scan over
+    /// `(is_empty, has_singular_support, has_strict_partial_cover,
+    /// has_singular_gap, is_full_cover)` with the cardinality-2
+    /// collapse to disambiguate. Collapsed to one inherent call
+    /// returning a closed three-variant enum whose exhaustiveness
+    /// the compiler enforces at every `match` site.
+    ///
+    /// Peer to [`Self::support_cardinality_class`] on the same
+    /// support-cardinality scalar — the histogram now carries two
+    /// closed-classifier projections on the support-cardinality
+    /// dimension in lockstep: [`Self::support_cardinality_class`]
+    /// over the five-corner surface and [`Self::support_boundary_distance`]
+    /// over the three-bucket distance-from-boundary surface.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost.
+    #[must_use]
+    pub fn support_boundary_distance(&self) -> SupportBoundaryDistance {
+        self.support_cardinality_class().support_boundary_distance()
     }
 
     /// Pointwise sum with `other` — the monoid operation. Every cell
@@ -35394,5 +35624,305 @@ mod tests {
                 SupportCardinalityClass::SingularSupport,
             );
         }
+    }
+
+    #[test]
+    fn support_boundary_distance_all_has_three_entries() {
+        // Three-bucket partition of the distance-from-boundary leg of
+        // the (`is_boundary`, `is_singular`, `is_strict_partial_cover`)
+        // ternary on `SupportCardinalityClass`. Idiom-peer of
+        // `SupportCardinalityClass::ALL` (length 5) and
+        // `ModalityClass::ALL` (length 5) on the sibling typed
+        // classifiers; this one is strictly smaller because the
+        // five-corner surface partitions into three buckets.
+        assert_eq!(SupportBoundaryDistance::ALL.len(), 3);
+    }
+
+    #[test]
+    fn support_boundary_distance_all_entries_are_pairwise_distinct() {
+        for (i, a) in SupportBoundaryDistance::ALL.iter().enumerate() {
+            for (j, b) in SupportBoundaryDistance::ALL.iter().enumerate() {
+                if i != j {
+                    assert_ne!(a, b, "ALL[{i}] = {a:?} must differ from ALL[{j}] = {b:?}",);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_corner_predicates_partition_every_variant() {
+        // Each variant fires exactly one of the three bucket predicates.
+        // Stronger than disjointness — names the joint-exhaustiveness
+        // law on the typed-bucket surface directly. Peer of
+        // `support_cardinality_class_corner_predicates_partition_every_variant`
+        // on the sibling typed classifier (where five predicates partition
+        // five variants); here three predicates partition three variants
+        // by construction.
+        for &bucket in SupportBoundaryDistance::ALL {
+            let fires = u32::from(bucket.is_boundary())
+                + u32::from(bucket.is_singular())
+                + u32::from(bucket.is_strict_interior());
+            assert_eq!(
+                fires, 1,
+                "exactly one bucket predicate must fire on every variant \
+                 (got fires={fires}) on bucket {bucket:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_boundary_distance_is_boundary_fires_exactly_on_boundary_variant() {
+        assert!(SupportBoundaryDistance::Boundary.is_boundary());
+        assert!(!SupportBoundaryDistance::Singular.is_boundary());
+        assert!(!SupportBoundaryDistance::StrictInterior.is_boundary());
+    }
+
+    #[test]
+    fn support_boundary_distance_is_singular_fires_exactly_on_singular_variant() {
+        assert!(!SupportBoundaryDistance::Boundary.is_singular());
+        assert!(SupportBoundaryDistance::Singular.is_singular());
+        assert!(!SupportBoundaryDistance::StrictInterior.is_singular());
+    }
+
+    #[test]
+    fn support_boundary_distance_is_strict_interior_fires_exactly_on_strict_interior_variant() {
+        assert!(!SupportBoundaryDistance::Boundary.is_strict_interior());
+        assert!(!SupportBoundaryDistance::Singular.is_strict_interior());
+        assert!(SupportBoundaryDistance::StrictInterior.is_strict_interior());
+    }
+
+    #[test]
+    fn support_cardinality_class_support_boundary_distance_lands_on_expected_bucket_per_variant() {
+        // Behavioral pin on the variant-tag projection — the five
+        // class variants map onto the three buckets per the
+        // documented closed mapping (Empty | FullCover → Boundary,
+        // SingularSupport | SingularGap → Singular,
+        // StrictPartialCover → StrictInterior).
+        assert_eq!(
+            SupportCardinalityClass::Empty.support_boundary_distance(),
+            SupportBoundaryDistance::Boundary,
+        );
+        assert_eq!(
+            SupportCardinalityClass::SingularSupport.support_boundary_distance(),
+            SupportBoundaryDistance::Singular,
+        );
+        assert_eq!(
+            SupportCardinalityClass::StrictPartialCover.support_boundary_distance(),
+            SupportBoundaryDistance::StrictInterior,
+        );
+        assert_eq!(
+            SupportCardinalityClass::SingularGap.support_boundary_distance(),
+            SupportBoundaryDistance::Singular,
+        );
+        assert_eq!(
+            SupportCardinalityClass::FullCover.support_boundary_distance(),
+            SupportBoundaryDistance::Boundary,
+        );
+    }
+
+    #[test]
+    fn support_cardinality_class_support_boundary_distance_pointwise_matches_leg_predicates() {
+        // Bucket-predicate bridge laws: for every variant the typed-
+        // bucket projection's three predicates agree pointwise with
+        // the class-side leg predicates on the same scalar.
+        for &class in SupportCardinalityClass::ALL {
+            let bucket = class.support_boundary_distance();
+            assert_eq!(
+                bucket.is_boundary(),
+                class.is_boundary(),
+                "support_boundary_distance().is_boundary must equal \
+                 is_boundary on class {class:?}",
+            );
+            assert_eq!(
+                bucket.is_singular(),
+                class.is_singular(),
+                "support_boundary_distance().is_singular must equal \
+                 is_singular on class {class:?}",
+            );
+            assert_eq!(
+                bucket.is_strict_interior(),
+                class.is_strict_partial_cover(),
+                "support_boundary_distance().is_strict_interior must equal \
+                 is_strict_partial_cover on class {class:?}",
+            );
+        }
+    }
+
+    fn assert_support_boundary_distance_agrees_with_class_projection<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Histogram-side projection definitional law:
+        // hist.support_boundary_distance() ==
+        // hist.support_cardinality_class().support_boundary_distance()
+        // for every canonical shape. The histogram-side projection
+        // routes through the existing class-side variant-tag
+        // projection by construction — the two paths must agree.
+        let check = |hist: &AxisHistogram<A>, label: &str| {
+            assert_eq!(
+                hist.support_boundary_distance(),
+                hist.support_cardinality_class().support_boundary_distance(),
+                "support_boundary_distance must equal \
+                 support_cardinality_class().support_boundary_distance() on {label} \
+                 for axis {}",
+                std::any::type_name::<A>(),
+            );
+        };
+
+        check(&AxisHistogram::<A>::empty(), "empty");
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            let label = format!("singleton {observed:?}");
+            check(&singleton, &label);
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        check(&cover, "axis-cover");
+    }
+
+    fn assert_support_boundary_distance_is_boundary_agrees_with_has_boundary<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Bucket-predicate bridge (boundary leg):
+        // hist.support_boundary_distance().is_boundary() ==
+        // hist.has_boundary() pointwise. Composes the class-side
+        // bridge `has_boundary == support_cardinality_class().is_boundary()`
+        // (pinned by
+        // `axis_histogram_has_boundary_agrees_with_class_is_boundary_for_every_closed_axis_implementor`)
+        // with the class-side bucket-predicate law
+        // `support_boundary_distance().is_boundary() == is_boundary`
+        // on `SupportCardinalityClass` (pinned by
+        // `support_cardinality_class_support_boundary_distance_pointwise_matches_leg_predicates`).
+        let check = |hist: &AxisHistogram<A>, label: &str| {
+            assert_eq!(
+                hist.support_boundary_distance().is_boundary(),
+                hist.has_boundary(),
+                "support_boundary_distance().is_boundary must equal has_boundary on \
+                 {label} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        };
+
+        check(&AxisHistogram::<A>::empty(), "empty");
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            let label = format!("singleton {observed:?}");
+            check(&singleton, &label);
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        check(&cover, "axis-cover");
+    }
+
+    fn assert_support_boundary_distance_is_singular_agrees_with_has_singular<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Bucket-predicate bridge (singular leg):
+        // hist.support_boundary_distance().is_singular() ==
+        // hist.has_singular() pointwise. The bridge holds across
+        // cardinality-2 axes by the same dual-singular collapse
+        // routing already pinned for `has_singular` against
+        // `support_cardinality_class().is_singular()`.
+        let check = |hist: &AxisHistogram<A>, label: &str| {
+            assert_eq!(
+                hist.support_boundary_distance().is_singular(),
+                hist.has_singular(),
+                "support_boundary_distance().is_singular must equal has_singular on \
+                 {label} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        };
+
+        check(&AxisHistogram::<A>::empty(), "empty");
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            let label = format!("singleton {observed:?}");
+            check(&singleton, &label);
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        check(&cover, "axis-cover");
+    }
+
+    fn assert_support_boundary_distance_is_strict_interior_agrees_with_has_strict_partial_cover<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Bucket-predicate bridge (strict-interior leg):
+        // hist.support_boundary_distance().is_strict_interior() ==
+        // hist.has_strict_partial_cover() pointwise. The
+        // strict-interior bucket on the typed-bucket surface is the
+        // single-variant peer of `StrictPartialCover` on the class
+        // surface; the bridge reduces to the class-side leg-predicate
+        // bridge by construction.
+        let check = |hist: &AxisHistogram<A>, label: &str| {
+            assert_eq!(
+                hist.support_boundary_distance().is_strict_interior(),
+                hist.has_strict_partial_cover(),
+                "support_boundary_distance().is_strict_interior must equal \
+                 has_strict_partial_cover on {label} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        };
+
+        check(&AxisHistogram::<A>::empty(), "empty");
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            let label = format!("singleton {observed:?}");
+            check(&singleton, &label);
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        check(&cover, "axis-cover");
+    }
+
+    #[test]
+    fn axis_histogram_support_boundary_distance_agrees_with_class_projection_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_boundary_distance_agrees_with_class_projection::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_support_boundary_distance_is_boundary_agrees_with_has_boundary_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_boundary_distance_is_boundary_agrees_with_has_boundary::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_support_boundary_distance_is_singular_agrees_with_has_singular_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_boundary_distance_is_singular_agrees_with_has_singular::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_support_boundary_distance_is_strict_interior_agrees_with_has_strict_partial_cover_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_boundary_distance_is_strict_interior_agrees_with_has_strict_partial_cover::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
     }
 }
