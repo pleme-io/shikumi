@@ -1731,6 +1731,57 @@ impl SupportCardinalityClass {
         }
     }
 
+    /// Project this variant onto its **support-magnitude direction** leg
+    /// of the strict ternary partition (`is_low_support`,
+    /// `is_strict_partial_cover`, `is_high_support`) — the typed three-
+    /// bucket lift of the (`is_low_support`, `is_strict_partial_cover`,
+    /// `is_high_support`) leg-predicate trio on [`Self`] to a single
+    /// closed enum whose exhaustiveness is checked by the compiler at
+    /// every `match` site. The mirror peer of
+    /// [`Self::support_boundary_distance`] across the
+    /// [`Self::StrictPartialCover`] middle leg: both projections share
+    /// the strict-interior bucket but split the four non-interior
+    /// corners on orthogonal axes.
+    ///
+    /// Variant-tag mapping (closed and exhaustive over the five
+    /// [`Self`] variants):
+    /// - [`Self::Empty`] / [`Self::SingularSupport`] →
+    ///   [`SupportMagnitudeDirection::Low`] (support magnitude at most
+    ///   one cell — the bottom of the support-cardinality interval).
+    /// - [`Self::StrictPartialCover`] →
+    ///   [`SupportMagnitudeDirection::StrictInterior`] (the strict
+    ///   interior — support 2..=`axis_cardinality - 2`, only reachable
+    ///   on cardinality-`>= 4` axes; the shared middle leg with
+    ///   [`Self::support_boundary_distance`]).
+    /// - [`Self::SingularGap`] / [`Self::FullCover`] →
+    ///   [`SupportMagnitudeDirection::High`] (support magnitude at
+    ///   least `axis_cardinality - 1` — the top of the support-
+    ///   cardinality interval).
+    ///
+    /// **Leg-predicate bridge laws** — for every variant `c`:
+    /// - `c.support_magnitude_direction().is_low() == c.is_low_support()`,
+    /// - `c.support_magnitude_direction().is_strict_interior() ==
+    ///    c.is_strict_partial_cover()`,
+    /// - `c.support_magnitude_direction().is_high() == c.is_high_support()`.
+    ///
+    /// All three pinned pointwise across [`Self::ALL`] by
+    /// [`tests::support_cardinality_class_support_magnitude_direction_pointwise_matches_leg_predicates`].
+    ///
+    /// Peer to [`Self::support_boundary_distance`] on the same scalar —
+    /// the typescape now carries two orthogonal typed-bucket projections
+    /// of [`Self`] in lockstep, both sharing the strict-interior middle
+    /// leg ([`Self::StrictPartialCover`]) and splitting the four non-
+    /// interior corners on orthogonal axes (distance from boundary vs.
+    /// support magnitude direction).
+    #[must_use]
+    pub const fn support_magnitude_direction(self) -> SupportMagnitudeDirection {
+        match self {
+            Self::Empty | Self::SingularSupport => SupportMagnitudeDirection::Low,
+            Self::StrictPartialCover => SupportMagnitudeDirection::StrictInterior,
+            Self::SingularGap | Self::FullCover => SupportMagnitudeDirection::High,
+        }
+    }
+
     /// Canonical operator-facing kebab-case label for the variant
     /// tag — `"empty"`, `"singular-support"`,
     /// `"strict-partial-cover"`, `"singular-gap"`, `"full-cover"`.
@@ -2073,6 +2124,120 @@ impl<'de> serde::Deserialize<'de> for SupportBoundaryDistance {
         }
 
         deserializer.deserialize_str(SupportBoundaryDistanceVisitor)
+    }
+}
+
+/// Typed three-bucket projection of the support-cardinality scalar by
+/// **support-magnitude direction** — the closed enum lift of the
+/// (`is_low_support`, `is_strict_partial_cover`, `is_high_support`)
+/// strict ternary partition on [`SupportCardinalityClass`]. The mirror
+/// peer of [`SupportBoundaryDistance`] across the
+/// [`SupportCardinalityClass::StrictPartialCover`] middle leg: both
+/// ternaries share the strict-interior middle bucket but split the four
+/// non-interior corners on orthogonal axes.
+///
+/// Bucket mapping (closed and exhaustive over the five
+/// [`SupportCardinalityClass`] variants):
+/// - [`Self::Low`] — the two low-support corners
+///   ([`SupportCardinalityClass::Empty`],
+///   [`SupportCardinalityClass::SingularSupport`]). Support magnitude
+///   at most one cell — the bottom of the support-cardinality interval.
+/// - [`Self::StrictInterior`] — the strict interior
+///   ([`SupportCardinalityClass::StrictPartialCover`]). Support 2..=
+///   `axis_cardinality - 2`, only reachable on cardinality-`>= 4` axes.
+/// - [`Self::High`] — the two high-support corners
+///   ([`SupportCardinalityClass::SingularGap`],
+///   [`SupportCardinalityClass::FullCover`]). Support magnitude at
+///   least `axis_cardinality - 1` — the top of the support-cardinality
+///   interval.
+///
+/// **Orthogonality with [`SupportBoundaryDistance`].** Both ternaries
+/// share the [`Self::StrictInterior`] / [`SupportBoundaryDistance::StrictInterior`]
+/// middle leg (the [`SupportCardinalityClass::StrictPartialCover`]
+/// single-variant peer), but split the four non-interior corners
+/// orthogonally:
+/// - distance partition: bottom-pair `{Empty, FullCover}` (boundary),
+///   middle-pair `{SingularSupport, SingularGap}` (singular).
+/// - magnitude partition: bottom-pair `{Empty, SingularSupport}` (low),
+///   top-pair `{SingularGap, FullCover}` (high).
+///
+/// The two ternaries cross to recover the four named single-variant
+/// peers on the non-interior corners: `Low ∩ Boundary = Empty`,
+/// `Low ∩ Singular = SingularSupport`, `High ∩ Singular = SingularGap`,
+/// `High ∩ Boundary = FullCover`.
+///
+/// Peer to [`SupportCardinalityClass`] on the same scalar — the
+/// typed-class surface carries the five-corner classifier
+/// ([`SupportCardinalityClass`]), the typed-bucket surface carries two
+/// orthogonal three-leg classifiers ([`SupportBoundaryDistance`] over
+/// the distance-from-boundary axis, [`Self`] over the support-magnitude
+/// axis). The forward projection
+/// [`SupportCardinalityClass::support_magnitude_direction`] is closed
+/// and exhaustive; its histogram-side peer
+/// [`AxisHistogram::support_magnitude_direction`] routes through the
+/// existing [`AxisHistogram::support_cardinality_class`] projection,
+/// mirroring the routing of [`AxisHistogram::support_boundary_distance`].
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Ord, PartialOrd)]
+pub enum SupportMagnitudeDirection {
+    /// The two low-support corners of the support-cardinality interval —
+    /// [`SupportCardinalityClass::Empty`] and
+    /// [`SupportCardinalityClass::SingularSupport`]. Support magnitude
+    /// at most one cell. Lifts the
+    /// [`SupportCardinalityClass::is_low_support`] leg predicate to the
+    /// typed variant tag.
+    Low,
+    /// The strict interior of the support-cardinality interval —
+    /// [`SupportCardinalityClass::StrictPartialCover`]. Support
+    /// 2..=`axis_cardinality - 2`. Only reachable on cardinality-`>= 4`
+    /// axes; vacuously absent on cardinality-`<= 3` axes. Lifts the
+    /// [`SupportCardinalityClass::is_strict_partial_cover`] leg
+    /// predicate to the typed variant tag. The shared middle leg with
+    /// [`SupportBoundaryDistance::StrictInterior`].
+    StrictInterior,
+    /// The two high-support corners of the support-cardinality
+    /// interval — [`SupportCardinalityClass::SingularGap`] and
+    /// [`SupportCardinalityClass::FullCover`]. Support magnitude at
+    /// least `axis_cardinality - 1`. Lifts the
+    /// [`SupportCardinalityClass::is_high_support`] leg predicate to
+    /// the typed variant tag.
+    High,
+}
+
+impl SupportMagnitudeDirection {
+    /// Every [`SupportMagnitudeDirection`] variant, in declaration
+    /// order: `Low`, `StrictInterior`, `High`. Length 3 — pinned by
+    /// [`tests::support_magnitude_direction_all_has_three_entries`].
+    /// Idiom-peer of [`SupportBoundaryDistance::ALL`] on the sibling
+    /// typed-bucket classifier.
+    pub const ALL: &'static [Self] = &[Self::Low, Self::StrictInterior, Self::High];
+
+    /// `true` exactly on [`Self::Low`] — the typed-bucket peer of
+    /// [`SupportCardinalityClass::is_low_support`] projected from the
+    /// variant tag. Named `is_low` on the typed-bucket surface (the
+    /// bucket-level reading of the support-magnitude axis); the
+    /// class-side leg predicate keeps its `is_low_support` name since
+    /// it sits on the two-variant low-corner pair.
+    #[must_use]
+    pub const fn is_low(self) -> bool {
+        matches!(self, Self::Low)
+    }
+
+    /// `true` exactly on [`Self::StrictInterior`] — the typed-bucket
+    /// peer of [`SupportCardinalityClass::is_strict_partial_cover`]
+    /// projected from the variant tag. The shared middle leg with
+    /// [`SupportBoundaryDistance::is_strict_interior`].
+    #[must_use]
+    pub const fn is_strict_interior(self) -> bool {
+        matches!(self, Self::StrictInterior)
+    }
+
+    /// `true` exactly on [`Self::High`] — the typed-bucket peer of
+    /// [`SupportCardinalityClass::is_high_support`] projected from the
+    /// variant tag. Mirror peer of [`Self::is_low`] across the
+    /// [`Self::StrictInterior`] middle leg.
+    #[must_use]
+    pub const fn is_high(self) -> bool {
+        matches!(self, Self::High)
     }
 }
 
@@ -6107,6 +6272,71 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     #[must_use]
     pub fn support_boundary_distance(&self) -> SupportBoundaryDistance {
         self.support_cardinality_class().support_boundary_distance()
+    }
+
+    /// The **support-magnitude direction bucket** of the histogram on
+    /// the three-cell partition of the [`SupportCardinalityClass`]
+    /// surface — the typed three-bucket projection peer of the three
+    /// histogram-side leg predicates [`Self::has_low_support`],
+    /// [`Self::has_strict_partial_cover`], [`Self::has_high_support`].
+    /// The mirror peer of [`Self::support_boundary_distance`] across
+    /// the [`SupportCardinalityClass::StrictPartialCover`] middle leg.
+    ///
+    /// Routes through the existing [`Self::support_cardinality_class`]
+    /// projection and the class-side
+    /// [`SupportCardinalityClass::support_magnitude_direction`] variant-
+    /// tag projection — the bucket the histogram lands in is exactly
+    /// the bucket of its support-cardinality class. Equivalent to three
+    /// documented surface forms — each names the same bucket
+    /// differently:
+    /// - `self.support_cardinality_class().support_magnitude_direction()`
+    ///   (the chained projection through the existing class surface —
+    ///   the definitional form).
+    /// - A three-way `match` on
+    ///   `(has_low_support(), has_strict_partial_cover(), has_high_support())`
+    ///   (the histogram-side leg-predicate form: exactly one of the
+    ///   three booleans fires on every shape with
+    ///   `axis_cardinality::<A>() >= 2` by the strict ternary partition
+    ///   law).
+    /// - A five-way `match` on the histogram-side leaf primitives
+    ///   `(is_empty(), has_singular_support(), has_strict_partial_cover(),
+    ///   has_singular_gap(), is_full_cover())` (the leaf form — five
+    ///   method calls with the cardinality-2 collapse to disambiguate).
+    ///
+    /// **Bucket-predicate bridge laws** — for every histogram `h` on
+    /// every [`ClosedAxis`] implementor:
+    /// - `h.support_magnitude_direction().is_low() == h.has_low_support()`,
+    /// - `h.support_magnitude_direction().is_strict_interior() ==
+    ///    h.has_strict_partial_cover()`,
+    /// - `h.support_magnitude_direction().is_high() == h.has_high_support()`.
+    ///
+    /// All three pinned trait-uniformly through
+    /// `for_each_closed_axis_implementor!` by the
+    /// `axis_histogram_support_magnitude_direction_*_agrees_with_*`
+    /// tests below — composing the class-side leg-predicate bridges
+    /// already pinned by
+    /// [`tests::axis_histogram_has_low_support_agrees_with_class_is_low_support_for_every_closed_axis_implementor`],
+    /// [`tests::axis_histogram_has_high_support_agrees_with_class_is_high_support_for_every_closed_axis_implementor`],
+    /// and the existing `has_strict_partial_cover` bridge with the
+    /// class-side variant-tag projection
+    /// [`SupportCardinalityClass::support_magnitude_direction`].
+    ///
+    /// Peer to [`Self::support_boundary_distance`] on the same support-
+    /// cardinality scalar — the histogram now carries three closed-
+    /// classifier projections on the support-cardinality dimension in
+    /// lockstep: [`Self::support_cardinality_class`] over the five-
+    /// corner surface, [`Self::support_boundary_distance`] over the
+    /// three-bucket distance-from-boundary surface, and
+    /// [`Self::support_magnitude_direction`] over the orthogonal three-
+    /// bucket support-magnitude direction surface (both ternaries share
+    /// the strict-interior middle leg).
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost.
+    #[must_use]
+    pub fn support_magnitude_direction(&self) -> SupportMagnitudeDirection {
+        self.support_cardinality_class()
+            .support_magnitude_direction()
     }
 
     /// Pointwise sum with `other` — the monoid operation. Every cell
@@ -36185,6 +36415,380 @@ mod tests {
         macro_rules! check {
             ($ty:ident) => {
                 assert_support_boundary_distance_is_strict_interior_agrees_with_has_strict_partial_cover::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn support_magnitude_direction_all_has_three_entries() {
+        // Three-bucket partition of the support-magnitude-direction leg
+        // of the (`is_low_support`, `is_strict_partial_cover`,
+        // `is_high_support`) ternary on `SupportCardinalityClass`.
+        // Idiom-peer of `SupportBoundaryDistance::ALL` (length 3) on
+        // the sibling typed-bucket classifier; the orthogonal three-
+        // bucket projection of the same five-corner surface across the
+        // shared strict-interior middle leg.
+        assert_eq!(SupportMagnitudeDirection::ALL.len(), 3);
+    }
+
+    #[test]
+    fn support_magnitude_direction_all_entries_are_pairwise_distinct() {
+        for (i, a) in SupportMagnitudeDirection::ALL.iter().enumerate() {
+            for (j, b) in SupportMagnitudeDirection::ALL.iter().enumerate() {
+                if i != j {
+                    assert_ne!(a, b, "ALL[{i}] = {a:?} must differ from ALL[{j}] = {b:?}",);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn support_magnitude_direction_bucket_predicates_partition_every_variant() {
+        // Each variant fires exactly one of the three bucket predicates.
+        // Stronger than disjointness — names the joint-exhaustiveness
+        // law on the typed-bucket surface directly. Peer of
+        // `support_boundary_distance_corner_predicates_partition_every_variant`
+        // on the sibling typed-bucket classifier.
+        for &bucket in SupportMagnitudeDirection::ALL {
+            let fires = u32::from(bucket.is_low())
+                + u32::from(bucket.is_strict_interior())
+                + u32::from(bucket.is_high());
+            assert_eq!(
+                fires, 1,
+                "exactly one bucket predicate must fire on every variant \
+                 (got fires={fires}) on bucket {bucket:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_magnitude_direction_is_low_fires_exactly_on_low_variant() {
+        assert!(SupportMagnitudeDirection::Low.is_low());
+        assert!(!SupportMagnitudeDirection::StrictInterior.is_low());
+        assert!(!SupportMagnitudeDirection::High.is_low());
+    }
+
+    #[test]
+    fn support_magnitude_direction_is_strict_interior_fires_exactly_on_strict_interior_variant() {
+        assert!(!SupportMagnitudeDirection::Low.is_strict_interior());
+        assert!(SupportMagnitudeDirection::StrictInterior.is_strict_interior());
+        assert!(!SupportMagnitudeDirection::High.is_strict_interior());
+    }
+
+    #[test]
+    fn support_magnitude_direction_is_high_fires_exactly_on_high_variant() {
+        assert!(!SupportMagnitudeDirection::Low.is_high());
+        assert!(!SupportMagnitudeDirection::StrictInterior.is_high());
+        assert!(SupportMagnitudeDirection::High.is_high());
+    }
+
+    #[test]
+    fn support_cardinality_class_support_magnitude_direction_lands_on_expected_bucket_per_variant()
+    {
+        // Behavioral pin on the variant-tag projection — the five class
+        // variants map onto the three buckets per the documented closed
+        // mapping (Empty | SingularSupport → Low, StrictPartialCover →
+        // StrictInterior, SingularGap | FullCover → High). Mirror of
+        // `support_cardinality_class_support_boundary_distance_lands_on_expected_bucket_per_variant`
+        // across the shared StrictPartialCover middle leg.
+        assert_eq!(
+            SupportCardinalityClass::Empty.support_magnitude_direction(),
+            SupportMagnitudeDirection::Low,
+        );
+        assert_eq!(
+            SupportCardinalityClass::SingularSupport.support_magnitude_direction(),
+            SupportMagnitudeDirection::Low,
+        );
+        assert_eq!(
+            SupportCardinalityClass::StrictPartialCover.support_magnitude_direction(),
+            SupportMagnitudeDirection::StrictInterior,
+        );
+        assert_eq!(
+            SupportCardinalityClass::SingularGap.support_magnitude_direction(),
+            SupportMagnitudeDirection::High,
+        );
+        assert_eq!(
+            SupportCardinalityClass::FullCover.support_magnitude_direction(),
+            SupportMagnitudeDirection::High,
+        );
+    }
+
+    #[test]
+    fn support_cardinality_class_support_magnitude_direction_pointwise_matches_leg_predicates() {
+        // Bucket-predicate bridge laws: for every variant the typed-
+        // bucket projection's three predicates agree pointwise with
+        // the class-side leg predicates on the same scalar. Mirror of
+        // `support_cardinality_class_support_boundary_distance_pointwise_matches_leg_predicates`
+        // on the orthogonal ternary.
+        for &class in SupportCardinalityClass::ALL {
+            let bucket = class.support_magnitude_direction();
+            assert_eq!(
+                bucket.is_low(),
+                class.is_low_support(),
+                "support_magnitude_direction().is_low must equal \
+                 is_low_support on class {class:?}",
+            );
+            assert_eq!(
+                bucket.is_strict_interior(),
+                class.is_strict_partial_cover(),
+                "support_magnitude_direction().is_strict_interior must equal \
+                 is_strict_partial_cover on class {class:?}",
+            );
+            assert_eq!(
+                bucket.is_high(),
+                class.is_high_support(),
+                "support_magnitude_direction().is_high must equal \
+                 is_high_support on class {class:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn support_cardinality_class_support_magnitude_direction_strict_interior_leg_matches_support_boundary_distance_strict_interior_leg()
+     {
+        // Cross-classifier shared-middle-leg law: the two orthogonal
+        // typed-bucket projections of the support-cardinality scalar
+        // agree on the strict-interior middle leg pointwise across
+        // every class variant. Pins that the shared middle leg is
+        // exactly the `StrictPartialCover` single-variant peer on both
+        // typed-bucket surfaces.
+        for &class in SupportCardinalityClass::ALL {
+            assert_eq!(
+                class.support_magnitude_direction().is_strict_interior(),
+                class.support_boundary_distance().is_strict_interior(),
+                "the two typed-bucket projections must agree on the \
+                 strict-interior middle leg on class {class:?}",
+            );
+        }
+    }
+
+    fn assert_support_magnitude_direction_agrees_with_class_projection<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Histogram-side projection definitional law:
+        // hist.support_magnitude_direction() ==
+        // hist.support_cardinality_class().support_magnitude_direction()
+        // for every canonical shape. The histogram-side projection
+        // routes through the existing class-side variant-tag
+        // projection by construction — the two paths must agree.
+        let check = |hist: &AxisHistogram<A>, label: &str| {
+            assert_eq!(
+                hist.support_magnitude_direction(),
+                hist.support_cardinality_class()
+                    .support_magnitude_direction(),
+                "support_magnitude_direction must equal \
+                 support_cardinality_class().support_magnitude_direction() on {label} \
+                 for axis {}",
+                std::any::type_name::<A>(),
+            );
+        };
+
+        check(&AxisHistogram::<A>::empty(), "empty");
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            let label = format!("singleton {observed:?}");
+            check(&singleton, &label);
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        check(&cover, "axis-cover");
+    }
+
+    fn assert_support_magnitude_direction_is_low_agrees_with_has_low_support<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Bucket-predicate bridge (low leg):
+        // hist.support_magnitude_direction().is_low() ==
+        // hist.has_low_support() pointwise. Composes the class-side
+        // bridge `has_low_support == support_cardinality_class().is_low_support()`
+        // (pinned by
+        // `axis_histogram_has_low_support_agrees_with_class_is_low_support_for_every_closed_axis_implementor`)
+        // with the class-side bucket-predicate law
+        // `support_magnitude_direction().is_low() == is_low_support`
+        // on `SupportCardinalityClass` (pinned by
+        // `support_cardinality_class_support_magnitude_direction_pointwise_matches_leg_predicates`).
+        let check = |hist: &AxisHistogram<A>, label: &str| {
+            assert_eq!(
+                hist.support_magnitude_direction().is_low(),
+                hist.has_low_support(),
+                "support_magnitude_direction().is_low must equal has_low_support on \
+                 {label} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        };
+
+        check(&AxisHistogram::<A>::empty(), "empty");
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            let label = format!("singleton {observed:?}");
+            check(&singleton, &label);
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        check(&cover, "axis-cover");
+    }
+
+    fn assert_support_magnitude_direction_is_strict_interior_agrees_with_has_strict_partial_cover<
+        A,
+    >()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Bucket-predicate bridge (strict-interior leg, the leg shared
+        // with `support_boundary_distance`): on every canonical shape,
+        // both typed-bucket projections agree on the strict-interior
+        // bucket and equal the histogram-side `has_strict_partial_cover`
+        // predicate. Mirror peer of the
+        // `support_boundary_distance().is_strict_interior() ==
+        // has_strict_partial_cover()` bridge on the sibling typed-
+        // bucket classifier.
+        let check = |hist: &AxisHistogram<A>, label: &str| {
+            assert_eq!(
+                hist.support_magnitude_direction().is_strict_interior(),
+                hist.has_strict_partial_cover(),
+                "support_magnitude_direction().is_strict_interior must equal \
+                 has_strict_partial_cover on {label} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        };
+
+        check(&AxisHistogram::<A>::empty(), "empty");
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            let label = format!("singleton {observed:?}");
+            check(&singleton, &label);
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        check(&cover, "axis-cover");
+    }
+
+    fn assert_support_magnitude_direction_is_high_agrees_with_has_high_support<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Bucket-predicate bridge (high leg):
+        // hist.support_magnitude_direction().is_high() ==
+        // hist.has_high_support() pointwise. The bridge holds across
+        // cardinality-2 axes by the same dual-singular collapse
+        // routing already pinned for `has_high_support` against
+        // `support_cardinality_class().is_high_support()` (the
+        // `!has_singular_support()` clause excises the collapse on the
+        // histogram side; the class-side projection's bottom-boundary-
+        // first priority lands the cardinality-2 singleton on
+        // `SingularSupport` where `is_high_support` reads `false`).
+        let check = |hist: &AxisHistogram<A>, label: &str| {
+            assert_eq!(
+                hist.support_magnitude_direction().is_high(),
+                hist.has_high_support(),
+                "support_magnitude_direction().is_high must equal has_high_support on \
+                 {label} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        };
+
+        check(&AxisHistogram::<A>::empty(), "empty");
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            let label = format!("singleton {observed:?}");
+            check(&singleton, &label);
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        check(&cover, "axis-cover");
+    }
+
+    fn assert_support_magnitude_direction_strict_interior_leg_matches_support_boundary_distance_strict_interior_leg<
+        A,
+    >()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Cross-classifier shared-middle-leg law on the histogram
+        // surface: the two orthogonal typed-bucket projections agree
+        // on the strict-interior middle leg pointwise on every
+        // canonical shape. The histogram-side peer of the class-side
+        // shared-middle-leg law pinned by
+        // `support_cardinality_class_support_magnitude_direction_strict_interior_leg_matches_support_boundary_distance_strict_interior_leg`.
+        let check = |hist: &AxisHistogram<A>, label: &str| {
+            assert_eq!(
+                hist.support_magnitude_direction().is_strict_interior(),
+                hist.support_boundary_distance().is_strict_interior(),
+                "the two histogram-side typed-bucket projections must \
+                 agree on the strict-interior middle leg on {label} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        };
+
+        check(&AxisHistogram::<A>::empty(), "empty");
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            let label = format!("singleton {observed:?}");
+            check(&singleton, &label);
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        check(&cover, "axis-cover");
+    }
+
+    #[test]
+    fn axis_histogram_support_magnitude_direction_agrees_with_class_projection_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_magnitude_direction_agrees_with_class_projection::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_support_magnitude_direction_is_low_agrees_with_has_low_support_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_magnitude_direction_is_low_agrees_with_has_low_support::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_support_magnitude_direction_is_strict_interior_agrees_with_has_strict_partial_cover_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_magnitude_direction_is_strict_interior_agrees_with_has_strict_partial_cover::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_support_magnitude_direction_is_high_agrees_with_has_high_support_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_magnitude_direction_is_high_agrees_with_has_high_support::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_support_magnitude_direction_strict_interior_leg_matches_support_boundary_distance_strict_interior_leg_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_support_magnitude_direction_strict_interior_leg_matches_support_boundary_distance_strict_interior_leg::<$ty>();
             };
         }
         for_each_closed_axis_implementor!(check);
