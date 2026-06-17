@@ -383,14 +383,20 @@ impl<A: ClosedAxis> Default for AxisHistogram<A> {
 /// as a [`std::collections::HashMap`] key for per-classifier-corner
 /// rollup counters, e.g. a fleet-wide
 /// `HashMap<ModalityClass, usize>` tallying how many reload windows
-/// landed in each classifier corner), and `Debug` (operator-facing
-/// summary line emission). It is *not* a [`ClosedAxis`] itself — that
-/// would imply an [`AxisHistogram<ModalityClass>`] surface, which is
-/// well-typed but semantically inverted (counting how many histograms
-/// land in each class is a meta-observation, not a substrate
-/// observation); the [`ClosedAxis`] trait stays gated on substrate-
-/// observation axes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// landed in each classifier corner), [`Ord`] + [`PartialOrd`] (usable
+/// as a [`std::collections::BTreeMap`] key for deterministic
+/// classifier-corner rollup emission — declaration-order total order
+/// matches [`Self::ALL`] position pointwise, pinned by
+/// [`tests::modality_class_ord_matches_all_declaration_order`]; the
+/// idiom-peer of the same [`Ord`] + [`PartialOrd`] derive on
+/// [`SupportBoundaryDistance`] and [`SupportMagnitudeDirection`]), and
+/// `Debug` (operator-facing summary line emission). It is *not* a
+/// [`ClosedAxis`] itself — that would imply an
+/// [`AxisHistogram<ModalityClass>`] surface, which is well-typed but
+/// semantically inverted (counting how many histograms land in each
+/// class is a meta-observation, not a substrate observation); the
+/// [`ClosedAxis`] trait stays gated on substrate-observation axes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum ModalityClass {
     /// The **empty-histogram boundary** — `modality_degree() == (0, 0)`.
     ///
@@ -1095,12 +1101,22 @@ impl<'de> serde::Deserialize<'de> for ModalityClass {
 /// as a [`std::collections::HashMap`] key for per-corner rollup
 /// counters, e.g. a fleet-wide
 /// `HashMap<SupportCardinalityClass, usize>` tallying how many
-/// reload windows landed in each support-cardinality corner), and
+/// reload windows landed in each support-cardinality corner),
+/// [`Ord`] + [`PartialOrd`] (usable as a
+/// [`std::collections::BTreeMap`] key for deterministic per-corner
+/// rollup emission — the declaration-order total order is monotone in
+/// `distinct_cells()` over the five corners
+/// (`Empty` < `SingularSupport` < `StrictPartialCover` <
+/// `SingularGap` < `FullCover`) and matches [`Self::ALL`] position
+/// pointwise, pinned by
+/// [`tests::support_cardinality_class_ord_matches_all_declaration_order`];
+/// the idiom-peer of the same [`Ord`] + [`PartialOrd`] derive on
+/// [`SupportBoundaryDistance`] and [`SupportMagnitudeDirection`]), and
 /// [`Debug`] (operator-facing summary line emission). Like
 /// [`ModalityClass`], it is *not* a [`ClosedAxis`] itself — the
 /// substrate-observation invariant gates [`ClosedAxis`] on
 /// substrate-observation axes only.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum SupportCardinalityClass {
     /// **No observed cells** — `distinct_cells() == 0`. The
     /// empty-histogram boundary. Lifts [`AxisHistogram::is_empty`]
@@ -37071,5 +37087,64 @@ mod tests {
             };
         }
         for_each_closed_axis_implementor!(check);
+    }
+
+    // ---- Typed-classifier Ord-matches-ALL-declaration-order discipline ----
+    //
+    // The four typed classifiers on the [`AxisHistogram`] surface
+    // ([`ModalityClass`], [`SupportCardinalityClass`],
+    // [`SupportBoundaryDistance`], [`SupportMagnitudeDirection`]) all
+    // carry `#[derive(Ord, PartialOrd)]`. The derive lowers the total
+    // order to lexicographic comparison of the variant discriminants,
+    // which for a fieldless `pub enum` matches declaration order
+    // pointwise — the same order their `Self::ALL` slices enumerate.
+    // The assertion is implicit in the derive's semantics; the pin
+    // names it explicitly so a future contributor reordering variants
+    // (silently flipping the `Ord` surface that downstream
+    // `BTreeMap<Classifier, T>` keys observe) is caught at the
+    // typed-classifier level rather than at a downstream rollup
+    // dashboard.
+    //
+    // Idiom-peer of the
+    // `support_*_all_entries_are_pairwise_distinct` pins above on the
+    // same four typed classifiers — the `Eq` pairwise-distinct
+    // invariant is the [`PartialEq`] analog of this [`Ord`]
+    // strict-monotone invariant; both flow from the same
+    // `ALL`-enumerates-every-variant-once discipline.
+    fn assert_ord_matches_all_declaration_order<T>(all: &[T])
+    where
+        T: Ord + Copy + std::fmt::Debug,
+    {
+        // Every adjacent pair is strictly ordered, which by transitivity
+        // pins the full strict-monotone chain over `ALL`.
+        for window in all.windows(2) {
+            assert!(
+                window[0] < window[1],
+                "ALL must be strictly increasing under Ord: \
+                 got {:?} >= {:?} at adjacent positions",
+                window[0],
+                window[1],
+            );
+        }
+    }
+
+    #[test]
+    fn modality_class_ord_matches_all_declaration_order() {
+        assert_ord_matches_all_declaration_order(ModalityClass::ALL);
+    }
+
+    #[test]
+    fn support_cardinality_class_ord_matches_all_declaration_order() {
+        assert_ord_matches_all_declaration_order(SupportCardinalityClass::ALL);
+    }
+
+    #[test]
+    fn support_boundary_distance_ord_matches_all_declaration_order() {
+        assert_ord_matches_all_declaration_order(SupportBoundaryDistance::ALL);
+    }
+
+    #[test]
+    fn support_magnitude_direction_ord_matches_all_declaration_order() {
+        assert_ord_matches_all_declaration_order(SupportMagnitudeDirection::ALL);
     }
 }
