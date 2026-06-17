@@ -10877,8 +10877,25 @@ pub fn unrealizable_at<C: ProductCube>(ordinal: usize) -> Option<C> {
 /// face-keyed dashboard row iterates the two faces uniformly through
 /// [`axis_iter::<PartitionFace>()`][axis_iter] rather than re-deriving
 /// `[Realizable, Unrealizable]` inline at every renderer.
+///
+/// **Stdlib idiom quintet.** Carries the `(Display, FromStr, Serialize,
+/// Deserialize)` quartet rooted on the `(as_str, from_canonical_str)`
+/// canonical-name pair, plus [`Ord`] + [`PartialOrd`] in
+/// declaration-order (`Realizable < Unrealizable`). Idiom-peer of the
+/// same quintet on the four typed-class / typed-bucket cube classifiers
+/// ([`ModalityClass`], [`SupportCardinalityClass`],
+/// [`SupportBoundaryDistance`], [`SupportMagnitudeDirection`]) — each of
+/// which carries `(Display, FromStr, Serialize, Deserialize, Ord,
+/// PartialOrd)` rooted on its own `(as_str, from_canonical_str)` pair.
+/// A face emitted into a YAML attestation manifest, a JSON observability
+/// payload, or a structured-log scalar field serializes natively through
+/// the serde impls — no consumer-side fallback to
+/// `axis_label::<PartitionFace>(face)` at the renderer. A
+/// `BTreeMap<PartitionFace, T>` rollup keyed on the face axis emits in
+/// declaration order (`Realizable` first) under the [`Ord`] derive
+/// without naming a comparator.
 #[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum PartitionFace {
     /// The cube's recognized-image realizable surface — cells some
     /// typescape value occupies. Matches
@@ -10935,6 +10952,160 @@ impl PartitionFace {
             Self::Realizable => "realizable",
             Self::Unrealizable => "unrealizable",
         }
+    }
+}
+
+impl std::fmt::Display for PartitionFace {
+    /// Operator-facing rendering of the face tag — delegates to
+    /// [`PartitionFace::as_str`] pointwise.
+    ///
+    /// Closes the canonical Rust stdlib (`Debug`, `Display`) duality
+    /// every stdlib-style closed enum carries: where `Debug` (derived
+    /// above) renders the Rust identifier (`Realizable` /
+    /// `Unrealizable`), `Display` renders the canonical operator-facing
+    /// label (`realizable` / `unrealizable`). Idiom-peer of the same
+    /// `Display` impl on the four typed-cube-classifier surfaces
+    /// ([`ModalityClass`], [`SupportCardinalityClass`],
+    /// [`SupportBoundaryDistance`], [`SupportMagnitudeDirection`]).
+    ///
+    /// **Round-trip with [`FromStr`][std::str::FromStr]** —
+    /// `v.to_string().parse::<PartitionFace>().unwrap() == v` for every
+    /// `v: PartitionFace`. Pinned by
+    /// [`tests::partition_face_from_str_round_trips_through_display`].
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Typed parse failure of [`<PartitionFace as
+/// std::str::FromStr>::from_str`] — the offending input was not a
+/// canonical name on the [`PartitionFace`] surface.
+///
+/// The two-variant face axis carries a small closed label set
+/// (`"realizable"`, `"unrealizable"`), so the parser's single rejection
+/// mode is "input did not match any canonical name". This struct
+/// carries the offending substring verbatim in the `label` field so a
+/// downstream consumer can localize the failure to the surrounding
+/// context (a YAML attestation manifest field, a structured-log
+/// face-keyed scalar, a CLI argument).
+///
+/// `#[non_exhaustive]` so a future stricter parse rule (e.g. an
+/// `EmptyInput` distinguished from `UnknownLabel`) lands as a new
+/// variant without a SemVer-major bump. Idiom-peer of
+/// [`ParseModalityClassError`], [`ParseSupportCardinalityClassError`],
+/// [`ParseSupportBoundaryDistanceError`], and
+/// [`ParseSupportMagnitudeDirectionError`] on the four
+/// typed-cube-classifier surfaces.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ParsePartitionFaceError {
+    /// The offending input substring, verbatim.
+    pub label: String,
+}
+
+impl std::fmt::Display for ParsePartitionFaceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "unknown partition face label {:?}", self.label)
+    }
+}
+
+impl std::error::Error for ParsePartitionFaceError {}
+
+impl std::str::FromStr for PartitionFace {
+    type Err = ParsePartitionFaceError;
+
+    /// Parse the face tag from the canonical lowercase label
+    /// [`PartitionFace::as_str`] emits — the canonical Rust stdlib
+    /// [`FromStr`][std::str::FromStr] idiom-peer of the
+    /// [`Display`][std::fmt::Display] impl. Delegates to
+    /// [`<Self as ClosedAxisLabel>::from_canonical_str`] for the
+    /// case-insensitive lookup, lifting the [`Option<Self>`] failure
+    /// to a typed [`ParsePartitionFaceError`] so the
+    /// [`std::error::Error`] bound is satisfied at consumer sites
+    /// requiring `Result<_, Box<dyn Error>>` (`eyre::Result<_>`,
+    /// structured-log error fields, deserialization error chaining).
+    ///
+    /// **Round-trip law** —
+    /// `v.to_string().parse::<PartitionFace>().unwrap() == v` for every
+    /// `v: PartitionFace`. Pinned by
+    /// [`tests::partition_face_from_str_round_trips_through_display`].
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        <Self as ClosedAxisLabel>::from_canonical_str(s).ok_or_else(|| ParsePartitionFaceError {
+            label: s.to_owned(),
+        })
+    }
+}
+
+impl serde::Serialize for PartitionFace {
+    /// Serialize the face tag as the canonical operator-facing
+    /// lowercase label [`Self::as_str`] emits — the same scalar the
+    /// [`Display`][std::fmt::Display] impl writes. Routes through
+    /// [`serde::Serializer::collect_str`] so the serialized
+    /// representation is exactly `format!("{self}")` with no
+    /// intermediate allocation.
+    ///
+    /// Closes the canonical (`Serialize`, `Deserialize`) serde
+    /// idiom-peer of the (`Display`, `FromStr`) stdlib pair on the
+    /// face-tag surface — idiom-peer of the same lift on the four
+    /// typed-cube-classifier surfaces. A face emitted into a YAML
+    /// attestation manifest field, a JSON observability payload, or
+    /// any consumer struct holding a `PartitionFace` field under
+    /// `#[derive(Serialize, Deserialize)]` round-trips through the
+    /// canonical label without a consumer-side rename helper.
+    ///
+    /// **Round-trip law** — for every `v: PartitionFace`,
+    /// `serde_yaml::from_str::<PartitionFace>(&serde_yaml::to_string(&v)?)? == v`
+    /// and the same on `serde_json`. Pinned by
+    /// [`tests::partition_face_serde_yaml_round_trips_over_every_variant`]
+    /// and the `serde_json` peer test.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for PartitionFace {
+    /// Deserialize the face tag from the canonical operator-facing
+    /// lowercase label [`Self::as_str`] emits via
+    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
+    /// `visit_str` lowers to [`<Self as std::str::FromStr>::from_str`]
+    /// and routes any [`ParsePartitionFaceError`] through
+    /// [`serde::de::Error::custom`].
+    ///
+    /// **Case insensitivity inherits from [`FromStr`]** — an
+    /// operator-authored manifest field carrying the uppercase or
+    /// mixed-case form of a canonical label parses on the serde side
+    /// without a per-emitter case-fold, because the deserialize path
+    /// lowers through [`ClosedAxisLabel::from_canonical_str`] which
+    /// compares via [`str::eq_ignore_ascii_case`]. Pinned by
+    /// [`tests::partition_face_serde_yaml_is_case_insensitive`].
+    ///
+    /// **Unknown-label rejection carries the offending label
+    /// verbatim** — a manifest field carrying an unknown face name
+    /// surfaces at the serde error site with the offending substring
+    /// verbatim in the rendered message, lifted through
+    /// [`ParsePartitionFaceError::label`] and the typed
+    /// [`Display`][std::fmt::Display] impl on the parse error. Pinned
+    /// by
+    /// [`tests::partition_face_serde_yaml_unknown_label_error_carries_label_verbatim`].
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct PartitionFaceVisitor;
+
+        impl serde::de::Visitor<'_> for PartitionFaceVisitor {
+            type Value = PartitionFace;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(
+                    "a canonical PartitionFace lowercase label \
+                     (`realizable`, `unrealizable`)",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                v.parse::<PartitionFace>().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(PartitionFaceVisitor)
     }
 }
 
@@ -13921,6 +14092,167 @@ mod tests {
         // round-trip law.
         assert_eq!(PartitionFace::Realizable.as_str(), "realizable");
         assert_eq!(PartitionFace::Unrealizable.as_str(), "unrealizable");
+    }
+
+    #[test]
+    fn partition_face_display_matches_as_str_for_every_variant() {
+        // Display delegates to as_str pointwise — closes the canonical
+        // (Debug, Display) duality on the face-tag surface. Idiom-peer
+        // of the same pin on the four typed-cube classifiers.
+        for &v in PartitionFace::ALL {
+            assert_eq!(
+                format!("{v}"),
+                v.as_str(),
+                "Display must equal as_str for {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_face_from_str_round_trips_through_display() {
+        // Display / FromStr round-trip identity over every variant —
+        // the canonical stdlib stable-string pair on the face axis.
+        for &v in PartitionFace::ALL {
+            let rendered = v.to_string();
+            let parsed: PartitionFace = rendered.parse().unwrap();
+            assert_eq!(parsed, v, "Display / FromStr round-trip for {v:?}");
+        }
+    }
+
+    #[test]
+    fn partition_face_from_str_is_case_insensitive() {
+        // Uppercase canonical labels parse back to the same face via
+        // the case-insensitive ClosedAxisLabel::from_canonical_str
+        // route the FromStr impl delegates through.
+        for &v in PartitionFace::ALL {
+            let parsed: PartitionFace = v
+                .as_str()
+                .to_ascii_uppercase()
+                .parse()
+                .unwrap_or_else(|e| panic!("uppercase parse for {v:?} failed: {e}"));
+            assert_eq!(parsed, v, "case-insensitive parse must recover {v:?}");
+        }
+    }
+
+    #[test]
+    fn partition_face_from_str_rejects_unknown_label_with_label_verbatim() {
+        // Unknown labels surface verbatim through both
+        // ParsePartitionFaceError::label and the typed Display impl —
+        // the operator-facing error message names the offending input.
+        let sentinel = "__shikumi_unknown_partition_face_sentinel__";
+        match sentinel.parse::<PartitionFace>() {
+            Err(e) => {
+                assert_eq!(e.label, sentinel);
+                let rendered = format!("{e}");
+                assert!(
+                    rendered.contains(sentinel),
+                    "Display impl must carry the unknown sentinel verbatim, got: {rendered}",
+                );
+            }
+            Ok(other) => panic!("unknown label must reject, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn partition_face_from_str_rejects_empty_string() {
+        // The empty string is not a canonical face label.
+        assert!("".parse::<PartitionFace>().is_err());
+    }
+
+    #[test]
+    fn partition_face_serde_yaml_round_trips_over_every_variant() {
+        // Serialize then deserialize on every variant — the typed face
+        // tag survives the YAML scalar round-trip via the canonical
+        // label, no consumer-side rename helper at the renderer.
+        for &v in PartitionFace::ALL {
+            let yaml = serde_yaml::to_string(&v).unwrap();
+            let parsed: PartitionFace = serde_yaml::from_str(&yaml)
+                .unwrap_or_else(|e| panic!("YAML round-trip for {v:?} failed: {e}"));
+            assert_eq!(
+                parsed, v,
+                "serde YAML round-trip must be identity for {v:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn partition_face_serde_json_round_trips_over_every_variant() {
+        // JSON emission is the quoted canonical label; the round-trip
+        // is identity over every variant. Pins the natural projection
+        // an observability payload reaches when carrying a PartitionFace
+        // field through #[derive(Serialize, Deserialize)].
+        for &v in PartitionFace::ALL {
+            let json = serde_json::to_string(&v).unwrap();
+            assert_eq!(
+                json,
+                format!("\"{}\"", v.as_str()),
+                "JSON emission for {v:?} must be the quoted canonical label",
+            );
+            let parsed: PartitionFace = serde_json::from_str(&json).unwrap_or_else(|e| {
+                panic!("JSON round-trip for {v:?} failed: {e}\n  json: {json}")
+            });
+            assert_eq!(
+                parsed, v,
+                "serde JSON round-trip must be identity for {v:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn partition_face_serde_yaml_is_case_insensitive() {
+        // Uppercase YAML scalars parse back to the same face via the
+        // case-insensitive deserialize path lowering through FromStr.
+        for &v in PartitionFace::ALL {
+            let upper = v.as_str().to_ascii_uppercase();
+            let yaml = format!("\"{upper}\"\n");
+            let parsed: PartitionFace = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+                panic!("uppercase YAML scalar for {v:?} must deserialize: {e}\n  yaml: {yaml:?}")
+            });
+            assert_eq!(parsed, v);
+        }
+    }
+
+    #[test]
+    fn partition_face_serde_yaml_unknown_label_error_carries_label_verbatim() {
+        // The deserialize error surface carries the offending label
+        // verbatim through the typed parse error's Display impl,
+        // routed via serde::de::Error::custom.
+        let sentinel = "__shikumi_unknown_partition_face_sentinel__";
+        let yaml = format!("\"{sentinel}\"\n");
+        let result: Result<PartitionFace, _> = serde_yaml::from_str(&yaml);
+        match result {
+            Err(e) => {
+                let rendered = format!("{e}");
+                assert!(
+                    rendered.contains(sentinel),
+                    "serde YAML error must carry the unknown sentinel verbatim, got: {rendered}",
+                );
+            }
+            Ok(other) => panic!("YAML carrying unknown label must reject, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn partition_face_ord_matches_declaration_order() {
+        // Realizable < Unrealizable under the derived Ord — the
+        // declaration-order total order is monotone in the
+        // PartitionFace::ALL position. A BTreeMap<PartitionFace, T>
+        // keyed on the face axis emits rows in this order
+        // deterministically; pinned here so a silent variant reorder
+        // (which would invert the rollup order on every consumer) fails
+        // this assertion first. Idiom-peer of the four
+        // `*_class_ord_matches_all_declaration_order` pins on the
+        // typed-cube classifiers.
+        assert!(PartitionFace::Realizable < PartitionFace::Unrealizable);
+        for window in PartitionFace::ALL.windows(2) {
+            assert!(
+                window[0] < window[1],
+                "Ord must be strictly monotone in PartitionFace::ALL position: \
+                 {:?} < {:?} failed",
+                window[0],
+                window[1],
+            );
+        }
     }
 
     // ---- axis_label / axis_from_label — free-fn mirrors of the
