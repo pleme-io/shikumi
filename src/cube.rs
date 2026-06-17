@@ -11148,7 +11148,42 @@ impl ClosedAxisLabel for PartitionFace {
 /// `impl ProductCube` declaration without re-deriving the
 /// `if is_realizable(cell) { Realizable(...) } else { Unrealizable(...) }`
 /// branch at every call site.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// **Trait surface** — alongside the canonical
+/// `Debug + Clone + Copy + PartialEq + Eq + Hash` set, the derive
+/// also includes [`Ord`] + [`PartialOrd`], lifting the
+/// declaration-order total order on [`PartitionFace`] (`Realizable <
+/// Unrealizable`, pinned by
+/// [`tests::partition_face_ord_matches_declaration_order`]) and the
+/// numeric total order on the inner dense ordinal into one
+/// lexicographic total order on the full disjoint-union encoding.
+/// Rust's derived [`Ord`] on a tuple-variant enum compares the
+/// variant tag first (so every `Realizable(_)` lands strictly less
+/// than every `Unrealizable(_)`, regardless of the inner ordinal)
+/// and falls through to the inner-`usize` comparison on matching
+/// variants — face-major, inner-ordinal-minor. This matches
+/// `a.face().cmp(&b.face()).then(a.face_ordinal().cmp(&b.face_ordinal()))`
+/// pointwise, pinned by
+/// [`tests::partition_ordinal_ord_matches_face_then_face_ordinal`],
+/// closing the canonical lexicographic-on-`(face, face_ordinal)`
+/// reading of the typed-partition surface.
+///
+/// **Consumers** — a
+/// `BTreeMap<PartitionOrdinal, MetricRollup>` keyed on the typed
+/// cell address now emits rows in face-major, dense-ordinal-minor
+/// order deterministically across releases (every realizable cell
+/// before every unrealizable cell, each face traversed in
+/// `realizable_at` / `unrealizable_at` dense-prefix order),
+/// matching the canonical realizable-then-unrealizable rendering
+/// the rest of the cube surfaces emit through
+/// `realizable_iter().chain(unrealizable_iter())`. A
+/// `Vec<PartitionOrdinal>` `.sort()`-ed for stable JSON / YAML
+/// emission lands at the same order without naming a comparator —
+/// idiom-peer of the same [`Ord`] derive on [`PartitionFace`] and on
+/// the four typed-cube-classifier surfaces ([`ModalityClass`],
+/// [`SupportCardinalityClass`], [`SupportBoundaryDistance`],
+/// [`SupportMagnitudeDirection`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum PartitionOrdinal {
     /// Cell sits on the recognized-image realizable surface; carries
     /// the dense ordinal in the prefix `0..realizable_count::<C>()`.
@@ -13410,6 +13445,100 @@ mod tests {
             at_partition_ordinal::<FormatCoordinates>(PartitionOrdinal::Unrealizable(3)),
             Some(nix_figment),
         );
+    }
+
+    #[test]
+    fn partition_ordinal_ord_matches_face_then_face_ordinal() {
+        // The derived Ord on PartitionOrdinal is lexicographic on
+        // (face, face_ordinal): Rust compares the variant tag first (so
+        // every Realizable(_) is strictly less than every Unrealizable(_)
+        // regardless of inner ordinal) and falls through to the inner
+        // usize on matching variants. Three legs pin this:
+        //
+        //   (a) Within-face monotonicity — Realizable(i) < Realizable(j)
+        //       iff i < j; dually for Unrealizable. Each face's dense
+        //       prefix sorts ascending under the derived Ord.
+        //   (b) Cross-face dominance — every Realizable(_) lands strictly
+        //       less than every Unrealizable(_), regardless of how the
+        //       inner ordinals compare. The Realizable-then-Unrealizable
+        //       block layout the rest of the cube surfaces emit through
+        //       `realizable_iter().chain(unrealizable_iter())` matches the
+        //       Ord block layout pointwise.
+        //   (c) Lexicographic agreement with the (face, face_ordinal)
+        //       projection — `a.cmp(&b) ==
+        //       a.face().cmp(&b.face()).then(a.face_ordinal().cmp(
+        //       &b.face_ordinal()))` over a representative sample
+        //       crossing both faces. Pins the closed-form reading of the
+        //       derive: PartitionOrdinal::Ord IS the lexicographic order
+        //       on (PartitionFace::Ord, usize::Ord), no hidden tiebreak.
+        //
+        // A silent variant reorder on PartitionOrdinal (which would
+        // invert the cross-face dominance and break every BTreeMap<
+        // PartitionOrdinal, T> rollup's emission order downstream)
+        // fails leg (b) first. A future addition of a hidden tiebreak
+        // field on either variant (which would break the lexicographic
+        // reading and surprise consumers reading the derive as
+        // (face, face_ordinal) lex) fails leg (c) first. Idiom-peer of
+        // `partition_face_ord_matches_declaration_order` on the
+        // variant-tag projection and the four
+        // `*_class_ord_matches_all_declaration_order` pins on the
+        // typed-cube classifiers.
+        use std::cmp::Ordering;
+        let sample = [
+            PartitionOrdinal::Realizable(0),
+            PartitionOrdinal::Realizable(1),
+            PartitionOrdinal::Realizable(usize::MAX),
+            PartitionOrdinal::Unrealizable(0),
+            PartitionOrdinal::Unrealizable(1),
+            PartitionOrdinal::Unrealizable(usize::MAX),
+        ];
+
+        // Leg (a) — within-face monotonicity on each face.
+        assert!(PartitionOrdinal::Realizable(0) < PartitionOrdinal::Realizable(1));
+        assert!(PartitionOrdinal::Realizable(1) < PartitionOrdinal::Realizable(usize::MAX));
+        assert!(PartitionOrdinal::Unrealizable(0) < PartitionOrdinal::Unrealizable(1));
+        assert!(PartitionOrdinal::Unrealizable(1) < PartitionOrdinal::Unrealizable(usize::MAX));
+
+        // Leg (b) — cross-face dominance, including the adversarial
+        // case where the Realizable side carries the largest possible
+        // inner ordinal and the Unrealizable side carries the smallest.
+        // The variant tag dominates the inner ordinal pointwise.
+        assert!(PartitionOrdinal::Realizable(usize::MAX) < PartitionOrdinal::Unrealizable(0));
+        assert!(PartitionOrdinal::Realizable(0) < PartitionOrdinal::Unrealizable(0));
+        assert!(PartitionOrdinal::Realizable(0) < PartitionOrdinal::Unrealizable(usize::MAX));
+
+        // Leg (c) — lexicographic agreement with `(face, face_ordinal)`
+        // over every ordered pair in the sample. Covers the within-face
+        // Equal/Less/Greater and the cross-face Less/Greater modes at
+        // one site.
+        for a in sample {
+            for b in sample {
+                let lex = a
+                    .face()
+                    .cmp(&b.face())
+                    .then(a.face_ordinal().cmp(&b.face_ordinal()));
+                assert_eq!(
+                    a.cmp(&b),
+                    lex,
+                    "PartitionOrdinal Ord must equal (face, face_ordinal) lex: \
+                     {a:?} vs {b:?} got {:?} expected {lex:?}",
+                    a.cmp(&b),
+                );
+                // Reflexivity sanity check on the diagonal.
+                if a == b {
+                    assert_eq!(a.cmp(&b), Ordering::Equal);
+                }
+            }
+        }
+
+        // Block-layout cross-check — sorting the sample under the
+        // derived Ord yields the canonical realizable-block-then-
+        // unrealizable-block sequence, each block in dense-ordinal
+        // order. Closes the BTreeMap<PartitionOrdinal, _> emission-
+        // order story the rustdoc on PartitionOrdinal states.
+        let mut sorted = sample;
+        sorted.sort();
+        assert_eq!(sorted, sample);
     }
 
     // ---- PartitionFace algebra and PartitionOrdinal projections ----
