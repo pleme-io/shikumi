@@ -435,7 +435,40 @@ impl Format {
 /// [`crate::FieldPathLocalization`]): closed, allocation-free,
 /// extensible without breaking exhaustivity at consumer matches when a
 /// future provider class lands.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// **Trait surface** — alongside the canonical
+/// `Debug + Clone + Copy + PartialEq + Eq + Hash` set, the derive also
+/// includes [`Ord`] + [`PartialOrd`]. The total order is the
+/// declaration-order lex over [`Self::ALL`]
+/// (`FigmentBuiltin < ShikumiBuilt`), so a
+/// [`BTreeMap<FormatProvenance, T>`][std::collections::BTreeMap] keyed
+/// on the provenance axis (per-provenance attribution histograms,
+/// per-provenance failure-rate dashboards, attestation manifests
+/// recording provenance-axis cardinality mixes) emits rows in
+/// declaration order deterministically without a hand-rolled
+/// comparator at the renderer. Idiom-peer of the [`Ord`] derive on
+/// [`Format`] (commit `b56b121`) and on the typed-cube classifiers
+/// ([`crate::ModalityClass`], [`crate::PartitionFace`], …); pinned by
+/// [`tests::format_provenance_ord_matches_all_declaration_order`].
+///
+/// **Serde surface** — [`serde::Serialize`] / [`serde::Deserialize`]
+/// are implemented manually as the canonical idiom-peer of the
+/// inherent [`Self::as_str`] / [`std::str::FromStr`] pair. Serialize
+/// emits the canonical kebab-case label [`Self::as_str`] returns
+/// (`"figment-builtin"` / `"shikumi-built"`); Deserialize lowers
+/// through [`<Self as std::str::FromStr>::from_str`], inheriting the
+/// trait-default case-insensitivity from
+/// [`crate::ClosedAxisLabel::from_canonical_str`]. An attestation
+/// manifest field recording which provider class loaded a config, a
+/// structured-log payload carrying the resolved provenance, or a
+/// consumer struct holding a [`FormatProvenance`] under
+/// `#[derive(Serialize, Deserialize)]` round-trips through the
+/// canonical label without a consumer-side rename helper. Pinned by
+/// [`tests::format_provenance_serde_yaml_round_trips_over_every_variant`],
+/// [`tests::format_provenance_serde_json_round_trips_over_every_variant`],
+/// [`tests::format_provenance_serde_yaml_is_case_insensitive`], and
+/// [`tests::format_provenance_serde_yaml_unknown_provenance_error_carries_label_verbatim`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[non_exhaustive]
 pub enum FormatProvenance {
     /// Loaded by one of figment's built-in providers
@@ -1110,6 +1143,102 @@ impl<'de> serde::Deserialize<'de> for Format {
         }
 
         deserializer.deserialize_str(FormatVisitor)
+    }
+}
+
+impl fmt::Display for FormatProvenance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for FormatProvenance {
+    type Err = ShikumiError;
+
+    /// Parse the canonical kebab-case label
+    /// (`"figment-builtin"` / `"shikumi-built"`)
+    /// produced by [`Self::as_str`]; case-insensitive over ASCII via
+    /// the trait-default
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] parse.
+    /// On unrecognized input, returns
+    /// [`ShikumiError::Parse`] with the offending label embedded
+    /// verbatim — matching the [`Format::FromStr`] surface so the same
+    /// localization story (the operator sees the offending substring
+    /// in the rendered diagnostic) carries to the provenance axis.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        <Self as crate::ClosedAxisLabel>::from_canonical_str(s)
+            .ok_or_else(|| ShikumiError::Parse(format!("unknown format provenance: {s}")))
+    }
+}
+
+impl serde::Serialize for FormatProvenance {
+    /// Serialize the provenance cell as the canonical operator-facing
+    /// kebab-case label [`Self::as_str`] returns — the same scalar the
+    /// [`fmt::Display`] impl writes. Routes through
+    /// [`serde::Serializer::collect_str`] so the serialized
+    /// representation is exactly `format!("{self}")` with no
+    /// intermediate allocation.
+    ///
+    /// Closes the canonical (`Serialize`, `Deserialize`) serde
+    /// idiom-peer of the (`Display`, [`std::str::FromStr`]) stdlib
+    /// pair on the provenance-axis surface. A provenance value
+    /// emitted into a YAML attestation manifest field, a JSON
+    /// observability payload, or any consumer struct holding a
+    /// [`FormatProvenance`] field under
+    /// `#[derive(Serialize, Deserialize)]` round-trips through the
+    /// canonical label without a consumer-side rename helper.
+    ///
+    /// **Round-trip law** — for every `p: FormatProvenance`,
+    /// `serde_yaml::from_str::<FormatProvenance>(&serde_yaml::to_string(&p)?)? == p`
+    /// and the same on `serde_json`. Pinned by
+    /// [`tests::format_provenance_serde_yaml_round_trips_over_every_variant`]
+    /// and
+    /// [`tests::format_provenance_serde_json_round_trips_over_every_variant`].
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for FormatProvenance {
+    /// Deserialize the provenance cell from the canonical
+    /// operator-facing kebab-case label [`Self::as_str`] returns via
+    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
+    /// `visit_str` lowers to [`<Self as std::str::FromStr>::from_str`]
+    /// and routes any [`ShikumiError`] through
+    /// [`serde::de::Error::custom`].
+    ///
+    /// **Case insensitivity inherits from [`std::str::FromStr`]** —
+    /// the [`crate::ClosedAxisLabel::from_canonical_str`] trait
+    /// default uses [`str::eq_ignore_ascii_case`] over [`Self::ALL`],
+    /// so uppercase or mixed-case scalars (e.g. `Figment-Builtin`,
+    /// `SHIKUMI-BUILT`) parse pointwise. Pinned by
+    /// [`tests::format_provenance_serde_yaml_is_case_insensitive`].
+    ///
+    /// **Unknown-provenance rejection carries the offending label
+    /// verbatim** — a manifest field carrying an unrecognized
+    /// provenance surfaces at the serde error site with the offending
+    /// substring verbatim in the rendered message, lifted through
+    /// [`ShikumiError::Parse`]'s `Display` impl. Pinned by
+    /// [`tests::format_provenance_serde_yaml_unknown_provenance_error_carries_label_verbatim`].
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct FormatProvenanceVisitor;
+
+        impl serde::de::Visitor<'_> for FormatProvenanceVisitor {
+            type Value = FormatProvenance;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(
+                    "a canonical FormatProvenance kebab-case label \
+                     (`figment-builtin`, `shikumi-built`; case-insensitive)",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<FormatProvenance, E> {
+                v.parse::<FormatProvenance>().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(FormatProvenanceVisitor)
     }
 }
 
@@ -4534,6 +4663,206 @@ mod tests {
         assert_eq!(
             <FormatProvenance as ClosedAxisLabel>::from_canonical_str("custom"),
             None,
+        );
+    }
+
+    // ---- FormatProvenance Display / FromStr / Ord / serde lift ----
+
+    #[test]
+    fn format_provenance_ord_matches_all_declaration_order() {
+        // FigmentBuiltin < ShikumiBuilt under the derived Ord — the
+        // declaration-order total order is monotone in
+        // FormatProvenance::ALL position. A BTreeMap<FormatProvenance,
+        // T> keyed on the provenance axis emits rows in this order
+        // deterministically; pinned here so a silent variant reorder
+        // (which would invert the rollup order on every consumer)
+        // fails this assertion first. Idiom-peer of the
+        // `format_ord_matches_all_declaration_order` pin on the
+        // Format axis (commit b56b121) and the
+        // `*_class_ord_matches_all_declaration_order` pins on the
+        // typed-cube classifiers.
+        assert!(FormatProvenance::FigmentBuiltin < FormatProvenance::ShikumiBuilt);
+        for window in FormatProvenance::ALL.windows(2) {
+            assert!(
+                window[0] < window[1],
+                "Ord must be strictly monotone in FormatProvenance::ALL position: \
+                 {:?} < {:?} failed",
+                window[0],
+                window[1],
+            );
+        }
+    }
+
+    #[test]
+    fn format_provenance_display_matches_as_str() {
+        // The Display impl delegates to `as_str` via `f.write_str`
+        // pointwise across the provenance space. Pinned so a future
+        // Display refactor (none today) cannot drift from the
+        // canonical label that the (Serialize, Deserialize) pair
+        // routes through.
+        for p in FormatProvenance::ALL.iter().copied() {
+            assert_eq!(
+                format!("{p}"),
+                p.as_str(),
+                "Display impl must equal as_str pointwise on {p:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_provenance_from_str_round_trips_over_every_variant() {
+        // The (Display, FromStr) stdlib pair on the provenance axis:
+        // each canonical kebab-case label parses back to its variant.
+        // Idiom-peer of the (Display, FromStr) round-trip on Format.
+        for p in FormatProvenance::ALL.iter().copied() {
+            let label = format!("{p}");
+            let parsed: FormatProvenance = label
+                .parse()
+                .unwrap_or_else(|e| panic!("FromStr round-trip for {p:?} failed: {e}"));
+            assert_eq!(parsed, p, "FromStr round-trip must be identity for {p:?}",);
+        }
+    }
+
+    #[test]
+    fn format_provenance_from_str_is_case_insensitive() {
+        // FromStr inherits ASCII case-insensitivity from the
+        // trait-default `from_canonical_str` parse (which uses
+        // `eq_ignore_ascii_case` over `FormatProvenance::ALL`). An
+        // operator-typed `FIGMENT-BUILTIN` env-override label reaches
+        // the same variant as the canonical lowercase form.
+        for p in FormatProvenance::ALL.iter().copied() {
+            let upper = p.as_str().to_ascii_uppercase();
+            let parsed: FormatProvenance = upper.parse().unwrap_or_else(|e| {
+                panic!("uppercase FromStr for {p:?} must parse: {e}\n  input: {upper:?}")
+            });
+            assert_eq!(parsed, p);
+        }
+    }
+
+    #[test]
+    fn format_provenance_from_str_unknown_carries_label_verbatim() {
+        // FromStr returns ShikumiError::Parse for unrecognized input,
+        // with the offending substring embedded verbatim in the
+        // rendered diagnostic. Mirror of the
+        // `format_serde_yaml_unknown_format_error_carries_label_verbatim`
+        // pin on Format; the operator localizes a typo without
+        // matching on the parse error variant.
+        let sentinel = "__shikumi_unknown_provenance_sentinel__";
+        let result: Result<FormatProvenance, _> = sentinel.parse();
+        match result {
+            Err(e) => {
+                let rendered = format!("{e}");
+                assert!(
+                    rendered.contains(sentinel),
+                    "FromStr error must carry the unknown sentinel verbatim, got: {rendered}",
+                );
+            }
+            Ok(other) => panic!("FromStr on unknown provenance must reject, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn format_provenance_serde_yaml_round_trips_over_every_variant() {
+        // Serialize then deserialize on every variant — the typed
+        // provenance cell survives the YAML scalar round-trip via the
+        // canonical kebab-case label, no consumer-side rename helper
+        // at the renderer. Closes the (Serialize, Deserialize)
+        // idiom-peer of the (Display, FromStr) round-trip on
+        // FormatProvenance, mirroring the same pin on Format.
+        for p in FormatProvenance::ALL.iter().copied() {
+            let yaml = serde_yaml::to_string(&p).unwrap();
+            let parsed: FormatProvenance = serde_yaml::from_str(&yaml)
+                .unwrap_or_else(|e| panic!("YAML round-trip for {p:?} failed: {e}"));
+            assert_eq!(
+                parsed, p,
+                "serde YAML round-trip must be identity for {p:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_provenance_serde_json_round_trips_over_every_variant() {
+        // JSON emission is the quoted canonical kebab-case label; the
+        // round-trip is identity over every variant. An attestation
+        // manifest emitting `{"loaded_by": "shikumi-built"}` lands at
+        // the wire shape without a rename helper.
+        for p in FormatProvenance::ALL.iter().copied() {
+            let json = serde_json::to_string(&p).unwrap();
+            assert_eq!(
+                json,
+                format!("\"{}\"", p.as_str()),
+                "JSON emission for {p:?} must be the quoted canonical label",
+            );
+            let parsed: FormatProvenance = serde_json::from_str(&json).unwrap_or_else(|e| {
+                panic!("JSON round-trip for {p:?} failed: {e}\n  json: {json}")
+            });
+            assert_eq!(
+                parsed, p,
+                "serde JSON round-trip must be identity for {p:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_provenance_serde_yaml_is_case_insensitive() {
+        // Uppercase YAML scalars parse back to the same provenance via
+        // the case-insensitive deserialize path lowering through
+        // FromStr (which lowers through the trait-default
+        // `from_canonical_str` applying `eq_ignore_ascii_case`).
+        for p in FormatProvenance::ALL.iter().copied() {
+            let upper = p.as_str().to_ascii_uppercase();
+            let yaml = format!("\"{upper}\"\n");
+            let parsed: FormatProvenance = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+                panic!("uppercase YAML scalar for {p:?} must deserialize: {e}\n  yaml: {yaml:?}",)
+            });
+            assert_eq!(parsed, p);
+        }
+    }
+
+    #[test]
+    fn format_provenance_serde_yaml_unknown_provenance_error_carries_label_verbatim() {
+        // The deserialize error surface carries the offending label
+        // verbatim through ShikumiError::Parse's Display impl, routed
+        // via serde::de::Error::custom. Idiom-peer of the same pin on
+        // the Format surface — a manifest field carrying
+        // `loaded_by: vault` rejects on the serde side with the
+        // offending substring named in the rendered diagnostic.
+        let sentinel = "__shikumi_unknown_provenance_sentinel__";
+        let yaml = format!("\"{sentinel}\"\n");
+        let result: Result<FormatProvenance, _> = serde_yaml::from_str(&yaml);
+        match result {
+            Err(e) => {
+                let rendered = format!("{e}");
+                assert!(
+                    rendered.contains(sentinel),
+                    "serde YAML error must carry the unknown sentinel verbatim, got: {rendered}",
+                );
+            }
+            Ok(other) => panic!("YAML carrying unknown provenance must reject, got {other:?}",),
+        }
+    }
+
+    #[test]
+    fn format_provenance_btreemap_emits_in_declaration_order() {
+        // The Ord derive's compounding payoff: a
+        // BTreeMap<FormatProvenance, T> keyed on the provenance axis
+        // iterates in declaration order (FigmentBuiltin <
+        // ShikumiBuilt). A per-provenance failure-rate dashboard, a
+        // per-provenance attribution histogram rollup, or an
+        // attestation manifest's per-provenance cardinality mix emits
+        // rows in declaration order without a hand-rolled comparator
+        // at the renderer. Idiom-peer of the
+        // `format_btreemap_emits_in_preference_order` pin on Format.
+        use std::collections::BTreeMap;
+        let mut tally: BTreeMap<FormatProvenance, u32> = BTreeMap::new();
+        for &p in FormatProvenance::ALL {
+            tally.insert(p, 0);
+        }
+        let emitted: Vec<FormatProvenance> = tally.keys().copied().collect();
+        assert_eq!(
+            emitted,
+            FormatProvenance::ALL.to_vec(),
+            "BTreeMap<FormatProvenance, _> key order must match FormatProvenance::ALL",
         );
     }
 
