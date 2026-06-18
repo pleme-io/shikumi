@@ -11243,6 +11243,249 @@ impl PartitionOrdinal {
     }
 }
 
+impl std::fmt::Display for PartitionOrdinal {
+    /// Operator-facing rendering of the typed partition address as
+    /// `<face>:<face_ordinal>` — concatenates the canonical lowercase
+    /// face label from [`PartitionFace::as_str`] (the same scalar the
+    /// [`Display`][std::fmt::Display] impl on [`PartitionFace`] writes)
+    /// with a `:` separator and the dense inner ordinal rendered through
+    /// `usize`'s built-in [`Display`][std::fmt::Display]. The two halves
+    /// of the typed disjoint-union encoding round-trip through one
+    /// scalar without two manifest fields.
+    ///
+    /// Closes the canonical Rust stdlib (`Debug`, `Display`) duality on
+    /// the typed cube-cell-address surface: where `Debug` (derived
+    /// above) renders the Rust constructor (`Realizable(42)` /
+    /// `Unrealizable(7)`), `Display` renders the canonical
+    /// operator-facing form (`realizable:42` / `unrealizable:7`). The
+    /// colon separator is unambiguous because the canonical face labels
+    /// `realizable` / `unrealizable` are pure lowercase ASCII letters
+    /// (no colon, no digits), so the leftmost colon cleanly splits the
+    /// face label from the dense ordinal. Idiom-peer of the same
+    /// (`Display`, `FromStr`) lift on [`PartitionFace`] and on the four
+    /// typed-cube-classifier surfaces ([`ModalityClass`],
+    /// [`SupportCardinalityClass`], [`SupportBoundaryDistance`],
+    /// [`SupportMagnitudeDirection`]), now extended onto the
+    /// disjoint-union encoding that pairs the face tag with the dense
+    /// inner ordinal.
+    ///
+    /// **Round-trip with [`FromStr`][std::str::FromStr]** —
+    /// `v.to_string().parse::<PartitionOrdinal>().unwrap() == v` for
+    /// every `v: PartitionOrdinal` (over every variant tag and every
+    /// representable `usize` ordinal, including the boundary `0` and
+    /// `usize::MAX`). Pinned by
+    /// [`tests::partition_ordinal_from_str_round_trips_through_display`].
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.face().as_str(), self.face_ordinal())
+    }
+}
+
+/// Typed parse failure of [`<PartitionOrdinal as
+/// std::str::FromStr>::from_str`] — the offending input was not a
+/// canonical `<face>:<face_ordinal>` address on the [`PartitionOrdinal`]
+/// surface.
+///
+/// The disjoint-union encoding carries two halves at the scalar level
+/// (the face label and the dense inner ordinal), so the parser's
+/// rejection modes split into three: the input carried no `:` separator
+/// at all, the face half did not match a canonical [`PartitionFace`]
+/// name, or the ordinal half did not parse as a `usize`. Each variant
+/// carries the offending substring verbatim so a downstream consumer
+/// can localize the failure to the surrounding context (a YAML
+/// attestation manifest field carrying a cube cell address, a
+/// structured-log address-keyed scalar, a CLI argument). The malformed
+/// ordinal variant additionally carries the underlying
+/// [`std::num::ParseIntError`] so the standard-library numeric parse
+/// diagnostic threads through to the error message without
+/// re-stringification.
+///
+/// `#[non_exhaustive]` so a future stricter parse rule (e.g. an
+/// `EmptyInput` distinguished from `MissingSeparator`) lands as a new
+/// variant without a SemVer-major bump. Idiom-peer of
+/// [`ParsePartitionFaceError`] on the variant-tag projection — but
+/// promoted from a single-field struct to a three-variant enum because
+/// the parse surface carries two halves rather than one canonical
+/// label.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ParsePartitionOrdinalError {
+    /// The input carried no `:` separator. The full offending input is
+    /// preserved verbatim so the operator-facing error names what was
+    /// actually received.
+    MissingSeparator {
+        /// The offending input substring, verbatim.
+        input: String,
+    },
+    /// The face-label half (before the `:`) did not match a canonical
+    /// [`PartitionFace`] name. The offending substring is preserved
+    /// verbatim.
+    UnknownFace {
+        /// The offending face-label substring, verbatim.
+        label: String,
+    },
+    /// The ordinal half (after the `:`) did not parse as a `usize`. The
+    /// offending substring is preserved verbatim and the underlying
+    /// [`std::num::ParseIntError`] threads through `source` so the
+    /// standard-library numeric diagnostic surfaces without
+    /// re-stringification.
+    MalformedOrdinal {
+        /// The offending ordinal substring, verbatim.
+        ordinal: String,
+        /// The underlying numeric parse error from
+        /// [`<usize as std::str::FromStr>::from_str`].
+        source: std::num::ParseIntError,
+    },
+}
+
+impl std::fmt::Display for ParsePartitionOrdinalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingSeparator { input } => {
+                write!(f, "PartitionOrdinal input missing `:` separator: {input:?}",)
+            }
+            Self::UnknownFace { label } => {
+                write!(f, "unknown partition face label {label:?}")
+            }
+            Self::MalformedOrdinal { ordinal, source } => write!(
+                f,
+                "malformed PartitionOrdinal face_ordinal {ordinal:?}: {source}",
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ParsePartitionOrdinalError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::MalformedOrdinal { source, .. } => Some(source),
+            Self::MissingSeparator { .. } | Self::UnknownFace { .. } => None,
+        }
+    }
+}
+
+impl std::str::FromStr for PartitionOrdinal {
+    type Err = ParsePartitionOrdinalError;
+
+    /// Parse a typed partition address from the canonical
+    /// `<face>:<face_ordinal>` form [`Display`][std::fmt::Display]
+    /// emits — the canonical Rust stdlib
+    /// [`FromStr`][std::str::FromStr] idiom-peer of the
+    /// [`Display`][std::fmt::Display] impl. Splits on the leftmost `:`
+    /// (the canonical face labels are pure lowercase ASCII letters, so
+    /// no colon appears inside the face half), delegates the face half
+    /// to [`<PartitionFace as std::str::FromStr>::from_str`] (which
+    /// itself lowers through the case-insensitive
+    /// [`ClosedAxisLabel::from_canonical_str`] route), and the ordinal
+    /// half to [`<usize as std::str::FromStr>::from_str`]. Failures lift
+    /// to typed [`ParsePartitionOrdinalError`] variants so the
+    /// [`std::error::Error`] bound is satisfied at consumer sites
+    /// requiring `Result<_, Box<dyn Error>>` (`eyre::Result<_>`,
+    /// structured-log error fields, deserialization error chaining).
+    ///
+    /// **Round-trip law** —
+    /// `v.to_string().parse::<PartitionOrdinal>().unwrap() == v` for
+    /// every `v: PartitionOrdinal` over every variant tag and every
+    /// representable `usize` ordinal. Pinned by
+    /// [`tests::partition_ordinal_from_str_round_trips_through_display`].
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (face_str, ordinal_str) =
+            s.split_once(':')
+                .ok_or_else(|| ParsePartitionOrdinalError::MissingSeparator {
+                    input: s.to_owned(),
+                })?;
+        let face = face_str
+            .parse::<PartitionFace>()
+            .map_err(|e| ParsePartitionOrdinalError::UnknownFace { label: e.label })?;
+        let face_ordinal = ordinal_str.parse::<usize>().map_err(|source| {
+            ParsePartitionOrdinalError::MalformedOrdinal {
+                ordinal: ordinal_str.to_owned(),
+                source,
+            }
+        })?;
+        Ok(match face {
+            PartitionFace::Realizable => Self::Realizable(face_ordinal),
+            PartitionFace::Unrealizable => Self::Unrealizable(face_ordinal),
+        })
+    }
+}
+
+impl serde::Serialize for PartitionOrdinal {
+    /// Serialize the typed partition address as the canonical
+    /// `<face>:<face_ordinal>` scalar the
+    /// [`Display`][std::fmt::Display] impl writes. Routes through
+    /// [`serde::Serializer::collect_str`] so the serialized
+    /// representation is exactly `format!("{self}")` with no
+    /// intermediate allocation.
+    ///
+    /// Closes the canonical (`Serialize`, `Deserialize`) serde
+    /// idiom-peer of the (`Display`, `FromStr`) stdlib pair on the
+    /// typed cube-cell-address surface — idiom-peer of the same lift
+    /// on [`PartitionFace`] and on the four typed-cube-classifier
+    /// surfaces. A partition address emitted into a YAML attestation
+    /// manifest field, a JSON observability payload, or any consumer
+    /// struct holding a `PartitionOrdinal` field under
+    /// `#[derive(Serialize, Deserialize)]` round-trips through the
+    /// canonical scalar without a consumer-side helper combining the
+    /// face label and the dense inner ordinal at the renderer.
+    ///
+    /// **Round-trip law** — for every `v: PartitionOrdinal`,
+    /// `serde_yaml::from_str::<PartitionOrdinal>(&serde_yaml::to_string(&v)?)? == v`
+    /// and the same on `serde_json`. Pinned by
+    /// [`tests::partition_ordinal_serde_yaml_round_trips_over_sample`]
+    /// and the `serde_json` peer test.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for PartitionOrdinal {
+    /// Deserialize the typed partition address from the canonical
+    /// `<face>:<face_ordinal>` scalar via
+    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
+    /// `visit_str` lowers to
+    /// [`<Self as std::str::FromStr>::from_str`] and routes any
+    /// [`ParsePartitionOrdinalError`] through
+    /// [`serde::de::Error::custom`].
+    ///
+    /// **Case insensitivity on the face half inherits from
+    /// [`FromStr`]** — an operator-authored manifest field carrying the
+    /// uppercase or mixed-case form of a face label parses on the
+    /// serde side without a per-emitter case-fold, because the
+    /// deserialize path lowers through
+    /// [`<PartitionFace as std::str::FromStr>::from_str`] which in turn
+    /// lowers through [`ClosedAxisLabel::from_canonical_str`] which
+    /// compares via [`str::eq_ignore_ascii_case`]. Pinned by
+    /// [`tests::partition_ordinal_serde_yaml_face_is_case_insensitive`].
+    ///
+    /// **Three rejection modes carry the offending substring
+    /// verbatim** — a manifest field carrying a malformed address
+    /// surfaces at the serde error site with either the missing-
+    /// separator input, the unknown face label, or the malformed
+    /// ordinal substring verbatim in the rendered message, lifted
+    /// through [`ParsePartitionOrdinalError`] and the typed
+    /// [`Display`][std::fmt::Display] impl on the parse error.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct PartitionOrdinalVisitor;
+
+        impl serde::de::Visitor<'_> for PartitionOrdinalVisitor {
+            type Value = PartitionOrdinal;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(
+                    "a canonical PartitionOrdinal `<face>:<face_ordinal>` scalar \
+                     (e.g. `realizable:42`, `unrealizable:7`)",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                v.parse::<PartitionOrdinal>().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(PartitionOrdinalVisitor)
+    }
+}
+
 /// Typed partition ordinal of a [`ProductCube`] cell — fuses
 /// ([`realizable_ordinal`], [`unrealizable_ordinal`]) into one total
 /// helper returning a [`PartitionOrdinal`] variant tagged with which
@@ -14381,6 +14624,332 @@ mod tests {
                 window[0],
                 window[1],
             );
+        }
+    }
+
+    // ---- PartitionOrdinal Display / FromStr / serde round-trips ----
+    //
+    // The typed disjoint-union encoding carries the canonical
+    // `<face>:<face_ordinal>` scalar form on the wire. The tests below
+    // pin the round-trip law at the (Display, FromStr) layer and at the
+    // (Serialize, Deserialize) layer, plus the three rejection modes
+    // (missing `:` separator, unknown face label, malformed ordinal)
+    // carry the offending substring verbatim through the typed parse
+    // error. Idiom-peer of the `partition_face_*` tests above on the
+    // variant-tag projection — lifted onto the disjoint-union encoding
+    // that pairs the face with the dense inner ordinal.
+
+    fn partition_ordinal_sample() -> [PartitionOrdinal; 8] {
+        // Representative coverage: both faces, the boundary ordinals
+        // (`0` and `usize::MAX`), plus an interior pair pinning the
+        // generic case the round-trip law must survive on every cell.
+        [
+            PartitionOrdinal::Realizable(0),
+            PartitionOrdinal::Realizable(1),
+            PartitionOrdinal::Realizable(42),
+            PartitionOrdinal::Realizable(usize::MAX),
+            PartitionOrdinal::Unrealizable(0),
+            PartitionOrdinal::Unrealizable(1),
+            PartitionOrdinal::Unrealizable(7),
+            PartitionOrdinal::Unrealizable(usize::MAX),
+        ]
+    }
+
+    #[test]
+    fn partition_ordinal_display_renders_canonical_face_colon_ordinal() {
+        // Concrete-position pin on Display: the canonical scalar form
+        // is the face label from PartitionFace::as_str + `:` + the
+        // dense inner ordinal rendered through usize::Display. A future
+        // change of separator (e.g. to `/`) or face label rendering
+        // would fail here before drifting through the round-trip law.
+        assert_eq!(
+            format!("{}", PartitionOrdinal::Realizable(0)),
+            "realizable:0",
+        );
+        assert_eq!(
+            format!("{}", PartitionOrdinal::Realizable(42)),
+            "realizable:42",
+        );
+        assert_eq!(
+            format!("{}", PartitionOrdinal::Unrealizable(0)),
+            "unrealizable:0",
+        );
+        assert_eq!(
+            format!("{}", PartitionOrdinal::Unrealizable(7)),
+            "unrealizable:7",
+        );
+    }
+
+    #[test]
+    fn partition_ordinal_display_matches_face_and_face_ordinal_for_every_sample() {
+        // Display recomposes from the two named projections —
+        // `format!("{}:{}", v.face().as_str(), v.face_ordinal())` is
+        // the canonical reading at one site. A future drift between
+        // Display and the projections (e.g. Display caching the face
+        // label separately and falling out of step on a rename) fails
+        // this pin first.
+        for v in partition_ordinal_sample() {
+            assert_eq!(
+                format!("{v}"),
+                format!("{}:{}", v.face().as_str(), v.face_ordinal()),
+                "Display must equal `<face>:<face_ordinal>` for {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_from_str_round_trips_through_display() {
+        // Display / FromStr round-trip identity over the representative
+        // sample covering both faces and the boundary ordinals. Closes
+        // the canonical stdlib stable-string pair on the typed
+        // partition-address surface.
+        for v in partition_ordinal_sample() {
+            let rendered = v.to_string();
+            let parsed: PartitionOrdinal = rendered.parse().unwrap_or_else(|e| {
+                panic!("FromStr round-trip for {v:?} failed: {e}\n  rendered: {rendered:?}")
+            });
+            assert_eq!(parsed, v, "Display / FromStr round-trip for {v:?}");
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_from_str_face_half_is_case_insensitive() {
+        // The face half of `<face>:<face_ordinal>` lowers through
+        // `<PartitionFace as FromStr>::from_str`, which inherits the
+        // case-insensitive ClosedAxisLabel::from_canonical_str route.
+        // Uppercase / mixed-case face labels parse back to the same
+        // address without a per-emitter case-fold.
+        for v in partition_ordinal_sample() {
+            let face_upper = v.face().as_str().to_ascii_uppercase();
+            let upper = format!("{face_upper}:{}", v.face_ordinal());
+            let parsed: PartitionOrdinal = upper
+                .parse()
+                .unwrap_or_else(|e| panic!("uppercase parse for {v:?} failed: {e}"));
+            assert_eq!(
+                parsed, v,
+                "case-insensitive face half must recover {v:?} (from {upper:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_from_str_rejects_missing_separator() {
+        // The `:` separator is mandatory: a scalar that omits it lifts
+        // to ParsePartitionOrdinalError::MissingSeparator, carrying the
+        // offending input verbatim through both the structured field
+        // and the typed Display impl.
+        let sentinel = "realizable42";
+        match sentinel.parse::<PartitionOrdinal>() {
+            Err(ParsePartitionOrdinalError::MissingSeparator { input }) => {
+                assert_eq!(input, sentinel);
+                let rendered = format!(
+                    "{}",
+                    ParsePartitionOrdinalError::MissingSeparator {
+                        input: input.clone(),
+                    },
+                );
+                assert!(
+                    rendered.contains(sentinel),
+                    "Display impl must carry the offending input verbatim, got: {rendered}",
+                );
+            }
+            other => {
+                panic!("missing-separator input must reject as MissingSeparator, got {other:?}")
+            }
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_from_str_rejects_unknown_face_with_label_verbatim() {
+        // An unknown face half lifts to
+        // ParsePartitionOrdinalError::UnknownFace through the
+        // delegated `<PartitionFace as FromStr>::from_str`, carrying
+        // the offending substring verbatim.
+        let sentinel_face = "__shikumi_unknown_partition_face_sentinel__";
+        let input = format!("{sentinel_face}:42");
+        match input.parse::<PartitionOrdinal>() {
+            Err(ParsePartitionOrdinalError::UnknownFace { label }) => {
+                assert_eq!(label, sentinel_face);
+                let rendered = format!(
+                    "{}",
+                    ParsePartitionOrdinalError::UnknownFace {
+                        label: label.clone(),
+                    },
+                );
+                assert!(
+                    rendered.contains(sentinel_face),
+                    "Display impl must carry the unknown face label verbatim, got: {rendered}",
+                );
+            }
+            other => panic!("unknown face label must reject as UnknownFace, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_from_str_rejects_malformed_ordinal_with_substring_and_source() {
+        // A malformed ordinal half lifts to
+        // ParsePartitionOrdinalError::MalformedOrdinal, carrying the
+        // offending substring verbatim AND threading the underlying
+        // std::num::ParseIntError through Error::source so the
+        // standard-library numeric diagnostic surfaces without
+        // re-stringification.
+        use std::error::Error as _;
+        let sentinel_ord = "not_a_number";
+        let input = format!("realizable:{sentinel_ord}");
+        match input.parse::<PartitionOrdinal>() {
+            Err(e @ ParsePartitionOrdinalError::MalformedOrdinal { .. }) => {
+                if let ParsePartitionOrdinalError::MalformedOrdinal { ordinal, .. } = &e {
+                    assert_eq!(ordinal, sentinel_ord);
+                }
+                let rendered = format!("{e}");
+                assert!(
+                    rendered.contains(sentinel_ord),
+                    "Display impl must carry the malformed ordinal verbatim, got: {rendered}",
+                );
+                // Error::source threads the underlying ParseIntError
+                // through, satisfying the std::error::Error chain at
+                // consumer sites that walk `e.source()` for the root.
+                assert!(
+                    e.source().is_some(),
+                    "MalformedOrdinal must thread ParseIntError through Error::source",
+                );
+            }
+            other => panic!("malformed ordinal must reject as MalformedOrdinal, got {other:?}",),
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_from_str_rejects_empty_string() {
+        // The empty string has no `:` separator, so it lands on
+        // MissingSeparator with the empty input verbatim.
+        match "".parse::<PartitionOrdinal>() {
+            Err(ParsePartitionOrdinalError::MissingSeparator { input }) => {
+                assert_eq!(input, "");
+            }
+            other => panic!("empty string must reject as MissingSeparator, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_from_str_uses_leftmost_colon_only() {
+        // The canonical face labels are pure lowercase ASCII letters
+        // (no colon), so the leftmost `:` cleanly splits the face from
+        // the ordinal. A second `:` (e.g. inside an ordinal-side
+        // substring) is forwarded into the ordinal-parse path, which
+        // rejects it as a malformed ordinal — not as a missing
+        // separator. Pins `split_once(':')` semantics so a future
+        // change to a stricter `split(':').exactly_two()` discipline
+        // would surface here as a parse-mode shift.
+        let input = "realizable:1:2";
+        match input.parse::<PartitionOrdinal>() {
+            Err(ParsePartitionOrdinalError::MalformedOrdinal { ordinal, .. }) => {
+                assert_eq!(ordinal, "1:2");
+            }
+            other => panic!(
+                "leftmost-`:`-only split must forward the rest into the ordinal half, got {other:?}",
+            ),
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_serde_yaml_round_trips_over_sample() {
+        // Serialize then deserialize on the representative sample —
+        // the typed partition address survives the YAML scalar
+        // round-trip via the canonical `<face>:<face_ordinal>` form, no
+        // consumer-side helper combining the two halves at the
+        // renderer.
+        for v in partition_ordinal_sample() {
+            let yaml = serde_yaml::to_string(&v).unwrap();
+            let parsed: PartitionOrdinal = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+                panic!("YAML round-trip for {v:?} failed: {e}\n  yaml: {yaml:?}")
+            });
+            assert_eq!(
+                parsed, v,
+                "serde YAML round-trip must be identity for {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_serde_json_round_trips_over_sample() {
+        // JSON emission is the quoted canonical `<face>:<face_ordinal>`
+        // scalar; the round-trip is identity over the sample. Pins
+        // the natural projection an observability payload reaches when
+        // carrying a PartitionOrdinal field through
+        // #[derive(Serialize, Deserialize)].
+        for v in partition_ordinal_sample() {
+            let json = serde_json::to_string(&v).unwrap();
+            assert_eq!(
+                json,
+                format!("\"{v}\""),
+                "JSON emission for {v:?} must be the quoted canonical scalar",
+            );
+            let parsed: PartitionOrdinal = serde_json::from_str(&json).unwrap_or_else(|e| {
+                panic!("JSON round-trip for {v:?} failed: {e}\n  json: {json}")
+            });
+            assert_eq!(
+                parsed, v,
+                "serde JSON round-trip must be identity for {v:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_serde_yaml_face_is_case_insensitive() {
+        // Uppercase / mixed-case face halves in YAML scalars parse
+        // back to the same address via the case-insensitive
+        // deserialize path lowering through FromStr.
+        for v in partition_ordinal_sample() {
+            let face_upper = v.face().as_str().to_ascii_uppercase();
+            let yaml = format!("\"{face_upper}:{}\"\n", v.face_ordinal());
+            let parsed: PartitionOrdinal = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+                panic!("uppercase YAML scalar for {v:?} must deserialize: {e}\n  yaml: {yaml:?}")
+            });
+            assert_eq!(parsed, v);
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_serde_yaml_unknown_face_error_carries_label_verbatim() {
+        // A malformed face half surfaces through the serde error site
+        // with the offending substring verbatim, routed via
+        // serde::de::Error::custom on top of
+        // ParsePartitionOrdinalError::UnknownFace's typed Display
+        // impl.
+        let sentinel = "__shikumi_unknown_partition_face_sentinel__";
+        let yaml = format!("\"{sentinel}:42\"\n");
+        let result: Result<PartitionOrdinal, _> = serde_yaml::from_str(&yaml);
+        match result {
+            Err(e) => {
+                let rendered = format!("{e}");
+                assert!(
+                    rendered.contains(sentinel),
+                    "serde YAML error must carry the unknown face label verbatim, got: {rendered}",
+                );
+            }
+            Ok(other) => panic!("YAML carrying unknown face must reject, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn partition_ordinal_serde_yaml_malformed_ordinal_error_carries_substring_verbatim() {
+        // A malformed ordinal half surfaces through the serde error
+        // site with the offending substring verbatim, routed via
+        // serde::de::Error::custom on top of
+        // ParsePartitionOrdinalError::MalformedOrdinal's typed Display
+        // impl.
+        let sentinel = "not_a_number";
+        let yaml = format!("\"realizable:{sentinel}\"\n");
+        let result: Result<PartitionOrdinal, _> = serde_yaml::from_str(&yaml);
+        match result {
+            Err(e) => {
+                let rendered = format!("{e}");
+                assert!(
+                    rendered.contains(sentinel),
+                    "serde YAML error must carry the malformed ordinal verbatim, got: {rendered}",
+                );
+            }
+            Ok(other) => panic!("YAML carrying malformed ordinal must reject, got {other:?}"),
         }
     }
 
