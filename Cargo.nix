@@ -2219,9 +2219,9 @@ rec {
       };
       "bytes" = rec {
         crateName = "bytes";
-        version = "1.11.1";
+        version = "1.12.0";
         edition = "2021";
-        sha256 = "0czwlhbq8z29wq0ia87yass2mzy1y0jcasjb8ghriiybnwrqfx0y";
+        sha256 = "14xmxm8imyvw675bsgyadmzm9k63js1sdqh7099p0hlj2p9zbqwa";
         authors = [
           "Carl Lerche <me@carllerche.com>"
           "Sean McArthur <sean@seanmonstar.com>"
@@ -7689,7 +7689,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.79";
+        version = "0.1.80";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -8071,13 +8071,13 @@ rec {
       };
       "tatara-lisp" = rec {
         crateName = "tatara-lisp";
-        version = "0.2.74";
+        version = "0.2.76";
         edition = "2021";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "cfbcd712cb8ad7fe1082a4e8885b99be26f0e5c8";
-          sha256 = "1vfr5s5cy45w6dwkw706madfcd644g0qlri63ci3kr0ccmi938c8";
+          rev = "d69c8dc4a98e8163332d17019cc17b8ef6f099f4";
+          sha256 = "1962pngwxfvws77in3lsaxkbf29c3mxpqq1sylcpmvyy1jq1qx69";
         };
         libName = "tatara_lisp";
         authors = [
@@ -8113,13 +8113,13 @@ rec {
       };
       "tatara-lisp-derive" = rec {
         crateName = "tatara-lisp-derive";
-        version = "0.2.74";
+        version = "0.2.76";
         edition = "2021";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "cfbcd712cb8ad7fe1082a4e8885b99be26f0e5c8";
-          sha256 = "1vfr5s5cy45w6dwkw706madfcd644g0qlri63ci3kr0ccmi938c8";
+          rev = "d69c8dc4a98e8163332d17019cc17b8ef6f099f4";
+          sha256 = "1962pngwxfvws77in3lsaxkbf29c3mxpqq1sylcpmvyy1jq1qx69";
         };
         procMacro = true;
         libName = "tatara_lisp_derive";
