@@ -583,9 +583,9 @@ checksum = "c8efb64bd706a16a1bdde310ae86b351e4d21550d98d056f22f8a7f7a2183fec"
 
 [[package]]
 name = "bytes"
-version = "1.11.1"
+version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
+checksum = "8ae3f5d315924270530207e2a68396c3cc547f6dca3fbdca317cfb1a51edb593"
 
 [[package]]
 name = "bytes-utils"
@@ -2234,7 +2234,7 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.78"
+version = "0.1.79"
 dependencies = [
  "akeyless-api",
  "arc-swap",
@@ -2356,8 +2356,8 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp"
-version = "0.2.74"
-source = "git+https://github.com/pleme-io/tatara#cfbcd712cb8ad7fe1082a4e8885b99be26f0e5c8"
+version = "0.2.76"
+source = "git+https://github.com/pleme-io/tatara#d69c8dc4a98e8163332d17019cc17b8ef6f099f4"
 dependencies = [
  "blake3",
  "serde",
@@ -2368,8 +2368,8 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp-derive"
-version = "0.2.74"
-source = "git+https://github.com/pleme-io/tatara#cfbcd712cb8ad7fe1082a4e8885b99be26f0e5c8"
+version = "0.2.76"
+source = "git+https://github.com/pleme-io/tatara#d69c8dc4a98e8163332d17019cc17b8ef6f099f4"
 dependencies = [
  "proc-macro2",
  "quote",
