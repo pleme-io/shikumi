@@ -68,7 +68,7 @@ pub use cube::{
 };
 pub use discovery::{
     ConfigDiscovery, Format, FormatCoordinates, FormatMetadataTag, FormatProvenance,
-    ParseFormatCoordinatesError,
+    ParseFormatCoordinatesError, ParseFormatMetadataTagError,
 };
 pub use error::{
     AttributionAxis, AttributionConfidence, AttributionCoordinates, AttributionNameKindCoordinates,

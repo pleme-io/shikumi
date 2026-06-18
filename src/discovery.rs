@@ -1224,7 +1224,52 @@ impl<'de> serde::Deserialize<'de> for FormatCoordinates {
 /// breaking pattern-bind sites; the named-field shape (rather than a
 /// positional tuple) is what makes the extension non-breaking on
 /// callers that destructure with `..`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// **Trait surface** — alongside the canonical
+/// `Debug + Clone + Copy + PartialEq + Eq + Hash` set, the derive also
+/// includes [`Ord`] + [`PartialOrd`]. The total order is the
+/// declaration-order lex over the struct's fields (`format` outer,
+/// `path` inner): outer ordering inherits the format-axis declaration
+/// order (`Yaml < Toml < Lisp < Nix`) lifted from
+/// [`Format`]'s `Ord` derive (commit `b56b121`), and inner ordering is
+/// `Path`'s native lex over its underlying byte slice. A
+/// [`BTreeMap<FormatMetadataTag, T>`][std::collections::BTreeMap] keyed
+/// on the (format, path) envelope (per-tag attribution counters,
+/// per-tag failure-rate dashboards, attestation manifests recording
+/// per-tag cardinality mixes) emits rows in declaration-then-lex order
+/// deterministically without a hand-rolled comparator at the renderer.
+/// Pinned by [`tests::format_metadata_tag_ord_matches_format_then_path_lex`]
+/// and [`tests::format_metadata_tag_btreemap_emits_in_format_then_path_lex_order`].
+///
+/// **Display surface** — [`fmt::Display`] writes the canonical
+/// `<format>: <path>` shape — exactly the string
+/// [`Format::metadata_name`] returns for the same `(format, path)` pair.
+/// Lifting the canonical wire form from a method on [`Format`] to a
+/// `Display` impl on the typed envelope itself means a consumer holding
+/// a typed tag can write `format!("{tag}")` instead of re-deriving
+/// `format!("{}: {}", tag.format, tag.path.display())` — the same
+/// idiom-peer lift the discovery-layer trio's prior commits landed on
+/// [`FormatCoordinates`] (commit `06a2f42`) and on [`FormatProvenance`]
+/// (commit `2c7654c`). Pinned by
+/// [`tests::format_metadata_tag_display_matches_format_metadata_name`]
+/// and
+/// [`tests::format_metadata_tag_display_parse_round_trips_for_shikumi_providers`].
+///
+/// **`TryFrom<&'a str>` surface** — [`TryFrom`] over `&'a str` is the
+/// idiom-peer of the inverse [`Format::parse_metadata_tag`]: the
+/// envelope's typed parser routes through `parse_metadata_tag` and
+/// promotes its `None` arm to a typed
+/// [`ParseFormatMetadataTagError::NoMatchingShikumiProviderPrefix`]
+/// variant carrying the offending input verbatim — same verbatim-rejection
+/// discipline as [`ParseFormatCoordinatesError`] (commit `06a2f42`).
+/// [`FromStr`] is unavailable because the parsed envelope borrows into
+/// the input; [`TryFrom<&'a str>`] threads the lifetime through. Pinned by
+/// [`tests::format_metadata_tag_try_from_round_trips_for_shikumi_providers`],
+/// [`tests::format_metadata_tag_try_from_rejects_non_shikumi_provider_prefixes`],
+/// [`tests::format_metadata_tag_try_from_rejects_unrelated_strings_with_input_verbatim`],
+/// and
+/// [`tests::format_metadata_tag_try_from_path_borrows_into_input`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[non_exhaustive]
 pub struct FormatMetadataTag<'a> {
     /// The [`Format`] whose shikumi-built provider emitted the
@@ -1236,6 +1281,123 @@ pub struct FormatMetadataTag<'a> {
     /// input metadata-name `&str`, no allocation. Matched against
     /// [`crate::ConfigSource::as_path`] in the failing-source resolver.
     pub path: &'a Path,
+}
+
+impl fmt::Display for FormatMetadataTag<'_> {
+    /// Write the canonical `<format>: <path>` shape — exactly the string
+    /// [`Format::metadata_name`] returns for the same `(format, path)`
+    /// pair, byte-for-byte. The format token comes from [`Format`]'s own
+    /// [`fmt::Display`] (canonical lowercase label
+    /// [`Format::as_str`] returns), and the path renders through
+    /// [`Path::display`] (the standard library's lossy `OsStr` →
+    /// `&str` projection — the same path renderer
+    /// [`Format::metadata_name`] uses).
+    ///
+    /// **Round-trip law** — for every shikumi-built provider's tag
+    /// (every `t: FormatMetadataTag<'_>` with
+    /// `t.format.has_shikumi_provider() == true` and path bytes that
+    /// don't lose information under [`Path::display`]), parsing the
+    /// rendered string back through [`Format::parse_metadata_tag`]
+    /// yields an envelope structurally equal to the original. Pinned by
+    /// [`tests::format_metadata_tag_display_parse_round_trips_for_shikumi_providers`].
+    ///
+    /// **Idiom-peer of [`Format::metadata_name`]** — pinned by
+    /// [`tests::format_metadata_tag_display_matches_format_metadata_name`],
+    /// which asserts `format!("{tag}") == tag.format.metadata_name(tag.path)`
+    /// pointwise across every `(Format, Path)` pair (both shikumi-provider
+    /// and figment-builtin variants). The two surfaces stay
+    /// byte-for-byte aligned by construction; a future change to either
+    /// must update the other in lockstep.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.format, self.path.display())
+    }
+}
+
+/// Typed rejection reason emitted by [`FormatMetadataTag`]'s
+/// [`TryFrom<&str>`] impl when an input doesn't parse as a shikumi-built
+/// provider's `figment::Metadata::name`.
+///
+/// Single-variant for now: a metadata-name string that doesn't match any
+/// shikumi-provider `"<format>: <path>"` prefix has only one rejection
+/// shape (no recognized prefix), so the variant carries the offending
+/// input verbatim and nothing else. Marked `#[non_exhaustive]` so a
+/// future enrichment (e.g. a `MissingSpaceAfterColon { input }` or a
+/// `UnknownFormatToken { token }` arm if the parser ever sharpens
+/// further) lands as a new variant without breaking exhaustivity at
+/// consumer matches.
+///
+/// **Verbatim-substring rejection discipline** — the `input` field
+/// carries the offending substring verbatim into the rendered
+/// `Display` message, matching the discipline already established by
+/// [`ParseFormatCoordinatesError`] (commit `06a2f42`) and
+/// [`crate::ParsePartitionOrdinalError`] (commit `6b20041`). A
+/// renderer printing the error doesn't have to scrape the original
+/// input from its own context — the offending bytes ride with the
+/// error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ParseFormatMetadataTagError {
+    /// Input doesn't begin with a recognized `"<format>: "` prefix for
+    /// any shikumi-built provider (`lisp: ` / `nix: `).
+    NoMatchingShikumiProviderPrefix {
+        /// The offending input string, verbatim.
+        input: String,
+    },
+}
+
+impl fmt::Display for ParseFormatMetadataTagError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoMatchingShikumiProviderPrefix { input } => {
+                write!(
+                    f,
+                    "FormatMetadataTag input does not match any \
+                     shikumi-built provider's `<format>: <path>` prefix \
+                     (one of `lisp: `, `nix: `): {input:?}",
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for ParseFormatMetadataTagError {}
+
+impl<'a> TryFrom<&'a str> for FormatMetadataTag<'a> {
+    type Error = ParseFormatMetadataTagError;
+
+    /// Parse a `figment::Metadata::name` string into a typed envelope —
+    /// idiom-peer of [`Format::parse_metadata_tag`] at the type's own
+    /// surface, so a consumer can write
+    /// `FormatMetadataTag::try_from(name)?` instead of reaching into
+    /// [`Format`] for the parse.
+    ///
+    /// Routes through [`Format::parse_metadata_tag`] for the parse
+    /// (preserving the path-borrow into `name` and the exhaustive sweep
+    /// over [`FormatProvenance::ShikumiBuilt`]'s formats), and promotes
+    /// the `None` arm to
+    /// [`ParseFormatMetadataTagError::NoMatchingShikumiProviderPrefix`]
+    /// carrying the offending `input` verbatim.
+    ///
+    /// **Round-trip law** — for every shikumi-built provider's
+    /// metadata-name string produced by [`Format::metadata_name`],
+    /// `FormatMetadataTag::try_from(&name)?` recovers a structurally
+    /// equal envelope. Pinned by
+    /// [`tests::format_metadata_tag_try_from_round_trips_for_shikumi_providers`].
+    ///
+    /// **Same `None` / `Err` boundary as
+    /// [`Format::parse_metadata_tag`]** — figment-builtin formats
+    /// (Yaml/Toml) and unrelated strings reject through the
+    /// `NoMatchingShikumiProviderPrefix` arm. Pinned by
+    /// [`tests::format_metadata_tag_try_from_rejects_non_shikumi_provider_prefixes`]
+    /// and
+    /// [`tests::format_metadata_tag_try_from_rejects_unrelated_strings_with_input_verbatim`].
+    fn try_from(input: &'a str) -> Result<Self, Self::Error> {
+        Format::parse_metadata_tag(input).ok_or_else(|| {
+            ParseFormatMetadataTagError::NoMatchingShikumiProviderPrefix {
+                input: input.to_owned(),
+            }
+        })
+    }
 }
 
 impl fmt::Display for Format {
@@ -4222,6 +4384,280 @@ mod tests {
         set.insert(tag_a); // duplicate
         set.insert(tag_b);
         assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn format_metadata_tag_ord_matches_format_then_path_lex() {
+        // The derived total order is declaration-order lex over the
+        // struct's fields: `format` outer (inheriting Format::ALL's
+        // declaration order, b56b121), `path` inner (Path's native
+        // lex). Pin both legs.
+        let path_a = Path::new("/a");
+        let path_b = Path::new("/b");
+        // Outer leg: format axis dominates path axis when formats differ.
+        // Lisp < Nix in declaration order, so (Lisp, /b) < (Nix, /a).
+        let lisp_b = FormatMetadataTag {
+            format: Format::Lisp,
+            path: path_b,
+        };
+        let nix_a = FormatMetadataTag {
+            format: Format::Nix,
+            path: path_a,
+        };
+        assert!(
+            lisp_b < nix_a,
+            "format axis must dominate path axis: (Lisp,/b) < (Nix,/a)"
+        );
+        // Inner leg: with the same format, path lex orders the pair.
+        // /a < /b in lex order, so (Lisp, /a) < (Lisp, /b).
+        let lisp_a = FormatMetadataTag {
+            format: Format::Lisp,
+            path: path_a,
+        };
+        assert!(
+            lisp_a < lisp_b,
+            "with equal format, path lex must order: (Lisp,/a) < (Lisp,/b)"
+        );
+        // PartialOrd agrees with Ord (the derive guarantees this).
+        assert_eq!(lisp_a.cmp(&lisp_b), std::cmp::Ordering::Less);
+        assert_eq!(lisp_a.partial_cmp(&lisp_b), Some(std::cmp::Ordering::Less));
+        // Reflexivity.
+        assert_eq!(lisp_a.cmp(&lisp_a), std::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn format_metadata_tag_display_matches_format_metadata_name() {
+        // The Display impl on the typed envelope must agree pointwise
+        // with `Format::metadata_name` on the same `(format, path)`
+        // pair, byte-for-byte. This is the cross-API contract that
+        // pins both surfaces in lockstep — if either re-renders the
+        // `<format>: <path>` shape differently, this test catches it.
+        // Sweep over every Format variant (not just shikumi-provider
+        // ones — `metadata_name` is total over Format::ALL).
+        for &f in Format::ALL {
+            for path in [
+                Path::new("/a"),
+                Path::new("/etc/app/app.cfg"),
+                Path::new("/srv/cfg/x.lisp"),
+                Path::new("relative/path"),
+            ] {
+                let tag = FormatMetadataTag { format: f, path };
+                assert_eq!(
+                    tag.to_string(),
+                    f.metadata_name(path),
+                    "Display must match Format::metadata_name pointwise for {f:?} at {path:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn format_metadata_tag_display_parse_round_trips_for_shikumi_providers() {
+        // For every shikumi-provider variant, rendering a tag through
+        // Display and parsing the result back through
+        // `Format::parse_metadata_tag` recovers a structurally equal
+        // envelope. Pins the (render, parse) duality at the envelope's
+        // own surface.
+        for &f in Format::ALL.iter().filter(|f| f.has_shikumi_provider()) {
+            for path in [Path::new("/a.lisp"), Path::new("/etc/app/app.nix")] {
+                let tag = FormatMetadataTag { format: f, path };
+                let rendered = tag.to_string();
+                let parsed = Format::parse_metadata_tag(&rendered)
+                    .expect("render/parse round-trip must succeed for shikumi-provider tag");
+                assert_eq!(
+                    parsed.format, tag.format,
+                    "round-trip must recover the format for {f:?} at {path:?}"
+                );
+                assert_eq!(
+                    parsed.path, tag.path,
+                    "round-trip must recover the path for {f:?} at {path:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn format_metadata_tag_btreemap_emits_in_format_then_path_lex_order() {
+        // The compounding payoff of the Ord derive: a BTreeMap keyed on
+        // the typed envelope iterates in (format, path) lex order
+        // pointwise — no hand-rolled comparator at the renderer.
+        use std::collections::BTreeMap;
+        let tags = [
+            FormatMetadataTag {
+                format: Format::Nix,
+                path: Path::new("/z"),
+            },
+            FormatMetadataTag {
+                format: Format::Lisp,
+                path: Path::new("/b"),
+            },
+            FormatMetadataTag {
+                format: Format::Lisp,
+                path: Path::new("/a"),
+            },
+            FormatMetadataTag {
+                format: Format::Nix,
+                path: Path::new("/a"),
+            },
+        ];
+        let mut map = BTreeMap::new();
+        for (i, tag) in tags.iter().enumerate() {
+            map.insert(*tag, i);
+        }
+        let iter_order: Vec<_> = map.keys().copied().collect();
+        // Expected: (Lisp,/a) < (Lisp,/b) < (Nix,/a) < (Nix,/z).
+        let expected = vec![
+            FormatMetadataTag {
+                format: Format::Lisp,
+                path: Path::new("/a"),
+            },
+            FormatMetadataTag {
+                format: Format::Lisp,
+                path: Path::new("/b"),
+            },
+            FormatMetadataTag {
+                format: Format::Nix,
+                path: Path::new("/a"),
+            },
+            FormatMetadataTag {
+                format: Format::Nix,
+                path: Path::new("/z"),
+            },
+        ];
+        assert_eq!(
+            iter_order, expected,
+            "BTreeMap<FormatMetadataTag, _> must emit in (format, path) lex order"
+        );
+    }
+
+    #[test]
+    fn format_metadata_tag_try_from_round_trips_for_shikumi_providers() {
+        // Idiom-peer of `parse_metadata_tag_round_trips_for_shikumi_providers`
+        // at the envelope's own TryFrom surface: a consumer holding a
+        // `&str` can write `FormatMetadataTag::try_from(name)?` without
+        // reaching into `Format`.
+        for &f in Format::ALL.iter().filter(|f| f.has_shikumi_provider()) {
+            let path = Path::new("/srv/cfg/app.cfg");
+            let name = f.metadata_name(path);
+            let tag = FormatMetadataTag::try_from(name.as_str())
+                .expect("TryFrom round-trip must succeed for shikumi-provider name");
+            assert_eq!(
+                tag.format, f,
+                "TryFrom must recover the format that emitted the name for {f:?}"
+            );
+            assert_eq!(
+                tag.path, path,
+                "TryFrom must surface the trailing path verbatim, as &Path for {f:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn format_metadata_tag_try_from_rejects_non_shikumi_provider_prefixes() {
+        // Same Err contract as `parse_metadata_tag`'s `None`: variants
+        // without a shikumi-built provider must not be recognized — even
+        // though `metadata_name` produces a syntactically valid string
+        // for them. The Err arm carries the offending input verbatim.
+        for &f in Format::ALL.iter().filter(|f| !f.has_shikumi_provider()) {
+            let name = f.metadata_name(Path::new("/x.cfg"));
+            let err = FormatMetadataTag::try_from(name.as_str())
+                .expect_err("non-shikumi-provider name must reject");
+            match err {
+                ParseFormatMetadataTagError::NoMatchingShikumiProviderPrefix { input } => {
+                    assert_eq!(input, name, "Err must carry the offending input verbatim");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn format_metadata_tag_try_from_rejects_unrelated_strings_with_input_verbatim() {
+        // Unrelated metadata-name strings reject with the `input` field
+        // carrying the offending input verbatim into the rendered
+        // Display message — the verbatim-substring rejection discipline
+        // established by `ParseFormatCoordinatesError`.
+        for name in [
+            "",
+            "/etc/app/app.yaml",
+            "`MYAPP_` environment variable",
+            "json: /etc/app.json",
+            "lisp /etc/app.lisp", // missing colon
+            "lisp:/etc/app.lisp", // missing space after colon
+        ] {
+            let err =
+                FormatMetadataTag::try_from(name).expect_err("unrelated metadata-name must reject");
+            match &err {
+                ParseFormatMetadataTagError::NoMatchingShikumiProviderPrefix { input } => {
+                    assert_eq!(input, name, "Err must carry input verbatim for {name:?}");
+                }
+            }
+            // The rendered Display message also embeds the offending
+            // input verbatim (via the `{input:?}` debug-format escape),
+            // so an operator-facing renderer doesn't need to scrape the
+            // original input from context.
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(&format!("{name:?}")),
+                "Display must embed the offending input verbatim: {rendered}"
+            );
+        }
+    }
+
+    #[test]
+    fn format_metadata_tag_try_from_path_borrows_into_input() {
+        // The path slice in the envelope must be a sub-borrow of the
+        // input `&str`, not a fresh allocation — the `&'a str` →
+        // `FormatMetadataTag<'a>` lifetime threading preserves the
+        // underlying byte borrow through TryFrom. Mirror of
+        // `parse_metadata_tag_path_borrows_into_input` on the TryFrom
+        // surface.
+        let name = Format::Nix.metadata_name(Path::new("/srv/app.nix"));
+        let tag =
+            FormatMetadataTag::try_from(name.as_str()).expect("nix prefix must match via TryFrom");
+        let name_start = name.as_ptr() as usize;
+        let name_end = name_start + name.len();
+        let path_start = tag.path.as_os_str().as_encoded_bytes().as_ptr() as usize;
+        assert!(
+            path_start >= name_start && path_start < name_end,
+            "TryFrom-produced envelope path must borrow into input metadata-name"
+        );
+    }
+
+    #[test]
+    fn format_metadata_tag_try_from_agrees_with_parse_metadata_tag() {
+        // Cross-API contract: `FormatMetadataTag::try_from(name)` and
+        // `Format::parse_metadata_tag(name)` must agree on every input
+        // (Some/Ok on matches, None/Err on non-matches, structurally
+        // equal envelopes on matches).
+        let shikumi_names = [
+            Format::Lisp.metadata_name(Path::new("/a.lisp")),
+            Format::Nix.metadata_name(Path::new("/etc/app/app.nix")),
+        ];
+        for name in &shikumi_names {
+            let try_from_tag = FormatMetadataTag::try_from(name.as_str()).unwrap();
+            let parse_tag = Format::parse_metadata_tag(name).unwrap();
+            assert_eq!(
+                try_from_tag, parse_tag,
+                "TryFrom and parse_metadata_tag must agree on matches"
+            );
+        }
+        for name in ["", "/etc/app.yaml", "envvar `X_` typo"] {
+            assert!(FormatMetadataTag::try_from(name).is_err());
+            assert!(Format::parse_metadata_tag(name).is_none());
+        }
+    }
+
+    #[test]
+    fn parse_format_metadata_tag_error_is_std_error() {
+        // Trait-bounds parity with `ParseFormatCoordinatesError`: the
+        // typed rejection enum implements `std::error::Error` so it
+        // composes through `Box<dyn Error>` and `anyhow::Error` at
+        // consumer sites.
+        fn assert_std_error<E: std::error::Error>(_: &E) {}
+        let err = ParseFormatMetadataTagError::NoMatchingShikumiProviderPrefix {
+            input: "x".to_owned(),
+        };
+        assert_std_error(&err);
     }
 
     // ---- FormatProvenance / Format::provenance typed-primitive tests ----
