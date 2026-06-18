@@ -768,7 +768,40 @@ impl FormatProvenance {
 /// [`Format::format_coordinates`] / [`Self::format_or_none`]; existing
 /// consumers that destructure on the named fields stay coherent under
 /// the `#[non_exhaustive]` discipline.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// **Trait surface** — alongside the canonical
+/// `Debug + Clone + Copy + PartialEq + Eq + Hash` set, the derive also
+/// includes [`Ord`] + [`PartialOrd`]. The derived order is lex over
+/// the struct fields in declaration order (`format` outer, `provenance`
+/// inner); because both sibling axes already carry declaration-order
+/// [`Ord`] ([`Format`] from commit `b56b121`, [`FormatProvenance`] from
+/// commit `2c7654c`), the induced product-cube order matches
+/// [`Self::ALL`] pointwise. A
+/// [`BTreeMap<FormatCoordinates, T>`][std::collections::BTreeMap] keyed
+/// on the (format × provenance) cube emits rows in product order
+/// deterministically. Pinned by
+/// [`tests::format_coordinates_ord_matches_all_declaration_order`].
+///
+/// **Canonical-string surface** — [`std::fmt::Display`] /
+/// [`std::str::FromStr`] round-trip through the
+/// `<format>:<provenance>` scalar (e.g. `"yaml:figment-builtin"`,
+/// `"nix:shikumi-built"`). The leftmost-`:`-split parser delegates each
+/// half to its axis's [`FromStr`], inheriting case-insensitivity and
+/// the format-axis alias surface (`yml`/`lsp`/`el`). Idiom-peer of the
+/// (`Display`, `FromStr`) lift on [`crate::PartitionOrdinal`] (commit
+/// `6b20041`), now extended onto a (closed-enum × closed-enum) product.
+///
+/// **Serde surface** — [`serde::Serialize`] / [`serde::Deserialize`]
+/// are the canonical idiom-peer of the (`Display`, `FromStr`) pair:
+/// Serialize via [`serde::Serializer::collect_str`], Deserialize via
+/// [`serde::de::Error::custom`] lowering through `FromStr`. An
+/// attestation manifest field recording which (format, provenance)
+/// cell loaded a config round-trips through the canonical scalar
+/// without a consumer-side rename helper. Pinned by
+/// [`tests::format_coordinates_serde_yaml_round_trips_over_all_cells`]
+/// and
+/// [`tests::format_coordinates_serde_json_round_trips_over_all_cells`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[non_exhaustive]
 pub struct FormatCoordinates {
     /// Which on-disk format the cell describes — see [`Format`] /
@@ -1004,6 +1037,167 @@ impl crate::PartialInverseCube for FormatCoordinates {
 
     fn forward(image: Format) -> Self {
         image.format_coordinates()
+    }
+}
+
+impl fmt::Display for FormatCoordinates {
+    /// Operator-facing rendering of the product-cube cell as
+    /// `<format>:<provenance>` — the canonical [`Format::as_str`] label
+    /// (`yaml` / `toml` / `lisp` / `nix`), a `:` separator, and the
+    /// canonical [`FormatProvenance::as_str`] kebab-case label
+    /// (`figment-builtin` / `shikumi-built`). The colon separator is
+    /// unambiguous because neither half contains `:`, so the leftmost
+    /// `:` cleanly splits the two axes.
+    ///
+    /// **Round-trip with [`FromStr`]** — for every
+    /// `c: FormatCoordinates`,
+    /// `c.to_string().parse::<FormatCoordinates>().unwrap() == c`.
+    /// Pinned by
+    /// [`tests::format_coordinates_from_str_round_trips_over_all_cells`].
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.format.as_str(), self.provenance.as_str())
+    }
+}
+
+/// Typed parse failure of [`<FormatCoordinates as
+/// std::str::FromStr>::from_str`] — the offending input was not a
+/// canonical `<format>:<provenance>` cell.
+///
+/// Three rejection modes covering the two halves of the scalar
+/// encoding: no `:` separator, an unrecognized format label before
+/// `:`, or an unrecognized provenance label after `:`. Each variant
+/// captures the offending substring verbatim so a downstream consumer
+/// can localize the failure to its surrounding context.
+///
+/// `#[non_exhaustive]` so a future stricter parse rule lands as a new
+/// variant without a SemVer-major bump. Idiom-peer of
+/// [`crate::ParsePartitionOrdinalError`] (commit `6b20041`) on the
+/// (variant-tag × dense-ordinal) product, lifted here onto the
+/// (closed-enum × closed-enum) product whose both halves are
+/// label-typed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ParseFormatCoordinatesError {
+    /// The input carried no `:` separator. The full offending input is
+    /// preserved verbatim so the operator-facing error names what was
+    /// actually received.
+    MissingSeparator {
+        /// The offending input substring, verbatim.
+        input: String,
+    },
+    /// The format-label half (before the `:`) did not match a canonical
+    /// [`Format`] name (`yaml`, `toml`, `lisp`, `nix`) and was not one
+    /// of the recognized aliases (`yml`, `lsp`, `el`). The offending
+    /// substring is preserved verbatim.
+    UnknownFormat {
+        /// The offending format-label substring, verbatim.
+        label: String,
+    },
+    /// The provenance-label half (after the `:`) did not match a
+    /// canonical [`FormatProvenance`] name (`figment-builtin`,
+    /// `shikumi-built`). The offending substring is preserved verbatim.
+    UnknownProvenance {
+        /// The offending provenance-label substring, verbatim.
+        label: String,
+    },
+}
+
+impl fmt::Display for ParseFormatCoordinatesError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingSeparator { input } => {
+                write!(
+                    f,
+                    "FormatCoordinates input missing `:` separator: {input:?}",
+                )
+            }
+            Self::UnknownFormat { label } => {
+                write!(f, "unknown FormatCoordinates format label {label:?}")
+            }
+            Self::UnknownProvenance { label } => {
+                write!(f, "unknown FormatCoordinates provenance label {label:?}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ParseFormatCoordinatesError {}
+
+impl FromStr for FormatCoordinates {
+    type Err = ParseFormatCoordinatesError;
+
+    /// Parse the canonical `<format>:<provenance>` cell label. The
+    /// leftmost `:` splits the input; the format half lowers through
+    /// [`<Format as FromStr>::from_str`] (inherits `yml`/`lsp`/`el`
+    /// aliases and ASCII case-insensitivity), and the provenance half
+    /// lowers through
+    /// [`<FormatProvenance as FromStr>::from_str`] (inherits ASCII
+    /// case-insensitivity from
+    /// [`crate::ClosedAxisLabel::from_canonical_str`]).
+    ///
+    /// Check order is `MissingSeparator → UnknownFormat →
+    /// UnknownProvenance`, mirroring
+    /// [`crate::ParsePartitionOrdinalError`]'s
+    /// `MissingSeparator → UnknownFace → MalformedOrdinal` precedence:
+    /// the structural separator check is strictly more specific than
+    /// per-half label checks, and the format half is checked before the
+    /// provenance half to match left-to-right reading.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (format_half, provenance_half) =
+            s.split_once(':')
+                .ok_or_else(|| ParseFormatCoordinatesError::MissingSeparator {
+                    input: s.to_owned(),
+                })?;
+        let format = Format::from_str(format_half).map_err(|_| {
+            ParseFormatCoordinatesError::UnknownFormat {
+                label: format_half.to_owned(),
+            }
+        })?;
+        let provenance = FormatProvenance::from_str(provenance_half).map_err(|_| {
+            ParseFormatCoordinatesError::UnknownProvenance {
+                label: provenance_half.to_owned(),
+            }
+        })?;
+        Ok(Self { format, provenance })
+    }
+}
+
+impl serde::Serialize for FormatCoordinates {
+    /// Serialize as the canonical `<format>:<provenance>` scalar
+    /// [`fmt::Display`] writes, routed through
+    /// [`serde::Serializer::collect_str`] (no intermediate allocation).
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for FormatCoordinates {
+    /// Deserialize from the canonical `<format>:<provenance>` scalar
+    /// via a `visit_str` visitor lowering to [`FromStr`] and routing
+    /// any [`ParseFormatCoordinatesError`] through
+    /// [`serde::de::Error::custom`]. Both halves inherit ASCII
+    /// case-insensitivity from their respective axis's `FromStr`; the
+    /// rejection modes carry the offending substring verbatim into the
+    /// rendered serde error.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct FormatCoordinatesVisitor;
+
+        impl serde::de::Visitor<'_> for FormatCoordinatesVisitor {
+            type Value = FormatCoordinates;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(
+                    "a canonical FormatCoordinates `<format>:<provenance>` scalar \
+                     (e.g. `yaml:figment-builtin`, `nix:shikumi-built`; case-insensitive)",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<FormatCoordinates, E> {
+                v.parse::<FormatCoordinates>().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(FormatCoordinatesVisitor)
     }
 }
 
@@ -5214,5 +5408,349 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ---- FormatCoordinates: Ord / Display / FromStr / serde ----
+
+    #[test]
+    fn format_coordinates_ord_matches_all_declaration_order() {
+        // The derived Ord on FormatCoordinates is lex over the struct's
+        // declaration order (format outer, provenance inner). Because
+        // both sibling axes already carry declaration-order Ord under
+        // the same trait-uniform discipline (Format from commit b56b121,
+        // FormatProvenance from commit 2c7654c), the induced
+        // product-cube order matches FormatCoordinates::ALL pointwise.
+        // Pinned here so a silent variant reorder on either axis (which
+        // would invert the rollup order on every consumer) fails this
+        // assertion first.
+        for window in FormatCoordinates::ALL.windows(2) {
+            assert!(
+                window[0] < window[1],
+                "Ord must be strictly monotone in FormatCoordinates::ALL position: \
+                 {:?} < {:?} failed",
+                window[0],
+                window[1],
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_display_renders_canonical_format_colon_provenance() {
+        // The Display impl writes `<format>:<provenance>` using the
+        // canonical lowercase labels from each sibling axis. Pin the
+        // wire shape on every cell of the cube so a future format /
+        // provenance variant landing cannot drift the separator or
+        // label casing.
+        for cell in FormatCoordinates::ALL.iter().copied() {
+            let rendered = format!("{cell}");
+            let expected = format!("{}:{}", cell.format.as_str(), cell.provenance.as_str());
+            assert_eq!(
+                rendered, expected,
+                "Display must render canonical <format>:<provenance> on {cell:?}",
+            );
+            assert!(
+                rendered.contains(':'),
+                "Display output for {cell:?} must contain the `:` separator: {rendered}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_from_str_round_trips_over_all_cells() {
+        // The (Display, FromStr) stdlib pair on the product cube: every
+        // cell's canonical pair label parses back to the same cell. The
+        // round-trip holds across the full 8-cell cube — realizable and
+        // unrealizable alike — because Display / FromStr operate on the
+        // closed-enum labels, not on the realizability predicate.
+        for cell in FormatCoordinates::ALL.iter().copied() {
+            let rendered = cell.to_string();
+            let parsed: FormatCoordinates = rendered
+                .parse()
+                .unwrap_or_else(|e| panic!("FromStr round-trip for {cell:?} failed: {e}"));
+            assert_eq!(
+                parsed, cell,
+                "FromStr round-trip must be identity for {cell:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_from_str_inherits_case_insensitivity_per_axis() {
+        // Both halves of the canonical pair label parse
+        // case-insensitively: the format half inherits ASCII
+        // case-insensitivity from Format::from_extension (via
+        // to_ascii_lowercase), the provenance half inherits ASCII
+        // case-insensitivity from the trait-default
+        // ClosedAxisLabel::from_canonical_str. An operator-typed
+        // uppercased cell label reaches the same cell as the canonical
+        // lowercase form.
+        for cell in FormatCoordinates::ALL.iter().copied() {
+            let upper = cell.to_string().to_ascii_uppercase();
+            let parsed: FormatCoordinates = upper.parse().unwrap_or_else(|e| {
+                panic!("uppercase FromStr for {cell:?} must parse: {e}\n  input: {upper:?}")
+            });
+            assert_eq!(
+                parsed, cell,
+                "case-insensitive parse must round-trip {cell:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_from_str_inherits_format_alias_surface() {
+        // The format half of the pair label routes through
+        // Format::from_str, which accepts the alias extensions `yml`,
+        // `lsp`, `el` alongside the canonical names. An operator-typed
+        // `yml:figment-builtin` pair label reaches the same cell as the
+        // canonical `yaml:figment-builtin` form — the alias surface on
+        // the format axis lifts onto the product cube without a
+        // consumer-side rewrite.
+        let parsed: FormatCoordinates = "yml:figment-builtin".parse().unwrap();
+        assert_eq!(
+            parsed,
+            FormatCoordinates {
+                format: Format::Yaml,
+                provenance: FormatProvenance::FigmentBuiltin,
+            },
+        );
+        let parsed: FormatCoordinates = "lsp:shikumi-built".parse().unwrap();
+        assert_eq!(
+            parsed,
+            FormatCoordinates {
+                format: Format::Lisp,
+                provenance: FormatProvenance::ShikumiBuilt,
+            },
+        );
+    }
+
+    #[test]
+    fn format_coordinates_from_str_rejects_missing_separator() {
+        // Input without `:` rejects with MissingSeparator carrying the
+        // full input substring verbatim. The structural separator check
+        // is strictly more specific than per-half label checks, so a
+        // bare label like `yaml` (a valid Format) still rejects on the
+        // product-cube surface for missing the colon.
+        let sentinel = "no-colon-here-at-all";
+        let result: Result<FormatCoordinates, _> = sentinel.parse();
+        match result {
+            Err(ParseFormatCoordinatesError::MissingSeparator { input }) => {
+                assert_eq!(input, sentinel);
+                let rendered = format!(
+                    "{}",
+                    ParseFormatCoordinatesError::MissingSeparator {
+                        input: sentinel.to_owned(),
+                    }
+                );
+                assert!(
+                    rendered.contains(sentinel),
+                    "Display must carry the offending input verbatim, got: {rendered}",
+                );
+            }
+            other => {
+                panic!("missing-separator input must reject with MissingSeparator: {other:?}",)
+            }
+        }
+    }
+
+    #[test]
+    fn format_coordinates_from_str_rejects_unknown_format_with_label_verbatim() {
+        // Input with a `:` separator but an unrecognized format half
+        // rejects with UnknownFormat carrying the offending format
+        // substring verbatim. The provenance half is not checked at
+        // this point — the format-half check is strictly more specific
+        // and runs first to match left-to-right reading.
+        let result: Result<FormatCoordinates, _> = "vault:shikumi-built".parse();
+        match result {
+            Err(ParseFormatCoordinatesError::UnknownFormat { label }) => {
+                assert_eq!(label, "vault");
+                let rendered = format!(
+                    "{}",
+                    ParseFormatCoordinatesError::UnknownFormat {
+                        label: "vault".to_owned(),
+                    }
+                );
+                assert!(
+                    rendered.contains("vault"),
+                    "Display must carry the offending format label verbatim, got: {rendered}",
+                );
+            }
+            other => panic!("unknown-format input must reject with UnknownFormat: {other:?}",),
+        }
+    }
+
+    #[test]
+    fn format_coordinates_from_str_rejects_unknown_provenance_with_label_verbatim() {
+        // Input with a `:` separator and a recognized format half but
+        // an unrecognized provenance half rejects with UnknownProvenance
+        // carrying the offending provenance substring verbatim. This is
+        // the third precedence level after MissingSeparator and
+        // UnknownFormat.
+        let result: Result<FormatCoordinates, _> = "yaml:upstream-figment".parse();
+        match result {
+            Err(ParseFormatCoordinatesError::UnknownProvenance { label }) => {
+                assert_eq!(label, "upstream-figment");
+                let rendered = format!(
+                    "{}",
+                    ParseFormatCoordinatesError::UnknownProvenance {
+                        label: "upstream-figment".to_owned(),
+                    }
+                );
+                assert!(
+                    rendered.contains("upstream-figment"),
+                    "Display must carry the offending provenance label verbatim, got: {rendered}",
+                );
+            }
+            other => {
+                panic!("unknown-provenance input must reject with UnknownProvenance: {other:?}",)
+            }
+        }
+    }
+
+    #[test]
+    fn format_coordinates_from_str_uses_leftmost_colon_only() {
+        // The parser uses `split_once(':')` which splits on the
+        // leftmost `:`. Any additional `:` characters fall into the
+        // provenance half; since the canonical provenance labels
+        // contain no `:`, such input rejects with UnknownProvenance
+        // carrying the multi-colon trailing slice verbatim. Pins the
+        // split semantics so a future parser change cannot silently
+        // swap to rsplit_once.
+        let result: Result<FormatCoordinates, _> = "yaml:figment-builtin:extra".parse();
+        match result {
+            Err(ParseFormatCoordinatesError::UnknownProvenance { label }) => {
+                assert_eq!(label, "figment-builtin:extra");
+            }
+            other => panic!("multi-colon input must reject with UnknownProvenance: {other:?}",),
+        }
+    }
+
+    #[test]
+    fn format_coordinates_serde_yaml_round_trips_over_all_cells() {
+        // The (Serialize, Deserialize) serde idiom-peer of the
+        // (Display, FromStr) round-trip: every cell of the cube
+        // serializes to its canonical `<format>:<provenance>` scalar
+        // and deserializes back to the same cell. The round-trip holds
+        // across the full 8-cell cube.
+        for cell in FormatCoordinates::ALL.iter().copied() {
+            let yaml = serde_yaml::to_string(&cell).unwrap();
+            let parsed: FormatCoordinates = serde_yaml::from_str(&yaml)
+                .unwrap_or_else(|e| panic!("YAML round-trip for {cell:?} failed: {e}"));
+            assert_eq!(
+                parsed, cell,
+                "serde YAML round-trip must be identity for {cell:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_serde_json_round_trips_over_all_cells() {
+        // JSON emission is the quoted canonical pair label; the
+        // round-trip is identity over every cell. An attestation
+        // manifest emitting `{"loaded_by": "nix:shikumi-built"}` lands
+        // at the wire shape without a rename helper.
+        for cell in FormatCoordinates::ALL.iter().copied() {
+            let json = serde_json::to_string(&cell).unwrap();
+            assert_eq!(
+                json,
+                format!("\"{}:{}\"", cell.format.as_str(), cell.provenance.as_str()),
+                "JSON emission for {cell:?} must be the quoted canonical pair label",
+            );
+            let parsed: FormatCoordinates = serde_json::from_str(&json).unwrap_or_else(|e| {
+                panic!("JSON round-trip for {cell:?} failed: {e}\n  json: {json}")
+            });
+            assert_eq!(
+                parsed, cell,
+                "serde JSON round-trip must be identity for {cell:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn format_coordinates_serde_yaml_is_case_insensitive() {
+        // Uppercase YAML scalars parse back to the same cell via the
+        // case-insensitive deserialize path lowering through FromStr.
+        // Both halves inherit ASCII case-insensitivity from their
+        // respective axes; the product cube composes the inheritance
+        // pointwise without re-stating it at the cell parser.
+        for cell in FormatCoordinates::ALL.iter().copied() {
+            let upper = format!("{cell}").to_ascii_uppercase();
+            let yaml = format!("\"{upper}\"\n");
+            let parsed: FormatCoordinates = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+                panic!("uppercase YAML scalar for {cell:?} must deserialize: {e}\n  yaml: {yaml:?}",)
+            });
+            assert_eq!(parsed, cell);
+        }
+    }
+
+    #[test]
+    fn format_coordinates_serde_yaml_unknown_format_error_carries_label_verbatim() {
+        // The deserialize error surface carries the offending format
+        // label verbatim through ParseFormatCoordinatesError's Display
+        // impl, routed via serde::de::Error::custom. A manifest field
+        // carrying `loaded_by: vault:shikumi-built` rejects on the
+        // serde side with the offending format substring named in the
+        // rendered diagnostic.
+        let yaml = "\"vault:shikumi-built\"\n";
+        let result: Result<FormatCoordinates, _> = serde_yaml::from_str(yaml);
+        match result {
+            Err(e) => {
+                let rendered = format!("{e}");
+                assert!(
+                    rendered.contains("vault"),
+                    "serde YAML error must carry the unknown format label verbatim, \
+                     got: {rendered}",
+                );
+            }
+            Ok(other) => panic!("YAML carrying unknown format half must reject, got {other:?}",),
+        }
+    }
+
+    #[test]
+    fn format_coordinates_serde_yaml_unknown_provenance_error_carries_label_verbatim() {
+        // Symmetric pin on the provenance half: a manifest field
+        // carrying `loaded_by: yaml:upstream-figment` rejects on the
+        // serde side with the offending provenance substring named in
+        // the rendered diagnostic.
+        let yaml = "\"yaml:upstream-figment\"\n";
+        let result: Result<FormatCoordinates, _> = serde_yaml::from_str(yaml);
+        match result {
+            Err(e) => {
+                let rendered = format!("{e}");
+                assert!(
+                    rendered.contains("upstream-figment"),
+                    "serde YAML error must carry the unknown provenance label verbatim, \
+                     got: {rendered}",
+                );
+            }
+            Ok(other) => {
+                panic!("YAML carrying unknown provenance half must reject, got {other:?}",)
+            }
+        }
+    }
+
+    #[test]
+    fn format_coordinates_btreemap_emits_in_cube_order() {
+        // The Ord derive's compounding payoff on the product cube: a
+        // BTreeMap<FormatCoordinates, T> keyed on the (format ×
+        // provenance) cube iterates in product order pointwise matching
+        // FormatCoordinates::ALL. A per-cell discovery-cost telemetry
+        // rollup, a per-cell failure-rate dashboard, or an attestation
+        // manifest's per-cell cardinality mix emits rows in product
+        // order without a hand-rolled comparator at the renderer. Same
+        // BTreeMap-emission pin as on the sibling axes
+        // (`format_btreemap_emits_in_preference_order`,
+        // `format_provenance_btreemap_emits_in_declaration_order`),
+        // lifted onto the product cube.
+        use std::collections::BTreeMap;
+        let mut tally: BTreeMap<FormatCoordinates, u32> = BTreeMap::new();
+        for &cell in FormatCoordinates::ALL {
+            tally.insert(cell, 0);
+        }
+        let emitted: Vec<FormatCoordinates> = tally.keys().copied().collect();
+        assert_eq!(
+            emitted,
+            FormatCoordinates::ALL.to_vec(),
+            "BTreeMap<FormatCoordinates, _> key order must match FormatCoordinates::ALL",
+        );
     }
 }
