@@ -12,6 +12,7 @@
 use std::fmt;
 use std::panic::Location;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 /// A single layer in a config provider chain.
 ///
@@ -258,7 +259,48 @@ impl ConfigSource {
 /// trait-bounds parity with the sibling typescape primitives
 /// ([`crate::AttributionRule`], [`crate::AttributionConfidence`],
 /// [`FigmentSourceTag`], [`FigmentNameTag`], [`EnvMetadataTag`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// **Trait surface** — alongside the canonical
+/// `Debug + Clone + Copy + PartialEq + Eq + Hash` set, the derive also
+/// includes [`Ord`] + [`PartialOrd`]. The total order is the
+/// declaration-order lex over [`Self::ALL`]
+/// (`Defaults < Env < File`), so a
+/// [`BTreeMap<ConfigSourceKind, T>`][std::collections::BTreeMap] keyed
+/// on the layer-kind axis (per-kind attribution histograms, per-kind
+/// failure-rate dashboards, attestation manifests recording the layer-
+/// kind cardinality mix of a recorded chain) emits rows in declaration
+/// order deterministically without a hand-rolled comparator at the
+/// renderer. Idiom-peer of the [`Ord`] derive on
+/// [`crate::FormatProvenance`] (commit `2c7654c`), [`crate::Format`]
+/// (commit `b56b121`), and the typed-cube classifiers
+/// ([`crate::ModalityClass`], [`crate::PartitionFace`], …); pinned by
+/// [`tests::config_source_kind_ord_matches_all_declaration_order`].
+///
+/// **Canonical-string surface** — [`fmt::Display`] /
+/// [`std::str::FromStr`] round-trip through the canonical operator-
+/// facing lowercase label [`Self::as_str`] returns (`"defaults"` /
+/// `"env"` / `"file"`); `FromStr` lowers through the trait-default
+/// [`crate::ClosedAxisLabel::from_canonical_str`] parse and inherits
+/// ASCII case-insensitivity. Pinned by
+/// [`tests::config_source_kind_display_matches_as_str`] and
+/// [`tests::config_source_kind_from_str_round_trips_over_every_variant`].
+///
+/// **Serde surface** — [`serde::Serialize`] / [`serde::Deserialize`]
+/// are the canonical idiom-peer of the ([`fmt::Display`],
+/// [`std::str::FromStr`]) pair. Serialize emits the canonical
+/// lowercase label through [`serde::Serializer::collect_str`];
+/// Deserialize lowers through [`<Self as FromStr>::from_str`],
+/// inheriting the trait-default case-insensitivity. An attestation
+/// manifest field recording which layer-kind originated a failing
+/// attribution, a structured-log payload tagging the layer-kind of a
+/// chain entry, or a consumer struct holding a [`ConfigSourceKind`]
+/// under `#[derive(Serialize, Deserialize)]` round-trips through the
+/// canonical label without a consumer-side rename helper. Pinned by
+/// [`tests::config_source_kind_serde_yaml_round_trips_over_every_variant`],
+/// [`tests::config_source_kind_serde_json_round_trips_over_every_variant`],
+/// [`tests::config_source_kind_serde_yaml_is_case_insensitive`], and
+/// [`tests::config_source_kind_serde_yaml_unknown_kind_error_carries_label_verbatim`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 #[non_exhaustive]
 pub enum ConfigSourceKind {
     /// Maps to [`ConfigSource::Defaults`].
@@ -351,6 +393,107 @@ impl crate::ClosedAxis for ConfigSourceKind {
 impl crate::ClosedAxisLabel for ConfigSourceKind {
     fn as_str(self) -> &'static str {
         Self::as_str(self)
+    }
+}
+
+impl fmt::Display for ConfigSourceKind {
+    /// Write the canonical operator-facing lowercase label
+    /// [`Self::as_str`] returns (`"defaults"` / `"env"` / `"file"`) —
+    /// the same scalar [`<Self as serde::Serialize>::serialize`] emits
+    /// and the same scalar [`<Self as std::str::FromStr>::from_str`]
+    /// accepts. Idiom-peer of the `Display` impl on
+    /// [`crate::FormatProvenance`] (commit `2c7654c`) lifted onto the
+    /// layer-kind sibling closed-enum.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for ConfigSourceKind {
+    type Err = crate::ShikumiError;
+
+    /// Parse the canonical operator-facing lowercase label
+    /// (`"defaults"` / `"env"` / `"file"`) produced by [`Self::as_str`];
+    /// case-insensitive over ASCII via the trait-default
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] parse.
+    /// On unrecognized input, returns [`crate::ShikumiError::Parse`]
+    /// with the offending label embedded verbatim — matching the
+    /// [`<crate::FormatProvenance as FromStr>::from_str`] surface
+    /// (commit `2c7654c`) so the same localization story (the operator
+    /// sees the offending substring in the rendered diagnostic) carries
+    /// to the layer-kind axis.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        <Self as crate::ClosedAxisLabel>::from_canonical_str(s)
+            .ok_or_else(|| crate::ShikumiError::Parse(format!("unknown config source kind: {s}")))
+    }
+}
+
+impl serde::Serialize for ConfigSourceKind {
+    /// Serialize the layer-kind as the canonical operator-facing
+    /// lowercase label [`Self::as_str`] returns — the same scalar the
+    /// [`fmt::Display`] impl writes. Routes through
+    /// [`serde::Serializer::collect_str`] so the serialized
+    /// representation is exactly `format!("{self}")` with no
+    /// intermediate allocation.
+    ///
+    /// Closes the canonical (`Serialize`, `Deserialize`) serde
+    /// idiom-peer of the (`Display`, [`std::str::FromStr`]) stdlib pair
+    /// on the layer-kind axis. A layer-kind emitted into a YAML
+    /// attestation manifest field, a JSON observability payload, or any
+    /// consumer struct holding a [`ConfigSourceKind`] field under
+    /// `#[derive(Serialize, Deserialize)]` round-trips through the
+    /// canonical label without a consumer-side rename helper.
+    ///
+    /// **Round-trip law** — for every `k: ConfigSourceKind`,
+    /// `serde_yaml::from_str::<ConfigSourceKind>(&serde_yaml::to_string(&k)?)? == k`
+    /// and the same on `serde_json`. Pinned by
+    /// [`tests::config_source_kind_serde_yaml_round_trips_over_every_variant`]
+    /// and
+    /// [`tests::config_source_kind_serde_json_round_trips_over_every_variant`].
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ConfigSourceKind {
+    /// Deserialize the layer-kind from the canonical operator-facing
+    /// lowercase label [`Self::as_str`] returns via
+    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
+    /// `visit_str` lowers to [`<Self as FromStr>::from_str`] and routes
+    /// any [`crate::ShikumiError`] through [`serde::de::Error::custom`].
+    ///
+    /// **Case insensitivity inherits from [`FromStr`]** — the
+    /// [`crate::ClosedAxisLabel::from_canonical_str`] trait default
+    /// uses [`str::eq_ignore_ascii_case`] over [`Self::ALL`], so
+    /// uppercase or mixed-case scalars (e.g. `Defaults`, `ENV`,
+    /// `File`) parse pointwise. Pinned by
+    /// [`tests::config_source_kind_serde_yaml_is_case_insensitive`].
+    ///
+    /// **Unknown-kind rejection carries the offending label verbatim**
+    /// — a manifest field carrying an unrecognized kind surfaces at
+    /// the serde error site with the offending substring verbatim in
+    /// the rendered message, lifted through
+    /// [`crate::ShikumiError::Parse`]'s `Display` impl. Pinned by
+    /// [`tests::config_source_kind_serde_yaml_unknown_kind_error_carries_label_verbatim`].
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ConfigSourceKindVisitor;
+
+        impl serde::de::Visitor<'_> for ConfigSourceKindVisitor {
+            type Value = ConfigSourceKind;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(
+                    "a canonical ConfigSourceKind lowercase label \
+                     (`defaults`, `env`, `file`; case-insensitive)",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<ConfigSourceKind, E> {
+                v.parse::<ConfigSourceKind>().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(ConfigSourceKindVisitor)
     }
 }
 
@@ -3417,6 +3560,215 @@ mod tests {
             "every AttributionRule::layer_kind() must appear in ConfigSourceKind::ALL: \
              rule_kinds={rule_kinds:?}, listed={listed:?}",
         );
+    }
+
+    #[test]
+    fn config_source_kind_ord_matches_all_declaration_order() {
+        // The derived Ord on ConfigSourceKind is declaration-order lex
+        // over ALL: `Defaults < Env < File`. A BTreeMap keyed on the
+        // layer-kind axis (per-kind attribution histograms, per-kind
+        // failure-rate dashboards, attestation manifests recording the
+        // layer-kind cardinality mix of a recorded chain) emits rows in
+        // that order deterministically without a hand-rolled comparator
+        // at the renderer.
+        //
+        // Two-leg pin: (1) ALL is a strictly-increasing chain under Ord,
+        // (2) cmp/partial_cmp agree with the array-index lex over ALL on
+        // every pair (and reflexivity holds).
+        use std::cmp::Ordering;
+        for window in ConfigSourceKind::ALL.windows(2) {
+            assert!(
+                window[0] < window[1],
+                "ConfigSourceKind::ALL must be strictly increasing under Ord, \
+                 but {:?} >= {:?}",
+                window[0],
+                window[1],
+            );
+        }
+        for (i, &a) in ConfigSourceKind::ALL.iter().enumerate() {
+            for (j, &b) in ConfigSourceKind::ALL.iter().enumerate() {
+                let expected = i.cmp(&j);
+                assert_eq!(
+                    a.cmp(&b),
+                    expected,
+                    "ConfigSourceKind::cmp must match ALL-index lex for ({a:?}, {b:?})",
+                );
+                assert_eq!(
+                    a.partial_cmp(&b),
+                    Some(expected),
+                    "ConfigSourceKind::partial_cmp must agree with cmp for ({a:?}, {b:?})",
+                );
+                if i == j {
+                    assert_eq!(a.cmp(&b), Ordering::Equal, "Ord must be reflexive on {a:?}",);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn config_source_kind_btreemap_emits_in_declaration_order() {
+        // The compounding payoff of the Ord derive at a typed consumer
+        // site: a BTreeMap<ConfigSourceKind, _> emits keys in
+        // declaration order on `iter()` / `into_iter()` regardless of
+        // insertion order, matching `ConfigSourceKind::ALL`. Idiom-peer
+        // of the same pin on FormatProvenance (commit `2c7654c`) and on
+        // FormatMetadataTag (commit `fc0051e`).
+        use std::collections::BTreeMap;
+        let mut counts: BTreeMap<ConfigSourceKind, u32> = BTreeMap::new();
+        counts.insert(ConfigSourceKind::File, 3);
+        counts.insert(ConfigSourceKind::Defaults, 1);
+        counts.insert(ConfigSourceKind::Env, 2);
+        let observed: Vec<ConfigSourceKind> = counts.keys().copied().collect();
+        assert_eq!(
+            observed,
+            ConfigSourceKind::ALL.to_vec(),
+            "BTreeMap<ConfigSourceKind, _> must emit keys in ALL declaration order",
+        );
+    }
+
+    #[test]
+    fn config_source_kind_display_matches_as_str() {
+        // Display writes the canonical lowercase label as_str returns,
+        // byte-for-byte. The two surfaces stay aligned by construction
+        // — a future rename of either must update the other in lockstep.
+        for k in ConfigSourceKind::ALL.iter().copied() {
+            assert_eq!(
+                format!("{k}"),
+                k.as_str(),
+                "Display must agree with as_str for {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_source_kind_from_str_round_trips_over_every_variant() {
+        // Display → FromStr identity round-trip over every variant.
+        // FromStr lowers through ClosedAxisLabel::from_canonical_str,
+        // so any future override of that trait method is held to this
+        // law at the inherent FromStr surface as well.
+        for k in ConfigSourceKind::ALL {
+            let rendered = k.to_string();
+            let parsed: ConfigSourceKind = rendered
+                .parse()
+                .expect("FromStr must round-trip Display output");
+            assert_eq!(parsed, *k, "FromStr must round-trip {k:?}");
+        }
+    }
+
+    #[test]
+    fn config_source_kind_from_str_is_case_insensitive() {
+        // FromStr lowers through ClosedAxisLabel::from_canonical_str
+        // which uses eq_ignore_ascii_case over ALL — uppercase and
+        // mixed-case scalars an operator might type into an env var or
+        // CLI flag parse pointwise to the same variant.
+        assert_eq!(
+            "DEFAULTS".parse::<ConfigSourceKind>().unwrap(),
+            ConfigSourceKind::Defaults,
+        );
+        assert_eq!(
+            "Env".parse::<ConfigSourceKind>().unwrap(),
+            ConfigSourceKind::Env,
+        );
+        assert_eq!(
+            "FILE".parse::<ConfigSourceKind>().unwrap(),
+            ConfigSourceKind::File,
+        );
+    }
+
+    #[test]
+    fn config_source_kind_from_str_unknown_kind_error_carries_label_verbatim() {
+        // Unrecognized labels reject through ShikumiError::Parse with
+        // the offending substring embedded verbatim in the rendered
+        // message — same verbatim-rejection discipline as
+        // FormatProvenance's FromStr surface (commit `2c7654c`) and
+        // ParseFormatCoordinatesError (commit `06a2f42`).
+        for bad in &["default", "http", "vault", "", "  env"] {
+            let err = bad
+                .parse::<ConfigSourceKind>()
+                .expect_err("non-canonical label must reject");
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(bad),
+                "rendered error must contain the offending label verbatim: \
+                 input={bad:?}, rendered={rendered:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_source_kind_serde_yaml_round_trips_over_every_variant() {
+        // Serde Serialize → Deserialize identity round-trip over every
+        // variant through serde_yaml. Closes the (Serialize, Deserialize)
+        // idiom-peer of the (Display, FromStr) stdlib pair on the layer-
+        // kind axis. A consumer struct holding a ConfigSourceKind field
+        // under #[derive(Serialize, Deserialize)] (e.g. an attestation
+        // manifest recording the layer-kind of a failing attribution)
+        // round-trips without a consumer-side rename helper.
+        for k in ConfigSourceKind::ALL {
+            let yaml = serde_yaml::to_string(k).expect("Serialize must succeed");
+            let parsed: ConfigSourceKind =
+                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+            assert_eq!(parsed, *k, "serde_yaml round-trip must preserve {k:?}");
+        }
+    }
+
+    #[test]
+    fn config_source_kind_serde_json_round_trips_over_every_variant() {
+        // Serde Serialize → Deserialize identity round-trip over every
+        // variant through serde_json. The two formats render the
+        // canonical scalar identically modulo wire ceremony (YAML's
+        // bare scalar vs. JSON's quoted string), so the round-trip law
+        // composes pointwise — a future divergence in either Serialize
+        // impl surfaces here.
+        for k in ConfigSourceKind::ALL {
+            let json = serde_json::to_string(k).expect("Serialize must succeed");
+            let parsed: ConfigSourceKind =
+                serde_json::from_str(&json).expect("Deserialize must accept Serialize output");
+            assert_eq!(parsed, *k, "serde_json round-trip must preserve {k:?}");
+        }
+    }
+
+    #[test]
+    fn config_source_kind_serde_yaml_is_case_insensitive() {
+        // Deserialize lowers through FromStr which lowers through
+        // ClosedAxisLabel::from_canonical_str (eq_ignore_ascii_case),
+        // so uppercase or mixed-case scalars parse pointwise. A
+        // manifest field authored by an operator typing the canonical
+        // name with different casing parses without a consumer-side
+        // case-fold helper.
+        let cases: &[(&str, ConfigSourceKind)] = &[
+            ("Defaults", ConfigSourceKind::Defaults),
+            ("ENV", ConfigSourceKind::Env),
+            ("File", ConfigSourceKind::File),
+        ];
+        for (input, expected) in cases {
+            let parsed: ConfigSourceKind =
+                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+            assert_eq!(
+                parsed, *expected,
+                "serde_yaml must parse case-insensitively for input {input:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn config_source_kind_serde_yaml_unknown_kind_error_carries_label_verbatim() {
+        // An unrecognized layer-kind label surfaces at the serde error
+        // site with the offending substring verbatim in the rendered
+        // message, lifted through ShikumiError::Parse's Display impl.
+        // Same verbatim-rejection discipline as FormatProvenance's
+        // serde surface (commit `2c7654c`) and Format's serde surface
+        // (commit `b56b121`).
+        for bad in &["http", "vault", "default", "configmap"] {
+            let err = serde_yaml::from_str::<ConfigSourceKind>(bad)
+                .expect_err("non-canonical label must reject");
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(bad),
+                "rendered serde error must contain the offending label verbatim: \
+                 input={bad:?}, rendered={rendered:?}",
+            );
+        }
     }
 
     // ---- env_metadata_name / strip_env_metadata_name ----
