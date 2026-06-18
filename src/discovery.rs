@@ -20,7 +20,37 @@ use crate::error::ShikumiError;
 /// **Tatara-lisp is a first-class configuration format** alongside YAML, TOML,
 /// and Nix. Per the pleme-io tatara-lisp ecosystem standard, every configurable
 /// application supports all four natively and auto-detects by extension.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+///
+/// **Trait surface** — alongside the canonical
+/// `Debug + Clone + Copy + PartialEq + Eq + Hash + Default` set, the derive
+/// also includes [`Ord`] + [`PartialOrd`]. The total order is the
+/// declaration-order lex over [`Self::ALL`]
+/// (`Yaml < Toml < Lisp < Nix`), matching the documented "preference
+/// order" reading at the type level. A
+/// [`BTreeMap<Format, T>`][std::collections::BTreeMap] keyed on the
+/// format axis (e.g. per-format resolve-cost telemetry, per-format
+/// discovery-hit counts, per-format attestation rollups) emits rows in
+/// preference order deterministically without a hand-rolled comparator
+/// — idiom-peer of the same `Ord` derive on the typed-cube classifiers
+/// ([`crate::ModalityClass`], [`crate::PartitionFace`], …) and pinned by
+/// [`tests::format_ord_matches_all_declaration_order`].
+///
+/// **Serde surface** — [`serde::Serialize`] / [`serde::Deserialize`] are
+/// implemented manually as the canonical idiom-peer of the existing
+/// [`std::fmt::Display`] / [`std::str::FromStr`] pair. Serialize emits
+/// the canonical lowercase label [`Self::as_str`] returns; Deserialize
+/// lowers through [`<Self as FromStr>::from_str`], inheriting the
+/// alias surface (`yml`/`lsp`/`el`) and case-insensitivity for free. A
+/// consumer config carrying a `default_format: yaml` field, an
+/// attestation manifest recording which format a config resolved
+/// through, or a per-format dispatch table keyed under
+/// `#[derive(Serialize, Deserialize)]` reaches the canonical wire form
+/// without a consumer-side rename helper. Pinned by
+/// [`tests::format_serde_yaml_round_trips_over_every_variant`],
+/// [`tests::format_serde_json_round_trips_over_every_variant`],
+/// [`tests::format_serde_yaml_accepts_aliases`], and
+/// [`tests::format_serde_yaml_unknown_format_error_carries_label_verbatim`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Ord, PartialOrd)]
 #[non_exhaustive]
 pub enum Format {
     /// YAML format (`.yaml` and `.yml` extensions).
@@ -1006,6 +1036,80 @@ impl FromStr for Format {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::from_extension(s)
             .ok_or_else(|| ShikumiError::Parse(format!("unknown config format: {s}")))
+    }
+}
+
+impl serde::Serialize for Format {
+    /// Serialize the format tag as the canonical operator-facing
+    /// lowercase label [`Self::as_str`] returns — the same scalar the
+    /// [`fmt::Display`] impl writes. Routes through
+    /// [`serde::Serializer::collect_str`] so the serialized
+    /// representation is exactly `format!("{self}")` with no
+    /// intermediate allocation.
+    ///
+    /// Closes the canonical (`Serialize`, `Deserialize`) serde
+    /// idiom-peer of the (`Display`, `FromStr`) stdlib pair on the
+    /// format-tag surface. A format emitted into a YAML attestation
+    /// manifest field, a JSON observability payload, or any consumer
+    /// struct holding a [`Format`] field under
+    /// `#[derive(Serialize, Deserialize)]` round-trips through the
+    /// canonical label without a consumer-side rename helper.
+    ///
+    /// **Round-trip law** — for every `f: Format`,
+    /// `serde_yaml::from_str::<Format>(&serde_yaml::to_string(&f)?)? == f`
+    /// and the same on `serde_json`. Pinned by
+    /// [`tests::format_serde_yaml_round_trips_over_every_variant`] and
+    /// [`tests::format_serde_json_round_trips_over_every_variant`].
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Format {
+    /// Deserialize the format tag from the canonical operator-facing
+    /// lowercase label [`Self::as_str`] returns via
+    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
+    /// `visit_str` lowers to [`<Self as FromStr>::from_str`] and routes
+    /// any [`ShikumiError`] through [`serde::de::Error::custom`].
+    ///
+    /// **Alias surface inherits from [`FromStr`]** — the deserialize
+    /// path lowers through [`Self::from_extension`], which accepts
+    /// `"yml"`/`"lsp"`/`"el"` alongside the canonical
+    /// `"yaml"`/`"lisp"`. An operator-authored manifest field carrying
+    /// either alias parses on the serde side without a per-emitter
+    /// alias-fold. Pinned by
+    /// [`tests::format_serde_yaml_accepts_aliases`].
+    ///
+    /// **Case insensitivity inherits from [`FromStr`]** — the
+    /// `to_ascii_lowercase` step in [`Self::from_extension`] makes
+    /// uppercase or mixed-case scalars parse pointwise. Pinned by
+    /// [`tests::format_serde_yaml_is_case_insensitive`].
+    ///
+    /// **Unknown-format rejection carries the offending label
+    /// verbatim** — a manifest field carrying an unrecognized format
+    /// surfaces at the serde error site with the offending substring
+    /// verbatim in the rendered message, lifted through
+    /// [`ShikumiError::Parse`]'s `Display` impl. Pinned by
+    /// [`tests::format_serde_yaml_unknown_format_error_carries_label_verbatim`].
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct FormatVisitor;
+
+        impl serde::de::Visitor<'_> for FormatVisitor {
+            type Value = Format;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(
+                    "a canonical Format lowercase label \
+                     (`yaml`, `toml`, `lisp`, `nix`; aliases `yml`/`lsp`/`el` accepted)",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Format, E> {
+                v.parse::<Format>().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(FormatVisitor)
     }
 }
 
@@ -3400,6 +3504,165 @@ mod tests {
             <Format as ClosedAxisLabel>::from_canonical_str("el"),
             None,
             "from_canonical_str must reject alias `el`",
+        );
+    }
+
+    #[test]
+    fn format_ord_matches_all_declaration_order() {
+        // Yaml < Toml < Lisp < Nix under the derived Ord — the
+        // declaration-order total order is monotone in the Format::ALL
+        // position. A BTreeMap<Format, T> keyed on the format axis
+        // emits rows in this order deterministically; pinned here so a
+        // silent variant reorder (which would invert the rollup order
+        // on every consumer) fails this assertion first. Idiom-peer of
+        // the `*_class_ord_matches_all_declaration_order` pins on the
+        // typed-cube classifiers (ModalityClass, PartitionFace, …).
+        // The order also matches the documented "preference order"
+        // reading on the Format doc comment, so a future precedence
+        // change at the discovery layer surfaces as a paired drift
+        // here.
+        assert!(Format::Yaml < Format::Toml);
+        assert!(Format::Toml < Format::Lisp);
+        assert!(Format::Lisp < Format::Nix);
+        for window in Format::ALL.windows(2) {
+            assert!(
+                window[0] < window[1],
+                "Ord must be strictly monotone in Format::ALL position: \
+                 {:?} < {:?} failed",
+                window[0],
+                window[1],
+            );
+        }
+    }
+
+    #[test]
+    fn format_serde_yaml_round_trips_over_every_variant() {
+        // Serialize then deserialize on every variant — the typed
+        // format tag survives the YAML scalar round-trip via the
+        // canonical label, no consumer-side rename helper at the
+        // renderer. Closes the (Serialize, Deserialize) idiom-peer of
+        // the existing (Display, FromStr) round-trip on Format.
+        for &f in Format::ALL {
+            let yaml = serde_yaml::to_string(&f).unwrap();
+            let parsed: Format = serde_yaml::from_str(&yaml)
+                .unwrap_or_else(|e| panic!("YAML round-trip for {f:?} failed: {e}"));
+            assert_eq!(
+                parsed, f,
+                "serde YAML round-trip must be identity for {f:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn format_serde_json_round_trips_over_every_variant() {
+        // JSON emission is the quoted canonical lowercase label; the
+        // round-trip is identity over every variant. Pins the natural
+        // projection an observability payload reaches when carrying a
+        // Format field through #[derive(Serialize, Deserialize)] — a
+        // consumer config emitting `{"default_format": "yaml"}` lands
+        // at the wire shape without a rename helper.
+        for &f in Format::ALL {
+            let json = serde_json::to_string(&f).unwrap();
+            assert_eq!(
+                json,
+                format!("\"{}\"", f.as_str()),
+                "JSON emission for {f:?} must be the quoted canonical label",
+            );
+            let parsed: Format = serde_json::from_str(&json).unwrap_or_else(|e| {
+                panic!("JSON round-trip for {f:?} failed: {e}\n  json: {json}")
+            });
+            assert_eq!(
+                parsed, f,
+                "serde JSON round-trip must be identity for {f:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn format_serde_yaml_is_case_insensitive() {
+        // Uppercase YAML scalars parse back to the same format via the
+        // case-insensitive deserialize path lowering through FromStr
+        // (which lowers through Format::from_extension, applying
+        // `to_ascii_lowercase` to the input).
+        for &f in Format::ALL {
+            let upper = f.as_str().to_ascii_uppercase();
+            let yaml = format!("\"{upper}\"\n");
+            let parsed: Format = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+                panic!("uppercase YAML scalar for {f:?} must deserialize: {e}\n  yaml: {yaml:?}")
+            });
+            assert_eq!(parsed, f);
+        }
+    }
+
+    #[test]
+    fn format_serde_yaml_accepts_aliases() {
+        // The alias surface inherited from Format::from_extension —
+        // `yml` for Yaml, `lsp`/`el` for Lisp — parses pointwise on
+        // the serde side. An operator-authored manifest field carrying
+        // `default_format: yml` (the common short spelling) lands as
+        // Format::Yaml without a per-emitter alias-fold.
+        let cases: &[(&str, Format)] = &[
+            ("yml", Format::Yaml),
+            ("lsp", Format::Lisp),
+            ("el", Format::Lisp),
+        ];
+        for &(alias, expected) in cases {
+            let yaml = format!("\"{alias}\"\n");
+            let parsed: Format = serde_yaml::from_str(&yaml).unwrap_or_else(|e| {
+                panic!("alias `{alias}` must deserialize to {expected:?}: {e}")
+            });
+            assert_eq!(
+                parsed, expected,
+                "alias `{alias}` must deserialize to {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn format_serde_yaml_unknown_format_error_carries_label_verbatim() {
+        // The deserialize error surface carries the offending label
+        // verbatim through ShikumiError::Parse's Display impl, routed
+        // via serde::de::Error::custom. Idiom-peer of the same pin on
+        // the typed-cube classifier surfaces — a manifest field
+        // carrying `default_format: json` rejects on the serde side
+        // with the offending substring named in the rendered
+        // diagnostic, so the operator can localize the typo without
+        // matching on the parse error variant.
+        let sentinel = "__shikumi_unknown_format_sentinel__";
+        let yaml = format!("\"{sentinel}\"\n");
+        let result: Result<Format, _> = serde_yaml::from_str(&yaml);
+        match result {
+            Err(e) => {
+                let rendered = format!("{e}");
+                assert!(
+                    rendered.contains(sentinel),
+                    "serde YAML error must carry the unknown sentinel verbatim, got: {rendered}",
+                );
+            }
+            Ok(other) => panic!("YAML carrying unknown format must reject, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn format_btreemap_emits_in_preference_order() {
+        // The Ord derive's compounding payoff: a BTreeMap<Format, T>
+        // keyed on the format axis iterates in declaration order
+        // (Yaml < Toml < Lisp < Nix), which matches the documented
+        // "preference order" reading on the Format doc comment. A
+        // per-format resolve-cost telemetry rollup, a per-format
+        // discovery-hit counter, or an attestation manifest's
+        // per-format cardinality mix emits rows in preference order
+        // without a hand-rolled comparator at the renderer.
+        use std::collections::BTreeMap;
+        let mut tally: BTreeMap<Format, u32> = BTreeMap::new();
+        for &f in Format::ALL {
+            tally.insert(f, 0);
+        }
+        let emitted: Vec<Format> = tally.keys().copied().collect();
+        assert_eq!(
+            emitted,
+            Format::ALL.to_vec(),
+            "BTreeMap<Format, _> key order must match Format::ALL (preference order)",
         );
     }
 
