@@ -82,8 +82,10 @@
 //! # Ok::<_, shikumi::ShikumiError>(())
 //! ```
 
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
@@ -249,7 +251,21 @@ impl SecretBackend {
 /// `'static` and allocation-free, suitable for crossing thread
 /// boundaries the borrowed [`SecretBackend`] (which holds owned `String`
 /// payloads) is unnecessarily expensive to clone for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// `Ord` and `PartialOrd` are derived as declaration-order lex over
+/// [`Self::ALL`] (`Literal < Command < Op < Sops < Akeyless < Vault <
+/// AwsSecret < GcpSecret`): a `BTreeMap<SecretBackendKind, T>` keyed on
+/// the secret-backend-axis kind (per-kind resolution-success
+/// histograms, per-kind failure-rate dashboards, attestation manifests
+/// recording the backend mix of resolved secrets) emits rows in that
+/// order deterministically without a hand-rolled comparator at the
+/// renderer. Idiom-peer of the same derive on
+/// [`crate::FigmentSourceKind`] (commit `5df265c`),
+/// [`crate::FigmentNameTagKind`] (commit `64a47e7`),
+/// [`crate::ConfigSourceKind`] (commit `e0b96d1`), and
+/// [`crate::Format`] (commit `b56b121`) lifted onto the
+/// secret-resolution-backend-axis sibling closed-enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum SecretBackendKind {
     /// Maps to [`SecretBackend::Literal`] regardless of inner string.
@@ -359,6 +375,125 @@ impl crate::ClosedAxis for SecretBackendKind {
 impl crate::ClosedAxisLabel for SecretBackendKind {
     fn as_str(self) -> &'static str {
         Self::as_str(self)
+    }
+}
+
+impl fmt::Display for SecretBackendKind {
+    /// Write the canonical operator-facing snake_case label
+    /// [`Self::as_str`] returns (`"literal"`, `"command"`, `"op"`,
+    /// `"sops"`, `"akeyless"`, `"vault"`, `"aws_secret"`,
+    /// `"gcp_secret"`) — the same scalar
+    /// [`<Self as serde::Serialize>::serialize`] emits and the same
+    /// scalar [`<Self as std::str::FromStr>::from_str`] accepts.
+    /// Idiom-peer of the `Display` impl on
+    /// [`crate::FigmentSourceKind`] (commit `5df265c`),
+    /// [`crate::FigmentNameTagKind`] (commit `64a47e7`), and
+    /// [`crate::ConfigSourceKind`] (commit `e0b96d1`) lifted onto the
+    /// secret-resolution-backend-axis sibling closed-enum.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for SecretBackendKind {
+    type Err = ShikumiError;
+
+    /// Parse the canonical operator-facing snake_case label
+    /// (`"literal"` / `"command"` / `"op"` / `"sops"` / `"akeyless"` /
+    /// `"vault"` / `"aws_secret"` / `"gcp_secret"`) produced by
+    /// [`Self::as_str`]; case-insensitive over ASCII via the
+    /// trait-default
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] parse.
+    /// On unrecognized input, returns [`ShikumiError::Parse`] with the
+    /// offending label embedded verbatim — matching the
+    /// verbatim-substring rejection discipline already established by
+    /// [`<crate::FigmentSourceKind as FromStr>::from_str`]
+    /// (commit `5df265c`),
+    /// [`<crate::FigmentNameTagKind as FromStr>::from_str`]
+    /// (commit `64a47e7`),
+    /// [`<crate::ConfigSourceKind as FromStr>::from_str`]
+    /// (commit `e0b96d1`),
+    /// [`<crate::FormatProvenance as FromStr>::from_str`]
+    /// (commit `2c7654c`), and
+    /// [`crate::ParseFormatCoordinatesError`] (commit `06a2f42`) so
+    /// the same localization story (the operator sees the offending
+    /// substring in the rendered diagnostic) carries to the
+    /// secret-resolution-backend-axis kind.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        <Self as crate::ClosedAxisLabel>::from_canonical_str(s)
+            .ok_or_else(|| ShikumiError::Parse(format!("unknown secret backend kind: {s}")))
+    }
+}
+
+impl serde::Serialize for SecretBackendKind {
+    /// Serialize the secret-resolution-backend-axis kind as the
+    /// canonical operator-facing snake_case label [`Self::as_str`]
+    /// returns — the same scalar the [`fmt::Display`] impl writes.
+    /// Routes through [`serde::Serializer::collect_str`] so the
+    /// serialized representation is exactly `format!("{self}")` with
+    /// no intermediate allocation.
+    ///
+    /// Closes the canonical (`Serialize`, `Deserialize`) serde
+    /// idiom-peer of the (`Display`, [`std::str::FromStr`]) stdlib
+    /// pair on the secret-resolution-backend-axis kind primitive. A
+    /// kind emitted into a YAML attestation manifest field, a JSON
+    /// observability payload, or any consumer struct holding a
+    /// [`SecretBackendKind`] field under
+    /// `#[derive(Serialize, Deserialize)]` round-trips through the
+    /// canonical label without a consumer-side rename helper.
+    ///
+    /// **Round-trip law** — for every `k: SecretBackendKind`,
+    /// `serde_yaml::from_str::<SecretBackendKind>(&serde_yaml::to_string(&k)?)? == k`
+    /// and the same on `serde_json`. Pinned by
+    /// [`tests::secret_backend_kind_serde_yaml_round_trips_over_every_variant`]
+    /// and
+    /// [`tests::secret_backend_kind_serde_json_round_trips_over_every_variant`].
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for SecretBackendKind {
+    /// Deserialize the secret-resolution-backend-axis kind from the
+    /// canonical operator-facing snake_case label [`Self::as_str`]
+    /// returns via [`serde::Deserializer::deserialize_str`] with a
+    /// visitor whose `visit_str` lowers to
+    /// [`<Self as FromStr>::from_str`] and routes any [`ShikumiError`]
+    /// through [`serde::de::Error::custom`].
+    ///
+    /// **Case insensitivity inherits from [`FromStr`]** — the
+    /// [`crate::ClosedAxisLabel::from_canonical_str`] trait default
+    /// uses [`str::eq_ignore_ascii_case`] over [`Self::ALL`], so
+    /// uppercase or mixed-case scalars (e.g. `LITERAL`, `Aws_Secret`)
+    /// parse pointwise. Pinned by
+    /// [`tests::secret_backend_kind_serde_yaml_is_case_insensitive`].
+    ///
+    /// **Unknown-kind rejection carries the offending label verbatim**
+    /// — a manifest field carrying an unrecognized kind surfaces at
+    /// the serde error site with the offending substring verbatim in
+    /// the rendered message, lifted through [`ShikumiError::Parse`]'s
+    /// `Display` impl. Pinned by
+    /// [`tests::secret_backend_kind_serde_yaml_unknown_kind_error_carries_label_verbatim`].
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct SecretBackendKindVisitor;
+
+        impl serde::de::Visitor<'_> for SecretBackendKindVisitor {
+            type Value = SecretBackendKind;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(
+                    "a canonical SecretBackendKind snake_case label \
+                     (`literal`, `command`, `op`, `sops`, `akeyless`, \
+                     `vault`, `aws_secret`, `gcp_secret`; case-insensitive)",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<SecretBackendKind, E> {
+                v.parse::<SecretBackendKind>().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(SecretBackendKindVisitor)
     }
 }
 
@@ -2347,5 +2482,261 @@ mod tests {
         // drifting through the round-trip law.
         assert_eq!(SecretRefShape::Whole.as_str(), "whole");
         assert_eq!(SecretRefShape::Field.as_str(), "field");
+    }
+
+    // ── SecretBackendKind — Ord / Display / FromStr / serde ──────────
+    //
+    // The (Ord, Display, FromStr, serde::{Serialize, Deserialize})
+    // quartet idiom-peer of the lift already landed on
+    // `FigmentSourceKind` (commit `5df265c`), `FigmentNameTagKind`
+    // (commit `64a47e7`), `ConfigSourceKind` (commit `e0b96d1`),
+    // `FormatProvenance` (commit `2c7654c`), `FormatCoordinates`
+    // (commit `06a2f42`), and `Format` (commit `b56b121`), now lifted
+    // onto the secret-resolution-backend-axis kind primitive.
+
+    #[test]
+    fn secret_backend_kind_ord_matches_all_declaration_order() {
+        // The derived Ord on SecretBackendKind is declaration-order
+        // lex over ALL: `Literal < Command < Op < Sops < Akeyless <
+        // Vault < AwsSecret < GcpSecret`. A BTreeMap keyed on the
+        // secret-resolution-backend-axis kind (per-kind
+        // resolution-success histograms, per-kind failure-rate
+        // dashboards, attestation manifests recording the backend mix
+        // of resolved secrets) emits rows in that order
+        // deterministically without a hand-rolled comparator at the
+        // renderer.
+        //
+        // Two-leg pin: (1) ALL is a strictly-increasing chain under
+        // Ord, (2) cmp/partial_cmp agree with the array-index lex over
+        // ALL on every pair (and reflexivity holds). Idiom-peer of the
+        // same pin on FigmentSourceKind (commit `5df265c`),
+        // FigmentNameTagKind (commit `64a47e7`), and ConfigSourceKind
+        // (commit `e0b96d1`).
+        use std::cmp::Ordering;
+        for window in SecretBackendKind::ALL.windows(2) {
+            assert!(
+                window[0] < window[1],
+                "SecretBackendKind::ALL must be strictly increasing under Ord, \
+                 but {:?} >= {:?}",
+                window[0],
+                window[1],
+            );
+        }
+        for (i, &a) in SecretBackendKind::ALL.iter().enumerate() {
+            for (j, &b) in SecretBackendKind::ALL.iter().enumerate() {
+                let expected = i.cmp(&j);
+                assert_eq!(
+                    a.cmp(&b),
+                    expected,
+                    "SecretBackendKind::cmp must match ALL-index lex for ({a:?}, {b:?})",
+                );
+                assert_eq!(
+                    a.partial_cmp(&b),
+                    Some(expected),
+                    "SecretBackendKind::partial_cmp must agree with cmp for ({a:?}, {b:?})",
+                );
+                if i == j {
+                    assert_eq!(a.cmp(&b), Ordering::Equal, "Ord must be reflexive on {a:?}",);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_btreemap_emits_in_declaration_order() {
+        // The compounding payoff of the Ord derive at a typed consumer
+        // site: a BTreeMap<SecretBackendKind, _> emits keys in
+        // declaration order on `iter()` / `into_iter()` regardless of
+        // insertion order, matching `SecretBackendKind::ALL`.
+        // Idiom-peer of the same pin on FigmentSourceKind
+        // (commit `5df265c`), FigmentNameTagKind (commit `64a47e7`),
+        // and ConfigSourceKind (commit `e0b96d1`).
+        use std::collections::BTreeMap;
+        let mut counts: BTreeMap<SecretBackendKind, u32> = BTreeMap::new();
+        counts.insert(SecretBackendKind::GcpSecret, 7);
+        counts.insert(SecretBackendKind::Literal, 1);
+        counts.insert(SecretBackendKind::Vault, 3);
+        counts.insert(SecretBackendKind::Op, 2);
+        counts.insert(SecretBackendKind::AwsSecret, 5);
+        counts.insert(SecretBackendKind::Sops, 4);
+        counts.insert(SecretBackendKind::Akeyless, 6);
+        counts.insert(SecretBackendKind::Command, 8);
+        let observed: Vec<SecretBackendKind> = counts.keys().copied().collect();
+        assert_eq!(
+            observed,
+            SecretBackendKind::ALL.to_vec(),
+            "BTreeMap<SecretBackendKind, _> must emit keys in ALL declaration order",
+        );
+    }
+
+    #[test]
+    fn secret_backend_kind_display_matches_as_str() {
+        // Display writes the canonical snake_case label as_str returns,
+        // byte-for-byte. The two surfaces stay aligned by construction
+        // — a future rename of either must update the other in
+        // lockstep. Idiom-peer of the same pin on FigmentSourceKind
+        // (commit `5df265c`) and FigmentNameTagKind (commit `64a47e7`).
+        for k in SecretBackendKind::ALL.iter().copied() {
+            assert_eq!(
+                format!("{k}"),
+                k.as_str(),
+                "Display must agree with as_str for {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_from_str_round_trips_over_every_variant() {
+        // Display → FromStr identity round-trip over every variant.
+        // FromStr lowers through ClosedAxisLabel::from_canonical_str,
+        // so any future override of that trait method is held to this
+        // law at the inherent FromStr surface as well.
+        for k in SecretBackendKind::ALL {
+            let rendered = k.to_string();
+            let parsed: SecretBackendKind = rendered
+                .parse()
+                .expect("FromStr must round-trip Display output");
+            assert_eq!(parsed, *k, "FromStr must round-trip {k:?}");
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_from_str_is_case_insensitive() {
+        // FromStr lowers through ClosedAxisLabel::from_canonical_str
+        // which uses eq_ignore_ascii_case over ALL — uppercase and
+        // mixed-case scalars an operator might type into an env var or
+        // CLI flag parse pointwise to the same variant.
+        assert_eq!(
+            "LITERAL".parse::<SecretBackendKind>().unwrap(),
+            SecretBackendKind::Literal,
+        );
+        assert_eq!(
+            "Aws_Secret".parse::<SecretBackendKind>().unwrap(),
+            SecretBackendKind::AwsSecret,
+        );
+        assert_eq!(
+            "GcP_sEcReT".parse::<SecretBackendKind>().unwrap(),
+            SecretBackendKind::GcpSecret,
+        );
+        assert_eq!(
+            "Op".parse::<SecretBackendKind>().unwrap(),
+            SecretBackendKind::Op,
+        );
+    }
+
+    #[test]
+    fn secret_backend_kind_from_str_unknown_kind_error_carries_label_verbatim() {
+        // Unrecognized labels reject through ShikumiError::Parse with
+        // the offending substring embedded verbatim in the rendered
+        // message — same verbatim-rejection discipline as
+        // FigmentSourceKind's FromStr surface (commit `5df265c`),
+        // FigmentNameTagKind's FromStr surface (commit `64a47e7`),
+        // ConfigSourceKind's FromStr surface (commit `e0b96d1`),
+        // FormatProvenance's FromStr surface (commit `2c7654c`), and
+        // ParseFormatCoordinatesError (commit `06a2f42`).
+        for bad in &["aws", "gcp", "kubernetes", "env", "", "  op"] {
+            let err = bad
+                .parse::<SecretBackendKind>()
+                .expect_err("non-canonical label must reject");
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(bad),
+                "rendered error must contain the offending label verbatim: \
+                 input={bad:?}, rendered={rendered:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_serde_yaml_round_trips_over_every_variant() {
+        // Serde Serialize → Deserialize identity round-trip over every
+        // variant through serde_yaml. Closes the (Serialize, Deserialize)
+        // idiom-peer of the (Display, FromStr) stdlib pair on the
+        // secret-resolution-backend-axis kind primitive. A consumer
+        // struct holding a SecretBackendKind field under
+        // #[derive(Serialize, Deserialize)] (e.g. an attestation
+        // manifest recording the backend kind of a resolved secret)
+        // round-trips without a consumer-side rename helper.
+        for k in SecretBackendKind::ALL {
+            let yaml = serde_yaml::to_string(k).expect("Serialize must succeed");
+            let parsed: SecretBackendKind =
+                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+            assert_eq!(parsed, *k, "serde_yaml round-trip must preserve {k:?}");
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_serde_json_round_trips_over_every_variant() {
+        // Serde Serialize → Deserialize identity round-trip over every
+        // variant through serde_json. The two formats render the
+        // canonical scalar identically modulo wire ceremony (YAML's
+        // bare scalar vs. JSON's quoted string), so the round-trip
+        // law composes pointwise — a future divergence in either
+        // Serialize impl surfaces here.
+        for k in SecretBackendKind::ALL {
+            let json = serde_json::to_string(k).expect("Serialize must succeed");
+            let parsed: SecretBackendKind =
+                serde_json::from_str(&json).expect("Deserialize must accept Serialize output");
+            assert_eq!(parsed, *k, "serde_json round-trip must preserve {k:?}");
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_serde_yaml_is_case_insensitive() {
+        // Deserialize lowers through FromStr which lowers through
+        // ClosedAxisLabel::from_canonical_str (eq_ignore_ascii_case),
+        // so uppercase or mixed-case scalars parse pointwise. A
+        // manifest field authored by an operator typing the canonical
+        // name with different casing parses without a consumer-side
+        // case-fold helper.
+        let cases: &[(&str, SecretBackendKind)] = &[
+            ("Literal", SecretBackendKind::Literal),
+            ("COMMAND", SecretBackendKind::Command),
+            ("Aws_Secret", SecretBackendKind::AwsSecret),
+            ("gCp_SeCrEt", SecretBackendKind::GcpSecret),
+        ];
+        for (input, expected) in cases {
+            let parsed: SecretBackendKind =
+                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+            assert_eq!(
+                parsed, *expected,
+                "serde_yaml must parse case-insensitively for input {input:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_serde_yaml_unknown_kind_error_carries_label_verbatim() {
+        // An unrecognized secret-resolution-backend-axis kind label
+        // surfaces at the serde error site with the offending
+        // substring verbatim in the rendered message, lifted through
+        // ShikumiError::Parse's Display impl. Same verbatim-rejection
+        // discipline as FigmentSourceKind's serde surface
+        // (commit `5df265c`), FigmentNameTagKind's serde surface
+        // (commit `64a47e7`), ConfigSourceKind's serde surface
+        // (commit `e0b96d1`), and FormatProvenance's serde surface
+        // (commit `2c7654c`).
+        for bad in &["aws", "gcp", "kubernetes", "env"] {
+            let err = serde_yaml::from_str::<SecretBackendKind>(bad)
+                .expect_err("non-canonical label must reject");
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(bad),
+                "rendered serde error must contain the offending label verbatim: \
+                 input={bad:?}, rendered={rendered:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_backend_kind_serde_yaml_emission_is_bare_scalar() {
+        // Concrete-position pin on the YAML emission shape: a
+        // SecretBackendKind serializes as a bare snake_case scalar,
+        // not as a quoted string or a tagged enum. The pin captures
+        // that an attestation manifest authoring tool can emit the
+        // kind as a bare YAML scalar pointwise matching the
+        // operator-facing label.
+        let yaml = serde_yaml::to_string(&SecretBackendKind::AwsSecret).unwrap();
+        assert_eq!(yaml, "aws_secret\n");
     }
 }
