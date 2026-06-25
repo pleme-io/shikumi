@@ -308,9 +308,9 @@ rec {
       };
       "arrayvec" = rec {
         crateName = "arrayvec";
-        version = "0.7.6";
+        version = "0.7.7";
         edition = "2018";
-        sha256 = "0l1fz4ccgv6pm609rif37sl5nv5k6lbzi7kkppgzqzh1vwix20kw";
+        sha256 = "1zjxk501fc4lnkzkdicqsk7y3l3agw89ziqjzcjca6ry9n484a7h";
         authors = [
           "bluss"
         ];
@@ -1507,7 +1507,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.40";
+            packageId = "rustls 0.23.41";
             optional = true;
             usesDefaultFeatures = false;
           }
@@ -2263,9 +2263,9 @@ rec {
       };
       "cc" = rec {
         crateName = "cc";
-        version = "1.2.64";
+        version = "1.2.65";
         edition = "2018";
-        sha256 = "07shcd8faxw7csz13m3cg2mj6i8z07pqs960k181pscbjpyqgn6s";
+        sha256 = "15iv1nizwngnq9if3id4cjjs4pl0rnjkd6xm82vcq5vwpv4ywa72";
         authors = [
           "Alex Crichton <alex@alexcrichton.com>"
         ];
@@ -3202,13 +3202,13 @@ rec {
       };
       "gen-macros" = rec {
         crateName = "gen-macros";
-        version = "0.1.16";
+        version = "0.1.17";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/gen";
-          rev = "194b4b910e9f993942a52a0807f2bb4ebaae6f9e";
-          sha256 = "08i6a7kwysczqcxz28hcpvi3hpq4aahyxifxy563k97fkyh82qgi";
+          rev = "26e5bdf9fe257a16e55d46b4b3e454e3f3f108d0";
+          sha256 = "1w27m38bijskc28wwmg01l9yg236bcbdxfzs7klvzam0m41dc44j";
         };
         procMacro = true;
         libName = "gen_macros";
@@ -3234,13 +3234,13 @@ rec {
       };
       "gen-platform" = rec {
         crateName = "gen-platform";
-        version = "0.1.16";
+        version = "0.1.17";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/gen";
-          rev = "194b4b910e9f993942a52a0807f2bb4ebaae6f9e";
-          sha256 = "08i6a7kwysczqcxz28hcpvi3hpq4aahyxifxy563k97fkyh82qgi";
+          rev = "26e5bdf9fe257a16e55d46b4b3e454e3f3f108d0";
+          sha256 = "1w27m38bijskc28wwmg01l9yg236bcbdxfzs7klvzam0m41dc44j";
         };
         libName = "gen_platform";
         authors = [
@@ -3277,13 +3277,13 @@ rec {
       };
       "gen-types" = rec {
         crateName = "gen-types";
-        version = "0.1.16";
+        version = "0.1.17";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/gen";
-          rev = "194b4b910e9f993942a52a0807f2bb4ebaae6f9e";
-          sha256 = "08i6a7kwysczqcxz28hcpvi3hpq4aahyxifxy563k97fkyh82qgi";
+          rev = "26e5bdf9fe257a16e55d46b4b3e454e3f3f108d0";
+          sha256 = "1w27m38bijskc28wwmg01l9yg236bcbdxfzs7klvzam0m41dc44j";
         };
         libName = "gen_types";
         authors = [
@@ -4271,7 +4271,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.40";
+            packageId = "rustls 0.23.41";
             usesDefaultFeatures = false;
           }
           {
@@ -4307,7 +4307,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.40";
+            packageId = "rustls 0.23.41";
             usesDefaultFeatures = false;
             features = [ "tls12" ];
           }
@@ -5117,9 +5117,9 @@ rec {
       };
       "js-sys" = rec {
         crateName = "js-sys";
-        version = "0.3.102";
+        version = "0.3.103";
         edition = "2021";
-        sha256 = "0cgxklnyrfpzvf32cvdl3x5d070kfsv7ykdxfl3yizwdjqq4rl03";
+        sha256 = "00lib0b6hqmw56r2hjp7xrv730qacslirbkdlhvmi39zvgy4pd2k";
         libName = "js_sys";
         authors = [
           "The wasm-bindgen Developers"
@@ -5242,9 +5242,9 @@ rec {
       };
       "log" = rec {
         crateName = "log";
-        version = "0.4.32";
+        version = "0.4.33";
         edition = "2021";
-        sha256 = "0fmdg0cxig7i4fwf1sw7fmg4d1gdbfzniawcfpwydy1q7320fgwm";
+        sha256 = "1bd9dmk22pxgnf0h0slba6rz99zb0a0b2mdhpk8p92bp26ycbvhc";
         authors = [
           "The Rust Project Developers"
         ];
@@ -5800,9 +5800,9 @@ rec {
       };
       "quinn" = rec {
         crateName = "quinn";
-        version = "0.11.9";
+        version = "0.11.11";
         edition = "2021";
-        sha256 = "086gzj666dr3slmlynkvxlndy28hahgl361d6bf93hk3i6ahmqmr";
+        sha256 = "1a60yxn03zr07ll7zianby2mrs18w4frgm1c6y4x9fxn6zj426hc";
         dependencies = [
           {
             name = "bytes";
@@ -5831,7 +5831,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.40";
+            packageId = "rustls 0.23.41";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -5876,6 +5876,7 @@ rec {
           }
         ];
         features = {
+          "__rustls-post-quantum-test" = [ "rustls/prefer-post-quantum" "rustls-aws-lc-rs" "proto/__rustls-post-quantum-test" ];
           "async-io" = [ "dep:async-io" ];
           "async-std" = [ "dep:async-std" ];
           "aws-lc-rs" = [ "proto/aws-lc-rs" ];
@@ -5901,9 +5902,9 @@ rec {
       };
       "quinn-proto" = rec {
         crateName = "quinn-proto";
-        version = "0.11.14";
+        version = "0.11.15";
         edition = "2021";
-        sha256 = "1660jkxhzi1pnywzs13ifczwrlv6ds9qds111vsnxjciqpz44js3";
+        sha256 = "0gknq1m2b9g3fsndka2gn7f2k45vb0zdssrh1qpkql7cbdf97jsg";
         libName = "quinn_proto";
         dependencies = [
           {
@@ -5942,7 +5943,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.40";
+            packageId = "rustls 0.23.41";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -6047,9 +6048,9 @@ rec {
       };
       "quote" = rec {
         crateName = "quote";
-        version = "1.0.45";
+        version = "1.0.46";
         edition = "2021";
-        sha256 = "095rb5rg7pbnwdp6v8w5jw93wndwyijgci1b5lw8j1h5cscn3wj1";
+        sha256 = "0s034glrlav8nzqy2yskqzv52ncy82k126sm2jk5j1vs1iylbg6z";
         authors = [
           "David Tolnay <dtolnay@gmail.com>"
         ];
@@ -6337,7 +6338,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.40";
+            packageId = "rustls 0.23.41";
             optional = true;
             usesDefaultFeatures = false;
             target = { target, features }: (!("wasm32" == target."arch" or null));
@@ -6754,11 +6755,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "default" "log" "logging" "tls12" ];
       };
-      "rustls 0.23.40" = rec {
+      "rustls 0.23.41" = rec {
         crateName = "rustls";
-        version = "0.23.40";
+        version = "0.23.41";
         edition = "2021";
-        sha256 = "12qnv3ag4wrw7aj8jng74kgrilpjm2b1rfcjaac8h691frccv1pg";
+        sha256 = "07vbs2935a7xjqqvy8w3ndzmmw8dg769d9zcgdg7k6sdccjv34kb";
         dependencies = [
           {
             name = "aws-lc-rs";
@@ -7689,7 +7690,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.81";
+        version = "0.1.82";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -8071,13 +8072,13 @@ rec {
       };
       "tatara-lisp" = rec {
         crateName = "tatara-lisp";
-        version = "0.2.76";
+        version = "0.2.78";
         edition = "2021";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "71be5929b8aee5ad36aff9691cd65b811f8963f9";
-          sha256 = "1g2ysf8agq93wr5pcgzh8bzxsvnpd5kzq0m2j3clwxlddm1wayjm";
+          rev = "988d050111993d69997c446b10676927d01fa27a";
+          sha256 = "1i0a7980yj958hxgv77cap9dd33rakkwrf327p2z9p8iq6fs34rs";
         };
         libName = "tatara_lisp";
         authors = [
@@ -8113,13 +8114,13 @@ rec {
       };
       "tatara-lisp-derive" = rec {
         crateName = "tatara-lisp-derive";
-        version = "0.2.76";
+        version = "0.2.78";
         edition = "2021";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "71be5929b8aee5ad36aff9691cd65b811f8963f9";
-          sha256 = "1g2ysf8agq93wr5pcgzh8bzxsvnpd5kzq0m2j3clwxlddm1wayjm";
+          rev = "988d050111993d69997c446b10676927d01fa27a";
+          sha256 = "1i0a7980yj958hxgv77cap9dd33rakkwrf327p2z9p8iq6fs34rs";
         };
         procMacro = true;
         libName = "tatara_lisp_derive";
@@ -8238,9 +8239,9 @@ rec {
       };
       "time" = rec {
         crateName = "time";
-        version = "0.3.49";
+        version = "0.3.51";
         edition = "2024";
-        sha256 = "0sc4dgw6g187gvz5qj9iqqk2ashqzvdwi664b2183gbvsk1566ki";
+        sha256 = "09zkhrk6m83l5szc6dx5zn5zsg97lp8mxr44qi04ncxpzs07vhc5";
         authors = [
           "Jacob Pratt <open-source@jhpratt.dev>"
           "Time contributors"
@@ -8321,9 +8322,9 @@ rec {
       };
       "time-macros" = rec {
         crateName = "time-macros";
-        version = "0.2.29";
+        version = "0.2.30";
         edition = "2024";
-        sha256 = "0zf1ycfikg93ijf00qnprk801khqnqqga1zp0adbp73sfaim5iki";
+        sha256 = "0d9r83vk9ik0gxfbw4yaig748ff2prffq21j2mp0j6dipmhimvyw";
         procMacro = true;
         libName = "time_macros";
         authors = [
@@ -8599,7 +8600,7 @@ rec {
         dependencies = [
           {
             name = "rustls";
-            packageId = "rustls 0.23.40";
+            packageId = "rustls 0.23.41";
             usesDefaultFeatures = false;
             features = [ "std" ];
           }
@@ -9296,9 +9297,9 @@ rec {
       };
       "uuid" = rec {
         crateName = "uuid";
-        version = "1.23.3";
+        version = "1.23.4";
         edition = "2021";
-        sha256 = "1drddl03gi12vl1s3l2h371dw39plhn9wappp00v707g7h96nk8l";
+        sha256 = "0lws65rrqncssdz1rk8g8ww7xg6k4d3l6avzkslzwni78llag05z";
         authors = [
           "Ashley Mannix<ashleymannix@live.com.au>"
           "Dylan DPC<dylan.dpc@gmail.com>"
@@ -9450,9 +9451,9 @@ rec {
       };
       "wasm-bindgen" = rec {
         crateName = "wasm-bindgen";
-        version = "0.2.125";
+        version = "0.2.126";
         edition = "2021";
-        sha256 = "06nakz7nfy0ymyp7a27wfbjwx69659i12117hkgddkiv2iwkznwd";
+        sha256 = "197rma4qg1kb8l4bl7857pgszzval8s1w740g9myyjh92467q1jb";
         libName = "wasm_bindgen";
         authors = [
           "The wasm-bindgen Developers"
@@ -9501,9 +9502,9 @@ rec {
       };
       "wasm-bindgen-futures" = rec {
         crateName = "wasm-bindgen-futures";
-        version = "0.4.75";
+        version = "0.4.76";
         edition = "2021";
-        sha256 = "104jssshr6cm5hmkn6c66mbkyxgaaphng6c17g0dmj7jhk918fsh";
+        sha256 = "0799v92cpaprapnmpaflc51sdnz362q2fsjdqnwiq8ij1wsg2bf6";
         libName = "wasm_bindgen_futures";
         authors = [
           "The wasm-bindgen Developers"
@@ -9529,9 +9530,9 @@ rec {
       };
       "wasm-bindgen-macro" = rec {
         crateName = "wasm-bindgen-macro";
-        version = "0.2.125";
+        version = "0.2.126";
         edition = "2021";
-        sha256 = "0g9w68dwcs4ylm5kxf7schi0kjdfarhc9qlnf8arxc9zn62a28af";
+        sha256 = "1cda6wl5zyiy7777cfgrix7fhpaqba55l5zpqj4zig7ng7jyaz0n";
         procMacro = true;
         libName = "wasm_bindgen_macro";
         authors = [
@@ -9553,9 +9554,9 @@ rec {
       };
       "wasm-bindgen-macro-support" = rec {
         crateName = "wasm-bindgen-macro-support";
-        version = "0.2.125";
+        version = "0.2.126";
         edition = "2021";
-        sha256 = "1gayzdx5iwl8gllh7ys79wg9cf4iyasl9hrzzhh5m4xx6nfgvkpy";
+        sha256 = "03iq412frl2py55skwb3ya08xha0cf6q22zr5kqlwbr675w7r6gk";
         libName = "wasm_bindgen_macro_support";
         authors = [
           "The wasm-bindgen Developers"
@@ -9589,10 +9590,10 @@ rec {
       };
       "wasm-bindgen-shared" = rec {
         crateName = "wasm-bindgen-shared";
-        version = "0.2.125";
+        version = "0.2.126";
         edition = "2021";
         links = "wasm_bindgen";
-        sha256 = "07w7fy5qa14ys3p8v2p84h98yqinw713smibz9v7apcspd29x4r3";
+        sha256 = "097a3kbjls447s1lwr41l21x5crrh5vq3h6zsxccz7slrjq4q6yw";
         libName = "wasm_bindgen_shared";
         authors = [
           "The wasm-bindgen Developers"
@@ -9607,9 +9608,9 @@ rec {
       };
       "web-sys" = rec {
         crateName = "web-sys";
-        version = "0.3.102";
+        version = "0.3.103";
         edition = "2021";
-        sha256 = "0786aybrnwsgdmcynhc2k5ii291a02rq9zk054j35csyvxr0lhx6";
+        sha256 = "0hb1zdnrp99p5r5q66jagsddmwha460yv2wklvzrzk0b3jvdq8l6";
         libName = "web_sys";
         authors = [
           "The wasm-bindgen Developers"
