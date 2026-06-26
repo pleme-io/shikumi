@@ -1322,113 +1322,25 @@ impl crate::ClosedAxisLabel for FigmentNameTagKind {
     }
 }
 
-impl fmt::Display for FigmentNameTagKind {
-    /// Write the canonical operator-facing lowercase label
-    /// [`Self::as_str`] returns (`"format"` / `"env"`) — the same
-    /// scalar [`<Self as serde::Serialize>::serialize`] emits and the
-    /// same scalar [`<Self as std::str::FromStr>::from_str`] accepts.
-    /// Idiom-peer of the `Display` impl on [`FigmentSourceKind`]
-    /// (commit `5df265c`) lifted onto the figment-Name-axis sibling
-    /// closed-enum.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for FigmentNameTagKind {
-    type Err = crate::ShikumiError;
-
-    /// Parse the canonical operator-facing lowercase label
-    /// (`"format"` / `"env"`) produced by [`Self::as_str`];
-    /// case-insensitive over ASCII via the trait-default
-    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] parse.
-    /// On unrecognized input, returns [`crate::ShikumiError::Parse`]
-    /// with the offending label embedded verbatim — matching the
-    /// verbatim-substring rejection discipline already established by
-    /// [`<FigmentSourceKind as FromStr>::from_str`] (commit `5df265c`),
-    /// [`<ConfigSourceKind as FromStr>::from_str`] (commit `e0b96d1`),
-    /// [`<crate::FormatProvenance as FromStr>::from_str`]
-    /// (commit `2c7654c`), and
-    /// [`crate::ParseFormatCoordinatesError`] (commit `06a2f42`) so
-    /// the same localization story (the operator sees the offending
-    /// substring in the rendered diagnostic) carries to the
-    /// figment-Name-axis kind.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        <Self as crate::ClosedAxisLabel>::from_canonical_str(s).ok_or_else(|| {
-            crate::ShikumiError::Parse(format!("unknown figment name tag kind: {s}"))
-        })
-    }
-}
-
-impl serde::Serialize for FigmentNameTagKind {
-    /// Serialize the figment-Name-axis kind as the canonical
-    /// operator-facing lowercase label [`Self::as_str`] returns — the
-    /// same scalar the [`fmt::Display`] impl writes. Routes through
-    /// [`serde::Serializer::collect_str`] so the serialized
-    /// representation is exactly `format!("{self}")` with no
-    /// intermediate allocation.
-    ///
-    /// Closes the canonical (`Serialize`, `Deserialize`) serde
-    /// idiom-peer of the (`Display`, [`std::str::FromStr`]) stdlib
-    /// pair on the figment-Name-axis kind primitive. A kind emitted
-    /// into a YAML attestation manifest field, a JSON observability
-    /// payload, or any consumer struct holding a
-    /// [`FigmentNameTagKind`] field under
-    /// `#[derive(Serialize, Deserialize)]` round-trips through the
-    /// canonical label without a consumer-side rename helper.
-    ///
-    /// **Round-trip law** — for every `k: FigmentNameTagKind`,
-    /// `serde_yaml::from_str::<FigmentNameTagKind>(&serde_yaml::to_string(&k)?)? == k`
-    /// and the same on `serde_json`. Pinned by
-    /// [`tests::figment_name_tag_kind_serde_yaml_round_trips_over_every_variant`]
-    /// and
-    /// [`tests::figment_name_tag_kind_serde_json_round_trips_over_every_variant`].
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for FigmentNameTagKind {
-    /// Deserialize the figment-Name-axis kind from the canonical
-    /// operator-facing lowercase label [`Self::as_str`] returns via
-    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
-    /// `visit_str` lowers to [`<Self as FromStr>::from_str`] and
-    /// routes any [`crate::ShikumiError`] through
-    /// [`serde::de::Error::custom`].
-    ///
-    /// **Case insensitivity inherits from [`FromStr`]** — the
-    /// [`crate::ClosedAxisLabel::from_canonical_str`] trait default
-    /// uses [`str::eq_ignore_ascii_case`] over [`Self::ALL`], so
-    /// uppercase or mixed-case scalars (e.g. `Format`, `ENV`) parse
-    /// pointwise. Pinned by
-    /// [`tests::figment_name_tag_kind_serde_yaml_is_case_insensitive`].
-    ///
-    /// **Unknown-kind rejection carries the offending label verbatim**
-    /// — a manifest field carrying an unrecognized kind surfaces at
-    /// the serde error site with the offending substring verbatim in
-    /// the rendered message, lifted through
-    /// [`crate::ShikumiError::Parse`]'s `Display` impl. Pinned by
-    /// [`tests::figment_name_tag_kind_serde_yaml_unknown_kind_error_carries_label_verbatim`].
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct FigmentNameTagKindVisitor;
-
-        impl serde::de::Visitor<'_> for FigmentNameTagKindVisitor {
-            type Value = FigmentNameTagKind;
-
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(
-                    "a canonical FigmentNameTagKind lowercase label \
-                     (`format`, `env`; case-insensitive)",
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<FigmentNameTagKind, E> {
-                v.parse::<FigmentNameTagKind>().map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(FigmentNameTagKindVisitor)
-    }
+// The canonical (Display, FromStr, Serialize, Deserialize) string-surface
+// quartet on the figment-Name-axis kind closed-enum, lifted to one macro
+// after the 16+ hand-rolled idiom-peers preceding this commit
+// (WatchEventClass at `94f8a8b`, ShikumiErrorKind at `4b53792`,
+// DiffLineKind at `74ee853`, ConfigSourceKind at `ae24a13`,
+// FormatProvenance at `212d6fb`). See `closed_axis_label_string_surface!`
+// in `crate::macros` for the contract; behavior is byte-identical to the
+// hand-rolled impls the macro replaces — the verbatim-label `Parse` error
+// body, the case-insensitive `from_canonical_str` lowering, the
+// `collect_str`-based serde emission, and the visitor's `expecting`
+// message all match the prior surface pointwise. Pinned by
+// `tests::figment_name_tag_kind_display_matches_as_str`,
+// `tests::figment_name_tag_kind_from_str_*`, and
+// `tests::figment_name_tag_kind_serde_yaml_*`.
+closed_axis_label_string_surface! {
+    type = FigmentNameTagKind,
+    parse_error = "unknown figment name tag kind",
+    expecting = "a canonical FigmentNameTagKind lowercase label \
+                 (`format`, `env`; case-insensitive)",
 }
 
 /// Borrowed classification of a [`figment::Source`].
