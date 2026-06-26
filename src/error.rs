@@ -1,4 +1,6 @@
+use std::fmt;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use crate::source::{
     ConfigSource, ConfigSourceChain, ConfigSourceKind, EnvMetadataTag, FigmentNameTag,
@@ -126,7 +128,27 @@ fn display_failing_source(sources: &[ConfigSource], error: &figment::Error) -> S
 /// [`EnvMetadataTag`]): closed, allocation-free, extensible without
 /// breaking exhaustivity at consumer matches when a future
 /// [`ShikumiError`] variant lands.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// `Ord` / `PartialOrd` are declaration-order lex over [`Self::ALL`]
+/// (`NotFound < Parse < Watch < Io < Figment < Extract`): a
+/// `BTreeMap<ShikumiErrorKind, T>` keyed on the error-kind axis
+/// (per-kind failure-rate histograms, per-kind alert thresholds,
+/// attestation manifests recording the captured-failure mix
+/// histogram, structured-diagnostic legends bucketing per-kind
+/// counters in declaration order) emits rows in that order
+/// deterministically without a hand-rolled comparator at the
+/// renderer. Idiom-peer of the same derive on
+/// [`crate::SecretClientKind`] (commit `24c7b33`),
+/// [`crate::DiffLineKind`] (commit `c403e1a`),
+/// [`crate::WatchEventClass`] (commit `94f8a8b`),
+/// [`crate::EnvMetadataTagKind`] (commit `b556b75`),
+/// [`crate::SecretRefShape`] (commit `8a84bb6`),
+/// [`crate::SecretBackendKind`] (commit `9b1da86`),
+/// [`crate::FigmentNameTagKind`] (commit `64a47e7`),
+/// [`crate::FigmentSourceKind`] (commit `5df265c`), and
+/// [`crate::ConfigSourceKind`] (commit `e0b96d1`) lifted onto the
+/// captured-failure variant axis closed-enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum ShikumiErrorKind {
     /// [`ShikumiError::NotFound`] — discovery exhausted every searched
@@ -2156,6 +2178,137 @@ impl crate::ClosedAxis for ShikumiErrorKind {
 impl crate::ClosedAxisLabel for ShikumiErrorKind {
     fn as_str(self) -> &'static str {
         Self::as_str(self)
+    }
+}
+
+impl fmt::Display for ShikumiErrorKind {
+    /// Write the canonical operator-facing label [`Self::as_str`]
+    /// returns (`"not-found"` / `"parse"` / `"watch"` / `"io"` /
+    /// `"figment"` / `"extract"`) — the same scalar
+    /// [`<Self as serde::Serialize>::serialize`] emits and the same
+    /// scalar [`<Self as std::str::FromStr>::from_str`] accepts.
+    /// Idiom-peer of the `Display` impl on
+    /// [`crate::SecretClientKind`] (commit `24c7b33`),
+    /// [`crate::DiffLineKind`] (commit `c403e1a`),
+    /// [`crate::WatchEventClass`] (commit `94f8a8b`),
+    /// [`crate::EnvMetadataTagKind`] (commit `b556b75`),
+    /// [`crate::SecretRefShape`] (commit `8a84bb6`),
+    /// [`crate::SecretBackendKind`] (commit `9b1da86`),
+    /// [`crate::FigmentNameTagKind`] (commit `64a47e7`),
+    /// [`crate::FigmentSourceKind`] (commit `5df265c`), and
+    /// [`crate::ConfigSourceKind`] (commit `e0b96d1`) lifted onto the
+    /// captured-failure variant axis sibling closed-enum.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for ShikumiErrorKind {
+    type Err = ShikumiError;
+
+    /// Parse the canonical operator-facing label (`"not-found"` /
+    /// `"parse"` / `"watch"` / `"io"` / `"figment"` / `"extract"`)
+    /// produced by [`Self::as_str`]; case-insensitive over ASCII via
+    /// the trait-default
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] parse.
+    /// On unrecognized input, returns [`ShikumiError::Parse`] with the
+    /// offending label embedded verbatim — matching the
+    /// verbatim-substring rejection discipline already established by
+    /// [`<crate::SecretClientKind as FromStr>::from_str`]
+    /// (commit `24c7b33`),
+    /// [`<crate::DiffLineKind as FromStr>::from_str`]
+    /// (commit `c403e1a`),
+    /// [`<crate::WatchEventClass as FromStr>::from_str`]
+    /// (commit `94f8a8b`),
+    /// [`<crate::EnvMetadataTagKind as FromStr>::from_str`]
+    /// (commit `b556b75`),
+    /// [`<crate::SecretRefShape as FromStr>::from_str`]
+    /// (commit `8a84bb6`),
+    /// [`<crate::SecretBackendKind as FromStr>::from_str`]
+    /// (commit `9b1da86`),
+    /// [`<crate::FigmentNameTagKind as FromStr>::from_str`]
+    /// (commit `64a47e7`),
+    /// [`<crate::FigmentSourceKind as FromStr>::from_str`]
+    /// (commit `5df265c`), and
+    /// [`<crate::ConfigSourceKind as FromStr>::from_str`]
+    /// (commit `e0b96d1`) so the same localization story (the operator
+    /// sees the offending substring in the rendered diagnostic)
+    /// carries to the captured-failure variant axis kind.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        <Self as crate::ClosedAxisLabel>::from_canonical_str(s)
+            .ok_or_else(|| ShikumiError::Parse(format!("unknown shikumi error kind: {s}")))
+    }
+}
+
+impl serde::Serialize for ShikumiErrorKind {
+    /// Serialize the captured-failure variant axis kind as the
+    /// canonical operator-facing label [`Self::as_str`] returns — the
+    /// same scalar the [`fmt::Display`] impl writes. Routes through
+    /// [`serde::Serializer::collect_str`] so the serialized
+    /// representation is exactly `format!("{self}")` with no
+    /// intermediate allocation.
+    ///
+    /// Closes the canonical (`Serialize`, `Deserialize`) serde
+    /// idiom-peer of the (`Display`, [`std::str::FromStr`]) stdlib
+    /// pair on the captured-failure variant axis kind primitive. A
+    /// kind emitted into a YAML attestation manifest field, a JSON
+    /// observability payload, or any consumer struct holding a
+    /// [`ShikumiErrorKind`] field under
+    /// `#[derive(Serialize, Deserialize)]` round-trips through the
+    /// canonical label without a consumer-side rename helper.
+    ///
+    /// **Round-trip law** — for every `k: ShikumiErrorKind`,
+    /// `serde_yaml::from_str::<ShikumiErrorKind>(&serde_yaml::to_string(&k)?)? == k`
+    /// and the same on `serde_json`. Pinned by
+    /// [`tests::shikumi_error_kind_serde_yaml_round_trips_over_every_variant`]
+    /// and
+    /// [`tests::shikumi_error_kind_serde_json_round_trips_over_every_variant`].
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ShikumiErrorKind {
+    /// Deserialize the captured-failure variant axis kind from the
+    /// canonical operator-facing label [`Self::as_str`] returns via
+    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
+    /// `visit_str` lowers to [`<Self as FromStr>::from_str`] and
+    /// routes any [`ShikumiError`] through
+    /// [`serde::de::Error::custom`].
+    ///
+    /// **Case insensitivity inherits from [`FromStr`]** — the
+    /// [`crate::ClosedAxisLabel::from_canonical_str`] trait default
+    /// uses [`str::eq_ignore_ascii_case`] over [`Self::ALL`], so
+    /// uppercase or mixed-case scalars (e.g. `NOT-FOUND`,
+    /// `Figment`) parse pointwise. Pinned by
+    /// [`tests::shikumi_error_kind_serde_yaml_is_case_insensitive`].
+    ///
+    /// **Unknown-kind rejection carries the offending label verbatim**
+    /// — a manifest field carrying an unrecognized kind surfaces at
+    /// the serde error site with the offending substring verbatim in
+    /// the rendered message, lifted through [`ShikumiError::Parse`]'s
+    /// `Display` impl. Pinned by
+    /// [`tests::shikumi_error_kind_serde_yaml_unknown_kind_error_carries_label_verbatim`].
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ShikumiErrorKindVisitor;
+
+        impl serde::de::Visitor<'_> for ShikumiErrorKindVisitor {
+            type Value = ShikumiErrorKind;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(
+                    "a canonical ShikumiErrorKind label \
+                     (`not-found`, `parse`, `watch`, `io`, `figment`, `extract`; \
+                     case-insensitive)",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<ShikumiErrorKind, E> {
+                v.parse::<ShikumiErrorKind>().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(ShikumiErrorKindVisitor)
     }
 }
 
@@ -8033,5 +8186,303 @@ mod tests {
              AttributionNameKindCoordinates::ALL; observed: {observed:?}, \
              declared: {declared:?}",
         );
+    }
+
+    // ── ShikumiErrorKind — Ord / Display / FromStr / serde ──────────
+    //
+    // The (Ord, Display, FromStr, serde::{Serialize, Deserialize})
+    // quartet idiom-peer of the lift already landed on
+    // `SecretClientKind` (commit `24c7b33`), `DiffLineKind`
+    // (commit `c403e1a`), `WatchEventClass` (commit `94f8a8b`),
+    // `EnvMetadataTagKind` (commit `b556b75`), `SecretRefShape`
+    // (commit `8a84bb6`), `SecretBackendKind` (commit `9b1da86`),
+    // `FigmentNameTagKind` (commit `64a47e7`), `FigmentSourceKind`
+    // (commit `5df265c`), and `ConfigSourceKind` (commit `e0b96d1`),
+    // now lifted onto the captured-failure variant axis kind primitive.
+
+    #[test]
+    fn shikumi_error_kind_ord_matches_all_declaration_order() {
+        // The derived Ord on ShikumiErrorKind is declaration-order
+        // lex over ALL: `NotFound < Parse < Watch < Io < Figment <
+        // Extract`. A BTreeMap keyed on the captured-failure variant
+        // axis kind (per-kind failure-rate histograms, per-kind
+        // alert thresholds, attestation manifests recording the
+        // captured-failure mix histogram, structured-diagnostic
+        // legends bucketing per-kind counters in declaration order)
+        // emits rows in that order deterministically without a hand-
+        // rolled comparator at the renderer.
+        //
+        // Two-leg pin: (1) ALL is a strictly-increasing chain under
+        // Ord, (2) cmp/partial_cmp agree with the array-index lex
+        // over ALL on every pair (and reflexivity holds). Idiom-peer
+        // of the same pin on SecretClientKind (commit `24c7b33`)
+        // and DiffLineKind (commit `c403e1a`).
+        use std::cmp::Ordering;
+        for window in ShikumiErrorKind::ALL.windows(2) {
+            assert!(
+                window[0] < window[1],
+                "ShikumiErrorKind::ALL must be strictly increasing under Ord, \
+                 but {:?} >= {:?}",
+                window[0],
+                window[1],
+            );
+        }
+        for (i, &a) in ShikumiErrorKind::ALL.iter().enumerate() {
+            for (j, &b) in ShikumiErrorKind::ALL.iter().enumerate() {
+                let expected = i.cmp(&j);
+                assert_eq!(
+                    a.cmp(&b),
+                    expected,
+                    "ShikumiErrorKind::cmp must match ALL-index lex for ({a:?}, {b:?})",
+                );
+                assert_eq!(
+                    a.partial_cmp(&b),
+                    Some(expected),
+                    "ShikumiErrorKind::partial_cmp must agree with cmp for ({a:?}, {b:?})",
+                );
+                if i == j {
+                    assert_eq!(a.cmp(&b), Ordering::Equal, "Ord must be reflexive on {a:?}",);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_btreemap_emits_in_declaration_order() {
+        // The compounding payoff of the Ord derive at a typed
+        // consumer site: a BTreeMap<ShikumiErrorKind, _> emits keys
+        // in declaration order on `iter()` / `into_iter()` regardless
+        // of insertion order, matching `ShikumiErrorKind::ALL`.
+        // Idiom-peer of the same pin on SecretClientKind
+        // (commit `24c7b33`) and DiffLineKind (commit `c403e1a`).
+        use std::collections::BTreeMap;
+        let mut counts: BTreeMap<ShikumiErrorKind, u32> = BTreeMap::new();
+        counts.insert(ShikumiErrorKind::Extract, 6);
+        counts.insert(ShikumiErrorKind::NotFound, 1);
+        counts.insert(ShikumiErrorKind::Figment, 5);
+        counts.insert(ShikumiErrorKind::Io, 4);
+        counts.insert(ShikumiErrorKind::Parse, 2);
+        counts.insert(ShikumiErrorKind::Watch, 3);
+        let observed: Vec<ShikumiErrorKind> = counts.keys().copied().collect();
+        assert_eq!(
+            observed,
+            ShikumiErrorKind::ALL.to_vec(),
+            "BTreeMap<ShikumiErrorKind, _> must emit keys in ALL declaration order",
+        );
+    }
+
+    #[test]
+    fn shikumi_error_kind_display_matches_as_str() {
+        // Display writes the canonical label as_str returns, byte-
+        // for-byte. The two surfaces stay aligned by construction —
+        // a future rename of either must update the other in
+        // lockstep. Idiom-peer of the same pin on SecretClientKind
+        // (commit `24c7b33`), DiffLineKind (commit `c403e1a`), and
+        // WatchEventClass (commit `94f8a8b`).
+        for k in ShikumiErrorKind::ALL.iter().copied() {
+            assert_eq!(
+                format!("{k}"),
+                k.as_str(),
+                "Display must agree with as_str for {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_from_str_round_trips_over_every_variant() {
+        // Display → FromStr identity round-trip over every variant.
+        // FromStr lowers through ClosedAxisLabel::from_canonical_str,
+        // so any future override of that trait method is held to this
+        // law at the inherent FromStr surface as well.
+        for k in ShikumiErrorKind::ALL {
+            let rendered = k.to_string();
+            let parsed: ShikumiErrorKind = rendered
+                .parse()
+                .expect("FromStr must round-trip Display output");
+            assert_eq!(parsed, *k, "FromStr must round-trip {k:?}");
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_from_str_is_case_insensitive() {
+        // FromStr lowers through ClosedAxisLabel::from_canonical_str
+        // which uses eq_ignore_ascii_case over ALL — uppercase and
+        // mixed-case scalars an operator might type into an env var
+        // or CLI flag parse pointwise to the same variant.
+        assert_eq!(
+            "NOT-FOUND".parse::<ShikumiErrorKind>().unwrap(),
+            ShikumiErrorKind::NotFound,
+        );
+        assert_eq!(
+            "Parse".parse::<ShikumiErrorKind>().unwrap(),
+            ShikumiErrorKind::Parse,
+        );
+        assert_eq!(
+            "WATCH".parse::<ShikumiErrorKind>().unwrap(),
+            ShikumiErrorKind::Watch,
+        );
+        assert_eq!(
+            "Io".parse::<ShikumiErrorKind>().unwrap(),
+            ShikumiErrorKind::Io,
+        );
+        assert_eq!(
+            "FiGmEnT".parse::<ShikumiErrorKind>().unwrap(),
+            ShikumiErrorKind::Figment,
+        );
+        assert_eq!(
+            "EXTRACT".parse::<ShikumiErrorKind>().unwrap(),
+            ShikumiErrorKind::Extract,
+        );
+    }
+
+    #[test]
+    fn shikumi_error_kind_from_str_unknown_kind_error_carries_label_verbatim() {
+        // Unrecognized labels reject through ShikumiError::Parse with
+        // the offending substring embedded verbatim in the rendered
+        // message — same verbatim-rejection discipline as
+        // SecretClientKind's FromStr surface (commit `24c7b33`),
+        // DiffLineKind's FromStr surface (commit `c403e1a`),
+        // WatchEventClass's FromStr surface (commit `94f8a8b`),
+        // EnvMetadataTagKind's FromStr surface (commit `b556b75`),
+        // SecretRefShape's FromStr surface (commit `8a84bb6`),
+        // SecretBackendKind's FromStr surface (commit `9b1da86`),
+        // FigmentNameTagKind's FromStr surface (commit `64a47e7`),
+        // FigmentSourceKind's FromStr surface (commit `5df265c`), and
+        // ConfigSourceKind's FromStr surface (commit `e0b96d1`).
+        for bad in &["notfound", "parser", "fs", "input", "", "  parse"] {
+            let err = bad
+                .parse::<ShikumiErrorKind>()
+                .expect_err("non-canonical label must reject");
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(bad),
+                "rendered error must contain the offending label verbatim: \
+                 input={bad:?}, rendered={rendered:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_from_str_unknown_kind_returns_parse_variant() {
+        // Concrete-position pin on the rejection-kind: the inherent
+        // FromStr surface routes unknown labels through
+        // ShikumiError::Parse, not through Watch / Io / Figment /
+        // Extract. A future refactor of the error wrapping (e.g.
+        // adding a dedicated `UnknownKind` variant) is held to
+        // updating this site in lockstep, so consumers matching on
+        // the wrapping kind keep matching the same variant.
+        let err = "no-such-kind"
+            .parse::<ShikumiErrorKind>()
+            .expect_err("unrecognized label must reject");
+        assert_eq!(
+            err.kind(),
+            ShikumiErrorKind::Parse,
+            "FromStr rejection must surface as ShikumiErrorKind::Parse, got {err:?}",
+        );
+    }
+
+    #[test]
+    fn shikumi_error_kind_serde_yaml_round_trips_over_every_variant() {
+        // Serde Serialize → Deserialize identity round-trip over every
+        // variant through serde_yaml. Closes the (Serialize,
+        // Deserialize) idiom-peer of the (Display, FromStr) stdlib
+        // pair on the captured-failure variant axis kind primitive.
+        // A consumer struct holding a ShikumiErrorKind field under
+        // #[derive(Serialize, Deserialize)] (e.g. an attestation
+        // manifest recording the kind of a captured failure)
+        // round-trips without a consumer-side rename helper.
+        for k in ShikumiErrorKind::ALL {
+            let yaml = serde_yaml::to_string(k).expect("Serialize must succeed");
+            let parsed: ShikumiErrorKind =
+                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+            assert_eq!(parsed, *k, "serde_yaml round-trip must preserve {k:?}");
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_serde_json_round_trips_over_every_variant() {
+        // Serde Serialize → Deserialize identity round-trip over every
+        // variant through serde_json. The two formats render the
+        // canonical scalar identically modulo wire ceremony (YAML's
+        // bare scalar vs. JSON's quoted string), so the round-trip
+        // law composes pointwise — a future divergence in either
+        // Serialize impl surfaces here.
+        for k in ShikumiErrorKind::ALL {
+            let json = serde_json::to_string(k).expect("Serialize must succeed");
+            let parsed: ShikumiErrorKind =
+                serde_json::from_str(&json).expect("Deserialize must accept Serialize output");
+            assert_eq!(parsed, *k, "serde_json round-trip must preserve {k:?}");
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_serde_yaml_is_case_insensitive() {
+        // Deserialize lowers through FromStr which lowers through
+        // ClosedAxisLabel::from_canonical_str (eq_ignore_ascii_case),
+        // so uppercase or mixed-case scalars parse pointwise. A
+        // manifest field authored by an operator typing the canonical
+        // name with different casing parses without a consumer-side
+        // case-fold helper.
+        let cases: &[(&str, ShikumiErrorKind)] = &[
+            ("NOT-FOUND", ShikumiErrorKind::NotFound),
+            ("Parse", ShikumiErrorKind::Parse),
+            ("WATCH", ShikumiErrorKind::Watch),
+            ("Io", ShikumiErrorKind::Io),
+            ("FiGmEnT", ShikumiErrorKind::Figment),
+            ("EXTRACT", ShikumiErrorKind::Extract),
+        ];
+        for (input, expected) in cases {
+            let parsed: ShikumiErrorKind =
+                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+            assert_eq!(
+                parsed, *expected,
+                "serde_yaml must parse case-insensitively for input {input:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_serde_yaml_unknown_kind_error_carries_label_verbatim() {
+        // An unrecognized captured-failure variant axis kind label
+        // surfaces at the serde error site with the offending
+        // substring verbatim in the rendered message, lifted through
+        // ShikumiError::Parse's Display impl. Same verbatim-rejection
+        // discipline as SecretClientKind's serde surface
+        // (commit `24c7b33`), DiffLineKind's serde surface
+        // (commit `c403e1a`), WatchEventClass's serde surface
+        // (commit `94f8a8b`), and ConfigSourceKind's serde surface
+        // (commit `e0b96d1`).
+        for bad in &["notfound", "parser", "fs", "input"] {
+            let err = serde_yaml::from_str::<ShikumiErrorKind>(bad)
+                .expect_err("non-canonical label must reject");
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(bad),
+                "rendered serde error must contain the offending label verbatim: \
+                 input={bad:?}, rendered={rendered:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn shikumi_error_kind_serde_yaml_emission_is_bare_scalar() {
+        // Concrete-position pin on the YAML emission shape: a
+        // ShikumiErrorKind serializes as a bare kebab/lowercase
+        // scalar, not as a quoted string or a tagged enum. Captures
+        // that an attestation manifest authoring tool can emit the
+        // kind as a bare YAML scalar pointwise matching the
+        // operator-facing label across all six variants.
+        let pairs: &[(ShikumiErrorKind, &str)] = &[
+            (ShikumiErrorKind::NotFound, "not-found\n"),
+            (ShikumiErrorKind::Parse, "parse\n"),
+            (ShikumiErrorKind::Watch, "watch\n"),
+            (ShikumiErrorKind::Io, "io\n"),
+            (ShikumiErrorKind::Figment, "figment\n"),
+            (ShikumiErrorKind::Extract, "extract\n"),
+        ];
+        for (k, expected) in pairs {
+            let yaml = serde_yaml::to_string(k).unwrap();
+            assert_eq!(yaml, *expected, "YAML emission mismatch for {k:?}");
+        }
     }
 }
