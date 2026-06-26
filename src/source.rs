@@ -396,105 +396,24 @@ impl crate::ClosedAxisLabel for ConfigSourceKind {
     }
 }
 
-impl fmt::Display for ConfigSourceKind {
-    /// Write the canonical operator-facing lowercase label
-    /// [`Self::as_str`] returns (`"defaults"` / `"env"` / `"file"`) —
-    /// the same scalar [`<Self as serde::Serialize>::serialize`] emits
-    /// and the same scalar [`<Self as std::str::FromStr>::from_str`]
-    /// accepts. Idiom-peer of the `Display` impl on
-    /// [`crate::FormatProvenance`] (commit `2c7654c`) lifted onto the
-    /// layer-kind sibling closed-enum.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for ConfigSourceKind {
-    type Err = crate::ShikumiError;
-
-    /// Parse the canonical operator-facing lowercase label
-    /// (`"defaults"` / `"env"` / `"file"`) produced by [`Self::as_str`];
-    /// case-insensitive over ASCII via the trait-default
-    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] parse.
-    /// On unrecognized input, returns [`crate::ShikumiError::Parse`]
-    /// with the offending label embedded verbatim — matching the
-    /// [`<crate::FormatProvenance as FromStr>::from_str`] surface
-    /// (commit `2c7654c`) so the same localization story (the operator
-    /// sees the offending substring in the rendered diagnostic) carries
-    /// to the layer-kind axis.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        <Self as crate::ClosedAxisLabel>::from_canonical_str(s)
-            .ok_or_else(|| crate::ShikumiError::Parse(format!("unknown config source kind: {s}")))
-    }
-}
-
-impl serde::Serialize for ConfigSourceKind {
-    /// Serialize the layer-kind as the canonical operator-facing
-    /// lowercase label [`Self::as_str`] returns — the same scalar the
-    /// [`fmt::Display`] impl writes. Routes through
-    /// [`serde::Serializer::collect_str`] so the serialized
-    /// representation is exactly `format!("{self}")` with no
-    /// intermediate allocation.
-    ///
-    /// Closes the canonical (`Serialize`, `Deserialize`) serde
-    /// idiom-peer of the (`Display`, [`std::str::FromStr`]) stdlib pair
-    /// on the layer-kind axis. A layer-kind emitted into a YAML
-    /// attestation manifest field, a JSON observability payload, or any
-    /// consumer struct holding a [`ConfigSourceKind`] field under
-    /// `#[derive(Serialize, Deserialize)]` round-trips through the
-    /// canonical label without a consumer-side rename helper.
-    ///
-    /// **Round-trip law** — for every `k: ConfigSourceKind`,
-    /// `serde_yaml::from_str::<ConfigSourceKind>(&serde_yaml::to_string(&k)?)? == k`
-    /// and the same on `serde_json`. Pinned by
-    /// [`tests::config_source_kind_serde_yaml_round_trips_over_every_variant`]
-    /// and
-    /// [`tests::config_source_kind_serde_json_round_trips_over_every_variant`].
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for ConfigSourceKind {
-    /// Deserialize the layer-kind from the canonical operator-facing
-    /// lowercase label [`Self::as_str`] returns via
-    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
-    /// `visit_str` lowers to [`<Self as FromStr>::from_str`] and routes
-    /// any [`crate::ShikumiError`] through [`serde::de::Error::custom`].
-    ///
-    /// **Case insensitivity inherits from [`FromStr`]** — the
-    /// [`crate::ClosedAxisLabel::from_canonical_str`] trait default
-    /// uses [`str::eq_ignore_ascii_case`] over [`Self::ALL`], so
-    /// uppercase or mixed-case scalars (e.g. `Defaults`, `ENV`,
-    /// `File`) parse pointwise. Pinned by
-    /// [`tests::config_source_kind_serde_yaml_is_case_insensitive`].
-    ///
-    /// **Unknown-kind rejection carries the offending label verbatim**
-    /// — a manifest field carrying an unrecognized kind surfaces at
-    /// the serde error site with the offending substring verbatim in
-    /// the rendered message, lifted through
-    /// [`crate::ShikumiError::Parse`]'s `Display` impl. Pinned by
-    /// [`tests::config_source_kind_serde_yaml_unknown_kind_error_carries_label_verbatim`].
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct ConfigSourceKindVisitor;
-
-        impl serde::de::Visitor<'_> for ConfigSourceKindVisitor {
-            type Value = ConfigSourceKind;
-
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(
-                    "a canonical ConfigSourceKind lowercase label \
-                     (`defaults`, `env`, `file`; case-insensitive)",
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<ConfigSourceKind, E> {
-                v.parse::<ConfigSourceKind>().map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(ConfigSourceKindVisitor)
-    }
+// The canonical (Display, FromStr, Serialize, Deserialize) string-surface
+// quartet on the layer-kind closed-enum, lifted to one macro after the
+// 16+ hand-rolled idiom-peers preceding this commit (WatchEventClass at
+// `94f8a8b`, ShikumiErrorKind at `4b53792`, DiffLineKind at `74ee853`).
+// See `closed_axis_label_string_surface!` in `crate::macros` for the
+// contract; behavior is byte-identical to the hand-rolled impls the
+// macro replaces — the verbatim-label `Parse` error body, the case-
+// insensitive `from_canonical_str` lowering, the `collect_str`-based
+// serde emission, and the visitor's `expecting` message all match the
+// prior surface pointwise. Pinned by
+// `tests::config_source_kind_display_matches_as_str`,
+// `tests::config_source_kind_from_str_*`, and
+// `tests::config_source_kind_serde_yaml_*`.
+closed_axis_label_string_surface! {
+    type = ConfigSourceKind,
+    parse_error = "unknown config source kind",
+    expecting = "a canonical ConfigSourceKind lowercase label \
+                 (`defaults`, `env`, `file`; case-insensitive)",
 }
 
 /// Chain-level provenance queries over a recorded [`ConfigSource`] chain.
