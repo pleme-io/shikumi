@@ -50,6 +50,8 @@
 //! ```
 
 use std::collections::HashMap;
+use std::fmt;
+use std::str::FromStr;
 use std::sync::RwLock;
 
 use async_trait::async_trait;
@@ -670,10 +672,29 @@ impl Capabilities {
 /// shikumi-shipped universe only and explicitly does not claim to
 /// cover every possible implementor.
 ///
+/// `Ord` / `PartialOrd` are declaration-order lex over [`Self::ALL`]
+/// (`Mem < Command < Akeyless < AwsSecretsManager < OpConnect < Vault
+/// < GcpSecretManager`): a `BTreeMap<SecretClientKind, T>` keyed on
+/// the runtime-client kind (per-client request-rate histograms,
+/// per-client latency dashboards, attestation manifests recording
+/// the client-mix histogram of resolved secrets, structured-
+/// diagnostic legends bucketing per-client counters in declaration
+/// order) emits rows in that order deterministically without a hand-
+/// rolled comparator at the renderer. Idiom-peer of the same derive
+/// on [`crate::SecretBackendKind`] (commit `9b1da86`),
+/// [`crate::SecretRefShape`] (commit `8a84bb6`),
+/// [`crate::DiffLineKind`] (commit `c403e1a`),
+/// [`crate::WatchEventClass`] (commit `94f8a8b`),
+/// [`crate::EnvMetadataTagKind`] (commit `b556b75`),
+/// [`crate::FigmentNameTagKind`] (commit `64a47e7`),
+/// [`crate::FigmentSourceKind`] (commit `5df265c`), and
+/// [`crate::ConfigSourceKind`] (commit `e0b96d1`) lifted onto the
+/// runtime-client axis closed-enum.
+///
 /// [`SecretBackendKind`]: crate::secret::SecretBackendKind
 /// [`SecretBackendKind::Op`]: crate::secret::SecretBackendKind::Op
 /// [`SecretBackendKind::Sops`]: crate::secret::SecretBackendKind::Sops
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum SecretClientKind {
     /// Maps to [`MemClient`] — the thread-safe in-memory test scaffold.
@@ -832,6 +853,136 @@ impl crate::ClosedAxis for SecretClientKind {
 impl crate::ClosedAxisLabel for SecretClientKind {
     fn as_str(self) -> &'static str {
         Self::as_str(self)
+    }
+}
+
+impl fmt::Display for SecretClientKind {
+    /// Write the canonical operator-facing label [`Self::as_str`]
+    /// returns (`"mem"` / `"command"` / `"akeyless"` /
+    /// `"aws-secrets-manager"` / `"op-connect"` / `"vault"` /
+    /// `"gcp-secret-manager"`) — the same scalar
+    /// [`<Self as serde::Serialize>::serialize`] emits and the same
+    /// scalar [`<Self as std::str::FromStr>::from_str`] accepts.
+    /// Idiom-peer of the `Display` impl on
+    /// [`crate::SecretBackendKind`] (commit `9b1da86`),
+    /// [`crate::SecretRefShape`] (commit `8a84bb6`),
+    /// [`crate::DiffLineKind`] (commit `c403e1a`),
+    /// [`crate::WatchEventClass`] (commit `94f8a8b`),
+    /// [`crate::EnvMetadataTagKind`] (commit `b556b75`),
+    /// [`crate::FigmentNameTagKind`] (commit `64a47e7`),
+    /// [`crate::FigmentSourceKind`] (commit `5df265c`), and
+    /// [`crate::ConfigSourceKind`] (commit `e0b96d1`) lifted onto the
+    /// runtime-client axis sibling closed-enum.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for SecretClientKind {
+    type Err = ShikumiError;
+
+    /// Parse the canonical operator-facing label (`"mem"` /
+    /// `"command"` / `"akeyless"` / `"aws-secrets-manager"` /
+    /// `"op-connect"` / `"vault"` / `"gcp-secret-manager"`) produced
+    /// by [`Self::as_str`]; case-insensitive over ASCII via the
+    /// trait-default
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] parse.
+    /// On unrecognized input, returns [`ShikumiError::Parse`] with the
+    /// offending label embedded verbatim — matching the
+    /// verbatim-substring rejection discipline already established by
+    /// [`<crate::SecretBackendKind as FromStr>::from_str`]
+    /// (commit `9b1da86`),
+    /// [`<crate::SecretRefShape as FromStr>::from_str`]
+    /// (commit `8a84bb6`),
+    /// [`<crate::DiffLineKind as FromStr>::from_str`]
+    /// (commit `c403e1a`),
+    /// [`<crate::WatchEventClass as FromStr>::from_str`]
+    /// (commit `94f8a8b`),
+    /// [`<crate::EnvMetadataTagKind as FromStr>::from_str`]
+    /// (commit `b556b75`),
+    /// [`<crate::FigmentNameTagKind as FromStr>::from_str`]
+    /// (commit `64a47e7`),
+    /// [`<crate::FigmentSourceKind as FromStr>::from_str`]
+    /// (commit `5df265c`), and
+    /// [`<crate::ConfigSourceKind as FromStr>::from_str`]
+    /// (commit `e0b96d1`) so the same localization story (the operator
+    /// sees the offending substring in the rendered diagnostic)
+    /// carries to the runtime-client axis kind.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        <Self as crate::ClosedAxisLabel>::from_canonical_str(s)
+            .ok_or_else(|| ShikumiError::Parse(format!("unknown secret client kind: {s}")))
+    }
+}
+
+impl serde::Serialize for SecretClientKind {
+    /// Serialize the runtime-client axis kind as the canonical
+    /// operator-facing label [`Self::as_str`] returns — the same
+    /// scalar the [`fmt::Display`] impl writes. Routes through
+    /// [`serde::Serializer::collect_str`] so the serialized
+    /// representation is exactly `format!("{self}")` with no
+    /// intermediate allocation.
+    ///
+    /// Closes the canonical (`Serialize`, `Deserialize`) serde
+    /// idiom-peer of the (`Display`, [`std::str::FromStr`]) stdlib
+    /// pair on the runtime-client axis kind primitive. A kind emitted
+    /// into a YAML attestation manifest field, a JSON observability
+    /// payload, or any consumer struct holding a [`SecretClientKind`]
+    /// field under `#[derive(Serialize, Deserialize)]` round-trips
+    /// through the canonical label without a consumer-side rename
+    /// helper.
+    ///
+    /// **Round-trip law** — for every `k: SecretClientKind`,
+    /// `serde_yaml::from_str::<SecretClientKind>(&serde_yaml::to_string(&k)?)? == k`
+    /// and the same on `serde_json`. Pinned by
+    /// [`tests::secret_client_kind_serde_yaml_round_trips_over_every_variant`]
+    /// and
+    /// [`tests::secret_client_kind_serde_json_round_trips_over_every_variant`].
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for SecretClientKind {
+    /// Deserialize the runtime-client axis kind from the canonical
+    /// operator-facing label [`Self::as_str`] returns via
+    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
+    /// `visit_str` lowers to [`<Self as FromStr>::from_str`] and
+    /// routes any [`ShikumiError`] through
+    /// [`serde::de::Error::custom`].
+    ///
+    /// **Case insensitivity inherits from [`FromStr`]** — the
+    /// [`crate::ClosedAxisLabel::from_canonical_str`] trait default
+    /// uses [`str::eq_ignore_ascii_case`] over [`Self::ALL`], so
+    /// uppercase or mixed-case scalars (e.g. `MEM`, `Aws-Secrets-Manager`)
+    /// parse pointwise. Pinned by
+    /// [`tests::secret_client_kind_serde_yaml_is_case_insensitive`].
+    ///
+    /// **Unknown-kind rejection carries the offending label verbatim**
+    /// — a manifest field carrying an unrecognized kind surfaces at
+    /// the serde error site with the offending substring verbatim in
+    /// the rendered message, lifted through [`ShikumiError::Parse`]'s
+    /// `Display` impl. Pinned by
+    /// [`tests::secret_client_kind_serde_yaml_unknown_kind_error_carries_label_verbatim`].
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct SecretClientKindVisitor;
+
+        impl serde::de::Visitor<'_> for SecretClientKindVisitor {
+            type Value = SecretClientKind;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(
+                    "a canonical SecretClientKind label \
+                     (`mem`, `command`, `akeyless`, `aws-secrets-manager`, \
+                     `op-connect`, `vault`, `gcp-secret-manager`; case-insensitive)",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<SecretClientKind, E> {
+                v.parse::<SecretClientKind>().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(SecretClientKindVisitor)
     }
 }
 
@@ -3666,6 +3817,290 @@ mod tests {
             let parsed =
                 <SecretClientKind as crate::ClosedAxisLabel>::from_canonical_str(kind.as_str());
             assert_eq!(parsed, Some(kind), "round-trip failed for {kind:?}");
+        }
+    }
+
+    // ── SecretClientKind — Ord / Display / FromStr / serde ──────────
+    //
+    // The (Ord, Display, FromStr, serde::{Serialize, Deserialize})
+    // quartet idiom-peer of the lift already landed on
+    // `SecretBackendKind` (commit `9b1da86`), `SecretRefShape`
+    // (commit `8a84bb6`), `DiffLineKind` (commit `c403e1a`),
+    // `WatchEventClass` (commit `94f8a8b`), `EnvMetadataTagKind`
+    // (commit `b556b75`), `FigmentNameTagKind` (commit `64a47e7`),
+    // `FigmentSourceKind` (commit `5df265c`), and `ConfigSourceKind`
+    // (commit `e0b96d1`), now lifted onto the runtime-client axis
+    // kind primitive.
+
+    #[test]
+    fn secret_client_kind_ord_matches_all_declaration_order() {
+        // The derived Ord on SecretClientKind is declaration-order
+        // lex over ALL: `Mem < Command < Akeyless <
+        // AwsSecretsManager < OpConnect < Vault < GcpSecretManager`.
+        // A BTreeMap keyed on the runtime-client axis kind (per-
+        // client request-rate histograms, per-client latency
+        // dashboards, attestation manifests recording the client-mix
+        // histogram of resolved secrets, structured-diagnostic
+        // legends bucketing per-client counters in declaration order)
+        // emits rows in that order deterministically without a hand-
+        // rolled comparator at the renderer.
+        //
+        // Two-leg pin: (1) ALL is a strictly-increasing chain under
+        // Ord, (2) cmp/partial_cmp agree with the array-index lex
+        // over ALL on every pair (and reflexivity holds). Idiom-peer
+        // of the same pin on SecretBackendKind (commit `9b1da86`),
+        // SecretRefShape (commit `8a84bb6`), and DiffLineKind
+        // (commit `c403e1a`).
+        use std::cmp::Ordering;
+        for window in SecretClientKind::ALL.windows(2) {
+            assert!(
+                window[0] < window[1],
+                "SecretClientKind::ALL must be strictly increasing under Ord, \
+                 but {:?} >= {:?}",
+                window[0],
+                window[1],
+            );
+        }
+        for (i, &a) in SecretClientKind::ALL.iter().enumerate() {
+            for (j, &b) in SecretClientKind::ALL.iter().enumerate() {
+                let expected = i.cmp(&j);
+                assert_eq!(
+                    a.cmp(&b),
+                    expected,
+                    "SecretClientKind::cmp must match ALL-index lex for ({a:?}, {b:?})",
+                );
+                assert_eq!(
+                    a.partial_cmp(&b),
+                    Some(expected),
+                    "SecretClientKind::partial_cmp must agree with cmp for ({a:?}, {b:?})",
+                );
+                if i == j {
+                    assert_eq!(a.cmp(&b), Ordering::Equal, "Ord must be reflexive on {a:?}",);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_btreemap_emits_in_declaration_order() {
+        // The compounding payoff of the Ord derive at a typed
+        // consumer site: a BTreeMap<SecretClientKind, _> emits keys
+        // in declaration order on `iter()` / `into_iter()` regardless
+        // of insertion order, matching `SecretClientKind::ALL`.
+        // Idiom-peer of the same pin on SecretBackendKind
+        // (commit `9b1da86`), SecretRefShape (commit `8a84bb6`), and
+        // DiffLineKind (commit `c403e1a`).
+        use std::collections::BTreeMap;
+        let mut counts: BTreeMap<SecretClientKind, u32> = BTreeMap::new();
+        counts.insert(SecretClientKind::GcpSecretManager, 7);
+        counts.insert(SecretClientKind::Mem, 1);
+        counts.insert(SecretClientKind::Vault, 5);
+        counts.insert(SecretClientKind::OpConnect, 4);
+        counts.insert(SecretClientKind::AwsSecretsManager, 3);
+        counts.insert(SecretClientKind::Command, 2);
+        counts.insert(SecretClientKind::Akeyless, 6);
+        let observed: Vec<SecretClientKind> = counts.keys().copied().collect();
+        assert_eq!(
+            observed,
+            SecretClientKind::ALL.to_vec(),
+            "BTreeMap<SecretClientKind, _> must emit keys in ALL declaration order",
+        );
+    }
+
+    #[test]
+    fn secret_client_kind_display_matches_as_str() {
+        // Display writes the canonical label as_str returns, byte-
+        // for-byte. The two surfaces stay aligned by construction —
+        // a future rename of either must update the other in
+        // lockstep. Idiom-peer of the same pin on SecretBackendKind
+        // (commit `9b1da86`), DiffLineKind (commit `c403e1a`), and
+        // WatchEventClass (commit `94f8a8b`).
+        for k in SecretClientKind::ALL.iter().copied() {
+            assert_eq!(
+                format!("{k}"),
+                k.as_str(),
+                "Display must agree with as_str for {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_from_str_round_trips_over_every_variant() {
+        // Display → FromStr identity round-trip over every variant.
+        // FromStr lowers through ClosedAxisLabel::from_canonical_str,
+        // so any future override of that trait method is held to this
+        // law at the inherent FromStr surface as well.
+        for k in SecretClientKind::ALL {
+            let rendered = k.to_string();
+            let parsed: SecretClientKind = rendered
+                .parse()
+                .expect("FromStr must round-trip Display output");
+            assert_eq!(parsed, *k, "FromStr must round-trip {k:?}");
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_from_str_is_case_insensitive() {
+        // FromStr lowers through ClosedAxisLabel::from_canonical_str
+        // which uses eq_ignore_ascii_case over ALL — uppercase and
+        // mixed-case scalars an operator might type into an env var
+        // or CLI flag parse pointwise to the same variant.
+        assert_eq!(
+            "MEM".parse::<SecretClientKind>().unwrap(),
+            SecretClientKind::Mem,
+        );
+        assert_eq!(
+            "Command".parse::<SecretClientKind>().unwrap(),
+            SecretClientKind::Command,
+        );
+        assert_eq!(
+            "Aws-Secrets-Manager".parse::<SecretClientKind>().unwrap(),
+            SecretClientKind::AwsSecretsManager,
+        );
+        assert_eq!(
+            "oP-cOnNeCt".parse::<SecretClientKind>().unwrap(),
+            SecretClientKind::OpConnect,
+        );
+        assert_eq!(
+            "GCP-SECRET-MANAGER".parse::<SecretClientKind>().unwrap(),
+            SecretClientKind::GcpSecretManager,
+        );
+    }
+
+    #[test]
+    fn secret_client_kind_from_str_unknown_kind_error_carries_label_verbatim() {
+        // Unrecognized labels reject through ShikumiError::Parse with
+        // the offending substring embedded verbatim in the rendered
+        // message — same verbatim-rejection discipline as
+        // SecretBackendKind's FromStr surface (commit `9b1da86`),
+        // SecretRefShape's FromStr surface (commit `8a84bb6`),
+        // DiffLineKind's FromStr surface (commit `c403e1a`),
+        // WatchEventClass's FromStr surface (commit `94f8a8b`),
+        // EnvMetadataTagKind's FromStr surface (commit `b556b75`),
+        // FigmentNameTagKind's FromStr surface (commit `64a47e7`),
+        // FigmentSourceKind's FromStr surface (commit `5df265c`), and
+        // ConfigSourceKind's FromStr surface (commit `e0b96d1`).
+        for bad in &["aws", "gcp", "kubernetes", "keychain", "", "  mem"] {
+            let err = bad
+                .parse::<SecretClientKind>()
+                .expect_err("non-canonical label must reject");
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(bad),
+                "rendered error must contain the offending label verbatim: \
+                 input={bad:?}, rendered={rendered:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_serde_yaml_round_trips_over_every_variant() {
+        // Serde Serialize → Deserialize identity round-trip over every
+        // variant through serde_yaml. Closes the (Serialize,
+        // Deserialize) idiom-peer of the (Display, FromStr) stdlib
+        // pair on the runtime-client axis kind primitive. A consumer
+        // struct holding a SecretClientKind field under
+        // #[derive(Serialize, Deserialize)] (e.g. an attestation
+        // manifest recording the client kind of a resolved secret)
+        // round-trips without a consumer-side rename helper.
+        for k in SecretClientKind::ALL {
+            let yaml = serde_yaml::to_string(k).expect("Serialize must succeed");
+            let parsed: SecretClientKind =
+                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+            assert_eq!(parsed, *k, "serde_yaml round-trip must preserve {k:?}");
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_serde_json_round_trips_over_every_variant() {
+        // Serde Serialize → Deserialize identity round-trip over every
+        // variant through serde_json. The two formats render the
+        // canonical scalar identically modulo wire ceremony (YAML's
+        // bare scalar vs. JSON's quoted string), so the round-trip
+        // law composes pointwise — a future divergence in either
+        // Serialize impl surfaces here.
+        for k in SecretClientKind::ALL {
+            let json = serde_json::to_string(k).expect("Serialize must succeed");
+            let parsed: SecretClientKind =
+                serde_json::from_str(&json).expect("Deserialize must accept Serialize output");
+            assert_eq!(parsed, *k, "serde_json round-trip must preserve {k:?}");
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_serde_yaml_is_case_insensitive() {
+        // Deserialize lowers through FromStr which lowers through
+        // ClosedAxisLabel::from_canonical_str (eq_ignore_ascii_case),
+        // so uppercase or mixed-case scalars parse pointwise. A
+        // manifest field authored by an operator typing the canonical
+        // name with different casing parses without a consumer-side
+        // case-fold helper.
+        let cases: &[(&str, SecretClientKind)] = &[
+            ("Mem", SecretClientKind::Mem),
+            ("COMMAND", SecretClientKind::Command),
+            ("Aws-Secrets-Manager", SecretClientKind::AwsSecretsManager),
+            ("oP-cOnNeCt", SecretClientKind::OpConnect),
+            ("GCP-SECRET-MANAGER", SecretClientKind::GcpSecretManager),
+        ];
+        for (input, expected) in cases {
+            let parsed: SecretClientKind =
+                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+            assert_eq!(
+                parsed, *expected,
+                "serde_yaml must parse case-insensitively for input {input:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_serde_yaml_unknown_kind_error_carries_label_verbatim() {
+        // An unrecognized runtime-client axis kind label surfaces at
+        // the serde error site with the offending substring verbatim
+        // in the rendered message, lifted through
+        // ShikumiError::Parse's Display impl. Same verbatim-rejection
+        // discipline as SecretBackendKind's serde surface
+        // (commit `9b1da86`), DiffLineKind's serde surface
+        // (commit `c403e1a`), WatchEventClass's serde surface
+        // (commit `94f8a8b`), and ConfigSourceKind's serde surface
+        // (commit `e0b96d1`).
+        for bad in &["aws", "gcp", "kubernetes", "keychain"] {
+            let err = serde_yaml::from_str::<SecretClientKind>(bad)
+                .expect_err("non-canonical label must reject");
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(bad),
+                "rendered serde error must contain the offending label verbatim: \
+                 input={bad:?}, rendered={rendered:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_client_kind_serde_yaml_emission_is_bare_scalar() {
+        // Concrete-position pin on the YAML emission shape: a
+        // SecretClientKind serializes as a bare kebab-case scalar,
+        // not as a quoted string or a tagged enum. Captures that an
+        // attestation manifest authoring tool can emit the kind as a
+        // bare YAML scalar pointwise matching the operator-facing
+        // label across all seven variants.
+        let pairs: &[(SecretClientKind, &str)] = &[
+            (SecretClientKind::Mem, "mem\n"),
+            (SecretClientKind::Command, "command\n"),
+            (SecretClientKind::Akeyless, "akeyless\n"),
+            (
+                SecretClientKind::AwsSecretsManager,
+                "aws-secrets-manager\n",
+            ),
+            (SecretClientKind::OpConnect, "op-connect\n"),
+            (SecretClientKind::Vault, "vault\n"),
+            (
+                SecretClientKind::GcpSecretManager,
+                "gcp-secret-manager\n",
+            ),
+        ];
+        for (k, expected) in pairs {
+            let yaml = serde_yaml::to_string(k).unwrap();
+            assert_eq!(yaml, *expected, "YAML emission mismatch for {k:?}");
         }
     }
 }
