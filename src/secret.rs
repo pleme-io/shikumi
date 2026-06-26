@@ -621,7 +621,22 @@ impl VaultRef {
 /// boundaries the borrowed [`SopsRef`] / [`VaultRef`] (which hold owned
 /// `PathBuf` / `String` payloads) are unnecessarily expensive to clone
 /// for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// `Ord` and `PartialOrd` are derived as declaration-order lex over
+/// [`Self::ALL`] (`Whole < Field`): a `BTreeMap<SecretRefShape, T>`
+/// keyed on the secret-ref extraction-shape axis (per-shape
+/// resolution-success histograms, per-shape extraction-rate
+/// dashboards, attestation manifests recording the shape mix of
+/// resolved secrets across both [`SopsRef`] and [`VaultRef`] sites)
+/// emits rows in that order deterministically without a hand-rolled
+/// comparator at the renderer. Idiom-peer of the same derive on
+/// [`SecretBackendKind`] (commit `9b1da86`),
+/// [`crate::FigmentNameTagKind`] (commit `64a47e7`),
+/// [`crate::FigmentSourceKind`] (commit `5df265c`),
+/// [`crate::ConfigSourceKind`] (commit `e0b96d1`), and
+/// [`crate::Format`] (commit `b56b121`) lifted onto the
+/// secret-ref-extraction-shape sibling closed-enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum SecretRefShape {
     /// Whole-reference resolution — the bare-payload shorthand. Maps to
@@ -701,6 +716,122 @@ impl crate::ClosedAxis for SecretRefShape {
 impl crate::ClosedAxisLabel for SecretRefShape {
     fn as_str(self) -> &'static str {
         Self::as_str(self)
+    }
+}
+
+impl fmt::Display for SecretRefShape {
+    /// Write the canonical operator-facing lowercase label
+    /// [`Self::as_str`] returns (`"whole"` or `"field"`) — the same
+    /// scalar [`<Self as serde::Serialize>::serialize`] emits and the
+    /// same scalar [`<Self as std::str::FromStr>::from_str`] accepts.
+    /// Idiom-peer of the `Display` impl on
+    /// [`SecretBackendKind`] (commit `9b1da86`),
+    /// [`crate::FigmentNameTagKind`] (commit `64a47e7`),
+    /// [`crate::FigmentSourceKind`] (commit `5df265c`), and
+    /// [`crate::ConfigSourceKind`] (commit `e0b96d1`) lifted onto the
+    /// secret-ref-extraction-shape sibling closed-enum.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for SecretRefShape {
+    type Err = ShikumiError;
+
+    /// Parse the canonical operator-facing lowercase label
+    /// (`"whole"` or `"field"`) produced by [`Self::as_str`];
+    /// case-insensitive over ASCII via the trait-default
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] parse.
+    /// On unrecognized input, returns [`ShikumiError::Parse`] with the
+    /// offending label embedded verbatim — matching the
+    /// verbatim-substring rejection discipline already established by
+    /// [`<SecretBackendKind as FromStr>::from_str`] (commit `9b1da86`),
+    /// [`<crate::FigmentNameTagKind as FromStr>::from_str`]
+    /// (commit `64a47e7`),
+    /// [`<crate::FigmentSourceKind as FromStr>::from_str`]
+    /// (commit `5df265c`),
+    /// [`<crate::ConfigSourceKind as FromStr>::from_str`]
+    /// (commit `e0b96d1`),
+    /// [`<crate::FormatProvenance as FromStr>::from_str`]
+    /// (commit `2c7654c`), and
+    /// [`crate::ParseFormatCoordinatesError`] (commit `06a2f42`) so
+    /// the same localization story (the operator sees the offending
+    /// substring in the rendered diagnostic) carries to the
+    /// secret-ref-extraction-shape axis.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        <Self as crate::ClosedAxisLabel>::from_canonical_str(s)
+            .ok_or_else(|| ShikumiError::Parse(format!("unknown secret ref shape: {s}")))
+    }
+}
+
+impl serde::Serialize for SecretRefShape {
+    /// Serialize the secret-ref-extraction-shape axis kind as the
+    /// canonical operator-facing lowercase label [`Self::as_str`]
+    /// returns — the same scalar the [`fmt::Display`] impl writes.
+    /// Routes through [`serde::Serializer::collect_str`] so the
+    /// serialized representation is exactly `format!("{self}")` with
+    /// no intermediate allocation.
+    ///
+    /// Closes the canonical (`Serialize`, `Deserialize`) serde
+    /// idiom-peer of the (`Display`, [`std::str::FromStr`]) stdlib
+    /// pair on the secret-ref-extraction-shape axis primitive. A
+    /// shape emitted into a YAML attestation manifest field, a JSON
+    /// observability payload, or any consumer struct holding a
+    /// [`SecretRefShape`] field under
+    /// `#[derive(Serialize, Deserialize)]` round-trips through the
+    /// canonical label without a consumer-side rename helper.
+    ///
+    /// **Round-trip law** — for every `k: SecretRefShape`,
+    /// `serde_yaml::from_str::<SecretRefShape>(&serde_yaml::to_string(&k)?)? == k`
+    /// and the same on `serde_json`. Pinned by
+    /// [`tests::secret_ref_shape_serde_yaml_round_trips_over_every_variant`]
+    /// and
+    /// [`tests::secret_ref_shape_serde_json_round_trips_over_every_variant`].
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for SecretRefShape {
+    /// Deserialize the secret-ref-extraction-shape axis kind from the
+    /// canonical operator-facing lowercase label [`Self::as_str`]
+    /// returns via [`serde::Deserializer::deserialize_str`] with a
+    /// visitor whose `visit_str` lowers to
+    /// [`<Self as FromStr>::from_str`] and routes any [`ShikumiError`]
+    /// through [`serde::de::Error::custom`].
+    ///
+    /// **Case insensitivity inherits from [`FromStr`]** — the
+    /// [`crate::ClosedAxisLabel::from_canonical_str`] trait default
+    /// uses [`str::eq_ignore_ascii_case`] over [`Self::ALL`], so
+    /// uppercase or mixed-case scalars (e.g. `Whole`, `FIELD`) parse
+    /// pointwise. Pinned by
+    /// [`tests::secret_ref_shape_serde_yaml_is_case_insensitive`].
+    ///
+    /// **Unknown-shape rejection carries the offending label verbatim**
+    /// — a manifest field carrying an unrecognized shape surfaces at
+    /// the serde error site with the offending substring verbatim in
+    /// the rendered message, lifted through [`ShikumiError::Parse`]'s
+    /// `Display` impl. Pinned by
+    /// [`tests::secret_ref_shape_serde_yaml_unknown_shape_error_carries_label_verbatim`].
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct SecretRefShapeVisitor;
+
+        impl serde::de::Visitor<'_> for SecretRefShapeVisitor {
+            type Value = SecretRefShape;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(
+                    "a canonical SecretRefShape lowercase label \
+                     (`whole`, `field`; case-insensitive)",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<SecretRefShape, E> {
+                v.parse::<SecretRefShape>().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(SecretRefShapeVisitor)
     }
 }
 
@@ -2738,5 +2869,262 @@ mod tests {
         // operator-facing label.
         let yaml = serde_yaml::to_string(&SecretBackendKind::AwsSecret).unwrap();
         assert_eq!(yaml, "aws_secret\n");
+    }
+
+    // ── SecretRefShape — Ord / Display / FromStr / serde ─────────────
+    //
+    // The (Ord, Display, FromStr, serde::{Serialize, Deserialize})
+    // quartet idiom-peer of the lift already landed on
+    // `SecretBackendKind` (commit `9b1da86`),
+    // `FigmentNameTagKind` (commit `64a47e7`),
+    // `FigmentSourceKind` (commit `5df265c`), `ConfigSourceKind`
+    // (commit `e0b96d1`), `FormatProvenance` (commit `2c7654c`),
+    // `FormatCoordinates` (commit `06a2f42`), and `Format`
+    // (commit `b56b121`), now lifted onto the
+    // secret-ref-extraction-shape axis primitive — the first
+    // cross-type closed-axis primitive on the typescape (shared by
+    // both `SopsRef::shape` and `VaultRef::shape`).
+
+    #[test]
+    fn secret_ref_shape_ord_matches_all_declaration_order() {
+        // The derived Ord on SecretRefShape is declaration-order lex
+        // over ALL: `Whole < Field`. A BTreeMap keyed on the
+        // secret-ref-extraction-shape axis (per-shape
+        // resolution-success histograms, per-shape extraction-rate
+        // dashboards, attestation manifests recording the shape mix of
+        // resolved secrets) emits rows in that order deterministically
+        // without a hand-rolled comparator at the renderer.
+        //
+        // Two-leg pin: (1) ALL is a strictly-increasing chain under
+        // Ord, (2) cmp/partial_cmp agree with the array-index lex over
+        // ALL on every pair (and reflexivity holds). Idiom-peer of the
+        // same pin on SecretBackendKind (commit `9b1da86`),
+        // FigmentSourceKind (commit `5df265c`), FigmentNameTagKind
+        // (commit `64a47e7`), and ConfigSourceKind (commit `e0b96d1`).
+        use std::cmp::Ordering;
+        for window in SecretRefShape::ALL.windows(2) {
+            assert!(
+                window[0] < window[1],
+                "SecretRefShape::ALL must be strictly increasing under Ord, \
+                 but {:?} >= {:?}",
+                window[0],
+                window[1],
+            );
+        }
+        for (i, &a) in SecretRefShape::ALL.iter().enumerate() {
+            for (j, &b) in SecretRefShape::ALL.iter().enumerate() {
+                let expected = i.cmp(&j);
+                assert_eq!(
+                    a.cmp(&b),
+                    expected,
+                    "SecretRefShape::cmp must match ALL-index lex for ({a:?}, {b:?})",
+                );
+                assert_eq!(
+                    a.partial_cmp(&b),
+                    Some(expected),
+                    "SecretRefShape::partial_cmp must agree with cmp for ({a:?}, {b:?})",
+                );
+                if i == j {
+                    assert_eq!(a.cmp(&b), Ordering::Equal, "Ord must be reflexive on {a:?}",);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn secret_ref_shape_btreemap_emits_in_declaration_order() {
+        // The compounding payoff of the Ord derive at a typed consumer
+        // site: a BTreeMap<SecretRefShape, _> emits keys in
+        // declaration order on `iter()` / `into_iter()` regardless of
+        // insertion order, matching `SecretRefShape::ALL`. Idiom-peer
+        // of the same pin on SecretBackendKind (commit `9b1da86`),
+        // FigmentSourceKind (commit `5df265c`), FigmentNameTagKind
+        // (commit `64a47e7`), and ConfigSourceKind (commit `e0b96d1`).
+        use std::collections::BTreeMap;
+        let mut counts: BTreeMap<SecretRefShape, u32> = BTreeMap::new();
+        counts.insert(SecretRefShape::Field, 5);
+        counts.insert(SecretRefShape::Whole, 3);
+        let observed: Vec<SecretRefShape> = counts.keys().copied().collect();
+        assert_eq!(
+            observed,
+            SecretRefShape::ALL.to_vec(),
+            "BTreeMap<SecretRefShape, _> must emit keys in ALL declaration order",
+        );
+    }
+
+    #[test]
+    fn secret_ref_shape_display_matches_as_str() {
+        // Display writes the canonical lowercase label as_str returns,
+        // byte-for-byte. The two surfaces stay aligned by construction
+        // — a future rename of either must update the other in
+        // lockstep. Idiom-peer of the same pin on SecretBackendKind
+        // (commit `9b1da86`), FigmentSourceKind (commit `5df265c`),
+        // and FigmentNameTagKind (commit `64a47e7`).
+        for k in SecretRefShape::ALL.iter().copied() {
+            assert_eq!(
+                format!("{k}"),
+                k.as_str(),
+                "Display must agree with as_str for {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_ref_shape_from_str_round_trips_over_every_variant() {
+        // Display → FromStr identity round-trip over every variant.
+        // FromStr lowers through ClosedAxisLabel::from_canonical_str,
+        // so any future override of that trait method is held to this
+        // law at the inherent FromStr surface as well.
+        for k in SecretRefShape::ALL {
+            let rendered = k.to_string();
+            let parsed: SecretRefShape = rendered
+                .parse()
+                .expect("FromStr must round-trip Display output");
+            assert_eq!(parsed, *k, "FromStr must round-trip {k:?}");
+        }
+    }
+
+    #[test]
+    fn secret_ref_shape_from_str_is_case_insensitive() {
+        // FromStr lowers through ClosedAxisLabel::from_canonical_str
+        // which uses eq_ignore_ascii_case over ALL — uppercase and
+        // mixed-case scalars an operator might type into an env var or
+        // CLI flag parse pointwise to the same variant.
+        assert_eq!(
+            "WHOLE".parse::<SecretRefShape>().unwrap(),
+            SecretRefShape::Whole,
+        );
+        assert_eq!(
+            "Whole".parse::<SecretRefShape>().unwrap(),
+            SecretRefShape::Whole,
+        );
+        assert_eq!(
+            "FIELD".parse::<SecretRefShape>().unwrap(),
+            SecretRefShape::Field,
+        );
+        assert_eq!(
+            "FiElD".parse::<SecretRefShape>().unwrap(),
+            SecretRefShape::Field,
+        );
+    }
+
+    #[test]
+    fn secret_ref_shape_from_str_unknown_shape_error_carries_label_verbatim() {
+        // Unrecognized labels reject through ShikumiError::Parse with
+        // the offending substring embedded verbatim in the rendered
+        // message — same verbatim-rejection discipline as
+        // SecretBackendKind's FromStr surface (commit `9b1da86`),
+        // FigmentSourceKind's FromStr surface (commit `5df265c`),
+        // FigmentNameTagKind's FromStr surface (commit `64a47e7`),
+        // ConfigSourceKind's FromStr surface (commit `e0b96d1`),
+        // FormatProvenance's FromStr surface (commit `2c7654c`), and
+        // ParseFormatCoordinatesError (commit `06a2f42`).
+        for bad in &["bare", "all", "multifield", "path", "", "  whole"] {
+            let err = bad
+                .parse::<SecretRefShape>()
+                .expect_err("non-canonical label must reject");
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(bad),
+                "rendered error must contain the offending label verbatim: \
+                 input={bad:?}, rendered={rendered:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_ref_shape_serde_yaml_round_trips_over_every_variant() {
+        // Serde Serialize → Deserialize identity round-trip over every
+        // variant through serde_yaml. Closes the (Serialize, Deserialize)
+        // idiom-peer of the (Display, FromStr) stdlib pair on the
+        // secret-ref-extraction-shape axis primitive. A consumer struct
+        // holding a SecretRefShape field under
+        // #[derive(Serialize, Deserialize)] (e.g. an attestation
+        // manifest recording the extraction shape of a resolved secret)
+        // round-trips without a consumer-side rename helper.
+        for k in SecretRefShape::ALL {
+            let yaml = serde_yaml::to_string(k).expect("Serialize must succeed");
+            let parsed: SecretRefShape =
+                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+            assert_eq!(parsed, *k, "serde_yaml round-trip must preserve {k:?}");
+        }
+    }
+
+    #[test]
+    fn secret_ref_shape_serde_json_round_trips_over_every_variant() {
+        // Serde Serialize → Deserialize identity round-trip over every
+        // variant through serde_json. The two formats render the
+        // canonical scalar identically modulo wire ceremony (YAML's
+        // bare scalar vs. JSON's quoted string), so the round-trip law
+        // composes pointwise — a future divergence in either
+        // Serialize impl surfaces here.
+        for k in SecretRefShape::ALL {
+            let json = serde_json::to_string(k).expect("Serialize must succeed");
+            let parsed: SecretRefShape =
+                serde_json::from_str(&json).expect("Deserialize must accept Serialize output");
+            assert_eq!(parsed, *k, "serde_json round-trip must preserve {k:?}");
+        }
+    }
+
+    #[test]
+    fn secret_ref_shape_serde_yaml_is_case_insensitive() {
+        // Deserialize lowers through FromStr which lowers through
+        // ClosedAxisLabel::from_canonical_str (eq_ignore_ascii_case),
+        // so uppercase or mixed-case scalars parse pointwise. A
+        // manifest field authored by an operator typing the canonical
+        // name with different casing parses without a consumer-side
+        // case-fold helper.
+        let cases: &[(&str, SecretRefShape)] = &[
+            ("Whole", SecretRefShape::Whole),
+            ("WHOLE", SecretRefShape::Whole),
+            ("Field", SecretRefShape::Field),
+            ("fIeLd", SecretRefShape::Field),
+        ];
+        for (input, expected) in cases {
+            let parsed: SecretRefShape =
+                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+            assert_eq!(
+                parsed, *expected,
+                "serde_yaml must parse case-insensitively for input {input:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_ref_shape_serde_yaml_unknown_shape_error_carries_label_verbatim() {
+        // An unrecognized secret-ref-extraction-shape label surfaces
+        // at the serde error site with the offending substring
+        // verbatim in the rendered message, lifted through
+        // ShikumiError::Parse's Display impl. Same verbatim-rejection
+        // discipline as SecretBackendKind's serde surface
+        // (commit `9b1da86`), FigmentSourceKind's serde surface
+        // (commit `5df265c`), FigmentNameTagKind's serde surface
+        // (commit `64a47e7`), ConfigSourceKind's serde surface
+        // (commit `e0b96d1`), and FormatProvenance's serde surface
+        // (commit `2c7654c`).
+        for bad in &["bare", "all", "multifield", "path"] {
+            let err = serde_yaml::from_str::<SecretRefShape>(bad)
+                .expect_err("non-canonical label must reject");
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(bad),
+                "rendered serde error must contain the offending label verbatim: \
+                 input={bad:?}, rendered={rendered:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_ref_shape_serde_yaml_emission_is_bare_scalar() {
+        // Concrete-position pin on the YAML emission shape: a
+        // SecretRefShape serializes as a bare lowercase scalar, not as
+        // a quoted string or a tagged enum. The pin captures that an
+        // attestation manifest authoring tool can emit the shape as a
+        // bare YAML scalar pointwise matching the operator-facing
+        // label.
+        let yaml = serde_yaml::to_string(&SecretRefShape::Whole).unwrap();
+        assert_eq!(yaml, "whole\n");
+        let yaml = serde_yaml::to_string(&SecretRefShape::Field).unwrap();
+        assert_eq!(yaml, "field\n");
     }
 }
