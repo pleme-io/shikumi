@@ -1,6 +1,4 @@
-use std::fmt;
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use crate::source::{
     ConfigSource, ConfigSourceChain, ConfigSourceKind, EnvMetadataTag, FigmentNameTag,
@@ -2181,135 +2179,27 @@ impl crate::ClosedAxisLabel for ShikumiErrorKind {
     }
 }
 
-impl fmt::Display for ShikumiErrorKind {
-    /// Write the canonical operator-facing label [`Self::as_str`]
-    /// returns (`"not-found"` / `"parse"` / `"watch"` / `"io"` /
-    /// `"figment"` / `"extract"`) — the same scalar
-    /// [`<Self as serde::Serialize>::serialize`] emits and the same
-    /// scalar [`<Self as std::str::FromStr>::from_str`] accepts.
-    /// Idiom-peer of the `Display` impl on
-    /// [`crate::SecretClientKind`] (commit `24c7b33`),
-    /// [`crate::DiffLineKind`] (commit `c403e1a`),
-    /// [`crate::WatchEventClass`] (commit `94f8a8b`),
-    /// [`crate::EnvMetadataTagKind`] (commit `b556b75`),
-    /// [`crate::SecretRefShape`] (commit `8a84bb6`),
-    /// [`crate::SecretBackendKind`] (commit `9b1da86`),
-    /// [`crate::FigmentNameTagKind`] (commit `64a47e7`),
-    /// [`crate::FigmentSourceKind`] (commit `5df265c`), and
-    /// [`crate::ConfigSourceKind`] (commit `e0b96d1`) lifted onto the
-    /// captured-failure variant axis sibling closed-enum.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for ShikumiErrorKind {
-    type Err = ShikumiError;
-
-    /// Parse the canonical operator-facing label (`"not-found"` /
-    /// `"parse"` / `"watch"` / `"io"` / `"figment"` / `"extract"`)
-    /// produced by [`Self::as_str`]; case-insensitive over ASCII via
-    /// the trait-default
-    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] parse.
-    /// On unrecognized input, returns [`ShikumiError::Parse`] with the
-    /// offending label embedded verbatim — matching the
-    /// verbatim-substring rejection discipline already established by
-    /// [`<crate::SecretClientKind as FromStr>::from_str`]
-    /// (commit `24c7b33`),
-    /// [`<crate::DiffLineKind as FromStr>::from_str`]
-    /// (commit `c403e1a`),
-    /// [`<crate::WatchEventClass as FromStr>::from_str`]
-    /// (commit `94f8a8b`),
-    /// [`<crate::EnvMetadataTagKind as FromStr>::from_str`]
-    /// (commit `b556b75`),
-    /// [`<crate::SecretRefShape as FromStr>::from_str`]
-    /// (commit `8a84bb6`),
-    /// [`<crate::SecretBackendKind as FromStr>::from_str`]
-    /// (commit `9b1da86`),
-    /// [`<crate::FigmentNameTagKind as FromStr>::from_str`]
-    /// (commit `64a47e7`),
-    /// [`<crate::FigmentSourceKind as FromStr>::from_str`]
-    /// (commit `5df265c`), and
-    /// [`<crate::ConfigSourceKind as FromStr>::from_str`]
-    /// (commit `e0b96d1`) so the same localization story (the operator
-    /// sees the offending substring in the rendered diagnostic)
-    /// carries to the captured-failure variant axis kind.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        <Self as crate::ClosedAxisLabel>::from_canonical_str(s)
-            .ok_or_else(|| ShikumiError::Parse(format!("unknown shikumi error kind: {s}")))
-    }
-}
-
-impl serde::Serialize for ShikumiErrorKind {
-    /// Serialize the captured-failure variant axis kind as the
-    /// canonical operator-facing label [`Self::as_str`] returns — the
-    /// same scalar the [`fmt::Display`] impl writes. Routes through
-    /// [`serde::Serializer::collect_str`] so the serialized
-    /// representation is exactly `format!("{self}")` with no
-    /// intermediate allocation.
-    ///
-    /// Closes the canonical (`Serialize`, `Deserialize`) serde
-    /// idiom-peer of the (`Display`, [`std::str::FromStr`]) stdlib
-    /// pair on the captured-failure variant axis kind primitive. A
-    /// kind emitted into a YAML attestation manifest field, a JSON
-    /// observability payload, or any consumer struct holding a
-    /// [`ShikumiErrorKind`] field under
-    /// `#[derive(Serialize, Deserialize)]` round-trips through the
-    /// canonical label without a consumer-side rename helper.
-    ///
-    /// **Round-trip law** — for every `k: ShikumiErrorKind`,
-    /// `serde_yaml::from_str::<ShikumiErrorKind>(&serde_yaml::to_string(&k)?)? == k`
-    /// and the same on `serde_json`. Pinned by
-    /// [`tests::shikumi_error_kind_serde_yaml_round_trips_over_every_variant`]
-    /// and
-    /// [`tests::shikumi_error_kind_serde_json_round_trips_over_every_variant`].
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for ShikumiErrorKind {
-    /// Deserialize the captured-failure variant axis kind from the
-    /// canonical operator-facing label [`Self::as_str`] returns via
-    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
-    /// `visit_str` lowers to [`<Self as FromStr>::from_str`] and
-    /// routes any [`ShikumiError`] through
-    /// [`serde::de::Error::custom`].
-    ///
-    /// **Case insensitivity inherits from [`FromStr`]** — the
-    /// [`crate::ClosedAxisLabel::from_canonical_str`] trait default
-    /// uses [`str::eq_ignore_ascii_case`] over [`Self::ALL`], so
-    /// uppercase or mixed-case scalars (e.g. `NOT-FOUND`,
-    /// `Figment`) parse pointwise. Pinned by
-    /// [`tests::shikumi_error_kind_serde_yaml_is_case_insensitive`].
-    ///
-    /// **Unknown-kind rejection carries the offending label verbatim**
-    /// — a manifest field carrying an unrecognized kind surfaces at
-    /// the serde error site with the offending substring verbatim in
-    /// the rendered message, lifted through [`ShikumiError::Parse`]'s
-    /// `Display` impl. Pinned by
-    /// [`tests::shikumi_error_kind_serde_yaml_unknown_kind_error_carries_label_verbatim`].
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct ShikumiErrorKindVisitor;
-
-        impl serde::de::Visitor<'_> for ShikumiErrorKindVisitor {
-            type Value = ShikumiErrorKind;
-
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(
-                    "a canonical ShikumiErrorKind label \
-                     (`not-found`, `parse`, `watch`, `io`, `figment`, `extract`; \
-                     case-insensitive)",
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<ShikumiErrorKind, E> {
-                v.parse::<ShikumiErrorKind>().map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(ShikumiErrorKindVisitor)
-    }
+// The canonical (Display, FromStr, Serialize, Deserialize) string-surface
+// quartet on the captured-failure variant axis kind, lifted to one macro
+// after the 16+ hand-rolled idiom-peers (Format, FormatProvenance,
+// ConfigSourceKind, FigmentSourceKind, FigmentNameTagKind,
+// SecretBackendKind, SecretRefShape, EnvMetadataTagKind, WatchEventClass
+// (migrated 392cbeb), DiffLineKind, SecretClientKind, SecretErrorKind,
+// SecretOperation). See `closed_axis_label_string_surface!` in
+// `crate::macros` for the contract; behavior is byte-identical to the
+// hand-rolled impls the macro replaces — the verbatim-label `Parse`
+// error body, the case-insensitive `from_canonical_str` lowering, the
+// `collect_str`-based serde emission, and the visitor's `expecting`
+// message all match the prior surface pointwise. Pinned by
+// `tests::shikumi_error_kind_display_matches_as_str`,
+// `tests::shikumi_error_kind_from_str_*`, and
+// `tests::shikumi_error_kind_serde_yaml_*`.
+closed_axis_label_string_surface! {
+    type = ShikumiErrorKind,
+    parse_error = "unknown shikumi error kind",
+    expecting = "a canonical ShikumiErrorKind label \
+                 (`not-found`, `parse`, `watch`, `io`, `figment`, `extract`; \
+                 case-insensitive)",
 }
 
 impl crate::ClosedAxis for FieldPathLocalization {
