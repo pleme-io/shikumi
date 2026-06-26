@@ -624,120 +624,27 @@ impl crate::ClosedAxisLabel for SecretRefShape {
     }
 }
 
-impl fmt::Display for SecretRefShape {
-    /// Write the canonical operator-facing lowercase label
-    /// [`Self::as_str`] returns (`"whole"` or `"field"`) — the same
-    /// scalar [`<Self as serde::Serialize>::serialize`] emits and the
-    /// same scalar [`<Self as std::str::FromStr>::from_str`] accepts.
-    /// Idiom-peer of the `Display` impl on
-    /// [`SecretBackendKind`] (commit `9b1da86`),
-    /// [`crate::FigmentNameTagKind`] (commit `64a47e7`),
-    /// [`crate::FigmentSourceKind`] (commit `5df265c`), and
-    /// [`crate::ConfigSourceKind`] (commit `e0b96d1`) lifted onto the
-    /// secret-ref-extraction-shape sibling closed-enum.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for SecretRefShape {
-    type Err = ShikumiError;
-
-    /// Parse the canonical operator-facing lowercase label
-    /// (`"whole"` or `"field"`) produced by [`Self::as_str`];
-    /// case-insensitive over ASCII via the trait-default
-    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] parse.
-    /// On unrecognized input, returns [`ShikumiError::Parse`] with the
-    /// offending label embedded verbatim — matching the
-    /// verbatim-substring rejection discipline already established by
-    /// [`<SecretBackendKind as FromStr>::from_str`] (commit `9b1da86`),
-    /// [`<crate::FigmentNameTagKind as FromStr>::from_str`]
-    /// (commit `64a47e7`),
-    /// [`<crate::FigmentSourceKind as FromStr>::from_str`]
-    /// (commit `5df265c`),
-    /// [`<crate::ConfigSourceKind as FromStr>::from_str`]
-    /// (commit `e0b96d1`),
-    /// [`<crate::FormatProvenance as FromStr>::from_str`]
-    /// (commit `2c7654c`), and
-    /// [`crate::ParseFormatCoordinatesError`] (commit `06a2f42`) so
-    /// the same localization story (the operator sees the offending
-    /// substring in the rendered diagnostic) carries to the
-    /// secret-ref-extraction-shape axis.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        <Self as crate::ClosedAxisLabel>::from_canonical_str(s)
-            .ok_or_else(|| ShikumiError::Parse(format!("unknown secret ref shape: {s}")))
-    }
-}
-
-impl serde::Serialize for SecretRefShape {
-    /// Serialize the secret-ref-extraction-shape axis kind as the
-    /// canonical operator-facing lowercase label [`Self::as_str`]
-    /// returns — the same scalar the [`fmt::Display`] impl writes.
-    /// Routes through [`serde::Serializer::collect_str`] so the
-    /// serialized representation is exactly `format!("{self}")` with
-    /// no intermediate allocation.
-    ///
-    /// Closes the canonical (`Serialize`, `Deserialize`) serde
-    /// idiom-peer of the (`Display`, [`std::str::FromStr`]) stdlib
-    /// pair on the secret-ref-extraction-shape axis primitive. A
-    /// shape emitted into a YAML attestation manifest field, a JSON
-    /// observability payload, or any consumer struct holding a
-    /// [`SecretRefShape`] field under
-    /// `#[derive(Serialize, Deserialize)]` round-trips through the
-    /// canonical label without a consumer-side rename helper.
-    ///
-    /// **Round-trip law** — for every `k: SecretRefShape`,
-    /// `serde_yaml::from_str::<SecretRefShape>(&serde_yaml::to_string(&k)?)? == k`
-    /// and the same on `serde_json`. Pinned by
-    /// [`tests::secret_ref_shape_serde_yaml_round_trips_over_every_variant`]
-    /// and
-    /// [`tests::secret_ref_shape_serde_json_round_trips_over_every_variant`].
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for SecretRefShape {
-    /// Deserialize the secret-ref-extraction-shape axis kind from the
-    /// canonical operator-facing lowercase label [`Self::as_str`]
-    /// returns via [`serde::Deserializer::deserialize_str`] with a
-    /// visitor whose `visit_str` lowers to
-    /// [`<Self as FromStr>::from_str`] and routes any [`ShikumiError`]
-    /// through [`serde::de::Error::custom`].
-    ///
-    /// **Case insensitivity inherits from [`FromStr`]** — the
-    /// [`crate::ClosedAxisLabel::from_canonical_str`] trait default
-    /// uses [`str::eq_ignore_ascii_case`] over [`Self::ALL`], so
-    /// uppercase or mixed-case scalars (e.g. `Whole`, `FIELD`) parse
-    /// pointwise. Pinned by
-    /// [`tests::secret_ref_shape_serde_yaml_is_case_insensitive`].
-    ///
-    /// **Unknown-shape rejection carries the offending label verbatim**
-    /// — a manifest field carrying an unrecognized shape surfaces at
-    /// the serde error site with the offending substring verbatim in
-    /// the rendered message, lifted through [`ShikumiError::Parse`]'s
-    /// `Display` impl. Pinned by
-    /// [`tests::secret_ref_shape_serde_yaml_unknown_shape_error_carries_label_verbatim`].
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct SecretRefShapeVisitor;
-
-        impl serde::de::Visitor<'_> for SecretRefShapeVisitor {
-            type Value = SecretRefShape;
-
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(
-                    "a canonical SecretRefShape lowercase label \
-                     (`whole`, `field`; case-insensitive)",
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<SecretRefShape, E> {
-                v.parse::<SecretRefShape>().map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(SecretRefShapeVisitor)
-    }
+// The canonical (Display, FromStr, Serialize, Deserialize) string-surface
+// quartet on the secret-ref-extraction-shape axis closed-enum, lifted to
+// one macro after the nine hand-rolled idiom-peers preceding this commit
+// (WatchEventClass at `94f8a8b`, ShikumiErrorKind at `4b53792`,
+// DiffLineKind at `74ee853`, ConfigSourceKind at `ae24a13`,
+// FormatProvenance at `212d6fb`, FigmentNameTagKind at `25bab65`,
+// FigmentSourceKind at `8a0277d`, EnvMetadataTagKind at `58557d3`, and
+// SecretBackendKind at `360487a`). See `closed_axis_label_string_surface!`
+// in `crate::macros` for the contract; behavior is byte-identical to the
+// hand-rolled impls the macro replaces — the verbatim-label `Parse` error
+// body, the case-insensitive `from_canonical_str` lowering, the
+// `collect_str`-based serde emission, and the visitor's `expecting`
+// message all match the prior surface pointwise. Pinned by
+// `tests::secret_ref_shape_display_matches_as_str`,
+// `tests::secret_ref_shape_from_str_*`, and
+// `tests::secret_ref_shape_serde_yaml_*` / `…_serde_json_*`.
+closed_axis_label_string_surface! {
+    type = SecretRefShape,
+    parse_error = "unknown secret ref shape",
+    expecting = "a canonical SecretRefShape lowercase label \
+                 (`whole`, `field`; case-insensitive)",
 }
 
 /// Dispatch a [`SecretSource`] to the matching backend resolver.
