@@ -219,7 +219,7 @@ impl SecretError {
 /// Adding a future [`SecretError`] variant means adding one
 /// [`SecretErrorKind`] variant in lockstep — the exhaustive
 /// [`SecretError::kind`] match forces the assignment at compile time.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum SecretErrorKind {
     /// Maps to [`SecretError::NotFound`] regardless of inner secret
@@ -351,6 +351,116 @@ impl crate::ClosedAxis for SecretErrorKind {
 impl crate::ClosedAxisLabel for SecretErrorKind {
     fn as_str(self) -> &'static str {
         Self::as_str(self)
+    }
+}
+
+impl fmt::Display for SecretErrorKind {
+    /// Write the canonical operator-facing label [`Self::as_str`]
+    /// returns (`"not-found"` / `"unauthorized"` / `"unsupported"` /
+    /// `"backend"` / `"shikumi"`) — the same scalar
+    /// [`<Self as serde::Serialize>::serialize`] emits and the same
+    /// scalar [`<Self as std::str::FromStr>::from_str`] accepts.
+    /// Idiom-peer of the `Display` impl on
+    /// [`crate::ShikumiErrorKind`] (commit `911b598`),
+    /// [`SecretClientKind`] (commit `24c7b33`),
+    /// [`crate::SecretBackendKind`] (commit `9b1da86`),
+    /// [`crate::SecretRefShape`] (commit `8a84bb6`), and
+    /// [`crate::ConfigSourceKind`] (commit `e0b96d1`) lifted onto the
+    /// secret-client error-variant axis sibling closed-enum.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for SecretErrorKind {
+    type Err = ShikumiError;
+
+    /// Parse the canonical operator-facing label (`"not-found"` /
+    /// `"unauthorized"` / `"unsupported"` / `"backend"` / `"shikumi"`)
+    /// produced by [`Self::as_str`]; case-insensitive over ASCII via
+    /// the trait-default
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] parse.
+    /// On unrecognized input, returns [`ShikumiError::Parse`] with the
+    /// offending label embedded verbatim — matching the
+    /// verbatim-substring rejection discipline already established by
+    /// [`<crate::ShikumiErrorKind as FromStr>::from_str`]
+    /// (commit `911b598`),
+    /// [`<SecretClientKind as FromStr>::from_str`]
+    /// (commit `24c7b33`),
+    /// [`<crate::SecretBackendKind as FromStr>::from_str`]
+    /// (commit `9b1da86`),
+    /// [`<crate::SecretRefShape as FromStr>::from_str`]
+    /// (commit `8a84bb6`), and
+    /// [`<crate::ConfigSourceKind as FromStr>::from_str`]
+    /// (commit `e0b96d1`) so the same localization story (the operator
+    /// sees the offending substring in the rendered diagnostic)
+    /// carries to the secret-client error-variant axis kind.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        <Self as crate::ClosedAxisLabel>::from_canonical_str(s)
+            .ok_or_else(|| ShikumiError::Parse(format!("unknown secret error kind: {s}")))
+    }
+}
+
+impl serde::Serialize for SecretErrorKind {
+    /// Serialize the secret-client error-variant axis kind as the
+    /// canonical operator-facing label [`Self::as_str`] returns — the
+    /// same scalar the [`fmt::Display`] impl writes. Routes through
+    /// [`serde::Serializer::collect_str`] so the serialized
+    /// representation is exactly `format!("{self}")` with no
+    /// intermediate allocation.
+    ///
+    /// Closes the canonical (`Serialize`, `Deserialize`) serde
+    /// idiom-peer of the (`Display`, [`std::str::FromStr`]) stdlib
+    /// pair on the secret-client error-variant axis kind primitive.
+    /// A kind emitted into a YAML attestation manifest field, a JSON
+    /// observability payload, or any consumer struct holding a
+    /// [`SecretErrorKind`] field under
+    /// `#[derive(Serialize, Deserialize)]` round-trips through the
+    /// canonical label without a consumer-side rename helper.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for SecretErrorKind {
+    /// Deserialize the secret-client error-variant axis kind from the
+    /// canonical operator-facing label [`Self::as_str`] returns via
+    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
+    /// `visit_str` lowers to [`<Self as FromStr>::from_str`] and
+    /// routes any [`ShikumiError`] through
+    /// [`serde::de::Error::custom`].
+    ///
+    /// **Case insensitivity inherits from [`FromStr`]** — the
+    /// [`crate::ClosedAxisLabel::from_canonical_str`] trait default
+    /// uses [`str::eq_ignore_ascii_case`] over [`Self::ALL`], so
+    /// uppercase or mixed-case scalars (e.g. `NOT-FOUND`, `Backend`)
+    /// parse pointwise.
+    ///
+    /// **Unknown-kind rejection carries the offending label verbatim**
+    /// — a manifest field carrying an unrecognized kind surfaces at
+    /// the serde error site with the offending substring verbatim in
+    /// the rendered message, lifted through [`ShikumiError::Parse`]'s
+    /// `Display` impl.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct SecretErrorKindVisitor;
+
+        impl serde::de::Visitor<'_> for SecretErrorKindVisitor {
+            type Value = SecretErrorKind;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(
+                    "a canonical SecretErrorKind label \
+                     (`not-found`, `unauthorized`, `unsupported`, \
+                     `backend`, `shikumi`; case-insensitive)",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<SecretErrorKind, E> {
+                v.parse::<SecretErrorKind>().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(SecretErrorKindVisitor)
     }
 }
 
@@ -3422,6 +3532,246 @@ mod tests {
         }
     }
 
+    // ── SecretErrorKind — Ord / Display / FromStr / serde ───────────
+    //
+    // The (Ord, Display, FromStr, serde::{Serialize, Deserialize})
+    // quartet idiom-peer of the lift already landed on
+    // `ShikumiErrorKind` (commit `911b598`), `SecretClientKind`
+    // (commit `24c7b33`), `DiffLineKind` (commit `c403e1a`),
+    // `WatchEventClass` (commit `94f8a8b`), `EnvMetadataTagKind`
+    // (commit `b556b75`), `SecretRefShape` (commit `8a84bb6`),
+    // `SecretBackendKind` (commit `9b1da86`), `FigmentNameTagKind`
+    // (commit `64a47e7`), `FigmentSourceKind` (commit `5df265c`), and
+    // `ConfigSourceKind` (commit `e0b96d1`), now lifted onto the
+    // secret-client error-variant axis kind primitive.
+
+    #[test]
+    fn secret_error_kind_ord_matches_all_declaration_order() {
+        // The derived Ord on SecretErrorKind is declaration-order lex
+        // over ALL: `NotFound < Unauthorized < Unsupported < Backend <
+        // Shikumi`. A BTreeMap keyed on the secret-client error-
+        // variant axis kind (per-kind retry-policy buckets, per-kind
+        // failure-rate histograms, attestation manifests recording
+        // the captured-failure mix histogram across backends,
+        // structured-diagnostic legends bucketing per-kind counters in
+        // declaration order) emits rows in declaration order
+        // deterministically without a hand-rolled comparator at the
+        // renderer.
+        //
+        // Two-leg pin: (1) ALL is a strictly-increasing chain under
+        // Ord, (2) cmp/partial_cmp agree with the array-index lex
+        // over ALL on every pair (and reflexivity holds).
+        use std::cmp::Ordering;
+        for window in SecretErrorKind::ALL.windows(2) {
+            assert!(
+                window[0] < window[1],
+                "SecretErrorKind::ALL must be strictly increasing under Ord, \
+                 but {:?} >= {:?}",
+                window[0],
+                window[1],
+            );
+        }
+        for (i, &a) in SecretErrorKind::ALL.iter().enumerate() {
+            for (j, &b) in SecretErrorKind::ALL.iter().enumerate() {
+                let expected = i.cmp(&j);
+                assert_eq!(
+                    a.cmp(&b),
+                    expected,
+                    "SecretErrorKind::cmp must match ALL-index lex for ({a:?}, {b:?})",
+                );
+                assert_eq!(
+                    a.partial_cmp(&b),
+                    Some(expected),
+                    "SecretErrorKind::partial_cmp must agree with cmp for ({a:?}, {b:?})",
+                );
+                if i == j {
+                    assert_eq!(a.cmp(&b), Ordering::Equal, "Ord must be reflexive on {a:?}",);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_btreemap_emits_in_declaration_order() {
+        // The compounding payoff of the Ord derive at a typed
+        // consumer site: a BTreeMap<SecretErrorKind, _> emits keys in
+        // declaration order on `iter()` / `into_iter()` regardless of
+        // insertion order, matching `SecretErrorKind::ALL`.
+        use std::collections::BTreeMap;
+        let mut counts: BTreeMap<SecretErrorKind, u32> = BTreeMap::new();
+        counts.insert(SecretErrorKind::Shikumi, 5);
+        counts.insert(SecretErrorKind::NotFound, 1);
+        counts.insert(SecretErrorKind::Backend, 4);
+        counts.insert(SecretErrorKind::Unauthorized, 2);
+        counts.insert(SecretErrorKind::Unsupported, 3);
+        let observed: Vec<SecretErrorKind> = counts.keys().copied().collect();
+        assert_eq!(
+            observed,
+            SecretErrorKind::ALL.to_vec(),
+            "BTreeMap<SecretErrorKind, _> must emit keys in ALL declaration order",
+        );
+    }
+
+    #[test]
+    fn secret_error_kind_display_matches_as_str() {
+        // Display writes the canonical label as_str returns, byte-
+        // for-byte. The two surfaces stay aligned by construction —
+        // a future rename of either must update the other in lockstep.
+        for k in SecretErrorKind::ALL.iter().copied() {
+            assert_eq!(
+                format!("{k}"),
+                k.as_str(),
+                "Display must agree with as_str for {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_from_str_round_trips_over_every_variant() {
+        // Display → FromStr identity round-trip over every variant.
+        // FromStr lowers through ClosedAxisLabel::from_canonical_str,
+        // so any future override of that trait method is held to this
+        // law at the inherent FromStr surface as well.
+        for k in SecretErrorKind::ALL {
+            let rendered = k.to_string();
+            let parsed: SecretErrorKind = rendered
+                .parse()
+                .expect("FromStr must round-trip Display output");
+            assert_eq!(parsed, *k, "FromStr must round-trip {k:?}");
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_from_str_is_case_insensitive() {
+        // FromStr lowers through ClosedAxisLabel::from_canonical_str
+        // which uses eq_ignore_ascii_case over ALL — uppercase and
+        // mixed-case scalars an operator might type into an env var
+        // or CLI flag parse pointwise to the same variant.
+        assert_eq!(
+            "NOT-FOUND".parse::<SecretErrorKind>().unwrap(),
+            SecretErrorKind::NotFound,
+        );
+        assert_eq!(
+            "Unauthorized".parse::<SecretErrorKind>().unwrap(),
+            SecretErrorKind::Unauthorized,
+        );
+        assert_eq!(
+            "uNsUpPoRtEd".parse::<SecretErrorKind>().unwrap(),
+            SecretErrorKind::Unsupported,
+        );
+        assert_eq!(
+            "BACKEND".parse::<SecretErrorKind>().unwrap(),
+            SecretErrorKind::Backend,
+        );
+        assert_eq!(
+            "Shikumi".parse::<SecretErrorKind>().unwrap(),
+            SecretErrorKind::Shikumi,
+        );
+    }
+
+    #[test]
+    fn secret_error_kind_from_str_unknown_kind_error_carries_label_verbatim() {
+        // Unrecognized labels reject through ShikumiError::Parse with
+        // the offending substring embedded verbatim in the rendered
+        // message — same verbatim-rejection discipline as the prior
+        // sibling lifts.
+        for bad in &["timeout", "rate-limit", "transport", "", "  backend"] {
+            let err = bad
+                .parse::<SecretErrorKind>()
+                .expect_err("non-canonical label must reject");
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(bad),
+                "rendered error must contain the offending label verbatim: \
+                 input={bad:?}, rendered={rendered:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_serde_yaml_round_trips_over_every_variant() {
+        // Serde Serialize → Deserialize identity round-trip over every
+        // variant through serde_yaml. Closes the (Serialize,
+        // Deserialize) idiom-peer of the (Display, FromStr) stdlib
+        // pair on the secret-client error-variant axis kind primitive.
+        for k in SecretErrorKind::ALL {
+            let yaml = serde_yaml::to_string(k).expect("Serialize must succeed");
+            let parsed: SecretErrorKind =
+                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+            assert_eq!(parsed, *k, "serde_yaml round-trip must preserve {k:?}");
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_serde_json_round_trips_over_every_variant() {
+        // Serde Serialize → Deserialize identity round-trip over every
+        // variant through serde_json.
+        for k in SecretErrorKind::ALL {
+            let json = serde_json::to_string(k).expect("Serialize must succeed");
+            let parsed: SecretErrorKind =
+                serde_json::from_str(&json).expect("Deserialize must accept Serialize output");
+            assert_eq!(parsed, *k, "serde_json round-trip must preserve {k:?}");
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_serde_yaml_is_case_insensitive() {
+        // Deserialize lowers through FromStr which lowers through
+        // ClosedAxisLabel::from_canonical_str (eq_ignore_ascii_case),
+        // so uppercase or mixed-case scalars parse pointwise.
+        let cases: &[(&str, SecretErrorKind)] = &[
+            ("Not-Found", SecretErrorKind::NotFound),
+            ("UNAUTHORIZED", SecretErrorKind::Unauthorized),
+            ("Unsupported", SecretErrorKind::Unsupported),
+            ("BaCkEnD", SecretErrorKind::Backend),
+            ("SHIKUMI", SecretErrorKind::Shikumi),
+        ];
+        for (input, expected) in cases {
+            let parsed: SecretErrorKind =
+                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+            assert_eq!(
+                parsed, *expected,
+                "serde_yaml must parse case-insensitively for input {input:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_serde_yaml_unknown_kind_error_carries_label_verbatim() {
+        // An unrecognized secret-client error-variant axis kind label
+        // surfaces at the serde error site with the offending substring
+        // verbatim in the rendered message, lifted through
+        // ShikumiError::Parse's Display impl.
+        for bad in &["timeout", "rate-limit", "transport", "denied"] {
+            let err = serde_yaml::from_str::<SecretErrorKind>(bad)
+                .expect_err("non-canonical label must reject");
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(bad),
+                "rendered serde error must contain the offending label verbatim: \
+                 input={bad:?}, rendered={rendered:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_error_kind_serde_yaml_emission_is_bare_scalar() {
+        // Concrete-position pin on the YAML emission shape: a
+        // SecretErrorKind serializes as a bare kebab-case scalar, not
+        // as a quoted string or a tagged enum.
+        let pairs: &[(SecretErrorKind, &str)] = &[
+            (SecretErrorKind::NotFound, "not-found\n"),
+            (SecretErrorKind::Unauthorized, "unauthorized\n"),
+            (SecretErrorKind::Unsupported, "unsupported\n"),
+            (SecretErrorKind::Backend, "backend\n"),
+            (SecretErrorKind::Shikumi, "shikumi\n"),
+        ];
+        for (k, expected) in pairs {
+            let yaml = serde_yaml::to_string(k).unwrap();
+            assert_eq!(yaml, *expected, "YAML emission mismatch for {k:?}");
+        }
+    }
+
     #[cfg(feature = "op-native")]
     #[test]
     fn op_urlencode_handles_spaces_and_reserved_chars() {
@@ -4087,16 +4437,10 @@ mod tests {
             (SecretClientKind::Mem, "mem\n"),
             (SecretClientKind::Command, "command\n"),
             (SecretClientKind::Akeyless, "akeyless\n"),
-            (
-                SecretClientKind::AwsSecretsManager,
-                "aws-secrets-manager\n",
-            ),
+            (SecretClientKind::AwsSecretsManager, "aws-secrets-manager\n"),
             (SecretClientKind::OpConnect, "op-connect\n"),
             (SecretClientKind::Vault, "vault\n"),
-            (
-                SecretClientKind::GcpSecretManager,
-                "gcp-secret-manager\n",
-            ),
+            (SecretClientKind::GcpSecretManager, "gcp-secret-manager\n"),
         ];
         for (k, expected) in pairs {
             let yaml = serde_yaml::to_string(k).unwrap();
