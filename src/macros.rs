@@ -224,6 +224,133 @@ macro_rules! tiered_permutation_test {
     };
 }
 
+/// Emit the canonical `(Display, FromStr, Serialize, Deserialize)`
+/// string-surface quartet for a [`crate::ClosedAxisLabel`] implementor.
+///
+/// The pattern is structurally identical across every closed-axis
+/// primitive that has lifted the quartet (15+ commits since `b56b121`
+/// landed it on [`crate::Format`]): write the canonical label via
+/// [`crate::ClosedAxisLabel::as_str`] from `Display`, parse via
+/// [`crate::ClosedAxisLabel::from_canonical_str`] from `FromStr` with a
+/// verbatim-label `Parse` error, route serde `Serialize` through
+/// [`serde::Serializer::collect_str`] and `Deserialize` through a visitor
+/// that lowers to `FromStr`. Lifting it to one macro collapses ~120 lines
+/// of hand-rolled boilerplate per primitive into one invocation, makes the
+/// canonical-label discipline a single source of truth, and lets every
+/// future closed-axis primitive land all four surfaces in one call.
+///
+/// # Contract
+///
+/// - `$ty` must be `Copy` and implement [`crate::ClosedAxisLabel`].
+/// - [`std::fmt::Display`] writes `<Self as ClosedAxisLabel>::as_str(*self)`.
+/// - [`std::str::FromStr`] (`Err = crate::ShikumiError`) routes through
+///   [`crate::ClosedAxisLabel::from_canonical_str`]; on miss returns
+///   [`crate::ShikumiError::Parse`] with body
+///   `format!("{}: {}", $parse_error, input)` — the offending label embeds
+///   verbatim.
+/// - [`serde::Serialize`] emits the canonical label via
+///   [`serde::Serializer::collect_str`].
+/// - [`serde::Deserialize`] reads a `str` and lowers through `FromStr`,
+///   surfacing the [`crate::ShikumiError`] via [`serde::de::Error::custom`].
+///   The visitor's `expecting` message is the literal `$expecting`
+///   argument.
+///
+/// **Round-trip law** —
+/// `<$ty as FromStr>::from_str(&v.to_string()) == Ok(v)` and
+/// `serde_yaml::from_str::<$ty>(&serde_yaml::to_string(&v)?)? == v` for
+/// every `v: $ty`, inherited from the [`crate::ClosedAxisLabel`]
+/// round-trip law by construction.
+///
+/// # Example
+///
+/// ```
+/// use shikumi::{closed_axis_label_string_surface, ClosedAxis, ClosedAxisLabel};
+///
+/// #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// enum Mode { On, Off }
+///
+/// impl ClosedAxis for Mode {
+///     const ALL: &'static [Self] = &[Self::On, Self::Off];
+/// }
+///
+/// impl ClosedAxisLabel for Mode {
+///     fn as_str(self) -> &'static str {
+///         match self { Self::On => "on", Self::Off => "off" }
+///     }
+/// }
+///
+/// closed_axis_label_string_surface! {
+///     type = Mode,
+///     parse_error = "unknown mode",
+///     expecting = "a canonical Mode label (`on`, `off`; case-insensitive)",
+/// }
+///
+/// assert_eq!(format!("{}", Mode::On), "on");
+/// assert_eq!("OFF".parse::<Mode>().unwrap(), Mode::Off);
+/// assert_eq!(serde_yaml::to_string(&Mode::On).unwrap(), "on\n");
+/// assert_eq!(serde_yaml::from_str::<Mode>("off").unwrap(), Mode::Off);
+/// let err = "nope".parse::<Mode>().unwrap_err().to_string();
+/// assert!(err.contains("nope"));
+/// ```
+#[macro_export]
+macro_rules! closed_axis_label_string_surface {
+    (
+        type = $ty:ty,
+        parse_error = $parse_error:expr,
+        expecting = $expecting:expr $(,)?
+    ) => {
+        impl ::core::fmt::Display for $ty {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                f.write_str(<Self as $crate::ClosedAxisLabel>::as_str(*self))
+            }
+        }
+
+        impl ::core::str::FromStr for $ty {
+            type Err = $crate::ShikumiError;
+
+            fn from_str(s: &str) -> ::core::result::Result<Self, Self::Err> {
+                <Self as $crate::ClosedAxisLabel>::from_canonical_str(s).ok_or_else(|| {
+                    $crate::ShikumiError::Parse(::std::format!("{}: {}", $parse_error, s,))
+                })
+            }
+        }
+
+        impl ::serde::Serialize for $ty {
+            fn serialize<__S: ::serde::Serializer>(
+                &self,
+                serializer: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
+                serializer.collect_str(self)
+            }
+        }
+
+        impl<'de> ::serde::Deserialize<'de> for $ty {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(
+                deserializer: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
+                struct __Visitor;
+
+                impl ::serde::de::Visitor<'_> for __Visitor {
+                    type Value = $ty;
+
+                    fn expecting(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                        f.write_str($expecting)
+                    }
+
+                    fn visit_str<__E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<$ty, __E> {
+                        v.parse::<$ty>().map_err(__E::custom)
+                    }
+                }
+
+                deserializer.deserialize_str(__Visitor)
+            }
+        }
+    };
+}
+
 /// Backing runner for [`tiered_permutation_test!`]. Kept as a real `fn`
 /// (not inlined into the macro) so the heavy logic lives in a typed,
 /// independently-testable surface; the macro is the thin authoring shell.

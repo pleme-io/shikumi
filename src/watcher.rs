@@ -5,9 +5,7 @@
 //! the Nix store — `PollWatcher` for symlinks, `RecommendedWatcher` for
 //! regular files.
 
-use std::fmt;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::time::Duration;
 
 use notify::{RecursiveMode, Watcher};
@@ -132,123 +130,16 @@ impl ClosedAxisLabel for WatchEventClass {
     }
 }
 
-impl fmt::Display for WatchEventClass {
-    /// Write the canonical operator-facing lowercase label
-    /// [`Self::as_str`] returns (`"reload"` / `"removed"` /
-    /// `"ignored"`) — the same scalar
-    /// [`<Self as serde::Serialize>::serialize`] emits and the same
-    /// scalar [`<Self as std::str::FromStr>::from_str`] accepts.
-    /// Idiom-peer of the `Display` impl on
-    /// [`crate::EnvMetadataTagKind`] (commit `b556b75`),
-    /// [`crate::FigmentNameTagKind`] (commit `64a47e7`),
-    /// [`crate::FigmentSourceKind`] (commit `5df265c`), and
-    /// [`crate::ConfigSourceKind`] (commit `e0b96d1`) lifted onto the
-    /// reload-relevance axis sibling closed-enum.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for WatchEventClass {
-    type Err = ShikumiError;
-
-    /// Parse the canonical operator-facing lowercase label
-    /// (`"reload"` / `"removed"` / `"ignored"`) produced by
-    /// [`Self::as_str`]; case-insensitive over ASCII via the
-    /// trait-default
-    /// [`<Self as ClosedAxisLabel>::from_canonical_str`] parse. On
-    /// unrecognized input, returns [`ShikumiError::Parse`] with the
-    /// offending label embedded verbatim — matching the
-    /// verbatim-substring rejection discipline already established by
-    /// [`<crate::EnvMetadataTagKind as FromStr>::from_str`]
-    /// (commit `b556b75`),
-    /// [`<crate::FigmentNameTagKind as FromStr>::from_str`]
-    /// (commit `64a47e7`),
-    /// [`<crate::FigmentSourceKind as FromStr>::from_str`]
-    /// (commit `5df265c`),
-    /// [`<crate::ConfigSourceKind as FromStr>::from_str`]
-    /// (commit `e0b96d1`),
-    /// [`<crate::FormatProvenance as FromStr>::from_str`]
-    /// (commit `2c7654c`), and
-    /// [`crate::ParseFormatCoordinatesError`] (commit `06a2f42`) so
-    /// the same localization story (the operator sees the offending
-    /// substring in the rendered diagnostic) carries to the
-    /// reload-relevance axis class.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        <Self as ClosedAxisLabel>::from_canonical_str(s)
-            .ok_or_else(|| ShikumiError::Parse(format!("unknown watch event class: {s}")))
-    }
-}
-
-impl serde::Serialize for WatchEventClass {
-    /// Serialize the reload-relevance class as the canonical
-    /// operator-facing lowercase label [`Self::as_str`] returns — the
-    /// same scalar the [`fmt::Display`] impl writes. Routes through
-    /// [`serde::Serializer::collect_str`] so the serialized
-    /// representation is exactly `format!("{self}")` with no
-    /// intermediate allocation.
-    ///
-    /// Closes the canonical (`Serialize`, `Deserialize`) serde
-    /// idiom-peer of the (`Display`, [`std::str::FromStr`]) stdlib
-    /// pair on the reload-relevance axis primitive. A class emitted
-    /// into a YAML attestation manifest field, a JSON observability
-    /// payload, or any consumer struct holding a [`WatchEventClass`]
-    /// field under `#[derive(Serialize, Deserialize)]` round-trips
-    /// through the canonical label without a consumer-side rename
-    /// helper.
-    ///
-    /// **Round-trip law** — for every `c: WatchEventClass`,
-    /// `serde_yaml::from_str::<WatchEventClass>(&serde_yaml::to_string(&c)?)? == c`
-    /// and the same on `serde_json`. Pinned by
-    /// [`tests::watch_event_class_serde_yaml_round_trips_over_every_variant`]
-    /// and
-    /// [`tests::watch_event_class_serde_json_round_trips_over_every_variant`].
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for WatchEventClass {
-    /// Deserialize the reload-relevance class from the canonical
-    /// operator-facing lowercase label [`Self::as_str`] returns via
-    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
-    /// `visit_str` lowers to [`<Self as FromStr>::from_str`] and
-    /// routes any [`ShikumiError`] through
-    /// [`serde::de::Error::custom`].
-    ///
-    /// **Case insensitivity inherits from [`FromStr`]** — the
-    /// [`ClosedAxisLabel::from_canonical_str`] trait default uses
-    /// [`str::eq_ignore_ascii_case`] over [`Self::ALL`], so uppercase
-    /// or mixed-case scalars (e.g. `Reload`, `REMOVED`) parse
-    /// pointwise. Pinned by
-    /// [`tests::watch_event_class_serde_yaml_is_case_insensitive`].
-    ///
-    /// **Unknown-class rejection carries the offending label
-    /// verbatim** — a manifest field carrying an unrecognized class
-    /// surfaces at the serde error site with the offending substring
-    /// verbatim in the rendered message, lifted through
-    /// [`ShikumiError::Parse`]'s `Display` impl. Pinned by
-    /// [`tests::watch_event_class_serde_yaml_unknown_class_error_carries_label_verbatim`].
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct WatchEventClassVisitor;
-
-        impl serde::de::Visitor<'_> for WatchEventClassVisitor {
-            type Value = WatchEventClass;
-
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(
-                    "a canonical WatchEventClass lowercase label \
-                     (`reload`, `removed`, `ignored`; case-insensitive)",
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<WatchEventClass, E> {
-                v.parse::<WatchEventClass>().map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(WatchEventClassVisitor)
-    }
+// The canonical (Display, FromStr, Serialize, Deserialize) string-surface
+// quartet on a ClosedAxisLabel primitive — lifted to one macro after the
+// 15+ hand-rolled idiom-peers preceding this commit. See
+// `closed_axis_label_string_surface!` in `crate::macros` for the contract;
+// behavior is byte-identical to the hand-rolled impls the macro replaces.
+closed_axis_label_string_surface! {
+    type = WatchEventClass,
+    parse_error = "unknown watch event class",
+    expecting = "a canonical WatchEventClass lowercase label \
+                 (`reload`, `removed`, `ignored`; case-insensitive)",
 }
 
 /// Resolves a symlink to its canonical target, or returns `None` if the
