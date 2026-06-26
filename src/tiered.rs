@@ -94,10 +94,6 @@
 
 use serde::{Serialize, de::DeserializeOwned};
 use std::env;
-use std::fmt;
-use std::str::FromStr;
-
-use crate::error::ShikumiError;
 
 // ── ConfigTierKind — variant-tag projection of ConfigTier
 
@@ -653,125 +649,17 @@ impl crate::ClosedAxisLabel for DiffLineKind {
     }
 }
 
-impl fmt::Display for DiffLineKind {
-    /// Write the canonical operator-facing lowercase label
-    /// [`Self::as_str`] returns (`"removed"` / `"added"` /
-    /// `"context"`) — the same scalar
-    /// [`<Self as serde::Serialize>::serialize`] emits and the same
-    /// scalar [`<Self as std::str::FromStr>::from_str`] accepts.
-    /// Idiom-peer of the `Display` impl on
-    /// [`crate::WatchEventClass`] (commit `94f8a8b`),
-    /// [`crate::EnvMetadataTagKind`] (commit `b556b75`),
-    /// [`crate::FigmentNameTagKind`] (commit `64a47e7`),
-    /// [`crate::FigmentSourceKind`] (commit `5df265c`), and
-    /// [`crate::ConfigSourceKind`] (commit `e0b96d1`) lifted onto the
-    /// diff-cell axis sibling closed-enum.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for DiffLineKind {
-    type Err = ShikumiError;
-
-    /// Parse the canonical operator-facing lowercase label
-    /// (`"removed"` / `"added"` / `"context"`) produced by
-    /// [`Self::as_str`]; case-insensitive over ASCII via the
-    /// trait-default
-    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] parse.
-    /// On unrecognized input, returns [`ShikumiError::Parse`] with the
-    /// offending label embedded verbatim — matching the
-    /// verbatim-substring rejection discipline already established by
-    /// [`<crate::WatchEventClass as FromStr>::from_str`]
-    /// (commit `94f8a8b`),
-    /// [`<crate::EnvMetadataTagKind as FromStr>::from_str`]
-    /// (commit `b556b75`),
-    /// [`<crate::FigmentNameTagKind as FromStr>::from_str`]
-    /// (commit `64a47e7`),
-    /// [`<crate::FigmentSourceKind as FromStr>::from_str`]
-    /// (commit `5df265c`),
-    /// [`<crate::ConfigSourceKind as FromStr>::from_str`]
-    /// (commit `e0b96d1`),
-    /// [`<crate::FormatProvenance as FromStr>::from_str`]
-    /// (commit `2c7654c`), and
-    /// [`crate::ParseFormatCoordinatesError`] (commit `06a2f42`) so
-    /// the same localization story (the operator sees the offending
-    /// substring in the rendered diagnostic) carries to the diff-cell
-    /// axis kind.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        <Self as crate::ClosedAxisLabel>::from_canonical_str(s)
-            .ok_or_else(|| ShikumiError::Parse(format!("unknown diff line kind: {s}")))
-    }
-}
-
-impl serde::Serialize for DiffLineKind {
-    /// Serialize the diff-cell kind as the canonical operator-facing
-    /// lowercase label [`Self::as_str`] returns — the same scalar the
-    /// [`fmt::Display`] impl writes. Routes through
-    /// [`serde::Serializer::collect_str`] so the serialized
-    /// representation is exactly `format!("{self}")` with no
-    /// intermediate allocation.
-    ///
-    /// Closes the canonical (`Serialize`, `Deserialize`) serde
-    /// idiom-peer of the (`Display`, [`std::str::FromStr`]) stdlib
-    /// pair on the diff-cell axis primitive. A kind emitted into a
-    /// YAML attestation manifest field, a JSON observability payload,
-    /// or any consumer struct holding a [`DiffLineKind`] field under
-    /// `#[derive(Serialize, Deserialize)]` round-trips through the
-    /// canonical label without a consumer-side rename helper.
-    ///
-    /// **Round-trip law** — for every `k: DiffLineKind`,
-    /// `serde_yaml::from_str::<DiffLineKind>(&serde_yaml::to_string(&k)?)? == k`
-    /// and the same on `serde_json`. Pinned by
-    /// [`tests::diff_line_kind_serde_yaml_round_trips_over_every_variant`]
-    /// and
-    /// [`tests::diff_line_kind_serde_json_round_trips_over_every_variant`].
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for DiffLineKind {
-    /// Deserialize the diff-cell kind from the canonical operator-
-    /// facing lowercase label [`Self::as_str`] returns via
-    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
-    /// `visit_str` lowers to [`<Self as FromStr>::from_str`] and
-    /// routes any [`ShikumiError`] through
-    /// [`serde::de::Error::custom`].
-    ///
-    /// **Case insensitivity inherits from [`FromStr`]** — the
-    /// [`crate::ClosedAxisLabel::from_canonical_str`] trait default
-    /// uses [`str::eq_ignore_ascii_case`] over [`Self::ALL`], so
-    /// uppercase or mixed-case scalars (e.g. `Removed`, `ADDED`)
-    /// parse pointwise. Pinned by
-    /// [`tests::diff_line_kind_serde_yaml_is_case_insensitive`].
-    ///
-    /// **Unknown-kind rejection carries the offending label
-    /// verbatim** — a manifest field carrying an unrecognized kind
-    /// surfaces at the serde error site with the offending substring
-    /// verbatim in the rendered message, lifted through
-    /// [`ShikumiError::Parse`]'s `Display` impl. Pinned by
-    /// [`tests::diff_line_kind_serde_yaml_unknown_kind_error_carries_label_verbatim`].
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct DiffLineKindVisitor;
-
-        impl serde::de::Visitor<'_> for DiffLineKindVisitor {
-            type Value = DiffLineKind;
-
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(
-                    "a canonical DiffLineKind lowercase label \
-                     (`removed`, `added`, `context`; case-insensitive)",
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<DiffLineKind, E> {
-                v.parse::<DiffLineKind>().map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(DiffLineKindVisitor)
-    }
+// The canonical (Display, FromStr, Serialize, Deserialize) string-surface
+// quartet on a ClosedAxisLabel primitive — lifted to one macro after the
+// 16+ hand-rolled idiom-peers preceding this commit (WatchEventClass at
+// `94f8a8b`, ShikumiErrorKind at `4b53792`). See
+// `closed_axis_label_string_surface!` in `crate::macros` for the contract;
+// behavior is byte-identical to the hand-rolled impls the macro replaces.
+closed_axis_label_string_surface! {
+    type = DiffLineKind,
+    parse_error = "unknown diff line kind",
+    expecting = "a canonical DiffLineKind lowercase label \
+                 (`removed`, `added`, `context`; case-insensitive)",
 }
 
 impl ConfigDiff {
