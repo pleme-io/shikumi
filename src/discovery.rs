@@ -1502,100 +1502,25 @@ impl<'de> serde::Deserialize<'de> for Format {
     }
 }
 
-impl fmt::Display for FormatProvenance {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for FormatProvenance {
-    type Err = ShikumiError;
-
-    /// Parse the canonical kebab-case label
-    /// (`"figment-builtin"` / `"shikumi-built"`)
-    /// produced by [`Self::as_str`]; case-insensitive over ASCII via
-    /// the trait-default
-    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] parse.
-    /// On unrecognized input, returns
-    /// [`ShikumiError::Parse`] with the offending label embedded
-    /// verbatim — matching the [`Format::FromStr`] surface so the same
-    /// localization story (the operator sees the offending substring
-    /// in the rendered diagnostic) carries to the provenance axis.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        <Self as crate::ClosedAxisLabel>::from_canonical_str(s)
-            .ok_or_else(|| ShikumiError::Parse(format!("unknown format provenance: {s}")))
-    }
-}
-
-impl serde::Serialize for FormatProvenance {
-    /// Serialize the provenance cell as the canonical operator-facing
-    /// kebab-case label [`Self::as_str`] returns — the same scalar the
-    /// [`fmt::Display`] impl writes. Routes through
-    /// [`serde::Serializer::collect_str`] so the serialized
-    /// representation is exactly `format!("{self}")` with no
-    /// intermediate allocation.
-    ///
-    /// Closes the canonical (`Serialize`, `Deserialize`) serde
-    /// idiom-peer of the (`Display`, [`std::str::FromStr`]) stdlib
-    /// pair on the provenance-axis surface. A provenance value
-    /// emitted into a YAML attestation manifest field, a JSON
-    /// observability payload, or any consumer struct holding a
-    /// [`FormatProvenance`] field under
-    /// `#[derive(Serialize, Deserialize)]` round-trips through the
-    /// canonical label without a consumer-side rename helper.
-    ///
-    /// **Round-trip law** — for every `p: FormatProvenance`,
-    /// `serde_yaml::from_str::<FormatProvenance>(&serde_yaml::to_string(&p)?)? == p`
-    /// and the same on `serde_json`. Pinned by
-    /// [`tests::format_provenance_serde_yaml_round_trips_over_every_variant`]
-    /// and
-    /// [`tests::format_provenance_serde_json_round_trips_over_every_variant`].
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for FormatProvenance {
-    /// Deserialize the provenance cell from the canonical
-    /// operator-facing kebab-case label [`Self::as_str`] returns via
-    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
-    /// `visit_str` lowers to [`<Self as std::str::FromStr>::from_str`]
-    /// and routes any [`ShikumiError`] through
-    /// [`serde::de::Error::custom`].
-    ///
-    /// **Case insensitivity inherits from [`std::str::FromStr`]** —
-    /// the [`crate::ClosedAxisLabel::from_canonical_str`] trait
-    /// default uses [`str::eq_ignore_ascii_case`] over [`Self::ALL`],
-    /// so uppercase or mixed-case scalars (e.g. `Figment-Builtin`,
-    /// `SHIKUMI-BUILT`) parse pointwise. Pinned by
-    /// [`tests::format_provenance_serde_yaml_is_case_insensitive`].
-    ///
-    /// **Unknown-provenance rejection carries the offending label
-    /// verbatim** — a manifest field carrying an unrecognized
-    /// provenance surfaces at the serde error site with the offending
-    /// substring verbatim in the rendered message, lifted through
-    /// [`ShikumiError::Parse`]'s `Display` impl. Pinned by
-    /// [`tests::format_provenance_serde_yaml_unknown_provenance_error_carries_label_verbatim`].
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct FormatProvenanceVisitor;
-
-        impl serde::de::Visitor<'_> for FormatProvenanceVisitor {
-            type Value = FormatProvenance;
-
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(
-                    "a canonical FormatProvenance kebab-case label \
-                     (`figment-builtin`, `shikumi-built`; case-insensitive)",
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<FormatProvenance, E> {
-                v.parse::<FormatProvenance>().map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(FormatProvenanceVisitor)
-    }
+// The canonical (Display, FromStr, Serialize, Deserialize) string-surface
+// quartet on the provenance closed-enum, lifted to one macro after the
+// 17+ hand-rolled idiom-peers preceding this commit (WatchEventClass at
+// `94f8a8b`, ShikumiErrorKind at `4b53792`, DiffLineKind at `74ee853`,
+// ConfigSourceKind at `ae24a13`). See `closed_axis_label_string_surface!`
+// in `crate::macros` for the contract; behavior is byte-identical to the
+// hand-rolled impls the macro replaces — the verbatim-label `Parse` error
+// body, the case-insensitive `from_canonical_str` lowering, the
+// `collect_str`-based serde emission, and the visitor's `expecting`
+// message all match the prior surface pointwise. Pinned by
+// `tests::format_provenance_display_matches_as_str`,
+// `tests::format_provenance_from_str_*`, and
+// `tests::format_provenance_serde_yaml_*` /
+// `tests::format_provenance_serde_json_*`.
+closed_axis_label_string_surface! {
+    type = FormatProvenance,
+    parse_error = "unknown format provenance",
+    expecting = "a canonical FormatProvenance kebab-case label \
+                 (`figment-builtin`, `shikumi-built`; case-insensitive)",
 }
 
 /// Resolve a directory by checking a builder-supplied override first,
