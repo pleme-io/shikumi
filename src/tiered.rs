@@ -94,6 +94,10 @@
 
 use serde::{Serialize, de::DeserializeOwned};
 use std::env;
+use std::fmt;
+use std::str::FromStr;
+
+use crate::error::ShikumiError;
 
 // ── ConfigTierKind — variant-tag projection of ConfigTier
 
@@ -513,7 +517,22 @@ impl DiffLine {
 /// means adding one [`DiffLineKind`] variant in lockstep — the
 /// exhaustive [`DiffLine::kind`] match forces the assignment at
 /// compile time.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// `Ord` / `PartialOrd` are declaration-order lex over [`Self::ALL`]
+/// (`Removed < Added < Context`): a `BTreeMap<DiffLineKind, T>` keyed
+/// on the diff-cell kind (per-cell rebuild-summary histograms keyed
+/// over a stable axis, attestation manifests recording the diff-cell
+/// cardinality mix of a `ConfigDiff` between two tiers, structured-
+/// diagnostic legends bucketing per-cell counters in declaration
+/// order) emits rows in that order deterministically without a hand-
+/// rolled comparator at the renderer. Idiom-peer of the same derive
+/// on [`crate::WatchEventClass`] (commit `94f8a8b`),
+/// [`crate::EnvMetadataTagKind`] (commit `b556b75`),
+/// [`crate::FigmentNameTagKind`] (commit `64a47e7`),
+/// [`crate::FigmentSourceKind`] (commit `5df265c`), and
+/// [`crate::ConfigSourceKind`] (commit `e0b96d1`) lifted onto the
+/// diff-cell axis closed-enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum DiffLineKind {
     /// Maps to [`DiffLine::Removed`] regardless of inner payload —
@@ -631,6 +650,127 @@ impl crate::ClosedAxis for DiffLineKind {
 impl crate::ClosedAxisLabel for DiffLineKind {
     fn as_str(self) -> &'static str {
         Self::as_str(self)
+    }
+}
+
+impl fmt::Display for DiffLineKind {
+    /// Write the canonical operator-facing lowercase label
+    /// [`Self::as_str`] returns (`"removed"` / `"added"` /
+    /// `"context"`) — the same scalar
+    /// [`<Self as serde::Serialize>::serialize`] emits and the same
+    /// scalar [`<Self as std::str::FromStr>::from_str`] accepts.
+    /// Idiom-peer of the `Display` impl on
+    /// [`crate::WatchEventClass`] (commit `94f8a8b`),
+    /// [`crate::EnvMetadataTagKind`] (commit `b556b75`),
+    /// [`crate::FigmentNameTagKind`] (commit `64a47e7`),
+    /// [`crate::FigmentSourceKind`] (commit `5df265c`), and
+    /// [`crate::ConfigSourceKind`] (commit `e0b96d1`) lifted onto the
+    /// diff-cell axis sibling closed-enum.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for DiffLineKind {
+    type Err = ShikumiError;
+
+    /// Parse the canonical operator-facing lowercase label
+    /// (`"removed"` / `"added"` / `"context"`) produced by
+    /// [`Self::as_str`]; case-insensitive over ASCII via the
+    /// trait-default
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] parse.
+    /// On unrecognized input, returns [`ShikumiError::Parse`] with the
+    /// offending label embedded verbatim — matching the
+    /// verbatim-substring rejection discipline already established by
+    /// [`<crate::WatchEventClass as FromStr>::from_str`]
+    /// (commit `94f8a8b`),
+    /// [`<crate::EnvMetadataTagKind as FromStr>::from_str`]
+    /// (commit `b556b75`),
+    /// [`<crate::FigmentNameTagKind as FromStr>::from_str`]
+    /// (commit `64a47e7`),
+    /// [`<crate::FigmentSourceKind as FromStr>::from_str`]
+    /// (commit `5df265c`),
+    /// [`<crate::ConfigSourceKind as FromStr>::from_str`]
+    /// (commit `e0b96d1`),
+    /// [`<crate::FormatProvenance as FromStr>::from_str`]
+    /// (commit `2c7654c`), and
+    /// [`crate::ParseFormatCoordinatesError`] (commit `06a2f42`) so
+    /// the same localization story (the operator sees the offending
+    /// substring in the rendered diagnostic) carries to the diff-cell
+    /// axis kind.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        <Self as crate::ClosedAxisLabel>::from_canonical_str(s)
+            .ok_or_else(|| ShikumiError::Parse(format!("unknown diff line kind: {s}")))
+    }
+}
+
+impl serde::Serialize for DiffLineKind {
+    /// Serialize the diff-cell kind as the canonical operator-facing
+    /// lowercase label [`Self::as_str`] returns — the same scalar the
+    /// [`fmt::Display`] impl writes. Routes through
+    /// [`serde::Serializer::collect_str`] so the serialized
+    /// representation is exactly `format!("{self}")` with no
+    /// intermediate allocation.
+    ///
+    /// Closes the canonical (`Serialize`, `Deserialize`) serde
+    /// idiom-peer of the (`Display`, [`std::str::FromStr`]) stdlib
+    /// pair on the diff-cell axis primitive. A kind emitted into a
+    /// YAML attestation manifest field, a JSON observability payload,
+    /// or any consumer struct holding a [`DiffLineKind`] field under
+    /// `#[derive(Serialize, Deserialize)]` round-trips through the
+    /// canonical label without a consumer-side rename helper.
+    ///
+    /// **Round-trip law** — for every `k: DiffLineKind`,
+    /// `serde_yaml::from_str::<DiffLineKind>(&serde_yaml::to_string(&k)?)? == k`
+    /// and the same on `serde_json`. Pinned by
+    /// [`tests::diff_line_kind_serde_yaml_round_trips_over_every_variant`]
+    /// and
+    /// [`tests::diff_line_kind_serde_json_round_trips_over_every_variant`].
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for DiffLineKind {
+    /// Deserialize the diff-cell kind from the canonical operator-
+    /// facing lowercase label [`Self::as_str`] returns via
+    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
+    /// `visit_str` lowers to [`<Self as FromStr>::from_str`] and
+    /// routes any [`ShikumiError`] through
+    /// [`serde::de::Error::custom`].
+    ///
+    /// **Case insensitivity inherits from [`FromStr`]** — the
+    /// [`crate::ClosedAxisLabel::from_canonical_str`] trait default
+    /// uses [`str::eq_ignore_ascii_case`] over [`Self::ALL`], so
+    /// uppercase or mixed-case scalars (e.g. `Removed`, `ADDED`)
+    /// parse pointwise. Pinned by
+    /// [`tests::diff_line_kind_serde_yaml_is_case_insensitive`].
+    ///
+    /// **Unknown-kind rejection carries the offending label
+    /// verbatim** — a manifest field carrying an unrecognized kind
+    /// surfaces at the serde error site with the offending substring
+    /// verbatim in the rendered message, lifted through
+    /// [`ShikumiError::Parse`]'s `Display` impl. Pinned by
+    /// [`tests::diff_line_kind_serde_yaml_unknown_kind_error_carries_label_verbatim`].
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct DiffLineKindVisitor;
+
+        impl serde::de::Visitor<'_> for DiffLineKindVisitor {
+            type Value = DiffLineKind;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(
+                    "a canonical DiffLineKind lowercase label \
+                     (`removed`, `added`, `context`; case-insensitive)",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<DiffLineKind, E> {
+                v.parse::<DiffLineKind>().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(DiffLineKindVisitor)
     }
 }
 
@@ -1444,6 +1584,270 @@ mod tests {
                 (DiffLineKind::Added, 1),
                 (DiffLineKind::Context, 1),
             ],
+        );
+    }
+
+    #[test]
+    fn diff_line_kind_ord_matches_all_declaration_order() {
+        // The derived Ord on DiffLineKind is declaration-order lex
+        // over ALL: `Removed < Added < Context`. A BTreeMap keyed on
+        // the diff-cell kind (per-cell rebuild-summary histograms
+        // keyed over a stable axis, attestation manifests recording
+        // the diff-cell cardinality mix of a ConfigDiff between two
+        // tiers, structured-diagnostic legends bucketing per-cell
+        // counters in declaration order) emits rows in that order
+        // deterministically without a hand-rolled comparator at the
+        // renderer.
+        //
+        // Two-leg pin: (1) ALL is a strictly-increasing chain under
+        // Ord, (2) cmp/partial_cmp agree with the array-index lex
+        // over ALL on every pair (and reflexivity holds). Idiom-peer
+        // of the same pin on WatchEventClass (commit `94f8a8b`),
+        // EnvMetadataTagKind (commit `b556b75`), FigmentNameTagKind
+        // (commit `64a47e7`), FigmentSourceKind (commit `5df265c`),
+        // and ConfigSourceKind (commit `e0b96d1`).
+        use std::cmp::Ordering;
+        for window in DiffLineKind::ALL.windows(2) {
+            assert!(
+                window[0] < window[1],
+                "DiffLineKind::ALL must be strictly increasing under Ord, \
+                 but {:?} >= {:?}",
+                window[0],
+                window[1],
+            );
+        }
+        for (i, &a) in DiffLineKind::ALL.iter().enumerate() {
+            for (j, &b) in DiffLineKind::ALL.iter().enumerate() {
+                let expected = i.cmp(&j);
+                assert_eq!(
+                    a.cmp(&b),
+                    expected,
+                    "DiffLineKind::cmp must match ALL-index lex for ({a:?}, {b:?})",
+                );
+                assert_eq!(
+                    a.partial_cmp(&b),
+                    Some(expected),
+                    "DiffLineKind::partial_cmp must agree with cmp for ({a:?}, {b:?})",
+                );
+                if i == j {
+                    assert_eq!(a.cmp(&b), Ordering::Equal, "Ord must be reflexive on {a:?}",);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_btreemap_emits_in_declaration_order() {
+        // The compounding payoff of the Ord derive at a typed
+        // consumer site: a BTreeMap<DiffLineKind, _> emits keys
+        // in declaration order on `iter()` / `into_iter()`
+        // regardless of insertion order, matching
+        // `DiffLineKind::ALL`. Idiom-peer of the same pin on
+        // WatchEventClass (commit `94f8a8b`), EnvMetadataTagKind
+        // (commit `b556b75`), FigmentNameTagKind (commit `64a47e7`),
+        // FigmentSourceKind (commit `5df265c`), and ConfigSourceKind
+        // (commit `e0b96d1`).
+        use std::collections::BTreeMap;
+        let mut counts: BTreeMap<DiffLineKind, u32> = BTreeMap::new();
+        counts.insert(DiffLineKind::Context, 3);
+        counts.insert(DiffLineKind::Removed, 1);
+        counts.insert(DiffLineKind::Added, 2);
+        let observed: Vec<DiffLineKind> = counts.keys().copied().collect();
+        assert_eq!(
+            observed,
+            DiffLineKind::ALL.to_vec(),
+            "BTreeMap<DiffLineKind, _> must emit keys in ALL declaration order",
+        );
+    }
+
+    #[test]
+    fn diff_line_kind_display_matches_as_str() {
+        // Display writes the canonical lowercase label as_str returns,
+        // byte-for-byte. The two surfaces stay aligned by construction
+        // — a future rename of either must update the other in
+        // lockstep. Idiom-peer of the same pin on WatchEventClass
+        // (commit `94f8a8b`), EnvMetadataTagKind (commit `b556b75`),
+        // FigmentNameTagKind (commit `64a47e7`), and FigmentSourceKind
+        // (commit `5df265c`).
+        for k in DiffLineKind::ALL.iter().copied() {
+            assert_eq!(
+                format!("{k}"),
+                k.as_str(),
+                "Display must agree with as_str for {k:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_from_str_round_trips_over_every_variant() {
+        // Display → FromStr identity round-trip over every variant.
+        // FromStr lowers through ClosedAxisLabel::from_canonical_str,
+        // so any future override of that trait method is held to this
+        // law at the inherent FromStr surface as well.
+        for k in DiffLineKind::ALL {
+            let rendered = k.to_string();
+            let parsed: DiffLineKind = rendered
+                .parse()
+                .expect("FromStr must round-trip Display output");
+            assert_eq!(parsed, *k, "FromStr must round-trip {k:?}");
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_from_str_is_case_insensitive() {
+        // FromStr lowers through ClosedAxisLabel::from_canonical_str
+        // which uses eq_ignore_ascii_case over ALL — uppercase and
+        // mixed-case scalars an operator might type into a CLI flag
+        // or structured-log filter parse pointwise to the same
+        // variant.
+        assert_eq!(
+            "REMOVED".parse::<DiffLineKind>().unwrap(),
+            DiffLineKind::Removed,
+        );
+        assert_eq!(
+            "Added".parse::<DiffLineKind>().unwrap(),
+            DiffLineKind::Added,
+        );
+        assert_eq!(
+            "cOnTeXt".parse::<DiffLineKind>().unwrap(),
+            DiffLineKind::Context,
+        );
+        assert_eq!(
+            "rEmOvEd".parse::<DiffLineKind>().unwrap(),
+            DiffLineKind::Removed,
+        );
+    }
+
+    #[test]
+    fn diff_line_kind_from_str_unknown_kind_error_carries_label_verbatim() {
+        // Unrecognized labels reject through ShikumiError::Parse with
+        // the offending substring embedded verbatim in the rendered
+        // message — same verbatim-rejection discipline as
+        // WatchEventClass's FromStr surface (commit `94f8a8b`),
+        // EnvMetadataTagKind's FromStr surface (commit `b556b75`),
+        // FigmentNameTagKind's FromStr surface (commit `64a47e7`),
+        // FigmentSourceKind's FromStr surface (commit `5df265c`),
+        // ConfigSourceKind's FromStr surface (commit `e0b96d1`),
+        // FormatProvenance's FromStr surface (commit `2c7654c`), and
+        // ParseFormatCoordinatesError (commit `06a2f42`).
+        for bad in &["changed", "deleted", "modified", "", "  removed"] {
+            let err = bad
+                .parse::<DiffLineKind>()
+                .expect_err("non-canonical label must reject");
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(bad),
+                "rendered error must contain the offending label verbatim: \
+                 input={bad:?}, rendered={rendered:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_serde_yaml_round_trips_over_every_variant() {
+        // Serde Serialize → Deserialize identity round-trip over every
+        // variant through serde_yaml. Closes the (Serialize,
+        // Deserialize) idiom-peer of the (Display, FromStr) stdlib
+        // pair on the diff-cell axis primitive. A consumer struct
+        // holding a DiffLineKind field under
+        // #[derive(Serialize, Deserialize)] (e.g. an attestation
+        // manifest recording the diff-cell kind of a `ConfigDiff`
+        // sample) round-trips without a consumer-side rename helper.
+        for k in DiffLineKind::ALL {
+            let yaml = serde_yaml::to_string(k).expect("Serialize must succeed");
+            let parsed: DiffLineKind =
+                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+            assert_eq!(parsed, *k, "serde_yaml round-trip must preserve {k:?}");
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_serde_json_round_trips_over_every_variant() {
+        // Serde Serialize → Deserialize identity round-trip over every
+        // variant through serde_json. The two formats render the
+        // canonical scalar identically modulo wire ceremony (YAML's
+        // bare scalar vs. JSON's quoted string), so the round-trip
+        // law composes pointwise — a future divergence in either
+        // Serialize impl surfaces here.
+        for k in DiffLineKind::ALL {
+            let json = serde_json::to_string(k).expect("Serialize must succeed");
+            let parsed: DiffLineKind =
+                serde_json::from_str(&json).expect("Deserialize must accept Serialize output");
+            assert_eq!(parsed, *k, "serde_json round-trip must preserve {k:?}");
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_serde_yaml_is_case_insensitive() {
+        // Deserialize lowers through FromStr which lowers through
+        // ClosedAxisLabel::from_canonical_str (eq_ignore_ascii_case),
+        // so uppercase or mixed-case scalars parse pointwise. A
+        // manifest field authored by an operator typing the canonical
+        // name with different casing parses without a consumer-side
+        // case-fold helper.
+        let cases: &[(&str, DiffLineKind)] = &[
+            ("Removed", DiffLineKind::Removed),
+            ("ADDED", DiffLineKind::Added),
+            ("CoNtExT", DiffLineKind::Context),
+            ("rEmOvEd", DiffLineKind::Removed),
+        ];
+        for (input, expected) in cases {
+            let parsed: DiffLineKind =
+                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+            assert_eq!(
+                parsed, *expected,
+                "serde_yaml must parse case-insensitively for input {input:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_serde_yaml_unknown_kind_error_carries_label_verbatim() {
+        // An unrecognized diff-cell kind label surfaces at the serde
+        // error site with the offending substring verbatim in the
+        // rendered message, lifted through ShikumiError::Parse's
+        // Display impl. Same verbatim-rejection discipline as
+        // WatchEventClass's serde surface (commit `94f8a8b`),
+        // EnvMetadataTagKind's serde surface (commit `b556b75`),
+        // FigmentNameTagKind's serde surface (commit `64a47e7`),
+        // FigmentSourceKind's serde surface (commit `5df265c`),
+        // ConfigSourceKind's serde surface (commit `e0b96d1`), and
+        // FormatProvenance's serde surface (commit `2c7654c`).
+        for bad in &["changed", "deleted", "modified", "noop"] {
+            let err = serde_yaml::from_str::<DiffLineKind>(bad)
+                .expect_err("non-canonical label must reject");
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(bad),
+                "rendered serde error must contain the offending label verbatim: \
+                 input={bad:?}, rendered={rendered:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn diff_line_kind_serde_yaml_emission_is_bare_scalar() {
+        // Concrete-position pin on DiffLineKind's YAML emission:
+        // every variant renders as a bare lowercase scalar (no
+        // quotes, no tag prefix). Routes through
+        // Serializer::collect_str → Display → as_str, so the wire
+        // shape is exactly `format!("{k}")` followed by serde_yaml's
+        // newline terminator. Pins the serde idiom-peer of the
+        // Display surface byte-for-byte at concrete positions across
+        // every variant. Idiom-peer of
+        // `watch_event_class_serde_yaml_emission_is_bare_scalar`
+        // (commit `94f8a8b`).
+        assert_eq!(
+            serde_yaml::to_string(&DiffLineKind::Removed).unwrap(),
+            "removed\n",
+        );
+        assert_eq!(
+            serde_yaml::to_string(&DiffLineKind::Added).unwrap(),
+            "added\n",
+        );
+        assert_eq!(
+            serde_yaml::to_string(&DiffLineKind::Context).unwrap(),
+            "context\n",
         );
     }
 }
