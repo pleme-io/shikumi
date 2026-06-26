@@ -504,8 +504,30 @@ impl<'de> serde::Deserialize<'de> for SecretErrorKind {
 /// [`crate::ConfigSourceKind`] / [`crate::FigmentSourceKind`] /
 /// [`crate::FigmentNameTagKind`] on the resolution-axis primitives.
 ///
+/// `Ord` / `PartialOrd` are declaration-order lex over [`Self::ALL`]
+/// (`Get < List < Put < Delete < Rotate < GetVersion`): a
+/// `BTreeMap<SecretOperation, T>` keyed on the operation axis
+/// (per-operation request-rate histograms, per-operation latency
+/// dashboards, attestation manifests recording the operation-mix
+/// histogram of refused calls, structured-diagnostic legends
+/// bucketing per-operation counters in declaration order) emits rows
+/// in that order deterministically without a hand-rolled comparator
+/// at the renderer. Idiom-peer of the same derive on
+/// [`crate::SecretBackendKind`] (commit `9b1da86`),
+/// [`crate::SecretRefShape`] (commit `8a84bb6`),
+/// [`crate::DiffLineKind`] (commit `c403e1a`),
+/// [`crate::WatchEventClass`] (commit `94f8a8b`),
+/// [`crate::EnvMetadataTagKind`] (commit `b556b75`),
+/// [`crate::FigmentNameTagKind`] (commit `64a47e7`),
+/// [`crate::FigmentSourceKind`] (commit `5df265c`),
+/// [`crate::ConfigSourceKind`] (commit `e0b96d1`),
+/// [`SecretClientKind`] (commit `24c7b33`),
+/// [`crate::ShikumiErrorKind`] (commit `911b598`), and
+/// [`SecretErrorKind`] (commit `38b9964`) lifted onto the operation
+/// axis closed-enum.
+///
 /// [`SecretBackendKind`]: crate::secret::SecretBackendKind
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[non_exhaustive]
 pub enum SecretOperation {
     /// Read the current secret value — [`SecretClient::get`]. Maps to
@@ -615,6 +637,122 @@ impl crate::ClosedAxis for SecretOperation {
 impl crate::ClosedAxisLabel for SecretOperation {
     fn as_str(self) -> &'static str {
         Self::as_str(self)
+    }
+}
+
+impl fmt::Display for SecretOperation {
+    /// Write the canonical operator-facing label [`Self::as_str`]
+    /// returns (`"get"` / `"list"` / `"put"` / `"delete"` /
+    /// `"rotate"` / `"get_version"`) — the same scalar
+    /// [`<Self as serde::Serialize>::serialize`] emits and the same
+    /// scalar [`<Self as std::str::FromStr>::from_str`] accepts.
+    /// Idiom-peer of the `Display` impl on
+    /// [`crate::SecretBackendKind`] (commit `9b1da86`),
+    /// [`crate::SecretRefShape`] (commit `8a84bb6`),
+    /// [`crate::ConfigSourceKind`] (commit `e0b96d1`),
+    /// [`SecretClientKind`] (commit `24c7b33`), and
+    /// [`SecretErrorKind`] (commit `38b9964`) lifted onto the
+    /// operation axis sibling closed-enum.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for SecretOperation {
+    type Err = ShikumiError;
+
+    /// Parse the canonical operator-facing label (`"get"` / `"list"`
+    /// / `"put"` / `"delete"` / `"rotate"` / `"get_version"`)
+    /// produced by [`Self::as_str`]; case-insensitive over ASCII via
+    /// the trait-default
+    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] parse.
+    /// On unrecognized input, returns [`ShikumiError::Parse`] with
+    /// the offending label embedded verbatim — matching the
+    /// verbatim-substring rejection discipline already established by
+    /// [`<crate::SecretBackendKind as FromStr>::from_str`]
+    /// (commit `9b1da86`),
+    /// [`<SecretClientKind as FromStr>::from_str`]
+    /// (commit `24c7b33`), and
+    /// [`<SecretErrorKind as FromStr>::from_str`]
+    /// (commit `38b9964`) so the same localization story (the
+    /// operator sees the offending substring in the rendered
+    /// diagnostic) carries to the operation axis.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        <Self as crate::ClosedAxisLabel>::from_canonical_str(s)
+            .ok_or_else(|| ShikumiError::Parse(format!("unknown secret operation: {s}")))
+    }
+}
+
+impl serde::Serialize for SecretOperation {
+    /// Serialize the operation axis as the canonical operator-facing
+    /// label [`Self::as_str`] returns — the same scalar the
+    /// [`fmt::Display`] impl writes. Routes through
+    /// [`serde::Serializer::collect_str`] so the serialized
+    /// representation is exactly `format!("{self}")` with no
+    /// intermediate allocation.
+    ///
+    /// Closes the canonical (`Serialize`, `Deserialize`) serde
+    /// idiom-peer of the (`Display`, [`std::str::FromStr`]) stdlib
+    /// pair on the operation axis primitive. An operation emitted
+    /// into a YAML attestation manifest field (the operation-mix
+    /// histogram of refused calls), a JSON observability payload
+    /// (per-operation latency labels), or any consumer struct
+    /// holding a [`SecretOperation`] field under
+    /// `#[derive(Serialize, Deserialize)]` round-trips through the
+    /// canonical label without a consumer-side rename helper.
+    ///
+    /// **Round-trip law** — for every `op: SecretOperation`,
+    /// `serde_yaml::from_str::<SecretOperation>(&serde_yaml::to_string(&op)?)? == op`
+    /// and the same on `serde_json`. Pinned by
+    /// [`tests::secret_operation_serde_yaml_round_trips_over_every_variant`]
+    /// and
+    /// [`tests::secret_operation_serde_json_round_trips_over_every_variant`].
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for SecretOperation {
+    /// Deserialize the operation axis from the canonical operator-
+    /// facing label [`Self::as_str`] returns via
+    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
+    /// `visit_str` lowers to [`<Self as FromStr>::from_str`] and
+    /// routes any [`ShikumiError`] through
+    /// [`serde::de::Error::custom`].
+    ///
+    /// **Case insensitivity inherits from [`FromStr`]** — the
+    /// [`crate::ClosedAxisLabel::from_canonical_str`] trait default
+    /// uses [`str::eq_ignore_ascii_case`] over [`Self::ALL`], so
+    /// uppercase or mixed-case scalars (e.g. `GET`, `Get_Version`)
+    /// parse pointwise. Pinned by
+    /// [`tests::secret_operation_serde_yaml_is_case_insensitive`].
+    ///
+    /// **Unknown-operation rejection carries the offending label
+    /// verbatim** — a manifest field carrying an unrecognized
+    /// operation surfaces at the serde error site with the offending
+    /// substring verbatim in the rendered message, lifted through
+    /// [`ShikumiError::Parse`]'s `Display` impl. Pinned by
+    /// [`tests::secret_operation_serde_yaml_unknown_operation_error_carries_label_verbatim`].
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct SecretOperationVisitor;
+
+        impl serde::de::Visitor<'_> for SecretOperationVisitor {
+            type Value = SecretOperation;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(
+                    "a canonical SecretOperation label \
+                     (`get`, `list`, `put`, `delete`, `rotate`, \
+                     `get_version`; case-insensitive)",
+                )
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<SecretOperation, E> {
+                v.parse::<SecretOperation>().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_str(SecretOperationVisitor)
     }
 }
 
@@ -3270,6 +3408,256 @@ mod tests {
         let caps = Capabilities::full();
         for op in SecretOperation::ALL.iter().copied() {
             assert!(caps.supports(op), "full caps must support {op:?}");
+        }
+    }
+
+    // ── SecretOperation — Ord / Display / FromStr / serde ──────────
+    //
+    // The (Ord, Display, FromStr, serde::{Serialize, Deserialize})
+    // quartet idiom-peer of the lift already landed on
+    // `ShikumiErrorKind` (commit `911b598`), `SecretClientKind`
+    // (commit `24c7b33`), `DiffLineKind` (commit `c403e1a`),
+    // `WatchEventClass` (commit `94f8a8b`), `EnvMetadataTagKind`
+    // (commit `b556b75`), `SecretRefShape` (commit `8a84bb6`),
+    // `SecretBackendKind` (commit `9b1da86`), `FigmentNameTagKind`
+    // (commit `64a47e7`), `FigmentSourceKind` (commit `5df265c`),
+    // `ConfigSourceKind` (commit `e0b96d1`), and `SecretErrorKind`
+    // (commit `38b9964`), now lifted onto the secret-client
+    // operation axis primitive.
+
+    #[test]
+    fn secret_operation_ord_matches_all_declaration_order() {
+        // The derived Ord on SecretOperation is declaration-order
+        // lex over ALL: `Get < List < Put < Delete < Rotate <
+        // GetVersion`. A BTreeMap keyed on the operation axis
+        // (per-operation request-rate histograms, per-operation
+        // latency dashboards, attestation manifests recording the
+        // operation-mix histogram of refused calls, structured-
+        // diagnostic legends bucketing per-operation counters in
+        // declaration order) emits rows in declaration order
+        // deterministically without a hand-rolled comparator at the
+        // renderer.
+        //
+        // Two-leg pin: (1) ALL is a strictly-increasing chain under
+        // Ord, (2) cmp/partial_cmp agree with the array-index lex
+        // over ALL on every pair (and reflexivity holds).
+        use std::cmp::Ordering;
+        for window in SecretOperation::ALL.windows(2) {
+            assert!(
+                window[0] < window[1],
+                "SecretOperation::ALL must be strictly increasing under Ord, \
+                 but {:?} >= {:?}",
+                window[0],
+                window[1],
+            );
+        }
+        for (i, &a) in SecretOperation::ALL.iter().enumerate() {
+            for (j, &b) in SecretOperation::ALL.iter().enumerate() {
+                let expected = i.cmp(&j);
+                assert_eq!(
+                    a.cmp(&b),
+                    expected,
+                    "SecretOperation::cmp must match ALL-index lex for ({a:?}, {b:?})",
+                );
+                assert_eq!(
+                    a.partial_cmp(&b),
+                    Some(expected),
+                    "SecretOperation::partial_cmp must agree with cmp for ({a:?}, {b:?})",
+                );
+                if i == j {
+                    assert_eq!(a.cmp(&b), Ordering::Equal, "Ord must be reflexive on {a:?}",);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn secret_operation_btreemap_emits_in_declaration_order() {
+        // The compounding payoff of the Ord derive at a typed
+        // consumer site: a BTreeMap<SecretOperation, _> emits keys
+        // in declaration order on `iter()` / `into_iter()`
+        // regardless of insertion order, matching
+        // `SecretOperation::ALL`.
+        use std::collections::BTreeMap;
+        let mut counts: BTreeMap<SecretOperation, u32> = BTreeMap::new();
+        counts.insert(SecretOperation::GetVersion, 6);
+        counts.insert(SecretOperation::Get, 1);
+        counts.insert(SecretOperation::Rotate, 5);
+        counts.insert(SecretOperation::List, 2);
+        counts.insert(SecretOperation::Delete, 4);
+        counts.insert(SecretOperation::Put, 3);
+        let observed: Vec<SecretOperation> = counts.keys().copied().collect();
+        assert_eq!(
+            observed,
+            SecretOperation::ALL.to_vec(),
+            "BTreeMap<SecretOperation, _> must emit keys in ALL declaration order",
+        );
+    }
+
+    #[test]
+    fn secret_operation_display_matches_as_str() {
+        // Display writes the canonical label as_str returns, byte-
+        // for-byte. The two surfaces stay aligned by construction —
+        // a future rename of either must update the other in
+        // lockstep.
+        for op in SecretOperation::ALL.iter().copied() {
+            assert_eq!(
+                format!("{op}"),
+                op.as_str(),
+                "Display must agree with as_str for {op:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_from_str_round_trips_over_every_variant() {
+        // Display → FromStr identity round-trip over every variant.
+        // FromStr lowers through ClosedAxisLabel::from_canonical_str,
+        // so any future override of that trait method is held to
+        // this law at the inherent FromStr surface as well.
+        for op in SecretOperation::ALL {
+            let rendered = op.to_string();
+            let parsed: SecretOperation = rendered
+                .parse()
+                .expect("FromStr must round-trip Display output");
+            assert_eq!(parsed, *op, "FromStr must round-trip {op:?}");
+        }
+    }
+
+    #[test]
+    fn secret_operation_from_str_is_case_insensitive() {
+        // FromStr lowers through ClosedAxisLabel::from_canonical_str
+        // which uses eq_ignore_ascii_case over ALL — uppercase and
+        // mixed-case scalars an operator might type into an env var
+        // or CLI flag parse pointwise to the same variant.
+        assert_eq!(
+            "GET".parse::<SecretOperation>().unwrap(),
+            SecretOperation::Get,
+        );
+        assert_eq!(
+            "List".parse::<SecretOperation>().unwrap(),
+            SecretOperation::List,
+        );
+        assert_eq!(
+            "pUt".parse::<SecretOperation>().unwrap(),
+            SecretOperation::Put,
+        );
+        assert_eq!(
+            "DELETE".parse::<SecretOperation>().unwrap(),
+            SecretOperation::Delete,
+        );
+        assert_eq!(
+            "Rotate".parse::<SecretOperation>().unwrap(),
+            SecretOperation::Rotate,
+        );
+        assert_eq!(
+            "Get_Version".parse::<SecretOperation>().unwrap(),
+            SecretOperation::GetVersion,
+        );
+    }
+
+    #[test]
+    fn secret_operation_from_str_unknown_operation_error_carries_label_verbatim() {
+        // Unrecognized labels reject through ShikumiError::Parse
+        // with the offending substring embedded verbatim in the
+        // rendered message — same verbatim-rejection discipline as
+        // the prior sibling lifts.
+        for bad in &["metadata", "versions", "describe", "", "  get"] {
+            let err = bad
+                .parse::<SecretOperation>()
+                .expect_err("non-canonical label must reject");
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(bad),
+                "rendered error must contain the offending label verbatim: \
+                 input={bad:?}, rendered={rendered:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_serde_yaml_round_trips_over_every_variant() {
+        // Serde Serialize → Deserialize identity round-trip over
+        // every variant through serde_yaml. Closes the (Serialize,
+        // Deserialize) idiom-peer of the (Display, FromStr) stdlib
+        // pair on the operation axis primitive.
+        for op in SecretOperation::ALL {
+            let yaml = serde_yaml::to_string(op).expect("Serialize must succeed");
+            let parsed: SecretOperation =
+                serde_yaml::from_str(&yaml).expect("Deserialize must accept Serialize output");
+            assert_eq!(parsed, *op, "serde_yaml round-trip must preserve {op:?}");
+        }
+    }
+
+    #[test]
+    fn secret_operation_serde_json_round_trips_over_every_variant() {
+        // Serde Serialize → Deserialize identity round-trip over
+        // every variant through serde_json.
+        for op in SecretOperation::ALL {
+            let json = serde_json::to_string(op).expect("Serialize must succeed");
+            let parsed: SecretOperation =
+                serde_json::from_str(&json).expect("Deserialize must accept Serialize output");
+            assert_eq!(parsed, *op, "serde_json round-trip must preserve {op:?}");
+        }
+    }
+
+    #[test]
+    fn secret_operation_serde_yaml_is_case_insensitive() {
+        // Deserialize lowers through FromStr which lowers through
+        // ClosedAxisLabel::from_canonical_str (eq_ignore_ascii_case),
+        // so uppercase or mixed-case scalars parse pointwise.
+        let cases: &[(&str, SecretOperation)] = &[
+            ("GET", SecretOperation::Get),
+            ("List", SecretOperation::List),
+            ("pUt", SecretOperation::Put),
+            ("DELETE", SecretOperation::Delete),
+            ("Rotate", SecretOperation::Rotate),
+            ("Get_Version", SecretOperation::GetVersion),
+        ];
+        for (input, expected) in cases {
+            let parsed: SecretOperation =
+                serde_yaml::from_str(input).expect("case-insensitive Deserialize must succeed");
+            assert_eq!(
+                parsed, *expected,
+                "serde_yaml must parse case-insensitively for input {input:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_serde_yaml_unknown_operation_error_carries_label_verbatim() {
+        // An unrecognized operation axis label surfaces at the serde
+        // error site with the offending substring verbatim in the
+        // rendered message, lifted through ShikumiError::Parse's
+        // Display impl.
+        for bad in &["metadata", "versions", "describe", "purge"] {
+            let err = serde_yaml::from_str::<SecretOperation>(bad)
+                .expect_err("non-canonical label must reject");
+            let rendered = err.to_string();
+            assert!(
+                rendered.contains(bad),
+                "rendered serde error must contain the offending label verbatim: \
+                 input={bad:?}, rendered={rendered:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn secret_operation_serde_yaml_emission_is_bare_scalar() {
+        // Concrete-position pin on the YAML emission shape: a
+        // SecretOperation serializes as a bare snake_case scalar,
+        // not as a quoted string or a tagged enum.
+        let pairs: &[(SecretOperation, &str)] = &[
+            (SecretOperation::Get, "get\n"),
+            (SecretOperation::List, "list\n"),
+            (SecretOperation::Put, "put\n"),
+            (SecretOperation::Delete, "delete\n"),
+            (SecretOperation::Rotate, "rotate\n"),
+            (SecretOperation::GetVersion, "get_version\n"),
+        ];
+        for (op, expected) in pairs {
+            let yaml = serde_yaml::to_string(op).unwrap();
+            assert_eq!(yaml, *expected, "YAML emission mismatch for {op:?}");
         }
     }
 
