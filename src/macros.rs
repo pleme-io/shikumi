@@ -244,7 +244,12 @@ macro_rules! tiered_permutation_test {
 /// - `$ty` must be `Copy` and implement [`crate::ClosedAxisLabel`].
 /// - [`std::fmt::Display`] writes `<Self as ClosedAxisLabel>::as_str(*self)`.
 /// - [`std::str::FromStr`] (`Err = crate::ShikumiError`) routes through
-///   [`crate::ClosedAxisLabel::from_canonical_str`]; on miss returns
+///   the parser — by default
+///   [`crate::ClosedAxisLabel::from_canonical_str`], or an explicit
+///   `parser = $expr` slot of type `Fn(&str) -> Option<Self>` (used for
+///   primitives whose parse surface diverges from the rendering surface,
+///   e.g. [`crate::Format`] accepting `yml`/`lsp`/`el` aliases via
+///   [`crate::Format::from_extension`]); on miss returns
 ///   [`crate::ShikumiError::Parse`] with body
 ///   `format!("{}: {}", $parse_error, input)` — the offending label embeds
 ///   verbatim.
@@ -259,9 +264,13 @@ macro_rules! tiered_permutation_test {
 /// `<$ty as FromStr>::from_str(&v.to_string()) == Ok(v)` and
 /// `serde_yaml::from_str::<$ty>(&serde_yaml::to_string(&v)?)? == v` for
 /// every `v: $ty`, inherited from the [`crate::ClosedAxisLabel`]
-/// round-trip law by construction.
+/// round-trip law by construction. With an explicit `parser`, the law
+/// holds iff `parser(<v as ClosedAxisLabel>::as_str()) == Some(v)` for
+/// every `v: $ty` — a contract every alias-accepting parser already
+/// satisfies (the canonical label is one of the parser's accepted
+/// inputs).
 ///
-/// # Example
+/// # Example — default parser
 ///
 /// ```
 /// use shikumi::{closed_axis_label_string_surface, ClosedAxis, ClosedAxisLabel};
@@ -292,12 +301,72 @@ macro_rules! tiered_permutation_test {
 /// let err = "nope".parse::<Mode>().unwrap_err().to_string();
 /// assert!(err.contains("nope"));
 /// ```
+///
+/// # Example — explicit parser with aliases
+///
+/// ```
+/// use shikumi::{closed_axis_label_string_surface, ClosedAxis, ClosedAxisLabel};
+///
+/// #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// enum Tag { Yaml, Toml }
+///
+/// impl ClosedAxis for Tag {
+///     const ALL: &'static [Self] = &[Self::Yaml, Self::Toml];
+/// }
+///
+/// impl ClosedAxisLabel for Tag {
+///     fn as_str(self) -> &'static str {
+///         match self { Self::Yaml => "yaml", Self::Toml => "toml" }
+///     }
+/// }
+///
+/// impl Tag {
+///     fn from_alias(s: &str) -> Option<Self> {
+///         match s.to_ascii_lowercase().as_str() {
+///             "yaml" | "yml" => Some(Self::Yaml),
+///             "toml" => Some(Self::Toml),
+///             _ => None,
+///         }
+///     }
+/// }
+///
+/// closed_axis_label_string_surface! {
+///     type = Tag,
+///     parse_error = "unknown tag",
+///     expecting = "a canonical Tag label (`yaml`, `toml`; alias `yml` accepted)",
+///     parser = Tag::from_alias,
+/// }
+///
+/// assert_eq!("yml".parse::<Tag>().unwrap(), Tag::Yaml);
+/// assert_eq!("YAML".parse::<Tag>().unwrap(), Tag::Yaml);
+/// ```
 #[macro_export]
 macro_rules! closed_axis_label_string_surface {
+    // Default arm — forwards to the explicit-parser arm with the
+    // canonical-label parser from `ClosedAxisLabel::from_canonical_str`.
     (
         type = $ty:ty,
         parse_error = $parse_error:expr,
         expecting = $expecting:expr $(,)?
+    ) => {
+        $crate::closed_axis_label_string_surface! {
+            type = $ty,
+            parse_error = $parse_error,
+            expecting = $expecting,
+            parser = <$ty as $crate::ClosedAxisLabel>::from_canonical_str,
+        }
+    };
+
+    // Explicit-parser arm — `$parser` is any `Fn(&str) -> Option<Self>`
+    // expression (path to an associated function, free function, or
+    // closure). Primitives whose parse surface diverges from the
+    // canonical-label surface (e.g. `Format` accepting `yml`/`lsp`/`el`
+    // aliases) ride this arm.
+    (
+        type = $ty:ty,
+        parse_error = $parse_error:expr,
+        expecting = $expecting:expr,
+        parser = $parser:expr $(,)?
     ) => {
         impl ::core::fmt::Display for $ty {
             fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -309,7 +378,7 @@ macro_rules! closed_axis_label_string_surface {
             type Err = $crate::ShikumiError;
 
             fn from_str(s: &str) -> ::core::result::Result<Self, Self::Err> {
-                <Self as $crate::ClosedAxisLabel>::from_canonical_str(s).ok_or_else(|| {
+                ($parser)(s).ok_or_else(|| {
                     $crate::ShikumiError::Parse(::std::format!("{}: {}", $parse_error, s,))
                 })
             }

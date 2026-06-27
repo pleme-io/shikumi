@@ -1400,12 +1400,6 @@ impl<'a> TryFrom<&'a str> for FormatMetadataTag<'a> {
     }
 }
 
-impl fmt::Display for Format {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
 impl TryFrom<&Path> for Format {
     type Error = ShikumiError;
 
@@ -1419,87 +1413,28 @@ impl TryFrom<&Path> for Format {
     }
 }
 
-impl FromStr for Format {
-    type Err = ShikumiError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::from_extension(s)
-            .ok_or_else(|| ShikumiError::Parse(format!("unknown config format: {s}")))
-    }
-}
-
-impl serde::Serialize for Format {
-    /// Serialize the format tag as the canonical operator-facing
-    /// lowercase label [`Self::as_str`] returns — the same scalar the
-    /// [`fmt::Display`] impl writes. Routes through
-    /// [`serde::Serializer::collect_str`] so the serialized
-    /// representation is exactly `format!("{self}")` with no
-    /// intermediate allocation.
-    ///
-    /// Closes the canonical (`Serialize`, `Deserialize`) serde
-    /// idiom-peer of the (`Display`, `FromStr`) stdlib pair on the
-    /// format-tag surface. A format emitted into a YAML attestation
-    /// manifest field, a JSON observability payload, or any consumer
-    /// struct holding a [`Format`] field under
-    /// `#[derive(Serialize, Deserialize)]` round-trips through the
-    /// canonical label without a consumer-side rename helper.
-    ///
-    /// **Round-trip law** — for every `f: Format`,
-    /// `serde_yaml::from_str::<Format>(&serde_yaml::to_string(&f)?)? == f`
-    /// and the same on `serde_json`. Pinned by
-    /// [`tests::format_serde_yaml_round_trips_over_every_variant`] and
-    /// [`tests::format_serde_json_round_trips_over_every_variant`].
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for Format {
-    /// Deserialize the format tag from the canonical operator-facing
-    /// lowercase label [`Self::as_str`] returns via
-    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
-    /// `visit_str` lowers to [`<Self as FromStr>::from_str`] and routes
-    /// any [`ShikumiError`] through [`serde::de::Error::custom`].
-    ///
-    /// **Alias surface inherits from [`FromStr`]** — the deserialize
-    /// path lowers through [`Self::from_extension`], which accepts
-    /// `"yml"`/`"lsp"`/`"el"` alongside the canonical
-    /// `"yaml"`/`"lisp"`. An operator-authored manifest field carrying
-    /// either alias parses on the serde side without a per-emitter
-    /// alias-fold. Pinned by
-    /// [`tests::format_serde_yaml_accepts_aliases`].
-    ///
-    /// **Case insensitivity inherits from [`FromStr`]** — the
-    /// `to_ascii_lowercase` step in [`Self::from_extension`] makes
-    /// uppercase or mixed-case scalars parse pointwise. Pinned by
-    /// [`tests::format_serde_yaml_is_case_insensitive`].
-    ///
-    /// **Unknown-format rejection carries the offending label
-    /// verbatim** — a manifest field carrying an unrecognized format
-    /// surfaces at the serde error site with the offending substring
-    /// verbatim in the rendered message, lifted through
-    /// [`ShikumiError::Parse`]'s `Display` impl. Pinned by
-    /// [`tests::format_serde_yaml_unknown_format_error_carries_label_verbatim`].
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct FormatVisitor;
-
-        impl serde::de::Visitor<'_> for FormatVisitor {
-            type Value = Format;
-
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(
-                    "a canonical Format lowercase label \
-                     (`yaml`, `toml`, `lisp`, `nix`; aliases `yml`/`lsp`/`el` accepted)",
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Format, E> {
-                v.parse::<Format>().map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(FormatVisitor)
-    }
+// The canonical (Display, FromStr, Serialize, Deserialize) string-surface
+// quartet on the format closed-enum, lifted to one macro via the
+// explicit-parser arm of `closed_axis_label_string_surface!`. Format is
+// the alias-accepting member of the closed-axis cohort — `from_extension`
+// accepts `yml`/`lsp`/`el` alongside the canonical `yaml`/`lisp`, so the
+// FromStr lowering must route through `Self::from_extension` rather than
+// the default `from_canonical_str` parser. The macro's `parser =` slot
+// is exactly that affordance. Behavior is byte-identical to the prior
+// hand-rolled impls: the verbatim-label `Parse` error body
+// (`format!("unknown config format: {s}")` ≡
+// `format!("{}: {}", "unknown config format", s)`), the
+// `collect_str`-based serde emission, the visitor's `expecting` string,
+// and the `visit_str` lowering through `FromStr` all match pointwise.
+// Pinned by `tests::format_display_matches_as_str`,
+// `tests::format_from_str_*`, `tests::format_serde_yaml_*`, and
+// `tests::format_serde_json_*`.
+closed_axis_label_string_surface! {
+    type = Format,
+    parse_error = "unknown config format",
+    expecting = "a canonical Format lowercase label \
+                 (`yaml`, `toml`, `lisp`, `nix`; aliases `yml`/`lsp`/`el` accepted)",
+    parser = Format::from_extension,
 }
 
 // The canonical (Display, FromStr, Serialize, Deserialize) string-surface
