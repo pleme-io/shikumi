@@ -413,23 +413,61 @@ macro_rules! closed_axis_label_string_surface {
 /// forcing every primitive's `FromStr::Err` onto the
 /// [`crate::ShikumiError::Parse`] surface.
 ///
-/// # Contract
+/// # Arms
+///
+/// The macro has two arms.
+///
+/// **Concrete arm** — `type = $ty:ty, expecting = $expecting:expr` —
+/// the original lift. Emits the `(Serialize, Deserialize)` pair for a
+/// concrete (non-generic) type. The `expecting` slot is a literal
+/// `&str` expression the visitor's `expecting` method writes via
+/// [`std::fmt::Formatter::write_str`]. Every closed-axis-label
+/// implementor (14 primitives via [`closed_axis_label_string_surface!`])
+/// plus the seven typed-composite-and-classifier primitives migrated by
+/// the prior lift cycle (`ModalityClass`, `SupportCardinalityClass`,
+/// `SupportBoundaryDistance`, `SupportMagnitudeDirection`,
+/// `PartitionFace`, `PartitionOrdinal`, [`crate::FormatCoordinates`])
+/// ride this arm.
+///
+/// **Generic arm** —
+/// `type = $ty:ty, generics = ($($param),+), bounds = ($($bound)+),
+/// expecting_fn = |$f:ident| $body:expr` — the generalized lift for
+/// generic types whose `expecting` body is *computed* (uses a type
+/// parameter at runtime via [`std::any::type_name`] or similar) and
+/// therefore cannot be a literal `&str`. The `generics` slot lists the
+/// type parameters (just the names; bounds go in the `bounds` slot —
+/// e.g. `generics = (A), bounds = (A: ClosedAxisLabel)`), the
+/// `expecting_fn` slot is a closure-style binder `|f| <body>` where
+/// `$body` evaluates to [`std::fmt::Result`] (typically a `write!(f,
+/// "…", …)` invocation reaching the generic params), and the macro
+/// emits the same `(Serialize, Deserialize)` pair with `impl<$($param)+>`
+/// / `impl<'de, $($param)+>` and a generic `__Visitor<$($param)+>`
+/// carrying [`std::marker::PhantomData`]`<fn() -> ($($param)+)>`. The
+/// only consumer today is [`crate::AxisHistogram<A>`] (whose
+/// `expecting` body interpolates `std::any::type_name::<A>()` so the
+/// serde error legend names the offending axis); a future lift on the
+/// same shape (a generic [`crate::AttributionCoordinates`]-style
+/// composite, a parameterized [`crate::ParseAxisHistogramError`]
+/// wrapper) inherits the surface from one macro arm.
+///
+/// # Contract (both arms)
 ///
 /// - `$ty` must implement [`std::fmt::Display`] and [`std::str::FromStr`]
 ///   with `<$ty as FromStr>::Err: ::core::fmt::Display`.
 /// - [`serde::Serialize`] emits the canonical scalar via
 ///   [`serde::Serializer::collect_str`] (no intermediate allocation).
-/// - [`serde::Deserialize`] reads a `str` via a visitor whose
-///   `expecting` writes the literal `$expecting` argument and whose
-///   `visit_str` lowers through `FromStr`, routing the typed error
-///   through [`serde::de::Error::custom`].
+/// - [`serde::Deserialize`] reads a `str` via a visitor whose `visit_str`
+///   lowers through `FromStr`, routing the typed error through
+///   [`serde::de::Error::custom`]. The visitor's `expecting` writes the
+///   literal `$expecting` argument (concrete arm) or evaluates the
+///   `$body` expression (generic arm).
 ///
 /// **Round-trip law** —
 /// `serde_yaml::from_str::<$ty>(&serde_yaml::to_string(&v)?)? == v`
 /// for every `v: $ty`, inherited from the `(Display, FromStr)`
 /// round-trip law by construction.
 ///
-/// # Example
+/// # Example — concrete arm
 ///
 /// ```
 /// use shikumi::serde_via_display_fromstr;
@@ -472,8 +510,74 @@ macro_rules! closed_axis_label_string_surface {
 /// let err = serde_yaml::from_str::<Hex>("nope").unwrap_err().to_string();
 /// assert!(err.contains("nope"));
 /// ```
+///
+/// # Example — generic arm with computed `expecting`
+///
+/// ```
+/// use shikumi::serde_via_display_fromstr;
+/// use std::{fmt, marker::PhantomData, str::FromStr};
+///
+/// trait Tag: 'static {
+///     fn label() -> &'static str;
+/// }
+///
+/// #[derive(Debug, Clone, Copy, PartialEq)]
+/// struct Yaml;
+/// impl Tag for Yaml {
+///     fn label() -> &'static str { "yaml" }
+/// }
+///
+/// #[derive(Debug, Clone, PartialEq)]
+/// struct Tagged<T: Tag>(u32, PhantomData<fn() -> T>);
+///
+/// impl<T: Tag> Tagged<T> {
+///     fn new(v: u32) -> Self { Self(v, PhantomData) }
+/// }
+///
+/// impl<T: Tag> fmt::Display for Tagged<T> {
+///     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+///         write!(f, "{}:{}", T::label(), self.0)
+///     }
+/// }
+///
+/// #[derive(Debug)]
+/// struct ParseTaggedError(String);
+/// impl fmt::Display for ParseTaggedError {
+///     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+///         write!(f, "not a tagged value: {:?}", self.0)
+///     }
+/// }
+///
+/// impl<T: Tag> FromStr for Tagged<T> {
+///     type Err = ParseTaggedError;
+///     fn from_str(s: &str) -> Result<Self, Self::Err> {
+///         let (tag, n) = s.split_once(':').ok_or_else(|| ParseTaggedError(s.into()))?;
+///         if tag != T::label() { return Err(ParseTaggedError(s.into())); }
+///         n.parse::<u32>().map(Tagged::new).map_err(|_| ParseTaggedError(s.into()))
+///     }
+/// }
+///
+/// serde_via_display_fromstr! {
+///     type = Tagged<T>,
+///     generics = (T),
+///     bounds = (T: Tag),
+///     expecting_fn = |f| write!(
+///         f,
+///         "a `<label>:<count>` tagged value for label {}",
+///         T::label(),
+///     ),
+/// }
+///
+/// let v: Tagged<Yaml> = Tagged::new(42);
+/// assert_eq!(serde_yaml::to_string(&v).unwrap(), "yaml:42\n");
+/// let back: Tagged<Yaml> = serde_yaml::from_str("yaml:42").unwrap();
+/// assert_eq!(back, v);
+/// let err = serde_yaml::from_str::<Tagged<Yaml>>("nope").unwrap_err().to_string();
+/// assert!(err.contains("nope"));
+/// ```
 #[macro_export]
 macro_rules! serde_via_display_fromstr {
+    // Concrete arm — non-generic type with literal `expecting`.
     (
         type = $ty:ty,
         expecting = $expecting:expr $(,)?
@@ -509,6 +613,73 @@ macro_rules! serde_via_display_fromstr {
                 }
 
                 deserializer.deserialize_str(__Visitor)
+            }
+        }
+    };
+
+    // Generic arm — type with type parameters and a computed
+    // `expecting` body. The `expecting_fn = |f| <body>` slot binds the
+    // formatter as `$f` so `$body` can reach the generic params (e.g.
+    // via `write!(f, "...", ::std::any::type_name::<A>())`).
+    //
+    // `generics = ($($param),+)` lists the type-parameter names only;
+    // `bounds = ($($bound)+)` is the full `where`-clause-style bound
+    // list (e.g. `bounds = (A: ClosedAxisLabel)`).
+    (
+        type = $ty:ty,
+        generics = ( $( $param:ident ),+ $(,)? ),
+        bounds = ( $( $bound:tt )+ ),
+        expecting_fn = | $f:ident | $body:expr $(,)?
+    ) => {
+        impl< $( $param ),+ > ::serde::Serialize for $ty
+        where
+            $( $bound )+
+        {
+            fn serialize<__S: ::serde::Serializer>(
+                &self,
+                serializer: __S,
+            ) -> ::core::result::Result<__S::Ok, __S::Error> {
+                serializer.collect_str(self)
+            }
+        }
+
+        impl< 'de, $( $param ),+ > ::serde::Deserialize<'de> for $ty
+        where
+            $( $bound )+
+        {
+            fn deserialize<__D: ::serde::Deserializer<'de>>(
+                deserializer: __D,
+            ) -> ::core::result::Result<Self, __D::Error> {
+                struct __Visitor< $( $param ),+ >(
+                    ::core::marker::PhantomData<fn() -> ( $( $param, )+ )>,
+                )
+                where
+                    $( $bound )+;
+
+                impl< $( $param ),+ > ::serde::de::Visitor<'_> for __Visitor< $( $param ),+ >
+                where
+                    $( $bound )+
+                {
+                    type Value = $ty;
+
+                    fn expecting(
+                        &self,
+                        $f: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        $body
+                    }
+
+                    fn visit_str<__E: ::serde::de::Error>(
+                        self,
+                        v: &str,
+                    ) -> ::core::result::Result<$ty, __E> {
+                        v.parse::<$ty>().map_err(__E::custom)
+                    }
+                }
+
+                deserializer.deserialize_str(__Visitor::< $( $param ),+ >(
+                    ::core::marker::PhantomData,
+                ))
             }
         }
     };

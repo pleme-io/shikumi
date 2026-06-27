@@ -10019,88 +10019,40 @@ impl<A: ClosedAxisLabel> std::str::FromStr for AxisHistogram<A> {
     }
 }
 
-impl<A: ClosedAxisLabel> serde::Serialize for AxisHistogram<A> {
-    /// Serialize the histogram as the comma-separated
-    /// `"<label₁>=<count₁>, …, <labelₙ>=<countₙ>"` string the
-    /// [`Display`][std::fmt::Display] impl emits — the operator-facing
-    /// scalar form the same `(Display, FromStr)` pair on the
-    /// labeled-axis sub-surface (the pair landed in cce9769 and
-    /// adc2450) carries on the round-trip law `parse(display(h)) ==
-    /// Ok(h)`. Closes the canonical
-    /// (`Serialize`, `Deserialize`) serde idiom-peer of the
-    /// (`Display`, `FromStr`) stdlib pair every operator-facing
-    /// serializable typescape primitive in shikumi (`Format`,
-    /// `ShikumiErrorKind`, `ConfigSourceKind`, …) carries via
-    /// `#[serde(rename_all = "kebab-case")]` on the enum surface.
-    ///
-    /// Routes through [`serde::Serializer::collect_str`] so the
-    /// serialized representation is exactly `format!("{self}")` with
-    /// no intermediate allocation on serializers that accept a
-    /// streaming source — the YAML/JSON/TOML emitter sees one scalar
-    /// string, the round-trip with [`Self::deserialize`] is the same
-    /// bijection [`<Self as std::str::FromStr>::from_str`] already
-    /// closes.
-    ///
-    /// **Round-trip law** — for every `h: AxisHistogram<A>`,
-    /// `serde_yaml::from_str::<AxisHistogram<A>>(
-    /// &serde_yaml::to_string(&h)?)? == h` and the same on
-    /// `serde_json` — the canonical serde round-trip discipline pinned
-    /// by construction on the labeled-axis sub-surface, peer of the
-    /// `(Display, FromStr)` round-trip already pinned on the same
-    /// surface. Pinned uniformly across every [`ClosedAxisLabel`]
-    /// implementor by
-    /// [`tests::axis_histogram_serde_yaml_round_trip_for_every_closed_axis_label_implementor`]
-    /// and the `serde_json` peer test.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de, A: ClosedAxisLabel> serde::Deserialize<'de> for AxisHistogram<A> {
-    /// Deserialize the histogram from the comma-separated
-    /// `"<label>=<count>"` scalar string the
-    /// [`Serialize`][serde::Serialize] impl emits and the
-    /// [`FromStr`][std::str::FromStr] impl accepts — the operator-facing
-    /// scalar form the labeled-axis sub-surface carries on the
-    /// `(Display, FromStr)` round-trip pair, lifted to the serde
-    /// surface via [`serde::Deserializer::deserialize_str`] with a
-    /// visitor whose `visit_str` lowers to
-    /// [`<Self as std::str::FromStr>::from_str`] and routes any
-    /// [`ParseAxisHistogramError`] through
-    /// [`serde::de::Error::custom`].
-    ///
-    /// The accept surface inherits the four-variant rejection shape of
-    /// the [`FromStr`][std::str::FromStr] impl: a manifest field
-    /// carrying an unknown label, a missing `=`, an invalid count, or
-    /// a duplicated label surfaces at the serde error site with the
-    /// offending substring verbatim — the same operator-facing
-    /// localization the [`ParseAxisHistogramError`] [`Display`][std::fmt::Display]
-    /// impl carries. The accept surface also inherits the
-    /// missing-labels-default-to-zero law and the order-invariance law
-    /// — an operator can elide zero-cells (`diff_shape: "added=5"`)
-    /// or permute the pair sequence (`diff_shape: "context=3,
-    /// added=2, removed=1"`) and recover the same typed histogram.
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct AxisHistogramVisitor<A: ClosedAxisLabel>(std::marker::PhantomData<fn() -> A>);
-
-        impl<A: ClosedAxisLabel> serde::de::Visitor<'_> for AxisHistogramVisitor<A> {
-            type Value = AxisHistogram<A>;
-
-            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(
-                    f,
-                    "a comma-separated `<label>=<count>` histogram string for axis {}",
-                    std::any::type_name::<A>(),
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
-                v.parse::<AxisHistogram<A>>().map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(AxisHistogramVisitor::<A>(std::marker::PhantomData))
-    }
+// `AxisHistogram<A>`'s `(Serialize, Deserialize)` pair rides the generic
+// arm of `serde_via_display_fromstr!` — the canonical
+// `(collect_str + visit_str → FromStr → E::custom)` shape every
+// operator-facing Display+FromStr primitive in shikumi shares, here
+// instantiated on a generic `<A: ClosedAxisLabel>` with a computed
+// `expecting` body that names the offending axis via
+// `std::any::type_name::<A>()`. Serialize lowers to the `Display` impl
+// (the same operator-facing comma-separated `"<label>=<count>"` scalar
+// the labeled-axis sub-surface carries on the `(Display, FromStr)`
+// pair); Deserialize routes through the `FromStr` impl above (whose
+// four-variant `ParseAxisHistogramError` cohort surfaces the offending
+// label / pair / count substring verbatim at the serde error site via
+// `serde::de::Error::custom`).
+//
+// **Round-trip law** — for every `h: AxisHistogram<A>`,
+// `serde_yaml::from_str::<AxisHistogram<A>>(&serde_yaml::to_string(&h)?)? == h`
+// and the same on `serde_json`. Pinned uniformly across every
+// [`ClosedAxisLabel`] implementor by
+// [`tests::axis_histogram_serde_yaml_round_trip_for_every_closed_axis_label_implementor`]
+// and the `serde_json` peer test, plus the
+// `axis_histogram_serde_yaml_for_diff_line_kind` /
+// `axis_histogram_serde_json_for_diff_line_kind` concrete pins and
+// the
+// `axis_histogram_serde_yaml_unknown_label_error_carries_label_verbatim_for_diff_line_kind`
+// verbatim-rejection pin.
+serde_via_display_fromstr! {
+    type = AxisHistogram<A>,
+    generics = (A),
+    bounds = (A: ClosedAxisLabel),
+    expecting_fn = |f| write!(
+        f,
+        "a comma-separated `<label>=<count>` histogram string for axis {}",
+        ::std::any::type_name::<A>(),
+    ),
 }
 
 /// Lift an iterator of axis observations into a typed
