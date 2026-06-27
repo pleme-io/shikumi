@@ -1104,134 +1104,29 @@ impl crate::ClosedAxisLabel for SecretClientKind {
     }
 }
 
-impl fmt::Display for SecretClientKind {
-    /// Write the canonical operator-facing label [`Self::as_str`]
-    /// returns (`"mem"` / `"command"` / `"akeyless"` /
-    /// `"aws-secrets-manager"` / `"op-connect"` / `"vault"` /
-    /// `"gcp-secret-manager"`) — the same scalar
-    /// [`<Self as serde::Serialize>::serialize`] emits and the same
-    /// scalar [`<Self as std::str::FromStr>::from_str`] accepts.
-    /// Idiom-peer of the `Display` impl on
-    /// [`crate::SecretBackendKind`] (commit `9b1da86`),
-    /// [`crate::SecretRefShape`] (commit `8a84bb6`),
-    /// [`crate::DiffLineKind`] (commit `c403e1a`),
-    /// [`crate::WatchEventClass`] (commit `94f8a8b`),
-    /// [`crate::EnvMetadataTagKind`] (commit `b556b75`),
-    /// [`crate::FigmentNameTagKind`] (commit `64a47e7`),
-    /// [`crate::FigmentSourceKind`] (commit `5df265c`), and
-    /// [`crate::ConfigSourceKind`] (commit `e0b96d1`) lifted onto the
-    /// runtime-client axis sibling closed-enum.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for SecretClientKind {
-    type Err = ShikumiError;
-
-    /// Parse the canonical operator-facing label (`"mem"` /
-    /// `"command"` / `"akeyless"` / `"aws-secrets-manager"` /
-    /// `"op-connect"` / `"vault"` / `"gcp-secret-manager"`) produced
-    /// by [`Self::as_str`]; case-insensitive over ASCII via the
-    /// trait-default
-    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] parse.
-    /// On unrecognized input, returns [`ShikumiError::Parse`] with the
-    /// offending label embedded verbatim — matching the
-    /// verbatim-substring rejection discipline already established by
-    /// [`<crate::SecretBackendKind as FromStr>::from_str`]
-    /// (commit `9b1da86`),
-    /// [`<crate::SecretRefShape as FromStr>::from_str`]
-    /// (commit `8a84bb6`),
-    /// [`<crate::DiffLineKind as FromStr>::from_str`]
-    /// (commit `c403e1a`),
-    /// [`<crate::WatchEventClass as FromStr>::from_str`]
-    /// (commit `94f8a8b`),
-    /// [`<crate::EnvMetadataTagKind as FromStr>::from_str`]
-    /// (commit `b556b75`),
-    /// [`<crate::FigmentNameTagKind as FromStr>::from_str`]
-    /// (commit `64a47e7`),
-    /// [`<crate::FigmentSourceKind as FromStr>::from_str`]
-    /// (commit `5df265c`), and
-    /// [`<crate::ConfigSourceKind as FromStr>::from_str`]
-    /// (commit `e0b96d1`) so the same localization story (the operator
-    /// sees the offending substring in the rendered diagnostic)
-    /// carries to the runtime-client axis kind.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        <Self as crate::ClosedAxisLabel>::from_canonical_str(s)
-            .ok_or_else(|| ShikumiError::Parse(format!("unknown secret client kind: {s}")))
-    }
-}
-
-impl serde::Serialize for SecretClientKind {
-    /// Serialize the runtime-client axis kind as the canonical
-    /// operator-facing label [`Self::as_str`] returns — the same
-    /// scalar the [`fmt::Display`] impl writes. Routes through
-    /// [`serde::Serializer::collect_str`] so the serialized
-    /// representation is exactly `format!("{self}")` with no
-    /// intermediate allocation.
-    ///
-    /// Closes the canonical (`Serialize`, `Deserialize`) serde
-    /// idiom-peer of the (`Display`, [`std::str::FromStr`]) stdlib
-    /// pair on the runtime-client axis kind primitive. A kind emitted
-    /// into a YAML attestation manifest field, a JSON observability
-    /// payload, or any consumer struct holding a [`SecretClientKind`]
-    /// field under `#[derive(Serialize, Deserialize)]` round-trips
-    /// through the canonical label without a consumer-side rename
-    /// helper.
-    ///
-    /// **Round-trip law** — for every `k: SecretClientKind`,
-    /// `serde_yaml::from_str::<SecretClientKind>(&serde_yaml::to_string(&k)?)? == k`
-    /// and the same on `serde_json`. Pinned by
-    /// [`tests::secret_client_kind_serde_yaml_round_trips_over_every_variant`]
-    /// and
-    /// [`tests::secret_client_kind_serde_json_round_trips_over_every_variant`].
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for SecretClientKind {
-    /// Deserialize the runtime-client axis kind from the canonical
-    /// operator-facing label [`Self::as_str`] returns via
-    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
-    /// `visit_str` lowers to [`<Self as FromStr>::from_str`] and
-    /// routes any [`ShikumiError`] through
-    /// [`serde::de::Error::custom`].
-    ///
-    /// **Case insensitivity inherits from [`FromStr`]** — the
-    /// [`crate::ClosedAxisLabel::from_canonical_str`] trait default
-    /// uses [`str::eq_ignore_ascii_case`] over [`Self::ALL`], so
-    /// uppercase or mixed-case scalars (e.g. `MEM`, `Aws-Secrets-Manager`)
-    /// parse pointwise. Pinned by
-    /// [`tests::secret_client_kind_serde_yaml_is_case_insensitive`].
-    ///
-    /// **Unknown-kind rejection carries the offending label verbatim**
-    /// — a manifest field carrying an unrecognized kind surfaces at
-    /// the serde error site with the offending substring verbatim in
-    /// the rendered message, lifted through [`ShikumiError::Parse`]'s
-    /// `Display` impl. Pinned by
-    /// [`tests::secret_client_kind_serde_yaml_unknown_kind_error_carries_label_verbatim`].
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct SecretClientKindVisitor;
-
-        impl serde::de::Visitor<'_> for SecretClientKindVisitor {
-            type Value = SecretClientKind;
-
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(
-                    "a canonical SecretClientKind label \
-                     (`mem`, `command`, `akeyless`, `aws-secrets-manager`, \
-                     `op-connect`, `vault`, `gcp-secret-manager`; case-insensitive)",
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<SecretClientKind, E> {
-                v.parse::<SecretClientKind>().map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(SecretClientKindVisitor)
-    }
+// The canonical (Display, FromStr, Serialize, Deserialize) string-surface
+// quartet on the runtime-client axis kind closed-enum, lifted to one
+// macro after the ten hand-rolled idiom-peers preceding this commit
+// (WatchEventClass at `94f8a8b`, ShikumiErrorKind at `4b53792`,
+// DiffLineKind at `74ee853`, ConfigSourceKind at `ae24a13`,
+// FormatProvenance at `212d6fb`, FigmentNameTagKind at `25bab65`,
+// FigmentSourceKind at `8a0277d`, EnvMetadataTagKind at `58557d3`,
+// SecretBackendKind at `360487a`, SecretRefShape at `bb249c0`). See
+// `closed_axis_label_string_surface!` in `crate::macros` for the
+// contract; behavior is byte-identical to the hand-rolled impls the
+// macro replaces — the verbatim-label `Parse` error body, the
+// case-insensitive `from_canonical_str` lowering, the `collect_str`-based
+// serde emission, and the visitor's `expecting` message all match the
+// prior surface pointwise. Pinned by
+// `tests::secret_client_kind_display_matches_as_str`,
+// `tests::secret_client_kind_from_str_*`, and
+// `tests::secret_client_kind_serde_yaml_*`.
+closed_axis_label_string_surface! {
+    type = SecretClientKind,
+    parse_error = "unknown secret client kind",
+    expecting = "a canonical SecretClientKind label \
+                 (`mem`, `command`, `akeyless`, `aws-secrets-manager`, \
+                 `op-connect`, `vault`, `gcp-secret-manager`; case-insensitive)",
 }
 
 /// Metadata attached to a secret value.
