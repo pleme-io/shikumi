@@ -555,120 +555,30 @@ impl crate::ClosedAxisLabel for SecretOperation {
     }
 }
 
-impl fmt::Display for SecretOperation {
-    /// Write the canonical operator-facing label [`Self::as_str`]
-    /// returns (`"get"` / `"list"` / `"put"` / `"delete"` /
-    /// `"rotate"` / `"get_version"`) — the same scalar
-    /// [`<Self as serde::Serialize>::serialize`] emits and the same
-    /// scalar [`<Self as std::str::FromStr>::from_str`] accepts.
-    /// Idiom-peer of the `Display` impl on
-    /// [`crate::SecretBackendKind`] (commit `9b1da86`),
-    /// [`crate::SecretRefShape`] (commit `8a84bb6`),
-    /// [`crate::ConfigSourceKind`] (commit `e0b96d1`),
-    /// [`SecretClientKind`] (commit `24c7b33`), and
-    /// [`SecretErrorKind`] (commit `38b9964`) lifted onto the
-    /// operation axis sibling closed-enum.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-impl FromStr for SecretOperation {
-    type Err = ShikumiError;
-
-    /// Parse the canonical operator-facing label (`"get"` / `"list"`
-    /// / `"put"` / `"delete"` / `"rotate"` / `"get_version"`)
-    /// produced by [`Self::as_str`]; case-insensitive over ASCII via
-    /// the trait-default
-    /// [`<Self as crate::ClosedAxisLabel>::from_canonical_str`] parse.
-    /// On unrecognized input, returns [`ShikumiError::Parse`] with
-    /// the offending label embedded verbatim — matching the
-    /// verbatim-substring rejection discipline already established by
-    /// [`<crate::SecretBackendKind as FromStr>::from_str`]
-    /// (commit `9b1da86`),
-    /// [`<SecretClientKind as FromStr>::from_str`]
-    /// (commit `24c7b33`), and
-    /// [`<SecretErrorKind as FromStr>::from_str`]
-    /// (commit `38b9964`) so the same localization story (the
-    /// operator sees the offending substring in the rendered
-    /// diagnostic) carries to the operation axis.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        <Self as crate::ClosedAxisLabel>::from_canonical_str(s)
-            .ok_or_else(|| ShikumiError::Parse(format!("unknown secret operation: {s}")))
-    }
-}
-
-impl serde::Serialize for SecretOperation {
-    /// Serialize the operation axis as the canonical operator-facing
-    /// label [`Self::as_str`] returns — the same scalar the
-    /// [`fmt::Display`] impl writes. Routes through
-    /// [`serde::Serializer::collect_str`] so the serialized
-    /// representation is exactly `format!("{self}")` with no
-    /// intermediate allocation.
-    ///
-    /// Closes the canonical (`Serialize`, `Deserialize`) serde
-    /// idiom-peer of the (`Display`, [`std::str::FromStr`]) stdlib
-    /// pair on the operation axis primitive. An operation emitted
-    /// into a YAML attestation manifest field (the operation-mix
-    /// histogram of refused calls), a JSON observability payload
-    /// (per-operation latency labels), or any consumer struct
-    /// holding a [`SecretOperation`] field under
-    /// `#[derive(Serialize, Deserialize)]` round-trips through the
-    /// canonical label without a consumer-side rename helper.
-    ///
-    /// **Round-trip law** — for every `op: SecretOperation`,
-    /// `serde_yaml::from_str::<SecretOperation>(&serde_yaml::to_string(&op)?)? == op`
-    /// and the same on `serde_json`. Pinned by
-    /// [`tests::secret_operation_serde_yaml_round_trips_over_every_variant`]
-    /// and
-    /// [`tests::secret_operation_serde_json_round_trips_over_every_variant`].
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for SecretOperation {
-    /// Deserialize the operation axis from the canonical operator-
-    /// facing label [`Self::as_str`] returns via
-    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
-    /// `visit_str` lowers to [`<Self as FromStr>::from_str`] and
-    /// routes any [`ShikumiError`] through
-    /// [`serde::de::Error::custom`].
-    ///
-    /// **Case insensitivity inherits from [`FromStr`]** — the
-    /// [`crate::ClosedAxisLabel::from_canonical_str`] trait default
-    /// uses [`str::eq_ignore_ascii_case`] over [`Self::ALL`], so
-    /// uppercase or mixed-case scalars (e.g. `GET`, `Get_Version`)
-    /// parse pointwise. Pinned by
-    /// [`tests::secret_operation_serde_yaml_is_case_insensitive`].
-    ///
-    /// **Unknown-operation rejection carries the offending label
-    /// verbatim** — a manifest field carrying an unrecognized
-    /// operation surfaces at the serde error site with the offending
-    /// substring verbatim in the rendered message, lifted through
-    /// [`ShikumiError::Parse`]'s `Display` impl. Pinned by
-    /// [`tests::secret_operation_serde_yaml_unknown_operation_error_carries_label_verbatim`].
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct SecretOperationVisitor;
-
-        impl serde::de::Visitor<'_> for SecretOperationVisitor {
-            type Value = SecretOperation;
-
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(
-                    "a canonical SecretOperation label \
-                     (`get`, `list`, `put`, `delete`, `rotate`, \
-                     `get_version`; case-insensitive)",
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<SecretOperation, E> {
-                v.parse::<SecretOperation>().map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(SecretOperationVisitor)
-    }
+// The canonical (Display, FromStr, Serialize, Deserialize) string-surface
+// quartet on the operation axis closed-enum, lifted to one macro after the
+// twelve hand-rolled idiom-peers preceding this commit (WatchEventClass at
+// `94f8a8b`, ShikumiErrorKind at `4b53792`, DiffLineKind at `74ee853`,
+// ConfigSourceKind at `ae24a13`, FormatProvenance at `212d6fb`,
+// FigmentNameTagKind at `25bab65`, FigmentSourceKind at `8a0277d`,
+// EnvMetadataTagKind at `58557d3`, SecretBackendKind at `360487a`,
+// SecretRefShape at `bb249c0`, SecretClientKind at `fd9cc2b`, and
+// SecretErrorKind at `930ee5a`). See `closed_axis_label_string_surface!`
+// in `crate::macros` for the contract; behavior is byte-identical to the
+// hand-rolled impls the macro replaces — the verbatim-label `Parse` error
+// body, the case-insensitive `from_canonical_str` lowering, the
+// `collect_str`-based serde emission, and the visitor's `expecting`
+// message all match the prior surface pointwise. Pinned by
+// `tests::secret_operation_display_matches_as_str`,
+// `tests::secret_operation_from_str_*`,
+// `tests::secret_operation_serde_yaml_*`, and
+// `tests::secret_operation_serde_json_*`.
+closed_axis_label_string_surface! {
+    type = SecretOperation,
+    parse_error = "unknown secret operation",
+    expecting = "a canonical SecretOperation label \
+                 (`get`, `list`, `put`, `delete`, `rotate`, \
+                 `get_version`; case-insensitive)",
 }
 
 /// Which operations a [`SecretClient`] backend supports.
