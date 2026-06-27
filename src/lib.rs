@@ -33,13 +33,18 @@
 //! println!("width: {:?}", config.window_width);
 //! ```
 
+// `macros` MUST be declared first: `#[macro_use]` only makes its `macro_rules!`
+// visible to modules declared AFTER it. `cube` + `discovery` call
+// `serde_via_display_fromstr!` / `closed_axis_label_string_surface*!` by bare
+// name, so the macros module has to precede them or those calls are out of
+// scope ("cannot find macro in this scope").
+#[macro_use]
+pub mod macros;
 #[cfg(feature = "cli")]
 pub mod cli;
 pub mod coverage;
 mod cube;
 mod discovery;
-#[macro_use]
-pub mod macros;
 mod error;
 #[cfg(feature = "lisp")]
 pub mod lisp_provider;

@@ -505,8 +505,10 @@ macro_rules! closed_axis_label_string_surface {
 ///     expecting = "a `0x`-prefixed hex byte (e.g. `0x2a`)",
 /// }
 ///
-/// assert_eq!(serde_yaml::to_string(&Hex(0x2a)).unwrap(), "0x2a\n");
-/// assert_eq!(serde_yaml::from_str::<Hex>("0xff").unwrap(), Hex(0xff));
+/// // serde_yaml quotes `0x2a` — a plain scalar that would otherwise be read
+/// // back as a number — so the Display round-trips through a quoted string.
+/// assert_eq!(serde_yaml::to_string(&Hex(0x2a)).unwrap(), "'0x2a'\n");
+/// assert_eq!(serde_yaml::from_str::<Hex>("'0xff'").unwrap(), Hex(0xff));
 /// let err = serde_yaml::from_str::<Hex>("nope").unwrap_err().to_string();
 /// assert!(err.contains("nope"));
 /// ```
