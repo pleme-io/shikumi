@@ -9688,13 +9688,14 @@ impl<A: ClosedAxisLabel> std::fmt::Display for AxisHistogram<A> {
 /// rejection mode (e.g. an `EmptyCount`, a `LabelCaseViolation` on a
 /// stricter-case axis) lands as a new variant without a SemVer-major
 /// bump.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ParseAxisHistogramError {
     /// A `<label>=<count>` pair was missing the `=` separator. The
     /// `pair` field carries the offending substring verbatim (the
     /// comma-split token before the missing `=`) so a caller can
     /// localize the failure to the surrounding context.
+    #[error("missing '=' separator in pair {pair:?}")]
     MissingEquals {
         /// The offending pair substring, verbatim.
         pair: String,
@@ -9702,6 +9703,7 @@ pub enum ParseAxisHistogramError {
     /// A label substring did not match any canonical name on the axis
     /// — [`ClosedAxisLabel::from_canonical_str`] returned [`None`]. The
     /// `label` field carries the offending substring verbatim.
+    #[error("unknown axis label {label:?}")]
     UnknownLabel {
         /// The offending label substring, verbatim.
         label: String,
@@ -9710,6 +9712,7 @@ pub enum ParseAxisHistogramError {
     /// [`str::parse::<usize>`][str::parse] failed. The `label` field
     /// carries the cell whose count failed to parse; the `count` field
     /// carries the offending count substring verbatim.
+    #[error("invalid count {count:?} for label {label:?} (expected usize)")]
     InvalidCount {
         /// The label whose count failed to parse.
         label: String,
@@ -9721,35 +9724,12 @@ pub enum ParseAxisHistogramError {
     /// than silently overwriting because two different counts on the
     /// same cell name a load-bearing ambiguity the caller resolves
     /// upstream.
+    #[error("duplicate label {label:?}")]
     DuplicateLabel {
         /// The duplicated canonical label.
         label: String,
     },
 }
-
-impl std::fmt::Display for ParseAxisHistogramError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::MissingEquals { pair } => {
-                write!(f, "missing '=' separator in pair {pair:?}")
-            }
-            Self::UnknownLabel { label } => {
-                write!(f, "unknown axis label {label:?}")
-            }
-            Self::InvalidCount { label, count } => {
-                write!(
-                    f,
-                    "invalid count {count:?} for label {label:?} (expected usize)"
-                )
-            }
-            Self::DuplicateLabel { label } => {
-                write!(f, "duplicate label {label:?}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for ParseAxisHistogramError {}
 
 impl<A: ClosedAxisLabel> std::str::FromStr for AxisHistogram<A> {
     type Err = ParseAxisHistogramError;
@@ -10828,12 +10808,13 @@ impl std::fmt::Display for PartitionOrdinal {
 /// promoted from a single-field struct to a three-variant enum because
 /// the parse surface carries two halves rather than one canonical
 /// label.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ParsePartitionOrdinalError {
     /// The input carried no `:` separator. The full offending input is
     /// preserved verbatim so the operator-facing error names what was
     /// actually received.
+    #[error("PartitionOrdinal input missing `:` separator: {input:?}")]
     MissingSeparator {
         /// The offending input substring, verbatim.
         input: String,
@@ -10841,6 +10822,7 @@ pub enum ParsePartitionOrdinalError {
     /// The face-label half (before the `:`) did not match a canonical
     /// [`PartitionFace`] name. The offending substring is preserved
     /// verbatim.
+    #[error("unknown partition face label {label:?}")]
     UnknownFace {
         /// The offending face-label substring, verbatim.
         label: String,
@@ -10850,39 +10832,18 @@ pub enum ParsePartitionOrdinalError {
     /// [`std::num::ParseIntError`] threads through `source` so the
     /// standard-library numeric diagnostic surfaces without
     /// re-stringification.
+    #[error("malformed PartitionOrdinal face_ordinal {ordinal:?}: {source}")]
     MalformedOrdinal {
         /// The offending ordinal substring, verbatim.
         ordinal: String,
         /// The underlying numeric parse error from
-        /// [`<usize as std::str::FromStr>::from_str`].
+        /// [`<usize as std::str::FromStr>::from_str`]. Auto-detected
+        /// as the [`std::error::Error::source`] by `thiserror`'s
+        /// field-name convention, so the standard-library numeric
+        /// diagnostic threads through a downstream `e.source()` walk
+        /// without re-stringification.
         source: std::num::ParseIntError,
     },
-}
-
-impl std::fmt::Display for ParsePartitionOrdinalError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::MissingSeparator { input } => {
-                write!(f, "PartitionOrdinal input missing `:` separator: {input:?}",)
-            }
-            Self::UnknownFace { label } => {
-                write!(f, "unknown partition face label {label:?}")
-            }
-            Self::MalformedOrdinal { ordinal, source } => write!(
-                f,
-                "malformed PartitionOrdinal face_ordinal {ordinal:?}: {source}",
-            ),
-        }
-    }
-}
-
-impl std::error::Error for ParsePartitionOrdinalError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::MalformedOrdinal { source, .. } => Some(source),
-            Self::MissingSeparator { .. } | Self::UnknownFace { .. } => None,
-        }
-    }
 }
 
 impl std::str::FromStr for PartitionOrdinal {

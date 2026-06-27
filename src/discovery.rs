@@ -1075,12 +1075,13 @@ impl fmt::Display for FormatCoordinates {
 /// (variant-tag × dense-ordinal) product, lifted here onto the
 /// (closed-enum × closed-enum) product whose both halves are
 /// label-typed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ParseFormatCoordinatesError {
     /// The input carried no `:` separator. The full offending input is
     /// preserved verbatim so the operator-facing error names what was
     /// actually received.
+    #[error("FormatCoordinates input missing `:` separator: {input:?}")]
     MissingSeparator {
         /// The offending input substring, verbatim.
         input: String,
@@ -1089,6 +1090,7 @@ pub enum ParseFormatCoordinatesError {
     /// [`Format`] name (`yaml`, `toml`, `lisp`, `nix`) and was not one
     /// of the recognized aliases (`yml`, `lsp`, `el`). The offending
     /// substring is preserved verbatim.
+    #[error("unknown FormatCoordinates format label {label:?}")]
     UnknownFormat {
         /// The offending format-label substring, verbatim.
         label: String,
@@ -1096,32 +1098,12 @@ pub enum ParseFormatCoordinatesError {
     /// The provenance-label half (after the `:`) did not match a
     /// canonical [`FormatProvenance`] name (`figment-builtin`,
     /// `shikumi-built`). The offending substring is preserved verbatim.
+    #[error("unknown FormatCoordinates provenance label {label:?}")]
     UnknownProvenance {
         /// The offending provenance-label substring, verbatim.
         label: String,
     },
 }
-
-impl fmt::Display for ParseFormatCoordinatesError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::MissingSeparator { input } => {
-                write!(
-                    f,
-                    "FormatCoordinates input missing `:` separator: {input:?}",
-                )
-            }
-            Self::UnknownFormat { label } => {
-                write!(f, "unknown FormatCoordinates format label {label:?}")
-            }
-            Self::UnknownProvenance { label } => {
-                write!(f, "unknown FormatCoordinates provenance label {label:?}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for ParseFormatCoordinatesError {}
 
 impl FromStr for FormatCoordinates {
     type Err = ParseFormatCoordinatesError;
@@ -1316,33 +1298,21 @@ impl fmt::Display for FormatMetadataTag<'_> {
 /// renderer printing the error doesn't have to scrape the original
 /// input from its own context — the offending bytes ride with the
 /// error.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ParseFormatMetadataTagError {
     /// Input doesn't begin with a recognized `"<format>: "` prefix for
     /// any shikumi-built provider (`lisp: ` / `nix: `).
+    #[error(
+        "FormatMetadataTag input does not match any \
+         shikumi-built provider's `<format>: <path>` prefix \
+         (one of `lisp: `, `nix: `): {input:?}"
+    )]
     NoMatchingShikumiProviderPrefix {
         /// The offending input string, verbatim.
         input: String,
     },
 }
-
-impl fmt::Display for ParseFormatMetadataTagError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NoMatchingShikumiProviderPrefix { input } => {
-                write!(
-                    f,
-                    "FormatMetadataTag input does not match any \
-                     shikumi-built provider's `<format>: <path>` prefix \
-                     (one of `lisp: `, `nix: `): {input:?}",
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for ParseFormatMetadataTagError {}
 
 impl<'a> TryFrom<&'a str> for FormatMetadataTag<'a> {
     type Error = ParseFormatMetadataTagError;
