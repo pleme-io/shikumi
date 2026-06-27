@@ -1162,43 +1162,25 @@ impl FromStr for FormatCoordinates {
     }
 }
 
-impl serde::Serialize for FormatCoordinates {
-    /// Serialize as the canonical `<format>:<provenance>` scalar
-    /// [`fmt::Display`] writes, routed through
-    /// [`serde::Serializer::collect_str`] (no intermediate allocation).
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for FormatCoordinates {
-    /// Deserialize from the canonical `<format>:<provenance>` scalar
-    /// via a `visit_str` visitor lowering to [`FromStr`] and routing
-    /// any [`ParseFormatCoordinatesError`] through
-    /// [`serde::de::Error::custom`]. Both halves inherit ASCII
-    /// case-insensitivity from their respective axis's `FromStr`; the
-    /// rejection modes carry the offending substring verbatim into the
-    /// rendered serde error.
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct FormatCoordinatesVisitor;
-
-        impl serde::de::Visitor<'_> for FormatCoordinatesVisitor {
-            type Value = FormatCoordinates;
-
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(
-                    "a canonical FormatCoordinates `<format>:<provenance>` scalar \
-                     (e.g. `yaml:figment-builtin`, `nix:shikumi-built`; case-insensitive)",
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<FormatCoordinates, E> {
-                v.parse::<FormatCoordinates>().map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(FormatCoordinatesVisitor)
-    }
+// Canonical `<format>:<provenance>` serde scalar — Serialize via
+// `collect_str` over the `Display` impl, Deserialize via a visitor that
+// lowers through `FromStr` and routes `ParseFormatCoordinatesError`
+// through `serde::de::Error::custom` (the typed error's `Display` carries
+// the offending substring verbatim). Lifted to `serde_via_display_fromstr!`
+// — the same canonical serde shape the `ClosedAxisLabel` cohort already
+// rides via the explicit-parser arm of `closed_axis_label_string_surface!`,
+// extracted here so a typed-composite primitive whose `FromStr::Err` is
+// not `ShikumiError` (the three-variant `ParseFormatCoordinatesError`)
+// stays on the same single source of truth. Behavior is byte-identical
+// to the prior hand-rolled impls: the `collect_str` emission, the
+// visitor `expecting` literal, and the `visit_str` lowering through
+// `FromStr` all match the prior surface pointwise. Pinned by the
+// `format_coordinates_serde_*` round-trip / case-insensitivity /
+// verbatim-rejection tests in `tests`.
+serde_via_display_fromstr! {
+    type = FormatCoordinates,
+    expecting = "a canonical FormatCoordinates `<format>:<provenance>` scalar \
+                 (e.g. `yaml:figment-builtin`, `nix:shikumi-built`; case-insensitive)",
 }
 
 /// Recognized form of a shikumi-built provider's

@@ -961,92 +961,22 @@ impl std::str::FromStr for ModalityClass {
     }
 }
 
-impl serde::Serialize for ModalityClass {
-    /// Serialize the variant tag as the canonical operator-facing
-    /// kebab-case label [`Self::as_str`] emits — the same scalar the
-    /// [`Display`][std::fmt::Display] impl writes. Routes through
-    /// [`serde::Serializer::collect_str`] so the serialized
-    /// representation is exactly `format!("{self}")` with no
-    /// intermediate allocation on serializers that accept a streaming
-    /// source (YAML, JSON, TOML emitters lower the scalar straight
-    /// from the `&'static str` returned by [`Self::as_str`]).
-    ///
-    /// Closes the canonical (`Serialize`, `Deserialize`) serde
-    /// idiom-peer of the (`Display`, `FromStr`) stdlib pair on the
-    /// variant-tag surface — peer of the same lift on
-    /// [`AxisHistogram`] (commit 2311303) on the histogram surface,
-    /// and idiom-peer of the implicit lift on every
-    /// [`crate::Format`]/[`crate::ShikumiErrorKind`]/[`crate::ConfigSourceKind`]/
-    /// [`crate::FigmentSourceKind`] surface that carries
-    /// `#[serde(rename_all = "kebab-case")]` on the enum derive.
-    /// [`ModalityClass`] stays *off* the
-    /// `#[serde(rename_all)]`-derive path so the canonical-name
-    /// surface stays gated on the single inherent
-    /// [`Self::as_str`] projection: a future variant-name refactor
-    /// touches one site (the `match` in [`Self::as_str`]) rather than
-    /// a derive attribute *and* its consumers — same forcing function
-    /// the (`Display`, `FromStr`) pair already pins.
-    ///
-    /// **Round-trip law** — for every `v: ModalityClass`,
-    /// `serde_yaml::from_str::<ModalityClass>(&serde_yaml::to_string(&v)?)? == v`
-    /// and the same on `serde_json`. Pinned by
-    /// [`tests::modality_class_serde_yaml_round_trips_over_every_variant`]
-    /// and the `serde_json` peer test.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for ModalityClass {
-    /// Deserialize the variant tag from the canonical operator-facing
-    /// kebab-case label [`Self::as_str`] emits — the operator-facing
-    /// scalar form the variant-tag surface carries on the
-    /// (`Display`, `FromStr`) round-trip pair, lifted to the serde
-    /// surface via [`serde::Deserializer::deserialize_str`] with a
-    /// visitor whose `visit_str` lowers to
-    /// [`<Self as std::str::FromStr>::from_str`] and routes any
-    /// [`ParseModalityClassError`] through
-    /// [`serde::de::Error::custom`].
-    ///
-    /// **Case insensitivity inherits from [`FromStr`]** — an
-    /// operator-authored manifest field carrying the uppercase or
-    /// mixed-case form of a canonical label parses on the serde side
-    /// without a per-emitter case-fold, because the deserialize path
-    /// lowers through [`Self::from_canonical_str`] which compares via
-    /// [`str::eq_ignore_ascii_case`]. Pinned by
-    /// [`tests::modality_class_serde_yaml_is_case_insensitive`].
-    ///
-    /// **Unknown-label rejection carries the offending label
-    /// verbatim** — a manifest field carrying an unknown classifier
-    /// corner name surfaces at the serde error site with the offending
-    /// substring verbatim in the rendered message, lifted through
-    /// [`ParseModalityClassError::label`] and the typed
-    /// [`Display`][std::fmt::Display] impl on the parse error. Pinned
-    /// by
-    /// [`tests::modality_class_serde_yaml_unknown_label_error_carries_label_verbatim`].
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct ModalityClassVisitor;
-
-        impl serde::de::Visitor<'_> for ModalityClassVisitor {
-            type Value = ModalityClass;
-
-            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str(
-                    "a canonical ModalityClass kebab-case label \
-                     (`empty`, `strict-modal-strict-antimodal`, \
-                     `tied-modal-strict-antimodal`, \
-                     `strict-modal-tied-antimodal`, \
-                     `tied-modal-tied-antimodal`)",
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
-                v.parse::<ModalityClass>().map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(ModalityClassVisitor)
-    }
+// Canonical kebab-case-label serde pair — Serialize via `collect_str`
+// over the `Display` impl, Deserialize via a visitor that lowers
+// through `FromStr` and routes `ParseModalityClassError` through
+// `serde::de::Error::custom`. Lifted to `serde_via_display_fromstr!`.
+// Behavior is byte-identical to the prior hand-rolled impls: the
+// `collect_str` emission, the visitor `expecting` literal, and the
+// `visit_str` lowering through `FromStr` all match the prior surface
+// pointwise. Pinned by the `modality_class_serde_*` round-trip /
+// case-insensitivity / verbatim-rejection tests in `tests`.
+serde_via_display_fromstr! {
+    type = ModalityClass,
+    expecting = "a canonical ModalityClass kebab-case label \
+                 (`empty`, `strict-modal-strict-antimodal`, \
+                 `tied-modal-strict-antimodal`, \
+                 `strict-modal-tied-antimodal`, \
+                 `tied-modal-tied-antimodal`)",
 }
 
 /// The **support-cardinality classification** of an [`AxisHistogram`]
@@ -1882,44 +1812,16 @@ impl std::str::FromStr for SupportCardinalityClass {
     }
 }
 
-impl serde::Serialize for SupportCardinalityClass {
-    /// Serialize the variant tag as the canonical kebab-case label
-    /// [`Self::as_str`] emits. Closes the
-    /// `(Serialize, Deserialize)` serde idiom-peer of the
-    /// `(Display, FromStr)` stdlib pair on the variant-tag surface;
-    /// idiom-peer of the same lift on [`ModalityClass`].
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for SupportCardinalityClass {
-    /// Deserialize the variant tag from the canonical kebab-case
-    /// label [`Self::as_str`] emits via
-    /// [`serde::Deserializer::deserialize_str`] lowering to
-    /// [`<Self as std::str::FromStr>::from_str`]. Idiom-peer of the
-    /// same impl on [`ModalityClass`].
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct SupportCardinalityClassVisitor;
-
-        impl serde::de::Visitor<'_> for SupportCardinalityClassVisitor {
-            type Value = SupportCardinalityClass;
-
-            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str(
-                    "a canonical SupportCardinalityClass kebab-case label \
-                     (`empty`, `singular-support`, `strict-partial-cover`, \
-                     `singular-gap`, `full-cover`)",
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
-                v.parse::<SupportCardinalityClass>().map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(SupportCardinalityClassVisitor)
-    }
+// Canonical kebab-case-label serde pair lifted to
+// `serde_via_display_fromstr!`. Behavior byte-identical to the prior
+// hand-rolled (Serialize via `collect_str`, Deserialize visitor →
+// `FromStr` → `ParseSupportCardinalityClassError` → `E::custom`)
+// impls. Pinned by the `support_cardinality_class_serde_*` tests.
+serde_via_display_fromstr! {
+    type = SupportCardinalityClass,
+    expecting = "a canonical SupportCardinalityClass kebab-case label \
+                 (`empty`, `singular-support`, `strict-partial-cover`, \
+                 `singular-gap`, `full-cover`)",
 }
 
 /// Typed three-bucket projection of the support-cardinality scalar by
@@ -2103,44 +2005,15 @@ impl std::str::FromStr for SupportBoundaryDistance {
     }
 }
 
-impl serde::Serialize for SupportBoundaryDistance {
-    /// Serialize the variant tag as the canonical kebab-case label
-    /// [`Self::as_str`] emits. Closes the
-    /// `(Serialize, Deserialize)` serde idiom-peer of the
-    /// `(Display, FromStr)` stdlib pair on the variant-tag surface;
-    /// idiom-peer of the same lift on [`SupportCardinalityClass`]
-    /// and [`ModalityClass`].
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for SupportBoundaryDistance {
-    /// Deserialize the variant tag from the canonical kebab-case
-    /// label [`Self::as_str`] emits via
-    /// [`serde::Deserializer::deserialize_str`] lowering to
-    /// [`<Self as std::str::FromStr>::from_str`]. Idiom-peer of the
-    /// same impl on [`SupportCardinalityClass`] and [`ModalityClass`].
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct SupportBoundaryDistanceVisitor;
-
-        impl serde::de::Visitor<'_> for SupportBoundaryDistanceVisitor {
-            type Value = SupportBoundaryDistance;
-
-            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str(
-                    "a canonical SupportBoundaryDistance kebab-case label \
-                     (`boundary`, `singular`, `strict-interior`)",
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
-                v.parse::<SupportBoundaryDistance>().map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(SupportBoundaryDistanceVisitor)
-    }
+// Canonical kebab-case-label serde pair lifted to
+// `serde_via_display_fromstr!`. Behavior byte-identical to the prior
+// hand-rolled (Serialize via `collect_str`, Deserialize visitor →
+// `FromStr` → `ParseSupportBoundaryDistanceError` → `E::custom`)
+// impls. Pinned by the `support_boundary_distance_serde_*` tests.
+serde_via_display_fromstr! {
+    type = SupportBoundaryDistance,
+    expecting = "a canonical SupportBoundaryDistance kebab-case label \
+                 (`boundary`, `singular`, `strict-interior`)",
 }
 
 /// Typed three-bucket projection of the support-cardinality scalar by
@@ -2347,45 +2220,15 @@ impl std::str::FromStr for SupportMagnitudeDirection {
     }
 }
 
-impl serde::Serialize for SupportMagnitudeDirection {
-    /// Serialize the variant tag as the canonical kebab-case label
-    /// [`Self::as_str`] emits. Closes the
-    /// `(Serialize, Deserialize)` serde idiom-peer of the
-    /// `(Display, FromStr)` stdlib pair on the variant-tag surface;
-    /// idiom-peer of the same lift on [`SupportBoundaryDistance`],
-    /// [`SupportCardinalityClass`], and [`ModalityClass`].
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for SupportMagnitudeDirection {
-    /// Deserialize the variant tag from the canonical kebab-case
-    /// label [`Self::as_str`] emits via
-    /// [`serde::Deserializer::deserialize_str`] lowering to
-    /// [`<Self as std::str::FromStr>::from_str`]. Idiom-peer of the
-    /// same impl on [`SupportBoundaryDistance`],
-    /// [`SupportCardinalityClass`], and [`ModalityClass`].
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct SupportMagnitudeDirectionVisitor;
-
-        impl serde::de::Visitor<'_> for SupportMagnitudeDirectionVisitor {
-            type Value = SupportMagnitudeDirection;
-
-            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str(
-                    "a canonical SupportMagnitudeDirection kebab-case label \
-                     (`low`, `strict-interior`, `high`)",
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
-                v.parse::<SupportMagnitudeDirection>().map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(SupportMagnitudeDirectionVisitor)
-    }
+// Canonical kebab-case-label serde pair lifted to
+// `serde_via_display_fromstr!`. Behavior byte-identical to the prior
+// hand-rolled (Serialize via `collect_str`, Deserialize visitor →
+// `FromStr` → `ParseSupportMagnitudeDirectionError` → `E::custom`)
+// impls. Pinned by the `support_magnitude_direction_serde_*` tests.
+serde_via_display_fromstr! {
+    type = SupportMagnitudeDirection,
+    expecting = "a canonical SupportMagnitudeDirection kebab-case label \
+                 (`low`, `strict-interior`, `high`)",
 }
 
 impl<A: ClosedAxis> AxisHistogram<A> {
@@ -11036,77 +10879,15 @@ impl std::str::FromStr for PartitionFace {
     }
 }
 
-impl serde::Serialize for PartitionFace {
-    /// Serialize the face tag as the canonical operator-facing
-    /// lowercase label [`Self::as_str`] emits — the same scalar the
-    /// [`Display`][std::fmt::Display] impl writes. Routes through
-    /// [`serde::Serializer::collect_str`] so the serialized
-    /// representation is exactly `format!("{self}")` with no
-    /// intermediate allocation.
-    ///
-    /// Closes the canonical (`Serialize`, `Deserialize`) serde
-    /// idiom-peer of the (`Display`, `FromStr`) stdlib pair on the
-    /// face-tag surface — idiom-peer of the same lift on the four
-    /// typed-cube-classifier surfaces. A face emitted into a YAML
-    /// attestation manifest field, a JSON observability payload, or
-    /// any consumer struct holding a `PartitionFace` field under
-    /// `#[derive(Serialize, Deserialize)]` round-trips through the
-    /// canonical label without a consumer-side rename helper.
-    ///
-    /// **Round-trip law** — for every `v: PartitionFace`,
-    /// `serde_yaml::from_str::<PartitionFace>(&serde_yaml::to_string(&v)?)? == v`
-    /// and the same on `serde_json`. Pinned by
-    /// [`tests::partition_face_serde_yaml_round_trips_over_every_variant`]
-    /// and the `serde_json` peer test.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for PartitionFace {
-    /// Deserialize the face tag from the canonical operator-facing
-    /// lowercase label [`Self::as_str`] emits via
-    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
-    /// `visit_str` lowers to [`<Self as std::str::FromStr>::from_str`]
-    /// and routes any [`ParsePartitionFaceError`] through
-    /// [`serde::de::Error::custom`].
-    ///
-    /// **Case insensitivity inherits from [`FromStr`]** — an
-    /// operator-authored manifest field carrying the uppercase or
-    /// mixed-case form of a canonical label parses on the serde side
-    /// without a per-emitter case-fold, because the deserialize path
-    /// lowers through [`ClosedAxisLabel::from_canonical_str`] which
-    /// compares via [`str::eq_ignore_ascii_case`]. Pinned by
-    /// [`tests::partition_face_serde_yaml_is_case_insensitive`].
-    ///
-    /// **Unknown-label rejection carries the offending label
-    /// verbatim** — a manifest field carrying an unknown face name
-    /// surfaces at the serde error site with the offending substring
-    /// verbatim in the rendered message, lifted through
-    /// [`ParsePartitionFaceError::label`] and the typed
-    /// [`Display`][std::fmt::Display] impl on the parse error. Pinned
-    /// by
-    /// [`tests::partition_face_serde_yaml_unknown_label_error_carries_label_verbatim`].
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct PartitionFaceVisitor;
-
-        impl serde::de::Visitor<'_> for PartitionFaceVisitor {
-            type Value = PartitionFace;
-
-            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str(
-                    "a canonical PartitionFace lowercase label \
-                     (`realizable`, `unrealizable`)",
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
-                v.parse::<PartitionFace>().map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(PartitionFaceVisitor)
-    }
+// Canonical lowercase-label serde pair lifted to
+// `serde_via_display_fromstr!`. Behavior byte-identical to the prior
+// hand-rolled (Serialize via `collect_str`, Deserialize visitor →
+// `FromStr` → `ParsePartitionFaceError` → `E::custom`) impls. Pinned by
+// the `partition_face_serde_*` tests.
+serde_via_display_fromstr! {
+    type = PartitionFace,
+    expecting = "a canonical PartitionFace lowercase label \
+                 (`realizable`, `unrealizable`)",
 }
 
 impl ClosedAxis for PartitionFace {
@@ -11409,81 +11190,18 @@ impl std::str::FromStr for PartitionOrdinal {
     }
 }
 
-impl serde::Serialize for PartitionOrdinal {
-    /// Serialize the typed partition address as the canonical
-    /// `<face>:<face_ordinal>` scalar the
-    /// [`Display`][std::fmt::Display] impl writes. Routes through
-    /// [`serde::Serializer::collect_str`] so the serialized
-    /// representation is exactly `format!("{self}")` with no
-    /// intermediate allocation.
-    ///
-    /// Closes the canonical (`Serialize`, `Deserialize`) serde
-    /// idiom-peer of the (`Display`, `FromStr`) stdlib pair on the
-    /// typed cube-cell-address surface — idiom-peer of the same lift
-    /// on [`PartitionFace`] and on the four typed-cube-classifier
-    /// surfaces. A partition address emitted into a YAML attestation
-    /// manifest field, a JSON observability payload, or any consumer
-    /// struct holding a `PartitionOrdinal` field under
-    /// `#[derive(Serialize, Deserialize)]` round-trips through the
-    /// canonical scalar without a consumer-side helper combining the
-    /// face label and the dense inner ordinal at the renderer.
-    ///
-    /// **Round-trip law** — for every `v: PartitionOrdinal`,
-    /// `serde_yaml::from_str::<PartitionOrdinal>(&serde_yaml::to_string(&v)?)? == v`
-    /// and the same on `serde_json`. Pinned by
-    /// [`tests::partition_ordinal_serde_yaml_round_trips_over_sample`]
-    /// and the `serde_json` peer test.
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for PartitionOrdinal {
-    /// Deserialize the typed partition address from the canonical
-    /// `<face>:<face_ordinal>` scalar via
-    /// [`serde::Deserializer::deserialize_str`] with a visitor whose
-    /// `visit_str` lowers to
-    /// [`<Self as std::str::FromStr>::from_str`] and routes any
-    /// [`ParsePartitionOrdinalError`] through
-    /// [`serde::de::Error::custom`].
-    ///
-    /// **Case insensitivity on the face half inherits from
-    /// [`FromStr`]** — an operator-authored manifest field carrying the
-    /// uppercase or mixed-case form of a face label parses on the
-    /// serde side without a per-emitter case-fold, because the
-    /// deserialize path lowers through
-    /// [`<PartitionFace as std::str::FromStr>::from_str`] which in turn
-    /// lowers through [`ClosedAxisLabel::from_canonical_str`] which
-    /// compares via [`str::eq_ignore_ascii_case`]. Pinned by
-    /// [`tests::partition_ordinal_serde_yaml_face_is_case_insensitive`].
-    ///
-    /// **Three rejection modes carry the offending substring
-    /// verbatim** — a manifest field carrying a malformed address
-    /// surfaces at the serde error site with either the missing-
-    /// separator input, the unknown face label, or the malformed
-    /// ordinal substring verbatim in the rendered message, lifted
-    /// through [`ParsePartitionOrdinalError`] and the typed
-    /// [`Display`][std::fmt::Display] impl on the parse error.
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct PartitionOrdinalVisitor;
-
-        impl serde::de::Visitor<'_> for PartitionOrdinalVisitor {
-            type Value = PartitionOrdinal;
-
-            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.write_str(
-                    "a canonical PartitionOrdinal `<face>:<face_ordinal>` scalar \
-                     (e.g. `realizable:42`, `unrealizable:7`)",
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
-                v.parse::<PartitionOrdinal>().map_err(E::custom)
-            }
-        }
-
-        deserializer.deserialize_str(PartitionOrdinalVisitor)
-    }
+// Canonical `<face>:<face_ordinal>` serde pair lifted to
+// `serde_via_display_fromstr!`. Behavior byte-identical to the prior
+// hand-rolled (Serialize via `collect_str`, Deserialize visitor →
+// `FromStr` → `ParsePartitionOrdinalError` → `E::custom`) impls. The
+// typed three-variant rejection (`MissingSeparator`, `UnknownFace`,
+// `MalformedOrdinal`) carries the offending substring verbatim through
+// the parse error's `Display` impl. Pinned by the
+// `partition_ordinal_serde_*` tests.
+serde_via_display_fromstr! {
+    type = PartitionOrdinal,
+    expecting = "a canonical PartitionOrdinal `<face>:<face_ordinal>` scalar \
+                 (e.g. `realizable:42`, `unrealizable:7`)",
 }
 
 /// Typed partition ordinal of a [`ProductCube`] cell — fuses

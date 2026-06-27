@@ -362,6 +362,12 @@ macro_rules! closed_axis_label_string_surface {
     // closure). Primitives whose parse surface diverges from the
     // canonical-label surface (e.g. `Format` accepting `yml`/`lsp`/`el`
     // aliases) ride this arm.
+    //
+    // Serde is delegated to `serde_via_display_fromstr!` so the
+    // `(Serialize via collect_str + Deserialize via visit_str→FromStr)`
+    // shape is a single source of truth across both the closed-axis
+    // cohort and the typed-composite cohort (FormatCoordinates,
+    // PartitionOrdinal, the closed-axis-classifier cube primitives).
     (
         type = $ty:ty,
         parse_error = $parse_error:expr,
@@ -384,6 +390,94 @@ macro_rules! closed_axis_label_string_surface {
             }
         }
 
+        $crate::serde_via_display_fromstr! {
+            type = $ty,
+            expecting = $expecting,
+        }
+    };
+}
+
+/// Emit the canonical `(Serialize, Deserialize)` serde pair for any type
+/// whose canonical scalar form is its [`std::fmt::Display`] and whose
+/// canonical parse is its [`std::str::FromStr`].
+///
+/// The serde half of [`closed_axis_label_string_surface!`] lifted into
+/// its own primitive: this macro requires nothing about the
+/// [`FromStr::Err`][std::str::FromStr::Err] type beyond
+/// [`std::fmt::Display`] (so [`serde::de::Error::custom`] can lower it),
+/// which lets typed-composite primitives whose `FromStr` returns a
+/// bespoke error variant cohort (e.g. [`crate::FormatCoordinates`]'s
+/// [`crate::ParseFormatCoordinatesError`], `PartitionOrdinal`'s
+/// `ParsePartitionOrdinalError`) ride the same canonical serde shape
+/// the [`crate::ClosedAxisLabel`] cohort already enjoys — without
+/// forcing every primitive's `FromStr::Err` onto the
+/// [`crate::ShikumiError::Parse`] surface.
+///
+/// # Contract
+///
+/// - `$ty` must implement [`std::fmt::Display`] and [`std::str::FromStr`]
+///   with `<$ty as FromStr>::Err: ::core::fmt::Display`.
+/// - [`serde::Serialize`] emits the canonical scalar via
+///   [`serde::Serializer::collect_str`] (no intermediate allocation).
+/// - [`serde::Deserialize`] reads a `str` via a visitor whose
+///   `expecting` writes the literal `$expecting` argument and whose
+///   `visit_str` lowers through `FromStr`, routing the typed error
+///   through [`serde::de::Error::custom`].
+///
+/// **Round-trip law** —
+/// `serde_yaml::from_str::<$ty>(&serde_yaml::to_string(&v)?)? == v`
+/// for every `v: $ty`, inherited from the `(Display, FromStr)`
+/// round-trip law by construction.
+///
+/// # Example
+///
+/// ```
+/// use shikumi::serde_via_display_fromstr;
+/// use std::{fmt, str::FromStr};
+///
+/// #[derive(Debug, Clone, Copy, PartialEq)]
+/// struct Hex(u8);
+///
+/// impl fmt::Display for Hex {
+///     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+///         write!(f, "0x{:02x}", self.0)
+///     }
+/// }
+///
+/// #[derive(Debug)]
+/// struct ParseHexError(String);
+/// impl fmt::Display for ParseHexError {
+///     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+///         write!(f, "not a hex byte: {:?}", self.0)
+///     }
+/// }
+///
+/// impl FromStr for Hex {
+///     type Err = ParseHexError;
+///     fn from_str(s: &str) -> Result<Self, Self::Err> {
+///         let body = s.strip_prefix("0x").ok_or_else(|| ParseHexError(s.into()))?;
+///         u8::from_str_radix(body, 16)
+///             .map(Hex)
+///             .map_err(|_| ParseHexError(s.into()))
+///     }
+/// }
+///
+/// serde_via_display_fromstr! {
+///     type = Hex,
+///     expecting = "a `0x`-prefixed hex byte (e.g. `0x2a`)",
+/// }
+///
+/// assert_eq!(serde_yaml::to_string(&Hex(0x2a)).unwrap(), "0x2a\n");
+/// assert_eq!(serde_yaml::from_str::<Hex>("0xff").unwrap(), Hex(0xff));
+/// let err = serde_yaml::from_str::<Hex>("nope").unwrap_err().to_string();
+/// assert!(err.contains("nope"));
+/// ```
+#[macro_export]
+macro_rules! serde_via_display_fromstr {
+    (
+        type = $ty:ty,
+        expecting = $expecting:expr $(,)?
+    ) => {
         impl ::serde::Serialize for $ty {
             fn serialize<__S: ::serde::Serializer>(
                 &self,
