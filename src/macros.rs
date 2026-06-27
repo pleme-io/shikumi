@@ -685,6 +685,156 @@ macro_rules! serde_via_display_fromstr {
     };
 }
 
+/// Emit the canonical
+/// `(Display, FromStr, Serialize, Deserialize)` string-surface quartet
+/// for a closed-axis-label primitive whose `FromStr::Err` is a bespoke
+/// typed label-carrying error struct — the sibling lift of
+/// [`closed_axis_label_string_surface!`] for the typed-error cohort
+/// (the [`crate::ModalityClass`], [`crate::SupportCardinalityClass`],
+/// [`crate::SupportBoundaryDistance`],
+/// [`crate::SupportMagnitudeDirection`], and [`crate::PartitionFace`]
+/// typed cube classifiers, plus any future closed-axis primitive whose
+/// parse-rejection diagnostic needs a typed `Result<_, _>` shape rather
+/// than the [`crate::ShikumiError::Parse`] surface the
+/// [`closed_axis_label_string_surface!`] cohort routes through).
+///
+/// # Contract
+///
+/// The macro presumes the caller has already defined:
+///
+/// - the primitive `$ty`, with an inherent or
+///   [`crate::ClosedAxisLabel`]-trait `as_str(self) -> &'static str`
+///   reachable through unqualified `Self::as_str(*self)` (inherent
+///   methods shadow trait methods, so both the inherent-method case and
+///   the trait-only case work without disambiguation), and
+/// - the typed parse-error struct `$error`, which MUST be a struct with
+///   one named field `label: String` (the verbatim offending substring).
+///   The struct, its derives (typically
+///   `#[derive(Debug, Clone, PartialEq, Eq)]` + `#[non_exhaustive]`),
+///   its rich rustdoc, and the field's docs stay hand-rolled — the
+///   macro lifts only the mechanical impl scaffolding.
+///
+/// The macro emits, in order:
+///
+/// 1. [`std::fmt::Display`] for `$error`, writing
+///    `"{} {:?}", $error_legend, self.label` — the same byte-string the
+///    prior hand-rolled impl wrote (`write!(f, "<legend> {:?}",
+///    self.label)`).
+/// 2. [`std::error::Error`] for `$error` with the default empty body.
+/// 3. [`std::fmt::Display`] for `$ty`, writing `Self::as_str(*self)`.
+/// 4. [`std::str::FromStr`] for `$ty` with `type Err = $error`, routing
+///    through `($parser)(s)` (any `Fn(&str) -> Option<Self>` expression)
+///    and lifting the [`None`] case to
+///    `$error { label: s.to_owned() }`.
+/// 5. The serde pair via [`serde_via_display_fromstr!`] with
+///    `expecting = $expecting`.
+///
+/// **Round-trip law** — inherited from the
+/// `(as_str, $parser)` round-trip law on `$ty`: if
+/// `$parser(<$ty as Self>::as_str(v)) == Some(v)` for every `v: $ty`,
+/// then `v.to_string().parse::<$ty>() == Ok(v)` and
+/// `serde_yaml::from_str::<$ty>(&serde_yaml::to_string(&v)?)? == v`.
+///
+/// # Example
+///
+/// ```
+/// use shikumi::closed_axis_label_string_surface_typed_err;
+///
+/// #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// enum Phase { Boot, Run, Halt }
+///
+/// impl Phase {
+///     const ALL: &'static [Self] = &[Self::Boot, Self::Run, Self::Halt];
+///
+///     fn as_str(self) -> &'static str {
+///         match self { Self::Boot => "boot", Self::Run => "run", Self::Halt => "halt" }
+///     }
+///
+///     fn from_canonical_str(s: &str) -> Option<Self> {
+///         Self::ALL.iter().copied().find(|v| v.as_str().eq_ignore_ascii_case(s))
+///     }
+/// }
+///
+/// #[derive(Debug, Clone, PartialEq, Eq)]
+/// #[non_exhaustive]
+/// pub struct ParsePhaseError {
+///     pub label: String,
+/// }
+///
+/// closed_axis_label_string_surface_typed_err! {
+///     type = Phase,
+///     parser = Phase::from_canonical_str,
+///     error = ParsePhaseError,
+///     error_legend = "unknown phase label",
+///     expecting = "a canonical Phase lowercase label (`boot`, `run`, `halt`)",
+/// }
+///
+/// assert_eq!(format!("{}", Phase::Run), "run");
+/// assert_eq!("HALT".parse::<Phase>().unwrap(), Phase::Halt);
+/// assert_eq!(serde_yaml::to_string(&Phase::Boot).unwrap(), "boot\n");
+/// assert_eq!(serde_yaml::from_str::<Phase>("run").unwrap(), Phase::Run);
+/// let err = "nope".parse::<Phase>().unwrap_err();
+/// assert_eq!(err.label, "nope");
+/// assert!(err.to_string().contains("nope"));
+/// ```
+#[macro_export]
+macro_rules! closed_axis_label_string_surface_typed_err {
+    (
+        type = $ty:ty,
+        parser = $parser:expr,
+        error = $error:path,
+        error_legend = $error_legend:expr,
+        expecting = $expecting:expr $(,)?
+    ) => {
+        impl ::core::fmt::Display for $error {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                ::core::write!(f, "{} {:?}", $error_legend, self.label)
+            }
+        }
+
+        impl ::std::error::Error for $error {}
+
+        impl ::core::fmt::Display for $ty {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                f.write_str(Self::as_str(*self))
+            }
+        }
+
+        // Internal constructor on the typed error. The FromStr impl
+        // below calls it via UFCS instead of constructing the struct
+        // directly: a struct literal `$error { … }` would put the
+        // `:path` metavariable in expression position followed by `{`,
+        // which Rust's macro grammar disallows (the FOLLOW set of
+        // `:path` excludes `{`, so the parser would interpret the
+        // brace as a stray block opener — "struct literal body without
+        // path"). Routing construction through `<$error>::…(…)` works
+        // because `:path` permits `::` in FOLLOW. Named with a
+        // double-underscore `__shikumi_` prefix so it can't accidentally
+        // collide with user-authored inherent methods on the error
+        // type, and `#[doc(hidden)]` to keep it out of the public docs.
+        impl $error {
+            #[doc(hidden)]
+            #[inline]
+            fn __shikumi_with_label(label: ::std::string::String) -> Self {
+                Self { label }
+            }
+        }
+
+        impl ::core::str::FromStr for $ty {
+            type Err = $error;
+
+            fn from_str(s: &str) -> ::core::result::Result<Self, Self::Err> {
+                ($parser)(s).ok_or_else(|| <$error>::__shikumi_with_label(s.to_owned()))
+            }
+        }
+
+        $crate::serde_via_display_fromstr! {
+            type = $ty,
+            expecting = $expecting,
+        }
+    };
+}
+
 /// Backing runner for [`tiered_permutation_test!`]. Kept as a real `fn`
 /// (not inlined into the macro) so the heavy logic lives in a typed,
 /// independently-testable surface; the macro is the thin authoring shell.

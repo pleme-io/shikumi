@@ -870,28 +870,6 @@ impl ModalityClass {
     }
 }
 
-impl std::fmt::Display for ModalityClass {
-    /// Operator-facing rendering of the variant tag — delegates to
-    /// [`ModalityClass::as_str`] pointwise.
-    ///
-    /// Closes the canonical Rust stdlib
-    /// (`Debug`, `Display`) duality on the variant-tag surface every
-    /// stdlib-style closed enum carries: where `Debug` (derived above)
-    /// renders the Rust identifier (`StrictModalStrictAntimodal`),
-    /// `Display` renders the canonical operator-facing label
-    /// (`strict-modal-strict-antimodal`). Lockstep with the
-    /// idiom-peer pair on [`PartitionFace`] on the sibling
-    /// variant-tag projection.
-    ///
-    /// **Round-trip with [`FromStr`][std::str::FromStr]** —
-    /// `v.to_string().parse::<ModalityClass>().unwrap() == v` for every
-    /// `v: ModalityClass`. Pinned by
-    /// [`tests::modality_class_from_str_round_trips_through_display`].
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
 /// Typed parse failure of [`<ModalityClass as
 /// std::str::FromStr>::from_str`] — the offending input was not a
 /// canonical name on the [`ModalityClass`] surface.
@@ -923,55 +901,21 @@ pub struct ParseModalityClassError {
     pub label: String,
 }
 
-impl std::fmt::Display for ParseModalityClassError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "unknown modality class label {:?}", self.label)
-    }
-}
-
-impl std::error::Error for ParseModalityClassError {}
-
-impl std::str::FromStr for ModalityClass {
-    type Err = ParseModalityClassError;
-
-    /// Operator-facing parse of the variant tag from the canonical
-    /// label [`ModalityClass::as_str`] emits — the canonical Rust
-    /// stdlib [`FromStr`][std::str::FromStr] idiom-peer of the
-    /// [`Display`][std::fmt::Display] impl on the variant-tag surface.
-    /// Closes the (`Display`, `FromStr`) round-trip pair every
-    /// operator-facing typescape primitive carries — peer to the same
-    /// pair on [`AxisHistogram`] (cce9769 / adc2450) on the histogram
-    /// surface, and structurally identical to the
-    /// (`as_str`, `from_canonical_str`) inherent pair above. Delegates
-    /// to [`ModalityClass::from_canonical_str`] for the
-    /// case-insensitive lookup, lifting the [`Option<Self>`] failure
-    /// to a typed [`ParseModalityClassError`] so the
-    /// [`std::error::Error`] bound is satisfied at consumer sites
-    /// requiring `Result<_, Box<dyn Error>>` (`eyre::Result<_>`,
-    /// structured-log error fields, deserialization error chaining).
-    ///
-    /// **Round-trip law** —
-    /// `v.to_string().parse::<ModalityClass>().unwrap() == v` for every
-    /// `v: ModalityClass`. Pinned by
-    /// [`tests::modality_class_from_str_round_trips_through_display`].
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::from_canonical_str(s).ok_or_else(|| ParseModalityClassError {
-            label: s.to_owned(),
-        })
-    }
-}
-
-// Canonical kebab-case-label serde pair — Serialize via `collect_str`
-// over the `Display` impl, Deserialize via a visitor that lowers
-// through `FromStr` and routes `ParseModalityClassError` through
-// `serde::de::Error::custom`. Lifted to `serde_via_display_fromstr!`.
-// Behavior is byte-identical to the prior hand-rolled impls: the
-// `collect_str` emission, the visitor `expecting` literal, and the
-// `visit_str` lowering through `FromStr` all match the prior surface
-// pointwise. Pinned by the `modality_class_serde_*` round-trip /
-// case-insensitivity / verbatim-rejection tests in `tests`.
-serde_via_display_fromstr! {
+// Canonical (Display, FromStr, Serialize, Deserialize) string-surface
+// quartet — Display delegates to `as_str`, FromStr routes through
+// `from_canonical_str` and lifts the `None` case to the typed
+// `ParseModalityClassError { label: s.to_owned() }`, serde emits via
+// `collect_str` and deserializes via a visitor that lowers through
+// `FromStr` routing `ParseModalityClassError` through
+// `serde::de::Error::custom`. Lifted to
+// `closed_axis_label_string_surface_typed_err!`. Behavior is
+// byte-identical to the prior hand-rolled impls. Pinned by the
+// `modality_class_from_str_*` and `modality_class_serde_*` tests.
+closed_axis_label_string_surface_typed_err! {
     type = ModalityClass,
+    parser = ModalityClass::from_canonical_str,
+    error = ParseModalityClassError,
+    error_legend = "unknown modality class label",
     expecting = "a canonical ModalityClass kebab-case label \
                  (`empty`, `strict-modal-strict-antimodal`, \
                  `tied-modal-strict-antimodal`, \
@@ -1761,17 +1705,6 @@ impl SupportCardinalityClass {
     }
 }
 
-impl std::fmt::Display for SupportCardinalityClass {
-    /// Operator-facing rendering — delegates to
-    /// [`SupportCardinalityClass::as_str`] pointwise. Closes the
-    /// canonical `(Debug, Display)` duality every stdlib-style closed
-    /// enum carries; idiom-peer of the same impl on
-    /// [`ModalityClass`].
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
 /// Typed parse failure of
 /// [`<SupportCardinalityClass as std::str::FromStr>::from_str`] —
 /// the offending input was not a canonical name on the
@@ -1785,40 +1718,16 @@ pub struct ParseSupportCardinalityClassError {
     pub label: String,
 }
 
-impl std::fmt::Display for ParseSupportCardinalityClassError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "unknown support cardinality class label {:?}",
-            self.label
-        )
-    }
-}
-
-impl std::error::Error for ParseSupportCardinalityClassError {}
-
-impl std::str::FromStr for SupportCardinalityClass {
-    type Err = ParseSupportCardinalityClassError;
-
-    /// Parse the variant tag from the canonical kebab-case label
-    /// [`SupportCardinalityClass::as_str`] emits — the
-    /// [`FromStr`][std::str::FromStr] idiom-peer of the
-    /// [`Display`][std::fmt::Display] impl. Idiom-peer of the same
-    /// pair on [`ModalityClass`].
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::from_canonical_str(s).ok_or_else(|| ParseSupportCardinalityClassError {
-            label: s.to_owned(),
-        })
-    }
-}
-
-// Canonical kebab-case-label serde pair lifted to
-// `serde_via_display_fromstr!`. Behavior byte-identical to the prior
-// hand-rolled (Serialize via `collect_str`, Deserialize visitor →
-// `FromStr` → `ParseSupportCardinalityClassError` → `E::custom`)
-// impls. Pinned by the `support_cardinality_class_serde_*` tests.
-serde_via_display_fromstr! {
+// Canonical (Display, FromStr, Serialize, Deserialize) string-surface
+// quartet lifted to `closed_axis_label_string_surface_typed_err!`.
+// Behavior byte-identical to the prior hand-rolled impls. Pinned by
+// the `support_cardinality_class_from_str_*` and
+// `support_cardinality_class_serde_*` tests.
+closed_axis_label_string_surface_typed_err! {
     type = SupportCardinalityClass,
+    parser = SupportCardinalityClass::from_canonical_str,
+    error = ParseSupportCardinalityClassError,
+    error_legend = "unknown support cardinality class label",
     expecting = "a canonical SupportCardinalityClass kebab-case label \
                  (`empty`, `singular-support`, `strict-partial-cover`, \
                  `singular-gap`, `full-cover`)",
@@ -1953,17 +1862,6 @@ impl SupportBoundaryDistance {
     }
 }
 
-impl std::fmt::Display for SupportBoundaryDistance {
-    /// Operator-facing rendering — delegates to
-    /// [`SupportBoundaryDistance::as_str`] pointwise. Closes the
-    /// canonical `(Debug, Display)` duality every stdlib-style closed
-    /// enum carries; idiom-peer of the same impl on
-    /// [`SupportCardinalityClass`] and [`ModalityClass`].
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
 /// Typed parse failure of
 /// [`<SupportBoundaryDistance as std::str::FromStr>::from_str`] —
 /// the offending input was not a canonical name on the
@@ -1978,40 +1876,16 @@ pub struct ParseSupportBoundaryDistanceError {
     pub label: String,
 }
 
-impl std::fmt::Display for ParseSupportBoundaryDistanceError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "unknown support boundary distance label {:?}",
-            self.label
-        )
-    }
-}
-
-impl std::error::Error for ParseSupportBoundaryDistanceError {}
-
-impl std::str::FromStr for SupportBoundaryDistance {
-    type Err = ParseSupportBoundaryDistanceError;
-
-    /// Parse the variant tag from the canonical kebab-case label
-    /// [`SupportBoundaryDistance::as_str`] emits — the
-    /// [`FromStr`][std::str::FromStr] idiom-peer of the
-    /// [`Display`][std::fmt::Display] impl. Idiom-peer of the same
-    /// pair on [`SupportCardinalityClass`] and [`ModalityClass`].
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::from_canonical_str(s).ok_or_else(|| ParseSupportBoundaryDistanceError {
-            label: s.to_owned(),
-        })
-    }
-}
-
-// Canonical kebab-case-label serde pair lifted to
-// `serde_via_display_fromstr!`. Behavior byte-identical to the prior
-// hand-rolled (Serialize via `collect_str`, Deserialize visitor →
-// `FromStr` → `ParseSupportBoundaryDistanceError` → `E::custom`)
-// impls. Pinned by the `support_boundary_distance_serde_*` tests.
-serde_via_display_fromstr! {
+// Canonical (Display, FromStr, Serialize, Deserialize) string-surface
+// quartet lifted to `closed_axis_label_string_surface_typed_err!`.
+// Behavior byte-identical to the prior hand-rolled impls. Pinned by
+// the `support_boundary_distance_from_str_*` and
+// `support_boundary_distance_serde_*` tests.
+closed_axis_label_string_surface_typed_err! {
     type = SupportBoundaryDistance,
+    parser = SupportBoundaryDistance::from_canonical_str,
+    error = ParseSupportBoundaryDistanceError,
+    error_legend = "unknown support boundary distance label",
     expecting = "a canonical SupportBoundaryDistance kebab-case label \
                  (`boundary`, `singular`, `strict-interior`)",
 }
@@ -2165,18 +2039,6 @@ impl SupportMagnitudeDirection {
     }
 }
 
-impl std::fmt::Display for SupportMagnitudeDirection {
-    /// Operator-facing rendering — delegates to
-    /// [`SupportMagnitudeDirection::as_str`] pointwise. Closes the
-    /// canonical `(Debug, Display)` duality every stdlib-style closed
-    /// enum carries; idiom-peer of the same impl on
-    /// [`SupportBoundaryDistance`], [`SupportCardinalityClass`], and
-    /// [`ModalityClass`].
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
 /// Typed parse failure of
 /// [`<SupportMagnitudeDirection as std::str::FromStr>::from_str`] —
 /// the offending input was not a canonical name on the
@@ -2192,41 +2054,16 @@ pub struct ParseSupportMagnitudeDirectionError {
     pub label: String,
 }
 
-impl std::fmt::Display for ParseSupportMagnitudeDirectionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "unknown support magnitude direction label {:?}",
-            self.label
-        )
-    }
-}
-
-impl std::error::Error for ParseSupportMagnitudeDirectionError {}
-
-impl std::str::FromStr for SupportMagnitudeDirection {
-    type Err = ParseSupportMagnitudeDirectionError;
-
-    /// Parse the variant tag from the canonical kebab-case label
-    /// [`SupportMagnitudeDirection::as_str`] emits — the
-    /// [`FromStr`][std::str::FromStr] idiom-peer of the
-    /// [`Display`][std::fmt::Display] impl. Idiom-peer of the same
-    /// pair on [`SupportBoundaryDistance`],
-    /// [`SupportCardinalityClass`], and [`ModalityClass`].
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::from_canonical_str(s).ok_or_else(|| ParseSupportMagnitudeDirectionError {
-            label: s.to_owned(),
-        })
-    }
-}
-
-// Canonical kebab-case-label serde pair lifted to
-// `serde_via_display_fromstr!`. Behavior byte-identical to the prior
-// hand-rolled (Serialize via `collect_str`, Deserialize visitor →
-// `FromStr` → `ParseSupportMagnitudeDirectionError` → `E::custom`)
-// impls. Pinned by the `support_magnitude_direction_serde_*` tests.
-serde_via_display_fromstr! {
+// Canonical (Display, FromStr, Serialize, Deserialize) string-surface
+// quartet lifted to `closed_axis_label_string_surface_typed_err!`.
+// Behavior byte-identical to the prior hand-rolled impls. Pinned by
+// the `support_magnitude_direction_from_str_*` and
+// `support_magnitude_direction_serde_*` tests.
+closed_axis_label_string_surface_typed_err! {
     type = SupportMagnitudeDirection,
+    parser = SupportMagnitudeDirection::from_canonical_str,
+    error = ParseSupportMagnitudeDirectionError,
+    error_legend = "unknown support magnitude direction label",
     expecting = "a canonical SupportMagnitudeDirection kebab-case label \
                  (`low`, `strict-interior`, `high`)",
 }
@@ -10750,28 +10587,6 @@ impl PartitionFace {
     }
 }
 
-impl std::fmt::Display for PartitionFace {
-    /// Operator-facing rendering of the face tag — delegates to
-    /// [`PartitionFace::as_str`] pointwise.
-    ///
-    /// Closes the canonical Rust stdlib (`Debug`, `Display`) duality
-    /// every stdlib-style closed enum carries: where `Debug` (derived
-    /// above) renders the Rust identifier (`Realizable` /
-    /// `Unrealizable`), `Display` renders the canonical operator-facing
-    /// label (`realizable` / `unrealizable`). Idiom-peer of the same
-    /// `Display` impl on the four typed-cube-classifier surfaces
-    /// ([`ModalityClass`], [`SupportCardinalityClass`],
-    /// [`SupportBoundaryDistance`], [`SupportMagnitudeDirection`]).
-    ///
-    /// **Round-trip with [`FromStr`][std::str::FromStr]** —
-    /// `v.to_string().parse::<PartitionFace>().unwrap() == v` for every
-    /// `v: PartitionFace`. Pinned by
-    /// [`tests::partition_face_from_str_round_trips_through_display`].
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
 /// Typed parse failure of [`<PartitionFace as
 /// std::str::FromStr>::from_str`] — the offending input was not a
 /// canonical name on the [`PartitionFace`] surface.
@@ -10798,46 +10613,20 @@ pub struct ParsePartitionFaceError {
     pub label: String,
 }
 
-impl std::fmt::Display for ParsePartitionFaceError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "unknown partition face label {:?}", self.label)
-    }
-}
-
-impl std::error::Error for ParsePartitionFaceError {}
-
-impl std::str::FromStr for PartitionFace {
-    type Err = ParsePartitionFaceError;
-
-    /// Parse the face tag from the canonical lowercase label
-    /// [`PartitionFace::as_str`] emits — the canonical Rust stdlib
-    /// [`FromStr`][std::str::FromStr] idiom-peer of the
-    /// [`Display`][std::fmt::Display] impl. Delegates to
-    /// [`<Self as ClosedAxisLabel>::from_canonical_str`] for the
-    /// case-insensitive lookup, lifting the [`Option<Self>`] failure
-    /// to a typed [`ParsePartitionFaceError`] so the
-    /// [`std::error::Error`] bound is satisfied at consumer sites
-    /// requiring `Result<_, Box<dyn Error>>` (`eyre::Result<_>`,
-    /// structured-log error fields, deserialization error chaining).
-    ///
-    /// **Round-trip law** —
-    /// `v.to_string().parse::<PartitionFace>().unwrap() == v` for every
-    /// `v: PartitionFace`. Pinned by
-    /// [`tests::partition_face_from_str_round_trips_through_display`].
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        <Self as ClosedAxisLabel>::from_canonical_str(s).ok_or_else(|| ParsePartitionFaceError {
-            label: s.to_owned(),
-        })
-    }
-}
-
-// Canonical lowercase-label serde pair lifted to
-// `serde_via_display_fromstr!`. Behavior byte-identical to the prior
-// hand-rolled (Serialize via `collect_str`, Deserialize visitor →
-// `FromStr` → `ParsePartitionFaceError` → `E::custom`) impls. Pinned by
-// the `partition_face_serde_*` tests.
-serde_via_display_fromstr! {
+// Canonical (Display, FromStr, Serialize, Deserialize) string-surface
+// quartet lifted to `closed_axis_label_string_surface_typed_err!`. The
+// parser routes through `<Self as ClosedAxisLabel>::from_canonical_str`
+// (PartitionFace has no inherent `from_canonical_str`; the trait
+// default impl scans `Self::ALL` pointwise via
+// `eq_ignore_ascii_case` — same body as the inherent
+// `from_canonical_str` on the four sibling typed cube classifiers).
+// Behavior byte-identical to the prior hand-rolled impls. Pinned by
+// the `partition_face_from_str_*` and `partition_face_serde_*` tests.
+closed_axis_label_string_surface_typed_err! {
     type = PartitionFace,
+    parser = <Self as ClosedAxisLabel>::from_canonical_str,
+    error = ParsePartitionFaceError,
+    error_legend = "unknown partition face label",
     expecting = "a canonical PartitionFace lowercase label \
                  (`realizable`, `unrealizable`)",
 }
