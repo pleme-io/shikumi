@@ -44,6 +44,7 @@ pub mod macros;
 pub mod cli;
 pub mod coverage;
 mod cube;
+pub mod discovered;
 mod discovery;
 mod error;
 #[cfg(feature = "lisp")]
@@ -71,6 +72,7 @@ pub use cube::{
     realizable_at, realizable_count, realizable_images, realizable_iter, realizable_ordinal,
     unrealizable_at, unrealizable_count, unrealizable_iter, unrealizable_ordinal,
 };
+pub use discovered::{DiscoveryLayer, compose as compose_discovery, deep_merge, layer_names};
 pub use discovery::{
     ConfigDiscovery, Format, FormatCoordinates, FormatMetadataTag, FormatProvenance,
     ParseFormatCoordinatesError, ParseFormatMetadataTagError,

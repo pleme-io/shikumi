@@ -103,6 +103,59 @@ impl ProviderChain {
         self
     }
 
+    /// Merge an environment-**discovered** partial config as the discovered
+    /// tier.
+    ///
+    /// The discovered tier sits *above* serde/prescribed defaults and *below*
+    /// operator file/env config: call it after [`Self::with_defaults`] and
+    /// before [`Self::with_env`] / [`Self::with_file`]. The **load-bearing
+    /// guarantee** is that the discovered tier is below *both* env and file;
+    /// their mutual order then follows shikumi's own convention (file merged
+    /// last wins, per [`Self::with_file`]'s "defaults → env → file" pattern):
+    ///
+    /// ```text
+    /// serde/prescribed defaults → DISCOVERED → env → file   (later wins per key)
+    /// ```
+    ///
+    /// `dict` is typically [`crate::discovered::compose`]d from a stack of
+    /// [`crate::discovered::DiscoveryLayer`]s. Merged with figment's deep
+    /// per-key semantics (the same `Serialized::defaults(_).merge()` mechanism
+    /// as [`Self::with_defaults`]), so it overrides the developer's defaults
+    /// only on the keys it actually sets.
+    ///
+    /// Provenance is recorded as [`ConfigSource::Defaults`] — the discovered
+    /// tier is a *computed-defaults* layer (the same class as serde defaults:
+    /// machine-derived, not operator-supplied). A dedicated `Discovered`
+    /// provenance variant is a deliberate future refinement (it would thread
+    /// through the attribution typescape); recording it as `Defaults` keeps the
+    /// layer-kind partition honest today.
+    ///
+    /// **Precondition — do not wire this into a [`crate::ConfigStore`] *reload*
+    /// path yet.** Reload replays the recorded [`ConfigSource`] chain through
+    /// [`Self::with_source`], where `Defaults` is the identity (it carries no
+    /// reconstructable value). A discovered layer recorded as `Defaults` would
+    /// therefore be **dropped on reload**. This primitive is for *direct* chain
+    /// construction (compute the dict, merge it each build); a reload-stable
+    /// `ConfigStore` integration must first land the `Discovered` provenance
+    /// variant so the layer survives replay.
+    #[must_use]
+    pub fn with_discovered(mut self, dict: Dict) -> Self {
+        self.figment = self.figment.merge(Serialized::defaults(&dict));
+        self.sources.push(ConfigSource::Defaults);
+        self
+    }
+
+    /// Compose a stack of [`crate::discovered::DiscoveryLayer`]s and merge the
+    /// result as the discovered tier — convenience over
+    /// [`crate::discovered::compose`] + [`Self::with_discovered`].
+    #[must_use]
+    pub fn with_discovery_layers(
+        self,
+        layers: &[&dyn crate::discovered::DiscoveryLayer],
+    ) -> Self {
+        self.with_discovered(crate::discovered::compose(layers))
+    }
+
     /// Merge environment variables with the given prefix.
     ///
     /// Nested keys use `__` as separator (e.g. `MYAPP_OPTIONS__PADDING=10`).
@@ -729,6 +782,104 @@ mod tests {
         assert_eq!(config.name.as_deref(), Some("from_file"));
         // count: env overrides default (file doesn't set count)
         assert_eq!(config.count, Some(77));
+    }
+
+    // ---- discovered tier (with_discovered / with_discovery_layers) ----
+
+    #[test]
+    fn discovered_overrides_defaults_per_key() {
+        let mut d = Dict::new();
+        d.insert("name".to_owned(), Value::from("from_discovered"));
+        let defaults = TestConfig {
+            name: Some("dev_default".into()),
+            count: Some(5),
+        };
+        let config: TestConfig = ProviderChain::new()
+            .with_defaults(&defaults)
+            .with_discovered(d)
+            .extract()
+            .unwrap();
+        assert_eq!(
+            config.name.as_deref(),
+            Some("from_discovered"),
+            "discovered beats developer defaults"
+        );
+        assert_eq!(config.count, Some(5), "key the discovered layer didn't set keeps the default");
+    }
+
+    #[test]
+    fn file_and_env_both_override_discovered() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("over.yaml");
+        fs::write(&file, "name: from_file\n").unwrap();
+        let var = "SHIKUMI_DISC_COUNT";
+        unsafe { std::env::set_var(var, "9") };
+
+        let mut d = Dict::new();
+        d.insert("name".to_owned(), Value::from("from_discovered"));
+        d.insert("count".to_owned(), Value::from(1i64));
+
+        // defaults → discovered → env → file: operator layers (file, env) win.
+        let config: TestConfig = ProviderChain::new()
+            .with_defaults(&TestConfig::default())
+            .with_discovered(d)
+            .with_env("SHIKUMI_DISC_")
+            .with_file(&file)
+            .extract()
+            .unwrap();
+        unsafe { std::env::remove_var(var) };
+        assert_eq!(config.name.as_deref(), Some("from_file"), "file beats discovered");
+        assert_eq!(config.count, Some(9), "env beats discovered");
+    }
+
+    #[test]
+    fn empty_discovered_is_noop_over_defaults() {
+        let defaults = TestConfig {
+            name: Some("keep".into()),
+            count: Some(7),
+        };
+        let config: TestConfig = ProviderChain::new()
+            .with_defaults(&defaults)
+            .with_discovered(Dict::new())
+            .extract()
+            .unwrap();
+        assert_eq!(config.name.as_deref(), Some("keep"));
+        assert_eq!(config.count, Some(7));
+    }
+
+    #[test]
+    fn discovered_records_defaults_class_provenance() {
+        let chain = ProviderChain::new().with_discovered(Dict::new());
+        assert_eq!(chain.sources(), &[ConfigSource::Defaults]);
+    }
+
+    #[test]
+    fn with_discovery_layers_composes_specific_over_coarse() {
+        use crate::discovered::DiscoveryLayer;
+
+        struct Layer(&'static str, &'static str);
+        impl DiscoveryLayer for Layer {
+            fn name(&self) -> &'static str {
+                "test"
+            }
+            fn discover(&self) -> Dict {
+                let mut d = Dict::new();
+                d.insert(self.0.to_owned(), Value::from(self.1));
+                d
+            }
+        }
+
+        let coarse = Layer("name", "coarse");
+        let specific = Layer("name", "specific");
+        let config: TestConfig = ProviderChain::new()
+            .with_discovery_layers(&[&coarse, &specific])
+            .extract()
+            .unwrap();
+        assert_eq!(
+            config.name.as_deref(),
+            Some("specific"),
+            "later (more-specific) layer wins under composition"
+        );
     }
 
     #[test]
