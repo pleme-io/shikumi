@@ -115,8 +115,13 @@ pub fn layer_names(layers: &[&dyn DiscoveryLayer]) -> Vec<&'static str> {
 /// without re-running the discovery pass, invert with
 /// [`LayerAttribution::writes_by_layer`] to answer "which leaves did
 /// each layer shape?" in one pass — closing the leaf↔layer
-/// bidirectional query surface at one primitive — or restrict either
-/// direction to a subtree with [`LayerAttribution::subtree_iter`] /
+/// bidirectional query surface at one primitive — collapse that
+/// inverse onto a per-layer count with
+/// [`LayerAttribution::leaf_counts_by_layer`] to answer "how many
+/// leaves did each layer shape?" in `O(n log k)` and `O(k)` space
+/// (`k` = distinct-writer count) without materializing a
+/// `Vec<&[String]>` per writer, or restrict any of those directions
+/// to a subtree with [`LayerAttribution::subtree_iter`] /
 /// [`LayerAttribution::subtree`] to answer "under this config path,
 /// who wrote what?" in `O(log n + m · path.len())` (`m` matching
 /// leaves) via a single [`BTreeMap::range`] seek plus a linear walk
@@ -217,6 +222,46 @@ impl LayerAttribution {
         let mut out: BTreeMap<&'static str, Vec<&[String]>> = BTreeMap::new();
         for (path, layer) in &self.inner {
             out.entry(*layer).or_default().push(path.as_slice());
+        }
+        out
+    }
+
+    /// Compact histogram companion to [`Self::writes_by_layer`]: for
+    /// every [`DiscoveryLayer`] that wrote at least one leaf, the
+    /// number of leaves credited to it. `O(n log k)` time, `O(k)`
+    /// space — one pass over the attribution map, one [`BTreeMap`]
+    /// counter increment per leaf. `k` is the distinct-layer count.
+    ///
+    /// Peer to [`Self::writes_by_layer`] on the sizing axis: callers
+    /// that need only "how many leaves did each layer shape?" — audit
+    /// dashboards, size badges on a config-show pane, a diagnostics
+    /// pass that reports the top-writing layer — reach for this map
+    /// directly instead of paying the `O(n)` `Vec<&[String]>`
+    /// allocation per writer that [`Self::writes_by_layer`] performs
+    /// just to call [`Vec::len`] on it. Two `BTreeMap<&'static str,
+    /// _>` seams onto the same attribution — one carries the paths,
+    /// one carries the counts — and both share the outer lex order
+    /// on layer name (deterministic iteration).
+    ///
+    /// **Partition-count law.** The sum of every value equals
+    /// [`Self::len`], the map's key set equals
+    /// [`Self::writes_by_layer`]`().keys()` verbatim, and each value
+    /// equals the corresponding [`Self::writes_by_layer`] bucket's
+    /// [`Vec::len`]. Pinned by
+    /// `leaf_counts_by_layer_partition_count_law` and
+    /// `leaf_counts_by_layer_agrees_with_writes_by_layer_sizes` in
+    /// `src/discovered.rs`'s test module.
+    ///
+    /// **Empty layer.** A layer that emitted an empty [`Dict`]
+    /// contributes no leaves, so no bucket key — mirrors the
+    /// "undetectable axis is invisible" invariant
+    /// [`compose_with_provenance`] already upholds on the merged
+    /// dict and [`Self::writes_by_layer`] mirrors on the paths axis.
+    #[must_use]
+    pub fn leaf_counts_by_layer(&self) -> BTreeMap<&'static str, usize> {
+        let mut out: BTreeMap<&'static str, usize> = BTreeMap::new();
+        for layer in self.inner.values() {
+            *out.entry(*layer).or_insert(0) += 1;
         }
         out
     }
@@ -1078,6 +1123,152 @@ mod tests {
         assert_eq!(z_paths, &vec![["z".to_owned()].as_slice()]);
     }
 
+    // -------- LayerAttribution::leaf_counts_by_layer --------
+
+    #[test]
+    fn leaf_counts_by_layer_counts_writes_per_layer() {
+        // Two layers, four leaves — the compact histogram companion
+        // returns one count per writer, in the same lex order on
+        // layer name as `writes_by_layer`.
+        let a = Fixed(
+            "platform",
+            dict(&[("k1", Value::from(1i64)), ("k2", Value::from(2i64))]),
+        );
+        let b = Fixed(
+            "tenancy",
+            dict(&[("k2", Value::from(20i64)), ("k3", Value::from(3i64))]),
+        );
+        let out = compose_with_provenance(&[&a, &b]);
+        let counts = out.attribution.leaf_counts_by_layer();
+
+        let layers: Vec<&&'static str> = counts.keys().collect();
+        assert_eq!(
+            layers,
+            vec![&"platform", &"tenancy"],
+            "outer BTreeMap keys sort lex on layer name",
+        );
+        assert_eq!(
+            counts.get("platform").copied(),
+            Some(1),
+            "platform kept k1 only",
+        );
+        assert_eq!(
+            counts.get("tenancy").copied(),
+            Some(2),
+            "tenancy holds k2 (overwritten) and k3",
+        );
+    }
+
+    #[test]
+    fn leaf_counts_by_layer_partition_count_law() {
+        // The partition-count law: the sum of every value equals
+        // `len()` (every leaf belongs to exactly one layer's count).
+        let a = Fixed(
+            "A",
+            dict(&[(
+                "outer",
+                Value::from(dict(&[
+                    ("keep", Value::from("k")),
+                    ("change", Value::from(1i64)),
+                ])),
+            )]),
+        );
+        let b = Fixed(
+            "B",
+            dict(&[
+                ("outer", Value::from(dict(&[("change", Value::from(9i64))]))),
+                ("array", Value::from(vec![Value::from(0i64)])),
+            ]),
+        );
+        let out = compose_with_provenance(&[&a, &b]);
+        let counts = out.attribution.leaf_counts_by_layer();
+        let sum: usize = counts.values().sum();
+        assert_eq!(sum, out.attribution.len());
+    }
+
+    #[test]
+    fn leaf_counts_by_layer_agrees_with_writes_by_layer_sizes() {
+        // Cross-projection identity: `leaf_counts_by_layer` and
+        // `writes_by_layer` are two seams onto the same underlying
+        // BTreeMap — the compact seam must equal the wide seam's
+        // per-bucket len() at every writer, and the two must share
+        // the same key set verbatim.
+        let a = Fixed("Z", dict(&[("z", Value::from(1i64))]));
+        let b = Fixed(
+            "A",
+            dict(&[
+                ("a", Value::from(dict(&[("y", Value::from(2i64))]))),
+                ("m", Value::from(3i64)),
+            ]),
+        );
+        let c = Fixed("M", dict(&[("q", Value::from(4i64))]));
+        let out = compose_with_provenance(&[&a, &b, &c]);
+
+        let counts = out.attribution.leaf_counts_by_layer();
+        let groups = out.attribution.writes_by_layer();
+        let counts_keys: Vec<&&'static str> = counts.keys().collect();
+        let groups_keys: Vec<&&'static str> = groups.keys().collect();
+        assert_eq!(
+            counts_keys, groups_keys,
+            "compact and wide seams share the outer key set verbatim",
+        );
+        for (layer, paths) in &groups {
+            assert_eq!(
+                counts.get(layer).copied(),
+                Some(paths.len()),
+                "leaf_counts_by_layer[{layer}] == writes_by_layer[{layer}].len()",
+            );
+        }
+    }
+
+    #[test]
+    fn leaf_counts_by_layer_empty_when_no_layers() {
+        let out = compose_with_provenance(&[]);
+        assert!(
+            out.attribution.leaf_counts_by_layer().is_empty(),
+            "no layers ⇒ no counters",
+        );
+    }
+
+    #[test]
+    fn leaf_counts_by_layer_empty_layer_drops_out_of_counters() {
+        // A layer with an empty dict contributes no leaves — no bucket
+        // key — mirrors the corresponding `writes_by_layer` invariant
+        // on the sizing seam.
+        let real = Fixed("real", dict(&[("k", Value::from(1i64))]));
+        let empty = Fixed("undetectable", Dict::new());
+        let out = compose_with_provenance(&[&real, &empty]);
+        let counts = out.attribution.leaf_counts_by_layer();
+        assert_eq!(counts.len(), 1);
+        assert_eq!(counts.get("real").copied(), Some(1));
+        assert!(
+            !counts.contains_key("undetectable"),
+            "an empty-dict layer contributes no leaves, so no counter",
+        );
+    }
+
+    #[test]
+    fn leaf_counts_by_layer_reflects_dict_over_scalar_reshape() {
+        // Cross-shape reshape: layer A writes a scalar at `x`; layer B
+        // replaces it with a dict `{x.y}`. `compose_with_provenance`
+        // purges the stale `["x"]` attribution and re-attributes
+        // `["x", "y"]` to B. The compact histogram reads only the live
+        // attribution map, so B gets 1 count and A drops out entirely.
+        let a = Fixed("first", dict(&[("x", Value::from(1i64))]));
+        let b = Fixed(
+            "second",
+            dict(&[("x", Value::from(dict(&[("y", Value::from(2i64))])))]),
+        );
+        let out = compose_with_provenance(&[&a, &b]);
+        let counts = out.attribution.leaf_counts_by_layer();
+        assert_eq!(counts.get("second").copied(), Some(1));
+        assert!(
+            !counts.contains_key("first"),
+            "purged scalar attribution drops A from the counters",
+        );
+        assert_eq!(counts.len(), 1);
+    }
+
     #[test]
     fn compose_with_provenance_dict_matches_compose_projection_across_shape_transitions() {
         // Invariant: compose_with_provenance(...).dict == compose(...) for
@@ -1337,6 +1528,36 @@ mod tests {
         // `specific` (setpoint) — both appear.
         assert!(sub_groups.contains_key("coarse"));
         assert!(sub_groups.contains_key("specific"));
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_composes_at_sub_altitude() {
+        // The compact histogram composes on `subtree` at zero cost:
+        // `attribution.subtree(prefix).leaf_counts_by_layer()` is the
+        // per-layer size of the sub-tree rooted at `prefix`. Under
+        // `breathe.*` in the fixture, `coarse` wrote `mode` and
+        // `specific` wrote `setpoint` — each 1. The parent's totals
+        // include `alpha` (coarse) and `breatheZ` (specific) too, so
+        // the sub-counts are strictly `≤` the parent's counts for
+        // each layer that appears in the subtree.
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        let sub_counts = out.attribution.subtree(&prefix).leaf_counts_by_layer();
+        assert_eq!(sub_counts.get("coarse").copied(), Some(1));
+        assert_eq!(sub_counts.get("specific").copied(), Some(1));
+        assert_eq!(sub_counts.len(), 2);
+
+        let parent_counts = out.attribution.leaf_counts_by_layer();
+        for (layer, sub_count) in &sub_counts {
+            let parent_count = parent_counts
+                .get(layer)
+                .copied()
+                .expect("every subtree layer appears in the parent");
+            assert!(
+                *sub_count <= parent_count,
+                "sub-count for {layer} ({sub_count}) must not exceed parent count ({parent_count})",
+            );
+        }
     }
 
     #[test]
