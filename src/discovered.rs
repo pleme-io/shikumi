@@ -112,10 +112,15 @@ pub fn layer_names(layers: &[&dyn DiscoveryLayer]) -> Vec<&'static str> {
 /// [`crate::ProviderChain::with_discovered`]: a downstream store can
 /// consult [`LayerAttribution::layer_of`] to answer "which
 /// [`DiscoveryLayer`] shaped this leaf?" in `O(log n · path.len())`
-/// without re-running the discovery pass, or invert with
+/// without re-running the discovery pass, invert with
 /// [`LayerAttribution::writes_by_layer`] to answer "which leaves did
 /// each layer shape?" in one pass — closing the leaf↔layer
-/// bidirectional query surface at one primitive.
+/// bidirectional query surface at one primitive — or restrict either
+/// direction to a subtree with [`LayerAttribution::subtree_iter`] /
+/// [`LayerAttribution::subtree`] to answer "under this config path,
+/// who wrote what?" in `O(log n + m · path.len())` (`m` matching
+/// leaves) via a single [`BTreeMap::range`] seek plus a linear walk
+/// that halts at the subtree boundary.
 ///
 /// [`ConfigSource::Discovered`]: crate::ConfigSource
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -214,6 +219,71 @@ impl LayerAttribution {
             out.entry(*layer).or_default().push(path.as_slice());
         }
         out
+    }
+
+    /// Iterator over the `(path, layer)` entries whose path descends
+    /// from (or equals) `prefix` — the leaves of the sub-tree rooted
+    /// at `prefix`, in the same lex order [`Self::iter`] emits. A
+    /// `prefix` of `&[]` matches every entry and yields the same
+    /// sequence as [`Self::iter`]; a `prefix` that names an existing
+    /// leaf yields that leaf plus every descendant; a `prefix` that
+    /// names no subtree yields the empty iterator.
+    ///
+    /// **Cost.** `O(log n + m · path.len())` where `n` is the total
+    /// leaf count and `m` is the number of matching leaves — one
+    /// [`BTreeMap::range`] seek to the subtree's first entry, then a
+    /// linear walk that halts at the first non-prefixed key.
+    /// Callers that would otherwise walk [`Self::iter`] and filter
+    /// pay a full `O(n)` scan even when the subtree is small; this
+    /// primitive owns the range-based walk once, so consumers don't
+    /// re-implement the [`BTreeMap`] range idiom on every config-show
+    /// pane.
+    ///
+    /// **Contiguity.** In the underlying `BTreeMap<Vec<String>, _>`'s
+    /// lex order every entry prefixed by `prefix` occupies a
+    /// contiguous run, and the take-while formulation reads the
+    /// `path_has_prefix` invariant directly rather than computing a
+    /// lex successor of `prefix` — so a prefix-extending sibling
+    /// (e.g. leaf at `["breatheZ"]` when the subtree is `["breathe"]`,
+    /// which lands lex-adjacent but is *not* a descendant) is
+    /// correctly excluded at the boundary. Pinned by
+    /// `subtree_iter_stops_at_prefix_extending_sibling_key` in this
+    /// module's test cohort.
+    pub fn subtree_iter<'a>(
+        &'a self,
+        prefix: &'a [String],
+    ) -> impl Iterator<Item = (&'a [String], &'static str)> + 'a {
+        use std::ops::Bound;
+        self.inner
+            .range::<[String], _>((Bound::Included(prefix), Bound::Unbounded))
+            .take_while(move |(k, _)| path_has_prefix(k, prefix))
+            .map(|(k, l)| (k.as_slice(), *l))
+    }
+
+    /// Projection: a fresh [`LayerAttribution`] restricted to the
+    /// leaves reachable from `prefix` — the [`Self::subtree_iter`]
+    /// walk collected into a new [`BTreeMap`] with keys allocated
+    /// fresh. Every method on the returned attribution
+    /// ([`Self::layer_of`], [`Self::writes_by_layer`], [`Self::iter`],
+    /// [`Self::len`], recursive [`Self::subtree`]) sees only the
+    /// restricted set — the substrate reuses itself at the subtree
+    /// altitude with no per-consumer filter to write.
+    ///
+    /// Equal to [`Self::subtree_iter`] `.collect()` with the same
+    /// paths and layers. `subtree(&[])` equals `self`; `subtree` of a
+    /// prefix that names no subtree is empty; a leaf at `prefix`
+    /// itself is included (the reflexive case).
+    ///
+    /// **Cost.** `O(log n + m · path.len())` for the range seek plus
+    /// the walk, then `O(m)` allocations for the fresh owned keys.
+    #[must_use]
+    pub fn subtree(&self, prefix: &[String]) -> LayerAttribution {
+        LayerAttribution {
+            inner: self
+                .subtree_iter(prefix)
+                .map(|(p, l)| (p.to_vec(), l))
+                .collect(),
+        }
     }
 }
 
@@ -1057,5 +1127,236 @@ mod tests {
         assert_eq!(out.attribution.layer_of(&["scalar"]), Some("C"));
         // The intermediate B-written `scalar.inner` sub-leaf is purged by C.
         assert_eq!(out.attribution.layer_of(&["scalar", "inner"]), None);
+    }
+
+    // -------- LayerAttribution::subtree_iter / subtree --------
+
+    fn s(x: &str) -> String {
+        x.to_owned()
+    }
+
+    /// A rich two-layer fixture reused across the subtree cohort:
+    /// nested dicts under `breathe.*`, a scalar sibling at `alpha`,
+    /// and a specific-layer key `breatheZ` whose lex ordering lands
+    /// immediately after `breathe.setpoint` — the prefix-extending
+    /// sibling that pins the take_while boundary condition.
+    fn subtree_fixture() -> DiscoveryComposition {
+        let coarse = Fixed(
+            "coarse",
+            dict(&[
+                (
+                    "breathe",
+                    Value::from(dict(&[
+                        ("mode", Value::from("live")),
+                        ("setpoint", Value::from(0.80)),
+                    ])),
+                ),
+                ("alpha", Value::from(1i64)),
+            ]),
+        );
+        let specific = Fixed(
+            "specific",
+            dict(&[
+                (
+                    "breathe",
+                    Value::from(dict(&[("setpoint", Value::from(0.70))])),
+                ),
+                // `["breatheZ"]` follows `["breathe", "setpoint"]` in
+                // Vec<String> lex order but is NOT a descendant of
+                // `["breathe"]` — the substring "breathe" prefixes
+                // "breatheZ" as a string, but path_has_prefix compares
+                // the whole element, not string prefixes.
+                ("breatheZ", Value::from(9i64)),
+            ]),
+        );
+        compose_with_provenance(&[&coarse, &specific])
+    }
+
+    #[test]
+    fn subtree_iter_at_root_prefix_matches_iter() {
+        // `subtree_iter(&[])` is the identity: every leaf prefixes
+        // itself with `[]`, and `Bound::Included(&[])` seeks to the
+        // very first BTreeMap entry — so the range walk yields every
+        // entry, in the same order as `iter()`.
+        let out = subtree_fixture();
+        let full: Vec<(Vec<String>, &'static str)> = out
+            .attribution
+            .subtree_iter(&[])
+            .map(|(p, l)| (p.to_vec(), l))
+            .collect();
+        let via_iter: Vec<(Vec<String>, &'static str)> = out
+            .attribution
+            .iter()
+            .map(|(p, l)| (p.to_vec(), l))
+            .collect();
+        assert_eq!(full, via_iter, "empty prefix ⇒ full iter, same order");
+        assert_eq!(
+            out.attribution.subtree(&[]).len(),
+            out.attribution.len(),
+            "subtree(&[]) equals self on the len() axis",
+        );
+    }
+
+    #[test]
+    fn subtree_iter_at_named_prefix_yields_only_that_subtree_in_lex_order() {
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        let observed: Vec<(Vec<String>, &'static str)> = out
+            .attribution
+            .subtree_iter(&prefix)
+            .map(|(p, l)| (p.to_vec(), l))
+            .collect();
+        assert_eq!(
+            observed,
+            vec![
+                (vec![s("breathe"), s("mode")], "coarse"),
+                (vec![s("breathe"), s("setpoint")], "specific"),
+            ],
+            "subtree yields only breathe.* leaves in lex order",
+        );
+    }
+
+    #[test]
+    fn subtree_iter_stops_at_prefix_extending_sibling_key() {
+        // The critical boundary case: `["breatheZ"]` immediately follows
+        // `["breathe", "setpoint"]` in Vec<String> lex order (the string
+        // "breathe" is a proper prefix of "breatheZ", so
+        // `["breathe", ...]` all sort before `["breatheZ"]`, and no
+        // other key sits between them). But `["breatheZ"]` is NOT a
+        // descendant of `["breathe"]` — its first element is a
+        // different string, not the same element extended. The
+        // take_while must halt at `["breatheZ"]`. A range formulation
+        // that computed a lex successor of `["breathe"]` and stopped
+        // there would need to be careful about exactly this case;
+        // reading `path_has_prefix` directly reads the invariant we
+        // actually want.
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        let observed: Vec<Vec<String>> = out
+            .attribution
+            .subtree_iter(&prefix)
+            .map(|(p, _)| p.to_vec())
+            .collect();
+        assert!(
+            !observed.contains(&vec![s("breatheZ")]),
+            "prefix-extending sibling `breatheZ` is NOT a descendant of `breathe`",
+        );
+        assert_eq!(
+            observed.len(),
+            2,
+            "only the two `breathe.*` leaves are yielded, not `breatheZ`",
+        );
+        // And the parent attribution DOES hold `breatheZ` — this pins
+        // that the exclusion is a subtree-scope decision, not a leaf
+        // that never landed.
+        assert_eq!(
+            out.attribution.layer_of(&["breatheZ"]),
+            Some("specific"),
+            "the excluded sibling is still attributed in the parent",
+        );
+    }
+
+    #[test]
+    fn subtree_iter_empty_when_prefix_names_no_subtree() {
+        let out = subtree_fixture();
+        assert_eq!(
+            out.attribution.subtree_iter(&[s("nonexistent")]).count(),
+            0,
+            "absent prefix ⇒ empty iterator",
+        );
+        assert!(
+            out.attribution.subtree(&[s("nonexistent")]).is_empty(),
+            "absent prefix ⇒ empty projection",
+        );
+    }
+
+    #[test]
+    fn subtree_iter_at_exact_leaf_yields_that_leaf_only() {
+        // Reflexive case: `path_has_prefix(&["alpha"], &["alpha"])` is
+        // true, so a prefix that exactly names a scalar leaf resolves
+        // to that leaf alone.
+        let out = subtree_fixture();
+        let prefix = vec![s("alpha")];
+        let observed: Vec<(Vec<String>, &'static str)> = out
+            .attribution
+            .subtree_iter(&prefix)
+            .map(|(p, l)| (p.to_vec(), l))
+            .collect();
+        assert_eq!(observed, vec![(vec![s("alpha")], "coarse")]);
+    }
+
+    #[test]
+    fn subtree_agrees_with_subtree_iter_pointwise() {
+        // The projection primitive is `subtree_iter().collect()`; a
+        // restricted attribution must expose the same (path, layer)
+        // pairs the iterator does, and `layer_of_owned` on the child
+        // must agree with `layer_of_owned` on the parent for every
+        // path in the subtree.
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        let sub = out.attribution.subtree(&prefix);
+        let via_projection: Vec<(Vec<String>, &'static str)> =
+            sub.iter().map(|(p, l)| (p.to_vec(), l)).collect();
+        let via_iter: Vec<(Vec<String>, &'static str)> = out
+            .attribution
+            .subtree_iter(&prefix)
+            .map(|(p, l)| (p.to_vec(), l))
+            .collect();
+        assert_eq!(via_projection, via_iter);
+        assert_eq!(sub.len(), 2);
+        for (path, layer) in &via_iter {
+            assert_eq!(sub.layer_of_owned(path), Some(*layer));
+            assert_eq!(out.attribution.layer_of_owned(path), Some(*layer));
+        }
+    }
+
+    #[test]
+    fn subtree_writes_by_layer_is_subset_of_parent() {
+        // `subtree(prefix).writes_by_layer()` is the inverse projection
+        // restricted to the subtree; every bucket ⊆ the parent's
+        // bucket for the same layer, and every layer that appears in
+        // the subtree also appears in the parent. The substrate
+        // reuses itself at the sub-altitude — no per-consumer filter.
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        let sub = out.attribution.subtree(&prefix);
+        let sub_groups = sub.writes_by_layer();
+        let parent_groups = out.attribution.writes_by_layer();
+        for (layer, sub_paths) in &sub_groups {
+            let parent_paths = parent_groups
+                .get(layer)
+                .expect("every subtree layer appears in the parent");
+            for path in sub_paths {
+                assert!(
+                    parent_paths.contains(path),
+                    "sub-bucket paths are a subset of parent-bucket paths",
+                );
+            }
+        }
+        // Two writers under `breathe.*` — `coarse` (mode) and
+        // `specific` (setpoint) — both appear.
+        assert!(sub_groups.contains_key("coarse"));
+        assert!(sub_groups.contains_key("specific"));
+    }
+
+    #[test]
+    fn subtree_iter_reflects_dict_over_scalar_reshape() {
+        // Layer A writes a scalar at `x`; layer B replaces it with a
+        // dict `{x.y}`. The compose primitive purges the stale
+        // scalar attribution at `["x"]` and re-attributes the sub-leaf
+        // at `["x", "y"]` to B. `subtree_iter(&["x"])` must reflect
+        // the reshape: yield only `["x", "y"]`, never a stale `["x"]`.
+        let a = Fixed("first", dict(&[("x", Value::from(1i64))]));
+        let b = Fixed(
+            "second",
+            dict(&[("x", Value::from(dict(&[("y", Value::from(2i64))])))]),
+        );
+        let out = compose_with_provenance(&[&a, &b]);
+        let observed: Vec<(Vec<String>, &'static str)> = out
+            .attribution
+            .subtree_iter(&[s("x")])
+            .map(|(p, l)| (p.to_vec(), l))
+            .collect();
+        assert_eq!(observed, vec![(vec![s("x"), s("y")], "second")]);
     }
 }
