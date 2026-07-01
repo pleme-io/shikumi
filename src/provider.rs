@@ -149,10 +149,7 @@ impl ProviderChain {
     /// result as the discovered tier — convenience over
     /// [`crate::discovered::compose`] + [`Self::with_discovered`].
     #[must_use]
-    pub fn with_discovery_layers(
-        self,
-        layers: &[&dyn crate::discovered::DiscoveryLayer],
-    ) -> Self {
+    pub fn with_discovery_layers(self, layers: &[&dyn crate::discovered::DiscoveryLayer]) -> Self {
         self.with_discovered(crate::discovered::compose(layers))
     }
 
@@ -804,7 +801,11 @@ mod tests {
             Some("from_discovered"),
             "discovered beats developer defaults"
         );
-        assert_eq!(config.count, Some(5), "key the discovered layer didn't set keeps the default");
+        assert_eq!(
+            config.count,
+            Some(5),
+            "key the discovered layer didn't set keeps the default"
+        );
     }
 
     #[test]
@@ -828,7 +829,11 @@ mod tests {
             .extract()
             .unwrap();
         unsafe { std::env::remove_var(var) };
-        assert_eq!(config.name.as_deref(), Some("from_file"), "file beats discovered");
+        assert_eq!(
+            config.name.as_deref(),
+            Some("from_file"),
+            "file beats discovered"
+        );
         assert_eq!(config.count, Some(9), "env beats discovered");
     }
 

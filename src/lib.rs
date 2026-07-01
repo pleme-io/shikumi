@@ -72,7 +72,10 @@ pub use cube::{
     realizable_at, realizable_count, realizable_images, realizable_iter, realizable_ordinal,
     unrealizable_at, unrealizable_count, unrealizable_iter, unrealizable_ordinal,
 };
-pub use discovered::{DiscoveryLayer, compose as compose_discovery, deep_merge, layer_names};
+pub use discovered::{
+    DiscoveryComposition, DiscoveryLayer, LayerAttribution, compose as compose_discovery,
+    compose_with_provenance, deep_merge, layer_names,
+};
 pub use discovery::{
     ConfigDiscovery, Format, FormatCoordinates, FormatMetadataTag, FormatProvenance,
     ParseFormatCoordinatesError, ParseFormatMetadataTagError,
