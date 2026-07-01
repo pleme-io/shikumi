@@ -120,8 +120,13 @@ pub fn layer_names(layers: &[&dyn DiscoveryLayer]) -> Vec<&'static str> {
 /// [`LayerAttribution::leaf_counts_by_layer`] to answer "how many
 /// leaves did each layer shape?" in `O(n log k)` and `O(k)` space
 /// (`k` = distinct-writer count) without materializing a
-/// `Vec<&[String]>` per writer, or restrict any of those directions
-/// to a subtree with [`LayerAttribution::subtree_iter`] /
+/// `Vec<&[String]>` per writer, further collapse that count onto the
+/// bare surviving-writer name-set with
+/// [`LayerAttribution::surviving_layer_names`] to answer "which axes'
+/// opinions survived the merge?" in `O(n log k)` and `O(k)` space
+/// without materializing the counters either — the post-merge dual
+/// of the pre-merge [`contributor_names`] — or restrict any of those
+/// directions to a subtree with [`LayerAttribution::subtree_iter`] /
 /// [`LayerAttribution::subtree`] to answer "under this config path,
 /// who wrote what?" in `O(log n + m · path.len())` (`m` matching
 /// leaves) via a single [`BTreeMap::range`] seek plus a linear walk
@@ -217,6 +222,12 @@ impl LayerAttribution {
     /// [`Self::layer_of_owned`]`(path) == Some(layer)`. Pinned by
     /// `writes_by_layer_partitions_leaves_by_writer` in
     /// `src/discovered.rs`'s test module.
+    ///
+    /// Callers that only need the outer name-set — "which writers
+    /// survived the merge?" without the per-writer path lists —
+    /// reach for [`Self::surviving_layer_names`], which collects
+    /// the same lex-ordered keys via a `BTreeSet` without
+    /// allocating the `Vec<&[String]>` buckets this seam builds.
     #[must_use]
     pub fn writes_by_layer(&self) -> BTreeMap<&'static str, Vec<&[String]>> {
         let mut out: BTreeMap<&'static str, Vec<&[String]>> = BTreeMap::new();
@@ -264,6 +275,63 @@ impl LayerAttribution {
             *out.entry(*layer).or_insert(0) += 1;
         }
         out
+    }
+
+    /// Compact name-set companion to [`Self::writes_by_layer`] and
+    /// [`Self::leaf_counts_by_layer`]: every [`DiscoveryLayer`] with
+    /// at least one live leaf in the attribution, in the same lex
+    /// order on layer name the wide/count seams share.
+    ///
+    /// The **post-merge** dual of the top-level [`contributor_names`]:
+    /// that primitive answers "which axes had an opinion in the
+    /// discover pass" (application order, may include writers wholly
+    /// overridden downstream); this projection answers "which axes'
+    /// opinions survived the merge" (lex on layer name, drops writers
+    /// whose writes were purged by a later wholesale replace at the
+    /// same or an ancestor path). The two coincide iff no writer was
+    /// wholly overridden.
+    ///
+    /// **Cost.** One pass over `self.inner.values()`, one
+    /// [`BTreeSet`] insertion per leaf, one [`Vec`] collect.
+    /// `O(n log k)` time and `O(k)` space — where `k` is the
+    /// distinct-writer count and `n` the leaf count.
+    /// [`Self::writes_by_layer`]`().into_keys().collect()` would pay
+    /// `O(n)` extra allocations on the per-writer `Vec<&[String]>`
+    /// buckets, and [`Self::leaf_counts_by_layer`]`().into_keys().collect()`
+    /// would pay `O(k)` extra on the counters — both allocate map
+    /// values just to discard them. Callers that need only the writer
+    /// name-set (audit lists, "which axes survive the merge" banners,
+    /// health-check gauges over a fixed layer stack) reach for this
+    /// seam directly.
+    ///
+    /// **Partition-name law.** The result equals
+    /// [`Self::writes_by_layer`]`().into_keys().collect()` verbatim
+    /// and [`Self::leaf_counts_by_layer`]`().into_keys().collect()`
+    /// verbatim (both lex on layer name); its length equals
+    /// [`Self::writes_by_layer`]`().len()` and
+    /// [`Self::leaf_counts_by_layer`]`().len()`. An empty
+    /// attribution yields the empty vector. Pinned by
+    /// `surviving_layer_names_agrees_with_writes_by_layer_keys`,
+    /// `surviving_layer_names_agrees_with_leaf_counts_by_layer_keys`,
+    /// and `surviving_layer_names_empty_when_no_leaves` in
+    /// `src/discovered.rs`'s test module.
+    ///
+    /// **Subset invariant vs. [`contributor_names`].** For every
+    /// layer stack `layers`, the set of names returned by
+    /// `compose_with_provenance(layers).attribution.surviving_layer_names()`
+    /// is a subset of `contributor_names(layers)`. Strict subset iff
+    /// at least one contributor's writes were all purged by a later
+    /// layer (wholesale replace at the top-level key, or a
+    /// dict-over-scalar / scalar-over-dict reshape at an ancestor
+    /// path). Pinned by `surviving_layer_names_subset_of_contributor_names`.
+    #[must_use]
+    pub fn surviving_layer_names(&self) -> Vec<&'static str> {
+        use std::collections::BTreeSet;
+        let mut set: BTreeSet<&'static str> = BTreeSet::new();
+        for &layer in self.inner.values() {
+            set.insert(layer);
+        }
+        set.into_iter().collect()
     }
 
     /// Iterator over the `(path, layer)` entries whose path descends
@@ -487,7 +555,12 @@ fn attribute_leaves(
 /// dicts alongside the names — for a per-layer config-show pane, or to
 /// derive [`compose`] + [`contributor_names`] together without paying
 /// the discover cost twice — reach for [`nonempty_layer_dicts`], which
-/// captures both projections in the same sweep.
+/// captures both projections in the same sweep. Callers that want the
+/// **post-merge** dual — the writers whose leaves *survived* the merge,
+/// not just those who wrote into it — reach for
+/// [`LayerAttribution::surviving_layer_names`] on a
+/// [`compose_with_provenance`] result; the subset chain
+/// `surviving ⊆ contributors ⊆ layer_names` holds by construction.
 #[must_use]
 pub fn contributor_names(layers: &[&dyn DiscoveryLayer]) -> Vec<&'static str> {
     layers
@@ -1891,6 +1964,216 @@ mod tests {
         assert_eq!(
             nonempty_layer_dicts(&[&coarse, &specific]),
             vec![("platform", coarse_dict), ("tenancy", specific_dict)],
+        );
+    }
+
+    // -------- LayerAttribution::surviving_layer_names --------
+
+    #[test]
+    fn surviving_layer_names_lists_layers_with_live_leaves() {
+        // Two distinct writers, four leaves — the compact name-set
+        // projection lists both, in lex order on layer name.
+        let a = Fixed(
+            "platform",
+            dict(&[("k1", Value::from(1i64)), ("k2", Value::from(2i64))]),
+        );
+        let b = Fixed(
+            "tenancy",
+            dict(&[("k2", Value::from(20i64)), ("k3", Value::from(3i64))]),
+        );
+        let out = compose_with_provenance(&[&a, &b]);
+        assert_eq!(
+            out.attribution.surviving_layer_names(),
+            vec!["platform", "tenancy"],
+            "both writers survive; result sorted lex on layer name",
+        );
+    }
+
+    #[test]
+    fn surviving_layer_names_lex_order_regardless_of_application_order() {
+        // Application order is [Z, A]; the compact projection is lex
+        // on layer name (BTreeSet iteration), matching
+        // `writes_by_layer` and `leaf_counts_by_layer`, NOT the
+        // application-order discipline `contributor_names` upholds.
+        let a = Fixed("Z", dict(&[("z", Value::from(1i64))]));
+        let b = Fixed(
+            "A",
+            dict(&[
+                ("a", Value::from(dict(&[("y", Value::from(2i64))]))),
+                ("m", Value::from(3i64)),
+            ]),
+        );
+        let out = compose_with_provenance(&[&a, &b]);
+        assert_eq!(
+            out.attribution.surviving_layer_names(),
+            vec!["A", "Z"],
+            "lex order, not application order",
+        );
+    }
+
+    #[test]
+    fn surviving_layer_names_drops_wholly_overridden_writer() {
+        // Layer `coarse` writes `{setpoint: 0.80}`; layer `specific`
+        // writes `{setpoint: 0.70}` at the same leaf. The compose
+        // primitive overwrites the `["setpoint"]` attribution — no
+        // live leaf remains attributed to `coarse`, so it drops out
+        // of the surviving name-set. `contributor_names` still
+        // reports both writers on the pre-merge axis.
+        let coarse = Fixed("coarse", dict(&[("setpoint", Value::from(0.80))]));
+        let specific = Fixed("specific", dict(&[("setpoint", Value::from(0.70))]));
+        let out = compose_with_provenance(&[&coarse, &specific]);
+        assert_eq!(
+            out.attribution.surviving_layer_names(),
+            vec!["specific"],
+            "wholly-overridden writer drops off the surviving axis",
+        );
+        // Pre-merge dual: both writers had an opinion.
+        assert_eq!(
+            contributor_names(&[&coarse, &specific]),
+            vec!["coarse", "specific"],
+            "pre-merge contributor_names still lists the overridden writer",
+        );
+    }
+
+    #[test]
+    fn surviving_layer_names_drops_writer_purged_by_dict_over_scalar() {
+        // Cross-shape reshape: layer A writes a scalar at `x`; layer
+        // B replaces it with a dict `{x.y}`. `compose_with_provenance`
+        // purges the stale `["x"]` attribution and re-attributes
+        // `["x", "y"]` to B. A has no live leaves, so it drops out.
+        let a = Fixed("first", dict(&[("x", Value::from(1i64))]));
+        let b = Fixed(
+            "second",
+            dict(&[("x", Value::from(dict(&[("y", Value::from(2i64))])))]),
+        );
+        let out = compose_with_provenance(&[&a, &b]);
+        assert_eq!(
+            out.attribution.surviving_layer_names(),
+            vec!["second"],
+            "dict-over-scalar reshape purges A's only leaf",
+        );
+    }
+
+    #[test]
+    fn surviving_layer_names_empty_when_no_leaves() {
+        // No layers ⇒ empty attribution ⇒ empty name-set.
+        let empty = compose_with_provenance(&[]);
+        assert!(empty.attribution.surviving_layer_names().is_empty());
+        // All layers empty ⇒ same result on a non-degenerate stack.
+        let a_empty = Fixed("a", Dict::new());
+        let b_empty = Fixed("b", Dict::new());
+        let out = compose_with_provenance(&[&a_empty, &b_empty]);
+        assert!(
+            out.attribution.surviving_layer_names().is_empty(),
+            "empty-only stack ⇒ no surviving writers",
+        );
+    }
+
+    #[test]
+    fn surviving_layer_names_agrees_with_writes_by_layer_keys() {
+        // Cross-projection identity on the outer-key axis: the
+        // compact name-set equals `writes_by_layer().into_keys()`
+        // verbatim, and its length equals `writes_by_layer().len()`.
+        let a = Fixed("Z", dict(&[("z", Value::from(1i64))]));
+        let b = Fixed(
+            "A",
+            dict(&[
+                ("a", Value::from(dict(&[("y", Value::from(2i64))]))),
+                ("m", Value::from(3i64)),
+            ]),
+        );
+        let c = Fixed("M", dict(&[("q", Value::from(4i64))]));
+        let out = compose_with_provenance(&[&a, &b, &c]);
+        let via_wide: Vec<&'static str> = out.attribution.writes_by_layer().into_keys().collect();
+        assert_eq!(
+            out.attribution.surviving_layer_names(),
+            via_wide,
+            "compact and wide seams share the outer key set verbatim",
+        );
+        assert_eq!(
+            out.attribution.surviving_layer_names().len(),
+            out.attribution.writes_by_layer().len(),
+        );
+    }
+
+    #[test]
+    fn surviving_layer_names_agrees_with_leaf_counts_by_layer_keys() {
+        // Cross-projection identity on the outer-key axis vs the
+        // count seam: the compact name-set equals
+        // `leaf_counts_by_layer().into_keys()` verbatim.
+        let a = Fixed(
+            "platform",
+            dict(&[("k1", Value::from(1i64)), ("k2", Value::from(2i64))]),
+        );
+        let b = Fixed(
+            "tenancy",
+            dict(&[("k2", Value::from(20i64)), ("k3", Value::from(3i64))]),
+        );
+        let out = compose_with_provenance(&[&a, &b]);
+        let via_counts: Vec<&'static str> =
+            out.attribution.leaf_counts_by_layer().into_keys().collect();
+        assert_eq!(
+            out.attribution.surviving_layer_names(),
+            via_counts,
+            "compact and count seams share the outer key set verbatim",
+        );
+        assert_eq!(
+            out.attribution.surviving_layer_names().len(),
+            out.attribution.leaf_counts_by_layer().len(),
+        );
+    }
+
+    #[test]
+    fn surviving_layer_names_subset_of_contributor_names() {
+        // Subset invariant on the writer-name axis:
+        //   surviving ⊆ contributors ⊆ layer_names
+        // Strict subset when at least one contributor is wholly
+        // overridden (here: `coarse` gets clobbered at the only key
+        // it wrote), which pins the `<` direction of the chain.
+        let coarse = Fixed("coarse", dict(&[("setpoint", Value::from(0.80))]));
+        let specific = Fixed("specific", dict(&[("setpoint", Value::from(0.70))]));
+        let empty = Fixed("undetectable", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 3] = [&coarse, &specific, &empty];
+
+        let all: std::collections::BTreeSet<_> = layer_names(&layers).into_iter().collect();
+        let contribs: std::collections::BTreeSet<_> =
+            contributor_names(&layers).into_iter().collect();
+        let survivors: std::collections::BTreeSet<_> = compose_with_provenance(&layers)
+            .attribution
+            .surviving_layer_names()
+            .into_iter()
+            .collect();
+        assert!(survivors.is_subset(&contribs), "survivors ⊆ contributors");
+        assert!(contribs.is_subset(&all), "contributors ⊆ declared names");
+        assert!(
+            survivors.len() < contribs.len(),
+            "coarse wholly overridden ⇒ strict subset on this fixture",
+        );
+        assert!(
+            contribs.len() < all.len(),
+            "the undetectable layer is filtered from contributors but not from declared names",
+        );
+    }
+
+    #[test]
+    fn surviving_layer_names_coincides_with_contributor_names_when_no_writer_overridden() {
+        // Distinct top-level keys per writer ⇒ nothing purged ⇒
+        // survivors = contributors (as sets). The chain's equality
+        // case, complementing the strict-subset test above.
+        let a = Fixed("A", dict(&[("k1", Value::from(1i64))]));
+        let b = Fixed("B", dict(&[("k2", Value::from(2i64))]));
+        let c = Fixed("C", dict(&[("k3", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        let contribs: std::collections::BTreeSet<_> =
+            contributor_names(&layers).into_iter().collect();
+        let survivors: std::collections::BTreeSet<_> = compose_with_provenance(&layers)
+            .attribution
+            .surviving_layer_names()
+            .into_iter()
+            .collect();
+        assert_eq!(
+            survivors, contribs,
+            "no writer overridden ⇒ survivors and contributors agree as sets",
         );
     }
 }
