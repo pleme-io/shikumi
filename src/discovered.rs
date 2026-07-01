@@ -537,6 +537,12 @@ fn attribute_leaves(
 /// (subset invariant), with `contributor_names ⇒ layer_names` on the
 /// per-name axis; the reverse holds iff every axis is detectable.
 ///
+/// The complement within `layer_names` is [`silent_layer_names`] —
+/// the axes that returned an empty [`Dict`]. Together the two
+/// projections disjointly partition [`layer_names`]: every declared
+/// axis is either a contributor or a silent one, never both, never
+/// neither.
+///
 /// # Semantics
 ///
 /// A "contributor" is a layer whose `discover()` wrote *something* into
@@ -566,6 +572,54 @@ pub fn contributor_names(layers: &[&dyn DiscoveryLayer]) -> Vec<&'static str> {
     layers
         .iter()
         .filter(|layer| !layer.discover().is_empty())
+        .map(|layer| layer.name())
+        .collect()
+}
+
+/// The names of layers whose [`DiscoveryLayer::discover`] returned an
+/// *empty* [`Dict`] — axes that were declared but couldn't answer in
+/// the running environment. The diagnostic dual of [`contributor_names`]
+/// within [`layer_names`], in application order.
+///
+/// # Partition law
+///
+/// For every layer stack, `silent_layer_names(layers)` and
+/// `contributor_names(layers)` form a disjoint partition of
+/// `layer_names(layers)` — every declared name belongs to exactly one
+/// of the two projections, and their union equals `layer_names(layers)`
+/// as sets. The [`DiscoveryLayer::discover`] result is decisive:
+/// non-empty ⇒ contributor, empty ⇒ silent. No name can appear in both
+/// (a single boolean predicate splits the stack), and no declared name
+/// can be missing from both (the two filters together cover every
+/// element). Pinned by
+/// `silent_layer_names_partitions_layer_names_disjointly` in
+/// `src/discovered.rs`'s test module.
+///
+/// # Semantics
+///
+/// A "silent" axis is one whose environment probe couldn't answer —
+/// `kanchi`-style detection returned `None` and the layer emitted the
+/// clean degenerate empty [`Dict`] rather than guessing. The projection
+/// answers "which declared axes were undetectable in the running
+/// environment?" — the natural diagnostic pane on a config-show renderer
+/// that groups axes by whether the environment fed them or not.
+/// Application order is preserved (coarse→specific), matching
+/// [`contributor_names`] on the surviving-name axis and
+/// [`layer_names`] on the declared-name axis; the [`LayerAttribution`]
+/// projections switch to lex order at the merge boundary.
+///
+/// # Cost
+///
+/// Calls `discover()` once per layer, `O(n)` on the layer count — the
+/// mirror of [`contributor_names`]'s cost on the same axis. Callers
+/// that want *both* projections in one sweep reach for
+/// [`nonempty_layer_dicts`] and derive the silent set as the complement
+/// of the pair-set's names within [`layer_names`].
+#[must_use]
+pub fn silent_layer_names(layers: &[&dyn DiscoveryLayer]) -> Vec<&'static str> {
+    layers
+        .iter()
+        .filter(|layer| layer.discover().is_empty())
         .map(|layer| layer.name())
         .collect()
 }
@@ -2175,5 +2229,166 @@ mod tests {
             survivors, contribs,
             "no writer overridden ⇒ survivors and contributors agree as sets",
         );
+    }
+
+    // -------- silent_layer_names --------
+
+    #[test]
+    fn silent_layer_names_lists_axes_that_returned_empty_dicts() {
+        // The middle and last axes are undetectable ⇒ they show up on
+        // the silent projection while the first shows up on the
+        // contributor one — the two together cover the declared set.
+        let a = Fixed("platform", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("undetectable", Dict::new());
+        let c = Fixed("also-empty", Dict::new());
+        assert_eq!(
+            silent_layer_names(&[&a, &b, &c]),
+            vec!["undetectable", "also-empty"],
+        );
+    }
+
+    #[test]
+    fn silent_layer_names_preserves_application_order() {
+        // Order is application order (coarse→specific), mirroring
+        // `contributor_names` and `layer_names` on the same axis —
+        // NOT alphabetical.
+        let a = Fixed("tenancy", Dict::new());
+        let b = Fixed("platform", Dict::new());
+        assert_eq!(silent_layer_names(&[&a, &b]), vec!["tenancy", "platform"]);
+    }
+
+    #[test]
+    fn silent_layer_names_empty_when_every_layer_contributes() {
+        // Every axis wrote something ⇒ the silent projection is empty
+        // (the complementary edge of the disjoint partition).
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        assert!(silent_layer_names(&[&a, &b]).is_empty());
+    }
+
+    #[test]
+    fn silent_layer_names_empty_when_no_layers() {
+        assert!(silent_layer_names(&[]).is_empty());
+    }
+
+    #[test]
+    fn silent_layer_names_covers_layer_names_when_all_undetectable() {
+        // Every axis returned an empty dict ⇒ the silent projection
+        // equals `layer_names` verbatim.
+        let a = Fixed("a", Dict::new());
+        let b = Fixed("b", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        assert_eq!(silent_layer_names(&layers), layer_names(&layers));
+    }
+
+    #[test]
+    fn silent_layer_names_is_subset_of_layer_names() {
+        // Subset invariant on the (name → silent?) axis: every silent
+        // name is one of the declared layer names.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", Dict::new());
+        let c = Fixed("c", Dict::new());
+        let all: std::collections::BTreeSet<_> = layer_names(&[&a, &b, &c]).into_iter().collect();
+        let silent: std::collections::BTreeSet<_> =
+            silent_layer_names(&[&a, &b, &c]).into_iter().collect();
+        assert!(silent.is_subset(&all), "silent ⊆ declared names");
+        assert_eq!(silent.len(), 2, "two undetectable axes");
+    }
+
+    #[test]
+    fn silent_layer_names_disjoint_from_contributor_names() {
+        // Disjointness law: no name can appear in both projections
+        // (a single boolean predicate on `discover().is_empty()`
+        // splits the stack).
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", Dict::new());
+        let c = Fixed("c", dict(&[("k", Value::from(2i64))]));
+        let d = Fixed("d", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 4] = [&a, &b, &c, &d];
+        let contribs: std::collections::BTreeSet<_> =
+            contributor_names(&layers).into_iter().collect();
+        let silent: std::collections::BTreeSet<_> =
+            silent_layer_names(&layers).into_iter().collect();
+        assert!(
+            contribs.is_disjoint(&silent),
+            "contributor and silent projections share no elements",
+        );
+    }
+
+    #[test]
+    fn silent_layer_names_partitions_layer_names_disjointly() {
+        // Partition law: `silent ∪ contributors == layer_names` as
+        // sets, and the two are disjoint (checked separately). The
+        // union covers every declared name, and the sum of the two
+        // lengths equals `layer_names.len()` when all names are
+        // distinct.
+        let a = Fixed("platform", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("undetectable", Dict::new());
+        let c = Fixed("tenancy", dict(&[("k", Value::from(2i64))]));
+        let d = Fixed("also-empty", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 4] = [&a, &b, &c, &d];
+
+        let all: std::collections::BTreeSet<_> = layer_names(&layers).into_iter().collect();
+        let contribs: std::collections::BTreeSet<_> =
+            contributor_names(&layers).into_iter().collect();
+        let silent: std::collections::BTreeSet<_> =
+            silent_layer_names(&layers).into_iter().collect();
+
+        let union: std::collections::BTreeSet<_> = contribs.union(&silent).copied().collect();
+        assert_eq!(union, all, "contributors ∪ silent == declared names");
+        assert!(contribs.is_disjoint(&silent), "contributors ∩ silent == ∅",);
+        assert_eq!(
+            contribs.len() + silent.len(),
+            layer_names(&layers).len(),
+            "distinct names ⇒ length sum matches",
+        );
+    }
+
+    #[test]
+    fn silent_layer_names_agrees_with_layer_names_minus_contributor_names() {
+        // The projection factors through the set difference: silent =
+        // layer_names - contributor_names (as sets), even though the
+        // Vec forms preserve application order rather than lex order.
+        // This is the compact, single-pass computation of the
+        // complement.
+        let a = Fixed("z-first", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("m-empty", Dict::new());
+        let c = Fixed("a-third", dict(&[("k", Value::from(2i64))]));
+        let d = Fixed("q-empty", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 4] = [&a, &b, &c, &d];
+
+        let all: std::collections::BTreeSet<_> = layer_names(&layers).into_iter().collect();
+        let contribs: std::collections::BTreeSet<_> =
+            contributor_names(&layers).into_iter().collect();
+        let silent: std::collections::BTreeSet<_> =
+            silent_layer_names(&layers).into_iter().collect();
+        let derived: std::collections::BTreeSet<_> = all.difference(&contribs).copied().collect();
+        assert_eq!(silent, derived, "silent == layer_names − contributors");
+    }
+
+    #[test]
+    fn silent_layer_names_disjoint_from_surviving_layer_names() {
+        // Cross-projection disjointness: a silent axis has no leaves,
+        // so it cannot appear on the post-merge surviving-writer axis
+        // either. `silent ∩ surviving == ∅` for every fixture — the
+        // silent set is bounded away from *both* pre-merge and
+        // post-merge writer projections.
+        let coarse = Fixed("coarse", dict(&[("setpoint", Value::from(0.80))]));
+        let specific = Fixed("specific", dict(&[("setpoint", Value::from(0.70))]));
+        let empty = Fixed("undetectable", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 3] = [&coarse, &specific, &empty];
+        let silent: std::collections::BTreeSet<_> =
+            silent_layer_names(&layers).into_iter().collect();
+        let survivors: std::collections::BTreeSet<_> = compose_with_provenance(&layers)
+            .attribution
+            .surviving_layer_names()
+            .into_iter()
+            .collect();
+        assert!(
+            silent.is_disjoint(&survivors),
+            "silent axes cannot survive the merge (they wrote nothing)",
+        );
+        assert_eq!(silent, std::collections::BTreeSet::from(["undetectable"]));
+        assert_eq!(survivors, std::collections::BTreeSet::from(["specific"]));
     }
 }
