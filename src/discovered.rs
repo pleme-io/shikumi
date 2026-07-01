@@ -565,6 +565,14 @@ impl LayerAttribution {
     /// correctly excluded — the writer of that sibling is not counted
     /// against this subtree.
     ///
+    /// **Single-layer altitude.** The single-writer dual at this
+    /// altitude is [`Self::subtree_leaf_count_of_layer`]`(prefix,
+    /// layer)` — the compact scalar for one writer under one subtree.
+    /// A consumer that only cares about one writer's count under one
+    /// subtree reaches for that seam directly at zero allocation cost
+    /// instead of paying the per-writer counter map this primitive
+    /// builds across peer axes just to keep one entry.
+    ///
     /// [`writes_by_layer`]: Self::writes_by_layer
     #[must_use]
     pub fn subtree_leaf_counts_by_layer(&self, prefix: &[String]) -> BTreeMap<&'static str, usize> {
@@ -646,6 +654,14 @@ impl LayerAttribution {
     /// correctly excluded — the writer of that sibling's bucket does
     /// not carry that path under this subtree, even though the parent
     /// [`Self::writes_by_layer`] does.
+    ///
+    /// **Single-layer altitude.** The single-writer dual at this
+    /// altitude is [`Self::subtree_writes_of_layer`]`(prefix, layer)`
+    /// — the wide seam for one writer under one subtree. A consumer
+    /// that only cares about one writer's paths under one subtree
+    /// reaches for that seam directly to skip the per-writer bucket
+    /// this primitive materializes across peer axes just to expose
+    /// one bucket.
     #[must_use]
     pub fn subtree_writes_by_layer<'a>(
         &'a self,
@@ -704,6 +720,16 @@ impl LayerAttribution {
     /// "never-wrote-in-the-first-place" is [`contributor_names`]'s
     /// job at the pre-merge altitude; this projection is purely
     /// post-merge.
+    ///
+    /// **Subtree altitude.** The subtree-restricted counterpart is
+    /// [`Self::subtree_writes_of_layer`]`(prefix, layer)` — the
+    /// **2D-restricted** cell on the {path axis, layer axis} ×
+    /// {restricted, free} grid. A consumer scoped to a subsystem
+    /// (e.g. "which paths did axis `X` shape under `breathe.*`?")
+    /// reaches for that seam directly to skip both the peer-writer
+    /// allocation this primitive pays across peer axes and the
+    /// extra-subtree scan the top-level layer-axis restriction
+    /// pays across leaves outside the prefix.
     #[must_use]
     pub fn writes_of_layer<'a>(&'a self, layer: &str) -> Vec<&'a [String]> {
         self.inner
@@ -747,9 +773,157 @@ impl LayerAttribution {
     /// **Missing writer.** A `layer` name that never appears in the
     /// attribution yields zero, mirroring
     /// `leaf_counts_by_layer().get(layer)` returning [`None`].
+    ///
+    /// **Subtree altitude.** The subtree-restricted counterpart is
+    /// [`Self::subtree_leaf_count_of_layer`]`(prefix, layer)` — the
+    /// **2D-restricted** count seam on the {path axis, layer axis} ×
+    /// {restricted, free} grid. A consumer scoped to a subsystem
+    /// (e.g. "how many leaves did axis `X` shape under `breathe.*`?")
+    /// reaches for that seam directly to skip both the peer-writer
+    /// counter map [`Self::subtree_leaf_counts_by_layer`]`(prefix)`
+    /// allocates and the extra-subtree scan this primitive pays across
+    /// leaves outside the prefix.
     #[must_use]
     pub fn leaf_count_of_layer(&self, layer: &str) -> usize {
         self.inner.values().filter(|l| **l == layer).count()
+    }
+
+    /// The **subtree × single-layer** dual of [`Self::writes_by_layer`]:
+    /// the paths credited to `layer` under (or at) `prefix`, in lex path
+    /// order, without materializing the full per-writer map at either
+    /// altitude. A `prefix` of `&[]` and any `layer` equals
+    /// [`Self::writes_of_layer`]`(layer)` verbatim; a `layer` name that
+    /// contributed no surviving leaf under `prefix` yields the empty
+    /// vector; a `prefix` that names no subtree yields the empty vector.
+    ///
+    /// The **2D-restricted** seam completing the four-cell grid of {path
+    /// axis, layer axis} × {restricted, free}: [`Self::writes_by_layer`]
+    /// covers (free, free), [`Self::subtree_writes_by_layer`] covers
+    /// (subtree, free), [`Self::writes_of_layer`] covers (free,
+    /// single-layer), and this primitive covers (subtree, single-layer).
+    /// Every cell factors through one filtered pass at its altitude so
+    /// that a focused query never pays the cost of the peer axis — a
+    /// per-writer config-show pane scoped to one subsystem, an audit
+    /// dashboard slicing "which paths did axis `X` shape under
+    /// `breathe.*`?", a diagnostics pass rendering "layer `Y`'s
+    /// contribution to the `network.*` subtree" reaches for this seam
+    /// directly instead of paying the `O(m log k)` [`BTreeMap`]-construction
+    /// cost [`Self::subtree_writes_by_layer`]`(prefix)` pays across peer
+    /// writers under the subtree, or the `O(n − m)` extra-subtree scan
+    /// [`Self::writes_of_layer`]`(layer)` pays across leaves outside
+    /// `prefix`.
+    ///
+    /// **Cost.** `O(log n + m)` time and `O(w)` space, where `n` is the
+    /// total leaf count, `m` is the number of matching leaves *under
+    /// the subtree*, and `w` is the number of those matching leaves
+    /// this writer shaped — one [`BTreeMap::range`] seek to the
+    /// subtree's first entry (via [`Self::subtree_iter`]), a linear
+    /// walk that halts at the first non-prefixed key (via
+    /// [`Self::subtree_iter`]'s take-while), one predicate check per
+    /// entry, one [`Vec`] push per match. Peer writers under the
+    /// subtree and leaves outside `prefix` both pay no allocation.
+    ///
+    /// **Cross-projection identities.** The result equals
+    /// [`Self::subtree_writes_by_layer`]`(prefix).get(layer).cloned().unwrap_or_default()`
+    /// verbatim on every input, and its length equals
+    /// [`Self::subtree_leaf_count_of_layer`]`(prefix, layer)` and
+    /// [`Self::subtree_leaf_counts_by_layer`]`(prefix).get(layer).copied().unwrap_or(0)`.
+    /// `subtree_writes_of_layer(&[], layer)` equals
+    /// [`Self::writes_of_layer`]`(layer)` verbatim (empty-prefix corner).
+    ///
+    /// **Lex order preservation.** Paths land in the same lex order
+    /// [`Self::subtree_iter`] emits them (the underlying [`BTreeMap`]'s
+    /// ordering restricted to the subtree) — the identity property
+    /// axis restriction shares with the parent projection it filters.
+    ///
+    /// **Subset invariants.** For every prefix and every writer:
+    /// `subtree_writes_of_layer(prefix, layer)` is a subsequence of
+    /// [`Self::writes_of_layer`]`(layer)` (subtree paths ⊆ parent
+    /// paths); its length is `≤` [`Self::leaf_count_of_layer`]`(layer)`
+    /// and `≤` [`Self::subtree_leaf_counts_by_layer`]`(prefix)`'s
+    /// value for `layer`.
+    ///
+    /// **Missing writer / missing subtree.** A `layer` name that never
+    /// appears under the subtree — whether the writer was silent
+    /// globally, was purged under this subtree, or never wrote here —
+    /// yields the empty vector, mirroring
+    /// `subtree_writes_by_layer(prefix).get(layer)` returning [`None`].
+    /// A `prefix` that names no subtree yields the empty vector for
+    /// every writer.
+    ///
+    /// **Prefix-extending sibling boundary.** Inherited from
+    /// [`Self::subtree_iter`]: a lex-adjacent sibling that shares the
+    /// string prefix of the last `prefix` element but is not a path
+    /// descendant (e.g. `["breatheZ"]` vs prefix `["breathe"]`) is
+    /// correctly excluded — even when it belongs to `layer` in the
+    /// parent's [`Self::writes_of_layer`]`(layer)`.
+    #[must_use]
+    pub fn subtree_writes_of_layer<'a>(
+        &'a self,
+        prefix: &'a [String],
+        layer: &str,
+    ) -> Vec<&'a [String]> {
+        self.subtree_iter(prefix)
+            .filter_map(|(p, l)| (l == layer).then_some(p))
+            .collect()
+    }
+
+    /// The **subtree × single-layer** dual of
+    /// [`Self::leaf_counts_by_layer`]: the number of leaves credited
+    /// to `layer` under (or at) `prefix`, without materializing the
+    /// full per-writer counter map at either altitude. A `prefix` of
+    /// `&[]` and any `layer` equals [`Self::leaf_count_of_layer`]`(layer)`
+    /// verbatim; a `layer` name that contributed no surviving leaf
+    /// under `prefix` yields zero; a `prefix` that names no subtree
+    /// yields zero for every writer.
+    ///
+    /// The compact scalar companion to [`Self::subtree_writes_of_layer`]
+    /// on the 2D-restricted cell of the {path axis, layer axis} ×
+    /// {restricted, free} grid. Consumers that need only "how many
+    /// leaves did axis `X` shape under `breathe.*`?" — a size badge on
+    /// a per-writer config-show pane scoped to one subsystem, a
+    /// health-check gauge on one writer under one subtree, a
+    /// "top-writer-under-subtree" ranking loop — reach for this scalar
+    /// seam directly instead of paying the `O(m log k)` counter map
+    /// allocation [`Self::subtree_leaf_counts_by_layer`]`(prefix)` pays
+    /// across peer writers under the subtree, or the `O(n − m)`
+    /// extra-subtree scan [`Self::leaf_count_of_layer`]`(layer)` pays
+    /// across leaves outside `prefix`.
+    ///
+    /// **Cost.** `O(log n + m)` time and no allocation — one
+    /// [`BTreeMap::range`] seek to the subtree's first entry (via
+    /// [`Self::subtree_iter`]), a linear walk that halts at the first
+    /// non-prefixed key (via [`Self::subtree_iter`]'s take-while), one
+    /// predicate check per entry, one counter increment per match.
+    ///
+    /// **Cross-projection identities.** The result equals
+    /// [`Self::subtree_writes_of_layer`]`(prefix, layer).len()` and
+    /// [`Self::subtree_leaf_counts_by_layer`]`(prefix).get(layer).copied().unwrap_or(0)`
+    /// verbatim on every input. `subtree_leaf_count_of_layer(&[],
+    /// layer)` equals [`Self::leaf_count_of_layer`]`(layer)` verbatim
+    /// (empty-prefix corner).
+    ///
+    /// **Partition-count law.** The sum of
+    /// `subtree_leaf_count_of_layer(prefix, l)` over every `l` in
+    /// [`Self::subtree_surviving_layer_names`]`(prefix)` equals
+    /// [`Self::subtree_iter`]`(prefix).count()` (equivalently
+    /// [`Self::subtree`]`(prefix).len()`) — every subtree leaf belongs
+    /// to exactly one surviving writer's counter under the subtree.
+    ///
+    /// **Subset invariants.** For every prefix and every writer:
+    /// `subtree_leaf_count_of_layer(prefix, layer)` is `≤`
+    /// [`Self::leaf_count_of_layer`]`(layer)` (subtree ⊆ parent) and
+    /// `≤` [`Self::subtree_iter`]`(prefix).count()` (this writer's
+    /// share ⊆ the subtree's total).
+    ///
+    /// **Missing writer / missing subtree.** A `layer` that never
+    /// appears under the subtree yields zero; a `prefix` that names
+    /// no subtree yields zero for every writer.
+    #[must_use]
+    pub fn subtree_leaf_count_of_layer(&self, prefix: &[String], layer: &str) -> usize {
+        self.subtree_iter(prefix)
+            .filter(|(_, l)| *l == layer)
+            .count()
     }
 }
 
@@ -3578,6 +3752,402 @@ mod tests {
             empty.attribution.leaf_count_of_layer("anything"),
             0,
             "empty attribution yields count zero for any writer",
+        );
+    }
+
+    // -------- LayerAttribution::subtree_writes_of_layer /
+    // -------- subtree_leaf_count_of_layer
+
+    #[test]
+    fn subtree_writes_of_layer_empty_prefix_equals_writes_of_layer() {
+        // Empty-prefix corner: the 2D-restricted seam collapses to the
+        // top-level layer-axis restriction verbatim, on both surviving
+        // writers and never-declared names.
+        let out = layer_axis_fixture();
+        for layer in out.attribution.surviving_layer_names() {
+            assert_eq!(
+                out.attribution.subtree_writes_of_layer(&[], layer),
+                out.attribution.writes_of_layer(layer),
+                "empty prefix ⇒ subtree_writes_of_layer({layer}) equals writes_of_layer({layer})",
+            );
+        }
+        assert!(
+            out.attribution
+                .subtree_writes_of_layer(&[], "never-declared")
+                .is_empty(),
+            "empty prefix + never-declared writer ⇒ empty",
+        );
+    }
+
+    #[test]
+    fn subtree_writes_of_layer_agrees_with_subtree_writes_by_layer_bucket() {
+        // The cross-projection identity from the rustdoc: the
+        // 2D-restricted single-writer seam equals the per-writer bucket
+        // of the subtree-restricted multi-writer seam verbatim on every
+        // input, across every surviving writer under the subtree.
+        let out = subtree_fixture();
+        for prefix in [
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("nonexistent")],
+        ] {
+            let groups = out.attribution.subtree_writes_by_layer(&prefix);
+            for layer in out.attribution.subtree_surviving_layer_names(&prefix) {
+                let single: Vec<&[String]> =
+                    out.attribution.subtree_writes_of_layer(&prefix, layer);
+                let bucket: Vec<&[String]> = groups.get(layer).cloned().unwrap_or_default();
+                assert_eq!(
+                    single, bucket,
+                    "single-writer seam at prefix {prefix:?} equals subtree_writes_by_layer[{layer}]",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_writes_of_layer_at_named_prefix_lists_only_this_writer_under_it() {
+        // Under `breathe.*` in the subtree fixture, `coarse` wrote
+        // `["breathe","mode"]` (its top-level `alpha` write sits
+        // *outside* the subtree) and `specific` wrote
+        // `["breathe","setpoint"]` (its `breatheZ` write is the
+        // prefix-extending sibling, *outside* the subtree). Each
+        // writer's 2D-restricted seam carries only the one path it
+        // actually shaped under the subtree.
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        let coarse: Vec<Vec<String>> = out
+            .attribution
+            .subtree_writes_of_layer(&prefix, "coarse")
+            .into_iter()
+            .map(<[String]>::to_vec)
+            .collect();
+        assert_eq!(coarse, vec![vec![s("breathe"), s("mode")]]);
+        let specific: Vec<Vec<String>> = out
+            .attribution
+            .subtree_writes_of_layer(&prefix, "specific")
+            .into_iter()
+            .map(<[String]>::to_vec)
+            .collect();
+        assert_eq!(specific, vec![vec![s("breathe"), s("setpoint")]]);
+    }
+
+    #[test]
+    fn subtree_writes_of_layer_stops_at_prefix_extending_sibling_key() {
+        // The take_while boundary inherited from `subtree_iter`:
+        // `["breatheZ"]` (written by `specific`) is a top-level
+        // writes_of_layer("specific") entry but is NOT a descendant of
+        // `["breathe"]`. The 2D-restricted seam correctly excludes it,
+        // even though the top-level `writes_of_layer("specific")` does
+        // include it.
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        let sub: Vec<Vec<String>> = out
+            .attribution
+            .subtree_writes_of_layer(&prefix, "specific")
+            .into_iter()
+            .map(<[String]>::to_vec)
+            .collect();
+        assert!(
+            !sub.contains(&vec![s("breatheZ")]),
+            "prefix-extending sibling is excluded from the 2D-restricted seam",
+        );
+        // The parent's layer-axis seam DOES carry it — this pins that
+        // the exclusion is a subtree-scope decision, not a leaf that
+        // was never written.
+        let parent: Vec<Vec<String>> = out
+            .attribution
+            .writes_of_layer("specific")
+            .into_iter()
+            .map(<[String]>::to_vec)
+            .collect();
+        assert!(
+            parent.contains(&vec![s("breatheZ")]),
+            "the excluded sibling IS in the top-level layer-axis seam",
+        );
+    }
+
+    #[test]
+    fn subtree_writes_of_layer_preserves_lex_order() {
+        // The 2D-restricted result lands in the same lex order
+        // `subtree_iter` emits: paths under the subtree, filtered on
+        // the value column, keep the underlying BTreeMap key order.
+        // Compose `A` writing three leaves under `["s","a","y"]`,
+        // `["s","m"]`, and `["t"]`; `B` writing `["s","p"]` (an
+        // override-adjacent sibling under the same subtree). Under
+        // prefix `["s"]`, A's leaves land in lex path order and B's
+        // sibling does not intrude.
+        let a = Fixed(
+            "A",
+            dict(&[
+                (
+                    "s",
+                    Value::from(dict(&[
+                        ("m", Value::from(3i64)),
+                        ("a", Value::from(dict(&[("y", Value::from(2i64))]))),
+                    ])),
+                ),
+                ("t", Value::from(4i64)),
+            ]),
+        );
+        let b = Fixed(
+            "B",
+            dict(&[("s", Value::from(dict(&[("p", Value::from(9i64))])))]),
+        );
+        let out = compose_with_provenance(&[&a, &b]);
+        let prefix = vec![s("s")];
+        // Under `["s"]`, A wrote `["s","a","y"]` and `["s","m"]`; the
+        // top-level `["t"]` write sits outside the subtree.
+        let a_paths: Vec<Vec<String>> = out
+            .attribution
+            .subtree_writes_of_layer(&prefix, "A")
+            .into_iter()
+            .map(<[String]>::to_vec)
+            .collect();
+        assert_eq!(
+            a_paths,
+            vec![vec![s("s"), s("a"), s("y")], vec![s("s"), s("m")],],
+            "2D-restricted seam preserves lex path order under the subtree",
+        );
+        // Every returned path attributes back to A on the parent.
+        for path in &a_paths {
+            assert_eq!(
+                out.attribution.layer_of_owned(path),
+                Some("A"),
+                "every path attributes to A on the parent",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_writes_of_layer_absent_prefix_is_empty() {
+        // A prefix naming no subtree ⇒ `subtree_iter` yields nothing
+        // ⇒ every writer's 2D-restricted seam is empty. Mirrors the
+        // absent-prefix corners on the multi-writer subtree seams.
+        let out = subtree_fixture();
+        for layer in ["coarse", "specific", "never-declared"] {
+            assert!(
+                out.attribution
+                    .subtree_writes_of_layer(&[s("nonexistent")], layer)
+                    .is_empty(),
+                "absent prefix ⇒ subtree_writes_of_layer({layer}) is empty",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_writes_of_layer_missing_writer_is_empty() {
+        // A layer that never wrote under the subtree yields the empty
+        // vector — whether it wrote elsewhere, was silent globally, or
+        // was never declared.
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        assert!(
+            out.attribution
+                .subtree_writes_of_layer(&prefix, "never-declared")
+                .is_empty(),
+        );
+        // `alpha` is a `coarse` leaf outside the subtree; a fresh
+        // three-layer fixture pins a writer that wrote *elsewhere*
+        // but nothing under the queried subtree.
+        let elsewhere = Fixed("elsewhere", dict(&[("outside", Value::from(1i64))]));
+        let under = Fixed(
+            "under",
+            dict(&[("root", Value::from(dict(&[("leaf", Value::from(2i64))])))]),
+        );
+        let out2 = compose_with_provenance(&[&elsewhere, &under]);
+        assert!(
+            out2.attribution
+                .subtree_writes_of_layer(&[s("root")], "elsewhere")
+                .is_empty(),
+            "writer active elsewhere but silent under the subtree ⇒ empty",
+        );
+    }
+
+    #[test]
+    fn subtree_leaf_count_of_layer_empty_prefix_equals_leaf_count_of_layer() {
+        let out = layer_axis_fixture();
+        for layer in out.attribution.surviving_layer_names() {
+            assert_eq!(
+                out.attribution.subtree_leaf_count_of_layer(&[], layer),
+                out.attribution.leaf_count_of_layer(layer),
+                "empty prefix ⇒ subtree_leaf_count_of_layer({layer}) equals leaf_count_of_layer({layer})",
+            );
+        }
+        assert_eq!(
+            out.attribution
+                .subtree_leaf_count_of_layer(&[], "never-declared"),
+            0,
+            "empty prefix + never-declared writer ⇒ zero",
+        );
+    }
+
+    #[test]
+    fn subtree_leaf_count_of_layer_agrees_with_subtree_writes_of_layer_len() {
+        // The count seam matches the length of the wide seam across
+        // every (prefix, layer) — compact scalar companion pinned.
+        let out = subtree_fixture();
+        for prefix in [
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("nonexistent")],
+        ] {
+            for layer in ["coarse", "specific", "never-declared"] {
+                assert_eq!(
+                    out.attribution.subtree_leaf_count_of_layer(&prefix, layer),
+                    out.attribution
+                        .subtree_writes_of_layer(&prefix, layer)
+                        .len(),
+                    "count seam == wide seam length at prefix {prefix:?} × layer {layer}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_leaf_count_of_layer_agrees_with_subtree_leaf_counts_by_layer_bucket() {
+        // Cross-projection identity vs the multi-writer count seam at
+        // the same altitude: the 2D-restricted single-writer count
+        // equals the per-writer counter of `subtree_leaf_counts_by_layer`
+        // verbatim on every input.
+        let out = subtree_fixture();
+        for prefix in [
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("nonexistent")],
+        ] {
+            let counts = out.attribution.subtree_leaf_counts_by_layer(&prefix);
+            for layer in out.attribution.subtree_surviving_layer_names(&prefix) {
+                let single = out.attribution.subtree_leaf_count_of_layer(&prefix, layer);
+                let bucket = counts.get(layer).copied().unwrap_or(0);
+                assert_eq!(
+                    single, bucket,
+                    "single-writer count at prefix {prefix:?} equals subtree_leaf_counts_by_layer[{layer}]",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_leaf_count_of_layer_partition_count_law() {
+        // Sum over every surviving writer under the subtree equals the
+        // subtree's total leaf count: every subtree leaf belongs to
+        // exactly one surviving writer's counter — the 2D-restricted
+        // dual of the top-level layer-axis partition-count law.
+        let out = subtree_fixture();
+        for prefix in [vec![], vec![s("breathe")], vec![s("alpha")]] {
+            let survivors = out.attribution.subtree_surviving_layer_names(&prefix);
+            let total: usize = survivors
+                .iter()
+                .map(|l| out.attribution.subtree_leaf_count_of_layer(&prefix, l))
+                .sum();
+            let expected = out.attribution.subtree_iter(&prefix).count();
+            assert_eq!(
+                total, expected,
+                "sum of per-writer counts at prefix {prefix:?} equals subtree leaf count",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_leaf_count_of_layer_absent_prefix_is_zero() {
+        let out = subtree_fixture();
+        for layer in ["coarse", "specific", "never-declared"] {
+            assert_eq!(
+                out.attribution
+                    .subtree_leaf_count_of_layer(&[s("nonexistent")], layer),
+                0,
+                "absent prefix ⇒ zero for every writer ({layer})",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_leaf_count_of_layer_missing_writer_is_zero() {
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        assert_eq!(
+            out.attribution
+                .subtree_leaf_count_of_layer(&prefix, "never-declared"),
+            0,
+            "never-declared writer under a real subtree ⇒ zero",
+        );
+
+        let empty = compose_with_provenance(&[]);
+        assert_eq!(
+            empty
+                .attribution
+                .subtree_leaf_count_of_layer(&[s("anything")], "anyone"),
+            0,
+            "empty attribution ⇒ zero for every (prefix, writer)",
+        );
+    }
+
+    #[test]
+    fn subtree_leaf_count_of_layer_is_leq_leaf_count_of_layer_pointwise() {
+        // The 2D-restricted count is bounded above by the top-level
+        // layer-axis count for the same writer: a subtree can only
+        // credit a writer with a subset of the leaves the parent
+        // credits it with. Pinned across every (prefix, layer) with
+        // strict inequality when the writer wrote leaves outside the
+        // subtree.
+        let out = subtree_fixture();
+        for prefix in [vec![], vec![s("breathe")], vec![s("alpha")]] {
+            for layer in ["coarse", "specific"] {
+                let sub = out.attribution.subtree_leaf_count_of_layer(&prefix, layer);
+                let parent = out.attribution.leaf_count_of_layer(layer);
+                assert!(
+                    sub <= parent,
+                    "sub count for {layer} at prefix {prefix:?} ({sub}) must not exceed parent count ({parent})",
+                );
+            }
+        }
+        // Strict `<` when the writer has leaves outside the subtree:
+        // under `["breathe"]`, `coarse` wrote only `breathe.mode`
+        // (1 leaf) but globally wrote `alpha` too (2 leaves); the
+        // sub-count is strictly less than the parent count.
+        let strict_prefix = vec![s("breathe")];
+        assert!(
+            out.attribution
+                .subtree_leaf_count_of_layer(&strict_prefix, "coarse")
+                < out.attribution.leaf_count_of_layer("coarse"),
+            "strict inequality when coarse wrote leaves outside `breathe.*`",
+        );
+    }
+
+    #[test]
+    fn subtree_writes_of_layer_at_exact_scalar_leaf_yields_that_leaf_only() {
+        // Reflexive case: a prefix that exactly names a scalar leaf
+        // resolves to that leaf alone for its writer, and empty for
+        // every other writer.
+        let out = subtree_fixture();
+        let prefix = vec![s("alpha")];
+        let coarse: Vec<Vec<String>> = out
+            .attribution
+            .subtree_writes_of_layer(&prefix, "coarse")
+            .into_iter()
+            .map(<[String]>::to_vec)
+            .collect();
+        assert_eq!(coarse, vec![vec![s("alpha")]]);
+        assert!(
+            out.attribution
+                .subtree_writes_of_layer(&prefix, "specific")
+                .is_empty(),
+            "the leaf's non-writer gets no bucket at the exact-leaf prefix",
+        );
+        assert_eq!(
+            out.attribution
+                .subtree_leaf_count_of_layer(&prefix, "coarse"),
+            1,
+            "the leaf's writer gets count 1 at the exact-leaf prefix",
+        );
+        assert_eq!(
+            out.attribution
+                .subtree_leaf_count_of_layer(&prefix, "specific"),
+            0,
+            "non-writer's count at the exact-leaf prefix is zero",
         );
     }
 }
