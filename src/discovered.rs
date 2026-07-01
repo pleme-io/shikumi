@@ -1076,6 +1076,160 @@ impl LayerAttribution {
             })
             .map(|(name, _)| name)
     }
+
+    /// The **ranked** projection of [`Self::leaf_counts_by_layer`]:
+    /// every surviving [`DiscoveryLayer`] paired with its leaf count,
+    /// sorted by count descending with a deterministic
+    /// lex-name-ascending tie-break.
+    ///
+    /// The **sorted-by-dominance view** on the count axis — one step
+    /// past [`Self::dominant_layer`]'s scalar argmax. Where the histogram
+    /// [`Self::leaf_counts_by_layer`] iterates by *layer name* (the
+    /// underlying [`BTreeMap`]'s ordering) and the scalar
+    /// [`Self::dominant_layer`] collapses the histogram to its top
+    /// entry, this projection carries every survivor pre-sorted by
+    /// dominance. Consumers that need the runner-up, a top-`k` list, or
+    /// the minimum contributor — a config-show pane rendering "top 3
+    /// writers", a diagnostics banner reporting the two loudest axes, a
+    /// ranking-diff between compositions — reach for this seam directly
+    /// instead of re-sorting the histogram themselves.
+    ///
+    /// **Cost.** `O(n log k + k log k)` time and `O(k)` space where `n`
+    /// is the total leaf count and `k` is the distinct-writer count —
+    /// one pass over `self.inner.values()` to build the [`BTreeMap`]
+    /// counter map (via [`Self::leaf_counts_by_layer`]), one collect
+    /// into a [`Vec`], one stable [`sort_by`] on the vector. The counter
+    /// map is consumed, not returned, so callers that only need the
+    /// ranking pay no per-writer allocation the caller then discards.
+    ///
+    /// [`sort_by`]: Vec::sort_by
+    ///
+    /// **Deterministic tie-break.** When two or more writers share the
+    /// same count, they are ordered by smallest layer name in lex order
+    /// on `&'static str` — the same order every other
+    /// `BTreeMap<&'static str, _>` seam on [`LayerAttribution`]
+    /// ([`Self::writes_by_layer`], [`Self::leaf_counts_by_layer`],
+    /// [`Self::surviving_layer_names`]) already iterates, and the same
+    /// primary/secondary key [`Self::dominant_layer`] uses to pick a
+    /// single winner. So the result is stable across identical
+    /// attributions and stable across counters with tied runs, at zero
+    /// extra cost.
+    ///
+    /// **Cross-projection identities.** The result is empty iff
+    /// [`Self::is_empty`]; its length equals
+    /// [`Self::leaf_counts_by_layer`]`().len()` and
+    /// [`Self::surviving_layer_names`]`().len()`; the sum of every
+    /// paired count equals [`Self::len`]; every `(layer, count)` entry
+    /// satisfies `count == leaf_count_of_layer(layer)` and
+    /// `count == leaf_counts_by_layer().get(layer).copied().unwrap()`;
+    /// the set of `layer` names equals
+    /// [`Self::surviving_layer_names`] verbatim (as a set). Pinned by
+    /// `layer_ranking_agrees_with_leaf_counts_by_layer`,
+    /// `layer_ranking_len_equals_surviving_layer_names_len`,
+    /// `layer_ranking_counts_sum_to_len`, and
+    /// `layer_ranking_empty_iff_attribution_is_empty` in
+    /// `src/discovered.rs`'s test module.
+    ///
+    /// **Argmax law.**
+    /// `layer_ranking().first().map(|(n, _)| *n)` equals
+    /// [`Self::dominant_layer`] verbatim on every input — the ranking
+    /// is a strict generalization of the scalar argmax. Pinned by
+    /// `layer_ranking_first_equals_dominant_layer`.
+    ///
+    /// **Monotone order.** Counts are non-increasing along the vector;
+    /// within any tied run, names are strictly increasing. Pinned by
+    /// `layer_ranking_counts_are_non_increasing` and
+    /// `layer_ranking_ties_are_lex_ascending`.
+    ///
+    /// **Subtree altitude.** [`Self::subtree_layer_ranking`] extends
+    /// this ranked projection to a `prefix`, answering the same "who
+    /// dominates?" question restricted to a single sub-tree — the
+    /// natural top-of-ranking pane a per-subsystem config-show renderer
+    /// reaches for.
+    #[must_use]
+    pub fn layer_ranking(&self) -> Vec<(&'static str, usize)> {
+        let mut ranking: Vec<(&'static str, usize)> =
+            self.leaf_counts_by_layer().into_iter().collect();
+        ranking.sort_by(|(a_name, a_count), (b_name, b_count)| {
+            b_count.cmp(a_count).then_with(|| a_name.cmp(b_name))
+        });
+        ranking
+    }
+
+    /// The **subtree-restricted** dual of [`Self::layer_ranking`]:
+    /// every [`DiscoveryLayer`] that wrote at least one leaf under (or
+    /// at) `prefix`, paired with its subtree leaf count, sorted by
+    /// count descending with a deterministic lex-name-ascending
+    /// tie-break. A `prefix` of `&[]` equals [`Self::layer_ranking`]
+    /// verbatim; a `prefix` that names no subtree yields the empty
+    /// vector.
+    ///
+    /// The **sorted-by-dominance view** at the subtree altitude — one
+    /// step past [`Self::subtree_dominant_layer`]'s scalar argmax.
+    /// Consumers that need a per-subtree top-`k` list, a runner-up
+    /// under a subsystem, or the minimum contributor scoped to one
+    /// prefix — a per-subtree config-show pane ranking writers, a
+    /// diagnostics banner reporting the two loudest axes under
+    /// `breathe.*`, a subtree-restricted ranking-diff — reach for this
+    /// seam directly instead of re-sorting
+    /// [`Self::subtree_leaf_counts_by_layer`] themselves.
+    ///
+    /// **Deterministic tie-break.** As for [`Self::layer_ranking`],
+    /// tied counts are ordered by smallest layer name in lex order on
+    /// `&'static str` — stable across identical subtrees.
+    ///
+    /// **Cost.** `O(log n + m + k' log k')` time and `O(k')` space where
+    /// `n` is the total leaf count, `m` is the number of matching
+    /// leaves under the subtree, and `k'` is the distinct-writer count
+    /// *under the subtree* — one [`BTreeMap::range`] seek to the
+    /// subtree's first entry (via [`Self::subtree_iter`]), a linear
+    /// walk that halts at the first non-prefixed key, one [`BTreeMap`]
+    /// counter increment per leaf, one collect into a [`Vec`], one
+    /// stable [`sort_by`] on the vector.
+    ///
+    /// [`sort_by`]: Vec::sort_by
+    ///
+    /// **Cross-projection identities.** The result is empty iff
+    /// [`Self::subtree_iter`]`(prefix).next()` is [`None`]; its length
+    /// equals [`Self::subtree_leaf_counts_by_layer`]`(prefix).len()`
+    /// and [`Self::subtree_surviving_layer_names`]`(prefix).len()`;
+    /// the sum of every paired count equals
+    /// [`Self::subtree_iter`]`(prefix).count()`; every `(layer, count)`
+    /// entry satisfies
+    /// `count == subtree_leaf_count_of_layer(prefix, layer)` and
+    /// `count == subtree_leaf_counts_by_layer(prefix).get(layer).copied().unwrap()`;
+    /// the set of `layer` names equals
+    /// [`Self::subtree_surviving_layer_names`]`(prefix)` verbatim (as a
+    /// set). `subtree_layer_ranking(&[])` equals [`Self::layer_ranking`]
+    /// verbatim (the empty-prefix corner).
+    ///
+    /// **Argmax law.**
+    /// `subtree_layer_ranking(prefix).first().map(|(n, _)| *n)` equals
+    /// [`Self::subtree_dominant_layer`]`(prefix)` verbatim on every
+    /// input — the subtree ranking is a strict generalization of the
+    /// subtree scalar argmax.
+    ///
+    /// **Subset invariants.** For every prefix, the set of `layer`
+    /// names in `subtree_layer_ranking(prefix)` is a subset of
+    /// [`Self::surviving_layer_names`] (the top-level writer set) — the
+    /// subtree cannot rank a name that never wrote anywhere. Each
+    /// paired count is `≤` [`Self::leaf_count_of_layer`]`(layer)`
+    /// (subtree ⊆ parent).
+    ///
+    /// **Monotone order.** Counts are non-increasing along the vector;
+    /// within any tied run, names are strictly increasing — mirrors
+    /// [`Self::layer_ranking`]'s ordering contract.
+    #[must_use]
+    pub fn subtree_layer_ranking(&self, prefix: &[String]) -> Vec<(&'static str, usize)> {
+        let mut ranking: Vec<(&'static str, usize)> = self
+            .subtree_leaf_counts_by_layer(prefix)
+            .into_iter()
+            .collect();
+        ranking.sort_by(|(a_name, a_count), (b_name, b_count)| {
+            b_count.cmp(a_count).then_with(|| a_name.cmp(b_name))
+        });
+        ranking
+    }
 }
 
 /// The result of composing a stack of [`DiscoveryLayer`]s with per-leaf
@@ -4602,5 +4756,389 @@ mod tests {
             Some("coarse"),
             "coarse still owns the ['big'] subtree (3 leaves vs specific's 0)",
         );
+    }
+
+    #[test]
+    fn layer_ranking_agrees_with_leaf_counts_by_layer() {
+        // Cross-projection identity from the rustdoc: every
+        // `(layer, count)` entry in the ranking matches the histogram
+        // and `leaf_count_of_layer` verbatim, on every fixture.
+        for out in [
+            layer_axis_fixture(),
+            subtree_fixture(),
+            three_way_tie_fixture(),
+            inversion_fixture(),
+        ] {
+            let ranking = out.attribution.layer_ranking();
+            let counts = out.attribution.leaf_counts_by_layer();
+            for (name, count) in &ranking {
+                assert_eq!(
+                    counts.get(name).copied(),
+                    Some(*count),
+                    "ranking entry ({name}, {count}) must match leaf_counts_by_layer",
+                );
+                assert_eq!(
+                    out.attribution.leaf_count_of_layer(name),
+                    *count,
+                    "ranking entry ({name}, {count}) must match leaf_count_of_layer",
+                );
+            }
+            // And the ranking's name-set equals leaf_counts_by_layer's
+            // key-set verbatim (as a set).
+            let ranking_names: std::collections::BTreeSet<&'static str> =
+                ranking.iter().map(|(n, _)| *n).collect();
+            let counts_names: std::collections::BTreeSet<&'static str> =
+                counts.into_keys().collect();
+            assert_eq!(
+                ranking_names, counts_names,
+                "ranking names ≡ leaf_counts_by_layer keys (as a set)",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_ranking_len_equals_surviving_layer_names_len() {
+        for out in [
+            layer_axis_fixture(),
+            subtree_fixture(),
+            three_way_tie_fixture(),
+            inversion_fixture(),
+            compose_with_provenance(&[]),
+        ] {
+            assert_eq!(
+                out.attribution.layer_ranking().len(),
+                out.attribution.surviving_layer_names().len(),
+                "|layer_ranking| = |surviving_layer_names|",
+            );
+            assert_eq!(
+                out.attribution.layer_ranking().len(),
+                out.attribution.leaf_counts_by_layer().len(),
+                "|layer_ranking| = |leaf_counts_by_layer|",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_ranking_counts_sum_to_len() {
+        // Partition-count law: the sum of every paired count equals
+        // the total leaf count (every leaf belongs to exactly one
+        // surviving writer's bucket).
+        for out in [
+            layer_axis_fixture(),
+            subtree_fixture(),
+            three_way_tie_fixture(),
+            inversion_fixture(),
+            compose_with_provenance(&[]),
+        ] {
+            let sum: usize = out.attribution.layer_ranking().iter().map(|(_, c)| c).sum();
+            assert_eq!(sum, out.attribution.len(), "Σ counts = attribution.len()");
+        }
+    }
+
+    #[test]
+    fn layer_ranking_empty_iff_attribution_is_empty() {
+        // An empty attribution has an empty ranking; a non-empty
+        // attribution has a non-empty ranking.
+        assert!(
+            compose_with_provenance(&[])
+                .attribution
+                .layer_ranking()
+                .is_empty(),
+            "empty attribution ⇒ empty ranking",
+        );
+        for out in [
+            layer_axis_fixture(),
+            subtree_fixture(),
+            three_way_tie_fixture(),
+            inversion_fixture(),
+        ] {
+            assert!(
+                !out.attribution.layer_ranking().is_empty(),
+                "non-empty attribution ⇒ non-empty ranking",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_ranking_first_equals_dominant_layer() {
+        // Argmax law: the top of the ranking is the scalar argmax
+        // verbatim, across every fixture.
+        for out in [
+            layer_axis_fixture(),
+            subtree_fixture(),
+            three_way_tie_fixture(),
+            inversion_fixture(),
+            compose_with_provenance(&[]),
+        ] {
+            let ranking_first: Option<&'static str> =
+                out.attribution.layer_ranking().first().map(|(n, _)| *n);
+            assert_eq!(
+                ranking_first,
+                out.attribution.dominant_layer(),
+                "ranking.first().name ≡ dominant_layer()",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_ranking_counts_are_non_increasing() {
+        // Ordering contract: counts descend monotonically along the
+        // vector — every adjacent pair satisfies prev >= next.
+        for out in [
+            layer_axis_fixture(),
+            subtree_fixture(),
+            three_way_tie_fixture(),
+            inversion_fixture(),
+        ] {
+            let ranking = out.attribution.layer_ranking();
+            for window in ranking.windows(2) {
+                assert!(
+                    window[0].1 >= window[1].1,
+                    "counts must be non-increasing: {} !>= {}",
+                    window[0].1,
+                    window[1].1,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_ranking_ties_are_lex_ascending() {
+        // Within any tied run of counts, names are strictly increasing.
+        // The three_way_tie_fixture puts aaa/bbb/ccc all at count 1 —
+        // ranking must emit them in lex-ascending order.
+        let out = three_way_tie_fixture();
+        assert_eq!(
+            out.attribution.layer_ranking(),
+            vec![("aaa", 1), ("bbb", 1), ("ccc", 1)],
+            "three-way tie orders by lex ascending",
+        );
+        // General invariant: for every adjacent pair with equal
+        // counts, the earlier name is lex-smaller.
+        for out in [
+            layer_axis_fixture(),
+            subtree_fixture(),
+            three_way_tie_fixture(),
+            inversion_fixture(),
+        ] {
+            let ranking = out.attribution.layer_ranking();
+            for window in ranking.windows(2) {
+                if window[0].1 == window[1].1 {
+                    assert!(
+                        window[0].0 < window[1].0,
+                        "tied names must be lex-ascending: {} !< {}",
+                        window[0].0,
+                        window[1].0,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_layer_ranking_empty_prefix_equals_layer_ranking() {
+        // Empty-prefix corner: the subtree-restricted ranking collapses
+        // to the top-level ranking verbatim across every fixture.
+        for out in [
+            layer_axis_fixture(),
+            subtree_fixture(),
+            three_way_tie_fixture(),
+            inversion_fixture(),
+            compose_with_provenance(&[]),
+        ] {
+            assert_eq!(
+                out.attribution.subtree_layer_ranking(&[]),
+                out.attribution.layer_ranking(),
+                "empty prefix ⇒ subtree_layer_ranking equals layer_ranking",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_layer_ranking_absent_prefix_is_empty() {
+        let out = subtree_fixture();
+        assert!(
+            out.attribution
+                .subtree_layer_ranking(&[s("nonexistent")])
+                .is_empty(),
+            "absent prefix ⇒ empty subtree ⇒ empty ranking",
+        );
+    }
+
+    #[test]
+    fn subtree_layer_ranking_first_equals_subtree_dominant_layer() {
+        // Argmax law at the subtree altitude: the top of the ranking
+        // is the scalar argmax verbatim, across every fixture and every
+        // prefix — non-empty and empty subtrees alike.
+        let prefixes: Vec<Vec<String>> = vec![
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("small")],
+            vec![s("big")],
+            vec![s("nonexistent")],
+        ];
+        for out in [
+            subtree_fixture(),
+            inversion_fixture(),
+            layer_axis_fixture(),
+            three_way_tie_fixture(),
+        ] {
+            for prefix in &prefixes {
+                let ranking_first: Option<&'static str> = out
+                    .attribution
+                    .subtree_layer_ranking(prefix)
+                    .first()
+                    .map(|(n, _)| *n);
+                assert_eq!(
+                    ranking_first,
+                    out.attribution.subtree_dominant_layer(prefix),
+                    "at prefix {prefix:?}, subtree ranking.first().name ≡ subtree_dominant_layer",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_layer_ranking_agrees_with_subtree_leaf_counts() {
+        // Cross-projection identity across every prefix on every fixture:
+        // every `(layer, count)` entry matches the subtree histogram and
+        // subtree_leaf_count_of_layer verbatim; the counts sum to
+        // subtree_iter(prefix).count(); the name-set equals
+        // subtree_surviving_layer_names verbatim.
+        let prefixes: Vec<Vec<String>> = vec![
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("small")],
+            vec![s("big")],
+            vec![s("nonexistent")],
+        ];
+        for out in [subtree_fixture(), inversion_fixture(), layer_axis_fixture()] {
+            for prefix in &prefixes {
+                let ranking = out.attribution.subtree_layer_ranking(prefix);
+                let counts = out.attribution.subtree_leaf_counts_by_layer(prefix);
+                let sum: usize = ranking.iter().map(|(_, c)| c).sum();
+                assert_eq!(
+                    sum,
+                    out.attribution.subtree_iter(prefix).count(),
+                    "at prefix {prefix:?}, Σ counts = subtree_iter count",
+                );
+                for (name, count) in &ranking {
+                    assert_eq!(
+                        counts.get(name).copied(),
+                        Some(*count),
+                        "at prefix {prefix:?}, ranking entry ({name}, {count}) matches subtree_leaf_counts_by_layer",
+                    );
+                    assert_eq!(
+                        out.attribution.subtree_leaf_count_of_layer(prefix, name),
+                        *count,
+                        "at prefix {prefix:?}, ranking entry ({name}, {count}) matches subtree_leaf_count_of_layer",
+                    );
+                }
+                let ranking_names: std::collections::BTreeSet<&'static str> =
+                    ranking.iter().map(|(n, _)| *n).collect();
+                let survivor_names: std::collections::BTreeSet<&'static str> = out
+                    .attribution
+                    .subtree_surviving_layer_names(prefix)
+                    .into_iter()
+                    .collect();
+                assert_eq!(
+                    ranking_names, survivor_names,
+                    "at prefix {prefix:?}, ranking names ≡ subtree_surviving_layer_names (as a set)",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_layer_ranking_counts_are_non_increasing_and_ties_lex_ascending() {
+        // Ordering contract at subtree altitude.
+        let prefixes: Vec<Vec<String>> = vec![
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("small")],
+            vec![s("big")],
+        ];
+        for out in [
+            subtree_fixture(),
+            inversion_fixture(),
+            layer_axis_fixture(),
+            three_way_tie_fixture(),
+        ] {
+            for prefix in &prefixes {
+                let ranking = out.attribution.subtree_layer_ranking(prefix);
+                for window in ranking.windows(2) {
+                    assert!(
+                        window[0].1 >= window[1].1,
+                        "at prefix {prefix:?}, counts non-increasing: {} !>= {}",
+                        window[0].1,
+                        window[1].1,
+                    );
+                    if window[0].1 == window[1].1 {
+                        assert!(
+                            window[0].0 < window[1].0,
+                            "at prefix {prefix:?}, tied names lex-ascending: {} !< {}",
+                            window[0].0,
+                            window[1].0,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_layer_ranking_narrows_at_named_prefix() {
+        // Concrete inspection at the non-trivial cell: on
+        // inversion_fixture, `["small"]` puts specific (2 leaves) above
+        // coarse (1 leaf); `["big"]` has only coarse (3 leaves).
+        let out = inversion_fixture();
+        assert_eq!(
+            out.attribution.subtree_layer_ranking(&[s("small")]),
+            vec![("specific", 2), ("coarse", 1)],
+            "under small.*, specific tops the ranking (2 vs 1)",
+        );
+        assert_eq!(
+            out.attribution.subtree_layer_ranking(&[s("big")]),
+            vec![("coarse", 3)],
+            "under big.*, only coarse contributes (3 leaves)",
+        );
+    }
+
+    #[test]
+    fn subtree_layer_ranking_name_set_subset_of_surviving_layer_names() {
+        // Subset invariant: subtree ranking cannot pick a name that
+        // never wrote anywhere globally.
+        let prefixes: Vec<Vec<String>> = vec![
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("small")],
+            vec![s("big")],
+            vec![s("nonexistent")],
+        ];
+        for out in [subtree_fixture(), inversion_fixture(), layer_axis_fixture()] {
+            let global: std::collections::BTreeSet<&'static str> = out
+                .attribution
+                .surviving_layer_names()
+                .into_iter()
+                .collect();
+            for prefix in &prefixes {
+                let ranking = out.attribution.subtree_layer_ranking(prefix);
+                for (name, count) in &ranking {
+                    assert!(
+                        global.contains(name),
+                        "at prefix {prefix:?}, subtree ranking name {name} must survive globally",
+                    );
+                    assert!(
+                        *count <= out.attribution.leaf_count_of_layer(name),
+                        "at prefix {prefix:?}, subtree count {count} ≤ global {} for {name}",
+                        out.attribution.leaf_count_of_layer(name),
+                    );
+                }
+            }
+        }
     }
 }
