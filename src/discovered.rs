@@ -483,15 +483,76 @@ fn attribute_leaves(
 ///
 /// # Cost
 ///
-/// Calls `discover()` once per layer. Callers that also invoke
-/// [`compose`] pay 2× the discover cost; a joint one-pass primitive is
-/// a future addition on the same seam.
+/// Calls `discover()` once per layer. Callers that want the contributed
+/// dicts alongside the names — for a per-layer config-show pane, or to
+/// derive [`compose`] + [`contributor_names`] together without paying
+/// the discover cost twice — reach for [`nonempty_layer_dicts`], which
+/// captures both projections in the same sweep.
 #[must_use]
 pub fn contributor_names(layers: &[&dyn DiscoveryLayer]) -> Vec<&'static str> {
     layers
         .iter()
         .filter(|layer| !layer.discover().is_empty())
         .map(|layer| layer.name())
+        .collect()
+}
+
+/// The `(name, discovered dict)` pairs for every layer whose
+/// [`DiscoveryLayer::discover`] returned a non-empty [`Dict`], in
+/// application order (coarse→specific).
+///
+/// The root primitive on the (name, contributed-dict) axis: it captures
+/// what each contributor actually wrote, from which the substrate's
+/// other layer-stack projections factor through in a single `discover()`
+/// sweep. [`contributor_names`] is
+/// `nonempty_layer_dicts(layers).into_iter().map(|(n, _)| n).collect()`;
+/// [`compose`] is `nonempty_layer_dicts(layers).into_iter().fold(...)`
+/// with [`deep_merge`]; the future `contributor_count(layers)` scalar is
+/// this call's `.len()`. Callers that need any two of those pay 2× the
+/// discover cost when reaching for the two separate seams; reaching for
+/// this primitive once and deriving both pays 1×.
+///
+/// # Semantics
+///
+/// The layered discipline is preserved verbatim: a contributor whose
+/// top-level key is wholly overridden by a later specific layer is still
+/// present in the output (the "had an opinion" semantics
+/// [`contributor_names`] pins). Empty layers filter out — an
+/// undetectable axis is invisible on the pair projection just as it is
+/// invisible in the composed dict. Application order is
+/// caller-declared, not alphabetical: `[coarse, specific]` and
+/// `[specific, coarse]` yield the same pair set but in opposite orders,
+/// matching how [`compose`] would apply them.
+///
+/// # Cost
+///
+/// Calls `discover()` once per layer, `O(n)` on the layer count. Owns
+/// every returned [`Dict`] (no borrowed data), so callers can consume
+/// them without threading a lifetime back to the layer stack. Each
+/// contributor's dict is byte-identical to what its `discover()`
+/// returned on this call — no pre-merge, no filtering of inner keys.
+///
+/// # HOCON analogue
+///
+/// The substrate-owned counterpart to Lightbend HOCON's
+/// `Config.entrySet()` grouped by [origin], but at the *layer* granularity
+/// this substrate exposes: one entry per contributing axis, each carrying
+/// its full partial view of the config. A "config-show grouped by
+/// origin" pane reaches for this primitive once and iterates the pairs.
+///
+/// [origin]: https://lightbend.github.io/config/latest/api/com/typesafe/config/ConfigOrigin.html
+#[must_use]
+pub fn nonempty_layer_dicts(layers: &[&dyn DiscoveryLayer]) -> Vec<(&'static str, Dict)> {
+    layers
+        .iter()
+        .filter_map(|layer| {
+            let dict = layer.discover();
+            if dict.is_empty() {
+                None
+            } else {
+                Some((layer.name(), dict))
+            }
+        })
         .collect()
 }
 
@@ -1628,7 +1689,10 @@ mod tests {
         let a = Fixed("platform", dict(&[("k", Value::from(1i64))]));
         let b = Fixed("undetectable", Dict::new());
         let c = Fixed("tenancy", dict(&[("k", Value::from(2i64))]));
-        assert_eq!(contributor_names(&[&a, &b, &c]), vec!["platform", "tenancy"]);
+        assert_eq!(
+            contributor_names(&[&a, &b, &c]),
+            vec!["platform", "tenancy"]
+        );
     }
 
     #[test]
@@ -1662,7 +1726,10 @@ mod tests {
         let all: std::collections::BTreeSet<_> = layer_names(&[&a, &b, &c]).into_iter().collect();
         let contributors: std::collections::BTreeSet<_> =
             contributor_names(&[&a, &b, &c]).into_iter().collect();
-        assert!(contributors.is_subset(&all), "contributors ⊆ declared names");
+        assert!(
+            contributors.is_subset(&all),
+            "contributors ⊆ declared names"
+        );
         assert_eq!(
             contributors.len(),
             2,
@@ -1707,6 +1774,123 @@ mod tests {
         assert_eq!(
             compose(&[&coarse, &specific]).get("setpoint"),
             Some(&Value::from(0.70)),
+        );
+    }
+
+    // -------- nonempty_layer_dicts --------
+
+    #[test]
+    fn nonempty_layer_dicts_filters_empty_layers_and_carries_the_dicts() {
+        // The middle axis is undetectable ⇒ invisible on the pair
+        // projection just as it is invisible in the composed dict; the
+        // surviving pairs carry each contributor's discover() output
+        // byte-identically (no pre-merge, no filtering of inner keys).
+        let a_dict = dict(&[("k", Value::from(1i64)), ("side", Value::from("A"))]);
+        let c_dict = dict(&[("k", Value::from(2i64))]);
+        let a = Fixed("platform", a_dict.clone());
+        let b = Fixed("undetectable", Dict::new());
+        let c = Fixed("tenancy", c_dict.clone());
+        assert_eq!(
+            nonempty_layer_dicts(&[&a, &b, &c]),
+            vec![("platform", a_dict), ("tenancy", c_dict)],
+        );
+    }
+
+    #[test]
+    fn nonempty_layer_dicts_preserves_application_order() {
+        // Order is caller-declared (coarse→specific), NOT alphabetical
+        // — same discipline as compose and contributor_names.
+        let a = Fixed("tenancy", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("platform", dict(&[("k", Value::from(2i64))]));
+        let names: Vec<&'static str> = nonempty_layer_dicts(&[&a, &b])
+            .iter()
+            .map(|(n, _)| *n)
+            .collect();
+        assert_eq!(names, vec!["tenancy", "platform"]);
+    }
+
+    #[test]
+    fn nonempty_layer_dicts_empty_when_no_layers() {
+        assert!(nonempty_layer_dicts(&[]).is_empty());
+    }
+
+    #[test]
+    fn nonempty_layer_dicts_empty_when_all_layers_undetectable() {
+        let a = Fixed("a", Dict::new());
+        let b = Fixed("b", Dict::new());
+        assert!(nonempty_layer_dicts(&[&a, &b]).is_empty());
+    }
+
+    #[test]
+    fn nonempty_layer_dicts_projects_to_contributor_names() {
+        // The (name → contributor?) projection factors through the root
+        // primitive: consumers that want just the names can derive them
+        // from this call and skip a second discover() sweep.
+        let a = Fixed("platform", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("undetectable", Dict::new());
+        let c = Fixed("tenancy", dict(&[("k", Value::from(2i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        let derived: Vec<&'static str> = nonempty_layer_dicts(&layers)
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert_eq!(derived, contributor_names(&layers));
+    }
+
+    #[test]
+    fn nonempty_layer_dicts_projects_to_compose_via_deep_merge() {
+        // The (name → merged-dict) projection also factors through the
+        // root primitive: consumers that want compose() can fold
+        // deep_merge over the pairs and get the same merged dict.
+        let coarse = Fixed(
+            "platform",
+            dict(&[
+                ("setpoint", Value::from(0.80)),
+                ("floor", Value::from("256Mi")),
+            ]),
+        );
+        let mid = Fixed("undetectable", Dict::new());
+        let specific = Fixed("tenancy", dict(&[("setpoint", Value::from(0.70))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&coarse, &mid, &specific];
+        let mut derived = Dict::new();
+        for (_, d) in nonempty_layer_dicts(&layers) {
+            deep_merge(&mut derived, d);
+        }
+        assert_eq!(derived, compose(&layers), "fold(deep_merge) == compose");
+        assert_eq!(derived.get("setpoint"), Some(&Value::from(0.70)));
+        assert_eq!(derived.get("floor"), Some(&Value::from("256Mi")));
+    }
+
+    #[test]
+    fn nonempty_layer_dicts_length_equals_contributor_names_length() {
+        // The compact scalar projection ("how many axes contributed?")
+        // is `.len()` on the same primitive — no separate contributor_count
+        // pass required.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", Dict::new());
+        let c = Fixed("c", dict(&[("k", Value::from(2i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        assert_eq!(
+            nonempty_layer_dicts(&layers).len(),
+            contributor_names(&layers).len()
+        );
+    }
+
+    #[test]
+    fn nonempty_layer_dicts_carries_overridden_writers_dicts_unchanged() {
+        // "had an opinion" semantics on the dict axis: a coarse writer
+        // whose key is later overridden still shows up with its
+        // pre-merge dict verbatim. The pair projection reports the
+        // write-set, not the surviving-leaf set, mirroring
+        // contributor_names_counts_overridden_writers_too on the paired
+        // seam.
+        let coarse_dict = dict(&[("setpoint", Value::from(0.80))]);
+        let specific_dict = dict(&[("setpoint", Value::from(0.70))]);
+        let coarse = Fixed("platform", coarse_dict.clone());
+        let specific = Fixed("tenancy", specific_dict.clone());
+        assert_eq!(
+            nonempty_layer_dicts(&[&coarse, &specific]),
+            vec![("platform", coarse_dict), ("tenancy", specific_dict)],
         );
     }
 }

@@ -74,7 +74,7 @@ pub use cube::{
 };
 pub use discovered::{
     DiscoveryComposition, DiscoveryLayer, LayerAttribution, compose as compose_discovery,
-    compose_with_provenance, contributor_names, deep_merge, layer_names,
+    compose_with_provenance, contributor_names, deep_merge, layer_names, nonempty_layer_dicts,
 };
 pub use discovery::{
     ConfigDiscovery, Format, FormatCoordinates, FormatMetadataTag, FormatProvenance,
