@@ -111,8 +111,11 @@ pub fn layer_names(layers: &[&dyn DiscoveryLayer]) -> Vec<&'static str> {
 /// future discovery-provenance thread noted on
 /// [`crate::ProviderChain::with_discovered`]: a downstream store can
 /// consult [`LayerAttribution::layer_of`] to answer "which
-/// [`DiscoveryLayer`] shaped this leaf?" without re-running the
-/// discovery pass.
+/// [`DiscoveryLayer`] shaped this leaf?" in `O(log n · path.len())`
+/// without re-running the discovery pass, or invert with
+/// [`LayerAttribution::writes_by_layer`] to answer "which leaves did
+/// each layer shape?" in one pass — closing the leaf↔layer
+/// bidirectional query surface at one primitive.
 ///
 /// [`ConfigSource::Discovered`]: crate::ConfigSource
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -137,21 +140,80 @@ impl LayerAttribution {
     /// Name of the winning [`DiscoveryLayer`] at the leaf named by
     /// dotted `path`, or [`None`] if `path` names no leaf in the
     /// composed dict.
+    ///
+    /// **Cost.** `O(log n · path.len())` — one [`BTreeMap::get`]
+    /// against an owned key allocated once per call. Allocation is
+    /// bounded by the path depth (typically 1–5 for config paths),
+    /// not by the total leaf count `n`. Callers that already carry an
+    /// owned path reach for [`Self::layer_of_owned`] to skip the
+    /// per-call allocation.
     #[must_use]
     pub fn layer_of(&self, path: &[&str]) -> Option<&'static str> {
-        // BTreeMap keyed on Vec<String> won't accept &[&str] as a
-        // Borrow key, so walk once with the equal-len-and-elems test.
-        // Leaf count is bounded by the discovered dict's key count
-        // (config keys, not row counts), so linear scan is fine.
-        self.inner.iter().find_map(|(p, layer)| {
-            (p.len() == path.len() && p.iter().zip(path).all(|(a, b)| a == b)).then_some(*layer)
-        })
+        // `BTreeMap<Vec<String>, _>::get<Q>(&Q)` requires
+        // `Vec<String>: Borrow<Q>`. The Borrow chain is
+        // `Vec<T>: Borrow<[T]>`, so `[String]` is the smallest key
+        // type the map accepts — an allocated `Vec<String>` at each
+        // call, discarded on return. The `&str` → `String` mapping
+        // is unavoidable at this seam: the map's keys are owned
+        // (they outlive any single composition pass), but the
+        // caller's path is borrowed and cannot be compared against
+        // an owned Ord key without materializing owned strings
+        // somewhere.
+        self.layer_of_owned(&path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>())
+    }
+
+    /// Allocation-free variant of [`Self::layer_of`] for callers that
+    /// already carry an owned path (`&[String]`), typically iterating
+    /// a composed dict's own keys.
+    ///
+    /// **Cost.** `O(log n · path.len())` — one [`BTreeMap::get`] on
+    /// the borrowed slice, no allocation.
+    #[must_use]
+    pub fn layer_of_owned(&self, path: &[String]) -> Option<&'static str> {
+        self.inner.get(path).copied()
     }
 
     /// Sorted iterator over `(path, layer)` entries. Ordering is
     /// lexicographic by path — the [`BTreeMap`] iteration order.
     pub fn iter(&self) -> impl Iterator<Item = (&[String], &'static str)> + '_ {
         self.inner.iter().map(|(p, l)| (p.as_slice(), *l))
+    }
+
+    /// Inverse projection of [`Self::layer_of`]: for every
+    /// [`DiscoveryLayer`] that wrote at least one leaf, the sorted
+    /// list of paths credited to it.
+    ///
+    /// Peer to [`Self::layer_of`] on the (path → layer) axis — this
+    /// closes the leaf↔layer bidirectional query surface. A
+    /// config-show renderer walks
+    /// [`Self::writes_by_layer`]`().iter()` once to dump every
+    /// leaf under its writing layer; a diagnostics pass that reports
+    /// "layer `X` shaped these leaves" reaches for this map directly.
+    ///
+    /// **Structure.** The outer [`BTreeMap`] is keyed by layer name
+    /// (sorted lex on `&'static str`, deterministic iteration); each
+    /// inner `Vec<&[String]>` lists that layer's paths in the same
+    /// lex order [`Self::iter`] would emit them (the underlying
+    /// [`BTreeMap`]'s ordering). Cost `O(n log k)` where `n` is the
+    /// leaf count and `k` is the distinct-layer count — one pass
+    /// over the attribution map, one [`BTreeMap`] insertion per
+    /// leaf.
+    ///
+    /// **Partition law.** The union of every inner `Vec` equals
+    /// [`Self::iter`]`().map(|(p, _)| p)` verbatim (every leaf
+    /// belongs to exactly one layer); the sum of every inner
+    /// `Vec::len()` equals [`Self::len`]; for every
+    /// `(layer, paths)` entry, every `path` in `paths` satisfies
+    /// [`Self::layer_of_owned`]`(path) == Some(layer)`. Pinned by
+    /// `writes_by_layer_partitions_leaves_by_writer` in
+    /// `src/discovered.rs`'s test module.
+    #[must_use]
+    pub fn writes_by_layer(&self) -> BTreeMap<&'static str, Vec<&[String]>> {
+        let mut out: BTreeMap<&'static str, Vec<&[String]>> = BTreeMap::new();
+        for (path, layer) in &self.inner {
+            out.entry(*layer).or_default().push(path.as_slice());
+        }
+        out
     }
 }
 
@@ -698,6 +760,252 @@ mod tests {
             via_prov, via_plain,
             "attributed compose dict matches independent deep_merge walk"
         );
+    }
+
+    // -------- LayerAttribution::layer_of / layer_of_owned --------
+
+    #[test]
+    fn layer_of_owned_agrees_with_layer_of_pointwise() {
+        // The allocation-free `layer_of_owned` and the borrowed-str
+        // `layer_of` are two seams onto the same BTreeMap lookup —
+        // they must agree at every path (present and absent).
+        let a = Fixed(
+            "A",
+            dict(&[(
+                "outer",
+                Value::from(dict(&[("a", Value::from(1i64)), ("b", Value::from(2i64))])),
+            )]),
+        );
+        let b = Fixed("B", dict(&[("scalar", Value::from(3i64))]));
+        let out = compose_with_provenance(&[&a, &b]);
+
+        // Every present leaf: both accessors return the same layer.
+        for (path_slice, layer) in out.attribution.iter() {
+            let borrowed: Vec<&str> = path_slice.iter().map(String::as_str).collect();
+            assert_eq!(
+                out.attribution.layer_of(&borrowed),
+                Some(layer),
+                "layer_of at {path_slice:?} must match iter()",
+            );
+            assert_eq!(
+                out.attribution.layer_of_owned(path_slice),
+                Some(layer),
+                "layer_of_owned at {path_slice:?} must match iter()",
+            );
+        }
+        // Absent path: both return None.
+        let absent: [&str; 2] = ["outer", "never"];
+        assert_eq!(out.attribution.layer_of(&absent), None);
+        let absent_owned: Vec<String> = absent.iter().map(|s| (*s).to_owned()).collect();
+        assert_eq!(out.attribution.layer_of_owned(&absent_owned), None);
+    }
+
+    #[test]
+    fn layer_of_is_not_a_prefix_match_only_exact_leaves() {
+        // A dict subtree exists at `outer` but the leaf lives at
+        // `outer.a`. A lookup at `outer` alone must miss — this pins
+        // that `layer_of` never returns a spurious hit on an interior
+        // node (a bug the prior linear scan would also have avoided,
+        // now preserved under the BTreeMap::get seam).
+        let a = Fixed(
+            "A",
+            dict(&[("outer", Value::from(dict(&[("a", Value::from(1i64))])))]),
+        );
+        let out = compose_with_provenance(&[&a]);
+        assert_eq!(out.attribution.layer_of(&["outer", "a"]), Some("A"));
+        assert_eq!(
+            out.attribution.layer_of(&["outer"]),
+            None,
+            "interior nodes are not leaves and must not resolve",
+        );
+    }
+
+    #[test]
+    fn layer_of_owned_skips_allocation_on_owned_paths() {
+        // The primitive contract on `layer_of_owned`: pass in a path
+        // sourced from `iter()`'s own owned `Vec<String>` and get an
+        // O(log n) hit without materializing intermediate owned
+        // strings. The equivalence-with-`layer_of` test above already
+        // pins the semantic identity; this test pins the ergonomic
+        // seam a real caller uses (walk `iter()`, thread each path
+        // straight back into `layer_of_owned`).
+        let a = Fixed(
+            "A",
+            dict(&[("k1", Value::from(1i64)), ("k2", Value::from(2i64))]),
+        );
+        let b = Fixed("B", dict(&[("k3", Value::from(3i64))]));
+        let out = compose_with_provenance(&[&a, &b]);
+
+        let owned_paths: Vec<Vec<String>> = out
+            .attribution
+            .iter()
+            .map(|(path_slice, _)| path_slice.to_vec())
+            .collect();
+        for path in &owned_paths {
+            assert!(
+                out.attribution.layer_of_owned(path).is_some(),
+                "every iter()-sourced path must resolve on layer_of_owned",
+            );
+        }
+    }
+
+    // -------- LayerAttribution::writes_by_layer --------
+
+    #[test]
+    fn writes_by_layer_groups_leaves_under_their_writer() {
+        // Two layers, four leaves — the inverse projection gathers
+        // each layer's paths in one bucket.
+        let a = Fixed(
+            "platform",
+            dict(&[("k1", Value::from(1i64)), ("k2", Value::from(2i64))]),
+        );
+        let b = Fixed(
+            "tenancy",
+            dict(&[("k2", Value::from(20i64)), ("k3", Value::from(3i64))]),
+        );
+        let out = compose_with_provenance(&[&a, &b]);
+        let groups = out.attribution.writes_by_layer();
+
+        // Two distinct writers.
+        let layers: Vec<&&'static str> = groups.keys().collect();
+        assert_eq!(
+            layers,
+            vec![&"platform", &"tenancy"],
+            "outer BTreeMap keys sort lex on layer name",
+        );
+
+        // Platform kept `k1`; tenancy wrote `k2` (overwriting) and `k3`.
+        let platform = groups.get("platform").expect("platform bucket");
+        let tenancy = groups.get("tenancy").expect("tenancy bucket");
+        assert_eq!(
+            platform,
+            &vec![["k1".to_owned()].as_slice()],
+            "platform kept k1 only",
+        );
+        assert_eq!(
+            tenancy,
+            &vec![["k2".to_owned()].as_slice(), ["k3".to_owned()].as_slice(),],
+            "tenancy holds k2 (overwritten) and k3, in lex path order",
+        );
+    }
+
+    #[test]
+    fn writes_by_layer_partitions_leaves_by_writer() {
+        // The partition law from the rustdoc: every leaf belongs to
+        // exactly one layer, the flattened union equals `iter()`
+        // verbatim, and the sum of bucket lens equals `len()`.
+        let a = Fixed(
+            "A",
+            dict(&[(
+                "outer",
+                Value::from(dict(&[
+                    ("keep", Value::from("k")),
+                    ("change", Value::from(1i64)),
+                ])),
+            )]),
+        );
+        let b = Fixed(
+            "B",
+            dict(&[
+                ("outer", Value::from(dict(&[("change", Value::from(9i64))]))),
+                ("array", Value::from(vec![Value::from(0i64)])),
+            ]),
+        );
+        let out = compose_with_provenance(&[&a, &b]);
+        let groups = out.attribution.writes_by_layer();
+
+        // Bucket-len sum equals overall leaf count.
+        let bucket_sum: usize = groups.values().map(Vec::len).sum();
+        assert_eq!(bucket_sum, out.attribution.len());
+
+        // Flattened union equals `iter()`'s path set.
+        let mut flattened: Vec<&[String]> = groups
+            .values()
+            .flat_map(|paths| paths.iter().copied())
+            .collect();
+        flattened.sort();
+        let mut iter_paths: Vec<&[String]> = out.attribution.iter().map(|(p, _)| p).collect();
+        iter_paths.sort();
+        assert_eq!(
+            flattened, iter_paths,
+            "the flattened bucket union equals iter()'s path set",
+        );
+
+        // Every (layer, path) in a bucket satisfies layer_of_owned(path) == Some(layer).
+        for (layer, paths) in &groups {
+            for path in paths {
+                assert_eq!(
+                    out.attribution.layer_of_owned(path),
+                    Some(*layer),
+                    "layer_of_owned must agree with the bucket layer",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn writes_by_layer_empty_when_no_layers() {
+        let out = compose_with_provenance(&[]);
+        assert!(
+            out.attribution.writes_by_layer().is_empty(),
+            "no layers ⇒ no buckets",
+        );
+    }
+
+    #[test]
+    fn writes_by_layer_empty_layer_drops_out_of_buckets() {
+        // A layer that contributed nothing (empty dict) does not appear
+        // as a bucket key — the map is keyed on writers only. This
+        // mirrors the `compose_with_provenance_empty_layer` invariant
+        // on the leaf-count axis: an undetectable axis is invisible in
+        // both the merged dict and the inverse projection.
+        let real = Fixed("real", dict(&[("k", Value::from(1i64))]));
+        let empty = Fixed("undetectable", Dict::new());
+        let out = compose_with_provenance(&[&real, &empty]);
+        let groups = out.attribution.writes_by_layer();
+        assert_eq!(groups.len(), 1);
+        assert!(
+            groups.contains_key("real"),
+            "the real writer keeps its bucket",
+        );
+        assert!(
+            !groups.contains_key("undetectable"),
+            "an empty-dict layer contributes no leaves, so no bucket",
+        );
+    }
+
+    #[test]
+    fn writes_by_layer_yields_deterministic_layer_and_path_order() {
+        // Outer keys sort lex on `&'static str` (BTreeMap iteration);
+        // inner Vec<&[String]> lands in the same lex path order the
+        // underlying BTreeMap<Vec<String>, _> iteration emits.
+        let a = Fixed("Z", dict(&[("z", Value::from(1i64))]));
+        let b = Fixed(
+            "A",
+            dict(&[
+                ("a", Value::from(dict(&[("y", Value::from(2i64))]))),
+                ("m", Value::from(3i64)),
+            ]),
+        );
+        let out = compose_with_provenance(&[&a, &b]);
+        let groups = out.attribution.writes_by_layer();
+
+        // Outer key order: "A" < "Z".
+        let layers: Vec<&&'static str> = groups.keys().collect();
+        assert_eq!(layers, vec![&"A", &"Z"]);
+
+        // A's paths, in lex order: ["a","y"] < ["m"].
+        let a_paths = groups.get("A").expect("A bucket");
+        assert_eq!(
+            a_paths,
+            &vec![
+                ["a".to_owned(), "y".to_owned()].as_slice(),
+                ["m".to_owned()].as_slice(),
+            ],
+        );
+        // Z's single path.
+        let z_paths = groups.get("Z").expect("Z bucket");
+        assert_eq!(z_paths, &vec![["z".to_owned()].as_slice()]);
     }
 
     #[test]
