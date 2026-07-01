@@ -458,6 +458,43 @@ fn attribute_leaves(
     }
 }
 
+/// The names of layers that *actually* contributed to the composed dict
+/// — those whose [`DiscoveryLayer::discover`] returned a non-empty
+/// [`Dict`] — in application order.
+///
+/// The diagnostic dual of [`layer_names`]: `layer_names` enumerates
+/// every axis the caller declared (contributor or not); this projection
+/// filters to the subset the environment answered. Every entry of
+/// `contributor_names(layers)` also appears in `layer_names(layers)`
+/// (subset invariant), with `contributor_names ⇒ layer_names` on the
+/// per-name axis; the reverse holds iff every axis is detectable.
+///
+/// # Semantics
+///
+/// A "contributor" is a layer whose `discover()` wrote *something* into
+/// the merge — the same predicate [`compose`] uses to decide whether a
+/// layer participates. It says nothing about surviving leaves: a coarse
+/// contributor wholly overridden by a specific one is still counted, so
+/// the metric answers "which axes had an opinion" rather than "which
+/// axes' opinions survived". `compose(layers).is_empty()` iff
+/// `contributor_names(layers).is_empty()` whenever every contributor
+/// writes at least one top-level key (the discipline every
+/// [`DiscoveryLayer`] implementation satisfies by contract).
+///
+/// # Cost
+///
+/// Calls `discover()` once per layer. Callers that also invoke
+/// [`compose`] pay 2× the discover cost; a joint one-pass primitive is
+/// a future addition on the same seam.
+#[must_use]
+pub fn contributor_names(layers: &[&dyn DiscoveryLayer]) -> Vec<&'static str> {
+    layers
+        .iter()
+        .filter(|layer| !layer.discover().is_empty())
+        .map(|layer| layer.name())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1579,5 +1616,97 @@ mod tests {
             .map(|(p, l)| (p.to_vec(), l))
             .collect();
         assert_eq!(observed, vec![(vec![s("x"), s("y")], "second")]);
+    }
+
+    // -------- contributor_names --------
+
+    #[test]
+    fn contributor_names_filters_empty_layers() {
+        // The middle axis is undetectable ⇒ it is invisible on the
+        // contributor projection just as it is invisible in the composed
+        // dict.
+        let a = Fixed("platform", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("undetectable", Dict::new());
+        let c = Fixed("tenancy", dict(&[("k", Value::from(2i64))]));
+        assert_eq!(contributor_names(&[&a, &b, &c]), vec!["platform", "tenancy"]);
+    }
+
+    #[test]
+    fn contributor_names_preserves_application_order() {
+        // Order is application order (coarse→specific), NOT alphabetical
+        // — the caller's declared ordering survives the projection.
+        let a = Fixed("tenancy", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("platform", dict(&[("k", Value::from(2i64))]));
+        assert_eq!(contributor_names(&[&a, &b]), vec!["tenancy", "platform"]);
+    }
+
+    #[test]
+    fn contributor_names_empty_when_all_layers_undetectable() {
+        let a = Fixed("a", Dict::new());
+        let b = Fixed("b", Dict::new());
+        assert!(contributor_names(&[&a, &b]).is_empty());
+    }
+
+    #[test]
+    fn contributor_names_empty_when_no_layers() {
+        assert!(contributor_names(&[]).is_empty());
+    }
+
+    #[test]
+    fn contributor_names_is_subset_of_layer_names() {
+        // The subset invariant on the (name → contributor?) axis:
+        // every contributor name is one of the declared layer names.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", Dict::new());
+        let c = Fixed("c", dict(&[("k", Value::from(2i64))]));
+        let all: std::collections::BTreeSet<_> = layer_names(&[&a, &b, &c]).into_iter().collect();
+        let contributors: std::collections::BTreeSet<_> =
+            contributor_names(&[&a, &b, &c]).into_iter().collect();
+        assert!(contributors.is_subset(&all), "contributors ⊆ declared names");
+        assert_eq!(
+            contributors.len(),
+            2,
+            "the empty middle layer is filtered out"
+        );
+    }
+
+    #[test]
+    fn contributor_names_emptiness_matches_composed_emptiness() {
+        // The composition-emptiness ↔ contributor-emptiness identity on
+        // fixtures where contributors write distinct top-level keys
+        // (the discipline every DiscoveryLayer satisfies): the composed
+        // dict is empty iff no layer contributed.
+        let a_empty = Fixed("a", Dict::new());
+        let b_empty = Fixed("b", Dict::new());
+        let empty_stack: [&dyn DiscoveryLayer; 2] = [&a_empty, &b_empty];
+        assert!(contributor_names(&empty_stack).is_empty());
+        assert!(compose(&empty_stack).is_empty());
+
+        let a = Fixed("a", dict(&[("x", Value::from(1i64))]));
+        let b = Fixed("b", Dict::new());
+        let c = Fixed("c", dict(&[("y", Value::from(2i64))]));
+        let stack: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        assert!(!contributor_names(&stack).is_empty());
+        assert!(!compose(&stack).is_empty());
+    }
+
+    #[test]
+    fn contributor_names_counts_overridden_writers_too() {
+        // The "had an opinion" semantics: a coarse contributor whose
+        // top-level key is wholly overridden by a specific one is still
+        // a contributor — the count reflects who wrote into the merge,
+        // not whose leaves survived.
+        let coarse = Fixed("platform", dict(&[("setpoint", Value::from(0.80))]));
+        let specific = Fixed("tenancy", dict(&[("setpoint", Value::from(0.70))]));
+        assert_eq!(
+            contributor_names(&[&coarse, &specific]),
+            vec!["platform", "tenancy"],
+            "both writers show up even when specific wholly overrides coarse",
+        );
+        // Compose retains only the specific value on the shared key.
+        assert_eq!(
+            compose(&[&coarse, &specific]).get("setpoint"),
+            Some(&Value::from(0.70)),
+        );
     }
 }
