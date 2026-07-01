@@ -304,6 +304,13 @@ impl LayerAttribution {
     /// by a single counted pass over `self.inner.values()` with
     /// zero allocation, sparing the peer-writer counter entries
     /// [`Self::leaf_counts_by_layer`] materializes.
+    ///
+    /// **Argmax altitude.** [`Self::dominant_layer`] collapses this
+    /// histogram to its argmax — the scalar single-writer
+    /// projection answering "who owns the largest share?" with
+    /// deterministic lex-name tie-break — the audit query one step
+    /// past the wide/count seams, at [`Option<&'static str>`]
+    /// altitude.
     #[must_use]
     pub fn leaf_counts_by_layer(&self) -> BTreeMap<&'static str, usize> {
         let mut out: BTreeMap<&'static str, usize> = BTreeMap::new();
@@ -366,6 +373,12 @@ impl LayerAttribution {
     /// same "which axes' opinions survived" question restricted to a
     /// single sub-tree — the natural pane a per-subsystem config-show
     /// renderer reaches for.
+    ///
+    /// **Argmax altitude.** [`Self::dominant_layer`] collapses the
+    /// name-set to its top counter-holder — the scalar
+    /// single-writer projection answering "which of these survivors
+    /// owns the largest share?" with deterministic lex-name
+    /// tie-break, one step down from this compact name-set.
     #[must_use]
     pub fn surviving_layer_names(&self) -> Vec<&'static str> {
         use std::collections::BTreeSet;
@@ -495,6 +508,15 @@ impl LayerAttribution {
     /// against this subtree. Pinned by
     /// `subtree_surviving_layer_names_stops_at_prefix_extending_sibling_key`.
     ///
+    /// **Argmax altitude.** [`Self::subtree_dominant_layer`]`(prefix)`
+    /// collapses this subtree-restricted name-set to its top
+    /// counter-holder — the scalar single-writer projection answering
+    /// "which of these subtree-survivors owns the largest share
+    /// here?" with deterministic lex-name tie-break, at
+    /// [`Option<&'static str>`] altitude — the natural
+    /// top-writer-per-subsystem gauge one step past this compact
+    /// name-set.
+    ///
     /// [`writes_by_layer`]: Self::writes_by_layer
     /// [`leaf_counts_by_layer`]: Self::leaf_counts_by_layer
     #[must_use]
@@ -572,6 +594,13 @@ impl LayerAttribution {
     /// subtree reaches for that seam directly at zero allocation cost
     /// instead of paying the per-writer counter map this primitive
     /// builds across peer axes just to keep one entry.
+    ///
+    /// **Argmax altitude.** [`Self::subtree_dominant_layer`]`(prefix)`
+    /// collapses this histogram to its argmax — the scalar
+    /// single-writer projection answering "who owns the largest
+    /// share under this subtree?" with deterministic lex-name
+    /// tie-break, at [`Option<&'static str>`] altitude — the natural
+    /// top-writer-per-subsystem gauge one step past this histogram.
     ///
     /// [`writes_by_layer`]: Self::writes_by_layer
     #[must_use]
@@ -924,6 +953,128 @@ impl LayerAttribution {
         self.subtree_iter(prefix)
             .filter(|(_, l)| *l == layer)
             .count()
+    }
+
+    /// The **argmax** of [`Self::leaf_counts_by_layer`]: the
+    /// [`DiscoveryLayer`] that wrote the most surviving leaves in the
+    /// composed attribution, or [`None`] on an empty attribution.
+    ///
+    /// The **scalar single-writer** projection on the count axis — the
+    /// "who owns the largest share of the config?" audit query at the
+    /// altitude the {path × layer} × {free × restricted} grid answers
+    /// its "which writers survived?" (name-set) and "how much did each
+    /// writer contribute?" (histogram) questions. Where
+    /// [`Self::surviving_layer_names`] carries every survivor by name
+    /// (name-set altitude) and [`Self::leaf_counts_by_layer`] carries
+    /// every survivor with its counter (histogram altitude), this
+    /// primitive collapses the histogram to its argmax — the natural
+    /// top-of-ranking / one-writer-dominates diagnostic on the
+    /// attribution.
+    ///
+    /// **Deterministic tie-break.** When two or more writers share the
+    /// maximum count, the winner is the smallest layer name in lex
+    /// order on `&'static str` — the same order
+    /// [`Self::surviving_layer_names`] emits, and the same order every
+    /// `BTreeMap<&'static str, _>` seam ([`Self::writes_by_layer`],
+    /// [`Self::leaf_counts_by_layer`]) already iterates. So the result
+    /// is stable across identical attributions and stable across
+    /// counters with tied maxima, at zero extra cost.
+    ///
+    /// **Cost.** `O(n log k)` time and `O(k)` space where `n` is the
+    /// total leaf count and `k` is the distinct-writer count — one pass
+    /// over `self.inner.values()` to build the [`BTreeMap`] counter
+    /// map (via [`Self::leaf_counts_by_layer`]), one linear pass with a
+    /// running-max tracker to find the argmax. The counter map is
+    /// consumed, not returned, so callers that only need the top writer
+    /// pay no per-writer allocation the caller then discards.
+    ///
+    /// **Cross-projection identity.** The result is [`Some`] iff
+    /// [`Self::is_empty`] is `false`, its unwrapped value is a member of
+    /// [`Self::surviving_layer_names`], and
+    /// [`Self::leaf_count_of_layer`]`(dominant_layer().unwrap())` equals
+    /// the maximum value of [`Self::leaf_counts_by_layer`]. Pinned by
+    /// `dominant_layer_agrees_with_leaf_counts_argmax`,
+    /// `dominant_layer_is_member_of_surviving_layer_names`, and
+    /// `dominant_layer_empty_attribution_is_none` in
+    /// `src/discovered.rs`'s test module.
+    ///
+    /// **Single-writer identity.** When exactly one writer survives
+    /// (whether because the stack has one layer, or because every
+    /// other layer's writes were purged), this primitive returns that
+    /// writer's name. Pinned by
+    /// `dominant_layer_single_writer_is_that_writer`.
+    ///
+    /// **Subtree altitude.** [`Self::subtree_dominant_layer`] extends
+    /// this scalar to a `prefix`, answering the same "who owns the
+    /// largest share?" question restricted to a single sub-tree — the
+    /// natural top-writer-per-subsystem gauge a per-subtree config-show
+    /// pane reaches for.
+    #[must_use]
+    pub fn dominant_layer(&self) -> Option<&'static str> {
+        self.leaf_counts_by_layer()
+            .into_iter()
+            .max_by(|(a_name, a_count), (b_name, b_count)| {
+                a_count.cmp(b_count).then_with(|| b_name.cmp(a_name))
+            })
+            .map(|(name, _)| name)
+    }
+
+    /// The **subtree-restricted** dual of [`Self::dominant_layer`]:
+    /// the [`DiscoveryLayer`] that wrote the most surviving leaves
+    /// under (or at) `prefix`, or [`None`] when the subtree is empty
+    /// (`prefix` names no subtree, or every writer under it was
+    /// purged).
+    ///
+    /// The **scalar** cell on the count axis at the subtree altitude
+    /// — the compact companion to [`Self::subtree_surviving_layer_names`]
+    /// (name-set) and [`Self::subtree_leaf_counts_by_layer`]
+    /// (histogram). Consumers that only need the top writer under one
+    /// subsystem — a per-subtree health-check gauge, a
+    /// "who dominates `breathe.*`?" audit query, a
+    /// top-writer-per-subsystem ladder on a config-show pane — reach
+    /// for this seam directly instead of iterating
+    /// [`Self::subtree_leaf_counts_by_layer`] and tracking a running
+    /// max in the consumer.
+    ///
+    /// **Deterministic tie-break.** As for [`Self::dominant_layer`],
+    /// tied maxima are broken by the smallest layer name in lex order
+    /// on `&'static str` — stable across identical subtrees.
+    ///
+    /// **Cost.** `O(log n + m + k')` time and `O(k')` space where `n`
+    /// is the total leaf count, `m` is the number of matching leaves
+    /// under the subtree, and `k'` is the distinct-writer count *under
+    /// the subtree* — one [`BTreeMap::range`] seek to the subtree's
+    /// first entry (via [`Self::subtree_iter`]), a linear walk that
+    /// halts at the first non-prefixed key, one [`BTreeMap`] counter
+    /// increment per leaf, one linear argmax pass over the counter
+    /// map.
+    ///
+    /// **Cross-projection identities.** The result is [`Some`] iff
+    /// [`Self::subtree_iter`]`(prefix).next()` is [`Some`]; its
+    /// unwrapped value is a member of
+    /// [`Self::subtree_surviving_layer_names`]`(prefix)`; and
+    /// [`Self::subtree_leaf_count_of_layer`]`(prefix,
+    /// subtree_dominant_layer(prefix).unwrap())` equals the maximum
+    /// value of [`Self::subtree_leaf_counts_by_layer`]`(prefix)`.
+    /// `subtree_dominant_layer(&[])` equals [`Self::dominant_layer`]
+    /// verbatim (the empty-prefix corner).
+    ///
+    /// **Subset invariants.** For every prefix and every attribution:
+    /// `subtree_dominant_layer(prefix)` is [`None`] whenever
+    /// [`Self::subtree_iter`]`(prefix).next()` is [`None`], and is a
+    /// member of [`Self::surviving_layer_names`] (the top-level writer
+    /// set) when [`Some`] — the subtree cannot pick a name that never
+    /// wrote anywhere. The scalar can differ from
+    /// [`Self::dominant_layer`] under a subtree that a non-globally-
+    /// dominant writer nonetheless owns locally.
+    #[must_use]
+    pub fn subtree_dominant_layer(&self, prefix: &[String]) -> Option<&'static str> {
+        self.subtree_leaf_counts_by_layer(prefix)
+            .into_iter()
+            .max_by(|(a_name, a_count), (b_name, b_count)| {
+                a_count.cmp(b_count).then_with(|| b_name.cmp(a_name))
+            })
+            .map(|(name, _)| name)
     }
 }
 
@@ -4148,6 +4299,308 @@ mod tests {
                 .subtree_leaf_count_of_layer(&prefix, "specific"),
             0,
             "non-writer's count at the exact-leaf prefix is zero",
+        );
+    }
+
+    // -------- LayerAttribution::dominant_layer /
+    // -------- subtree_dominant_layer
+
+    /// Deterministic tie-break fixture: three single-leaf writers with
+    /// names `aaa`, `bbb`, `ccc` at disjoint top-level keys. Every
+    /// writer has count 1, so both `dominant_layer` and every
+    /// `subtree_dominant_layer` call under a subtree that catches
+    /// multiple writers must break by ascending lex name.
+    fn three_way_tie_fixture() -> DiscoveryComposition {
+        let a = Fixed("aaa", dict(&[("ka", Value::from(1i64))]));
+        let b = Fixed("bbb", dict(&[("kb", Value::from(2i64))]));
+        let c = Fixed("ccc", dict(&[("kc", Value::from(3i64))]));
+        compose_with_provenance(&[&a, &b, &c])
+    }
+
+    /// Global-vs-subtree inversion fixture: writer `coarse` wins the
+    /// top-level count (four leaves) but writer `specific` wins under
+    /// the `["small"]` subtree (two leaves vs one). Exercises the
+    /// non-trivial cell where `subtree_dominant_layer` disagrees with
+    /// `dominant_layer`.
+    fn inversion_fixture() -> DiscoveryComposition {
+        let coarse = Fixed(
+            "coarse",
+            dict(&[
+                (
+                    "big",
+                    Value::from(dict(&[
+                        ("a", Value::from(1i64)),
+                        ("b", Value::from(2i64)),
+                        ("c", Value::from(3i64)),
+                    ])),
+                ),
+                ("small", Value::from(dict(&[("x", Value::from(4i64))]))),
+            ]),
+        );
+        let specific = Fixed(
+            "specific",
+            dict(&[(
+                "small",
+                Value::from(dict(&[("y", Value::from(5i64)), ("z", Value::from(6i64))])),
+            )]),
+        );
+        compose_with_provenance(&[&coarse, &specific])
+    }
+
+    #[test]
+    fn dominant_layer_agrees_with_leaf_counts_argmax() {
+        // Cross-projection identity from the rustdoc: the scalar
+        // single-writer argmax equals the argmax of `leaf_counts_by_layer`
+        // verbatim. On layer_axis_fixture (platform: 1 leaf, tenancy:
+        // 2 leaves), the top writer is "tenancy" with count 2 = max.
+        let out = layer_axis_fixture();
+        let dominant = out.attribution.dominant_layer().expect("non-empty");
+        assert_eq!(dominant, "tenancy", "tenancy owns 2 leaves > platform's 1");
+        let counts = out.attribution.leaf_counts_by_layer();
+        let max_count = counts.values().copied().max().expect("non-empty");
+        assert_eq!(
+            counts.get(dominant).copied().unwrap_or(0),
+            max_count,
+            "dominant writer's count equals the max of leaf_counts_by_layer",
+        );
+        assert_eq!(
+            out.attribution.leaf_count_of_layer(dominant),
+            max_count,
+            "leaf_count_of_layer(dominant) also equals the max",
+        );
+    }
+
+    #[test]
+    fn dominant_layer_ties_broken_by_lex_name_ascending() {
+        // Three-way tie fixture: aaa, bbb, ccc all at count 1. The
+        // smallest lex name wins deterministically — the same order
+        // every other `BTreeMap<&'static str, _>` seam iterates.
+        let out = three_way_tie_fixture();
+        assert_eq!(
+            out.attribution.dominant_layer(),
+            Some("aaa"),
+            "on a three-way tie, the smallest lex name wins",
+        );
+    }
+
+    #[test]
+    fn dominant_layer_empty_attribution_is_none() {
+        let empty = compose_with_provenance(&[]);
+        assert_eq!(
+            empty.attribution.dominant_layer(),
+            None,
+            "empty attribution ⇒ no dominant layer",
+        );
+        // Also on a stack of empty-dict layers — every writer is
+        // silent, so the attribution is empty.
+        let silent = Fixed("silent-a", Dict::new());
+        let more_silent = Fixed("silent-b", Dict::new());
+        let silent_out = compose_with_provenance(&[&silent, &more_silent]);
+        assert_eq!(
+            silent_out.attribution.dominant_layer(),
+            None,
+            "silent-only stack ⇒ no dominant layer",
+        );
+    }
+
+    #[test]
+    fn dominant_layer_single_writer_is_that_writer() {
+        // One live writer ⇒ dominant_layer returns that writer's
+        // name regardless of leaf count.
+        let solo = Fixed(
+            "solo",
+            dict(&[("k1", Value::from(1i64)), ("k2", Value::from(2i64))]),
+        );
+        let silent = Fixed("silent", Dict::new());
+        let out = compose_with_provenance(&[&solo, &silent]);
+        assert_eq!(
+            out.attribution.dominant_layer(),
+            Some("solo"),
+            "the only surviving writer is the dominant one",
+        );
+    }
+
+    #[test]
+    fn dominant_layer_is_member_of_surviving_layer_names() {
+        // The rustdoc invariant: whenever `dominant_layer` returns
+        // `Some(name)`, `name` is in `surviving_layer_names`. Across
+        // every non-empty fixture in the cohort.
+        for out in [
+            layer_axis_fixture(),
+            subtree_fixture(),
+            three_way_tie_fixture(),
+            inversion_fixture(),
+        ] {
+            if let Some(dominant) = out.attribution.dominant_layer() {
+                assert!(
+                    out.attribution.surviving_layer_names().contains(&dominant),
+                    "dominant_layer must be a member of surviving_layer_names",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_dominant_layer_empty_prefix_equals_dominant_layer() {
+        // Empty-prefix corner from the rustdoc: the subtree-restricted
+        // scalar collapses to the top-level scalar verbatim across
+        // every fixture — non-empty and empty alike.
+        for out in [
+            layer_axis_fixture(),
+            subtree_fixture(),
+            three_way_tie_fixture(),
+            inversion_fixture(),
+            compose_with_provenance(&[]),
+        ] {
+            assert_eq!(
+                out.attribution.subtree_dominant_layer(&[]),
+                out.attribution.dominant_layer(),
+                "empty prefix ⇒ subtree_dominant_layer equals dominant_layer",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_dominant_layer_at_named_prefix_narrows_the_argmax() {
+        // Under subtree_fixture's `["breathe"]`: coarse:1, specific:1
+        // ⇒ tie ⇒ "coarse" (lex ascending). Under `["alpha"]`:
+        // coarse:1 alone ⇒ "coarse".
+        let out = subtree_fixture();
+        assert_eq!(
+            out.attribution.subtree_dominant_layer(&[s("breathe")]),
+            Some("coarse"),
+            "under breathe.*, coarse and specific tie at 1 leaf each — coarse wins by lex",
+        );
+        assert_eq!(
+            out.attribution.subtree_dominant_layer(&[s("alpha")]),
+            Some("coarse"),
+            "under alpha (a leaf), coarse alone is dominant",
+        );
+    }
+
+    #[test]
+    fn subtree_dominant_layer_absent_prefix_is_none() {
+        let out = subtree_fixture();
+        assert_eq!(
+            out.attribution.subtree_dominant_layer(&[s("nonexistent")]),
+            None,
+            "absent prefix ⇒ empty subtree ⇒ None",
+        );
+    }
+
+    #[test]
+    fn subtree_dominant_layer_agrees_with_argmax_of_subtree_counts() {
+        // Cross-projection identity across every prefix on every
+        // fixture: the scalar single-writer argmax equals the argmax
+        // of `subtree_leaf_counts_by_layer` verbatim, and the winning
+        // count equals `subtree_leaf_count_of_layer(prefix, winner)`.
+        let prefixes: Vec<Vec<String>> = vec![
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("small")],
+            vec![s("big")],
+            vec![s("nonexistent")],
+        ];
+        for out in [subtree_fixture(), inversion_fixture(), layer_axis_fixture()] {
+            for prefix in &prefixes {
+                let counts = out.attribution.subtree_leaf_counts_by_layer(prefix);
+                let dominant = out.attribution.subtree_dominant_layer(prefix);
+                if let Some(name) = dominant {
+                    let max_count = counts.values().copied().max().unwrap_or(0);
+                    assert_eq!(
+                        counts.get(name).copied().unwrap_or(0),
+                        max_count,
+                        "at prefix {prefix:?}, dominant {name}'s subtree count equals the max",
+                    );
+                    assert_eq!(
+                        out.attribution.subtree_leaf_count_of_layer(prefix, name),
+                        max_count,
+                        "at prefix {prefix:?}, subtree_leaf_count_of_layer({name}) also equals the max",
+                    );
+                    // And the winner is the smallest lex name among tied maxima.
+                    let tied_at_max: Vec<&'static str> = counts
+                        .iter()
+                        .filter_map(|(k, v)| (*v == max_count).then_some(*k))
+                        .collect();
+                    assert_eq!(
+                        tied_at_max.first().copied(),
+                        Some(name),
+                        "the winner is the smallest lex name among tied maxima",
+                    );
+                } else {
+                    assert!(
+                        counts.is_empty(),
+                        "None ⇒ empty subtree_leaf_counts_by_layer at prefix {prefix:?}",
+                    );
+                    assert_eq!(
+                        out.attribution.subtree_iter(prefix).count(),
+                        0,
+                        "None ⇒ empty subtree_iter at prefix {prefix:?}",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_dominant_layer_is_member_of_subtree_surviving_layer_names_when_some() {
+        // The rustdoc invariant: whenever `subtree_dominant_layer`
+        // returns `Some(name)`, `name` is in
+        // `subtree_surviving_layer_names(prefix)`. Across every prefix
+        // on every fixture.
+        let prefixes: Vec<Vec<String>> = vec![
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("small")],
+            vec![s("big")],
+            vec![s("nonexistent")],
+        ];
+        for out in [subtree_fixture(), inversion_fixture(), layer_axis_fixture()] {
+            for prefix in &prefixes {
+                if let Some(dominant) = out.attribution.subtree_dominant_layer(prefix) {
+                    assert!(
+                        out.attribution
+                            .subtree_surviving_layer_names(prefix)
+                            .contains(&dominant),
+                        "at prefix {prefix:?}, dominant {dominant} must be in subtree_surviving_layer_names",
+                    );
+                    // And still in the top-level surviving set — the
+                    // subtree cannot pick a writer that never wrote.
+                    assert!(
+                        out.attribution.surviving_layer_names().contains(&dominant),
+                        "at prefix {prefix:?}, dominant {dominant} must be in surviving_layer_names",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_dominant_layer_can_differ_from_dominant_layer() {
+        // The non-trivial cell: a writer that loses the top-level
+        // argmax can still win under a subtree it owns locally.
+        // inversion_fixture: coarse has 4 leaves globally (big.a,
+        // big.b, big.c, small.x), specific has 2 (small.y, small.z);
+        // under `["small"]`, coarse has 1 (small.x) and specific has
+        // 2 (small.y, small.z) — argmax flips.
+        let out = inversion_fixture();
+        assert_eq!(
+            out.attribution.dominant_layer(),
+            Some("coarse"),
+            "coarse owns the top-level argmax (4 leaves)",
+        );
+        assert_eq!(
+            out.attribution.subtree_dominant_layer(&[s("small")]),
+            Some("specific"),
+            "specific owns the ['small'] subtree (2 leaves vs coarse's 1)",
+        );
+        // And the two globally-dominant subtree the writer keeps: `big`.
+        assert_eq!(
+            out.attribution.subtree_dominant_layer(&[s("big")]),
+            Some("coarse"),
+            "coarse still owns the ['big'] subtree (3 leaves vs specific's 0)",
         );
     }
 }
