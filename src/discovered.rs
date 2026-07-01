@@ -237,6 +237,16 @@ impl LayerAttribution {
     /// [`Self::subtree_leaf_counts_by_layer`] (histogram), computed
     /// directly on [`Self::subtree_iter`] without materializing a
     /// fresh restricted attribution.
+    ///
+    /// **Single-layer altitude.** [`Self::writes_of_layer`] restricts
+    /// this wide seam to *one* writer, answering the same "which
+    /// paths did each layer shape?" question focused on a single
+    /// axis — the layer-axis dual of the path-axis
+    /// [`Self::subtree_writes_by_layer`], computed by a single
+    /// filtered pass over `self.inner` without materializing the
+    /// full per-writer map or paying the `O(n log k)` `BTreeMap`
+    /// construction cost across peer writers just to keep one
+    /// bucket.
     #[must_use]
     pub fn writes_by_layer(&self) -> BTreeMap<&'static str, Vec<&[String]>> {
         let mut out: BTreeMap<&'static str, Vec<&[String]>> = BTreeMap::new();
@@ -285,6 +295,15 @@ impl LayerAttribution {
     /// [`Self::subtree_surviving_layer_names`], computed directly on
     /// [`Self::subtree_iter`] without materializing a fresh restricted
     /// attribution.
+    ///
+    /// **Single-layer altitude.** [`Self::leaf_count_of_layer`]
+    /// restricts this compact histogram to *one* writer, answering
+    /// the same "how many leaves did each layer shape?" question
+    /// focused on a single axis — the layer-axis dual of the
+    /// path-axis [`Self::subtree_leaf_counts_by_layer`], computed
+    /// by a single counted pass over `self.inner.values()` with
+    /// zero allocation, sparing the peer-writer counter entries
+    /// [`Self::leaf_counts_by_layer`] materializes.
     #[must_use]
     pub fn leaf_counts_by_layer(&self) -> BTreeMap<&'static str, usize> {
         let mut out: BTreeMap<&'static str, usize> = BTreeMap::new();
@@ -637,6 +656,100 @@ impl LayerAttribution {
             out.entry(layer).or_default().push(path);
         }
         out
+    }
+
+    /// The **single-layer** dual of [`Self::writes_by_layer`]: the
+    /// paths credited to `layer`, in lex path order, without
+    /// materializing the full per-writer map. A `layer` name that
+    /// contributed no surviving leaf yields the empty vector.
+    ///
+    /// The **layer-axis** wide seam — the counterpart of the
+    /// **path-axis** wide seam [`Self::subtree_writes_by_layer`].
+    /// Where the subtree ladder restricts the attribution to a
+    /// prefix, this primitive restricts it to a single writer. Both
+    /// factor through one filtered pass over `self.inner` so that a
+    /// focused query never pays the cost of the peer axis: a
+    /// per-layer config-show pane, an audit dashboard slicing by
+    /// axis, a diagnostics pass that reports "here's every leaf
+    /// axis `X` shaped" reaches for this seam directly instead of
+    /// paying the `O(n log k)` [`BTreeMap`]-construction cost
+    /// [`Self::writes_by_layer`] pays across every writer just to
+    /// keep one bucket.
+    ///
+    /// **Cost.** `O(n)` time and `O(m)` space, where `n` is the total
+    /// leaf count and `m` is the number of leaves this writer shaped
+    /// — one pass over `self.inner`, one predicate check per entry,
+    /// one [`Vec`] push per match. The full per-writer map is never
+    /// materialized: peer writers pay no allocation.
+    ///
+    /// **Cross-projection identity.** The result equals
+    /// [`Self::writes_by_layer`]`().get(layer).cloned().unwrap_or_default()`
+    /// verbatim on every input, and its length equals
+    /// [`Self::leaf_count_of_layer`]`(layer)` and
+    /// [`Self::leaf_counts_by_layer`]`().get(layer).copied().unwrap_or(0)`.
+    /// Pinned by `writes_of_layer_agrees_with_writes_by_layer_bucket`
+    /// in `src/discovered.rs`'s test module.
+    ///
+    /// **Lex order preservation.** Paths land in the same lex order
+    /// [`Self::iter`] emits them (the underlying [`BTreeMap`]'s
+    /// ordering) — the identity property one axis restriction shares
+    /// with the top-level projection it filters. Pinned by
+    /// `writes_of_layer_preserves_lex_order`.
+    ///
+    /// **Missing writer.** A `layer` name that never appears in the
+    /// attribution — whether because it never contributed or its
+    /// writes were purged by a later wholesale replace — yields the
+    /// empty vector, mirroring `writes_by_layer().get(layer)`
+    /// returning [`None`]. Distinguishing "wrote-but-purged" from
+    /// "never-wrote-in-the-first-place" is [`contributor_names`]'s
+    /// job at the pre-merge altitude; this projection is purely
+    /// post-merge.
+    #[must_use]
+    pub fn writes_of_layer<'a>(&'a self, layer: &str) -> Vec<&'a [String]> {
+        self.inner
+            .iter()
+            .filter_map(|(p, l)| (*l == layer).then_some(p.as_slice()))
+            .collect()
+    }
+
+    /// The **single-layer** dual of [`Self::leaf_counts_by_layer`]:
+    /// the number of leaves credited to `layer`, without materializing
+    /// the full per-writer counter map. A `layer` name that
+    /// contributed no surviving leaf yields zero.
+    ///
+    /// The compact scalar companion to [`Self::writes_of_layer`] on
+    /// the layer axis — the counterpart of the path-axis
+    /// [`Self::subtree_leaf_counts_by_layer`]. Consumers that need
+    /// only "how many leaves did axis `X` shape?" — a size badge on a
+    /// per-layer config-show pane, a health-check gauge on one
+    /// writer, a "top-writer" ranking loop — reach for this scalar
+    /// seam directly instead of paying the `O(n log k)` counter map
+    /// allocation [`Self::leaf_counts_by_layer`] pays across every
+    /// writer just to keep one entry.
+    ///
+    /// **Cost.** `O(n)` time and no allocation — one pass over
+    /// `self.inner.values()`, one predicate check per entry, one
+    /// counter increment per match.
+    ///
+    /// **Cross-projection identity.** The result equals
+    /// [`Self::writes_of_layer`]`(layer).len()` and
+    /// [`Self::leaf_counts_by_layer`]`().get(layer).copied().unwrap_or(0)`
+    /// verbatim on every input. Pinned by
+    /// `leaf_count_of_layer_agrees_with_leaf_counts_by_layer_bucket`
+    /// and `leaf_count_of_layer_agrees_with_writes_of_layer_len`.
+    ///
+    /// **Partition-count law.** The sum of `leaf_count_of_layer(l)`
+    /// over every `l` in [`Self::surviving_layer_names`] equals
+    /// [`Self::len`] — every leaf belongs to exactly one surviving
+    /// writer's counter. Pinned by
+    /// `leaf_count_of_layer_partition_count_law`.
+    ///
+    /// **Missing writer.** A `layer` name that never appears in the
+    /// attribution yields zero, mirroring
+    /// `leaf_counts_by_layer().get(layer)` returning [`None`].
+    #[must_use]
+    pub fn leaf_count_of_layer(&self, layer: &str) -> usize {
+        self.inner.values().filter(|l| **l == layer).count()
     }
 }
 
@@ -3291,6 +3404,180 @@ mod tests {
             "strict subsequence pinned on `specific` under `breathe.*` (sub {} < parent {})",
             specific_sub.len(),
             specific_parent.len(),
+        );
+    }
+
+    // -------- LayerAttribution::writes_of_layer / leaf_count_of_layer --------
+
+    /// Two-layer fixture that spans both single-write and
+    /// override-and-siblings shapes: `platform` wrote only `k1` (the
+    /// override-loser at `k2` is purged) and `tenancy` wrote `k2`
+    /// (overriding) plus `k3`. Reused by the layer-axis single-writer
+    /// tests below so lex order and per-writer counts are pinned
+    /// against a shared shape.
+    fn layer_axis_fixture() -> DiscoveryComposition {
+        let a = Fixed(
+            "platform",
+            dict(&[("k1", Value::from(1i64)), ("k2", Value::from(2i64))]),
+        );
+        let b = Fixed(
+            "tenancy",
+            dict(&[("k2", Value::from(20i64)), ("k3", Value::from(3i64))]),
+        );
+        compose_with_provenance(&[&a, &b])
+    }
+
+    #[test]
+    fn writes_of_layer_agrees_with_writes_by_layer_bucket() {
+        // The cross-projection identity from the rustdoc: the
+        // single-layer wide seam equals the per-writer bucket of the
+        // multi-layer seam verbatim on every input.
+        let out = layer_axis_fixture();
+        let groups = out.attribution.writes_by_layer();
+        for layer in out.attribution.surviving_layer_names() {
+            let single: Vec<&[String]> = out.attribution.writes_of_layer(layer);
+            let bucket: Vec<&[String]> = groups.get(layer).cloned().unwrap_or_default();
+            assert_eq!(
+                single, bucket,
+                "single-layer wide seam equals writes_by_layer[{layer}] verbatim",
+            );
+        }
+    }
+
+    #[test]
+    fn writes_of_layer_preserves_lex_order() {
+        // The axis-restricted result lands in the same lex order
+        // `iter()` emits: filtering the value column out of the
+        // BTreeMap iteration preserves the underlying key order.
+        let a = Fixed(
+            "A",
+            dict(&[
+                ("m", Value::from(3i64)),
+                ("a", Value::from(dict(&[("y", Value::from(2i64))]))),
+            ]),
+        );
+        let b = Fixed("Z", dict(&[("z", Value::from(1i64))]));
+        let out = compose_with_provenance(&[&a, &b]);
+        // A's leaves in the underlying BTreeMap lex order: ["a","y"] < ["m"].
+        let a_paths = out.attribution.writes_of_layer("A");
+        assert_eq!(
+            a_paths,
+            vec![
+                ["a".to_owned(), "y".to_owned()].as_slice(),
+                ["m".to_owned()].as_slice(),
+            ],
+            "single-layer wide seam preserves lex path order",
+        );
+        // Every returned path attributes back to the same writer.
+        for path in &a_paths {
+            let owned: Vec<String> = path.iter().map(std::borrow::ToOwned::to_owned).collect();
+            assert_eq!(
+                out.attribution.layer_of_owned(&owned),
+                Some("A"),
+                "every path in writes_of_layer(A) attributes to A",
+            );
+        }
+    }
+
+    #[test]
+    fn writes_of_layer_missing_writer_is_empty() {
+        // A layer name that never appears in the attribution yields
+        // the empty vector — whether because it was never declared,
+        // was declared but silent, or was declared and had every
+        // write overridden.
+        let real = Fixed("real", dict(&[("k", Value::from(1i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+        let out = compose_with_provenance(&[&real, &silent]);
+        assert!(
+            out.attribution.writes_of_layer("undetectable").is_empty(),
+            "silent writer yields empty writes",
+        );
+        assert!(
+            out.attribution.writes_of_layer("never-declared").is_empty(),
+            "never-declared writer yields empty writes",
+        );
+    }
+
+    #[test]
+    fn writes_of_layer_empty_attribution_is_empty() {
+        let out = compose_with_provenance(&[]);
+        assert!(
+            out.attribution.writes_of_layer("anything").is_empty(),
+            "empty attribution yields empty writes for any writer",
+        );
+    }
+
+    #[test]
+    fn leaf_count_of_layer_agrees_with_leaf_counts_by_layer_bucket() {
+        // The cross-projection identity from the rustdoc: the
+        // single-layer count seam equals the per-writer counter of
+        // the multi-layer count seam verbatim.
+        let out = layer_axis_fixture();
+        let counts = out.attribution.leaf_counts_by_layer();
+        for layer in out.attribution.surviving_layer_names() {
+            let single = out.attribution.leaf_count_of_layer(layer);
+            let bucket = counts.get(layer).copied().unwrap_or(0);
+            assert_eq!(
+                single, bucket,
+                "single-layer count seam equals leaf_counts_by_layer[{layer}] verbatim",
+            );
+        }
+    }
+
+    #[test]
+    fn leaf_count_of_layer_agrees_with_writes_of_layer_len() {
+        // The count is exactly the length of the corresponding
+        // path list — the compact scalar companion to the wide seam.
+        let out = layer_axis_fixture();
+        for layer in out.attribution.surviving_layer_names() {
+            assert_eq!(
+                out.attribution.leaf_count_of_layer(layer),
+                out.attribution.writes_of_layer(layer).len(),
+                "leaf_count_of_layer({layer}) == writes_of_layer({layer}).len()",
+            );
+        }
+    }
+
+    #[test]
+    fn leaf_count_of_layer_partition_count_law() {
+        // Sum over every surviving writer equals the total leaf
+        // count: every leaf belongs to exactly one surviving
+        // writer's counter, the layer-axis dual of the path-axis
+        // partition-count law on `subtree_leaf_counts_by_layer`.
+        let out = layer_axis_fixture();
+        let survivors = out.attribution.surviving_layer_names();
+        let total: usize = survivors
+            .iter()
+            .map(|l| out.attribution.leaf_count_of_layer(l))
+            .sum();
+        assert_eq!(
+            total,
+            out.attribution.len(),
+            "sum of per-writer counts equals total leaf count",
+        );
+    }
+
+    #[test]
+    fn leaf_count_of_layer_missing_writer_is_zero() {
+        let real = Fixed("real", dict(&[("k", Value::from(1i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+        let out = compose_with_provenance(&[&real, &silent]);
+        assert_eq!(
+            out.attribution.leaf_count_of_layer("undetectable"),
+            0,
+            "silent writer yields count zero",
+        );
+        assert_eq!(
+            out.attribution.leaf_count_of_layer("never-declared"),
+            0,
+            "never-declared writer yields count zero",
+        );
+
+        let empty = compose_with_provenance(&[]);
+        assert_eq!(
+            empty.attribution.leaf_count_of_layer("anything"),
+            0,
+            "empty attribution yields count zero for any writer",
         );
     }
 }
