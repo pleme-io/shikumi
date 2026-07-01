@@ -324,6 +324,12 @@ impl LayerAttribution {
     /// layer (wholesale replace at the top-level key, or a
     /// dict-over-scalar / scalar-over-dict reshape at an ancestor
     /// path). Pinned by `surviving_layer_names_subset_of_contributor_names`.
+    ///
+    /// **Subtree altitude.** [`Self::subtree_surviving_layer_names`]
+    /// extends this compact projection to a `prefix`, answering the
+    /// same "which axes' opinions survived" question restricted to a
+    /// single sub-tree — the natural pane a per-subsystem config-show
+    /// renderer reaches for.
     #[must_use]
     pub fn surviving_layer_names(&self) -> Vec<&'static str> {
         use std::collections::BTreeSet;
@@ -397,6 +403,70 @@ impl LayerAttribution {
                 .map(|(p, l)| (p.to_vec(), l))
                 .collect(),
         }
+    }
+
+    /// The **subtree-restricted** dual of [`Self::surviving_layer_names`]:
+    /// every [`DiscoveryLayer`] with at least one live leaf under (or
+    /// at) `prefix`, in the same lex order on layer name the top-level
+    /// projection uses. A `prefix` of `&[]` matches every entry and
+    /// equals [`Self::surviving_layer_names`] verbatim; a `prefix` that
+    /// names no subtree yields the empty vector.
+    ///
+    /// Extends the compact name-set family to the subtree altitude,
+    /// answering "which axes' opinions survived the merge *under this
+    /// config path*?" — the natural diagnostic pane for a config-show
+    /// renderer that groups per-subtree writers, or a health-check
+    /// gauge that watches a single subsystem's writer set. The wide
+    /// dual is [`Self::subtree`]`(prefix).`[`writes_by_layer`]`()`; the
+    /// count dual is [`Self::subtree`]`(prefix).`[`leaf_counts_by_layer`]`()`;
+    /// this compact seam skips both those `Vec<&[String]>`/`usize`
+    /// values just to collect the outer key set.
+    ///
+    /// **Cost.** `O(log n + m log k)` where `n` is the total leaf
+    /// count, `m` is the number of matching leaves, and `k` is the
+    /// distinct-writer count *under the subtree* — one
+    /// [`BTreeMap::range`] seek to the subtree's first entry, a linear
+    /// walk that halts at the first non-prefixed key (via
+    /// [`Self::subtree_iter`]'s take-while), one [`BTreeSet`]
+    /// insertion per leaf. Skips the `O(m)` owned-key allocations
+    /// [`Self::subtree`]`(prefix).surviving_layer_names()` would pay
+    /// on the fresh restricted attribution just to discard the paths.
+    ///
+    /// **Partition-name law.** The result equals
+    /// [`Self::subtree`]`(prefix).surviving_layer_names()` verbatim on
+    /// every input (same lex order, same name-set); its length equals
+    /// [`Self::subtree`]`(prefix).surviving_layer_names().len()`. An
+    /// empty subtree yields the empty vector. Pinned by
+    /// `subtree_surviving_layer_names_agrees_with_subtree_surviving_layer_names`,
+    /// `subtree_surviving_layer_names_empty_prefix_equals_surviving_layer_names`,
+    /// and `subtree_surviving_layer_names_absent_prefix_is_empty` in
+    /// `src/discovered.rs`'s test module.
+    ///
+    /// **Subset invariant vs. [`Self::surviving_layer_names`].** For
+    /// every prefix, `subtree_surviving_layer_names(prefix)` is a
+    /// subset of `surviving_layer_names()`. Strict subset iff at least
+    /// one global-surviving writer wrote nothing under `prefix`.
+    /// Pinned by
+    /// `subtree_surviving_layer_names_subset_of_surviving_layer_names`.
+    ///
+    /// **Prefix-extending sibling boundary.** Inherited from
+    /// [`Self::subtree_iter`]: a lex-adjacent sibling that shares the
+    /// string prefix of the last `prefix` element but is not a path
+    /// descendant (e.g. `["breatheZ"]` vs prefix `["breathe"]`) is
+    /// correctly excluded — the writer of that sibling is not credited
+    /// against this subtree. Pinned by
+    /// `subtree_surviving_layer_names_stops_at_prefix_extending_sibling_key`.
+    ///
+    /// [`writes_by_layer`]: Self::writes_by_layer
+    /// [`leaf_counts_by_layer`]: Self::leaf_counts_by_layer
+    #[must_use]
+    pub fn subtree_surviving_layer_names(&self, prefix: &[String]) -> Vec<&'static str> {
+        use std::collections::BTreeSet;
+        let mut set: BTreeSet<&'static str> = BTreeSet::new();
+        for (_, layer) in self.subtree_iter(prefix) {
+            set.insert(layer);
+        }
+        set.into_iter().collect()
     }
 }
 
@@ -1804,6 +1874,226 @@ mod tests {
             .map(|(p, l)| (p.to_vec(), l))
             .collect();
         assert_eq!(observed, vec![(vec![s("x"), s("y")], "second")]);
+    }
+
+    // -------- LayerAttribution::subtree_surviving_layer_names --------
+
+    #[test]
+    fn subtree_surviving_layer_names_empty_prefix_equals_surviving_layer_names() {
+        // `subtree_surviving_layer_names(&[])` matches every entry (via
+        // `subtree_iter(&[])`'s identity behavior) and therefore agrees
+        // with the top-level `surviving_layer_names` verbatim on both
+        // order and content.
+        let out = subtree_fixture();
+        assert_eq!(
+            out.attribution.subtree_surviving_layer_names(&[]),
+            out.attribution.surviving_layer_names(),
+            "empty prefix ⇒ same lex name-set as the top-level projection",
+        );
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_at_named_prefix_lists_writers_under_it() {
+        // Under `breathe.*` the two live leaves are `breathe.mode`
+        // (coarse) and `breathe.setpoint` (specific) — both writers
+        // appear, in lex order on layer name (not application order).
+        // The `alpha` leaf under `coarse` and the `breatheZ` sibling
+        // under `specific` land in the parent's name-set but must NOT
+        // show up here just because their writer names do — this
+        // projection reads through the subtree, not through the writer
+        // set.
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        assert_eq!(
+            out.attribution.subtree_surviving_layer_names(&prefix),
+            vec!["coarse", "specific"],
+        );
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_agrees_with_subtree_surviving_layer_names() {
+        // Identity with the naive composition
+        // `subtree(prefix).surviving_layer_names()`: same lex order,
+        // same name-set — pins that the range-walk-plus-BTreeSet path
+        // and the fresh-attribution-then-surviving path are semantic
+        // duals, and the direct primitive skips the intermediate
+        // allocation the composition performs.
+        let out = subtree_fixture();
+        for prefix in [
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("nonexistent")],
+        ] {
+            assert_eq!(
+                out.attribution.subtree_surviving_layer_names(&prefix),
+                out.attribution.subtree(&prefix).surviving_layer_names(),
+                "direct seam agrees with the subtree-then-surviving composition at {prefix:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_absent_prefix_is_empty() {
+        // A prefix that names no subtree ⇒ the range walk yields
+        // nothing ⇒ no writers accumulate ⇒ empty vector. Mirrors
+        // `subtree_iter_empty_when_prefix_names_no_subtree` on the
+        // name-set axis.
+        let out = subtree_fixture();
+        assert!(
+            out.attribution
+                .subtree_surviving_layer_names(&[s("nonexistent")])
+                .is_empty(),
+            "absent prefix ⇒ empty name-set",
+        );
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_at_exact_scalar_leaf_lists_only_its_writer() {
+        // Reflexive case: a prefix that exactly names a scalar leaf
+        // yields exactly that leaf's writer, singleton. Under
+        // `alpha` in the fixture that is `coarse` alone.
+        let out = subtree_fixture();
+        let prefix = vec![s("alpha")];
+        assert_eq!(
+            out.attribution.subtree_surviving_layer_names(&prefix),
+            vec!["coarse"],
+        );
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_stops_at_prefix_extending_sibling_key() {
+        // The take_while boundary inherited from `subtree_iter`:
+        // `["breatheZ"]` (specific's write) shares the string prefix
+        // "breathe" but is not a path descendant of `["breathe"]`. Its
+        // writer `specific` must still appear in the subtree's name
+        // set here — because `["breathe", "setpoint"]` (also specific)
+        // IS under the subtree — but if we swap the specific layer to
+        // ONLY write the sibling, that specific-writer must drop from
+        // the subtree name-set.
+        let coarse = Fixed(
+            "coarse",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("live"))])),
+            )]),
+        );
+        // `specific` writes ONLY the prefix-extending sibling, never a
+        // real descendant of `breathe`. Its writer must NOT appear in
+        // the subtree name-set.
+        let specific_only_sibling = Fixed("specific", dict(&[("breatheZ", Value::from(9i64))]));
+        let out = compose_with_provenance(&[&coarse, &specific_only_sibling]);
+        let prefix = vec![s("breathe")];
+        assert_eq!(
+            out.attribution.subtree_surviving_layer_names(&prefix),
+            vec!["coarse"],
+            "the prefix-extending sibling's writer is NOT credited against the subtree",
+        );
+        // Sanity: the top-level projection DOES list `specific` — it
+        // wrote a live leaf at `["breatheZ"]`, just not one under the
+        // `breathe.*` subtree.
+        assert_eq!(
+            out.attribution.surviving_layer_names(),
+            vec!["coarse", "specific"],
+        );
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_deduplicates_multi_write_writer() {
+        // A writer with several live leaves under the subtree appears
+        // exactly once — the BTreeSet collapses duplicates the way
+        // the top-level `surviving_layer_names` does at global scope.
+        // Under `svc.*` here, `only` writes three leaves — the result
+        // is `["only"]`, singleton.
+        let only = Fixed(
+            "only",
+            dict(&[(
+                "svc",
+                Value::from(dict(&[
+                    ("a", Value::from(1i64)),
+                    ("b", Value::from(2i64)),
+                    ("c", Value::from(3i64)),
+                ])),
+            )]),
+        );
+        let out = compose_with_provenance(&[&only]);
+        let prefix = vec![s("svc")];
+        assert_eq!(
+            out.attribution.subtree_surviving_layer_names(&prefix),
+            vec!["only"],
+        );
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_returns_lex_order_on_layer_name() {
+        // Application order is [Z-layer, A-layer]; the compact
+        // projection sorts lex on layer name (BTreeSet iteration),
+        // matching `surviving_layer_names` at the top-level altitude.
+        // Both writers touch leaves under the `svc.*` subtree.
+        let z_layer = Fixed(
+            "Z",
+            dict(&[("svc", Value::from(dict(&[("k1", Value::from(1i64))])))]),
+        );
+        let a_layer = Fixed(
+            "A",
+            dict(&[("svc", Value::from(dict(&[("k2", Value::from(2i64))])))]),
+        );
+        let out = compose_with_provenance(&[&z_layer, &a_layer]);
+        let prefix = vec![s("svc")];
+        assert_eq!(
+            out.attribution.subtree_surviving_layer_names(&prefix),
+            vec!["A", "Z"],
+            "lex order, not application order",
+        );
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_subset_of_surviving_layer_names() {
+        // Subset invariant: for every prefix,
+        //   subtree_surviving_layer_names(prefix) ⊆ surviving_layer_names()
+        // The fixture's `alpha`-only subtree pins the STRICT direction:
+        // `specific` writes only under `breathe.*` and `breatheZ`, so
+        // under `["alpha"]` it has no live leaves and drops from the
+        // subtree name-set while remaining in the top-level one.
+        let out = subtree_fixture();
+        let prefix = vec![s("alpha")];
+        let sub_set: std::collections::BTreeSet<_> = out
+            .attribution
+            .subtree_surviving_layer_names(&prefix)
+            .into_iter()
+            .collect();
+        let top_set: std::collections::BTreeSet<_> = out
+            .attribution
+            .surviving_layer_names()
+            .into_iter()
+            .collect();
+        assert!(sub_set.is_subset(&top_set), "sub ⊆ top on every prefix");
+        assert!(
+            sub_set.len() < top_set.len(),
+            "the `alpha`-only subtree drops `specific` — strict subset",
+        );
+        assert!(
+            !sub_set.contains("specific"),
+            "specific has no leaf under alpha"
+        );
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_empty_when_no_leaves() {
+        // No layers ⇒ empty attribution ⇒ empty name-set at every prefix.
+        let empty = compose_with_provenance(&[]);
+        assert!(
+            empty
+                .attribution
+                .subtree_surviving_layer_names(&[])
+                .is_empty()
+        );
+        assert!(
+            empty
+                .attribution
+                .subtree_surviving_layer_names(&[s("any")])
+                .is_empty(),
+        );
     }
 
     // -------- contributor_names --------
