@@ -268,6 +268,14 @@ impl LayerAttribution {
     /// "undetectable axis is invisible" invariant
     /// [`compose_with_provenance`] already upholds on the merged
     /// dict and [`Self::writes_by_layer`] mirrors on the paths axis.
+    ///
+    /// **Subtree altitude.** [`Self::subtree_leaf_counts_by_layer`]
+    /// extends this compact histogram to a `prefix`, answering the
+    /// same "how many leaves did each layer shape?" question
+    /// restricted to a single subtree — the histogram companion to
+    /// [`Self::subtree_surviving_layer_names`], computed directly on
+    /// [`Self::subtree_iter`] without materializing a fresh restricted
+    /// attribution.
     #[must_use]
     pub fn leaf_counts_by_layer(&self) -> BTreeMap<&'static str, usize> {
         let mut out: BTreeMap<&'static str, usize> = BTreeMap::new();
@@ -418,9 +426,10 @@ impl LayerAttribution {
     /// renderer that groups per-subtree writers, or a health-check
     /// gauge that watches a single subsystem's writer set. The wide
     /// dual is [`Self::subtree`]`(prefix).`[`writes_by_layer`]`()`; the
-    /// count dual is [`Self::subtree`]`(prefix).`[`leaf_counts_by_layer`]`()`;
-    /// this compact seam skips both those `Vec<&[String]>`/`usize`
-    /// values just to collect the outer key set.
+    /// count dual is [`Self::subtree_leaf_counts_by_layer`]`(prefix)`
+    /// (direct on [`Self::subtree_iter`]) — the same outer key set,
+    /// carrying per-writer counters instead of the bare name-set this
+    /// projection returns.
     ///
     /// **Cost.** `O(log n + m log k)` where `n` is the total leaf
     /// count, `m` is the number of matching leaves, and `k` is the
@@ -467,6 +476,74 @@ impl LayerAttribution {
             set.insert(layer);
         }
         set.into_iter().collect()
+    }
+
+    /// The **subtree-restricted** dual of [`Self::leaf_counts_by_layer`]:
+    /// for every [`DiscoveryLayer`] that wrote at least one leaf under
+    /// (or at) `prefix`, the number of leaves credited to it under the
+    /// subtree, in the same lex order on layer name the top-level
+    /// projection uses. A `prefix` of `&[]` matches every entry and
+    /// equals [`Self::leaf_counts_by_layer`] verbatim; a `prefix` that
+    /// names no subtree yields the empty map.
+    ///
+    /// The **count seam** on the subtree ladder, complementing the
+    /// compact name-set [`Self::subtree_surviving_layer_names`] and the
+    /// naive-composed wide seam
+    /// [`Self::subtree`]`(prefix).`[`writes_by_layer`]`()`. Direct on
+    /// [`Self::subtree_iter`] — one range seek, a take-while walk over
+    /// matching leaves, one [`BTreeMap`] counter increment per leaf —
+    /// so it skips the `O(m)` owned-key allocations
+    /// [`Self::subtree`]`(prefix).leaf_counts_by_layer()` would perform
+    /// on a materialized restricted attribution just to discard the
+    /// paths. Consumers that only need per-layer counts under a
+    /// subtree (audit dashboards per subsystem, size badges on a
+    /// config-show pane grouped by writer, a diagnostics gauge
+    /// reporting "which axis wrote the most leaves under `breathe.*`?")
+    /// reach for this seam directly.
+    ///
+    /// **Cost.** `O(log n + m + k)` where `n` is the total leaf count,
+    /// `m` is the number of matching leaves under the subtree, and `k`
+    /// is the distinct-writer count *under the subtree* — one
+    /// [`BTreeMap::range`] seek to the subtree's first entry, a linear
+    /// walk that halts at the first non-prefixed key (via
+    /// [`Self::subtree_iter`]'s take-while), one [`BTreeMap`]
+    /// counter increment per leaf.
+    ///
+    /// **Partition-count law.** The sum of every value equals the
+    /// number of leaves under the subtree, i.e.
+    /// [`Self::subtree_iter`]`(prefix).count()` and
+    /// [`Self::subtree`]`(prefix).len()` — the per-layer histogram
+    /// partitions the subtree's leaf set by winning layer.
+    ///
+    /// **Cross-projection identities.** The result equals
+    /// [`Self::subtree`]`(prefix).leaf_counts_by_layer()` verbatim
+    /// (same lex order on layer name, same counter values), and its
+    /// key set equals [`Self::subtree_surviving_layer_names`]`(prefix)`
+    /// verbatim — the three subtree-restricted seams share their outer
+    /// key column.
+    ///
+    /// **Subset invariant vs. [`Self::leaf_counts_by_layer`].** For
+    /// every prefix and every writer `w`,
+    /// `subtree_leaf_counts_by_layer(prefix).get(w) <=
+    /// leaf_counts_by_layer().get(w)` — a subtree can only credit a
+    /// writer with a subset of the leaves the parent credits it with.
+    /// Strict `<` iff `w` wrote at least one leaf outside the subtree.
+    ///
+    /// **Prefix-extending sibling boundary.** Inherited from
+    /// [`Self::subtree_iter`]: a lex-adjacent sibling that shares the
+    /// string prefix of the last `prefix` element but is not a path
+    /// descendant (e.g. `["breatheZ"]` vs prefix `["breathe"]`) is
+    /// correctly excluded — the writer of that sibling is not counted
+    /// against this subtree.
+    ///
+    /// [`writes_by_layer`]: Self::writes_by_layer
+    #[must_use]
+    pub fn subtree_leaf_counts_by_layer(&self, prefix: &[String]) -> BTreeMap<&'static str, usize> {
+        let mut out: BTreeMap<&'static str, usize> = BTreeMap::new();
+        for (_, layer) in self.subtree_iter(prefix) {
+            *out.entry(layer).or_insert(0) += 1;
+        }
+        out
     }
 }
 
@@ -2680,5 +2757,184 @@ mod tests {
         );
         assert_eq!(silent, std::collections::BTreeSet::from(["undetectable"]));
         assert_eq!(survivors, std::collections::BTreeSet::from(["specific"]));
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_empty_prefix_equals_leaf_counts_by_layer() {
+        // `prefix = &[]` matches every entry; the direct primitive
+        // must equal the top-level histogram verbatim on every input
+        // (same lex order on layer name, same counter values).
+        let out = subtree_fixture();
+        assert_eq!(
+            out.attribution.subtree_leaf_counts_by_layer(&[]),
+            out.attribution.leaf_counts_by_layer(),
+        );
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_at_named_prefix_counts_only_leaves_under_it() {
+        // Under `breathe.*`, `coarse` wrote `mode` (1 leaf) and
+        // `specific` wrote `setpoint` (1 leaf) — both credited once
+        // in the subtree histogram. `alpha` (`coarse`) and `breatheZ`
+        // (`specific`) live outside the subtree and do NOT bump the
+        // per-writer counters — the direct primitive counts only
+        // leaves whose path descends from (or equals) the prefix.
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        let counts = out.attribution.subtree_leaf_counts_by_layer(&prefix);
+        assert_eq!(counts.get("coarse").copied(), Some(1));
+        assert_eq!(counts.get("specific").copied(), Some(1));
+        assert_eq!(counts.len(), 2);
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_agrees_with_subtree_leaf_counts_by_layer() {
+        // The cross-projection identity: the direct primitive equals
+        // `subtree(prefix).leaf_counts_by_layer()` verbatim on every
+        // input — root, named, exact-leaf, and absent prefixes each
+        // pin one arm of the equivalence.
+        let out = subtree_fixture();
+        for prefix in [
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("nonexistent")],
+        ] {
+            assert_eq!(
+                out.attribution.subtree_leaf_counts_by_layer(&prefix),
+                out.attribution.subtree(&prefix).leaf_counts_by_layer(),
+                "direct vs composition must agree at prefix {prefix:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_absent_prefix_is_empty() {
+        // A prefix naming no subtree ⇒ `subtree_iter` yields nothing
+        // ⇒ no counter is ever incremented ⇒ the histogram is the
+        // empty map. Mirrors `subtree_iter_empty_when_prefix_names_no_subtree`
+        // and `subtree_surviving_layer_names_absent_prefix_is_empty`.
+        let out = subtree_fixture();
+        assert!(
+            out.attribution
+                .subtree_leaf_counts_by_layer(&[s("nonexistent")])
+                .is_empty(),
+        );
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_at_exact_scalar_leaf_counts_one() {
+        // Reflexive case: `path_has_prefix(&["alpha"], &["alpha"])` is
+        // true (a path prefixes itself), so a prefix that exactly names
+        // a scalar leaf yields that leaf's writer with count 1.
+        let out = subtree_fixture();
+        let prefix = vec![s("alpha")];
+        let counts = out.attribution.subtree_leaf_counts_by_layer(&prefix);
+        assert_eq!(counts.get("coarse").copied(), Some(1));
+        assert_eq!(counts.len(), 1);
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_stops_at_prefix_extending_sibling_key() {
+        // The take_while boundary inherited from `subtree_iter`:
+        // `["breatheZ"]` (written by `specific`) is lex-adjacent to
+        // `["breathe", ...]` and its string starts with "breathe", but
+        // it is NOT a path descendant of the prefix `["breathe"]`. So
+        // `specific`'s bucket under the subtree carries only the one
+        // leaf it actually wrote there (`setpoint`), not the extra
+        // sibling. And the parent's histogram DOES credit `specific`
+        // with two leaves — one under the subtree, one outside.
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        let sub_counts = out.attribution.subtree_leaf_counts_by_layer(&prefix);
+        let parent_counts = out.attribution.leaf_counts_by_layer();
+        assert_eq!(sub_counts.get("specific").copied(), Some(1));
+        assert_eq!(parent_counts.get("specific").copied(), Some(2));
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_partition_count_law() {
+        // The sum of the histogram's values equals the number of
+        // leaves under the subtree (i.e. `subtree_iter(prefix).count()`
+        // and `subtree(prefix).len()`) — the per-layer histogram
+        // partitions the subtree's leaf set by winning layer.
+        let out = subtree_fixture();
+        for prefix in [
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("nonexistent")],
+        ] {
+            let counts = out.attribution.subtree_leaf_counts_by_layer(&prefix);
+            let sum: usize = counts.values().copied().sum();
+            let subtree_len = out.attribution.subtree(&prefix).len();
+            assert_eq!(
+                sum, subtree_len,
+                "partition-count law failed at prefix {prefix:?}",
+            );
+            assert_eq!(
+                sum,
+                out.attribution.subtree_iter(&prefix).count(),
+                "sum must equal subtree_iter count at prefix {prefix:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_keys_equal_subtree_surviving_layer_names() {
+        // The three subtree-restricted seams — the compact name-set,
+        // the count histogram, and the fully-composed writes_by_layer
+        // — share their outer key column. This cross-projection
+        // identity pins the key set of the histogram against the
+        // compact name-set primitive at multiple prefixes.
+        let out = subtree_fixture();
+        for prefix in [
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("nonexistent")],
+        ] {
+            let via_counts: Vec<&'static str> = out
+                .attribution
+                .subtree_leaf_counts_by_layer(&prefix)
+                .into_keys()
+                .collect();
+            let via_names = out.attribution.subtree_surviving_layer_names(&prefix);
+            assert_eq!(
+                via_counts, via_names,
+                "histogram key set must equal name-set at prefix {prefix:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_is_leq_leaf_counts_by_layer_pointwise() {
+        // Subset invariant vs. the top-level histogram: for every
+        // prefix and every writer w, the subtree's per-writer count is
+        // <= the parent's per-writer count. A subtree can only credit a
+        // writer with a subset of the leaves the parent credits it
+        // with. Strict `<` iff `w` wrote at least one leaf outside the
+        // subtree — pinned separately on `specific` under
+        // `breathe.*` (2 parent, 1 sub).
+        let out = subtree_fixture();
+        let parent_counts = out.attribution.leaf_counts_by_layer();
+        for prefix in [
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("nonexistent")],
+        ] {
+            let sub_counts = out.attribution.subtree_leaf_counts_by_layer(&prefix);
+            for (layer, sub_count) in &sub_counts {
+                let parent_count = parent_counts
+                    .get(layer)
+                    .copied()
+                    .expect("every subtree layer appears in the parent");
+                assert!(
+                    *sub_count <= parent_count,
+                    "sub-count for {layer} at {prefix:?} ({sub_count}) must not exceed parent count ({parent_count})",
+                );
+            }
+        }
     }
 }
