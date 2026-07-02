@@ -2124,6 +2124,95 @@ pub fn silenced_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> Vec<&'stati
     names
 }
 
+/// The name of the layer that *decides* `path` — the most-specific
+/// (last-applied) layer whose [`DiscoveryLayer::discover`] dict has an
+/// opinion at `path`. `None` when no layer touches `path`.
+///
+/// The point-restricted **decider projection** on the (path, layer)
+/// axis: [`contributors_at`] names every layer that *tried* to shape
+/// `path` — winners and losers — and this primitive picks the single
+/// trailing element (the effective decider). Combined with
+/// [`silenced_at`] (the losers projection), it closes the per-path
+/// override contest under the disjoint-union partition
+/// `silenced_at ⊎ decider_at == contributors_at`.
+///
+/// The **pre-merge** dual of [`LayerAttribution::layer_of`]. That
+/// primitive names the writer at a *surviving* leaf; this primitive
+/// names the decider even when the effective outcome at `path` is *no
+/// leaf* — erasure by a prefix-scalar, a dict container at `path`, or
+/// a path that runs below the leaves the composed dict actually
+/// contains. On surviving leaves the two agree; on non-leaf paths,
+/// `layer_of` is `None` while `decider_at` still names the responsible
+/// layer.
+///
+/// The **whole-layer→point-path** specialization of
+/// [`contributor_names`] at the empty path:
+/// `decider_at(layers, &[]) == contributor_names(layers).last().copied()`
+/// — the most-specific non-empty layer decides the root.
+///
+/// # Semantics
+///
+/// A layer *decides* `path` when its `discover()` dict:
+///
+/// - places a leaf at exactly `path` (scalar or array),
+/// - opens a dict container at `path` (its inner leaves live one level
+///   deeper, but this layer's opinion at `path` is "there is structure
+///   here"),
+/// - or covers `path` with a scalar/array at a proper prefix of `path`
+///   (wholesale-replace — the layer decided that no leaf exists at
+///   `path`),
+///
+/// and no later-applied layer touches `path`. Ties don't exist — the
+/// last-in-application-order toucher is always the decider.
+///
+/// # Partition law
+///
+/// For every layer stack and every path `p`:
+///
+/// ```text
+/// silenced_at(layers, p) ⊎ decider_at(layers, p).into_iter().collect()
+///     == contributors_at(layers, p)
+/// ```
+///
+/// holds as an ordered-vector equality (with the singleton empty when
+/// no layer touches `p`). Equivalently,
+/// `contributors_at(layers, p).last().copied() == decider_at(layers, p)`.
+/// When [`compose_with_provenance`]`(layers).attribution.layer_of(p)`
+/// is `Some(w)`, `decider_at(layers, p)` is also `Some(w)`; when
+/// `layer_of(p)` is `None`, `decider_at(layers, p)` is `None` iff no
+/// layer touches `p`, and `Some(erasure_agent)` when a prefix-scalar
+/// erases the subtree or `p` resolves to a dict container.
+///
+/// # Cost
+///
+/// Walks layers in **reverse** and short-circuits on the first hit —
+/// worst-case `O(layers × path.len())` (nobody touched, or the coarsest
+/// is the sole toucher), best-case `O(path.len())` (the most-specific
+/// layer touches). Zero allocation on the walker itself. Cheaper than
+/// [`contributors_at`] plus a `.last().copied()` for the point-decider
+/// query workload, which always walks every layer regardless.
+///
+/// # HOCON analogue
+///
+/// The substrate-owned counterpart to Lightbend HOCON's
+/// [`Config.getValue(path).origin()`]: HOCON's post-merge origin
+/// projection reports the winner at surviving leaves but is silent when
+/// the value has been resolved away (a nested key covered by a parent
+/// scalar assignment has no `ConfigValue` node to hang an origin off
+/// of). `decider_at` covers both cases uniformly by projecting the
+/// last pre-merge toucher, and short-circuits at the first (deepest)
+/// hit — a property HOCON's per-key origin walk doesn't offer.
+///
+/// [`Config.getValue(path).origin()`]: https://lightbend.github.io/config/latest/api/com/typesafe/config/Config.html#getValue-java.lang.String-
+#[must_use]
+pub fn decider_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> Option<&'static str> {
+    layers
+        .iter()
+        .rev()
+        .find(|layer| touches_path(&layer.discover(), path))
+        .map(|layer| layer.name())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -7342,6 +7431,198 @@ mod tests {
             assert!(
                 silenced.is_subset(&contributors),
                 "silenced_at({path:?}) = {silenced:?} not ⊆ contributors_at = {contributors:?}",
+            );
+        }
+    }
+
+    // -------- decider_at --------
+
+    #[test]
+    fn decider_at_names_most_specific_toucher() {
+        // Three writers coarse→specific; the last is the decider. A
+        // disjoint fourth layer never enters the contest.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("k", Value::from(3i64))]));
+        let disjoint = Fixed("disjoint", dict(&[("other", Value::from(9i64))]));
+        assert_eq!(decider_at(&[&a, &b, &c, &disjoint], &["k"]), Some("c"));
+    }
+
+    #[test]
+    fn decider_at_none_on_no_toucher_and_empty_stack() {
+        // No layer touches path → None. Empty layer stack → None on
+        // any path (root included) — nobody to decide anything.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let disjoint = Fixed("z", dict(&[("other", Value::from(9i64))]));
+        assert_eq!(decider_at(&[&a, &disjoint], &["nope"]), None);
+        assert_eq!(decider_at(&[], &["k"]), None);
+        assert_eq!(decider_at(&[], &[]), None);
+    }
+
+    #[test]
+    fn decider_at_single_toucher_is_that_toucher() {
+        // One toucher, no contest — the sole toucher decides.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let disjoint = Fixed("z", dict(&[("other", Value::from(9i64))]));
+        assert_eq!(decider_at(&[&a, &disjoint], &["k"]), Some("a"));
+    }
+
+    #[test]
+    fn decider_at_order_sensitivity() {
+        // Reversing layer order flips the decider — the primitive is
+        // application-order-sensitive, not set-based.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        assert_eq!(decider_at(&[&a, &b], &["k"]), Some("b"));
+        assert_eq!(decider_at(&[&b, &a], &["k"]), Some("a"));
+    }
+
+    #[test]
+    fn decider_at_partitions_contributors_at_disjointly_with_silenced_at() {
+        // Partition law:
+        //   silenced_at(p) ⊎ decider_at(p).into_iter() == contributors_at(p)
+        // as ordered-vector equality; the decider sits at the end.
+        // Checked across five paths: contested leaf, uncontested leaf,
+        // dict container, absent path, and root.
+        let coarse = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("setpoint", Value::from(0.80)),
+                    ("mode", Value::from("live")),
+                ])),
+            )]),
+        );
+        let specific = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 2] = [&coarse, &specific];
+        for path in [
+            &["breathe", "mode"][..],
+            &["breathe", "setpoint"][..],
+            &["breathe"][..],
+            &["absent"][..],
+            &[][..],
+        ] {
+            let contributors = contributors_at(&layers, path);
+            let mut recomposed = silenced_at(&layers, path);
+            recomposed.extend(decider_at(&layers, path));
+            assert_eq!(
+                recomposed, contributors,
+                "silenced_at ⊎ decider_at != contributors_at at {path:?}",
+            );
+            assert_eq!(
+                decider_at(&layers, path),
+                contributors.last().copied(),
+                "decider_at != contributors_at.last() at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn decider_at_agrees_with_layer_of_on_surviving_leaves() {
+        // On any path where the composed leaf survives,
+        // decider_at == layer_of. The two axes only diverge on
+        // erased-leaf / dict-container paths (covered separately below).
+        let coarse = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("setpoint", Value::from(0.80)),
+                    ("mode", Value::from("live")),
+                ])),
+            )]),
+        );
+        let specific = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 2] = [&coarse, &specific];
+        let out = compose_with_provenance(&layers);
+        for path in [&["breathe", "mode"][..], &["breathe", "setpoint"][..]] {
+            assert_eq!(
+                decider_at(&layers, path),
+                out.attribution.layer_of(path),
+                "decider_at != layer_of on surviving leaf {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn decider_at_names_erasure_agent_when_prefix_scalar_wipes_subtree() {
+        // Layer a opens ["x", "a"]; layer b's scalar at ["x"] wipes the
+        // deeper subtree wholesale. layer_of on the erased path is None
+        // (post-merge: no leaf) but decider_at is Some("b") — the
+        // erasure decider. The primitive covers the case layer_of can't
+        // reach.
+        let a = Fixed(
+            "a",
+            dict(&[("x", Value::from(dict(&[("a", Value::from(1i64))])))]),
+        );
+        let b = Fixed("b", dict(&[("x", Value::from(9i64))]));
+        assert_eq!(decider_at(&[&a, &b], &["x", "a"]), Some("b"));
+        // On the erasure-target path itself, b is also the decider —
+        // its scalar wholesale-replaces a's dict subtree.
+        assert_eq!(decider_at(&[&a, &b], &["x"]), Some("b"));
+        // Cross-check: post-merge attribution is None at the erased
+        // deep path.
+        let out = compose_with_provenance(&[&a, &b]);
+        assert_eq!(out.attribution.layer_of(&["x", "a"]), None);
+    }
+
+    #[test]
+    fn decider_at_at_root_equals_last_contributor_name() {
+        // Root-path boundary: decider_at at the empty path equals the
+        // last element of contributor_names — the most-specific
+        // non-empty layer. The partition law specialized to the
+        // whole-layer axis, paired with silenced_at_at_root.
+        let coarse = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+        let middle = Fixed("cloud", dict(&[("c", Value::from(3i64))]));
+        let specific = Fixed("tenancy", dict(&[("b", Value::from(2i64))]));
+        let layers: [&dyn DiscoveryLayer; 4] = [&coarse, &silent, &middle, &specific];
+        assert_eq!(
+            decider_at(&layers, &[]),
+            contributor_names(&layers).last().copied(),
+        );
+        assert_eq!(decider_at(&layers, &[]), Some("tenancy"));
+    }
+
+    #[test]
+    fn decider_at_matches_contributors_at_last_across_all_path_shapes() {
+        // The trailing-element identity decider_at ≡ contributors_at
+        // .last().copied() holds across contested, uncontested, absent,
+        // root, and prefix-erased paths — checked explicitly so an
+        // off-by-one in the reverse walker or short-circuit can't hide
+        // behind a specific-path test.
+        let a = Fixed(
+            "a",
+            dict(&[("x", Value::from(dict(&[("a", Value::from(1i64))])))]),
+        );
+        let b = Fixed("b", dict(&[("x", Value::from(9i64))]));
+        let c = Fixed("c", dict(&[("k", Value::from(3i64))]));
+        let d = Fixed("d", dict(&[("k", Value::from(4i64))]));
+        let layers: [&dyn DiscoveryLayer; 4] = [&a, &b, &c, &d];
+        for path in [
+            &["k"][..],
+            &["x"][..],
+            &["x", "a"][..],
+            &["nope"][..],
+            &[][..],
+        ] {
+            assert_eq!(
+                decider_at(&layers, path),
+                contributors_at(&layers, path).last().copied(),
+                "decider_at != contributors_at.last() at {path:?}",
             );
         }
     }
