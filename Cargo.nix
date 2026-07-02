@@ -5018,9 +5018,9 @@ rec {
       };
       "inotify-sys" = rec {
         crateName = "inotify-sys";
-        version = "0.1.6";
+        version = "0.1.7";
         edition = "2015";
-        sha256 = "1c6h0r0lqhfjyqfnh907dzx56iigbh8adjifv996jlqnr90rgnkg";
+        sha256 = "1z86mv4y3dswk9jb2l5dv3d4f8m4vjfyd2wrkip841in3f4lxacy";
         libName = "inotify_sys";
         authors = [
           "Hanno Braun <hb@hannobraun.de>"
@@ -5031,7 +5031,8 @@ rec {
             packageId = "libc";
           }
         ];
-
+        features = {
+        };
       };
       "inventory" = rec {
         crateName = "inventory";
@@ -7706,7 +7707,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.111";
+        version = "0.1.112";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
