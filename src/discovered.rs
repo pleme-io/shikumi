@@ -1922,6 +1922,120 @@ pub fn nonempty_layer_dicts(layers: &[&dyn DiscoveryLayer]) -> Vec<(&'static str
         .collect()
 }
 
+/// True iff `dict` has *some* value along `path` — the layer holds an
+/// opinion about the leaf at `path`. Zero allocation, `O(path.len())`.
+///
+/// The four semantically distinct cases collapse to a single boolean:
+///
+/// - A key or value exists at exactly `path` (leaf or dict container)
+///   → `true`.
+/// - A scalar/array sits at a *proper prefix* of `path`, so the
+///   wholesale-replace semantic erases every deeper leaf including
+///   the one at `path` — the layer is nonetheless the *decider* of
+///   that erasure → `true`.
+/// - No key at any prefix → `false`.
+/// - Empty `path` (root): `true` iff `dict` is non-empty; the root
+///   dict is the container every non-empty layer opens, and every
+///   contributor-at-root aligns with the [`contributor_names`]
+///   predicate on the whole-layer axis.
+fn touches_path(dict: &Dict, path: &[&str]) -> bool {
+    let Some((head, tail)) = path.split_first() else {
+        return !dict.is_empty();
+    };
+    let Some(value) = dict.get(*head) else {
+        return false;
+    };
+    if tail.is_empty() {
+        return true;
+    }
+    match value {
+        Value::Dict(_, inner) => touches_path(inner, tail),
+        _ => true,
+    }
+}
+
+/// The names of layers whose [`DiscoveryLayer::discover`] dict has any
+/// opinion at `path` — placed a leaf here, opened a dict container
+/// here, or wholesale-replaced a subtree containing `path` — in
+/// application order (coarse→specific).
+///
+/// The **per-path** dual of [`contributor_names`]: that primitive
+/// filters layers by `!discover().is_empty()` — "which axes had *any*
+/// opinion?" — this one filters by `touches_path(discover(), path)` —
+/// "which axes had opinions about *this* leaf?" A layer that answers
+/// non-empty in general but has no key on the walk down `path` is a
+/// contributor-in-general but not a contributor-at-`path`; it's
+/// filtered out here while [`contributor_names`] would keep it.
+///
+/// The **pre-merge** dual of [`LayerAttribution::layer_of`]: that
+/// primitive names the single **winner** at `path` in the composed
+/// dict; this one names every layer that had *tried* to shape `path`,
+/// winners and losers alike. Application order is preserved, so the
+/// last element (when non-empty) is the most specific layer with an
+/// opinion — and, when the effective outcome at `path` is a leaf, it
+/// equals
+/// [`compose_with_provenance`]`(layers).attribution.layer_of(path)`
+/// verbatim.
+///
+/// # Semantics
+///
+/// A layer *touches* `path` when its `discover()` dict:
+///
+/// - places a leaf at exactly `path` (scalar or array),
+/// - opens a dict container at `path` (its inner leaves live one
+///   level deeper, but this layer's opinion at `path` is "there is
+///   structure here"),
+/// - or covers `path` with a scalar/array at a proper prefix of
+///   `path` (wholesale-replace — the layer decided that no leaf
+///   exists at `path`).
+///
+/// Layers with no key at any prefix of `path` are filtered out.
+/// Empty `path` (the root) collapses to the [`contributor_names`]
+/// filter itself: every layer with any content is a contributor.
+///
+/// # Subset chains
+///
+/// For every layer stack and every path `p`:
+///
+/// - `contributors_at(layers, p) ⊆ contributor_names(layers)` — a
+///   contributor at some leaf must be a contributor in general.
+/// - When [`compose_with_provenance`]`(layers).attribution
+///   .layer_of(p)` is `Some(w)`, then `w` is the last element of
+///   `contributors_at(layers, p)` — the effective writer is always
+///   the most-specific-with-an-opinion.
+/// - `contributors_at(layers, &[]) == contributor_names(layers)` on
+///   the same layer stack.
+///
+/// # Cost
+///
+/// Calls `discover()` once per layer and walks each dict along `path`
+/// once — `O(layers × path.len())` time, `O(contributors_at.len())`
+/// allocation on the returned `Vec`. For per-leaf provenance over
+/// *many* paths, prefer [`compose_with_provenance`] to materialize
+/// the attribution once and query [`LayerAttribution::layer_of`] /
+/// [`LayerAttribution::writes_by_layer`] on it; this primitive is
+/// the diagnostic seam that answers the *pre-merge* question the
+/// materialized attribution can't reach — the losers, not just the
+/// winner.
+///
+/// # HOCON analogue
+///
+/// The path-parameterized companion to Lightbend HOCON's
+/// [`Config.entrySet()`] grouped by origin: HOCON's origin projection
+/// answers "which sources touched *any* key?" at whole-config scale;
+/// `contributors_at` restricts the same question to a single leaf
+/// coordinate.
+///
+/// [`Config.entrySet()`]: https://lightbend.github.io/config/latest/api/com/typesafe/config/Config.html#entrySet--
+#[must_use]
+pub fn contributors_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> Vec<&'static str> {
+    layers
+        .iter()
+        .filter(|layer| touches_path(&layer.discover(), path))
+        .map(|layer| layer.name())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -6797,6 +6911,152 @@ mod tests {
             out.attribution.subtree_weakest_entry(&[s("small")]),
             Some(("coarse", 1)),
             "under small.*, coarse (1 leaf) is weakest locally",
+        );
+    }
+
+    #[test]
+    fn contributors_at_lists_layers_that_touched_leaf_in_application_order() {
+        // Baseline: two layers write the same leaf, one writes a
+        // disjoint leaf, one is silent. The path-restricted contributors
+        // are the two who touched `k`, in application order.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("other", Value::from(3i64))]));
+        let silent = Fixed("silent", Dict::new());
+        assert_eq!(
+            contributors_at(&[&a, &b, &c, &silent], &["k"]),
+            vec!["a", "b"],
+        );
+        assert_eq!(
+            contributors_at(&[&a, &b, &c, &silent], &["other"]),
+            vec!["c"]
+        );
+        assert_eq!(
+            contributors_at(&[&a, &b, &c, &silent], &["nope"]),
+            Vec::<&'static str>::new(),
+        );
+    }
+
+    #[test]
+    fn contributors_at_includes_prefix_scalar_and_dict_container_touchers() {
+        // Wholesale-replace still counts as touching: layer B writes
+        // scalar at `x`, which erases the leaf at ["x", "a"]. B is
+        // nonetheless the decider of that erasure and belongs in
+        // contributors_at at the deeper leaf. Layer A opens a dict
+        // container at `x`; the inner leaf ["x", "a"] belongs to A,
+        // so A also touches ["x", "a"].
+        let a = Fixed(
+            "a",
+            dict(&[("x", Value::from(dict(&[("a", Value::from(1i64))])))]),
+        );
+        let b = Fixed("b", dict(&[("x", Value::from(9i64))]));
+        assert_eq!(contributors_at(&[&a, &b], &["x", "a"]), vec!["a", "b"]);
+        // Cross-check the effective writer: B's scalar wins at ["x"],
+        // erasing the deeper leaf. LayerAttribution::layer_of at the
+        // deeper leaf returns None (no leaf survives) — the
+        // contributors list correctly includes B as the decider even
+        // though B has no attributed leaf at that path.
+        let out = compose_with_provenance(&[&a, &b]);
+        assert_eq!(out.attribution.layer_of(&["x", "a"]), None);
+    }
+
+    #[test]
+    fn contributors_at_last_element_equals_layer_of_when_leaf_survives() {
+        // Subset chain: when the effective outcome at path is a
+        // leaf, the last element of contributors_at is the
+        // LayerAttribution.layer_of winner. Nested-dict, sibling-
+        // preservation flavor.
+        let coarse = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("setpoint", Value::from(0.80)),
+                    ("mode", Value::from("live")),
+                ])),
+            )]),
+        );
+        let specific = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 2] = [&coarse, &specific];
+        let out = compose_with_provenance(&layers);
+
+        // Contested leaf: both touched.
+        let contested = contributors_at(&layers, &["breathe", "mode"]);
+        assert_eq!(contested, vec!["platform", "tenancy"]);
+        assert_eq!(
+            contested.last().copied(),
+            out.attribution.layer_of(&["breathe", "mode"])
+        );
+
+        // Uncontested leaf: only the coarser layer touched.
+        let uncontested = contributors_at(&layers, &["breathe", "setpoint"]);
+        assert_eq!(uncontested, vec!["platform"]);
+        assert_eq!(
+            uncontested.last().copied(),
+            out.attribution.layer_of(&["breathe", "setpoint"]),
+        );
+    }
+
+    #[test]
+    fn contributors_at_root_equals_contributor_names() {
+        // Subset chain at the root path: contributors_at(layers, &[])
+        // is contributor_names(layers). Every layer with any content
+        // opens the root dict.
+        let coarse = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+        let specific = Fixed("tenancy", dict(&[("b", Value::from(2i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&coarse, &silent, &specific];
+        assert_eq!(contributors_at(&layers, &[]), contributor_names(&layers));
+        assert_eq!(contributors_at(&layers, &[]), vec!["platform", "tenancy"]);
+    }
+
+    #[test]
+    fn contributors_at_is_subset_of_contributor_names() {
+        // Subset chain on every path: any contributor at a leaf must
+        // be a contributor in general. Rendered as a set comparison
+        // so declaration order doesn't matter.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("other", Value::from(3i64))]));
+        let silent = Fixed("silent", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 4] = [&a, &b, &c, &silent];
+        let all: std::collections::BTreeSet<_> = contributor_names(&layers).into_iter().collect();
+        for path in [&["k"][..], &["other"][..], &["nope"][..], &[][..]] {
+            let restricted: std::collections::BTreeSet<_> =
+                contributors_at(&layers, path).into_iter().collect();
+            assert!(
+                restricted.is_subset(&all),
+                "contributors_at({path:?}) = {restricted:?} not ⊆ contributor_names = {all:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn contributors_at_empty_layers_is_empty() {
+        assert_eq!(contributors_at(&[], &["k"]), Vec::<&'static str>::new());
+        assert_eq!(contributors_at(&[], &[]), Vec::<&'static str>::new());
+    }
+
+    #[test]
+    fn contributors_at_ignores_layers_with_disjoint_content() {
+        // Under `deep_merge`, a layer whose top-level key doesn't
+        // match any prefix of `path` contributes nothing to that leaf
+        // and must be filtered out. The point primitive maps 1:1 onto
+        // that no-opinion filter.
+        let match_layer = Fixed(
+            "match",
+            dict(&[("a", Value::from(dict(&[("b", Value::from(1i64))])))]),
+        );
+        let disjoint = Fixed("disjoint", dict(&[("z", Value::from(9i64))]));
+        assert_eq!(
+            contributors_at(&[&match_layer, &disjoint], &["a", "b"]),
+            vec!["match"],
         );
     }
 }
