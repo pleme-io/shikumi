@@ -2284,6 +2284,39 @@ impl PathContest {
     pub fn contributor_count(&self) -> usize {
         self.overridden.len() + 1
     }
+
+    /// The full ordered contributor list — every layer that touched
+    /// the queried path, in application order (coarse→specific). The
+    /// reconstruction identity: the leading `overridden.len()` entries
+    /// are exactly `overridden` in order, and the trailing entry is
+    /// `decider`.
+    ///
+    /// The reconstruction identity as a method — a `PathContest` value
+    /// is now self-sufficient for every projection off the (path,
+    /// layer) axis. No re-walk of the layer stack needed. The identity
+    /// against [`contributors_at`]:
+    ///
+    /// ```text
+    /// contest_at(layers, p).map(|c| c.contributors())
+    ///     == Some(contributors_at(layers, p))       // when contest_at(layers, p).is_some()
+    /// contest_at(layers, p).map_or(vec![], |c| c.contributors())
+    ///     == contributors_at(layers, p)             // total on both sides
+    /// ```
+    ///
+    /// # Cost
+    ///
+    /// One `Vec` allocation of length `overridden.len() + 1`. `&'static
+    /// str` slices are `Copy` so no per-element clone. Strictly cheaper
+    /// than a fresh [`contributors_at`] call, which walks every layer
+    /// again — this projection reads off the already-materialized
+    /// `PathContest` in `O(overridden.len())` time.
+    #[must_use]
+    pub fn contributors(&self) -> Vec<&'static str> {
+        let mut out = Vec::with_capacity(self.overridden.len() + 1);
+        out.extend_from_slice(&self.overridden);
+        out.push(self.decider);
+        out
+    }
 }
 
 /// The full **per-path override contest** at `path` — decider (winner)
@@ -8063,5 +8096,213 @@ mod tests {
                 "contest.decider != layer_of on surviving leaf {path:?}",
             );
         }
+    }
+
+    // -------- PathContest::contributors --------
+
+    #[test]
+    fn path_contest_contributors_uncontested_returns_singleton_decider() {
+        // Single toucher → contributors() is [decider], length 1.
+        let contest = PathContest {
+            decider: "solo",
+            overridden: vec![],
+        };
+        assert_eq!(contest.contributors(), vec!["solo"]);
+        assert!(!contest.is_contested());
+        assert_eq!(contest.contributors().len(), 1);
+        assert_eq!(contest.contributors().len(), contest.contributor_count());
+    }
+
+    #[test]
+    fn path_contest_contributors_three_writers_ordered_coarse_to_specific() {
+        // Three touchers at breathe.mode; contributors() enumerates
+        // them coarse→specific with `tenancy` last (the decider).
+        let platform = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("live"))])),
+            )]),
+        );
+        let cloud = Fixed(
+            "cloud",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("aws"))])),
+            )]),
+        );
+        let tenancy = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("prod"))])),
+            )]),
+        );
+        let disjoint = Fixed("logger", dict(&[("logger", Value::from("info"))]));
+        let layers: [&dyn DiscoveryLayer; 4] = [&platform, &cloud, &tenancy, &disjoint];
+        let contest = contest_at(&layers, &["breathe", "mode"]).expect("three touchers");
+        assert_eq!(
+            contest.contributors(),
+            vec!["platform", "cloud", "tenancy"],
+            "contributors() enumerates touchers coarse→specific",
+        );
+    }
+
+    #[test]
+    fn path_contest_contributors_matches_contributors_at() {
+        // Reconstruction identity: contest_at(layers, p).map(|c| c.contributors())
+        // == Some(contributors_at(layers, p))  when contest_at is Some.
+        // The total-on-both-sides identity holds too:
+        // contest_at(layers, p).map_or(vec![], |c| c.contributors())
+        //   == contributors_at(layers, p).
+        let a = Fixed(
+            "a",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("mode", Value::from("live")),
+                    ("setpoint", Value::from(0.80)),
+                ])),
+            )]),
+        );
+        let b = Fixed(
+            "b",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let c = Fixed("c", dict(&[("logger", Value::from("info"))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        for path in [
+            &[][..],
+            &["breathe"][..],
+            &["breathe", "mode"][..],
+            &["breathe", "setpoint"][..],
+            &["logger"][..],
+            &["absent"][..],
+        ] {
+            let expected = contributors_at(&layers, path);
+            let via_fused = contest_at(&layers, path).map_or_else(Vec::new, |c| c.contributors());
+            assert_eq!(
+                via_fused, expected,
+                "contest.contributors() != contributors_at at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_contributors_len_matches_contributor_count() {
+        // contributors().len() == contributor_count() == contributors_at.len() across all paths.
+        let a = Fixed(
+            "a",
+            dict(&[("k", Value::from(dict(&[("leaf", Value::from(1i64))])))]),
+        );
+        let b = Fixed("b", dict(&[("k", Value::from("erased"))]));
+        let c = Fixed(
+            "c",
+            dict(&[("k", Value::from(dict(&[("leaf", Value::from(3i64))])))]),
+        );
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        for path in [&[][..], &["k"][..], &["k", "leaf"][..], &["absent"][..]] {
+            let expected = contributors_at(&layers, path).len();
+            let via_contributors = contest_at(&layers, path).map_or(0, |c| c.contributors().len());
+            let via_count = contest_at(&layers, path).map_or(0, |c| c.contributor_count());
+            assert_eq!(via_contributors, expected, "len mismatch at {path:?}");
+            assert_eq!(via_count, expected, "count mismatch at {path:?}");
+        }
+    }
+
+    #[test]
+    fn path_contest_contributors_trailing_element_is_decider() {
+        // The last element of contributors() is always .decider — the
+        // trailing-projection identity `contributors().last() ==
+        // Some(decider)` holds by construction (decider is push()'d last).
+        let a = Fixed(
+            "a",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("live"))])),
+            )]),
+        );
+        let b = Fixed(
+            "b",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let c = Fixed(
+            "c",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("prod"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        for path in [&["breathe"][..], &["breathe", "mode"][..], &[][..]] {
+            let contest = contest_at(&layers, path).expect("some toucher");
+            let contributors = contest.contributors();
+            assert_eq!(
+                contributors.last().copied(),
+                Some(contest.decider),
+                "trailing element != decider at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_contributors_leading_prefix_is_overridden() {
+        // The leading contributors().len() - 1 == overridden.len()
+        // entries of contributors() are exactly `overridden` in order.
+        let a = Fixed(
+            "a",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("live"))])),
+            )]),
+        );
+        let b = Fixed(
+            "b",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let c = Fixed(
+            "c",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("prod"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        for path in [&["breathe"][..], &["breathe", "mode"][..], &[][..]] {
+            let contest = contest_at(&layers, path).expect("some toucher");
+            let contributors = contest.contributors();
+            let leading = &contributors[..contest.overridden.len()];
+            assert_eq!(
+                leading,
+                contest.overridden.as_slice(),
+                "leading prefix != overridden at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_contributors_covers_erasure_case() {
+        // Prefix-scalar erasure: layer `a` wrote k.leaf, layer `b`
+        // wholesale-replaces k with a scalar. Both touch k.leaf;
+        // contributors() lists both with `b` last (the erasure agent).
+        let a = Fixed(
+            "a",
+            dict(&[("k", Value::from(dict(&[("leaf", Value::from(1i64))])))]),
+        );
+        let b = Fixed("b", dict(&[("k", Value::from("erased"))]));
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        let contest = contest_at(&layers, &["k", "leaf"]).expect("erasure decider is a toucher");
+        assert_eq!(contest.contributors(), vec!["a", "b"]);
+        assert_eq!(contest.decider, "b");
+        assert_eq!(contest.overridden, vec!["a"]);
     }
 }
