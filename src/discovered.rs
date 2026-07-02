@@ -2426,6 +2426,91 @@ pub fn is_contested_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> bool {
         .is_some()
 }
 
+/// The **number of layers** whose [`DiscoveryLayer::discover`] dict has
+/// an opinion at `path` — placed a leaf here, opened a dict container
+/// here, or wholesale-replaced a subtree containing `path`. Zero when
+/// no layer touches `path`; one for an uncontested singleton; two or
+/// more for a contested path.
+///
+/// The **scalar-cardinality endpoint** of the point-primitive lattice
+/// on the (path, layer) axis: [`contributors_at`] returns the ordered
+/// list of touchers, [`is_contested_at`] returns the boolean predicate
+/// "two or more of them," and this primitive returns their cardinality
+/// directly — the length-fold of [`contributors_at`] and the counting
+/// dual of [`is_contested_at`] on the same walk.
+///
+/// # Identities
+///
+/// The four scalar-cardinality projections on the lattice collapse onto
+/// one substrate-owned primitive with a **zero-allocation** walk:
+///
+/// - `contributor_count_at(layers, p) == `[`contributors_at`]`(layers, p).len()`
+///   (length-fold on the ordered-touchers axis)
+/// - `contributor_count_at(layers, p) == `[`contest_at`]`(layers, p).map_or(0,
+///   |c| c.contributor_count())` (folded-value method call)
+/// - `contributor_count_at(layers, p) == `[`silenced_at`]`(layers, p).len() +
+///   usize::from(`[`decider_at`]`(layers, p).is_some())` (partition-count
+///   identity: losers plus decider-count)
+/// - `contributor_count_at(layers, p) >= 2 == `[`is_contested_at`]`(layers, p)`
+///   (cardinality-threshold identity — the boolean dual reads off the
+///   scalar with a `>= 2` comparison, and every four zero-boundary
+///   endpoints ([`contest_at`], [`decider_at`], [`coarsest_at`],
+///   [`contributors_at`]) pin their `.is_none()` / `.is_empty()` boundary
+///   to `contributor_count_at == 0` in agreement)
+///
+/// All four routes are algebraically identical on their shared scalar
+/// output; this primitive is the strictly-cheapest route when the caller
+/// wants only the count and does not need the ordered touchers list, the
+/// decider name, the losers list, or the fused [`PathContest`].
+///
+/// # Semantics
+///
+/// The set of touchers is exactly the [`contributors_at`] projection:
+/// every layer whose `discover()` places a leaf at `path`, opens a dict
+/// container at `path`, or covers `path` with a scalar/array at a proper
+/// prefix (wholesale-replace). Silent layers between contributors are
+/// filtered (same walk as [`contributors_at`] / [`is_contested_at`]).
+///
+/// # Cost
+///
+/// Walks layers forward with `Iterator::count` — worst-case
+/// `O(layers × path.len())`, **zero allocation** on the walker itself.
+/// Strictly cheaper than every alternative on the same axis:
+///
+/// - [`contributors_at`]`(layers, p).len()` walks every layer and
+///   allocates the full `Vec<&'static str>` of touchers, then reads its
+///   length off the fat pointer.
+/// - [`silenced_at`]`(layers, p).len() + usize::from(`[`decider_at`]
+///   `(layers, p).is_some())` walks every layer twice (once forward
+///   allocating the losers `Vec`, once in reverse for the decider) and
+///   still allocates the losers list only to fold it to a length.
+/// - [`contest_at`]`(layers, p).map_or(0, |c| c.contributor_count())`
+///   walks every layer once, allocates the [`PathContest`]'s `overridden`
+///   `Vec`, then reads a `.len() + 1` off the fused struct.
+///
+/// This primitive short-circuits nothing (the whole layer stack must
+/// be walked to know the total) but allocates nothing either — the
+/// [`Iterator::count`] adapter compiles to a bump-a-`usize` walk.
+///
+/// # HOCON analogue
+///
+/// The substrate-owned counterpart to the "how many sources touched
+/// this key?" query that Lightbend HOCON callers reconstruct by
+/// iterating each source's [`Config.entrySet()`] and counting hits at
+/// the given key. `contributor_count_at` packages that count as one
+/// substrate-owned primitive over the same pre-merge touchers set,
+/// with the boundary invariant `count == 0 ⇔ nobody touched` pinned
+/// against every neighboring None-endpoint on the lattice.
+///
+/// [`Config.entrySet()`]: https://lightbend.github.io/config/latest/api/com/typesafe/config/Config.html#entrySet--
+#[must_use]
+pub fn contributor_count_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> usize {
+    layers
+        .iter()
+        .filter(|layer| touches_path(&layer.discover(), path))
+        .count()
+}
+
 /// A per-path override contest — the decider (winner) and the ordered
 /// losers along `path`. Returned by [`contest_at`]; the typed fusion of
 /// the pre-merge point primitives [`decider_at`] (winner projection)
@@ -9302,5 +9387,283 @@ mod tests {
         assert!(!is_contested_at(&layers_one, &[]));
         let layers_zero: [&dyn DiscoveryLayer; 2] = [&silent, &silent];
         assert!(!is_contested_at(&layers_zero, &[]));
+    }
+
+    // -------- contributor_count_at (point primitive) --------
+
+    #[test]
+    fn contributor_count_at_matches_contributors_len_across_paths() {
+        // Length-fold identity: contributor_count_at(layers, p) ==
+        // contributors_at(layers, p).len(). Both sides walk the same
+        // filter; the primitive folds to usize without allocating the
+        // Vec of &'static str.
+        let a = Fixed(
+            "a",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("mode", Value::from("live")),
+                    ("setpoint", Value::from(0.80)),
+                ])),
+            )]),
+        );
+        let b = Fixed(
+            "b",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let c = Fixed("c", dict(&[("logger", Value::from("info"))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        for path in [
+            &[][..],
+            &["breathe"][..],
+            &["breathe", "mode"][..],
+            &["breathe", "setpoint"][..],
+            &["logger"][..],
+            &["absent"][..],
+        ] {
+            let via_primitive = contributor_count_at(&layers, path);
+            let via_len = contributors_at(&layers, path).len();
+            assert_eq!(
+                via_primitive, via_len,
+                "contributor_count_at != contributors_at.len() at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn contributor_count_at_matches_contest_at_contributor_count_across_paths() {
+        // Folded-value identity across the None boundary:
+        // contributor_count_at(layers, p) == contest_at(layers, p)
+        // .map_or(0, |c| c.contributor_count()). The None branch on
+        // the fused side maps to 0 in agreement with the no-toucher
+        // zero branch on the primitive side.
+        let coarse = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("setpoint", Value::from(0.80)),
+                    ("mode", Value::from("live")),
+                ])),
+            )]),
+        );
+        let middle = Fixed(
+            "cloud",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("staging"))])),
+            )]),
+        );
+        let specific = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 3] = [&coarse, &middle, &specific];
+        for path in [
+            &["breathe", "mode"][..],
+            &["breathe", "setpoint"][..],
+            &["breathe"][..],
+            &["absent"][..],
+            &[][..],
+        ] {
+            let via_primitive = contributor_count_at(&layers, path);
+            let via_fused = contest_at(&layers, path).map_or(0, |c| c.contributor_count());
+            assert_eq!(
+                via_primitive, via_fused,
+                "contributor_count_at != contest_at.map_or(0, contributor_count) at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn contributor_count_at_matches_partition_across_paths() {
+        // Partition-count identity: contributor_count_at(layers, p) ==
+        // silenced_at(layers, p).len() + usize::from(decider_at(layers, p)
+        // .is_some()). Reads the total off the ordered partition
+        // `silenced ⊎ {decider}` in agreement with the direct fold; the
+        // zero-toucher branch collapses both terms to zero.
+        let a = Fixed(
+            "a",
+            dict(&[
+                ("solo", Value::from(1i64)),
+                (
+                    "breathe",
+                    Value::from(dict(&[("mode", Value::from("live"))])),
+                ),
+            ]),
+        );
+        let b = Fixed(
+            "b",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let c = Fixed("c", dict(&[("logger", Value::from("info"))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        for path in [
+            &[][..],
+            &["solo"][..],
+            &["breathe"][..],
+            &["breathe", "mode"][..],
+            &["logger"][..],
+            &["absent"][..],
+        ] {
+            let via_primitive = contributor_count_at(&layers, path);
+            let via_partition =
+                silenced_at(&layers, path).len() + usize::from(decider_at(&layers, path).is_some());
+            assert_eq!(
+                via_primitive, via_partition,
+                "contributor_count_at != silenced_at.len() + decider_at.is_some() at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn contributor_count_at_matches_is_contested_threshold_across_paths() {
+        // Cardinality-threshold identity: is_contested_at(layers, p) ==
+        // (contributor_count_at(layers, p) >= 2). Reads the boolean
+        // dual off the scalar with a `>= 2` comparison — the boolean
+        // and scalar endpoints of the point-primitive lattice pin
+        // to the same touchers walk.
+        let a = Fixed(
+            "a",
+            dict(&[
+                ("solo", Value::from(1i64)),
+                (
+                    "breathe",
+                    Value::from(dict(&[("mode", Value::from("live"))])),
+                ),
+            ]),
+        );
+        let b = Fixed(
+            "b",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        for path in [
+            &["solo"][..],
+            &["absent"][..],
+            &["breathe"][..],
+            &["breathe", "mode"][..],
+        ] {
+            let via_scalar = contributor_count_at(&layers, path) >= 2;
+            let via_bool = is_contested_at(&layers, path);
+            assert_eq!(
+                via_scalar, via_bool,
+                "(contributor_count_at >= 2) != is_contested_at at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn contributor_count_at_zero_pins_every_none_endpoint() {
+        // Zero-boundary identity: contributor_count_at(layers, p) == 0
+        // agrees with contest_at.is_none(), decider_at.is_none(), and
+        // coarsest_at.is_none() across every branch. The four
+        // None-endpoints on the lattice collapse to the same
+        // no-toucher condition; the scalar makes the collapse
+        // arithmetic (zero) rather than boolean.
+        let a = Fixed(
+            "a",
+            dict(&[
+                ("solo", Value::from(1i64)),
+                (
+                    "breathe",
+                    Value::from(dict(&[("mode", Value::from("live"))])),
+                ),
+            ]),
+        );
+        let b = Fixed(
+            "b",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        for path in [
+            &["solo"][..],
+            &["absent"][..],
+            &["breathe"][..],
+            &["breathe", "mode"][..],
+            &[][..],
+        ] {
+            let zero = contributor_count_at(&layers, path) == 0;
+            assert_eq!(
+                zero,
+                contest_at(&layers, path).is_none(),
+                "zero != contest_at.is_none() at {path:?}",
+            );
+            assert_eq!(
+                zero,
+                decider_at(&layers, path).is_none(),
+                "zero != decider_at.is_none() at {path:?}",
+            );
+            assert_eq!(
+                zero,
+                coarsest_at(&layers, path).is_none(),
+                "zero != coarsest_at.is_none() at {path:?}",
+            );
+            assert_eq!(
+                zero,
+                contributors_at(&layers, path).is_empty(),
+                "zero != contributors_at.is_empty() at {path:?}",
+            );
+        }
+        // Empty layer stack: no touchers anywhere; count is zero at
+        // every path, including the root.
+        let empty: [&dyn DiscoveryLayer; 0] = [];
+        assert_eq!(contributor_count_at(&empty, &[]), 0);
+        assert_eq!(contributor_count_at(&empty, &["absent"]), 0);
+    }
+
+    #[test]
+    fn contributor_count_at_credits_prefix_scalar_erasure_toucher() {
+        // Prefix-scalar erasure: `a` opened the deep subtree, `b`
+        // erased it with a shallow scalar. Both touch the erased
+        // leaf pre-merge, so contributor_count_at at the erased leaf
+        // is 2 — the count credits every layer that opined at the
+        // path pre-merge, regardless of whether their opinion survived
+        // the merge.
+        let a = Fixed(
+            "a",
+            dict(&[("k", Value::from(dict(&[("leaf", Value::from(1i64))])))]),
+        );
+        let b = Fixed("b", dict(&[("k", Value::from("erased"))]));
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        assert_eq!(contributor_count_at(&layers, &["k", "leaf"]), 2);
+        assert_eq!(contributor_count_at(&layers, &["k"]), 2);
+    }
+
+    #[test]
+    fn contributor_count_at_root_boundary_filters_silent_layers() {
+        // Root specialization: silent layers between contributors are
+        // filtered on the touchers walk, so a silent layer inserted
+        // between two non-empty layers does not shift the count —
+        // the stack with three non-empty layers is count-3 at root;
+        // the stack with only one non-empty layer is count-1;
+        // an all-silent stack is count-0. Symmetric to
+        // is_contested_at_root_boundary_filters_silent_layers on the
+        // boolean axis.
+        let coarse = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+        let middle = Fixed("cloud", dict(&[("c", Value::from(3i64))]));
+        let specific = Fixed("tenancy", dict(&[("b", Value::from(2i64))]));
+        let layers_four: [&dyn DiscoveryLayer; 4] = [&coarse, &silent, &middle, &specific];
+        assert_eq!(contributor_count_at(&layers_four, &[]), 3);
+        let layers_one: [&dyn DiscoveryLayer; 2] = [&coarse, &silent];
+        assert_eq!(contributor_count_at(&layers_one, &[]), 1);
+        let layers_zero: [&dyn DiscoveryLayer; 2] = [&silent, &silent];
+        assert_eq!(contributor_count_at(&layers_zero, &[]), 0);
     }
 }

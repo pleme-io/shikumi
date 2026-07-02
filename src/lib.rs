@@ -74,9 +74,9 @@ pub use cube::{
 };
 pub use discovered::{
     DiscoveryComposition, DiscoveryLayer, LayerAttribution, PathContest, coarsest_at,
-    compose as compose_discovery, compose_with_provenance, contest_at, contributor_names,
-    contributors_at, decider_at, deep_merge, is_contested_at, layer_names, nonempty_layer_dicts,
-    silenced_at, silent_layer_names,
+    compose as compose_discovery, compose_with_provenance, contest_at, contributor_count_at,
+    contributor_names, contributors_at, decider_at, deep_merge, is_contested_at, layer_names,
+    nonempty_layer_dicts, silenced_at, silent_layer_names,
 };
 pub use discovery::{
     ConfigDiscovery, Format, FormatCoordinates, FormatMetadataTag, FormatProvenance,
