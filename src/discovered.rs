@@ -2340,6 +2340,92 @@ pub fn coarsest_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> Option<&'st
         .map(|layer| layer.name())
 }
 
+/// `true` iff at least two layers touched `path` — the point-restricted
+/// **contest predicate** on the (path, layer) axis.
+///
+/// The point-primitive dual of [`PathContest::is_contested`]: that method
+/// reads a boolean off a materialized [`PathContest`] value in `O(1)`;
+/// this function answers the same question **without materializing the
+/// fused pair**, short-circuiting on the second toucher rather than
+/// walking every layer and allocating the `overridden` [`Vec`] for a
+/// scalar answer.
+///
+/// The four boolean projections on the point-primitive lattice collapse
+/// onto one substrate-owned primitive with the same short-circuit
+/// semantics as [`decider_at`] / [`coarsest_at`] on their scalar axes:
+///
+/// - `is_contested_at(layers, p) == !`[`silenced_at`]`(layers, p).is_empty()`
+///   (losers-non-empty predicate on the loose axis)
+/// - `is_contested_at(layers, p) == `[`contest_at`]`(layers, p).map_or(false,
+///   |c| c.is_contested())` (fused-value method call)
+/// - `is_contested_at(layers, p) == `[`contributors_at`]`(layers, p).len() >= 2`
+///   (cardinality predicate on the ordered-touchers axis)
+/// - `is_contested_at(layers, p) == (`[`coarsest_at`]`(layers, p) !=
+///   `[`decider_at`]`(layers, p))` (endpoint-inequality predicate — holds
+///   because both-`None` collapses to zero touchers and both-`Some(same)`
+///   collapses to one toucher; two+ distinct-named touchers give distinct
+///   leading/trailing endpoints under the [`DiscoveryLayer::name`]
+///   `&'static str` distinctness contract).
+///
+/// All four routes are algebraically identical on their shared boolean
+/// output; this primitive is the strictly-cheapest route when the caller
+/// wants only the contest predicate and does not need the touchers list,
+/// the decider name, or the losers list.
+///
+/// # Semantics
+///
+/// The set of touchers is exactly the [`contributors_at`] projection:
+/// every layer whose `discover()` places a leaf at `path`, opens a dict
+/// container at `path`, or covers `path` with a scalar/array at a proper
+/// prefix (wholesale-replace). Two touchers is the true-boundary; zero
+/// touchers (no layer opinions) and one toucher (uncontested singleton
+/// path) are the false-boundary — the two are collapsed under the same
+/// return value because both admit a single [`PathContest`]-shaped
+/// answer with an empty `overridden` (or no [`PathContest`] at all).
+///
+/// # Cost
+///
+/// Walks layers forward with a **short-circuit on the second hit** —
+/// worst-case `O(layers × path.len())` (nobody touched, or exactly one
+/// layer touched at the very end of the stack), best-case
+/// `O(path.len())` (the first two layers touch). Zero allocation on the
+/// walker itself. Strictly cheaper than [`contributors_at`] plus a
+/// `.len() >= 2` (which walks every layer and allocates the full
+/// touchers `Vec`), [`silenced_at`] plus `.is_empty()` (same allocation,
+/// plus a `pop` at the end), and [`contest_at`] plus `.is_contested()`
+/// (walks every layer, allocates the `overridden` `Vec`, then reads a
+/// single bit off the fused struct). Symmetric in short-circuit
+/// semantics to [`decider_at`] / [`coarsest_at`] on the boolean axis.
+///
+/// # HOCON analogue
+///
+/// The substrate-owned counterpart to Lightbend HOCON's "is this key
+/// shadowed across sources?" query: HOCON exposes per-source
+/// [`Config.entrySet()`] with a [`ConfigOrigin`] per value, but the
+/// *contested-at-path* predicate — "did more than one source touch this
+/// key?" — is recovered only by iterating each source's `entrySet()`
+/// and counting hits, or by set-differencing per-source origins against
+/// the merged value's origin. `is_contested_at` packages the predicate
+/// as one substrate-owned primitive with a short-circuiting forward
+/// walk, and the two false-boundary cases (zero touchers, one toucher)
+/// are collapsed under the same `false` return so the caller doesn't
+/// have to disambiguate the two. Figment 0.10's per-value [`Tag`] names
+/// the surviving-leaf's origin but exposes no predicate for the
+/// "someone else was shadowed" question; `is_contested_at` closes that
+/// missing predicate-endpoint seam.
+///
+/// [`Config.entrySet()`]: https://lightbend.github.io/config/latest/api/com/typesafe/config/Config.html#entrySet--
+/// [`ConfigOrigin`]: https://lightbend.github.io/config/latest/api/com/typesafe/config/ConfigOrigin.html
+/// [`Tag`]: https://docs.rs/figment/latest/figment/value/struct.Tag.html
+#[must_use]
+pub fn is_contested_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> bool {
+    layers
+        .iter()
+        .filter(|layer| touches_path(&layer.discover(), path))
+        .nth(1)
+        .is_some()
+}
+
 /// A per-path override contest — the decider (winner) and the ordered
 /// losers along `path`. Returned by [`contest_at`]; the typed fusion of
 /// the pre-merge point primitives [`decider_at`] (winner projection)
@@ -8960,5 +9046,261 @@ mod tests {
         assert_eq!(decider_at(&layers, &[]), names.last().copied());
         assert_eq!(coarsest_at(&layers, &[]), Some("platform"));
         assert_eq!(decider_at(&layers, &[]), Some("tenancy"));
+    }
+
+    // -------- is_contested_at (point primitive) --------
+
+    #[test]
+    fn is_contested_at_false_boundary_on_zero_or_one_toucher() {
+        // The false-boundary collapses two structurally distinct cases
+        // under the same return: no toucher (contributors_at.is_empty())
+        // and single toucher (contributors_at.len() == 1). Both admit
+        // an uncontested answer; is_contested_at names the collapsed
+        // predicate without disambiguating between them.
+        let a = Fixed(
+            "a",
+            dict(&[
+                ("solo", Value::from(1i64)),
+                (
+                    "breathe",
+                    Value::from(dict(&[("mode", Value::from("live"))])),
+                ),
+            ]),
+        );
+        let b = Fixed("b", dict(&[("logger", Value::from("info"))]));
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        // Zero touchers → false.
+        assert!(!is_contested_at(&layers, &["absent"]));
+        // One toucher (only a) → false.
+        assert!(!is_contested_at(&layers, &["solo"]));
+        assert!(!is_contested_at(&layers, &["breathe"]));
+        assert!(!is_contested_at(&layers, &["breathe", "mode"]));
+        // One toucher (only b) → false.
+        assert!(!is_contested_at(&layers, &["logger"]));
+        // Empty layer stack — no toucher on any path, including root.
+        let empty: [&dyn DiscoveryLayer; 0] = [];
+        assert!(!is_contested_at(&empty, &[]));
+        assert!(!is_contested_at(&empty, &["absent"]));
+    }
+
+    #[test]
+    fn is_contested_at_matches_silenced_non_empty_across_paths() {
+        // Losers-non-empty identity: is_contested_at(layers, p) ==
+        // !silenced_at(layers, p).is_empty(). Both sides pin to the
+        // "at least one overridden toucher" predicate on the loose
+        // axis. Covers no-toucher, one-toucher, two-toucher, and
+        // dict-container paths.
+        let a = Fixed(
+            "a",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("mode", Value::from("live")),
+                    ("setpoint", Value::from(0.80)),
+                ])),
+            )]),
+        );
+        let b = Fixed(
+            "b",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let c = Fixed("c", dict(&[("logger", Value::from("info"))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        for path in [
+            &[][..],
+            &["breathe"][..],
+            &["breathe", "mode"][..],
+            &["breathe", "setpoint"][..],
+            &["logger"][..],
+            &["absent"][..],
+        ] {
+            let via_primitive = is_contested_at(&layers, path);
+            let via_loose = !silenced_at(&layers, path).is_empty();
+            assert_eq!(
+                via_primitive, via_loose,
+                "is_contested_at != !silenced_at.is_empty() at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn is_contested_at_matches_contest_at_is_contested_across_paths() {
+        // Fused-value identity across the None boundary:
+        // is_contested_at(layers, p) == contest_at(layers, p)
+        // .map_or(false, |c| c.is_contested()) — the point primitive
+        // is exactly the boolean projection off contest_at, and the
+        // None branch on the fused side maps to false in agreement
+        // with the no-toucher false branch on the primitive side.
+        let coarse = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("setpoint", Value::from(0.80)),
+                    ("mode", Value::from("live")),
+                ])),
+            )]),
+        );
+        let middle = Fixed(
+            "cloud",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("staging"))])),
+            )]),
+        );
+        let specific = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 3] = [&coarse, &middle, &specific];
+        for path in [
+            &["breathe", "mode"][..],
+            &["breathe", "setpoint"][..],
+            &["breathe"][..],
+            &["absent"][..],
+            &[][..],
+        ] {
+            let via_primitive = is_contested_at(&layers, path);
+            let via_fused = contest_at(&layers, path).is_some_and(|c| c.is_contested());
+            assert_eq!(
+                via_primitive, via_fused,
+                "is_contested_at != contest_at.is_some_and(is_contested) at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn is_contested_at_matches_contributors_len_ge_two_across_paths() {
+        // Cardinality-threshold identity, the load-bearing point-primitive
+        // pin: is_contested_at(layers, p) == contributors_at(layers, p)
+        // .len() >= 2 across every branch of touches_path. Both sides
+        // walk the same filter; the primitive short-circuits at the
+        // second hit while the loose Vec walks every layer and then
+        // reads the length.
+        let a = Fixed(
+            "a",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("mode", Value::from("live")),
+                    ("setpoint", Value::from(0.80)),
+                ])),
+            )]),
+        );
+        let b = Fixed(
+            "b",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let c = Fixed("c", dict(&[("logger", Value::from("info"))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        for path in [
+            &[][..],
+            &["breathe"][..],
+            &["breathe", "mode"][..],
+            &["breathe", "setpoint"][..],
+            &["logger"][..],
+            &["absent"][..],
+        ] {
+            let via_primitive = is_contested_at(&layers, path);
+            let via_len = contributors_at(&layers, path).len() >= 2;
+            assert_eq!(
+                via_primitive, via_len,
+                "is_contested_at != contributors_at.len() >= 2 at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn is_contested_at_matches_endpoint_inequality_across_paths() {
+        // Endpoint-inequality identity: is_contested_at(layers, p) ==
+        // (coarsest_at(layers, p) != decider_at(layers, p)). Holds
+        // because both-None ⇒ equal ⇒ false (zero touchers, not
+        // contested); both-Some(same) ⇒ equal ⇒ false (one toucher,
+        // not contested); both-Some with distinct-in-order names ⇒
+        // not equal ⇒ true (two+ touchers, contested — decider is
+        // reverse-first, coarsest is forward-first, and the two
+        // indices differ under the layer-name distinctness contract).
+        let a = Fixed(
+            "a",
+            dict(&[
+                ("solo", Value::from(1i64)),
+                (
+                    "breathe",
+                    Value::from(dict(&[("mode", Value::from("live"))])),
+                ),
+            ]),
+        );
+        let b = Fixed(
+            "b",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        for path in [
+            &["solo"][..],            // only `a` touches — uncontested
+            &["absent"][..],          // no toucher — both None
+            &["breathe"][..],         // dict container both touch — contested
+            &["breathe", "mode"][..], // leaf both touch — contested
+        ] {
+            let via_primitive = is_contested_at(&layers, path);
+            let via_endpoints = coarsest_at(&layers, path) != decider_at(&layers, path);
+            assert_eq!(
+                via_primitive, via_endpoints,
+                "is_contested_at != (coarsest_at != decider_at) at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn is_contested_at_covers_prefix_scalar_erasure() {
+        // Prefix-scalar erasure: `a` opened the deep subtree, `b`
+        // erased it with a shallow scalar. Both touch the erased
+        // leaf, so is_contested_at is true — the predicate does not
+        // require both touchers to survive on the composed dict, only
+        // that both touched the path pre-merge. Symmetric to
+        // coarsest_at / decider_at's erasure test on their scalar
+        // axes.
+        let a = Fixed(
+            "a",
+            dict(&[("k", Value::from(dict(&[("leaf", Value::from(1i64))])))]),
+        );
+        let b = Fixed("b", dict(&[("k", Value::from("erased"))]));
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        assert!(is_contested_at(&layers, &["k", "leaf"]));
+        assert_eq!(coarsest_at(&layers, &["k", "leaf"]), Some("a"));
+        assert_eq!(decider_at(&layers, &["k", "leaf"]), Some("b"));
+    }
+
+    #[test]
+    fn is_contested_at_root_boundary_filters_silent_layers() {
+        // Root specialization: silent layers between contributors are
+        // filtered on both axes, so a silent layer inserted between
+        // two non-empty layers does not shift the predicate — the
+        // stack with two non-empty layers is contested at root; the
+        // stack with only one non-empty layer is not, regardless of
+        // how many silent layers sit alongside it.
+        let coarse = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+        let middle = Fixed("cloud", dict(&[("c", Value::from(3i64))]));
+        let specific = Fixed("tenancy", dict(&[("b", Value::from(2i64))]));
+        let layers_four: [&dyn DiscoveryLayer; 4] = [&coarse, &silent, &middle, &specific];
+        assert!(is_contested_at(&layers_four, &[]));
+        // Only one non-empty layer at root — silent siblings do not
+        // shift the endpoint or the predicate.
+        let layers_one: [&dyn DiscoveryLayer; 2] = [&coarse, &silent];
+        assert!(!is_contested_at(&layers_one, &[]));
+        let layers_zero: [&dyn DiscoveryLayer; 2] = [&silent, &silent];
+        assert!(!is_contested_at(&layers_zero, &[]));
     }
 }
