@@ -1230,6 +1230,140 @@ impl LayerAttribution {
         });
         ranking
     }
+
+    /// The **argmin** on the count axis: the [`DiscoveryLayer`] that
+    /// wrote the fewest surviving leaves in the composed attribution,
+    /// or [`None`] when the attribution is empty (no leaves survived).
+    ///
+    /// The **bottom-endpoint** dual of [`Self::dominant_layer`] — where
+    /// that scalar answers "who owns the largest share?" at the top of
+    /// [`Self::layer_ranking`], this one answers "who owns the smallest
+    /// share?" at the bottom. Consumers that need the minimum
+    /// contributor — a diagnostics gauge flagging under-used writers, a
+    /// "least-active axis" audit banner, a coverage report that names
+    /// the writer at risk of falling silent — reach for this seam
+    /// directly instead of iterating [`Self::leaf_counts_by_layer`] and
+    /// tracking a running min in the consumer.
+    ///
+    /// **Deterministic tie-break.** When two or more writers share the
+    /// minimum count, the winner is the *largest* layer name in lex
+    /// order on `&'static str` — the same endpoint
+    /// [`Self::layer_ranking`]`.last()` names. So both endpoints of
+    /// the ranking factor through the ranking's own tie-break
+    /// convention (count DESC, name ASC): the first is the smallest
+    /// lex name at max count, the last is the largest lex name at min
+    /// count. The result is stable across identical attributions and
+    /// stable across counters with tied minima at zero extra cost.
+    ///
+    /// **Cost.** `O(n log k)` time and `O(k)` space where `n` is the
+    /// leaf count and `k` is the distinct-writer count — one pass over
+    /// `self.inner.values()` to build the counter map (via
+    /// [`Self::leaf_counts_by_layer`]), one linear argmin pass over its
+    /// `k` entries. The counter map is consumed, not returned, so
+    /// callers pay no per-writer allocation they then discard.
+    ///
+    /// **Cross-projection identities.** The result is [`Some`] iff
+    /// [`Self::is_empty`] is `false`; its unwrapped value is a member
+    /// of [`Self::surviving_layer_names`]; and
+    /// [`Self::leaf_count_of_layer`]`(weakest_layer().unwrap())` equals
+    /// the minimum value of [`Self::leaf_counts_by_layer`]. Pinned by
+    /// `weakest_layer_agrees_with_leaf_counts_argmin`,
+    /// `weakest_layer_empty_attribution_is_none`, and
+    /// `weakest_layer_is_member_of_surviving_layer_names` in
+    /// `src/discovered.rs`'s test module.
+    ///
+    /// **Endpoint identity.**
+    /// `weakest_layer()` equals
+    /// `layer_ranking().last().map(|(n, _)| *n)` verbatim on every
+    /// input — the argmin is the last entry of the sorted-by-dominance
+    /// view. Pinned by `weakest_layer_equals_layer_ranking_last`.
+    ///
+    /// **Bookend law.** For every attribution with at least one live
+    /// writer, `dominant_layer() == weakest_layer()` iff every
+    /// surviving writer has the same leaf count (the ranking is flat).
+    /// Pinned indirectly by
+    /// `weakest_layer_equals_dominant_layer_on_single_writer_or_flat`.
+    ///
+    /// **Subtree altitude.** [`Self::subtree_weakest_layer`] extends
+    /// this scalar to a `prefix`, answering the same "who owns the
+    /// smallest share?" question restricted to a single sub-tree — the
+    /// natural pane a per-subsystem diagnostics gauge reaches for.
+    #[must_use]
+    pub fn weakest_layer(&self) -> Option<&'static str> {
+        self.leaf_counts_by_layer()
+            .into_iter()
+            .min_by(|(a_name, a_count), (b_name, b_count)| {
+                a_count.cmp(b_count).then_with(|| b_name.cmp(a_name))
+            })
+            .map(|(name, _)| name)
+    }
+
+    /// The **subtree-restricted** dual of [`Self::weakest_layer`]: the
+    /// [`DiscoveryLayer`] that wrote the fewest surviving leaves under
+    /// (or at) `prefix`, or [`None`] when the subtree is empty
+    /// (`prefix` names no subtree, or every writer under it was
+    /// purged).
+    ///
+    /// The **bottom-endpoint** dual on the subtree ladder — the
+    /// compact companion to [`Self::subtree_surviving_layer_names`]
+    /// (name-set), [`Self::subtree_leaf_counts_by_layer`] (histogram),
+    /// [`Self::subtree_dominant_layer`] (top endpoint), and
+    /// [`Self::subtree_layer_ranking`] (sorted view). Consumers that
+    /// only need the smallest contributor under one subsystem — a
+    /// per-subtree health-check gauge flagging under-used axes, a
+    /// "who barely wrote `breathe.*`?" audit query — reach for this
+    /// seam directly instead of iterating
+    /// [`Self::subtree_leaf_counts_by_layer`] and tracking a running
+    /// min in the consumer.
+    ///
+    /// **Deterministic tie-break.** As for [`Self::weakest_layer`],
+    /// tied minima are broken by the *largest* layer name in lex
+    /// order on `&'static str` — stable across identical subtrees,
+    /// and matching the endpoint
+    /// [`Self::subtree_layer_ranking`]`(prefix).last()` names.
+    ///
+    /// **Cost.** `O(log n + m + k')` time and `O(k')` space where `n`
+    /// is the total leaf count, `m` is the number of matching leaves
+    /// under the subtree, and `k'` is the distinct-writer count *under
+    /// the subtree* — one [`BTreeMap::range`] seek to the subtree's
+    /// first entry (via [`Self::subtree_iter`]), a linear walk that
+    /// halts at the first non-prefixed key, one [`BTreeMap`] counter
+    /// increment per leaf, one linear argmin pass over the counter
+    /// map.
+    ///
+    /// **Cross-projection identities.** The result is [`Some`] iff
+    /// [`Self::subtree_iter`]`(prefix).next()` is [`Some`]; its
+    /// unwrapped value is a member of
+    /// [`Self::subtree_surviving_layer_names`]`(prefix)`; and
+    /// [`Self::subtree_leaf_count_of_layer`]`(prefix,
+    /// subtree_weakest_layer(prefix).unwrap())` equals the minimum
+    /// value of [`Self::subtree_leaf_counts_by_layer`]`(prefix)`.
+    /// `subtree_weakest_layer(&[])` equals [`Self::weakest_layer`]
+    /// verbatim (the empty-prefix corner).
+    ///
+    /// **Endpoint identity.**
+    /// `subtree_weakest_layer(prefix)` equals
+    /// `subtree_layer_ranking(prefix).last().map(|(n, _)| *n)` verbatim
+    /// on every input — the subtree argmin is the last entry of the
+    /// subtree sorted-by-dominance view.
+    ///
+    /// **Subset invariants.** For every prefix and every attribution:
+    /// `subtree_weakest_layer(prefix)` is [`None`] whenever
+    /// [`Self::subtree_iter`]`(prefix).next()` is [`None`], and is a
+    /// member of [`Self::surviving_layer_names`] (the top-level writer
+    /// set) when [`Some`] — the subtree cannot pick a name that never
+    /// wrote anywhere. The scalar can differ from
+    /// [`Self::weakest_layer`] under a subtree that a globally-dominant
+    /// writer nonetheless barely touches (or wholly skips).
+    #[must_use]
+    pub fn subtree_weakest_layer(&self, prefix: &[String]) -> Option<&'static str> {
+        self.subtree_leaf_counts_by_layer(prefix)
+            .into_iter()
+            .min_by(|(a_name, a_count), (b_name, b_count)| {
+                a_count.cmp(b_count).then_with(|| b_name.cmp(a_name))
+            })
+            .map(|(name, _)| name)
+    }
 }
 
 /// The result of composing a stack of [`DiscoveryLayer`]s with per-leaf
@@ -5140,5 +5274,373 @@ mod tests {
                 }
             }
         }
+    }
+
+    // -------- weakest_layer / subtree_weakest_layer
+
+    #[test]
+    fn weakest_layer_agrees_with_leaf_counts_argmin() {
+        // Cross-projection identity: the scalar argmin equals the
+        // argmin of `leaf_counts_by_layer`. On layer_axis_fixture
+        // (platform: 1 leaf, tenancy: 2 leaves), the weakest is
+        // "platform" with count 1 = min.
+        let out = layer_axis_fixture();
+        let weakest = out.attribution.weakest_layer().expect("non-empty");
+        assert_eq!(weakest, "platform", "platform owns 1 leaf < tenancy's 2");
+        let counts = out.attribution.leaf_counts_by_layer();
+        let min_count = counts.values().copied().min().expect("non-empty");
+        assert_eq!(
+            counts.get(weakest).copied().unwrap_or(0),
+            min_count,
+            "weakest writer's count equals the min of leaf_counts_by_layer",
+        );
+        assert_eq!(
+            out.attribution.leaf_count_of_layer(weakest),
+            min_count,
+            "leaf_count_of_layer(weakest) also equals the min",
+        );
+    }
+
+    #[test]
+    fn weakest_layer_ties_broken_by_lex_name_descending() {
+        // Three-way tie fixture: aaa, bbb, ccc all at count 1. The
+        // largest lex name wins deterministically — the same endpoint
+        // `layer_ranking().last()` names.
+        let out = three_way_tie_fixture();
+        assert_eq!(
+            out.attribution.weakest_layer(),
+            Some("ccc"),
+            "on a three-way tie, the largest lex name wins the argmin",
+        );
+    }
+
+    #[test]
+    fn weakest_layer_empty_attribution_is_none() {
+        // Empty attribution ⇒ no writers ⇒ no weakest layer.
+        let empty = compose_with_provenance(&[]);
+        assert_eq!(empty.attribution.weakest_layer(), None);
+        // Silent-only stack — every writer emitted an empty dict, so
+        // the attribution is empty.
+        let silent = Fixed("silent-a", Dict::new());
+        let more_silent = Fixed("silent-b", Dict::new());
+        let silent_out = compose_with_provenance(&[&silent, &more_silent]);
+        assert_eq!(silent_out.attribution.weakest_layer(), None);
+    }
+
+    #[test]
+    fn weakest_layer_single_writer_is_that_writer() {
+        // One live writer ⇒ that writer is both the dominant and the
+        // weakest — the ranking is a single row.
+        let solo = Fixed(
+            "solo",
+            dict(&[("k1", Value::from(1i64)), ("k2", Value::from(2i64))]),
+        );
+        let silent = Fixed("silent", Dict::new());
+        let out = compose_with_provenance(&[&solo, &silent]);
+        assert_eq!(out.attribution.weakest_layer(), Some("solo"));
+        assert_eq!(
+            out.attribution.weakest_layer(),
+            out.attribution.dominant_layer(),
+            "single-writer bookend collapse",
+        );
+    }
+
+    #[test]
+    fn weakest_layer_is_member_of_surviving_layer_names() {
+        // Rustdoc invariant across every non-empty fixture: whenever
+        // `weakest_layer` returns `Some(name)`, `name` is in
+        // `surviving_layer_names`.
+        for out in [
+            layer_axis_fixture(),
+            subtree_fixture(),
+            three_way_tie_fixture(),
+            inversion_fixture(),
+        ] {
+            if let Some(weakest) = out.attribution.weakest_layer() {
+                assert!(
+                    out.attribution.surviving_layer_names().contains(&weakest),
+                    "weakest_layer must be a member of surviving_layer_names",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn weakest_layer_equals_layer_ranking_last() {
+        // Endpoint identity: the argmin equals the last entry of the
+        // sorted-by-dominance view verbatim, across every fixture.
+        for out in [
+            layer_axis_fixture(),
+            subtree_fixture(),
+            three_way_tie_fixture(),
+            inversion_fixture(),
+            compose_with_provenance(&[]),
+        ] {
+            let ranking_last: Option<&'static str> =
+                out.attribution.layer_ranking().last().map(|(n, _)| *n);
+            assert_eq!(
+                ranking_last,
+                out.attribution.weakest_layer(),
+                "ranking.last().name ≡ weakest_layer()",
+            );
+        }
+    }
+
+    #[test]
+    fn weakest_layer_equals_dominant_layer_on_single_writer_or_flat() {
+        // Bookend law: `weakest_layer == dominant_layer` iff the
+        // ranking is flat (every surviving writer has the same count).
+        // Solo writer ⇒ trivially flat ⇒ they coincide.
+        let solo = Fixed("solo", dict(&[("k", Value::from(1i64))]));
+        let out = compose_with_provenance(&[&solo]);
+        assert_eq!(
+            out.attribution.weakest_layer(),
+            out.attribution.dominant_layer(),
+            "single-writer ⇒ bookends coincide",
+        );
+        // Three-way tie ⇒ flat ranking at count 1 ⇒ bookends differ
+        // (dominant picks smallest lex, weakest picks largest).
+        let tied = three_way_tie_fixture();
+        assert_ne!(
+            tied.attribution.weakest_layer(),
+            tied.attribution.dominant_layer(),
+            "flat but multi-writer ⇒ bookends disagree by tie-break rule",
+        );
+        assert_eq!(tied.attribution.dominant_layer(), Some("aaa"));
+        assert_eq!(tied.attribution.weakest_layer(), Some("ccc"));
+        // Distinct counts ⇒ bookends differ.
+        let axis = layer_axis_fixture();
+        assert_ne!(
+            axis.attribution.weakest_layer(),
+            axis.attribution.dominant_layer(),
+            "distinct counts ⇒ bookends differ",
+        );
+    }
+
+    #[test]
+    fn subtree_weakest_layer_empty_prefix_equals_weakest_layer() {
+        // Empty-prefix corner: the subtree-restricted argmin collapses
+        // to the top-level argmin verbatim across every fixture —
+        // non-empty and empty alike.
+        for out in [
+            layer_axis_fixture(),
+            subtree_fixture(),
+            three_way_tie_fixture(),
+            inversion_fixture(),
+            compose_with_provenance(&[]),
+        ] {
+            assert_eq!(
+                out.attribution.subtree_weakest_layer(&[]),
+                out.attribution.weakest_layer(),
+                "empty prefix ⇒ subtree_weakest_layer equals weakest_layer",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_weakest_layer_at_named_prefix_narrows_the_argmin() {
+        // Under subtree_fixture's `["breathe"]`: coarse:1 (mode),
+        // specific:1 (setpoint) ⇒ tie ⇒ "specific" (lex descending).
+        // Under `["alpha"]`: coarse:1 alone ⇒ "coarse".
+        let out = subtree_fixture();
+        assert_eq!(
+            out.attribution.subtree_weakest_layer(&[s("breathe")]),
+            Some("specific"),
+            "under breathe.*, tied at 1 leaf each — specific wins by largest lex",
+        );
+        assert_eq!(
+            out.attribution.subtree_weakest_layer(&[s("alpha")]),
+            Some("coarse"),
+            "under alpha (a leaf), coarse alone is trivially weakest",
+        );
+        // Under inversion_fixture's `["small"]`: specific:2, coarse:1
+        // ⇒ weakest is coarse.
+        let inv = inversion_fixture();
+        assert_eq!(
+            inv.attribution.subtree_weakest_layer(&[s("small")]),
+            Some("coarse"),
+            "under small.*, coarse (1 leaf) is weaker than specific (2)",
+        );
+        assert_eq!(
+            inv.attribution.subtree_weakest_layer(&[s("big")]),
+            Some("coarse"),
+            "under big.*, coarse alone is trivially weakest",
+        );
+    }
+
+    #[test]
+    fn subtree_weakest_layer_absent_prefix_is_none() {
+        let out = subtree_fixture();
+        assert_eq!(
+            out.attribution.subtree_weakest_layer(&[s("nonexistent")]),
+            None,
+            "absent prefix ⇒ empty subtree ⇒ None",
+        );
+    }
+
+    #[test]
+    fn subtree_weakest_layer_agrees_with_argmin_of_subtree_counts() {
+        // Cross-projection identity across every prefix on every
+        // fixture: when `Some(name)`, `name`'s subtree count equals
+        // the min of `subtree_leaf_counts_by_layer`, and `name` is
+        // the last (largest-lex) entry among writers tied at that min.
+        let prefixes: Vec<Vec<String>> = vec![
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("small")],
+            vec![s("big")],
+            vec![s("nonexistent")],
+        ];
+        for out in [
+            subtree_fixture(),
+            inversion_fixture(),
+            layer_axis_fixture(),
+            three_way_tie_fixture(),
+        ] {
+            for prefix in &prefixes {
+                let weakest = out.attribution.subtree_weakest_layer(prefix);
+                let counts = out.attribution.subtree_leaf_counts_by_layer(prefix);
+                if let Some(name) = weakest {
+                    let min_count = counts
+                        .values()
+                        .copied()
+                        .min()
+                        .expect("non-empty subtree ⇒ non-empty counter map");
+                    assert_eq!(
+                        counts.get(name).copied(),
+                        Some(min_count),
+                        "at prefix {prefix:?}, weakest {name} owns the min count",
+                    );
+                    assert_eq!(
+                        out.attribution.subtree_leaf_count_of_layer(prefix, name),
+                        min_count,
+                        "at prefix {prefix:?}, subtree_leaf_count_of_layer({name}) equals the min",
+                    );
+                    // Tie-break: among writers at the min count,
+                    // `name` is the largest lex.
+                    let tied_at_min: Vec<&'static str> = counts
+                        .iter()
+                        .filter_map(|(n, c)| (*c == min_count).then_some(*n))
+                        .collect();
+                    assert_eq!(
+                        tied_at_min.last().copied(),
+                        Some(name),
+                        "at prefix {prefix:?}, weakest picks the largest lex name among tied minima",
+                    );
+                } else {
+                    assert!(
+                        counts.is_empty(),
+                        "at prefix {prefix:?}, None ⇒ counter map is empty",
+                    );
+                    assert_eq!(
+                        out.attribution.subtree_iter(prefix).count(),
+                        0,
+                        "at prefix {prefix:?}, None ⇒ subtree_iter is empty",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_weakest_layer_is_member_of_subtree_surviving_layer_names_when_some() {
+        // Two subset invariants across every prefix on every fixture:
+        // the returned name lives in the subtree's surviving names AND
+        // in the top-level surviving names (the subtree cannot pick a
+        // writer that never wrote anywhere).
+        let prefixes: Vec<Vec<String>> = vec![
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("small")],
+            vec![s("big")],
+            vec![s("nonexistent")],
+        ];
+        for out in [
+            subtree_fixture(),
+            inversion_fixture(),
+            layer_axis_fixture(),
+            three_way_tie_fixture(),
+        ] {
+            let global: std::collections::BTreeSet<&'static str> = out
+                .attribution
+                .surviving_layer_names()
+                .into_iter()
+                .collect();
+            for prefix in &prefixes {
+                if let Some(weakest) = out.attribution.subtree_weakest_layer(prefix) {
+                    let subtree_set: std::collections::BTreeSet<&'static str> = out
+                        .attribution
+                        .subtree_surviving_layer_names(prefix)
+                        .into_iter()
+                        .collect();
+                    assert!(
+                        subtree_set.contains(weakest),
+                        "at prefix {prefix:?}, weakest {weakest} lives in subtree_surviving_layer_names",
+                    );
+                    assert!(
+                        global.contains(weakest),
+                        "at prefix {prefix:?}, weakest {weakest} lives in the global surviving set",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_weakest_layer_equals_subtree_layer_ranking_last() {
+        // Endpoint identity at the subtree altitude: the argmin equals
+        // the last entry of the subtree sorted-by-dominance view
+        // verbatim, across every fixture and every prefix.
+        let prefixes: Vec<Vec<String>> = vec![
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("small")],
+            vec![s("big")],
+            vec![s("nonexistent")],
+        ];
+        for out in [
+            subtree_fixture(),
+            inversion_fixture(),
+            layer_axis_fixture(),
+            three_way_tie_fixture(),
+        ] {
+            for prefix in &prefixes {
+                let ranking_last: Option<&'static str> = out
+                    .attribution
+                    .subtree_layer_ranking(prefix)
+                    .last()
+                    .map(|(n, _)| *n);
+                assert_eq!(
+                    ranking_last,
+                    out.attribution.subtree_weakest_layer(prefix),
+                    "at prefix {prefix:?}, subtree ranking.last().name ≡ subtree_weakest_layer",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_weakest_layer_can_differ_from_weakest_layer() {
+        // The non-trivial cell: the top-level weakest differs from a
+        // subtree weakest. On inversion_fixture, the top-level weakest
+        // is "specific" (2 leaves) — but under `["big"]`, "specific"
+        // wrote nothing, so the local weakest is "coarse".
+        let out = inversion_fixture();
+        assert_eq!(out.attribution.weakest_layer(), Some("specific"));
+        assert_eq!(
+            out.attribution.subtree_weakest_layer(&[s("big")]),
+            Some("coarse"),
+            "under big.*, specific is absent — coarse is the only (and weakest) writer",
+        );
+        // Under `["small"]`: specific:2, coarse:1 — the weakest flips
+        // to "coarse" locally.
+        assert_eq!(
+            out.attribution.subtree_weakest_layer(&[s("small")]),
+            Some("coarse"),
+            "under small.*, coarse (1 leaf) is weaker than specific (2)",
+        );
     }
 }
