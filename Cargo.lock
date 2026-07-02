@@ -91,9 +91,9 @@ checksum = "76a2e8124351fda1ef8aaaa3bbd7ebbcb486bbcd4225aca0aa0d84bb2db8fecb"
 
 [[package]]
 name = "arrayvec"
-version = "0.7.7"
+version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f02882884d3e1bc524fb12c79f107f6ad0e1cfd498c536ffb494301740995dfe"
+checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
 name = "async-trait"
@@ -2241,7 +2241,7 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.115"
+version = "0.1.116"
 dependencies = [
  "akeyless-api",
  "arc-swap",
@@ -2363,8 +2363,8 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp"
-version = "0.2.113"
-source = "git+https://github.com/pleme-io/tatara#d866fb12843204d67bc8befeba18ea5fe2a10dd4"
+version = "0.2.115"
+source = "git+https://github.com/pleme-io/tatara#3325de7c07f0e3588028570140e7a8d82fc2a169"
 dependencies = [
  "blake3",
  "serde",
@@ -2375,8 +2375,8 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp-derive"
-version = "0.2.113"
-source = "git+https://github.com/pleme-io/tatara#d866fb12843204d67bc8befeba18ea5fe2a10dd4"
+version = "0.2.115"
+source = "git+https://github.com/pleme-io/tatara#3325de7c07f0e3588028570140e7a8d82fc2a169"
 dependencies = [
  "proc-macro2",
  "quote",
