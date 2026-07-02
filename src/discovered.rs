@@ -2213,6 +2213,174 @@ pub fn decider_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> Option<&'sta
         .map(|layer| layer.name())
 }
 
+/// A per-path override contest — the decider (winner) and the ordered
+/// losers along `path`. Returned by [`contest_at`]; the typed fusion of
+/// the pre-merge point primitives [`decider_at`] (winner projection)
+/// and [`silenced_at`] (loser projection) into one value the *type
+/// enforces* well-formedness of.
+///
+/// The [`Option<PathContest>`] return shape carries the "some toucher /
+/// no toucher" boundary at the outer layer; inside a `PathContest`,
+/// the `decider` field is unconditionally present — a `None` decider
+/// is *unrepresentable*. That's the structural gain over the split
+/// pair: a caller pattern-matching on `Option<PathContest>` handles
+/// every case exhaustively, and the "there are losers but no winner"
+/// state (which the loose pair `(Option<&'static str>,
+/// Vec<&'static str>)` would silently admit as
+/// `(None, ["a", "b"])`) cannot occur.
+///
+/// The relationship to the loose pair is the identity
+///
+/// ```text
+/// contest_at(layers, p).map(|c| c.decider)     == decider_at(layers, p)
+/// contest_at(layers, p).map(|c| c.overridden)  == Some(silenced_at(layers, p))
+///                                              // when contest_at is Some
+/// contest_at(layers, p).is_none()              == decider_at(layers, p).is_none()
+///                                              == silenced_at(layers, p).is_empty()
+///                                              &&  contributors_at(layers, p).is_empty()
+/// ```
+///
+/// The reconstruction identity
+///
+/// ```text
+/// [contest.overridden.clone(), vec![contest.decider]].concat()
+///     == contributors_at(layers, p)
+/// ```
+///
+/// pins the pair back to the ordered coarse→specific
+/// [`contributors_at`] projection: `overridden` is the leading prefix,
+/// `decider` is the trailing element. `contributor_count()` folds
+/// the pair to its scalar cardinality.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PathContest {
+    /// Name of the effective decider — the most-specific-with-an-opinion
+    /// layer along the queried path. Always the [`Some`] side of the
+    /// [`decider_at`] projection; an empty decider is unrepresentable.
+    pub decider: &'static str,
+    /// The layers whose opinion at the queried path was overridden by
+    /// `decider`, in application order (coarse→specific) — the
+    /// [`silenced_at`] projection. Empty iff `decider` was the sole
+    /// toucher (uncontested single-writer path).
+    pub overridden: Vec<&'static str>,
+}
+
+impl PathContest {
+    /// True iff at least one layer's opinion at the queried path was
+    /// overridden — i.e. `overridden` is non-empty. The `false` case
+    /// is "single toucher, no override contest"; the "no toucher"
+    /// case is unrepresentable (mapped to [`None`] at the
+    /// [`contest_at`] boundary).
+    #[must_use]
+    pub fn is_contested(&self) -> bool {
+        !self.overridden.is_empty()
+    }
+
+    /// Total number of layers that touched the queried path — the
+    /// decider plus every overridden toucher. Equals
+    /// `contributors_at(layers, path).len()` on the same input. Never
+    /// zero: a `PathContest` value always carries a decider, and the
+    /// no-toucher case is [`None`] at the [`contest_at`] boundary.
+    #[must_use]
+    pub fn contributor_count(&self) -> usize {
+        self.overridden.len() + 1
+    }
+}
+
+/// The full **per-path override contest** at `path` — decider (winner)
+/// and losers, fused into one [`PathContest`]. `None` iff no layer
+/// touches `path`.
+///
+/// The typed fusion of the pre-merge point primitives [`decider_at`]
+/// and [`silenced_at`]: rather than calling both and re-composing the
+/// pair at every consumer, this primitive owns the single walk that
+/// produces both projections, and its return type
+/// ([`Option<PathContest>`]) structurally forbids the ill-formed pair
+/// "losers without a winner". Error-path renderers producing
+/// `expected: one of {...}; got: {…} at breathe.mode; decider:
+/// tenancy; overridden: platform, cloud` reach for this primitive
+/// once and read `.decider` and `.overridden` off the returned struct.
+///
+/// The `is_contested_at` / cardinality queries collapse onto method
+/// calls on the returned [`PathContest`]:
+///
+/// ```text
+/// contest_at(layers, p).map_or(false, |c| c.is_contested())      // strict contest predicate
+/// contest_at(layers, p).map_or(0, |c| c.contributor_count())     // contributors_at.len() equivalent
+/// ```
+///
+/// # Semantics
+///
+/// The set of touchers is exactly the [`contributors_at`] projection:
+/// every layer whose `discover()` places a leaf at `path`, opens a
+/// dict container at `path`, or covers `path` with a scalar/array at
+/// a proper prefix (wholesale-replace). The trailing (most-specific)
+/// toucher becomes `decider`; the leading (coarse) touchers become
+/// `overridden`, order preserved.
+///
+/// # Partition law
+///
+/// For every layer stack and every path `p`:
+///
+/// ```text
+/// contest_at(layers, p).map(|c| c.decider)      == decider_at(layers, p)
+/// contest_at(layers, p).map(|c| c.overridden)   == Some(silenced_at(layers, p))
+///                                               // when contest_at is Some
+/// contest_at(layers, p).map_or(0, |c| c.contributor_count())
+///     == contributors_at(layers, p).len()
+/// ```
+///
+/// The reconstruction identity holds as ordered-vector equality:
+///
+/// ```text
+/// let mut recomposed = c.overridden.clone();
+/// recomposed.push(c.decider);
+/// recomposed == contributors_at(layers, p)
+/// ```
+///
+/// When [`compose_with_provenance`]`(layers).attribution
+/// .layer_of(p)` is `Some(w)`, `contest_at(layers, p)` is `Some(c)`
+/// with `c.decider == w`; when `layer_of(p)` is `None` (path is a
+/// dict container or was erased by a prefix-scalar), `contest_at`
+/// still names the responsible decider whenever any layer touches
+/// `p`.
+///
+/// # Cost
+///
+/// Calls `discover()` once per layer and walks each dict along `path`
+/// once — `O(layers × path.len())` time, `O(overridden.len())`
+/// allocation on the `PathContest`'s inner `Vec` (the trailing pop
+/// is amortized `O(1)`). Strictly one traversal, versus the two
+/// traversals a naive `(decider_at(p), silenced_at(p))` pair would
+/// do — a fixed 2× cost win for the common "render both projections
+/// at one path" workload the diagnostic seam actually hits.
+///
+/// # HOCON analogue
+///
+/// The typed fusion of Lightbend HOCON's post-merge
+/// [`Config.getValue(path).origin()`] with a synthesized "shadowed
+/// origins at this key" projection HOCON does not expose directly —
+/// callers reconstruct the latter by set-differencing per-source
+/// `entrySet()` origins against the merged value's origin. `contest_at`
+/// packages both into one substrate-owned value, computed in one
+/// walk, whose type forbids the "shadowed origins with no surviving
+/// value's origin" pair that HOCON's caller code has to guard
+/// against by convention.
+///
+/// [`Config.getValue(path).origin()`]: https://lightbend.github.io/config/latest/api/com/typesafe/config/Config.html#getValue-java.lang.String-
+#[must_use]
+pub fn contest_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> Option<PathContest> {
+    let mut names: Vec<&'static str> = layers
+        .iter()
+        .filter(|layer| touches_path(&layer.discover(), path))
+        .map(|layer| layer.name())
+        .collect();
+    let decider = names.pop()?;
+    Some(PathContest {
+        decider,
+        overridden: names,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -7623,6 +7791,276 @@ mod tests {
                 decider_at(&layers, path),
                 contributors_at(&layers, path).last().copied(),
                 "decider_at != contributors_at.last() at {path:?}",
+            );
+        }
+    }
+
+    // -------- contest_at / PathContest --------
+
+    #[test]
+    fn contest_at_none_on_no_toucher_and_empty_stack() {
+        // No layer touches path → None. Empty layer stack → None at
+        // every path (root included). The outer Option carries the
+        // no-toucher boundary; a `PathContest` value with a `None`
+        // decider is *unrepresentable* — the type enforces
+        // well-formedness.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let disjoint = Fixed("z", dict(&[("other", Value::from(9i64))]));
+        assert_eq!(contest_at(&[&a, &disjoint], &["nope"]), None);
+        assert_eq!(contest_at(&[], &["k"]), None);
+        assert_eq!(contest_at(&[], &[]), None);
+    }
+
+    #[test]
+    fn contest_at_single_toucher_is_uncontested_with_that_decider() {
+        // One toucher → Some(PathContest { decider: it, overridden: [] }).
+        // `is_contested()` is false; `contributor_count()` is 1. The
+        // distinction between "no toucher" and "uncontested" is
+        // structural, not conventional — one is None, the other is
+        // Some with an empty overridden vec.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let disjoint = Fixed("z", dict(&[("other", Value::from(9i64))]));
+        let contest = contest_at(&[&a, &disjoint], &["k"]).expect("some toucher");
+        assert_eq!(contest.decider, "a");
+        assert!(contest.overridden.is_empty(), "no override contest");
+        assert!(!contest.is_contested(), "single toucher is not contested");
+        assert_eq!(contest.contributor_count(), 1);
+    }
+
+    #[test]
+    fn contest_at_lists_overridden_in_application_order() {
+        // Three writers coarse→specific plus a disjoint fourth. The
+        // decider is the last-in-order toucher; the overridden list
+        // is the coarse-to-specific prefix, ordered.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("k", Value::from(3i64))]));
+        let disjoint = Fixed("disjoint", dict(&[("other", Value::from(9i64))]));
+        let contest = contest_at(&[&a, &b, &c, &disjoint], &["k"]).expect("some toucher");
+        assert_eq!(contest.decider, "c");
+        assert_eq!(contest.overridden, vec!["a", "b"]);
+        assert!(contest.is_contested());
+        assert_eq!(contest.contributor_count(), 3);
+    }
+
+    #[test]
+    fn contest_at_covers_erasure_case() {
+        // Prefix-scalar erases a deeper subtree; the decider is the
+        // erasure agent even where `layer_of` returns None. The
+        // structural fusion covers a case the loose `(decider,
+        // silenced)` pair could — but only via disciplined callers.
+        let a = Fixed(
+            "a",
+            dict(&[("x", Value::from(dict(&[("a", Value::from(1i64))])))]),
+        );
+        let b = Fixed("b", dict(&[("x", Value::from(9i64))]));
+        let contest = contest_at(&[&a, &b], &["x", "a"]).expect("erasure decider is a toucher");
+        assert_eq!(
+            contest.decider, "b",
+            "erasure agent decides the erased path"
+        );
+        assert_eq!(contest.overridden, vec!["a"]);
+        // Cross-check post-merge attribution: layer_of is None at the
+        // erased path — the primitive covers what LayerAttribution
+        // cannot reach.
+        let out = compose_with_provenance(&[&a, &b]);
+        assert_eq!(out.attribution.layer_of(&["x", "a"]), None);
+    }
+
+    #[test]
+    fn contest_at_projections_match_decider_and_silenced_axes() {
+        // The two loose primitives factor through the fused one:
+        //   contest_at.map(.decider)     == decider_at
+        //   contest_at.map(.overridden)  == Some(silenced_at)   [when Some]
+        //   contest_at.is_none()         iff  decider_at.is_none()
+        //                                and  contributors_at.is_empty()
+        // Checked across five paths spanning every branch of
+        // `touches_path`: contested leaf, uncontested leaf, dict
+        // container, absent path, and root.
+        let coarse = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("setpoint", Value::from(0.80)),
+                    ("mode", Value::from("live")),
+                ])),
+            )]),
+        );
+        let specific = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 2] = [&coarse, &specific];
+        for path in [
+            &["breathe", "mode"][..],
+            &["breathe", "setpoint"][..],
+            &["breathe"][..],
+            &["absent"][..],
+            &[][..],
+        ] {
+            let contest = contest_at(&layers, path);
+            assert_eq!(
+                contest.as_ref().map(|c| c.decider),
+                decider_at(&layers, path),
+                "contest.decider != decider_at at {path:?}",
+            );
+            match &contest {
+                Some(c) => assert_eq!(
+                    c.overridden,
+                    silenced_at(&layers, path),
+                    "contest.overridden != silenced_at at {path:?}",
+                ),
+                None => assert!(
+                    silenced_at(&layers, path).is_empty()
+                        && contributors_at(&layers, path).is_empty(),
+                    "contest_at is None but touchers exist at {path:?}",
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn contest_at_reconstructs_contributors_at() {
+        // Reconstruction identity: [overridden..., decider] ==
+        // contributors_at, as ordered-vector equality. Pins the
+        // pair back to the coarse→specific ordering the primitive
+        // has to preserve to be sound.
+        let coarse = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("setpoint", Value::from(0.80)),
+                    ("mode", Value::from("live")),
+                ])),
+            )]),
+        );
+        let middle = Fixed(
+            "cloud",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("staging"))])),
+            )]),
+        );
+        let specific = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 3] = [&coarse, &middle, &specific];
+        for path in [
+            &["breathe", "mode"][..],
+            &["breathe", "setpoint"][..],
+            &["breathe"][..],
+            &["absent"][..],
+            &[][..],
+        ] {
+            let contributors = contributors_at(&layers, path);
+            let recomposed = contest_at(&layers, path).map_or_else(Vec::new, |c| {
+                let mut v = c.overridden.clone();
+                v.push(c.decider);
+                v
+            });
+            assert_eq!(
+                recomposed, contributors,
+                "reconstructed != contributors_at at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn contest_at_contributor_count_matches_contributors_at_len() {
+        // Scalar invariant on the count axis: the fused primitive's
+        // cardinality method equals the loose primitive's Vec length,
+        // with None mapped to 0.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("other", Value::from(3i64))]));
+        let silent = Fixed("silent", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 4] = [&a, &b, &c, &silent];
+        for path in [&["k"][..], &["other"][..], &["nope"][..], &[][..]] {
+            assert_eq!(
+                contest_at(&layers, path).map_or(0, |c| c.contributor_count()),
+                contributors_at(&layers, path).len(),
+                "contributor_count != contributors_at.len() at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn contest_at_is_contested_iff_silenced_non_empty() {
+        // Boolean equivalence pinning the "contested" predicate to
+        // the silenced-non-empty predicate on the loose axis. Also
+        // pins the pairing to "single toucher is not contested".
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("other", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        for path in [&["k"][..], &["other"][..], &["nope"][..], &[][..]] {
+            let contested_via_fused = contest_at(&layers, path).is_some_and(|c| c.is_contested());
+            let contested_via_loose = !silenced_at(&layers, path).is_empty();
+            assert_eq!(
+                contested_via_fused, contested_via_loose,
+                "is_contested() != !silenced_at.is_empty() at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn contest_at_root_boundary() {
+        // Root-path specialization: decider is the last
+        // contributor_name; overridden is contributor_names minus
+        // the last element.
+        let coarse = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+        let middle = Fixed("cloud", dict(&[("c", Value::from(3i64))]));
+        let specific = Fixed("tenancy", dict(&[("b", Value::from(2i64))]));
+        let layers: [&dyn DiscoveryLayer; 4] = [&coarse, &silent, &middle, &specific];
+        let contest = contest_at(&layers, &[]).expect("some non-empty layer at root");
+        assert_eq!(contest.decider, "tenancy");
+        assert_eq!(contest.overridden, vec!["platform", "cloud"]);
+        let mut expected_overridden = contributor_names(&layers);
+        expected_overridden.pop();
+        assert_eq!(contest.overridden, expected_overridden);
+    }
+
+    #[test]
+    fn contest_at_agrees_with_layer_of_on_surviving_leaves() {
+        // Fused primitive's decider equals LayerAttribution.layer_of
+        // whenever a leaf survives at path. On erased-leaf / dict-
+        // container paths the two axes correctly diverge — covered
+        // separately by contest_at_covers_erasure_case.
+        let coarse = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("setpoint", Value::from(0.80)),
+                    ("mode", Value::from("live")),
+                ])),
+            )]),
+        );
+        let specific = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 2] = [&coarse, &specific];
+        let out = compose_with_provenance(&layers);
+        for path in [&["breathe", "mode"][..], &["breathe", "setpoint"][..]] {
+            let contest = contest_at(&layers, path).expect("surviving leaf has toucher");
+            assert_eq!(
+                Some(contest.decider),
+                out.attribution.layer_of(path),
+                "contest.decider != layer_of on surviving leaf {path:?}",
             );
         }
     }
