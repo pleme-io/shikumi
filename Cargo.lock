@@ -2241,7 +2241,7 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.122"
+version = "0.1.123"
 dependencies = [
  "akeyless-api",
  "arc-swap",
@@ -2363,8 +2363,8 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp"
-version = "0.2.121"
-source = "git+https://github.com/pleme-io/tatara#79dc90c4f778054de0a70d145aaf15a4dc3c5ea2"
+version = "0.2.122"
+source = "git+https://github.com/pleme-io/tatara#2a2fac0ae4cf6c001da693cd17fb2dbea11e0963"
 dependencies = [
  "blake3",
  "serde",
@@ -2375,8 +2375,8 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp-derive"
-version = "0.2.121"
-source = "git+https://github.com/pleme-io/tatara#79dc90c4f778054de0a70d145aaf15a4dc3c5ea2"
+version = "0.2.122"
+source = "git+https://github.com/pleme-io/tatara#2a2fac0ae4cf6c001da693cd17fb2dbea11e0963"
 dependencies = [
  "proc-macro2",
  "quote",
