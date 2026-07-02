@@ -2375,6 +2375,160 @@ pub fn has_silent_layer(layers: &[&dyn DiscoveryLayer]) -> bool {
     layers.iter().any(|layer| layer.discover().is_empty())
 }
 
+/// True iff **at least two declared layers** contributed a non-empty
+/// [`DiscoveryLayer::discover`] dict — the whole-layer "≥ 2" boolean
+/// predicate on the contributors axis.
+///
+/// The **whole-layer specialization of [`is_contested_at`] at the empty
+/// path**: on `path = &[]` the general point predicate collapses to the
+/// same non-empty-discover filter this primitive uses directly, with
+/// one fewer function-call boundary and no path slice traversal:
+///
+/// ```text
+/// has_multiple_contributors(layers) == is_contested_at(layers, &[])
+/// ```
+///
+/// The **boolean-cardinality-threshold "≥ 2" endpoint** of the whole-layer
+/// contributors axis: [`has_contributor`] closes the "≥ 1" endpoint of the
+/// same axis (with an [`Iterator::any`] short-circuit at the first hit);
+/// this primitive closes the "≥ 2" endpoint (with an [`Iterator::nth`]
+/// short-circuit at the second hit). Together the pair partitions the
+/// exact-cardinality trichotomy on the whole-layer contributors axis:
+///
+/// ```text
+/// contributor_count(layers) == 0   ⇔  !has_contributor(layers)
+/// contributor_count(layers) == 1   ⇔   has_contributor(layers) && !has_multiple_contributors(layers)
+/// contributor_count(layers) >= 2   ⇔   has_multiple_contributors(layers)
+/// ```
+///
+/// the whole-layer analog of the (`is_touched_at`, `is_contested_at`)
+/// trichotomy [`is_touched_at`] carries at the point altitude, with the
+/// monotonic chain `has_multiple_contributors ⇒ has_contributor` shifting
+/// the predicate axis by exactly one hit.
+///
+/// The **necessary-and-not-sufficient condition** for any leaf-level
+/// override contest: no leaf `p` can carry an override contest unless
+/// `has_multiple_contributors(layers)` — at most one non-empty layer means
+/// every touched leaf has at most one toucher, so
+/// `is_contested_at(layers, p)` is `false` for every path `p`. The
+/// converse fails at disjoint-key layered configs (two contributors that
+/// touch disjoint leaves — the pair is layered at the config level but no
+/// leaf is contested). The one-way implication
+///
+/// ```text
+/// (∃ path p : is_contested_at(layers, p))  =>  has_multiple_contributors(layers)
+/// ```
+///
+/// holds by construction and is the diagnostic gate every "did any
+/// override happen anywhere in this config?" walk short-circuits behind.
+///
+/// # Identities
+///
+/// The five presence-boundary projections on the whole-layer contributors
+/// axis at the "≥ 2" cardinality-threshold collapse onto one
+/// substrate-owned primitive with a **short-circuit forward walk**:
+///
+/// - `has_multiple_contributors(layers) == `[`contributor_count`]`(layers) >= 2`
+///   (cardinality-threshold identity at "≥ 2")
+/// - `has_multiple_contributors(layers) == `[`is_contested_at`]`(layers, &[])`
+///   (whole-layer→point-path root-specialization identity)
+/// - `has_multiple_contributors(layers) == (`[`contributor_names`]`(layers).len() >= 2)`
+///   (ordered-list cardinality-threshold dual on the contributors axis)
+/// - `has_multiple_contributors(layers) == (`[`nonempty_layer_dicts`]`(layers).len() >= 2)`
+///   (ordered-pair cardinality-threshold dual on the (name, dict) axis)
+/// - `has_multiple_contributors(layers) == `[`has_contributor`]`(layers) && (`[`contributor_count`]`(layers) != 1)`
+///   (trichotomy identity: "≥ 2" iff "≥ 1" and "not exactly 1", holding
+///   in short-circuiting boolean arithmetic against the "≥ 1" endpoint)
+///
+/// The monotonic chain against the "≥ 1" endpoint:
+///
+/// ```text
+/// has_multiple_contributors(layers)  =>  has_contributor(layers)
+/// !has_contributor(layers)           =>  !has_multiple_contributors(layers)
+/// ```
+///
+/// The singleton characterization on the exact-cardinality axis:
+///
+/// ```text
+/// has_contributor(layers) && !has_multiple_contributors(layers)
+///     <=>  contributor_count(layers) == 1
+/// ```
+///
+/// — the whole-layer analog of the point-altitude singleton
+/// characterization
+/// `is_touched_at(layers, p) && !is_contested_at(layers, p)
+///   <=> contributor_count_at(layers, p) == 1`.
+///
+/// All five routes are algebraically identical on their shared boolean
+/// output; this primitive is the strictly-cheapest route when the caller
+/// wants only the "layered ≥ 2" presence predicate and does not need the
+/// ordered contributor names, the (name, dict) pair list, the exact
+/// contributor count, or a point-path traversal through
+/// [`is_contested_at`].
+///
+/// # Semantics
+///
+/// The set of contributors is exactly the [`contributor_names`] projection:
+/// every layer whose `discover()` returns a non-empty [`Dict`]. Two
+/// contributors is the true-boundary; the zero-contributor and
+/// one-contributor cases (nothing declared, everything silent, single
+/// non-silent axis) are the two false-boundaries, collapsed under the
+/// same `false` return. A `true` return says the config was assembled
+/// from **more than one non-empty axis** — the necessary condition for
+/// any layered-override diagnostic.
+///
+/// # Cost
+///
+/// Walks layers forward with a **short-circuit on the second contributor**
+/// — worst-case `O(n)` on the layer count (fewer than two contributors,
+/// so [`Iterator::nth`] runs the full stack), best-case `O(2)` (the two
+/// coarsest layers both contribute and short-circuit the walk at the
+/// second hit). Zero allocation on the walker itself. Strictly cheaper
+/// than every alternative on the same axis:
+///
+/// - [`contributor_names`]`(layers).len() >= 2` walks every layer and
+///   allocates the full `Vec<&'static str>` of names, then reads the
+///   length off the fat pointer and compares — no short-circuit at any hit.
+/// - [`nonempty_layer_dicts`]`(layers).len() >= 2` walks every layer,
+///   allocates the full `Vec<(&'static str, Dict)>` of pairs (cloning
+///   every contributor's dict on the way), then reads the length off the
+///   fat pointer and compares.
+/// - [`contributor_count`]`(layers) >= 2` walks every layer with
+///   [`Iterator::count`] and reads a scalar comparison off the total —
+///   no short-circuit at the second hit.
+/// - [`is_contested_at`]`(layers, &[])` calls `touches_path(&d, &[])` —
+///   the general point primitive with an extra empty-slice dispatch on
+///   every layer that this whole-layer primitive avoids.
+///
+/// This primitive short-circuits at the second contributor *and* returns
+/// the boolean directly without projecting through an owned name — the
+/// [`Iterator::nth`] adapter compiles to a single-branch forward walk
+/// over the same non-empty-discover predicate that [`contributor_count`]
+/// folds, only stopped at the second hit.
+///
+/// # HOCON analogue
+///
+/// The substrate-owned counterpart to "did more than one declared
+/// configuration source contribute?" — Lightbend HOCON has no direct
+/// equivalent (its `ConfigFactory.parseResources` silently drops missing
+/// sources, so the answer requires iterating each source's `entrySet()`
+/// and counting the non-empty entries). Figment 0.10 tracks a `Tag` per
+/// leaf but reports no whole-provider "at least two sources contributed"
+/// bit. `has_multiple_contributors` packages the diagnostic gate as one
+/// substrate-owned primitive over the same non-empty-source predicate
+/// that [`contributor_names`] and [`contributor_count`] fold, with a
+/// short-circuiting `.nth(1).is_some()` walk that matches
+/// [`is_contested_at`]'s point-level short-circuit semantics one altitude
+/// up.
+#[must_use]
+pub fn has_multiple_contributors(layers: &[&dyn DiscoveryLayer]) -> bool {
+    layers
+        .iter()
+        .filter(|layer| !layer.discover().is_empty())
+        .nth(1)
+        .is_some()
+}
+
 /// True iff `dict` has *some* value along `path` — the layer holds an
 /// opinion about the leaf at `path`. Zero allocation, `O(path.len())`.
 ///
@@ -11748,6 +11902,316 @@ mod tests {
         assert_eq!(
             has_silent_layer(&tail_only),
             silent_layer_count(&tail_only) >= 1
+        );
+    }
+
+    // -------- has_multiple_contributors (root ≥2 boolean predicate on the contributors axis) --------
+
+    #[test]
+    fn has_multiple_contributors_matches_contributor_count_threshold() {
+        // Cardinality-threshold identity at "≥ 2":
+        // has_multiple_contributors(layers) == contributor_count(layers) >= 2.
+        // Both routes share the non-empty-discover predicate; the boolean
+        // short-circuits at the second contributor, the scalar walks the
+        // whole stack.
+        let owned = count_contributor_fixture();
+        let layers = as_refs(&owned);
+
+        let via_primitive = has_multiple_contributors(&layers);
+        let via_threshold = contributor_count(&layers) >= 2;
+        assert_eq!(
+            via_primitive, via_threshold,
+            "has_multiple_contributors != contributor_count >= 2",
+        );
+        assert!(
+            via_primitive,
+            "the fixture has three contributors — the ≥ 2 threshold holds",
+        );
+
+        // Threshold identity holds on every zero/one-contributor
+        // degenerate stack: the empty stack (count == 0 ⇒ false), the
+        // all-silent stack (count == 0 ⇒ false), and the single-
+        // contributor stack (count == 1 ⇒ false) all collapse the
+        // "≥ 2" bit and the boolean to false.
+        let empty: [&dyn DiscoveryLayer; 0] = [];
+        assert!(!has_multiple_contributors(&empty));
+        assert_eq!(
+            has_multiple_contributors(&empty),
+            contributor_count(&empty) >= 2,
+        );
+
+        let silent = Fixed("undetectable", Dict::new());
+        let all_silent: [&dyn DiscoveryLayer; 3] = [&silent, &silent, &silent];
+        assert!(!has_multiple_contributors(&all_silent));
+        assert_eq!(
+            has_multiple_contributors(&all_silent),
+            contributor_count(&all_silent) >= 2,
+        );
+
+        let solo = Fixed("solo", dict(&[("k", Value::from(1i64))]));
+        let single: [&dyn DiscoveryLayer; 4] = [&silent, &solo, &silent, &silent];
+        assert!(!has_multiple_contributors(&single));
+        assert_eq!(
+            has_multiple_contributors(&single),
+            contributor_count(&single) >= 2,
+        );
+    }
+
+    #[test]
+    fn has_multiple_contributors_matches_is_contested_at_root() {
+        // Whole-layer→point-path root-specialization identity:
+        // has_multiple_contributors(layers) == is_contested_at(layers, &[]).
+        // On path == &[] the general point predicate collapses to the
+        // same non-empty-discover filter this primitive uses directly.
+        let owned = count_contributor_fixture();
+        let layers = as_refs(&owned);
+
+        let via_root = has_multiple_contributors(&layers);
+        let via_point = is_contested_at(&layers, &[]);
+        assert_eq!(
+            via_root, via_point,
+            "has_multiple_contributors != is_contested_at(layers, &[])",
+        );
+
+        // Root-specialization holds on every degenerate stack: empty,
+        // all-silent, single-contributor, and the multi-contributor
+        // fixture all agree on both sides.
+        let empty: [&dyn DiscoveryLayer; 0] = [];
+        assert_eq!(
+            has_multiple_contributors(&empty),
+            is_contested_at(&empty, &[]),
+        );
+        assert!(!has_multiple_contributors(&empty));
+
+        let silent = Fixed("undetectable", Dict::new());
+        let all_silent: [&dyn DiscoveryLayer; 3] = [&silent, &silent, &silent];
+        assert_eq!(
+            has_multiple_contributors(&all_silent),
+            is_contested_at(&all_silent, &[]),
+        );
+        assert!(!has_multiple_contributors(&all_silent));
+
+        let solo = Fixed("solo", dict(&[("k", Value::from(1i64))]));
+        let single: [&dyn DiscoveryLayer; 2] = [&solo, &silent];
+        assert_eq!(
+            has_multiple_contributors(&single),
+            is_contested_at(&single, &[]),
+        );
+        assert!(!has_multiple_contributors(&single));
+    }
+
+    #[test]
+    fn has_multiple_contributors_matches_contributor_names_len_threshold() {
+        // Ordered-list cardinality-threshold dual on the contributors axis:
+        // has_multiple_contributors(layers) == contributor_names(layers).len() >= 2.
+        // The list-length reduction pins the same "≥ 2" boundary the
+        // boolean returns without materializing the name Vec.
+        let owned = count_contributor_fixture();
+        let layers = as_refs(&owned);
+
+        let via_primitive = has_multiple_contributors(&layers);
+        let via_names_len = contributor_names(&layers).len() >= 2;
+        assert_eq!(
+            via_primitive, via_names_len,
+            "has_multiple_contributors != contributor_names.len() >= 2",
+        );
+    }
+
+    #[test]
+    fn has_multiple_contributors_matches_nonempty_layer_dicts_len_threshold() {
+        // Ordered-pair cardinality-threshold dual on the (name, dict) axis:
+        // has_multiple_contributors(layers) == nonempty_layer_dicts(layers).len() >= 2.
+        // The (name, dict) pair Vec has one entry per contributor, so its
+        // length is the same partition scalar as contributor_count; the
+        // identity closes the "≥ 2" threshold at the pair altitude.
+        let owned = count_contributor_fixture();
+        let layers = as_refs(&owned);
+
+        let via_primitive = has_multiple_contributors(&layers);
+        let via_pairs_len = nonempty_layer_dicts(&layers).len() >= 2;
+        assert_eq!(
+            via_primitive, via_pairs_len,
+            "has_multiple_contributors != nonempty_layer_dicts.len() >= 2",
+        );
+    }
+
+    #[test]
+    fn has_multiple_contributors_partitions_trichotomy_with_has_contributor() {
+        // Trichotomy on (has_contributor, has_multiple_contributors) —
+        // the whole-layer analog of (is_touched_at, is_contested_at):
+        //   (F, F) ⇔ contributor_count == 0 (nothing declared, or all silent)
+        //   (T, F) ⇔ contributor_count == 1 (single-source config)
+        //   (T, T) ⇔ contributor_count >= 2 (layered / multi-source)
+        //   (F, T) ⇔ impossible (monotonic chain)
+        //
+        // Each state is reached by a distinct fixture; the pair pins the
+        // trichotomy as an ordered-pair equality against a hand-computed
+        // truth table, closing the exact-cardinality partition in
+        // short-circuiting boolean arithmetic on both endpoints at once.
+
+        // (F, F): empty stack — nothing declared.
+        let empty: [&dyn DiscoveryLayer; 0] = [];
+        assert!(!has_contributor(&empty));
+        assert!(!has_multiple_contributors(&empty));
+
+        // (F, F): all-silent stack — count == 0 collapses both bits.
+        let silent = Fixed("undetectable", Dict::new());
+        let all_silent: [&dyn DiscoveryLayer; 3] = [&silent, &silent, &silent];
+        assert!(!has_contributor(&all_silent));
+        assert!(!has_multiple_contributors(&all_silent));
+
+        // (T, F): single-source config — exactly one non-empty layer,
+        // the sole toucher; no override contest is representable.
+        let solo = Fixed("solo", dict(&[("k", Value::from(1i64))]));
+        let single: [&dyn DiscoveryLayer; 3] = [&silent, &solo, &silent];
+        assert!(has_contributor(&single));
+        assert!(!has_multiple_contributors(&single));
+        assert_eq!(contributor_count(&single), 1);
+
+        // (T, T): multi-source / layered — the fixture — three
+        // contributors, so the ≥ 2 endpoint fires.
+        let owned = count_contributor_fixture();
+        let layered = as_refs(&owned);
+        assert!(has_contributor(&layered));
+        assert!(has_multiple_contributors(&layered));
+        assert!(contributor_count(&layered) >= 2);
+
+        // Singleton characterization on the exact-cardinality axis:
+        //   has_contributor && !has_multiple_contributors
+        //     <=> contributor_count == 1
+        // holds pointwise across each fixture.
+        for fixture in [
+            &empty as &[&dyn DiscoveryLayer],
+            &all_silent as &[&dyn DiscoveryLayer],
+            &single as &[&dyn DiscoveryLayer],
+            &layered,
+        ] {
+            let via_pair = has_contributor(fixture) && !has_multiple_contributors(fixture);
+            let via_scalar = contributor_count(fixture) == 1;
+            assert_eq!(
+                via_pair,
+                via_scalar,
+                "singleton characterization mismatched on fixture with \
+                 contributor_count == {}",
+                contributor_count(fixture),
+            );
+        }
+    }
+
+    #[test]
+    fn has_multiple_contributors_monotonic_chain_with_has_contributor() {
+        // Monotonic implication `has_multiple_contributors ⇒ has_contributor`
+        // and its contrapositive `!has_contributor ⇒ !has_multiple_contributors`
+        // hold across every fixture — the "≥ 2" threshold is a strict
+        // refinement of the "≥ 1" threshold on the same axis.
+        let silent = Fixed("undetectable", Dict::new());
+        let solo = Fixed("solo", dict(&[("k", Value::from(1i64))]));
+        let a = Fixed("a", dict(&[("k1", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k2", Value::from(2i64))]));
+
+        let empty: [&dyn DiscoveryLayer; 0] = [];
+        let all_silent: [&dyn DiscoveryLayer; 3] = [&silent, &silent, &silent];
+        let single: [&dyn DiscoveryLayer; 3] = [&silent, &solo, &silent];
+        let pair: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        let owned = count_contributor_fixture();
+        let layered = as_refs(&owned);
+
+        for fixture in [
+            &empty as &[&dyn DiscoveryLayer],
+            &all_silent as &[&dyn DiscoveryLayer],
+            &single as &[&dyn DiscoveryLayer],
+            &pair as &[&dyn DiscoveryLayer],
+            &layered,
+        ] {
+            if has_multiple_contributors(fixture) {
+                assert!(
+                    has_contributor(fixture),
+                    "has_multiple_contributors ⇒ has_contributor was violated",
+                );
+            }
+            if !has_contributor(fixture) {
+                assert!(
+                    !has_multiple_contributors(fixture),
+                    "!has_contributor ⇒ !has_multiple_contributors was violated",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn has_multiple_contributors_gates_leaf_override_contests() {
+        // Necessary-and-not-sufficient condition for any leaf-level
+        // override contest:
+        //   (∃ path p : is_contested_at(layers, p))
+        //       ⇒ has_multiple_contributors(layers).
+        // The converse fails at disjoint-key layered configs — two
+        // contributors that touch disjoint leaves — where the pair is
+        // layered at the config level but no leaf is contested. Both
+        // directions are pinned here.
+
+        // Forward direction: a contested leaf implies ≥ 2 contributors.
+        // The fixture has three contributors and the deep-merge overlap
+        // at key "b" produces a contest.
+        let a = Fixed("shared", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("shared", dict(&[("k", Value::from(2i64))]));
+        let overlapping: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        assert!(is_contested_at(&overlapping, &["k"]));
+        assert!(has_multiple_contributors(&overlapping));
+
+        // Reverse direction (converse) fails: disjoint-key contributors
+        // — the pair is layered (≥ 2 contributors) but no leaf is
+        // contested (each contributor touches its own key).
+        let x = Fixed("x_only", dict(&[("x", Value::from(1i64))]));
+        let y = Fixed("y_only", dict(&[("y", Value::from(2i64))]));
+        let disjoint: [&dyn DiscoveryLayer; 2] = [&x, &y];
+        assert!(has_multiple_contributors(&disjoint));
+        assert!(!is_contested_at(&disjoint, &["x"]));
+        assert!(!is_contested_at(&disjoint, &["y"]));
+
+        // The gate direction holds on the single-contributor stack: no
+        // leaf can be contested when only one layer touches anything.
+        let silent = Fixed("undetectable", Dict::new());
+        let solo = Fixed("solo", dict(&[("k", Value::from(1i64))]));
+        let single: [&dyn DiscoveryLayer; 3] = [&silent, &solo, &silent];
+        assert!(!has_multiple_contributors(&single));
+        assert!(!is_contested_at(&single, &["k"]));
+    }
+
+    #[test]
+    fn has_multiple_contributors_short_circuits_on_early_pair() {
+        // Short-circuit correctness: a stack whose two coarsest layers
+        // both contribute short-circuits to true at the second hit.
+        // Iterator::nth(1).is_some() terminates on the second element on
+        // this fixture; the test pins the returned bit (not the walk
+        // length, which is not observable from the returned bool).
+        let a = Fixed("a", dict(&[("k1", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k2", Value::from(2i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+        let early_pair: [&dyn DiscoveryLayer; 5] = [&a, &b, &silent, &silent, &silent];
+        assert!(has_multiple_contributors(&early_pair));
+        assert_eq!(
+            has_multiple_contributors(&early_pair),
+            contributor_count(&early_pair) >= 2,
+        );
+
+        // Dual short-circuit: the two trailing contributors — every
+        // earlier layer is silent — still folds to true (worst-case walk
+        // on the filter path, but the returned bit is unchanged).
+        let late_pair: [&dyn DiscoveryLayer; 5] = [&silent, &silent, &silent, &a, &b];
+        assert!(has_multiple_contributors(&late_pair));
+        assert_eq!(
+            has_multiple_contributors(&late_pair),
+            contributor_count(&late_pair) >= 2,
+        );
+
+        // Boundary at the single-contributor stack: only one non-empty
+        // layer means .nth(1) returns None and the bit collapses to
+        // false, matching the "≥ 2" scalar boundary.
+        let single: [&dyn DiscoveryLayer; 5] = [&silent, &silent, &a, &silent, &silent];
+        assert!(!has_multiple_contributors(&single));
+        assert_eq!(
+            has_multiple_contributors(&single),
+            contributor_count(&single) >= 2,
         );
     }
 }
