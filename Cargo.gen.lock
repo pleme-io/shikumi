@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "cargo_lock_sha256": "63facccc49a1c6b4dd9cf289fb074f4a5d4386914ff31242f2a9b310beadb69e",
+  "cargo_lock_sha256": "2bfbafd772999a298b5f1c4f63bc4b0e29d5bc9b13e573c29f0cb0aae60f7048",
   "target_resolves": {
     "base": {
       "arc-swap-1.9.2": {
@@ -1165,7 +1165,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.123": {
+      "shikumi-0.1.124": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -4097,7 +4097,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.123": {
+    "shikumi-0.1.124": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
