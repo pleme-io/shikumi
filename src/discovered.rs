@@ -1364,6 +1364,138 @@ impl LayerAttribution {
             })
             .map(|(name, _)| name)
     }
+
+    /// The **atomic row** at the top endpoint of [`Self::layer_ranking`]:
+    /// the `(name, count)` tuple naming the winning
+    /// [`DiscoveryLayer`] and its surviving-leaf count, or [`None`] when
+    /// the attribution is empty (no leaves survived).
+    ///
+    /// The **entry** dual on the name-and-count axis — where
+    /// [`Self::dominant_layer`] returns the argmax *name* and
+    /// [`Self::leaf_count_of_layer`]`(dominant_layer().unwrap())` returns
+    /// the argmax *count*, this primitive returns both in a single pass.
+    /// Consumers rendering "dominant: nix (5 leaves)" on a diagnostics
+    /// banner, a "top writer + share" gauge on a config-show pane, or a
+    /// composition-diff row pairing name and count — reach for this seam
+    /// directly instead of walking two calls (`dominant_layer` +
+    /// `leaf_count_of_layer`) or picking `layer_ranking().first()` (which
+    /// pays an extra `O(k log k)` sort the entry itself does not need).
+    ///
+    /// **Deterministic tie-break.** When two or more writers share the
+    /// maximum count, the winner is the *smallest* layer name in lex
+    /// order on `&'static str` — matches [`Self::dominant_layer`] and
+    /// [`Self::layer_ranking`]`().first()` verbatim.
+    ///
+    /// **Cost.** `O(n log k)` time and `O(k)` space where `n` is the leaf
+    /// count and `k` is the distinct-writer count — one pass over
+    /// `self.inner.values()` to build the counter map (via
+    /// [`Self::leaf_counts_by_layer`]), one linear argmax pass over its
+    /// `k` entries. The counter map is consumed, not returned, so
+    /// callers pay no per-writer allocation they then discard. Strictly
+    /// cheaper than [`Self::layer_ranking`]`().first()`, which pays an
+    /// additional `O(k log k)` stable sort to build the whole vector.
+    ///
+    /// **Endpoint identity.** `dominant_entry()` equals
+    /// `layer_ranking().first().copied()` verbatim on every input — the
+    /// entry is the top row of the sorted-by-dominance view, extracted
+    /// without materializing the sort. Pinned by
+    /// `dominant_entry_equals_layer_ranking_first`.
+    ///
+    /// **Name-and-count decomposition.** For every attribution:
+    /// `dominant_entry().map(|(n, _)| n)` equals [`Self::dominant_layer`]
+    /// verbatim, and `dominant_entry().map(|(_, c)| c)` equals the
+    /// maximum value of [`Self::leaf_counts_by_layer`] verbatim (or
+    /// [`None`] when empty). So the two existing scalars factor through
+    /// this one entry — `dominant_layer` is the name-axis projection,
+    /// and the count scalar is the value-axis projection.
+    ///
+    /// **Cross-projection identity.** When [`Some`], the returned
+    /// `count` equals [`Self::leaf_count_of_layer`]`(name)` verbatim and
+    /// equals `leaf_counts_by_layer().get(name).copied().unwrap()` — the
+    /// entry's count is byte-identical to the histogram value at its
+    /// name. Pinned by `dominant_entry_count_agrees_with_leaf_count_of_layer`.
+    ///
+    /// **Subtree altitude.** [`Self::subtree_dominant_entry`] extends
+    /// this entry to a `prefix`, answering the same "top writer + share?"
+    /// question restricted to a single sub-tree — the natural row a
+    /// per-subsystem gauge or ranking-diff renderer reaches for.
+    #[must_use]
+    pub fn dominant_entry(&self) -> Option<(&'static str, usize)> {
+        self.leaf_counts_by_layer()
+            .into_iter()
+            .max_by(|(a_name, a_count), (b_name, b_count)| {
+                a_count.cmp(b_count).then_with(|| b_name.cmp(a_name))
+            })
+    }
+
+    /// The **subtree-restricted** dual of [`Self::dominant_entry`]: the
+    /// `(name, count)` tuple naming the [`DiscoveryLayer`] that wrote
+    /// the most surviving leaves under (or at) `prefix` paired with its
+    /// subtree leaf count, or [`None`] when the subtree is empty
+    /// (`prefix` names no subtree, or every writer under it was purged).
+    ///
+    /// The **atomic row** at the top endpoint of
+    /// [`Self::subtree_layer_ranking`] — the compact entry companion to
+    /// [`Self::subtree_dominant_layer`] (name), the maximum value of
+    /// [`Self::subtree_leaf_counts_by_layer`] (count), and
+    /// [`Self::subtree_layer_ranking`] (sorted view). Consumers that only
+    /// need the top row under one subsystem — a per-subtree config-show
+    /// pane rendering "top writer + share under `breathe.*`", a
+    /// composition-diff row pairing name and count at a subtree — reach
+    /// for this seam directly instead of walking
+    /// `subtree_dominant_layer` + `subtree_leaf_count_of_layer` or paying
+    /// the extra sort of `subtree_layer_ranking(prefix).first()`.
+    ///
+    /// **Deterministic tie-break.** As for [`Self::dominant_entry`],
+    /// tied maxima are broken by the smallest layer name in lex order on
+    /// `&'static str` — matches [`Self::subtree_dominant_layer`] and
+    /// [`Self::subtree_layer_ranking`]`(prefix).first()` verbatim.
+    ///
+    /// **Cost.** `O(log n + m + k')` time and `O(k')` space where `n`
+    /// is the total leaf count, `m` is the number of matching leaves
+    /// under the subtree, and `k'` is the distinct-writer count *under
+    /// the subtree* — one [`BTreeMap::range`] seek to the subtree's
+    /// first entry (via [`Self::subtree_iter`]), a linear walk that
+    /// halts at the first non-prefixed key, one [`BTreeMap`] counter
+    /// increment per leaf, one linear argmax pass over the counter map.
+    /// Strictly cheaper than [`Self::subtree_layer_ranking`]`(prefix)
+    /// .first()`, which pays an additional `O(k' log k')` sort.
+    ///
+    /// **Endpoint identity.** `subtree_dominant_entry(prefix)` equals
+    /// `subtree_layer_ranking(prefix).first().copied()` verbatim on
+    /// every input — the entry is the top row of the subtree
+    /// sorted-by-dominance view, extracted without materializing the
+    /// sort. `subtree_dominant_entry(&[])` equals
+    /// [`Self::dominant_entry`] verbatim (the empty-prefix corner).
+    ///
+    /// **Name-and-count decomposition.** For every prefix and every
+    /// attribution: `subtree_dominant_entry(prefix).map(|(n, _)| n)`
+    /// equals [`Self::subtree_dominant_layer`]`(prefix)` verbatim, and
+    /// `subtree_dominant_entry(prefix).map(|(_, c)| c)` equals the
+    /// maximum value of [`Self::subtree_leaf_counts_by_layer`]`(prefix)`
+    /// verbatim (or [`None`] when empty).
+    ///
+    /// **Cross-projection identity.** When [`Some`], the returned
+    /// `count` equals [`Self::subtree_leaf_count_of_layer`]`(prefix,
+    /// name)` verbatim and equals `subtree_leaf_counts_by_layer(prefix)
+    /// .get(name).copied().unwrap()` — the entry's count is
+    /// byte-identical to the subtree histogram value at its name.
+    ///
+    /// **Subset invariants.** For every prefix and every attribution:
+    /// `subtree_dominant_entry(prefix)` is [`None`] whenever
+    /// [`Self::subtree_iter`]`(prefix).next()` is [`None`], its name is
+    /// a member of [`Self::surviving_layer_names`] when [`Some`] (the
+    /// subtree cannot pick a writer that never wrote anywhere), and its
+    /// count is `≤` [`Self::leaf_count_of_layer`]`(name)` (subtree ⊆
+    /// parent).
+    #[must_use]
+    pub fn subtree_dominant_entry(&self, prefix: &[String]) -> Option<(&'static str, usize)> {
+        self.subtree_leaf_counts_by_layer(prefix)
+            .into_iter()
+            .max_by(|(a_name, a_count), (b_name, b_count)| {
+                a_count.cmp(b_count).then_with(|| b_name.cmp(a_name))
+            })
+    }
 }
 
 /// The result of composing a stack of [`DiscoveryLayer`]s with per-leaf
@@ -5641,6 +5773,425 @@ mod tests {
             out.attribution.subtree_weakest_layer(&[s("small")]),
             Some("coarse"),
             "under small.*, coarse (1 leaf) is weaker than specific (2)",
+        );
+    }
+
+    // -------- dominant_entry / subtree_dominant_entry
+
+    #[test]
+    fn dominant_entry_agrees_with_leaf_counts_argmax() {
+        // The atomic row identity: on layer_axis_fixture (platform:1,
+        // tenancy:2), `dominant_entry` returns Some(("tenancy", 2)) —
+        // the (name, count) tuple at the argmax of leaf_counts_by_layer.
+        let out = layer_axis_fixture();
+        let entry = out.attribution.dominant_entry().expect("non-empty");
+        assert_eq!(entry, ("tenancy", 2));
+        let counts = out.attribution.leaf_counts_by_layer();
+        let max_count = counts.values().copied().max().expect("non-empty");
+        assert_eq!(entry.1, max_count);
+        assert_eq!(counts.get(entry.0).copied(), Some(entry.1));
+    }
+
+    #[test]
+    fn dominant_entry_ties_broken_by_lex_name_ascending() {
+        // Three-way tie fixture: aaa/bbb/ccc all at count 1. The
+        // smallest lex name wins — the entry pairs "aaa" with 1.
+        let out = three_way_tie_fixture();
+        assert_eq!(
+            out.attribution.dominant_entry(),
+            Some(("aaa", 1)),
+            "on a three-way tie, smallest lex name wins with its count",
+        );
+    }
+
+    #[test]
+    fn dominant_entry_empty_attribution_is_none() {
+        // Empty attribution and silent-only stack — no writers — both
+        // yield None.
+        let empty = compose_with_provenance(&[]);
+        assert_eq!(empty.attribution.dominant_entry(), None);
+        let silent = Fixed("silent-a", Dict::new());
+        let more_silent = Fixed("silent-b", Dict::new());
+        let silent_out = compose_with_provenance(&[&silent, &more_silent]);
+        assert_eq!(silent_out.attribution.dominant_entry(), None);
+    }
+
+    #[test]
+    fn dominant_entry_single_writer_pairs_writer_with_its_leaf_count() {
+        // One live writer ⇒ entry pairs that writer's name with its
+        // full leaf count.
+        let solo = Fixed(
+            "solo",
+            dict(&[("k1", Value::from(1i64)), ("k2", Value::from(2i64))]),
+        );
+        let silent = Fixed("silent", Dict::new());
+        let out = compose_with_provenance(&[&solo, &silent]);
+        assert_eq!(out.attribution.dominant_entry(), Some(("solo", 2)));
+    }
+
+    #[test]
+    fn dominant_entry_equals_layer_ranking_first() {
+        // Endpoint identity across every fixture: the entry is the top
+        // row of the sorted-by-dominance view, extracted without
+        // materializing the sort.
+        for out in [
+            layer_axis_fixture(),
+            subtree_fixture(),
+            three_way_tie_fixture(),
+            inversion_fixture(),
+            compose_with_provenance(&[]),
+        ] {
+            let via_ranking: Option<(&'static str, usize)> =
+                out.attribution.layer_ranking().first().copied();
+            assert_eq!(
+                out.attribution.dominant_entry(),
+                via_ranking,
+                "dominant_entry() ≡ layer_ranking().first().copied()",
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_entry_name_projection_equals_dominant_layer() {
+        // Name-axis projection: dropping the count returns the
+        // pre-existing `dominant_layer` scalar verbatim, across every
+        // fixture including the empty attribution.
+        for out in [
+            layer_axis_fixture(),
+            subtree_fixture(),
+            three_way_tie_fixture(),
+            inversion_fixture(),
+            compose_with_provenance(&[]),
+        ] {
+            let entry_name: Option<&'static str> = out.attribution.dominant_entry().map(|(n, _)| n);
+            assert_eq!(
+                entry_name,
+                out.attribution.dominant_layer(),
+                "dominant_entry().map(|(n, _)| n) ≡ dominant_layer()",
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_entry_count_projection_equals_leaf_counts_max() {
+        // Count-axis projection: dropping the name returns the max of
+        // `leaf_counts_by_layer` verbatim, or None when empty. So the
+        // implicit "dominant_count" scalar is a direct projection.
+        for out in [
+            layer_axis_fixture(),
+            subtree_fixture(),
+            three_way_tie_fixture(),
+            inversion_fixture(),
+            compose_with_provenance(&[]),
+        ] {
+            let entry_count: Option<usize> = out.attribution.dominant_entry().map(|(_, c)| c);
+            let max_count: Option<usize> = out
+                .attribution
+                .leaf_counts_by_layer()
+                .values()
+                .copied()
+                .max();
+            assert_eq!(
+                entry_count, max_count,
+                "dominant_entry().map(|(_, c)| c) ≡ leaf_counts_by_layer().values().max()",
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_entry_count_agrees_with_leaf_count_of_layer() {
+        // Cross-projection identity: for every non-empty fixture, the
+        // returned count equals `leaf_count_of_layer(name)` verbatim —
+        // the entry's two axes are consistent with the single-writer
+        // count seam.
+        for out in [
+            layer_axis_fixture(),
+            subtree_fixture(),
+            three_way_tie_fixture(),
+            inversion_fixture(),
+        ] {
+            let (name, count) = out.attribution.dominant_entry().expect("non-empty fixture");
+            assert_eq!(
+                count,
+                out.attribution.leaf_count_of_layer(name),
+                "dominant_entry count ≡ leaf_count_of_layer(name)",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_dominant_entry_empty_prefix_equals_dominant_entry() {
+        // Empty-prefix corner: the subtree entry collapses to the
+        // top-level entry verbatim across every fixture — including
+        // the empty attribution where both return None.
+        for out in [
+            layer_axis_fixture(),
+            subtree_fixture(),
+            three_way_tie_fixture(),
+            inversion_fixture(),
+            compose_with_provenance(&[]),
+        ] {
+            assert_eq!(
+                out.attribution.subtree_dominant_entry(&[]),
+                out.attribution.dominant_entry(),
+                "empty prefix ⇒ subtree_dominant_entry ≡ dominant_entry",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_dominant_entry_at_named_prefix_narrows_the_argmax() {
+        // subtree_fixture under `["breathe"]`: coarse:1 (mode),
+        // specific:1 (setpoint) ⇒ tie ⇒ "coarse" (lex ascending) with
+        // count 1. Under `["alpha"]`: coarse:1 alone ⇒ ("coarse", 1).
+        let out = subtree_fixture();
+        assert_eq!(
+            out.attribution.subtree_dominant_entry(&[s("breathe")]),
+            Some(("coarse", 1)),
+            "under breathe.*, tied at 1 leaf each — coarse wins by smallest lex",
+        );
+        assert_eq!(
+            out.attribution.subtree_dominant_entry(&[s("alpha")]),
+            Some(("coarse", 1)),
+            "under alpha (a leaf), coarse alone owns the row",
+        );
+        // inversion_fixture under `["small"]`: coarse:1, specific:2 ⇒
+        // ("specific", 2). Under `["big"]`: coarse:3 alone ⇒
+        // ("coarse", 3).
+        let inv = inversion_fixture();
+        assert_eq!(
+            inv.attribution.subtree_dominant_entry(&[s("small")]),
+            Some(("specific", 2)),
+            "under small.*, specific (2 leaves) beats coarse (1)",
+        );
+        assert_eq!(
+            inv.attribution.subtree_dominant_entry(&[s("big")]),
+            Some(("coarse", 3)),
+            "under big.*, coarse alone owns the row with 3 leaves",
+        );
+    }
+
+    #[test]
+    fn subtree_dominant_entry_absent_prefix_is_none() {
+        let out = subtree_fixture();
+        assert_eq!(
+            out.attribution.subtree_dominant_entry(&[s("nonexistent")]),
+            None,
+            "absent prefix ⇒ empty subtree ⇒ None",
+        );
+    }
+
+    #[test]
+    fn subtree_dominant_entry_agrees_with_argmax_of_subtree_counts() {
+        // Cross-projection identity across every prefix on every
+        // fixture: when Some((name, count)), count equals the max of
+        // `subtree_leaf_counts_by_layer` AND equals
+        // `subtree_leaf_count_of_layer(prefix, name)`; when None, the
+        // subtree is empty.
+        let prefixes: Vec<Vec<String>> = vec![
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("small")],
+            vec![s("big")],
+            vec![s("nonexistent")],
+        ];
+        for out in [
+            subtree_fixture(),
+            inversion_fixture(),
+            layer_axis_fixture(),
+            three_way_tie_fixture(),
+        ] {
+            for prefix in &prefixes {
+                let entry = out.attribution.subtree_dominant_entry(prefix);
+                let counts = out.attribution.subtree_leaf_counts_by_layer(prefix);
+                if let Some((name, count)) = entry {
+                    let max_count = counts
+                        .values()
+                        .copied()
+                        .max()
+                        .expect("non-empty subtree ⇒ non-empty counter map");
+                    assert_eq!(
+                        count, max_count,
+                        "at prefix {prefix:?}, entry count equals subtree argmax",
+                    );
+                    assert_eq!(
+                        counts.get(name).copied(),
+                        Some(count),
+                        "at prefix {prefix:?}, entry count equals the histogram bucket",
+                    );
+                    assert_eq!(
+                        out.attribution.subtree_leaf_count_of_layer(prefix, name),
+                        count,
+                        "at prefix {prefix:?}, entry count ≡ subtree_leaf_count_of_layer",
+                    );
+                    // Tie-break: among writers at the max count, `name`
+                    // is the smallest lex name (BTreeMap iteration is
+                    // already ascending on names).
+                    let tied_at_max: Vec<&'static str> = counts
+                        .iter()
+                        .filter_map(|(n, c)| (*c == max_count).then_some(*n))
+                        .collect();
+                    assert_eq!(
+                        tied_at_max.first().copied(),
+                        Some(name),
+                        "at prefix {prefix:?}, entry picks smallest lex name among tied maxima",
+                    );
+                } else {
+                    assert!(
+                        counts.is_empty(),
+                        "at prefix {prefix:?}, None ⇒ counter map is empty",
+                    );
+                    assert_eq!(
+                        out.attribution.subtree_iter(prefix).count(),
+                        0,
+                        "at prefix {prefix:?}, None ⇒ subtree_iter is empty",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_dominant_entry_equals_subtree_layer_ranking_first() {
+        // Endpoint identity at the subtree altitude: the entry equals
+        // the first row of the subtree sorted-by-dominance view
+        // verbatim, across every fixture and every prefix.
+        let prefixes: Vec<Vec<String>> = vec![
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("small")],
+            vec![s("big")],
+            vec![s("nonexistent")],
+        ];
+        for out in [
+            subtree_fixture(),
+            inversion_fixture(),
+            layer_axis_fixture(),
+            three_way_tie_fixture(),
+        ] {
+            for prefix in &prefixes {
+                let via_ranking: Option<(&'static str, usize)> = out
+                    .attribution
+                    .subtree_layer_ranking(prefix)
+                    .first()
+                    .copied();
+                assert_eq!(
+                    out.attribution.subtree_dominant_entry(prefix),
+                    via_ranking,
+                    "at prefix {prefix:?}, subtree_dominant_entry ≡ subtree_layer_ranking.first().copied()",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_dominant_entry_projections_equal_scalars() {
+        // Name-and-count decomposition at subtree altitude across every
+        // prefix on every fixture:
+        //   entry.map(|(n, _)| n) ≡ subtree_dominant_layer(prefix)
+        //   entry.map(|(_, c)| c) ≡ subtree_leaf_counts_by_layer(prefix)
+        //                              .values().max()
+        let prefixes: Vec<Vec<String>> = vec![
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("small")],
+            vec![s("big")],
+            vec![s("nonexistent")],
+        ];
+        for out in [
+            subtree_fixture(),
+            inversion_fixture(),
+            layer_axis_fixture(),
+            three_way_tie_fixture(),
+            compose_with_provenance(&[]),
+        ] {
+            for prefix in &prefixes {
+                let entry = out.attribution.subtree_dominant_entry(prefix);
+                assert_eq!(
+                    entry.map(|(n, _)| n),
+                    out.attribution.subtree_dominant_layer(prefix),
+                    "at prefix {prefix:?}, name projection ≡ subtree_dominant_layer",
+                );
+                let counts_max: Option<usize> = out
+                    .attribution
+                    .subtree_leaf_counts_by_layer(prefix)
+                    .values()
+                    .copied()
+                    .max();
+                assert_eq!(
+                    entry.map(|(_, c)| c),
+                    counts_max,
+                    "at prefix {prefix:?}, count projection ≡ subtree histogram max",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_dominant_entry_name_in_surviving_and_count_le_global() {
+        // Two subset invariants across every prefix on every fixture:
+        // when Some((name, count)), (a) `name` lives in the top-level
+        // `surviving_layer_names` (the subtree cannot pick a writer that
+        // never wrote anywhere), and (b) `count` ≤
+        // `leaf_count_of_layer(name)` (subtree ⊆ parent).
+        let prefixes: Vec<Vec<String>> = vec![
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("small")],
+            vec![s("big")],
+            vec![s("nonexistent")],
+        ];
+        for out in [
+            subtree_fixture(),
+            inversion_fixture(),
+            layer_axis_fixture(),
+            three_way_tie_fixture(),
+        ] {
+            let global: std::collections::BTreeSet<&'static str> = out
+                .attribution
+                .surviving_layer_names()
+                .into_iter()
+                .collect();
+            for prefix in &prefixes {
+                if let Some((name, count)) = out.attribution.subtree_dominant_entry(prefix) {
+                    assert!(
+                        global.contains(name),
+                        "at prefix {prefix:?}, entry name {name} lives in the global surviving set",
+                    );
+                    assert!(
+                        count <= out.attribution.leaf_count_of_layer(name),
+                        "at prefix {prefix:?}, subtree count {count} ≤ global {} for {name}",
+                        out.attribution.leaf_count_of_layer(name),
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_dominant_entry_can_differ_from_dominant_entry() {
+        // The non-trivial cell: the top-level dominant entry differs
+        // from a subtree dominant entry. On inversion_fixture, the top
+        // entry is ("coarse", 4) — but under `["small"]`, coarse owns
+        // only 1 leaf and specific owns 2, so the local entry is
+        // ("specific", 2).
+        let out = inversion_fixture();
+        assert_eq!(out.attribution.dominant_entry(), Some(("coarse", 4)));
+        assert_eq!(
+            out.attribution.subtree_dominant_entry(&[s("small")]),
+            Some(("specific", 2)),
+            "under small.*, specific owns the top row locally",
+        );
+        // Under `["big"]`: coarse:3 alone ⇒ ("coarse", 3) — same name
+        // but a smaller local count than the global entry's 4.
+        assert_eq!(
+            out.attribution.subtree_dominant_entry(&[s("big")]),
+            Some(("coarse", 3)),
+            "under big.*, coarse alone with 3 leaves — count narrows",
         );
     }
 }
