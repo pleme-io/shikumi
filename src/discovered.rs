@@ -2036,6 +2036,94 @@ pub fn contributors_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> Vec<&'s
         .collect()
 }
 
+/// The names of layers whose [`DiscoveryLayer::discover`] dict had an
+/// opinion at `path` but were **overridden** by a later layer whose
+/// `discover()` dict also had an opinion at `path` — the losers of the
+/// per-path override contest, in application order (coarse→specific).
+///
+/// The point-restricted dual of the "losing-layer" projection on the
+/// (path, layer) axis: [`contributors_at`] names every layer that
+/// *tried* to shape `path` — winners and losers — and this primitive
+/// drops the single trailing element (the most-specific-with-an-opinion,
+/// i.e. the effective decider) to leave the losers alone.
+///
+/// The **pre-merge** dual of the surviving-layer axis at a point.
+/// [`LayerAttribution::layer_of`] names the winner at a *surviving*
+/// leaf; this primitive names everyone who *lost* the contest for the
+/// same path, including the case where the "winner" wholesale-erased
+/// the subtree (the erasure decider is dropped from the returned list;
+/// every earlier toucher is credited as silenced).
+///
+/// # Semantics
+///
+/// For a path with `k` touchers ordered coarse→specific, the returned
+/// list is the first `k − 1` names — every layer whose opinion at
+/// `path` was superseded by a later toucher on the same path. When
+/// `k ∈ {0, 1}` (nobody touched, or only one toucher = no override
+/// contest), the returned list is empty.
+///
+/// Application order is preserved: the returned names appear
+/// coarse→specific, matching [`contributors_at`] and
+/// [`contributor_names`] on the same axis. Erasure via
+/// wholesale-replace at a proper prefix counts as touching, so a coarse
+/// layer that placed a leaf at `path` is credited as silenced when a
+/// later layer's prefix-scalar erases the whole subtree — the erasure
+/// decider is the (dropped) last element.
+///
+/// # Partition law
+///
+/// For every layer stack and every path `p`, the disjoint union
+///
+/// ```text
+/// silenced_at(layers, p) ⊎ {last of contributors_at(layers, p)}
+///     == contributors_at(layers, p)
+/// ```
+///
+/// holds as an ordered-vector equality (with the singleton empty when
+/// no layer touches `p`). The `⊆` chain
+/// `silenced_at ⊆ contributors_at ⊆ contributor_names` extends the
+/// [`contributors_at`] subset chain to a three-tier one, and
+/// `silenced_at.len() == contributors_at.len().saturating_sub(1)`
+/// tracks it on the scalar axis.
+///
+/// When [`compose_with_provenance`]`(layers).attribution.layer_of(p)`
+/// is `Some(w)`, `w` equals the (dropped) last element of
+/// [`contributors_at`] and therefore does *not* appear in
+/// `silenced_at(layers, p)`. When `layer_of(p)` is `None` (the path
+/// resolves to a dict container or is erased by a prefix-scalar),
+/// `silenced_at` is still well-defined: it credits every non-effective
+/// toucher and drops the decider.
+///
+/// # Cost
+///
+/// Calls `discover()` once per layer and walks each dict along `path`
+/// once — `O(layers × path.len())` time, `O(silenced_at.len())`
+/// allocation on the returned `Vec`. The pop step is amortized `O(1)`;
+/// total allocation matches [`contributors_at`] minus one slot.
+///
+/// # HOCON analogue
+///
+/// The path-parameterized dual of Lightbend HOCON's "which sources
+/// were shadowed by later sources at this key?" question: HOCON's
+/// `Config.entrySet()` grouped by [`ConfigOrigin`] surfaces winners
+/// wholesale; the *losers* are recovered by set-differencing pre-merge
+/// origins against post-merge origins. `silenced_at` is the point,
+/// pre-merge primitive that answers the same question at a single leaf
+/// coordinate — with the disjoint-union invariant against
+/// [`contributors_at`] pinning the algebra shut.
+///
+/// [`ConfigOrigin`]: https://lightbend.github.io/config/latest/api/com/typesafe/config/ConfigOrigin.html
+#[must_use]
+pub fn silenced_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> Vec<&'static str> {
+    let mut names: Vec<&'static str> = layers
+        .iter()
+        .filter(|layer| touches_path(&layer.discover(), path))
+        .map(|layer| layer.name())
+        .collect();
+    names.pop();
+    names
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -7058,5 +7146,203 @@ mod tests {
             contributors_at(&[&match_layer, &disjoint], &["a", "b"]),
             vec!["match"],
         );
+    }
+
+    // -------- silenced_at --------
+
+    #[test]
+    fn silenced_at_lists_overridden_touchers_in_application_order() {
+        // Three layers write the same leaf coarse→specific; a fourth
+        // is disjoint. The two coarse touchers are silenced by the
+        // most-specific-with-an-opinion; the disjoint layer never
+        // enters the contest.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("k", Value::from(3i64))]));
+        let disjoint = Fixed("disjoint", dict(&[("other", Value::from(9i64))]));
+        assert_eq!(
+            silenced_at(&[&a, &b, &c, &disjoint], &["k"]),
+            vec!["a", "b"],
+        );
+    }
+
+    #[test]
+    fn silenced_at_empty_when_single_toucher_or_no_toucher() {
+        // Single toucher: no override contest, nothing silenced.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let disjoint = Fixed("z", dict(&[("other", Value::from(9i64))]));
+        assert_eq!(
+            silenced_at(&[&a, &disjoint], &["k"]),
+            Vec::<&'static str>::new(),
+        );
+        // No toucher: nothing to silence.
+        assert_eq!(
+            silenced_at(&[&a, &disjoint], &["nope"]),
+            Vec::<&'static str>::new(),
+        );
+        // Empty layer stack: both silenced_at and contributors_at are
+        // empty; the partition law holds trivially.
+        assert_eq!(silenced_at(&[], &["k"]), Vec::<&'static str>::new());
+        assert_eq!(silenced_at(&[], &[]), Vec::<&'static str>::new());
+    }
+
+    #[test]
+    fn silenced_at_partitions_contributors_at_disjointly() {
+        // Disjoint-union law: silenced_at ⊎ [decider] == contributors_at
+        // (ordered-vector equality). The decider is the last element
+        // of contributors_at — the effective writer when the leaf
+        // survives, the erasure decider when a prefix-scalar wipes
+        // the subtree. Checked across four paths: contested leaf,
+        // uncontested leaf, dict-container path, no-toucher path.
+        let coarse = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("setpoint", Value::from(0.80)),
+                    ("mode", Value::from("live")),
+                ])),
+            )]),
+        );
+        let specific = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 2] = [&coarse, &specific];
+        for path in [
+            &["breathe", "mode"][..],
+            &["breathe", "setpoint"][..],
+            &["breathe"][..],
+            &["absent"][..],
+            &[][..],
+        ] {
+            let contributors = contributors_at(&layers, path);
+            let mut recomposed = silenced_at(&layers, path);
+            if let Some(&decider) = contributors.last() {
+                recomposed.push(decider);
+            }
+            assert_eq!(
+                recomposed, contributors,
+                "silenced_at ⊎ decider != contributors_at at {path:?}",
+            );
+            assert_eq!(
+                silenced_at(&layers, path).len(),
+                contributors.len().saturating_sub(1),
+                "silenced_at.len() != contributors_at.len() - 1 at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn silenced_at_excludes_layer_of_winner_when_leaf_survives() {
+        // When the leaf at path survives the merge,
+        // LayerAttribution::layer_of(path) is Some(w) and w is the
+        // effective writer. silenced_at must NOT contain w — it must
+        // contain every other toucher.
+        let coarse = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("setpoint", Value::from(0.80)),
+                    ("mode", Value::from("live")),
+                ])),
+            )]),
+        );
+        let specific = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 2] = [&coarse, &specific];
+        let out = compose_with_provenance(&layers);
+
+        // Contested leaf: platform is silenced by tenancy.
+        let winner = out.attribution.layer_of(&["breathe", "mode"]);
+        assert_eq!(winner, Some("tenancy"));
+        let silenced = silenced_at(&layers, &["breathe", "mode"]);
+        assert_eq!(silenced, vec!["platform"]);
+        assert!(
+            !silenced.contains(&"tenancy"),
+            "winner never appears silenced"
+        );
+
+        // Uncontested leaf: only platform touched; nothing silenced.
+        let winner = out.attribution.layer_of(&["breathe", "setpoint"]);
+        assert_eq!(winner, Some("platform"));
+        assert_eq!(
+            silenced_at(&layers, &["breathe", "setpoint"]),
+            Vec::<&'static str>::new(),
+        );
+    }
+
+    #[test]
+    fn silenced_at_credits_earlier_writer_when_prefix_scalar_erases_subtree() {
+        // Layer a opens a leaf at ["x", "a"]; layer b's scalar at
+        // ["x"] wholesale-erases the deeper subtree. Both touch
+        // ["x", "a"] (b is the erasure decider); a is silenced by
+        // that erasure. layer_of on the erased path is None — the
+        // primitive is still well-defined via the last-toucher
+        // convention.
+        let a = Fixed(
+            "a",
+            dict(&[("x", Value::from(dict(&[("a", Value::from(1i64))])))]),
+        );
+        let b = Fixed("b", dict(&[("x", Value::from(9i64))]));
+        assert_eq!(silenced_at(&[&a, &b], &["x", "a"]), vec!["a"]);
+        // Cross-check: the effective attribution surface returns None
+        // at the erased leaf, so the disjoint-union invariant threads
+        // through the last-toucher convention rather than layer_of.
+        let out = compose_with_provenance(&[&a, &b]);
+        assert_eq!(out.attribution.layer_of(&["x", "a"]), None);
+        assert_eq!(
+            contributors_at(&[&a, &b], &["x", "a"]),
+            vec!["a", "b"],
+            "contributors_at includes both toucher and erasure decider",
+        );
+    }
+
+    #[test]
+    fn silenced_at_at_root_equals_contributor_names_minus_last() {
+        // Root-path boundary condition: silenced_at at the empty path
+        // equals contributor_names minus its last element. The
+        // partition law specialized to the whole-layer axis.
+        let coarse = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+        let middle = Fixed("cloud", dict(&[("c", Value::from(3i64))]));
+        let specific = Fixed("tenancy", dict(&[("b", Value::from(2i64))]));
+        let layers: [&dyn DiscoveryLayer; 4] = [&coarse, &silent, &middle, &specific];
+        let mut expected = contributor_names(&layers);
+        expected.pop();
+        assert_eq!(silenced_at(&layers, &[]), expected);
+        assert_eq!(silenced_at(&layers, &[]), vec!["platform", "cloud"]);
+    }
+
+    #[test]
+    fn silenced_at_is_subset_of_contributors_at() {
+        // Subset chain on every path: silenced_at ⊆ contributors_at.
+        // Rendered as a set comparison so the pop ordering can't hide
+        // an off-by-one in the filter that produces the underlying
+        // list.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("other", Value::from(3i64))]));
+        let silent = Fixed("silent", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 4] = [&a, &b, &c, &silent];
+        for path in [&["k"][..], &["other"][..], &["nope"][..], &[][..]] {
+            let contributors: std::collections::BTreeSet<_> =
+                contributors_at(&layers, path).into_iter().collect();
+            let silenced: std::collections::BTreeSet<_> =
+                silenced_at(&layers, path).into_iter().collect();
+            assert!(
+                silenced.is_subset(&contributors),
+                "silenced_at({path:?}) = {silenced:?} not ⊆ contributors_at = {contributors:?}",
+            );
+        }
     }
 }
