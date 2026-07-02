@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "cargo_lock_sha256": "edb4014d0080e8a83461547b7d53eda9e3341b5003caaab7c018f751cc7b595e",
+  "cargo_lock_sha256": "3524f9dbcc1193361680d7d176e944b4e561dc245c24c66120212a10f3eeca22",
   "target_resolves": {
     "base": {
-      "arc-swap-1.9.1": {
+      "arc-swap-1.9.2": {
         "runtime_dependencies": [
           {
             "name": "rustversion",
@@ -1165,11 +1165,11 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.108": {
+      "shikumi-0.1.109": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
-            "package_key": "arc-swap-1.9.1",
+            "package_key": "arc-swap-1.9.2",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -2281,7 +2281,7 @@
               },
               {
                 "name": "inotify_sys",
-                "package_key": "inotify-sys-0.1.5",
+                "package_key": "inotify-sys-0.1.6",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -2303,7 +2303,7 @@
             "build_dependencies": [],
             "features": []
           },
-          "inotify-sys-0.1.5": {
+          "inotify-sys-0.1.6": {
             "runtime_dependencies": [
               {
                 "name": "libc",
@@ -2614,7 +2614,7 @@
               },
               {
                 "name": "inotify_sys",
-                "package_key": "inotify-sys-0.1.5",
+                "package_key": "inotify-sys-0.1.6",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -2636,7 +2636,7 @@
             "build_dependencies": [],
             "features": []
           },
-          "inotify-sys-0.1.5": {
+          "inotify-sys-0.1.6": {
             "runtime_dependencies": [
               {
                 "name": "libc",
@@ -3306,7 +3306,7 @@
               },
               {
                 "name": "inotify_sys",
-                "package_key": "inotify-sys-0.1.5",
+                "package_key": "inotify-sys-0.1.6",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3328,7 +3328,7 @@
             "build_dependencies": [],
             "features": []
           },
-          "inotify-sys-0.1.5": {
+          "inotify-sys-0.1.6": {
             "runtime_dependencies": [
               {
                 "name": "libc",
@@ -3654,7 +3654,7 @@
               },
               {
                 "name": "inotify_sys",
-                "package_key": "inotify-sys-0.1.5",
+                "package_key": "inotify-sys-0.1.6",
                 "kind": "normal",
                 "features": [],
                 "uses_default_features": true,
@@ -3676,7 +3676,7 @@
             "build_dependencies": [],
             "features": []
           },
-          "inotify-sys-0.1.5": {
+          "inotify-sys-0.1.6": {
             "runtime_dependencies": [
               {
                 "name": "libc",
@@ -3907,7 +3907,7 @@
     }
   },
   "per_crate": {
-    "arc-swap-1.9.1": {
+    "arc-swap-1.9.2": {
       "edition": "2018"
     },
     "arrayref-0.3.9": {
@@ -3993,8 +3993,9 @@
     "inotify-0.11.2": {
       "edition": "2018"
     },
-    "inotify-sys-0.1.5": {
-      "edition": "2015"
+    "inotify-sys-0.1.6": {
+      "edition": "2015",
+      "build_script": "build.rs"
     },
     "inventory-0.3.24": {
       "edition": "2021"
@@ -4096,7 +4097,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.108": {
+    "shikumi-0.1.109": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
