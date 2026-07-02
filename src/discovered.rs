@@ -2247,6 +2247,134 @@ pub fn has_contributor(layers: &[&dyn DiscoveryLayer]) -> bool {
     layers.iter().any(|layer| !layer.discover().is_empty())
 }
 
+/// True iff **at least one declared layer** returned an empty
+/// [`DiscoveryLayer::discover`] dict — the whole-layer "≥ 1" boolean
+/// predicate on the *silent* axis.
+///
+/// The **silent-axis dual of [`has_contributor`]**: that primitive folds
+/// the "one or more contributors" bit over the `!discover().is_empty()`
+/// predicate; this primitive folds the "one or more silent layers" bit
+/// over the inverted `discover().is_empty()` predicate — the same
+/// short-circuit forward walk [`silent_layer_count`] would perform if its
+/// [`Iterator::count`] fold were replaced by [`Iterator::any`] on the
+/// losing side of the whole-layer partition.
+///
+/// The **boolean-cardinality-threshold endpoint** of the whole-layer
+/// silent axis: [`silent_layer_count`] returns the exact scalar count
+/// (folded with [`Iterator::count`]); this primitive returns the "one or
+/// more" bit directly (folded with [`Iterator::any`]) — the same
+/// short-circuit distinction that [`has_contributor`] carries over
+/// [`contributor_count`] on the contributors axis.
+///
+/// The **presence dual** of every neighboring emptiness endpoint on the
+/// whole-layer silent axis: [`silent_layer_names`] carries the
+/// [`Vec::is_empty`] boundary as `.is_empty()`; [`silent_layer_count`]
+/// carries it at the arithmetic zero. This primitive returns the same bit
+/// directly as a [`bool`], without materializing a name (which the caller
+/// then discards) or walking the full stack, and short-circuits at the
+/// first silent layer rather than folding a count off the total.
+///
+/// # Identities
+///
+/// The four presence-boundary projections on the whole-layer silent axis
+/// collapse onto one substrate-owned primitive with a **short-circuit
+/// forward walk**:
+///
+/// - `has_silent_layer(layers) == `[`silent_layer_count`]`(layers) >= 1`
+///   (cardinality-threshold identity at "≥ 1")
+/// - `has_silent_layer(layers) == !`[`silent_layer_names`]`(layers).is_empty()`
+///   (ordered-list emptiness dual on the silent-names axis)
+/// - `has_silent_layer(layers) == (`[`contributor_count`]`(layers) < `[`layer_names`]`(layers).len())`
+///   (partition-complement identity: some declared layer is silent iff
+///   not every declared layer is a contributor, holding across both the
+///   empty stack — where both sides are `false` — and the fully-populated
+///   stack in pure-scalar arithmetic against the partition-count law)
+/// - `has_silent_layer(layers) == (`[`nonempty_layer_dicts`]`(layers).len() < `[`layer_names`]`(layers).len())`
+///   (pair-partition-complement identity: the contributor-side
+///   `Vec::len` folded through the same partition-count law)
+///
+/// The monotonic chain against the whole-layer partition-count law
+/// (`contributor_count + silent_layer_count == layer_names.len()`):
+///
+/// ```text
+/// has_silent_layer(layers)  =>  silent_layer_count(layers) >= 1
+/// !has_silent_layer(layers) =>  silent_layer_count(layers) == 0
+///                           =>  contributor_count(layers) == layer_names(layers).len()
+/// ```
+///
+/// The **2×2 truth table** over `(`[`has_contributor`]`, has_silent_layer)`
+/// closes the whole-layer partition in short-circuiting boolean arithmetic
+/// against both partition subsets at once, replacing the mixed
+/// scalar/boolean formulation on [`has_contributor`]'s doc block:
+///
+/// ```text
+/// !has_contributor && !has_silent_layer  ⇔  layers.is_empty()
+///                                             (empty stack — nothing declared)
+/// has_contributor  && !has_silent_layer  ⇔  every declared layer contributes
+///                                             (upper contributors-axis endpoint)
+/// !has_contributor && has_silent_layer   ⇔  every declared layer is silent
+///                                             (upper silent-axis endpoint)
+/// has_contributor  && has_silent_layer   ⇔  mixed stack (some contribute, some silent)
+/// ```
+///
+/// All four projection routes on the silent axis are algebraically
+/// identical on their shared boolean output; this primitive is the
+/// strictly-cheapest route when the caller wants only the presence
+/// predicate and does not need the ordered silent-layer names, the exact
+/// silent count, or the contributors-side partition scalar.
+///
+/// # Semantics
+///
+/// The set of silent layers is exactly the [`silent_layer_names`]
+/// projection: every layer whose `discover()` returns an empty [`Dict`].
+/// One silent layer is the true-boundary; the zero-silent-layer cases —
+/// the empty layer stack and the every-layer-contributes stack — are the
+/// two false-boundaries, collapsed under the same `false` return.
+///
+/// # Cost
+///
+/// Walks layers forward with a **short-circuit on the first silent
+/// layer** — worst-case `O(n)` on the layer count (every layer
+/// contributes, so [`Iterator::any`] runs the full stack), best-case
+/// `O(1)` (the coarsest layer is silent and short-circuits the walk).
+/// Zero allocation on the walker itself. Strictly cheaper than every
+/// alternative on the same axis:
+///
+/// - [`silent_layer_names`]`(layers).is_empty()` walks every layer and
+///   allocates the full `Vec<&'static str>` of silent names, then reads
+///   the emptiness bit off the fat pointer — no short-circuit at any hit.
+/// - [`silent_layer_count`]`(layers) >= 1` walks every layer with
+///   [`Iterator::count`] and reads a scalar comparison off the total —
+///   no short-circuit at any hit.
+/// - [`contributor_count`]`(layers) < `[`layer_names`]`(layers).len()`
+///   walks every layer twice — once for the declared-name `Vec`
+///   allocation, once for the contributor filter — then reads a scalar
+///   comparison off the two totals.
+///
+/// This primitive short-circuits at the first silent layer *and* returns
+/// the boolean directly without projecting through an owned name — the
+/// [`Iterator::any`] adapter compiles to a single-branch forward walk
+/// over the same is-empty-discover predicate that [`silent_layer_count`]
+/// folds, only stopped at the first hit.
+///
+/// # HOCON analogue
+///
+/// The substrate-owned counterpart to "did any declared configuration
+/// source fail to contribute anything?" — Lightbend HOCON has no direct
+/// equivalent (its `ConfigFactory.parseResources` silently drops missing
+/// sources, so the answer is not recoverable from a merged `Config`
+/// at all). Figment 0.10 tracks a `Tag` per leaf but reports no
+/// whole-provider-silent presence bit. `has_silent_layer` packages the
+/// diagnostic bit as one substrate-owned primitive over the same
+/// silence predicate that [`silent_layer_names`] and [`silent_layer_count`]
+/// share, with a short-circuiting `.any()` walk that matches
+/// [`has_contributor`]'s presence-axis short-circuit semantics on the
+/// complementary partition subset.
+#[must_use]
+pub fn has_silent_layer(layers: &[&dyn DiscoveryLayer]) -> bool {
+    layers.iter().any(|layer| layer.discover().is_empty())
+}
+
 /// True iff `dict` has *some* value along `path` — the layer holds an
 /// opinion about the leaf at `path`. Zero allocation, `O(path.len())`.
 ///
@@ -11416,6 +11544,210 @@ mod tests {
         assert_eq!(
             has_contributor(&tail_only),
             contributor_count(&tail_only) >= 1
+        );
+    }
+
+    // -------- has_silent_layer (root ≥1 boolean predicate on the silent axis) --------
+
+    #[test]
+    fn has_silent_layer_matches_silent_layer_names_nonempty() {
+        // Ordered-list emptiness dual on the silent axis:
+        // has_silent_layer(layers) == !silent_layer_names(layers).is_empty().
+        // Both sides read from the same is-empty-discover predicate; the
+        // boolean returns the first-hit bit without allocating the name Vec.
+        let owned = count_contributor_fixture();
+        let layers = as_refs(&owned);
+
+        let via_primitive = has_silent_layer(&layers);
+        let via_names_nonempty = !silent_layer_names(&layers).is_empty();
+        assert_eq!(
+            via_primitive, via_names_nonempty,
+            "has_silent_layer != !silent_layer_names.is_empty()",
+        );
+        assert!(via_primitive, "the fixture has three silent layers");
+    }
+
+    #[test]
+    fn has_silent_layer_matches_silent_layer_count_threshold() {
+        // Cardinality-threshold identity at "≥ 1":
+        // has_silent_layer(layers) == silent_layer_count(layers) >= 1.
+        // Both routes share the is-empty-discover predicate; the boolean
+        // short-circuits at the first silent layer, the scalar walks the
+        // whole stack.
+        let owned = count_contributor_fixture();
+        let layers = as_refs(&owned);
+
+        let via_primitive = has_silent_layer(&layers);
+        let via_threshold = silent_layer_count(&layers) >= 1;
+        assert_eq!(
+            via_primitive, via_threshold,
+            "has_silent_layer != silent_layer_count >= 1",
+        );
+
+        // Threshold identity holds on both zero-silent-layer degenerate
+        // stacks: the empty stack (count == 0 ⇒ false) and the
+        // all-contribute stack (count == 0 ⇒ false) both collapse the
+        // "≥ 1" bit and the boolean to false.
+        let empty: [&dyn DiscoveryLayer; 0] = [];
+        assert!(!has_silent_layer(&empty));
+        assert_eq!(has_silent_layer(&empty), silent_layer_count(&empty) >= 1);
+
+        let a = Fixed("a", dict(&[("k1", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k2", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("k3", Value::from(3i64))]));
+        let all_contribute: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        assert!(!has_silent_layer(&all_contribute));
+        assert_eq!(
+            has_silent_layer(&all_contribute),
+            silent_layer_count(&all_contribute) >= 1,
+        );
+    }
+
+    #[test]
+    fn has_silent_layer_partition_complement_matches_contributor_count() {
+        // Partition-complement identity:
+        //   has_silent_layer(layers) == (contributor_count(layers)
+        //                                < layer_names(layers).len()).
+        // "Some declared layer is silent" iff "not every declared layer
+        // is a contributor", which is the partition-count law rewritten
+        // as a strict inequality between the contributor-side scalar and
+        // the declared denominator. Holds across the empty stack (0 < 0 is
+        // false; has_silent_layer is also false) and the fully-populated
+        // stacks in pure-scalar arithmetic.
+        let owned = count_contributor_fixture();
+        let layers = as_refs(&owned);
+
+        let via_primitive = has_silent_layer(&layers);
+        let via_complement = contributor_count(&layers) < layer_names(&layers).len();
+        assert_eq!(
+            via_primitive, via_complement,
+            "has_silent_layer != (contributor_count < layer_names.len())",
+        );
+
+        // Empty stack: 0 < 0 is false; has_silent_layer is also false.
+        let empty: [&dyn DiscoveryLayer; 0] = [];
+        assert_eq!(
+            has_silent_layer(&empty),
+            contributor_count(&empty) < layer_names(&empty).len(),
+        );
+        assert!(!has_silent_layer(&empty));
+
+        // All-contribute stack: contributor_count == layer_names.len(),
+        // so the strict inequality is false; has_silent_layer is also
+        // false.
+        let a = Fixed("a", dict(&[("k1", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k2", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("k3", Value::from(3i64))]));
+        let all_contribute: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        assert_eq!(
+            has_silent_layer(&all_contribute),
+            contributor_count(&all_contribute) < layer_names(&all_contribute).len(),
+        );
+        assert!(!has_silent_layer(&all_contribute));
+
+        // All-silent stack: contributor_count == 0 < layer_names.len(),
+        // so the strict inequality is true; has_silent_layer is also
+        // true.
+        let silent = Fixed("undetectable", Dict::new());
+        let all_silent: [&dyn DiscoveryLayer; 3] = [&silent, &silent, &silent];
+        assert_eq!(
+            has_silent_layer(&all_silent),
+            contributor_count(&all_silent) < layer_names(&all_silent).len(),
+        );
+        assert!(has_silent_layer(&all_silent));
+    }
+
+    #[test]
+    fn has_silent_layer_matches_nonempty_layer_dicts_partition() {
+        // Pair-partition-complement identity:
+        //   has_silent_layer(layers) == (nonempty_layer_dicts(layers).len()
+        //                                < layer_names(layers).len()).
+        // The (name, dict) pair Vec has one entry per contributor, so its
+        // length is the same partition scalar as contributor_count; the
+        // identity closes the strict inequality against layer_names on
+        // the pair-projection altitude.
+        let owned = count_contributor_fixture();
+        let layers = as_refs(&owned);
+
+        let via_primitive = has_silent_layer(&layers);
+        let via_pairs = nonempty_layer_dicts(&layers).len() < layer_names(&layers).len();
+        assert_eq!(
+            via_primitive, via_pairs,
+            "has_silent_layer != (nonempty_layer_dicts.len() < layer_names.len())",
+        );
+    }
+
+    #[test]
+    fn has_silent_layer_partition_truth_table_vs_has_contributor() {
+        // 2×2 truth table over (has_contributor, has_silent_layer)
+        // covering the four disjoint states of the whole-layer partition:
+        //   (F, F) ⇔ empty stack (nothing declared)
+        //   (T, F) ⇔ every declared layer contributes
+        //   (F, T) ⇔ every declared layer is silent
+        //   (T, T) ⇔ mixed stack (some contribute, some silent)
+        //
+        // Each state is reached by a distinct fixture; the pair pins the
+        // whole-layer partition as an ordered-pair equality against a
+        // hand-computed truth table, closing the partition in
+        // short-circuiting boolean arithmetic on both subsets at once
+        // (replacing the mixed scalar/boolean formulation in
+        // has_contributor's prior truth table against silent_layer_count).
+
+        // (F, F): the empty stack — nothing declared.
+        let empty: [&dyn DiscoveryLayer; 0] = [];
+        assert!(!has_contributor(&empty));
+        assert!(!has_silent_layer(&empty));
+
+        // (T, F): every declared layer contributes.
+        let a = Fixed("a", dict(&[("k1", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k2", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("k3", Value::from(3i64))]));
+        let all_contribute: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        assert!(has_contributor(&all_contribute));
+        assert!(!has_silent_layer(&all_contribute));
+
+        // (F, T): every declared layer is silent.
+        let silent = Fixed("undetectable", Dict::new());
+        let all_silent: [&dyn DiscoveryLayer; 3] = [&silent, &silent, &silent];
+        assert!(!has_contributor(&all_silent));
+        assert!(has_silent_layer(&all_silent));
+
+        // (T, T): mixed stack (the fixture — three contributors and
+        // three silent layers interleaved).
+        let owned = count_contributor_fixture();
+        let mixed = as_refs(&owned);
+        assert!(has_contributor(&mixed));
+        assert!(has_silent_layer(&mixed));
+    }
+
+    #[test]
+    fn has_silent_layer_short_circuits_on_coarsest_silent() {
+        // Short-circuit correctness: a stack with the coarsest layer as
+        // the sole silent one and every later layer contributing still
+        // returns true. Iterator::any's short-circuit compiles to the
+        // same output as a full walk on the correctness axis; this test
+        // pins the bit rather than the walk length (which is not
+        // observable from the returned bool), covering the best-case O(1)
+        // endpoint by constructing a stack where any::any() logically
+        // terminates on the first element.
+        let silent = Fixed("undetectable", Dict::new());
+        let contrib = Fixed("k", dict(&[("k", Value::from(1i64))]));
+        let coarsest_silent: [&dyn DiscoveryLayer; 4] = [&silent, &contrib, &contrib, &contrib];
+        assert!(has_silent_layer(&coarsest_silent));
+        assert_eq!(
+            has_silent_layer(&coarsest_silent),
+            silent_layer_count(&coarsest_silent) >= 1
+        );
+
+        // Dual short-circuit: the trailing-silent case — every earlier
+        // layer contributes and the last is the sole silent one — still
+        // folds to true (no short-circuit, worst-case walk on the
+        // any::any() path, but the returned bit is unchanged).
+        let tail_only: [&dyn DiscoveryLayer; 4] = [&contrib, &contrib, &contrib, &silent];
+        assert!(has_silent_layer(&tail_only));
+        assert_eq!(
+            has_silent_layer(&tail_only),
+            silent_layer_count(&tail_only) >= 1
         );
     }
 }
