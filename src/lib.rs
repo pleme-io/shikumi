@@ -77,7 +77,7 @@ pub use discovered::{
     compose as compose_discovery, compose_with_provenance, contest_at, contributor_count,
     contributor_count_at, contributor_names, contributors_at, decider_at, deep_merge,
     is_contested_at, is_touched_at, layer_names, nonempty_layer_dicts, silenced_at,
-    silent_layer_names,
+    silent_layer_count, silent_layer_names,
 };
 pub use discovery::{
     ConfigDiscovery, Format, FormatCoordinates, FormatMetadataTag, FormatProvenance,
