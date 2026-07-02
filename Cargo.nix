@@ -279,9 +279,9 @@ rec {
       };
       "arc-swap" = rec {
         crateName = "arc-swap";
-        version = "1.9.1";
+        version = "1.9.2";
         edition = "2018";
-        sha256 = "01xjlahcya8igdalxmda375lnlhjqwjz0cdqhy0bc1jkyzb1yfka";
+        sha256 = "02w1n3kiz02ml6is3biqia4bgxcf7dml2m9mrd2v3w5f9nzc0jf0";
         libName = "arc_swap";
         authors = [
           "Michal 'vorner' Vaner <vorner@vorner.cz>"
@@ -590,10 +590,10 @@ rec {
       };
       "aws-lc-rs" = rec {
         crateName = "aws-lc-rs";
-        version = "1.17.0";
+        version = "1.17.1";
         edition = "2021";
-        links = "aws_lc_rs_1_17_0_sys";
-        sha256 = "003d69lq9qf12bj4j6csy3nrvilwa30yd9x9blx7h1f27vyg3hjy";
+        links = "aws_lc_rs_1_17_1_sys";
+        sha256 = "1b9j3rrl3bxi27y9qwfi5hm8h337q1hj4ab03jdxvrf7gy9xhhj3";
         libName = "aws_lc_rs";
         authors = [
           "AWS-LibCrypto"
@@ -626,10 +626,10 @@ rec {
       };
       "aws-lc-sys" = rec {
         crateName = "aws-lc-sys";
-        version = "0.41.0";
+        version = "0.42.0";
         edition = "2021";
-        links = "aws_lc_0_41_0";
-        sha256 = "1x735y1qny5v2gzpl928z1ppddb906nl1n8d2yv3mfc5rrwrfbqs";
+        links = "aws_lc_0_42_0";
+        sha256 = "0i0l6q3xf0p5v1raxd718ccxl06dviws9kpwyh97ll1im4fyp73d";
         build = "builder/main.rs";
         libName = "aws_lc_sys";
         authors = [
@@ -652,6 +652,11 @@ rec {
           {
             name = "fs_extra";
             packageId = "fs_extra";
+          }
+          {
+            name = "pkg-config";
+            packageId = "pkg-config";
+            target = { target, features }: (target."unix" or false);
           }
         ];
         features = {
@@ -5013,9 +5018,9 @@ rec {
       };
       "inotify-sys" = rec {
         crateName = "inotify-sys";
-        version = "0.1.5";
+        version = "0.1.6";
         edition = "2015";
-        sha256 = "1syhjgvkram88my04kv03s0zwa66mdwa5v7ddja3pzwvx2sh4p70";
+        sha256 = "1c6h0r0lqhfjyqfnh907dzx56iigbh8adjifv996jlqnr90rgnkg";
         libName = "inotify_sys";
         authors = [
           "Hanno Braun <hb@hannobraun.de>"
@@ -5672,6 +5677,17 @@ rec {
         libName = "pin_utils";
         authors = [
           "Josef Brandl <mail@josefbrandl.de>"
+        ];
+
+      };
+      "pkg-config" = rec {
+        crateName = "pkg-config";
+        version = "0.3.33";
+        edition = "2018";
+        sha256 = "17jnqmcbxsnwhg9gjf0nh6dj5k0x3hgwi3mb9krjnmfa9v435w8r";
+        libName = "pkg_config";
+        authors = [
+          "Alex Crichton <alex@alexcrichton.com>"
         ];
 
       };
@@ -6852,9 +6868,9 @@ rec {
       };
       "rustls-pki-types" = rec {
         crateName = "rustls-pki-types";
-        version = "1.14.1";
+        version = "1.15.0";
         edition = "2021";
-        sha256 = "1a9pr54y0f3qr97bxpd3ahjldq0gqdld0h799xbnwdzbwxx1k9rh";
+        sha256 = "0imhb5d0m4hinavcgqxzmqpb55zjahv19g0lxrkh167k9ai9jj3n";
         libName = "rustls_pki_types";
         dependencies = [
           {
@@ -7690,7 +7706,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.109";
+        version = "0.1.110";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -8077,8 +8093,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "4d1b1e0b6de4ac515364b170c3d31e753245b8fe";
-          sha256 = "12ap2bqkcvwm5yd2p2qmvjmj1r36gxk4ws3wdc99lyf9i1x7nxkl";
+          rev = "4f7c97943b64a75a0a5e6fac249a9d5b0a49b34e";
+          sha256 = "1f8c8j0sdvbgxalv6cc3rk64npq3cbybwqy7hmws68qkswi6nhwv";
         };
         libName = "tatara_lisp";
         authors = [
@@ -8119,8 +8135,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "4d1b1e0b6de4ac515364b170c3d31e753245b8fe";
-          sha256 = "12ap2bqkcvwm5yd2p2qmvjmj1r36gxk4ws3wdc99lyf9i1x7nxkl";
+          rev = "4f7c97943b64a75a0a5e6fac249a9d5b0a49b34e";
+          sha256 = "1f8c8j0sdvbgxalv6cc3rk64npq3cbybwqy7hmws68qkswi6nhwv";
         };
         procMacro = true;
         libName = "tatara_lisp_derive";
@@ -8239,9 +8255,9 @@ rec {
       };
       "time" = rec {
         crateName = "time";
-        version = "0.3.51";
+        version = "0.3.53";
         edition = "2024";
-        sha256 = "09zkhrk6m83l5szc6dx5zn5zsg97lp8mxr44qi04ncxpzs07vhc5";
+        sha256 = "0l4aans0kv47y53736cjs0pnvdz91iyywrkqbrxk6cmrvknsmpqq";
         authors = [
           "Jacob Pratt <open-source@jhpratt.dev>"
           "Time contributors"
@@ -8322,9 +8338,9 @@ rec {
       };
       "time-macros" = rec {
         crateName = "time-macros";
-        version = "0.2.30";
+        version = "0.2.31";
         edition = "2024";
-        sha256 = "0d9r83vk9ik0gxfbw4yaig748ff2prffq21j2mp0j6dipmhimvyw";
+        sha256 = "0pq8y9bm1zr008dmjs62qdfwsigv2kwkga5sj0d4jvk625qvhcf4";
         procMacro = true;
         libName = "time_macros";
         authors = [
