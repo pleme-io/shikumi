@@ -2317,6 +2317,63 @@ impl PathContest {
         out.push(self.decider);
         out
     }
+
+    /// The **coarsest** toucher — the first-in-application-order layer
+    /// that placed an opinion at the queried path. Named dually to
+    /// [`Self::decider`]: `decider` is the most-specific opinion (the
+    /// trailing element of [`Self::contributors`]); `coarsest` is the
+    /// most-general opinion (the *leading* element). Together, the
+    /// pair frames the override cascade for diagnostic renderers —
+    /// "`platform` opened this key, `tenancy` decided its final
+    /// value" reads directly off `(coarsest, decider)`.
+    ///
+    /// Semantically the leading-element dual of [`Self::decider`]'s
+    /// trailing-element projection. Never [`Option`]: a `PathContest`
+    /// value always carries a decider, and when `overridden` is empty
+    /// the sole toucher (`decider`) *is* the coarsest — the
+    /// uncontested-singleton degenerate collapses cleanly rather
+    /// than requiring the caller to `unwrap_or(decider)`.
+    ///
+    /// # Identities
+    ///
+    /// The leading-element identity against [`Self::contributors`]:
+    ///
+    /// ```text
+    /// coarsest()                        == contributors().first().copied().unwrap()
+    /// contest_at(layers, p).map(|c| c.coarsest())
+    ///     == contributors_at(layers, p).first().copied()   // when contest_at is Some
+    /// ```
+    ///
+    /// The uncontested-singleton degenerate:
+    ///
+    /// ```text
+    /// !is_contested()  =>  coarsest() == decider
+    /// ```
+    ///
+    /// which follows structurally: when `overridden.is_empty()`,
+    /// `overridden.first()` is [`None`] and the `unwrap_or` branch
+    /// returns `decider`.
+    ///
+    /// The pairing with [`Self::decider`]:
+    ///
+    /// ```text
+    /// !is_contested()      <=>  coarsest() == decider
+    /// is_contested()       =>   coarsest() != decider    (loosely — the
+    ///                            two axes may coincidentally alias, but
+    ///                            structurally coarsest is overridden[0])
+    /// ```
+    ///
+    /// # Cost
+    ///
+    /// `O(1)` — one pointer read (`Vec::first`) and one branch. No
+    /// allocation, no walk of the layer stack. Strictly cheaper than
+    /// re-invoking any pre-merge point primitive; strictly cheaper
+    /// than materializing [`Self::contributors`] and reading its
+    /// leading element.
+    #[must_use]
+    pub fn coarsest(&self) -> &'static str {
+        self.overridden.first().copied().unwrap_or(self.decider)
+    }
 }
 
 /// The full **per-path override contest** at `path` — decider (winner)
@@ -8304,5 +8361,239 @@ mod tests {
         assert_eq!(contest.contributors(), vec!["a", "b"]);
         assert_eq!(contest.decider, "b");
         assert_eq!(contest.overridden, vec!["a"]);
+    }
+
+    // -------- PathContest::coarsest --------
+
+    #[test]
+    fn path_contest_coarsest_uncontested_singleton_equals_decider() {
+        // Structural degenerate: `overridden.is_empty()` ⇒
+        // `overridden.first()` is None ⇒ `unwrap_or(decider)` picks
+        // `decider`. The identity holds by construction.
+        let contest = PathContest {
+            decider: "solo",
+            overridden: vec![],
+        };
+        assert_eq!(contest.coarsest(), "solo");
+        assert_eq!(contest.coarsest(), contest.decider);
+        assert!(!contest.is_contested());
+    }
+
+    #[test]
+    fn path_contest_coarsest_three_writers_returns_leading_overridden() {
+        // Three touchers coarse→specific at breathe.mode.
+        // `contributors()` == [platform, cloud, tenancy]; `coarsest`
+        // is the leading element `platform`, `decider` is the
+        // trailing element `tenancy`, and the two axes are distinct.
+        let platform = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("live"))])),
+            )]),
+        );
+        let cloud = Fixed(
+            "cloud",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("aws"))])),
+            )]),
+        );
+        let tenancy = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("prod"))])),
+            )]),
+        );
+        let disjoint = Fixed("logger", dict(&[("logger", Value::from("info"))]));
+        let layers: [&dyn DiscoveryLayer; 4] = [&platform, &cloud, &tenancy, &disjoint];
+        let contest = contest_at(&layers, &["breathe", "mode"]).expect("three touchers");
+        assert_eq!(contest.coarsest(), "platform");
+        assert_eq!(contest.decider, "tenancy");
+        assert_ne!(contest.coarsest(), contest.decider);
+        assert_eq!(
+            contest.coarsest(),
+            contest.overridden[0],
+            "coarsest is the leading overridden entry when contested",
+        );
+    }
+
+    #[test]
+    fn path_contest_coarsest_matches_contributors_first() {
+        // Leading-element identity: coarsest() == contributors().first().copied().unwrap()
+        // across every branch of touches_path — contested leaf,
+        // uncontested leaf, dict container, root, and (skipped) absent.
+        let a = Fixed(
+            "a",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("mode", Value::from("live")),
+                    ("setpoint", Value::from(0.80)),
+                ])),
+            )]),
+        );
+        let b = Fixed(
+            "b",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let c = Fixed("c", dict(&[("logger", Value::from("info"))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        for path in [
+            &[][..],
+            &["breathe"][..],
+            &["breathe", "mode"][..],
+            &["breathe", "setpoint"][..],
+            &["logger"][..],
+        ] {
+            let contest = contest_at(&layers, path).expect("some toucher");
+            let leading = contest
+                .contributors()
+                .first()
+                .copied()
+                .expect("contest is non-empty");
+            assert_eq!(
+                contest.coarsest(),
+                leading,
+                "coarsest() != contributors().first() at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_coarsest_matches_contributors_at_first() {
+        // Point-primitive identity: contest_at.map(|c| c.coarsest())
+        // == contributors_at.first().copied() across every path,
+        // including the None boundary (contest_at is None iff
+        // contributors_at is empty iff first().copied() is None).
+        let coarse = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("setpoint", Value::from(0.80)),
+                    ("mode", Value::from("live")),
+                ])),
+            )]),
+        );
+        let middle = Fixed(
+            "cloud",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("staging"))])),
+            )]),
+        );
+        let specific = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 3] = [&coarse, &middle, &specific];
+        for path in [
+            &["breathe", "mode"][..],
+            &["breathe", "setpoint"][..],
+            &["breathe"][..],
+            &["absent"][..],
+            &[][..],
+        ] {
+            let via_fused = contest_at(&layers, path).map(|c| c.coarsest());
+            let via_loose = contributors_at(&layers, path).first().copied();
+            assert_eq!(
+                via_fused, via_loose,
+                "coarsest() != contributors_at.first() at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_coarsest_equals_decider_iff_uncontested() {
+        // Boolean identity across every touched path: coarsest() ==
+        // decider iff overridden is empty. When contested, the two
+        // are structurally distinct (coarsest is overridden[0], decider
+        // is the trailing toucher).
+        let a = Fixed(
+            "a",
+            dict(&[
+                ("solo", Value::from(1i64)),
+                (
+                    "breathe",
+                    Value::from(dict(&[("mode", Value::from("live"))])),
+                ),
+            ]),
+        );
+        let b = Fixed(
+            "b",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        for path in [
+            &["solo"][..],            // only `a` touches — uncontested
+            &["breathe"][..],         // dict container both touch — contested
+            &["breathe", "mode"][..], // leaf both touch — contested
+        ] {
+            let contest = contest_at(&layers, path).expect("some toucher");
+            let uncontested = !contest.is_contested();
+            let coarsest_is_decider = contest.coarsest() == contest.decider;
+            assert_eq!(
+                uncontested, coarsest_is_decider,
+                "!is_contested() != (coarsest == decider) at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_coarsest_covers_erasure_case() {
+        // Prefix-scalar erasure: `a` wrote the deep subtree, `b`
+        // erased it with a shallow scalar. Both touch the erased
+        // leaf; coarsest names `a` (the axis that opened this key
+        // originally, before erasure). Symmetric to the erasure
+        // test on contributors(): coarsest gives the leading toucher
+        // regardless of whether the trailing toucher is an erasure
+        // agent.
+        let a = Fixed(
+            "a",
+            dict(&[("k", Value::from(dict(&[("leaf", Value::from(1i64))])))]),
+        );
+        let b = Fixed("b", dict(&[("k", Value::from("erased"))]));
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        let contest = contest_at(&layers, &["k", "leaf"]).expect("erasure decider is a toucher");
+        assert_eq!(contest.coarsest(), "a");
+        assert_eq!(contest.decider, "b");
+        assert_ne!(contest.coarsest(), contest.decider);
+    }
+
+    #[test]
+    fn path_contest_coarsest_root_boundary() {
+        // Root-path specialization: coarsest is the first
+        // contributor_name; decider is the last. Silent layers
+        // between them are filtered out on both axes.
+        let coarse = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+        let middle = Fixed("cloud", dict(&[("c", Value::from(3i64))]));
+        let specific = Fixed("tenancy", dict(&[("b", Value::from(2i64))]));
+        let layers: [&dyn DiscoveryLayer; 4] = [&coarse, &silent, &middle, &specific];
+        let contest = contest_at(&layers, &[]).expect("some non-empty layer at root");
+        let names = contributor_names(&layers);
+        assert_eq!(
+            contest.coarsest(),
+            *names.first().expect("some contributor"),
+            "root coarsest is first contributor_name",
+        );
+        assert_eq!(
+            contest.decider,
+            *names.last().expect("some contributor"),
+            "root decider is last contributor_name",
+        );
+        assert_eq!(contest.coarsest(), "platform");
+        assert_eq!(contest.decider, "tenancy");
     }
 }
