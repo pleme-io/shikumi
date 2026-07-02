@@ -2511,6 +2511,136 @@ pub fn contributor_count_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> us
         .count()
 }
 
+/// True iff **at least one layer** touches `path` — placed a leaf here,
+/// opened a dict container here, or wholesale-replaced a subtree
+/// containing `path`. False iff no layer has an opinion at `path`.
+///
+/// The **"≥ 1" endpoint** of the cardinality-threshold predicate lattice
+/// on the (path, layer) axis: [`is_contested_at`] returns the "≥ 2"
+/// threshold ("more than one toucher — an override contest exists"), and
+/// this primitive returns the "≥ 1" threshold ("any toucher at all — the
+/// path was touched"). Together with the exact-cardinality endpoint
+/// [`contributor_count_at`], the three primitives partition the
+/// three-way outcome
+///
+/// ```text
+/// contributor_count_at(layers, p) == 0   ⇔  !is_touched_at(layers, p)
+/// contributor_count_at(layers, p) == 1   ⇔   is_touched_at(layers, p) && !is_contested_at(layers, p)
+/// contributor_count_at(layers, p) >= 2   ⇔   is_contested_at(layers, p)
+/// ```
+///
+/// with the monotonic chain `is_contested_at ⇒ is_touched_at` shifting
+/// the predicate axis by exactly one hit.
+///
+/// The **boolean dual** of every neighboring None-endpoint on the
+/// point-primitive lattice: [`contest_at`] / [`decider_at`] /
+/// [`coarsest_at`] all carry an [`Option`] boundary that maps
+/// [`None`] ↔ "no toucher"; [`contributors_at`] carries the
+/// [`Vec::is_empty`] boundary at the same point. This primitive returns
+/// the same bit directly as a [`bool`], without materializing a name
+/// (which the caller then discards) or an owned [`Vec`].
+///
+/// # Identities
+///
+/// The five presence-boundary projections on the lattice collapse onto
+/// one substrate-owned primitive with a **short-circuit forward walk**:
+///
+/// - `is_touched_at(layers, p) == `[`contributor_count_at`]`(layers, p) >= 1`
+///   (cardinality-threshold identity at "≥ 1")
+/// - `is_touched_at(layers, p) == `[`contest_at`]`(layers, p).is_some()`
+///   (fused-value presence bit)
+/// - `is_touched_at(layers, p) == `[`decider_at`]`(layers, p).is_some()`
+///   (trailing-scalar presence bit)
+/// - `is_touched_at(layers, p) == `[`coarsest_at`]`(layers, p).is_some()`
+///   (leading-scalar presence bit)
+/// - `is_touched_at(layers, p) == !`[`contributors_at`]`(layers, p).is_empty()`
+///   (ordered-list emptiness dual)
+///
+/// The monotonic chain against the "≥ 2" endpoint:
+///
+/// ```text
+/// is_contested_at(layers, p)  =>   is_touched_at(layers, p)
+/// !is_touched_at(layers, p)   =>  !is_contested_at(layers, p)
+/// ```
+///
+/// The singleton characterization on the exact-cardinality axis:
+///
+/// ```text
+/// is_touched_at(layers, p) && !is_contested_at(layers, p)
+///     <=>  contributor_count_at(layers, p) == 1
+/// ```
+///
+/// All five routes are algebraically identical on their shared boolean
+/// output; this primitive is the strictly-cheapest route when the caller
+/// wants only the presence predicate and does not need the touchers list,
+/// the decider name, the coarsest name, or the losers list.
+///
+/// # Semantics
+///
+/// The set of touchers is exactly the [`contributors_at`] projection:
+/// every layer whose `discover()` places a leaf at `path`, opens a dict
+/// container at `path`, or covers `path` with a scalar/array at a proper
+/// prefix (wholesale-replace). One toucher is the true-boundary; the
+/// zero-toucher case (no layer opinions at all along `path`) is the sole
+/// false case.
+///
+/// # Cost
+///
+/// Walks layers forward with a **short-circuit on the first hit** —
+/// worst-case `O(layers × path.len())` (nobody touched), best-case
+/// `O(path.len())` (the coarsest layer touches). Zero allocation on the
+/// walker itself. Strictly cheaper than every alternative on the same
+/// axis:
+///
+/// - [`contributors_at`]`(layers, p).is_empty()` walks every layer and
+///   allocates the full `Vec<&'static str>` of touchers, then reads the
+///   emptiness bit off the fat pointer — no short-circuit at any hit.
+/// - [`contributor_count_at`]`(layers, p) >= 1` walks every layer with
+///   [`Iterator::count`] and reads a scalar comparison off the total —
+///   no short-circuit at any hit.
+/// - [`contest_at`]`(layers, p).is_some()` walks every layer, allocates
+///   the [`PathContest`]'s `overridden` `Vec`, then reads the
+///   [`Option`] discriminant.
+/// - [`decider_at`]`(layers, p).is_some()` walks layers in **reverse**
+///   and short-circuits at the first hit — tied in traversal cost but
+///   materializes a `&'static str` name only to discard it via
+///   `.is_some()`.
+/// - [`coarsest_at`]`(layers, p).is_some()` walks layers forward and
+///   short-circuits at the first hit — tied in traversal cost but
+///   materializes a `&'static str` name only to discard it via
+///   `.is_some()`.
+///
+/// This primitive short-circuits at the first hit *and* returns the
+/// boolean directly without projecting through an owned name — the
+/// [`Iterator::any`] adapter compiles to a single-branch forward walk.
+///
+/// # HOCON analogue
+///
+/// The substrate-owned counterpart to Lightbend HOCON's
+/// [`Config.hasPath`] predicate, extended to the pre-merge axis: HOCON's
+/// `hasPath` reports whether the post-merge value tree has anything at
+/// `path`, but the pre-merge presence question — "did *any* source ever
+/// touch this key, even if its opinion was later erased by a
+/// prefix-scalar?" — is recovered only by iterating each source's
+/// [`Config.entrySet()`] and checking. `is_touched_at` packages the
+/// pre-merge presence predicate as one substrate-owned primitive with a
+/// short-circuiting forward walk, and covers the erasure case uniformly
+/// by projecting the *touched* set rather than the *surviving* set.
+/// Figment 0.10's per-value [`Tag`] names the surviving-leaf's origin
+/// but reports nothing when the leaf was erased upstream;
+/// `is_touched_at` remains `true` in that case because the pre-merge
+/// touch happened.
+///
+/// [`Config.hasPath`]: https://lightbend.github.io/config/latest/api/com/typesafe/config/Config.html#hasPath-java.lang.String-
+/// [`Config.entrySet()`]: https://lightbend.github.io/config/latest/api/com/typesafe/config/Config.html#entrySet--
+/// [`Tag`]: https://docs.rs/figment/latest/figment/value/struct.Tag.html
+#[must_use]
+pub fn is_touched_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> bool {
+    layers
+        .iter()
+        .any(|layer| touches_path(&layer.discover(), path))
+}
+
 /// A per-path override contest — the decider (winner) and the ordered
 /// losers along `path`. Returned by [`contest_at`]; the typed fusion of
 /// the pre-merge point primitives [`decider_at`] (winner projection)
@@ -9665,5 +9795,240 @@ mod tests {
         assert_eq!(contributor_count_at(&layers_one, &[]), 1);
         let layers_zero: [&dyn DiscoveryLayer; 2] = [&silent, &silent];
         assert_eq!(contributor_count_at(&layers_zero, &[]), 0);
+    }
+
+    #[test]
+    fn is_touched_at_matches_contributor_count_ge_one_across_paths() {
+        // Cardinality-threshold identity at "≥ 1": is_touched_at(layers,
+        // p) == (contributor_count_at(layers, p) >= 1). The "≥ 1"
+        // predicate endpoint of the point-primitive lattice reads off
+        // the scalar cardinality with the same walk as `is_contested_at`
+        // reads its "≥ 2" endpoint.
+        let a = Fixed(
+            "a",
+            dict(&[
+                ("solo", Value::from(1i64)),
+                (
+                    "breathe",
+                    Value::from(dict(&[("mode", Value::from("live"))])),
+                ),
+            ]),
+        );
+        let b = Fixed(
+            "b",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        for path in [
+            &[][..],
+            &["solo"][..],
+            &["absent"][..],
+            &["breathe"][..],
+            &["breathe", "mode"][..],
+        ] {
+            let via_bool = is_touched_at(&layers, path);
+            let via_scalar = contributor_count_at(&layers, path) >= 1;
+            assert_eq!(
+                via_bool, via_scalar,
+                "is_touched_at != (contributor_count_at >= 1) at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn is_touched_at_pins_every_none_endpoint_across_paths() {
+        // Presence-boundary identity: is_touched_at agrees with
+        // contest_at.is_some(), decider_at.is_some(), coarsest_at
+        // .is_some(), and !contributors_at.is_empty() at every path.
+        // The five presence-projections on the lattice collapse onto
+        // one boolean answer; the primitive returns it as a bare
+        // `bool` without materializing a name or an owned Vec.
+        let coarse = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("setpoint", Value::from(0.80)),
+                    ("mode", Value::from("live")),
+                ])),
+            )]),
+        );
+        let specific = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 2] = [&coarse, &specific];
+        for path in [
+            &[][..],
+            &["breathe"][..],
+            &["breathe", "mode"][..],
+            &["breathe", "setpoint"][..],
+            &["absent"][..],
+            &["breathe", "absent"][..],
+        ] {
+            let touched = is_touched_at(&layers, path);
+            assert_eq!(
+                touched,
+                contest_at(&layers, path).is_some(),
+                "is_touched_at != contest_at.is_some() at {path:?}",
+            );
+            assert_eq!(
+                touched,
+                decider_at(&layers, path).is_some(),
+                "is_touched_at != decider_at.is_some() at {path:?}",
+            );
+            assert_eq!(
+                touched,
+                coarsest_at(&layers, path).is_some(),
+                "is_touched_at != coarsest_at.is_some() at {path:?}",
+            );
+            assert_eq!(
+                touched,
+                !contributors_at(&layers, path).is_empty(),
+                "is_touched_at != !contributors_at.is_empty() at {path:?}",
+            );
+        }
+        // Empty layer stack: no touchers anywhere; the predicate is
+        // false at every path, including the root.
+        let empty: [&dyn DiscoveryLayer; 0] = [];
+        assert!(!is_touched_at(&empty, &[]));
+        assert!(!is_touched_at(&empty, &["absent"]));
+    }
+
+    #[test]
+    fn is_touched_at_matches_monotonic_chain_against_is_contested_at() {
+        // Monotonic chain: is_contested_at(p) ⇒ is_touched_at(p) and
+        // !is_touched_at(p) ⇒ !is_contested_at(p). The two boolean
+        // endpoints of the cardinality-threshold lattice at "≥ 2" and
+        // "≥ 1" shift the predicate axis by exactly one hit, so the
+        // implication is one-directional on every branch of every path.
+        let a = Fixed(
+            "a",
+            dict(&[
+                ("solo", Value::from(1i64)),
+                (
+                    "breathe",
+                    Value::from(dict(&[("mode", Value::from("live"))])),
+                ),
+            ]),
+        );
+        let b = Fixed(
+            "b",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        for path in [
+            &[][..],
+            &["solo"][..],
+            &["absent"][..],
+            &["breathe"][..],
+            &["breathe", "mode"][..],
+        ] {
+            let touched = is_touched_at(&layers, path);
+            let contested = is_contested_at(&layers, path);
+            assert!(
+                !contested || touched,
+                "is_contested_at ⇒ is_touched_at broken at {path:?}",
+            );
+            assert!(
+                touched || !contested,
+                "!is_touched_at ⇒ !is_contested_at broken at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn is_touched_at_singleton_characterization_across_paths() {
+        // Singleton characterization: is_touched_at && !is_contested_at
+        // ⇔ contributor_count_at == 1. The intersection of the two
+        // boolean endpoints selects exactly the exact-cardinality-one
+        // branch of the three-way partition (0 / 1 / ≥ 2).
+        let a = Fixed(
+            "a",
+            dict(&[
+                ("solo", Value::from(1i64)),
+                (
+                    "breathe",
+                    Value::from(dict(&[("mode", Value::from("live"))])),
+                ),
+            ]),
+        );
+        let b = Fixed(
+            "b",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let c = Fixed("c", dict(&[("logger", Value::from("info"))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        for path in [
+            &[][..],
+            &["solo"][..],
+            &["logger"][..],
+            &["breathe"][..],
+            &["breathe", "mode"][..],
+            &["absent"][..],
+        ] {
+            let singleton_via_bools =
+                is_touched_at(&layers, path) && !is_contested_at(&layers, path);
+            let singleton_via_scalar = contributor_count_at(&layers, path) == 1;
+            assert_eq!(
+                singleton_via_bools, singleton_via_scalar,
+                "singleton characterization broken at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn is_touched_at_credits_prefix_scalar_erasure_toucher() {
+        // Prefix-scalar erasure: `a` opened the deep subtree, `b`
+        // erased it with a shallow scalar. Both pre-merge touch the
+        // erased leaf, so is_touched_at at the erased leaf is true
+        // — the predicate credits the pre-merge touch even though
+        // the leaf does not survive the merge. Same semantics as
+        // `contributor_count_at` (which counts to 2 here); the
+        // predicate collapses the count-2 outcome to the ≥ 1 branch.
+        let a = Fixed(
+            "a",
+            dict(&[("k", Value::from(dict(&[("leaf", Value::from(1i64))])))]),
+        );
+        let b = Fixed("b", dict(&[("k", Value::from("erased"))]));
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        assert!(is_touched_at(&layers, &["k", "leaf"]));
+        assert!(is_touched_at(&layers, &["k"]));
+        // A sibling key nobody touched: no layer has an opinion at
+        // `unrelated`, so the predicate is false. The prefix-scalar
+        // `b` at `k` only propagates touches *below* `k`, not to
+        // sibling keys.
+        assert!(!is_touched_at(&layers, &["unrelated"]));
+        assert!(!is_touched_at(&layers, &["unrelated", "deep"]));
+    }
+
+    #[test]
+    fn is_touched_at_root_boundary_filters_silent_layers() {
+        // Root specialization: any non-empty layer flips the predicate
+        // to true at the root; an all-silent stack keeps it false.
+        // Silent layers between contributors don't shift the answer,
+        // matching the touchers-walk semantics of every other point
+        // primitive on the (path, layer) axis.
+        let coarse = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+        let specific = Fixed("tenancy", dict(&[("b", Value::from(2i64))]));
+        let layers_two_non_empty: [&dyn DiscoveryLayer; 3] = [&coarse, &silent, &specific];
+        assert!(is_touched_at(&layers_two_non_empty, &[]));
+        let layers_one: [&dyn DiscoveryLayer; 2] = [&coarse, &silent];
+        assert!(is_touched_at(&layers_one, &[]));
+        let layers_only_silent: [&dyn DiscoveryLayer; 2] = [&silent, &silent];
+        assert!(!is_touched_at(&layers_only_silent, &[]));
     }
 }
