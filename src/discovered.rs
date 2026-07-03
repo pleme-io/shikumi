@@ -3105,6 +3105,180 @@ pub fn coarsest_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> Option<&'st
         .map(|layer| layer.name())
 }
 
+/// The name of the layer that would have decided `path` **if the actual
+/// decider hadn't touched it** — the second-to-last (most-specific-among-
+/// silenced) layer whose [`DiscoveryLayer::discover`] dict has an opinion
+/// at `path`. `None` when fewer than two layers touch `path`.
+///
+/// The point-restricted **runner-up projection** on the (path, layer)
+/// axis: [`contributors_at`] names every layer that *tried* to shape
+/// `path` (winners and losers, coarse→specific), and this primitive
+/// picks the single element **one step back from the trailing decider** —
+/// equivalently, the trailing element of [`silenced_at`].
+///
+/// The **one-step-back sibling of [`decider_at`]** on the touchers axis.
+/// Together with the two endpoints, the triple
+/// `(coarsest_at, runner_up_at, decider_at)` frames the three ordered
+/// specificity positions callers actually name when rendering the
+/// override cascade at a point — "the coarsest layer that opened this
+/// key" / "the closest challenger the decider silenced" / "the layer
+/// that decided its final value". `runner_up_at` answers the
+/// diagnostic question "what would this key have been if the decider
+/// hadn't touched it?" — the "*next-in-line*" name behind the winner.
+///
+/// The **point-primitive dual** of [`PathContest::runner_up`]: that
+/// method is the trailing projection off a materialized fused pair
+/// in `O(1)`; this function is the identical projection computed
+/// **without materializing the pair** — one reverse-walking
+/// short-circuit at the second hit vs one forward walk that collects
+/// every toucher, pops the trailing decider, and reads the trailing
+/// element of the remaining losers `Vec`. When the caller only wants
+/// the runner-up name and does not need the ordered losers list, the
+/// decider, or the fused [`PathContest`], this primitive is strictly
+/// cheaper.
+///
+/// # Semantics
+///
+/// A layer is the *runner-up* at `path` when it is the
+/// second-in-reverse-application-order layer whose `discover()` dict:
+///
+/// - places a leaf at exactly `path` (scalar or array),
+/// - opens a dict container at `path` (its inner leaves live one level
+///   deeper, but this layer's opinion at `path` is "there is structure
+///   here"),
+/// - or covers `path` with a scalar/array at a proper prefix of `path`
+///   (wholesale-replace).
+///
+/// Zero touchers (nobody opened this key) and one toucher (uncontested
+/// singleton path — the sole toucher *is* the decider, so there is
+/// nothing one step back from it) collapse under the same [`None`]
+/// return. Two or more touchers give a [`Some`] with the
+/// second-to-last name in application order.
+///
+/// # Identities
+///
+/// The trailing-of-losers identity against [`silenced_at`] on the
+/// loose axis:
+///
+/// ```text
+/// runner_up_at(layers, p) == silenced_at(layers, p).last().copied()
+/// ```
+///
+/// The one-step-back identity against [`contributors_at`]:
+///
+/// ```text
+/// runner_up_at(layers, p) == contributors_at(layers, p).iter().nth_back(1).copied()
+/// ```
+///
+/// The fused-value identity across the [`None`] boundary:
+///
+/// ```text
+/// runner_up_at(layers, p) == contest_at(layers, p).and_then(|c| c.runner_up())
+/// ```
+///
+/// — the free-fn is exactly the trailing-loser projection off
+/// [`PathContest::runner_up`], and both sides map to [`None`] on the
+/// zero-or-one-toucher no-contest boundary.
+///
+/// The presence-boundary identity against [`is_contested_at`]:
+///
+/// ```text
+/// runner_up_at(layers, p).is_some() == is_contested_at(layers, p)
+/// runner_up_at(layers, p).is_none() == !is_contested_at(layers, p)
+/// ```
+///
+/// The pairing identity with [`coarsest_at`] on the shared touchers
+/// axis:
+///
+/// ```text
+/// silenced_count_at(layers, p) == 1  =>  runner_up_at(layers, p) == coarsest_at(layers, p)
+/// silenced_count_at(layers, p) >= 2  =>  runner_up_at(layers, p) != coarsest_at(layers, p)
+/// ```
+///
+/// — singly contested paths alias the runner-up onto the coarsest
+/// (the sole silenced layer occupies both endpoints of the losers
+/// list); multiply silenced paths place them at structurally distinct
+/// positions on the ordered touchers vector.
+///
+/// The [`None`] boundary aligns with the "no runner-up" cell of the
+/// broader lattice — [`is_contested_at`]`(layers, p) == false`
+/// straddles zero-toucher and one-toucher paths, and this primitive
+/// collapses the same two cells under the same [`None`] return.
+///
+/// The strict-decider non-alias invariant on the [`Some`] branch:
+///
+/// ```text
+/// runner_up_at(layers, p) == Some(name)  =>  Some(name) != decider_at(layers, p)
+/// ```
+///
+/// — the runner-up is drawn from the silenced list, structurally
+/// distinct from the decider under the [`DiscoveryLayer::name`]
+/// `&'static str` distinctness contract on the substrate-owned layer
+/// stack.
+///
+/// # Cost
+///
+/// Walks layers in **reverse** with a **short-circuit on the second
+/// hit** — worst-case `O(layers × path.len())` (fewer than two
+/// touchers, so [`Iterator::nth`] runs the full reverse walk),
+/// best-case `O(2 × path.len())` (the two most-specific layers
+/// touch and the walker halts at the second reverse hit). Zero
+/// allocation on the walker itself. Strictly cheaper than every
+/// alternative on the same axis:
+///
+/// - [`silenced_at`]`(layers, p).last().copied()` walks every layer
+///   forward, allocates the losers [`Vec<&'static str>`], then reads
+///   the trailing element — no short-circuit on the second reverse
+///   hit.
+/// - [`contributors_at`]`(layers, p).iter().nth_back(1).copied()`
+///   walks every layer forward, allocates the touchers
+///   [`Vec<&'static str>`], then reads the second-to-last element.
+/// - [`contest_at`]`(layers, p).and_then(|c| c.runner_up())` walks
+///   every layer, allocates the [`PathContest`]'s `overridden`
+///   [`Vec`], then reads a single trailing name off the fused
+///   struct.
+///
+/// This primitive short-circuits at the second reverse hit *and*
+/// returns the name directly without projecting through a materialized
+/// [`Vec`] or fused pair — the [`Iterator::nth`] adapter on the
+/// reversed touchers filter compiles to a single-branch reverse walk
+/// over the same predicate [`decider_at`] runs, only stopped at the
+/// second reverse hit rather than the first. Symmetric in
+/// short-circuit semantics to [`decider_at`] (first reverse hit) at
+/// the trailing endpoint; the two together give the substrate a
+/// pair of tightly-scoped reverse-walking primitives at the two
+/// specificity positions consumers actually name.
+///
+/// # HOCON analogue
+///
+/// The substrate-owned counterpart to "what would this key have been
+/// if the winning source hadn't set it?" — Lightbend HOCON's
+/// [`Config.getValue(path).origin()`] exposes only the surviving-leaf's
+/// origin; the *runner-up origin* (the source one step back from the
+/// decider on the specificity axis) is unreachable without a per-source
+/// [`Config.entrySet()`] re-walk, filtering to sources that touched
+/// the key, and picking the second-to-last in application order.
+/// `runner_up_at` packages the one-step-back projection as a single
+/// substrate-owned primitive with a short-circuiting reverse walk.
+/// Figment 0.10's per-value [`Tag`] names the surviving-leaf's origin
+/// (the trailing / most-specific opinion) but exposes no companion
+/// for the next-in-line origin; `runner_up_at` closes that missing
+/// runner-up-endpoint seam on the same axis [`coarsest_at`] closes
+/// the coarsest-endpoint seam.
+///
+/// [`Config.entrySet()`]: https://lightbend.github.io/config/latest/api/com/typesafe/config/Config.html#entrySet--
+/// [`Config.getValue(path).origin()`]: https://lightbend.github.io/config/latest/api/com/typesafe/config/Config.html#getValue-java.lang.String-
+/// [`Tag`]: https://docs.rs/figment/latest/figment/value/struct.Tag.html
+#[must_use]
+pub fn runner_up_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> Option<&'static str> {
+    layers
+        .iter()
+        .rev()
+        .filter(|layer| touches_path(&layer.discover(), path))
+        .nth(1)
+        .map(|layer| layer.name())
+}
+
 /// `true` iff at least two layers touched `path` — the point-restricted
 /// **contest predicate** on the (path, layer) axis.
 ///
@@ -13650,6 +13824,287 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ---- runner_up_at (point primitive) ---------------------------------
+
+    #[test]
+    fn runner_up_at_none_boundary_matches_is_contested_at() {
+        // The false-boundary of the point-primitive lattice collapses
+        // two structurally distinct cases under the same None return:
+        // zero touchers (nobody opened the key) and one toucher
+        // (uncontested singleton — the sole toucher is the decider,
+        // nothing sits one step back). Both cells align with
+        // is_contested_at(...) == false pointwise.
+        let a = Fixed(
+            "a",
+            dict(&[
+                ("solo", Value::from(1i64)),
+                (
+                    "breathe",
+                    Value::from(dict(&[("mode", Value::from("live"))])),
+                ),
+            ]),
+        );
+        let b = Fixed("b", dict(&[("logger", Value::from("info"))]));
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        // Zero touchers → None, not contested.
+        assert_eq!(runner_up_at(&layers, &["absent"]), None);
+        assert!(!is_contested_at(&layers, &["absent"]));
+        // One toucher (only a) → None, not contested.
+        assert_eq!(runner_up_at(&layers, &["solo"]), None);
+        assert!(!is_contested_at(&layers, &["solo"]));
+        // One toucher (only b) → None, not contested.
+        assert_eq!(runner_up_at(&layers, &["logger"]), None);
+        assert!(!is_contested_at(&layers, &["logger"]));
+        // Empty layer stack — no toucher on any path, including root.
+        let empty: [&dyn DiscoveryLayer; 0] = [];
+        assert_eq!(runner_up_at(&empty, &[]), None);
+        assert_eq!(runner_up_at(&empty, &["absent"]), None);
+    }
+
+    #[test]
+    fn runner_up_at_matches_silenced_at_last_across_paths() {
+        // Trailing-of-losers identity, the load-bearing point-primitive
+        // pin: runner_up_at(layers, p) == silenced_at(layers, p)
+        // .last().copied() across every branch of touches_path —
+        // contested leaf, uncontested leaf, dict container, root, and
+        // the absent (None) boundary.
+        let a = Fixed(
+            "a",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("mode", Value::from("live")),
+                    ("setpoint", Value::from(0.80)),
+                ])),
+            )]),
+        );
+        let b = Fixed(
+            "b",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let c = Fixed("c", dict(&[("logger", Value::from("info"))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        for path in [
+            &[][..],
+            &["breathe"][..],
+            &["breathe", "mode"][..],
+            &["breathe", "setpoint"][..],
+            &["logger"][..],
+            &["absent"][..],
+        ] {
+            let via_primitive = runner_up_at(&layers, path);
+            let via_loose = silenced_at(&layers, path).last().copied();
+            assert_eq!(
+                via_primitive, via_loose,
+                "runner_up_at != silenced_at.last() at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn runner_up_at_matches_contest_at_runner_up_across_paths() {
+        // Fused-value identity across the None boundary:
+        // runner_up_at(layers, p) == contest_at(layers, p)
+        // .and_then(|c| c.runner_up()) — the point primitive is exactly
+        // the trailing-loser projection off contest_at, and both sides
+        // map to None on no-contest paths (zero or one toucher).
+        // Exercised on the same five-path grid the coarsest_at fused
+        // identity uses.
+        let coarse = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("setpoint", Value::from(0.80)),
+                    ("mode", Value::from("live")),
+                ])),
+            )]),
+        );
+        let middle = Fixed(
+            "cloud",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("staging"))])),
+            )]),
+        );
+        let specific = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 3] = [&coarse, &middle, &specific];
+        for path in [
+            &["breathe", "mode"][..],
+            &["breathe", "setpoint"][..],
+            &["breathe"][..],
+            &["absent"][..],
+            &[][..],
+        ] {
+            let via_primitive = runner_up_at(&layers, path);
+            let via_fused = contest_at(&layers, path).and_then(|c| c.runner_up());
+            assert_eq!(
+                via_primitive, via_fused,
+                "runner_up_at != contest_at.and_then(|c| c.runner_up()) at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn runner_up_at_three_writers_returns_middle_toucher() {
+        // Three touchers coarse→specific at breathe.mode. runner_up_at
+        // is the middle name `cloud` — one step back from decider
+        // (`tenancy`), one step forward from coarsest (`platform`).
+        // Silent-in-scope layers (`disjoint` touches a different key)
+        // do not shift the runner-up endpoint. Structurally distinct
+        // from both coarsest_at and decider_at when at least three
+        // layers touch.
+        let platform = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("live"))])),
+            )]),
+        );
+        let cloud = Fixed(
+            "cloud",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("aws"))])),
+            )]),
+        );
+        let tenancy = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("prod"))])),
+            )]),
+        );
+        let disjoint = Fixed("logger", dict(&[("logger", Value::from("info"))]));
+        let layers: [&dyn DiscoveryLayer; 4] = [&platform, &cloud, &tenancy, &disjoint];
+        assert_eq!(
+            runner_up_at(&layers, &["breathe", "mode"]),
+            Some("cloud"),
+            "runner_up_at is the second-to-last toucher"
+        );
+        assert_eq!(coarsest_at(&layers, &["breathe", "mode"]), Some("platform"));
+        assert_eq!(decider_at(&layers, &["breathe", "mode"]), Some("tenancy"));
+        assert_ne!(
+            runner_up_at(&layers, &["breathe", "mode"]),
+            coarsest_at(&layers, &["breathe", "mode"]),
+            "at ≥ 2 silenced, runner_up_at and coarsest_at diverge",
+        );
+        assert_ne!(
+            runner_up_at(&layers, &["breathe", "mode"]),
+            decider_at(&layers, &["breathe", "mode"]),
+            "runner_up_at is drawn from the losers list, never aliases decider_at",
+        );
+    }
+
+    #[test]
+    fn runner_up_at_singly_contested_aliases_coarsest_at() {
+        // Singly contested pairing: at exactly one silenced (two total
+        // touchers), the runner-up and the coarsest occupy the same
+        // position — the sole silenced layer sits at both endpoints
+        // of `overridden` at once. Pins the {silenced_count_at == 1}
+        // cell where runner_up_at == coarsest_at ≠ decider_at.
+        let coarse = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("live"))])),
+            )]),
+        );
+        let specific = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 2] = [&coarse, &specific];
+        assert_eq!(silenced_count_at(&layers, &["breathe", "mode"]), 1);
+        assert_eq!(
+            runner_up_at(&layers, &["breathe", "mode"]),
+            coarsest_at(&layers, &["breathe", "mode"]),
+            "at exactly one silenced, runner_up_at aliases coarsest_at",
+        );
+        assert_eq!(
+            runner_up_at(&layers, &["breathe", "mode"]),
+            Some("platform"),
+        );
+        assert_ne!(
+            runner_up_at(&layers, &["breathe", "mode"]),
+            decider_at(&layers, &["breathe", "mode"]),
+            "runner_up_at ≠ decider_at even on the singly-contested cell",
+        );
+    }
+
+    #[test]
+    fn runner_up_at_covers_prefix_scalar_erasure() {
+        // Prefix-scalar erasure with three touchers: `a` opened the
+        // deep subtree, `b` overrode it with a competing subtree, `c`
+        // erased everything with a shallow scalar. All three touch
+        // the erased leaf. coarsest_at names `a` (opener), runner_up_at
+        // names `b` (the closest challenger `c` silenced), decider_at
+        // names `c` (erasure agent). Diagnostic renderers reach for
+        // the triple to render "opened by a; the closest challenger
+        // was b; erased by c" without materializing the contributors
+        // vector or the PathContest wrapper.
+        let a = Fixed(
+            "a",
+            dict(&[("k", Value::from(dict(&[("leaf", Value::from(1i64))])))]),
+        );
+        let b = Fixed(
+            "b",
+            dict(&[("k", Value::from(dict(&[("leaf", Value::from(2i64))])))]),
+        );
+        let c = Fixed("c", dict(&[("k", Value::from("erased"))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        assert_eq!(coarsest_at(&layers, &["k", "leaf"]), Some("a"));
+        assert_eq!(runner_up_at(&layers, &["k", "leaf"]), Some("b"));
+        assert_eq!(decider_at(&layers, &["k", "leaf"]), Some("c"));
+        // Sanity: the three specificity positions are pairwise
+        // distinct when at least three layers touch a path.
+        let leading = coarsest_at(&layers, &["k", "leaf"]);
+        let middle = runner_up_at(&layers, &["k", "leaf"]);
+        let trailing = decider_at(&layers, &["k", "leaf"]);
+        assert_ne!(leading, middle, "coarsest ≠ runner_up at ≥ 3 touchers");
+        assert_ne!(middle, trailing, "runner_up ≠ decider structurally");
+        assert_ne!(leading, trailing, "coarsest ≠ decider at ≥ 2 touchers");
+    }
+
+    #[test]
+    fn runner_up_at_root_boundary_equals_contributor_names_nth_back_one() {
+        // Root specialization: runner_up_at(layers, &[]) ==
+        // contributor_names(layers).iter().nth_back(1).copied() —
+        // the one-step-back-from-decider projection at the empty-path
+        // whole-layer specialization. Silent layers between
+        // contributors are filtered out on both axes, so an empty
+        // layer inserted between two non-empty layers does not shift
+        // the endpoint. Dual of decider_at's root specialization at
+        // the trailing endpoint; sibling of coarsest_at's root
+        // specialization at the leading endpoint.
+        let coarse = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+        let middle = Fixed("cloud", dict(&[("c", Value::from(3i64))]));
+        let specific = Fixed("tenancy", dict(&[("b", Value::from(2i64))]));
+        let layers: [&dyn DiscoveryLayer; 4] = [&coarse, &silent, &middle, &specific];
+        let names = contributor_names(&layers);
+        assert_eq!(
+            runner_up_at(&layers, &[]),
+            names.iter().nth_back(1).copied()
+        );
+        assert_eq!(runner_up_at(&layers, &[]), Some("cloud"));
+        // Sibling endpoints alignment on the root triple.
+        assert_eq!(coarsest_at(&layers, &[]), Some("platform"));
+        assert_eq!(decider_at(&layers, &[]), Some("tenancy"));
     }
 
     /// Test-side clone helper — the `Fixed` layer is deliberately
