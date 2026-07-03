@@ -190,7 +190,28 @@ impl LayerAttribution {
 
     /// Sorted iterator over `(path, layer)` entries. Ordering is
     /// lexicographic by path — the [`BTreeMap`] iteration order.
-    pub fn iter(&self) -> impl Iterator<Item = (&[String], &'static str)> + '_ {
+    ///
+    /// # Reverse walk
+    ///
+    /// The returned iterator is [`DoubleEndedIterator`]: the backing
+    /// `BTreeMap<Vec<String>, _>::iter()` is `DoubleEndedIterator +
+    /// Clone` and [`Iterator::map`] preserves both because the closure
+    /// captures nothing (a zero-size, `Copy` function pointer under the
+    /// hood). Consumers that render the attribution in
+    /// specific→coarse order — a config-show pane that walks the
+    /// leaves right-to-left in lex order — reach for `iter().rev()`
+    /// directly, skipping the full `.collect::<Vec<_>>()` →
+    /// `.into_iter().rev()` roundtrip the prior bare-`impl Iterator`
+    /// return forced.
+    ///
+    /// # Independent walks
+    ///
+    /// The returned iterator is [`Clone`]. Cloning the handle produces
+    /// an independent walk over the same underlying [`BTreeMap`] — no
+    /// second `Vec` materialization for callers that need to iterate
+    /// twice (render once, then find a position on a re-walk).
+    #[must_use]
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = (&[String], &'static str)> + Clone + '_ {
         self.inner.iter().map(|(p, l)| (p.as_slice(), *l))
     }
 
@@ -417,10 +438,33 @@ impl LayerAttribution {
     /// correctly excluded at the boundary. Pinned by
     /// `subtree_iter_stops_at_prefix_extending_sibling_key` in this
     /// module's test cohort.
+    ///
+    /// # Independent walks
+    ///
+    /// The returned iterator is [`Clone`]. The backing
+    /// `BTreeMap::range` is `Clone`, the `take_while` closure captures
+    /// only the `Copy` reborrow `prefix: &'a [String]`, and the `map`
+    /// closure captures nothing — so the compound iterator carries
+    /// `Clone` at zero runtime cost. Callers that need to walk the
+    /// subtree twice (render once, then re-walk to find a positional
+    /// match) clone the handle up front instead of allocating an
+    /// intermediate `Vec` or re-invoking the range seek.
+    ///
+    /// # No reverse walk
+    ///
+    /// The returned iterator is *not* [`DoubleEndedIterator`]: while
+    /// the underlying [`BTreeMap`] range yields both ends in
+    /// `O(log n)`, [`Iterator::take_while`] has no back-end — it
+    /// cannot know where the "would-stop" boundary sits without
+    /// walking forward. Callers that need the subtree in reverse
+    /// order [`Iterator::collect`] into an owned [`Vec`] and reverse
+    /// it, or reach for [`Self::subtree`] to materialize the
+    /// restricted attribution whose [`Self::iter`] is
+    /// double-ended.
     pub fn subtree_iter<'a>(
         &'a self,
         prefix: &'a [String],
-    ) -> impl Iterator<Item = (&'a [String], &'static str)> + 'a {
+    ) -> impl Iterator<Item = (&'a [String], &'static str)> + Clone + 'a {
         use std::ops::Bound;
         self.inner
             .range::<[String], _>((Bound::Included(prefix), Bound::Unbounded))
@@ -5241,6 +5285,161 @@ mod tests {
         }
     }
 
+    // -------- LayerAttribution::iter (DoubleEndedIterator + Clone) --------
+
+    /// Shared fixture for the sharpened-trait-algebra tests: three
+    /// layers, six live leaves, mixed sole/overridden writers — enough
+    /// entries that the reverse walk and the clone-independence tests
+    /// exercise more than the trivial one-entry case.
+    fn iter_fixture() -> DiscoveryComposition {
+        let coarse = Fixed(
+            "coarse",
+            dict(&[
+                ("alpha", Value::from(1i64)),
+                ("beta", Value::from(2i64)),
+                (
+                    "breathe",
+                    Value::from(dict(&[
+                        ("mode", Value::from("live")),
+                        ("setpoint", Value::from(0.80)),
+                    ])),
+                ),
+            ]),
+        );
+        let mid = Fixed("mid", dict(&[("gamma", Value::from(3i64))]));
+        let specific = Fixed(
+            "specific",
+            dict(&[
+                (
+                    "breathe",
+                    Value::from(dict(&[("setpoint", Value::from(0.70))])),
+                ),
+                ("delta", Value::from(4i64)),
+            ]),
+        );
+        compose_with_provenance(&[&coarse, &mid, &specific])
+    }
+
+    #[test]
+    fn attribution_iter_rev_reverses_forward_walk() {
+        // Reverse-walk identity: iter().rev().collect() equals
+        // iter().collect().reversed(). The DoubleEndedIterator bound
+        // on the sharpened signature is the underlying
+        // BTreeMap::Iter's — reversing walks from the largest key back
+        // to the smallest in lex order.
+        let out = iter_fixture();
+        let forward: Vec<(Vec<String>, &'static str)> = out
+            .attribution
+            .iter()
+            .map(|(p, l)| (p.to_vec(), l))
+            .collect();
+        let reverse: Vec<(Vec<String>, &'static str)> = out
+            .attribution
+            .iter()
+            .rev()
+            .map(|(p, l)| (p.to_vec(), l))
+            .collect();
+        let mut expected = forward.clone();
+        expected.reverse();
+        assert_eq!(reverse, expected, "iter().rev() reverses iter() pointwise");
+    }
+
+    #[test]
+    fn attribution_iter_rev_endpoints_alias_first_and_last_key() {
+        // Reverse-endpoint identities: rev().next() yields the largest
+        // key (lex-last leaf), rev().last() yields the smallest key
+        // (lex-first leaf). This is the DoubleEndedIterator's
+        // observable behavior on a `Map<BTreeMap::Iter, F>` — the
+        // capability the sharpened signature exposes at the API
+        // boundary.
+        let out = iter_fixture();
+        let forward: Vec<(Vec<String>, &'static str)> = out
+            .attribution
+            .iter()
+            .map(|(p, l)| (p.to_vec(), l))
+            .collect();
+        let mut back = out.attribution.iter();
+        let last = back.next_back().expect("non-empty");
+        assert_eq!(
+            (last.0.to_vec(), last.1),
+            forward.last().cloned().expect("non-empty"),
+            "next_back() yields the lex-last (path, layer)",
+        );
+        let front = back.next_back().expect("more than one entry");
+        assert_eq!(
+            (front.0.to_vec(), front.1),
+            forward[forward.len() - 2].clone(),
+            "successive next_back walks specific→coarse in lex order",
+        );
+    }
+
+    #[test]
+    fn attribution_iter_clone_yields_independent_walks() {
+        // Clone-independence: two clones collect to the same result,
+        // and interleaved advance preserves per-clone position — the
+        // Clone bound on the sharpened signature gives two independent
+        // walks over the same BTreeMap without a second collect().
+        let out = iter_fixture();
+        let a = out.attribution.iter();
+        let b = a.clone();
+        let a_collected: Vec<(Vec<String>, &'static str)> =
+            a.map(|(p, l)| (p.to_vec(), l)).collect();
+        let b_collected: Vec<(Vec<String>, &'static str)> =
+            b.map(|(p, l)| (p.to_vec(), l)).collect();
+        assert_eq!(
+            a_collected, b_collected,
+            "cloned handles yield the same walk"
+        );
+
+        // Interleaved advance: one clone advances, the other stays.
+        let mut left = out.attribution.iter();
+        let mut right = left.clone();
+        let l0 = left.next().expect("non-empty");
+        let r0 = right.next().expect("non-empty");
+        assert_eq!(
+            (l0.0.to_vec(), l0.1),
+            (r0.0.to_vec(), r0.1),
+            "both clones observe the same first entry — position is per-clone",
+        );
+        // Advance left twice more; right's position must be unaffected.
+        let _ = left.next();
+        let _ = left.next();
+        let r1 = right.next().expect("second entry present");
+        assert_eq!(
+            (r1.0.to_vec(), r1.1),
+            a_collected[1],
+            "right sees the second entry regardless of left's advance",
+        );
+    }
+
+    #[test]
+    fn attribution_iter_clone_and_rev_compose() {
+        // Composition test: `.clone().rev()` and `.rev().clone()` yield
+        // the same reversed stream — pinning that Clone and
+        // DoubleEndedIterator compose commutatively on the Map<Iter, F>
+        // return type the sharpened signature exposes.
+        let out = iter_fixture();
+        let base: Vec<(Vec<String>, &'static str)> = out
+            .attribution
+            .iter()
+            .rev()
+            .map(|(p, l)| (p.to_vec(), l))
+            .collect();
+        let via_clone_then_rev: Vec<(Vec<String>, &'static str)> = out
+            .attribution
+            .iter()
+            .clone()
+            .rev()
+            .map(|(p, l)| (p.to_vec(), l))
+            .collect();
+        let via_rev_then_clone: Vec<(Vec<String>, &'static str)> = {
+            let rev = out.attribution.iter().rev();
+            rev.clone().map(|(p, l)| (p.to_vec(), l)).collect()
+        };
+        assert_eq!(base, via_clone_then_rev);
+        assert_eq!(base, via_rev_then_clone);
+    }
+
     // -------- LayerAttribution::writes_by_layer --------
 
     #[test]
@@ -5856,6 +6055,71 @@ mod tests {
             .map(|(p, l)| (p.to_vec(), l))
             .collect();
         assert_eq!(observed, vec![(vec![s("x"), s("y")], "second")]);
+    }
+
+    #[test]
+    fn subtree_iter_clone_yields_independent_walks() {
+        // Clone-independence: two clones over the same range walk
+        // collect to the same result and interleaved advance preserves
+        // per-clone position. The Clone bound on the sharpened
+        // signature gives two independent walks over the same
+        // BTreeMap::range without re-invoking the O(log n) range seek
+        // or allocating an intermediate Vec.
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        let a = out.attribution.subtree_iter(&prefix);
+        let b = a.clone();
+        let a_collected: Vec<(Vec<String>, &'static str)> =
+            a.map(|(p, l)| (p.to_vec(), l)).collect();
+        let b_collected: Vec<(Vec<String>, &'static str)> =
+            b.map(|(p, l)| (p.to_vec(), l)).collect();
+        assert_eq!(
+            a_collected, b_collected,
+            "cloned handles yield the same subtree walk"
+        );
+
+        // Interleaved advance across the two-leaf breathe.* subtree.
+        let mut left = out.attribution.subtree_iter(&prefix);
+        let mut right = left.clone();
+        let l0 = left.next().expect("breathe.mode");
+        let r0 = right.next().expect("breathe.mode");
+        assert_eq!(
+            (l0.0.to_vec(), l0.1),
+            (r0.0.to_vec(), r0.1),
+            "both clones observe the same first entry",
+        );
+        // Advance left to exhaustion; right's next() must still see the
+        // second entry — its position is per-clone, not shared.
+        let _ = left.next();
+        assert!(left.next().is_none(), "left is exhausted after two entries");
+        let r1 = right.next().expect("right still has breathe.setpoint");
+        assert_eq!(
+            (r1.0.to_vec(), r1.1),
+            a_collected[1],
+            "right's position is independent of left's",
+        );
+    }
+
+    #[test]
+    fn subtree_iter_clone_at_root_prefix_matches_iter_clone() {
+        // Empty-prefix identity extended to the Clone axis: cloning
+        // `subtree_iter(&[])` yields the same stream as cloning
+        // `iter()` — both wrap the same BTreeMap::iter substrate at
+        // the empty prefix (BTreeMap::range with unbounded ends
+        // degenerates to full iteration), and both carry Clone at
+        // zero runtime cost.
+        let out = iter_fixture();
+        let via_subtree = out.attribution.subtree_iter(&[]);
+        let via_subtree_clone = via_subtree.clone();
+        let via_iter_clone = out.attribution.iter().clone();
+        let sub_collected: Vec<(Vec<String>, &'static str)> =
+            via_subtree.map(|(p, l)| (p.to_vec(), l)).collect();
+        let sub_clone_collected: Vec<(Vec<String>, &'static str)> =
+            via_subtree_clone.map(|(p, l)| (p.to_vec(), l)).collect();
+        let iter_clone_collected: Vec<(Vec<String>, &'static str)> =
+            via_iter_clone.map(|(p, l)| (p.to_vec(), l)).collect();
+        assert_eq!(sub_collected, sub_clone_collected);
+        assert_eq!(sub_collected, iter_clone_collected);
     }
 
     // -------- LayerAttribution::subtree_surviving_layer_names --------
