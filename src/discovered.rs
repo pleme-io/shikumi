@@ -191,18 +191,35 @@ impl LayerAttribution {
     /// Sorted iterator over `(path, layer)` entries. Ordering is
     /// lexicographic by path — the [`BTreeMap`] iteration order.
     ///
+    /// The concrete return type is [`LayerAttributionIter`], a thin
+    /// newtype around
+    /// [`std::collections::btree_map::Iter<'a, Vec<String>, &'static str>`]
+    /// that projects `(&Vec<String>, &&'static str)` to
+    /// `(&[String], &'static str)` at every seam. Naming the return
+    /// type at the API boundary (rather than
+    /// `impl DoubleEndedIterator<Item = ...> + Clone + '_`) exposes
+    /// the [`std::iter::FusedIterator`] and [`ExactSizeIterator`]
+    /// impls the substrate structurally carries — the prior bare
+    /// [`impl Trait`][impl-trait] return erased both at the boundary
+    /// even though `BTreeMap::Iter` implements each. The concrete
+    /// name additionally lets callers spell the iterator in
+    /// signatures — a diagnostic renderer storing the handle in a
+    /// struct field or returning it up through its own API no longer
+    /// smuggles an unnameable `impl Trait` across every seam.
+    ///
+    /// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
+    ///
     /// # Reverse walk
     ///
-    /// The returned iterator is [`DoubleEndedIterator`]: the backing
-    /// `BTreeMap<Vec<String>, _>::iter()` is `DoubleEndedIterator +
-    /// Clone` and [`Iterator::map`] preserves both because the closure
-    /// captures nothing (a zero-size, `Copy` function pointer under the
-    /// hood). Consumers that render the attribution in
+    /// The returned [`LayerAttributionIter`] is [`DoubleEndedIterator`]:
+    /// the backing `BTreeMap<Vec<String>, _>::iter()` is
+    /// `DoubleEndedIterator` and the newtype forwards `next_back`
+    /// straight through. Consumers that render the attribution in
     /// specific→coarse order — a config-show pane that walks the
     /// leaves right-to-left in lex order — reach for `iter().rev()`
     /// directly, skipping the full `.collect::<Vec<_>>()` →
-    /// `.into_iter().rev()` roundtrip the prior bare-`impl Iterator`
-    /// return forced.
+    /// `.into_iter().rev()` roundtrip a bare-`impl Iterator` return
+    /// would have forced.
     ///
     /// # Independent walks
     ///
@@ -210,9 +227,35 @@ impl LayerAttribution {
     /// an independent walk over the same underlying [`BTreeMap`] — no
     /// second `Vec` materialization for callers that need to iterate
     /// twice (render once, then find a position on a re-walk).
+    ///
+    /// # Length in constant time and fused exhaustion
+    ///
+    /// The returned [`LayerAttributionIter`] is [`ExactSizeIterator`]:
+    /// the underlying [`BTreeMap::Iter`][std::collections::btree_map::Iter]
+    /// tracks its remaining length in-cursor and the newtype forwards
+    /// [`ExactSizeIterator::len`] straight through. Callers that want
+    /// the entry count without walking the stream write
+    /// `.iter().len()` in `O(1)` on the handle directly, at parity
+    /// with [`Self::len`]:
+    ///
+    /// ```text
+    /// iter().len()                            ==  len()
+    /// iter().size_hint()                      ==  (n, Some(n))
+    ///                                           where n == len()
+    /// ```
+    ///
+    /// The iterator is also [`std::iter::FusedIterator`]: once
+    /// exhausted, every further `.next()` / `.next_back()` returns
+    /// [`None`] — the invariant every closed-form iterator carries at
+    /// the trait surface. `BTreeMap::Iter` is fused; the newtype
+    /// re-declares the impl at the API boundary rather than leaving
+    /// it as an implementation detail behind an unnameable `impl
+    /// Trait`.
     #[must_use]
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = (&[String], &'static str)> + Clone + '_ {
-        self.inner.iter().map(|(p, l)| (p.as_slice(), *l))
+    pub fn iter(&self) -> LayerAttributionIter<'_> {
+        LayerAttributionIter {
+            inner: self.inner.iter(),
+        }
     }
 
     /// Inverse projection of [`Self::layer_of`]: for every
@@ -1680,6 +1723,88 @@ impl LayerAttribution {
             .min_by(|(a_name, a_count), (b_name, b_count)| {
                 a_count.cmp(b_count).then_with(|| b_name.cmp(a_name))
             })
+    }
+}
+
+/// Zero-allocation ordered stream of `(&[String], &'static str)` entries
+/// over a [`LayerAttribution`]'s `(path, layer)` pairs, in lex order on
+/// the path — the concrete return type of [`LayerAttribution::iter`] and
+/// the [`LayerAttribution`]-scope companion to the [`PathContest`]-scope
+/// [`PathContestContributorsIter`] / [`PathContestSilencedIter`] duo.
+///
+/// Naming the return type at the API boundary (rather than
+/// `impl DoubleEndedIterator<Item = ...> + Clone + '_`) exposes the
+/// [`std::iter::FusedIterator`] and [`ExactSizeIterator`] impls the
+/// substrate ([`std::collections::btree_map::Iter<'a, Vec<String>,
+/// &'static str>`]) structurally carries — the prior bare `impl Trait`
+/// return erased both at the boundary even though `BTreeMap::Iter`
+/// implements each in stable Rust. The named type additionally lets
+/// callers spell the iterator in signatures: a diagnostic renderer
+/// storing the handle in a struct field, or returning it up through
+/// its own API, no longer smuggles an unnameable `impl Trait` across
+/// every seam.
+///
+/// Follows the same idiom as
+/// [`AxisHistogramIter`][crate::AxisHistogramIter] /
+/// [`AxisHistogramIntoIter`][crate::AxisHistogramIntoIter] on the cube
+/// algebra and [`PathContestContributorsIter`] /
+/// [`PathContestSilencedIter`] on the [`PathContest`] touchers
+/// partition — every zero-allocation iterator return on the discovered
+/// substrate now carries a named concrete type at the API boundary.
+#[derive(Debug, Clone)]
+pub struct LayerAttributionIter<'a> {
+    inner: std::collections::btree_map::Iter<'a, Vec<String>, &'static str>,
+}
+
+impl<'a> Iterator for LayerAttributionIter<'a> {
+    type Item = (&'a [String], &'static str);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(|(p, l)| (p.as_slice(), *l))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+
+    fn count(self) -> usize {
+        self.inner.count()
+    }
+
+    fn last(self) -> Option<Self::Item> {
+        self.inner.last().map(|(p, l)| (p.as_slice(), *l))
+    }
+}
+
+impl DoubleEndedIterator for LayerAttributionIter<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back().map(|(p, l)| (p.as_slice(), *l))
+    }
+}
+
+impl ExactSizeIterator for LayerAttributionIter<'_> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for LayerAttributionIter<'_> {}
+
+/// `for entry in &attribution` iterates the same `(&[String], &'static
+/// str)` stream as [`LayerAttribution::iter`], in the same lex order.
+/// The idiomatic dual of the inherent [`LayerAttribution::iter`] getter
+/// — one seam every std collection with an `iter()` method surfaces on
+/// its `&Self` reference (`&Vec<T>`, `&BTreeMap<K, V>`, `&HashMap<K, V>`,
+/// `&[T]`) — closing the shared idiom on the discovered algebra so
+/// consumers reach for the `for`-loop form directly instead of the
+/// explicit `.iter()` call. Zero-allocation: forwards to
+/// [`LayerAttribution::iter`], which is `O(1)` per element.
+impl<'a> IntoIterator for &'a LayerAttribution {
+    type Item = (&'a [String], &'static str);
+    type IntoIter = LayerAttributionIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
 
@@ -5532,7 +5657,10 @@ mod tests {
         let out = compose_with_provenance(&[&a, &b]);
 
         // Every present leaf: both accessors return the same layer.
-        for (path_slice, layer) in out.attribution.iter() {
+        // Uses the `IntoIterator for &LayerAttribution` impl the
+        // sharpened API surface adds — pointwise equivalent to
+        // `out.attribution.iter()`, one seam closer to the std idiom.
+        for (path_slice, layer) in &out.attribution {
             let borrowed: Vec<&str> = path_slice.iter().map(String::as_str).collect();
             assert_eq!(
                 out.attribution.layer_of(&borrowed),
@@ -5754,6 +5882,133 @@ mod tests {
         };
         assert_eq!(base, via_clone_then_rev);
         assert_eq!(base, via_rev_then_clone);
+    }
+
+    // -------- LayerAttributionIter (concrete-named iter) --------
+
+    #[test]
+    fn attribution_iter_len_matches_attribution_len_across_fixture() {
+        // ExactSizeIterator O(1) length: `.iter().len()` reads the
+        // BTreeMap::Iter's in-cursor remaining count and equals
+        // `LayerAttribution::len()` at every seam. The prior
+        // `impl DoubleEndedIterator + Clone` return erased
+        // ExactSizeIterator even though BTreeMap::Iter implements it
+        // — the concrete `LayerAttributionIter` surfaces the impl,
+        // so callers writing `.iter().len()` get the O(1) count
+        // instead of walking to `.count()` or reaching for the
+        // sibling `LayerAttribution::len` method.
+        let out = iter_fixture();
+        assert_eq!(out.attribution.iter().len(), out.attribution.len());
+    }
+
+    #[test]
+    fn attribution_iter_size_hint_reports_exact_length() {
+        // size_hint() returns (n, Some(n)) where n == len() — the
+        // ExactSizeIterator invariant on the concrete return type.
+        // Every closed-form iterator on the substrate reports its
+        // exact-length pair at the trait surface; the BTreeMap::Iter
+        // substrate carries this through and the newtype forwards
+        // `size_hint` straight through.
+        let out = iter_fixture();
+        let n = out.attribution.len();
+        let iter = out.attribution.iter();
+        assert_eq!(iter.size_hint(), (n, Some(n)));
+    }
+
+    #[test]
+    fn attribution_iter_len_decreases_by_one_per_advance() {
+        // Each `.next()` / `.next_back()` step decrements `.len()` by
+        // one and both sides converge to 0 on exhaustion. This is
+        // the observable behavior of the sharpened ExactSizeIterator
+        // impl — the state machine `LayerAttributionIter` owns
+        // through its BTreeMap::Iter cursor.
+        let out = iter_fixture();
+        let n = out.attribution.len();
+        assert!(n >= 3, "fixture is expected to be non-trivial");
+        let mut iter = out.attribution.iter();
+        for expected_remaining in (0..n).rev() {
+            // Alternate front/back consumption to exercise both
+            // ends of the DoubleEndedIterator + ExactSizeIterator
+            // pair on the same underlying cursor.
+            if expected_remaining % 2 == 0 {
+                assert!(iter.next().is_some(), "non-empty at len {n}");
+            } else {
+                assert!(iter.next_back().is_some(), "non-empty at len {n}");
+            }
+            assert_eq!(iter.len(), expected_remaining);
+        }
+        assert!(iter.next().is_none(), "exhausted forward");
+        assert!(iter.next_back().is_none(), "exhausted backward");
+        assert_eq!(iter.len(), 0);
+    }
+
+    #[test]
+    fn attribution_iter_is_fused_past_exhaustion() {
+        // `LayerAttributionIter` is `FusedIterator` — every call
+        // past exhaustion continues to return `None` on both ends.
+        // BTreeMap::Iter is fused; the newtype re-declares the
+        // impl at the API boundary rather than leaving it as an
+        // implementation detail behind an unnameable `impl Trait`.
+        let out = iter_fixture();
+        let mut iter = out.attribution.iter();
+        // Drain the forward side entirely.
+        while iter.next().is_some() {}
+        // Fused invariant: further pulls on either end continue to
+        // return `None` — no panic, no phantom re-yield.
+        for _ in 0..4 {
+            assert!(iter.next().is_none(), "fused past forward exhaustion");
+            assert!(
+                iter.next_back().is_none(),
+                "fused past forward exhaustion (back)"
+            );
+            assert_eq!(iter.len(), 0, "len stays 0 past fused exhaustion");
+        }
+    }
+
+    #[test]
+    fn attribution_iter_last_matches_lex_last_key() {
+        // `.last()` on a DoubleEndedIterator returns the rightmost
+        // remaining element without walking the whole stream — the
+        // BTreeMap::Iter substrate specializes `.last()` and the
+        // newtype forwards to it. The result equals the lex-last
+        // `(path, layer)` of the fixture.
+        let out = iter_fixture();
+        let forward: Vec<(Vec<String>, &'static str)> = out
+            .attribution
+            .iter()
+            .map(|(p, l)| (p.to_vec(), l))
+            .collect();
+        let last = out.attribution.iter().last().map(|(p, l)| (p.to_vec(), l));
+        assert_eq!(last, forward.last().cloned());
+    }
+
+    #[test]
+    fn attribution_iter_named_type_carries_trait_algebra() {
+        // The concrete return type carries the full trait algebra at
+        // the API boundary: `LayerAttributionIter<'_>` implements
+        // `Iterator + DoubleEndedIterator + ExactSizeIterator +
+        // FusedIterator + Clone + Debug`. The `is_x` helpers below
+        // compile only if the corresponding trait is implemented — a
+        // regression that erases any of the traits from the concrete
+        // type would fail to compile, pinning the algebra invariant
+        // at the type-signature level rather than at a value-level
+        // behaviour check.
+        fn is_iter<'a, I: Iterator<Item = (&'a [String], &'static str)>>(_: &I) {}
+        fn is_double_ended<'a, I: DoubleEndedIterator<Item = (&'a [String], &'static str)>>(_: &I) {
+        }
+        fn is_exact_size<'a, I: ExactSizeIterator<Item = (&'a [String], &'static str)>>(_: &I) {}
+        fn is_fused<'a, I: std::iter::FusedIterator<Item = (&'a [String], &'static str)>>(_: &I) {}
+        fn is_clone<T: Clone>(_: &T) {}
+        fn is_debug<T: std::fmt::Debug>(_: &T) {}
+
+        let out = iter_fixture();
+        let iter: LayerAttributionIter<'_> = out.attribution.iter();
+        is_iter(&iter);
+        is_double_ended(&iter);
+        is_exact_size(&iter);
+        is_fused(&iter);
+        is_clone(&iter);
+        is_debug(&iter);
     }
 
     // -------- LayerAttribution::writes_by_layer --------
