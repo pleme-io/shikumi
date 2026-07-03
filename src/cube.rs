@@ -10326,7 +10326,46 @@ pub trait ProductCube: ClosedAxis {
 /// `*_is_realizable_image_equals_*` test site on each cube. Generic in
 /// the cube type so a future fifth cube inherits the helper at the
 /// `impl ProductCube` declaration.
-pub fn realizable_iter<C: ProductCube>() -> impl Iterator<Item = C> {
+///
+/// # Reverse walk
+///
+/// The returned iterator is [`DoubleEndedIterator`] — the backing
+/// composition is `Filter<Copied<slice::Iter<'static, C>>, P>`, and
+/// [`std::iter::Filter`] preserves [`DoubleEndedIterator`] when the
+/// underlying iterator carries it (the `Copied<slice::Iter>` substrate
+/// does, per the [`axis_iter`] preservation chain) and the predicate
+/// closure is [`Clone`] (the captureless `|c| c.is_realizable()` is a
+/// zero-sized type that is trivially [`Copy`] + [`Clone`]). Consumers
+/// rendering the realizable half specific→coarse (last-declared cell
+/// first, matching an attestation manifest emitter walking the recent
+/// end of the image) reach `realizable_iter::<C>().rev()` directly
+/// without a `.collect::<Vec<_>>().into_iter().rev()` roundtrip that
+/// pays a realizable-cardinality-length [`Vec`] allocation.
+///
+/// # Fused exhaustion
+///
+/// The returned iterator is [`std::iter::FusedIterator`] — the
+/// underlying `Copied<slice::Iter>` substrate is fused, and
+/// [`std::iter::Filter`] preserves the trait when the underlying
+/// iterator carries it. Composite consumers relying on the fused
+/// contract (`.chain`, `.peekable`, `.by_ref` past exhaustion) get
+/// the invariant at the type-signature altitude rather than as an
+/// unnamed implementation detail behind an unnameable combinator.
+///
+/// # Independent walks
+///
+/// The returned iterator is [`Clone`] — the underlying
+/// `Copied<slice::Iter>` substrate is [`Clone`], and
+/// [`std::iter::Filter`] preserves the trait when the underlying
+/// iterator is [`Clone`] and the predicate closure is [`Clone`]
+/// (the captureless zero-sized closure is trivially [`Copy`] +
+/// [`Clone`]). Callers that need two independent walks over the
+/// realizable image (render once, then re-walk to find a positional
+/// match on the recognized half) clone the handle up front instead
+/// of re-invoking `realizable_iter::<C>()` at each walk.
+#[must_use]
+pub fn realizable_iter<C: ProductCube>()
+-> impl DoubleEndedIterator<Item = C> + std::iter::FusedIterator + Clone {
     C::ALL.iter().copied().filter(|c| c.is_realizable())
 }
 
@@ -10339,7 +10378,37 @@ pub fn realizable_iter<C: ProductCube>() -> impl Iterator<Item = C> {
 /// `*_unrealizable_cells_have_no_inverse` test site on each cube.
 /// Generic in the cube type so a future fifth cube inherits the helper
 /// at the `impl ProductCube` declaration.
-pub fn unrealizable_iter<C: ProductCube>() -> impl Iterator<Item = C> {
+///
+/// # Reverse walk
+///
+/// The returned iterator is [`DoubleEndedIterator`] — same
+/// `Filter<Copied<slice::Iter<'static, C>>, P>` preservation chain
+/// [`realizable_iter`] carries, on the complementary predicate
+/// `|c| !c.is_realizable()`. Consumers rendering the unrecognized
+/// complement specific→coarse (last-declared cross-axis
+/// consistency-violation cell first) reach
+/// `unrealizable_iter::<C>().rev()` directly without paying an
+/// unrealizable-cardinality-length [`Vec`] allocation on the
+/// `.collect::<Vec<_>>().into_iter().rev()` roundtrip.
+///
+/// # Fused exhaustion
+///
+/// The returned iterator is [`std::iter::FusedIterator`] — same
+/// preservation chain [`realizable_iter`] carries. Composite
+/// consumers relying on the fused contract past exhaustion get the
+/// invariant at the type-signature altitude.
+///
+/// # Independent walks
+///
+/// The returned iterator is [`Clone`] — same preservation chain
+/// [`realizable_iter`] carries, with the complementary captureless
+/// predicate closure. Callers walking the unrecognized complement
+/// twice (render once, then re-walk to find a positional match on
+/// the cross-axis consistency-violation cells) clone the handle up
+/// front.
+#[must_use]
+pub fn unrealizable_iter<C: ProductCube>()
+-> impl DoubleEndedIterator<Item = C> + std::iter::FusedIterator + Clone {
     C::ALL.iter().copied().filter(|c| !c.is_realizable())
 }
 
@@ -11987,6 +12056,165 @@ mod tests {
         );
     }
 
+    fn assert_realizable_iter_rev_reverses_forward_walk<C>()
+    where
+        C: ProductCube + std::fmt::Debug + PartialEq,
+    {
+        // The [`DoubleEndedIterator`] contract on the sharpened
+        // [`realizable_iter`] surface: collecting through `.rev()` and
+        // reversing the result recovers the forward walk pointwise.
+        // Pins that the sharpened return type restores the reverse-
+        // walk capability the prior bare-`impl Iterator` erased — a
+        // consumer rendering the realizable image specific→coarse
+        // (last-declared realizable cell first) no longer needs a
+        // `.collect::<Vec<_>>().into_iter().rev()` roundtrip that pays
+        // a realizable-cardinality-length `Vec` allocation. The trait
+        // preservation chain is
+        // `Filter<Copied<slice::Iter<'static, C>>, P>` —
+        // `Copied<slice::Iter>` is `DoubleEndedIterator` (via the
+        // preservation chain [`axis_iter`] carries), and `Filter`
+        // preserves the trait when the underlying iterator carries it
+        // and the predicate closure is [`Clone`] (the captureless
+        // `|c| c.is_realizable()` is trivially [`Copy`] + [`Clone`]).
+        let forward: Vec<C> = realizable_iter::<C>().collect();
+        let mut reversed: Vec<C> = realizable_iter::<C>().rev().collect();
+        reversed.reverse();
+        assert_eq!(
+            forward,
+            reversed,
+            "realizable_iter().rev() must reverse the forward walk on cube {}",
+            std::any::type_name::<C>(),
+        );
+    }
+
+    fn assert_realizable_iter_clone_yields_independent_walks<C>()
+    where
+        C: ProductCube + std::fmt::Debug + PartialEq,
+    {
+        // The [`Clone`] contract on the sharpened [`realizable_iter`]
+        // surface: cloning the iterator handle gives two independent
+        // walks over the realizable image, whose pointwise-`collect`
+        // results agree. Pins that the sharpened return type restores
+        // the clone capability the prior bare-`impl Iterator` erased —
+        // a two-pass consumer (render once, re-walk to find a
+        // positional match on the recognized half) clones the handle
+        // up front instead of re-invoking `realizable_iter::<C>()` at
+        // each walk. The trait preservation chain is
+        // `Filter<Copied<slice::Iter<'static, C>>, P>` —
+        // `Copied<slice::Iter>` is `Clone`, `Filter` preserves the
+        // trait when the underlying iterator is `Clone` and the
+        // predicate closure is `Clone`.
+        let first = realizable_iter::<C>();
+        let second = first.clone();
+        let via_first: Vec<C> = first.collect();
+        let via_second: Vec<C> = second.collect();
+        assert_eq!(
+            via_first,
+            via_second,
+            "realizable_iter().clone() must yield equal walks on cube {}",
+            std::any::type_name::<C>(),
+        );
+    }
+
+    fn assert_realizable_iter_is_fused_past_exhaustion<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // The [`std::iter::FusedIterator`] contract on the sharpened
+        // [`realizable_iter`] surface: once the iterator returns
+        // `None`, every subsequent pull continues to return `None`.
+        // Pins that the sharpened return type names the fused
+        // invariant at the API boundary rather than leaving it as an
+        // unnamed implementation detail behind an unnameable
+        // combinator. Drain the iterator into a length-vector, then
+        // pull four more times; each subsequent pull must yield
+        // `None`.
+        let mut iter = realizable_iter::<C>();
+        let mut drained = 0usize;
+        while iter.next().is_some() {
+            drained += 1;
+        }
+        assert_eq!(
+            drained,
+            realizable_count::<C>(),
+            "realizable_iter cardinality must equal realizable_count on cube {}",
+            std::any::type_name::<C>(),
+        );
+        for _ in 0..4 {
+            assert!(
+                iter.next().is_none(),
+                "realizable_iter must stay `None` past exhaustion on cube {}",
+                std::any::type_name::<C>(),
+            );
+        }
+    }
+
+    fn assert_unrealizable_iter_rev_reverses_forward_walk<C>()
+    where
+        C: ProductCube + std::fmt::Debug + PartialEq,
+    {
+        // Same [`DoubleEndedIterator`] contract as the realizable
+        // peer, on the complementary predicate `|c| !c.is_realizable()`.
+        // Pins the reverse-walk capability at the type-signature
+        // altitude across every [`ProductCube`] implementor.
+        let forward: Vec<C> = unrealizable_iter::<C>().collect();
+        let mut reversed: Vec<C> = unrealizable_iter::<C>().rev().collect();
+        reversed.reverse();
+        assert_eq!(
+            forward,
+            reversed,
+            "unrealizable_iter().rev() must reverse the forward walk on cube {}",
+            std::any::type_name::<C>(),
+        );
+    }
+
+    fn assert_unrealizable_iter_clone_yields_independent_walks<C>()
+    where
+        C: ProductCube + std::fmt::Debug + PartialEq,
+    {
+        // Same [`Clone`] contract as the realizable peer, on the
+        // complementary predicate. Pins the two-independent-walks
+        // capability at the type-signature altitude.
+        let first = unrealizable_iter::<C>();
+        let second = first.clone();
+        let via_first: Vec<C> = first.collect();
+        let via_second: Vec<C> = second.collect();
+        assert_eq!(
+            via_first,
+            via_second,
+            "unrealizable_iter().clone() must yield equal walks on cube {}",
+            std::any::type_name::<C>(),
+        );
+    }
+
+    fn assert_unrealizable_iter_is_fused_past_exhaustion<C>()
+    where
+        C: ProductCube + std::fmt::Debug,
+    {
+        // Same [`std::iter::FusedIterator`] contract as the
+        // realizable peer, on the complementary predicate. Pins the
+        // fused-past-exhaustion invariant at the type-signature
+        // altitude.
+        let mut iter = unrealizable_iter::<C>();
+        let mut drained = 0usize;
+        while iter.next().is_some() {
+            drained += 1;
+        }
+        assert_eq!(
+            drained,
+            unrealizable_count::<C>(),
+            "unrealizable_iter cardinality must equal unrealizable_count on cube {}",
+            std::any::type_name::<C>(),
+        );
+        for _ in 0..4 {
+            assert!(
+                iter.next().is_none(),
+                "unrealizable_iter must stay `None` past exhaustion on cube {}",
+                std::any::type_name::<C>(),
+            );
+        }
+    }
+
     fn assert_axis_cardinality_matches_trait_all<A>(expected: usize)
     where
         A: ClosedAxis + std::fmt::Debug,
@@ -12155,6 +12383,68 @@ mod tests {
             };
         }
         for_each_closed_axis_implementor!(check);
+    }
+
+    // ---- realizable_iter / unrealizable_iter carry the sharpened trait algebra ----
+
+    #[test]
+    fn realizable_iter_rev_reverses_forward_walk_for_every_product_cube() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_realizable_iter_rev_reverses_forward_walk::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn realizable_iter_clone_yields_independent_walks_for_every_product_cube() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_realizable_iter_clone_yields_independent_walks::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn realizable_iter_is_fused_past_exhaustion_for_every_product_cube() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_realizable_iter_is_fused_past_exhaustion::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn unrealizable_iter_rev_reverses_forward_walk_for_every_product_cube() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_unrealizable_iter_rev_reverses_forward_walk::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn unrealizable_iter_clone_yields_independent_walks_for_every_product_cube() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_unrealizable_iter_clone_yields_independent_walks::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn unrealizable_iter_is_fused_past_exhaustion_for_every_product_cube() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_unrealizable_iter_is_fused_past_exhaustion::<$ty>();
+            };
+        }
+        for_each_product_cube!(check);
     }
 
     // ---- axis_cardinality pins today's variant / cell counts ----
