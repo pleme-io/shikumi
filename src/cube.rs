@@ -2342,7 +2342,33 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     /// structured-log field listing only the error classes that fired
     /// in the last reload window). Pointwise prefix of [`Self::iter`]
     /// filtered by `count > 0`.
-    pub fn nonzero(&self) -> impl Iterator<Item = (A, usize)> + '_ {
+    ///
+    /// # Reverse walk
+    ///
+    /// The returned iterator is [`DoubleEndedIterator`] — the
+    /// underlying [`Self::iter`] is [`DoubleEndedIterator`] and
+    /// [`std::iter::Filter`] preserves the trait when the underlying
+    /// iterator carries it. Consumers rendering the support
+    /// specific→coarse (last-declared axis cell first, matching a
+    /// sort-by-recency projection over the observed kinds) reach for
+    /// `nonzero().rev()` directly, versus the prior state where
+    /// reversal forced a full `.collect::<Vec<_>>().into_iter().rev()`
+    /// chain that paid a `distinct_cells`-length [`Vec`] allocation
+    /// the zero-alloc composition surface was introduced to avoid.
+    ///
+    /// # Independent walks
+    ///
+    /// The returned iterator is [`Clone`] — the underlying
+    /// [`AxisHistogramIter`] is [`Clone`] and [`std::iter::Filter`]
+    /// preserves the trait when the underlying iterator is [`Clone`]
+    /// and the predicate closure is [`Clone`] (the captureless
+    /// zero-sized closure `|&(_, c)| c > 0` is trivially [`Copy`] +
+    /// [`Clone`]). Callers that need two independent walks over the
+    /// same substrate-owned counts vector (render once, then re-walk
+    /// to find a positional match on the support) clone the handle
+    /// up front instead of materializing an intermediate `Vec`.
+    #[must_use]
+    pub fn nonzero(&self) -> impl DoubleEndedIterator<Item = (A, usize)> + Clone + '_ {
         self.iter().filter(|&(_, c)| c > 0)
     }
 
@@ -2451,7 +2477,30 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     /// (`axis_histogram_observed_empty_is_empty_*`,
     /// `axis_histogram_observed_axis_cover_is_full_axis_*`,
     /// `axis_histogram_observed_singleton_is_just_observed_cell_*`).
-    pub fn observed(&self) -> impl Iterator<Item = A> + '_ {
+    ///
+    /// # Reverse walk
+    ///
+    /// The returned iterator is [`DoubleEndedIterator`] — the
+    /// composition is `Map<Filter<AxisHistogramIter, P>, F>` and
+    /// [`std::iter::Filter`] / [`std::iter::Map`] both preserve the
+    /// trait when the underlying iterator carries it. Consumers
+    /// rendering the observed support specific→coarse (last-declared
+    /// axis cell first) reach for `observed().rev()` directly without
+    /// the `.collect::<Vec<_>>().into_iter().rev()` roundtrip.
+    ///
+    /// # Independent walks
+    ///
+    /// The returned iterator is [`Clone`] — the underlying
+    /// [`AxisHistogramIter`] is [`Clone`], and both
+    /// [`std::iter::Filter`] and [`std::iter::Map`] preserve the trait
+    /// when the underlying iterator is [`Clone`] and the closure is
+    /// [`Clone`] (both closures — `|&(_, c)| c > 0` and `|(v, _)| v` —
+    /// capture nothing, so they are trivially [`Copy`] + [`Clone`]).
+    /// Callers that need two independent walks over the same
+    /// substrate-owned support (render once, then re-walk to find a
+    /// positional match) clone the handle up front.
+    #[must_use]
+    pub fn observed(&self) -> impl DoubleEndedIterator<Item = A> + Clone + '_ {
         self.iter().filter(|&(_, c)| c > 0).map(|(v, _)| v)
     }
 
@@ -2544,7 +2593,31 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     /// `axis_histogram_unobserved_axis_cover_is_empty_*`,
     /// `axis_histogram_unobserved_singleton_omits_observed_cell_*`,
     /// `axis_histogram_unobserved_and_nonzero_partition_axis_*`).
-    pub fn unobserved(&self) -> impl Iterator<Item = A> + '_ {
+    ///
+    /// # Reverse walk
+    ///
+    /// The returned iterator is [`DoubleEndedIterator`] — the
+    /// composition is `Map<Filter<AxisHistogramIter, P>, F>` and
+    /// [`std::iter::Filter`] / [`std::iter::Map`] both preserve the
+    /// trait when the underlying iterator carries it. Consumers
+    /// rendering the coverage gap specific→coarse (last-declared axis
+    /// cell first, matching a "which unfired error class fired
+    /// most-recently on a nearby axis?" projection over the missing
+    /// kinds) reach for `unobserved().rev()` directly.
+    ///
+    /// # Independent walks
+    ///
+    /// The returned iterator is [`Clone`] — the underlying
+    /// [`AxisHistogramIter`] is [`Clone`], and both
+    /// [`std::iter::Filter`] and [`std::iter::Map`] preserve the trait
+    /// when the underlying iterator is [`Clone`] and the closure is
+    /// [`Clone`] (both closures — `|&(_, c)| c == 0` and `|(v, _)| v` —
+    /// capture nothing, so they are trivially [`Copy`] + [`Clone`]).
+    /// Callers that need two independent walks over the same
+    /// substrate-owned coverage gap (render once, then re-walk to
+    /// look for a specific missing cell) clone the handle up front.
+    #[must_use]
+    pub fn unobserved(&self) -> impl DoubleEndedIterator<Item = A> + Clone + '_ {
         self.iter().filter(|&(_, c)| c == 0).map(|(v, _)| v)
     }
 
@@ -14882,6 +14955,154 @@ mod tests {
         );
     }
 
+    fn assert_nonzero_rev_reverses_forward_walk<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug + PartialEq,
+    {
+        // The [`DoubleEndedIterator`] contract on the [`Self::nonzero`]
+        // composition surface: collecting through `.rev()` and reversing
+        // the result recovers the forward pair sequence pointwise. Pins
+        // that the sharpened return type restores the reverse-walk
+        // capability the prior bare-`impl Iterator + '_` erased — a
+        // consumer rendering the observed support specific→coarse
+        // (last-declared axis cell first) no longer needs a
+        // `.collect::<Vec<_>>().into_iter().rev()` roundtrip. Fixture
+        // observes the first cell of the axis so the coverage gap is
+        // non-empty on every cardinality-`>= 2` axis (and reduces to
+        // the trivial identity on the cardinality-1 axes where forward
+        // and reverse walk the same one-element sequence).
+        let first = axis_iter::<A>()
+            .next()
+            .expect("ClosedAxis::ALL is non-empty by trait contract");
+        let hist: AxisHistogram<A> = std::iter::once(first).collect();
+        let forward: Vec<(A, usize)> = hist.nonzero().collect();
+        let mut reversed: Vec<(A, usize)> = hist.nonzero().rev().collect();
+        reversed.reverse();
+        assert_eq!(
+            forward,
+            reversed,
+            "nonzero().rev() must reverse the forward walk on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_nonzero_clone_yields_independent_walks<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug + PartialEq,
+    {
+        // The [`Clone`] contract on the [`Self::nonzero`] composition
+        // surface: cloning the iterator handle gives two independent
+        // walks over the same substrate-owned support, whose pointwise-
+        // `collect` results agree. Pins that the sharpened return type
+        // restores the clone capability the prior bare-`impl Iterator +
+        // '_` erased — a two-pass consumer (render once, re-walk to
+        // find a positional match on the support) no longer materializes
+        // a `Vec` twice or holds the owned `Vec` across both walks.
+        // Fixture observes every cell twice so the nonzero support is
+        // the full axis and the clone walk has non-trivial length.
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let first = hist.nonzero();
+        let second = first.clone();
+        let via_first: Vec<(A, usize)> = first.collect();
+        let via_second: Vec<(A, usize)> = second.collect();
+        assert_eq!(
+            via_first,
+            via_second,
+            "nonzero().clone() must yield equal walks on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_observed_rev_reverses_forward_walk<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug + PartialEq,
+    {
+        // The [`DoubleEndedIterator`] contract on the [`Self::observed`]
+        // composition surface: `Map<Filter<AxisHistogramIter, P>, F>`
+        // preserves [`DoubleEndedIterator`] because [`Filter`] and
+        // [`Map`] both preserve it when the underlying iterator carries
+        // it. Fixture observes every cell twice so the observed support
+        // is the full axis, giving the reverse walk axis_cardinality
+        // elements.
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let forward: Vec<A> = hist.observed().collect();
+        let mut reversed: Vec<A> = hist.observed().rev().collect();
+        reversed.reverse();
+        assert_eq!(
+            forward,
+            reversed,
+            "observed().rev() must reverse the forward walk on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_observed_clone_yields_independent_walks<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug + PartialEq,
+    {
+        // The [`Clone`] contract on the [`Self::observed`] composition
+        // surface: `Map<Filter<AxisHistogramIter, P>, F>` preserves
+        // [`Clone`] because [`Filter`] and [`Map`] both preserve it
+        // when the underlying iterator is [`Clone`] and the closures
+        // are [`Clone`] (both closures are captureless, so trivially
+        // [`Copy`] + [`Clone`]).
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let first = hist.observed();
+        let second = first.clone();
+        let via_first: Vec<A> = first.collect();
+        let via_second: Vec<A> = second.collect();
+        assert_eq!(
+            via_first,
+            via_second,
+            "observed().clone() must yield equal walks on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_unobserved_rev_reverses_forward_walk<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug + PartialEq,
+    {
+        // The [`DoubleEndedIterator`] contract on the
+        // [`Self::unobserved`] composition surface: same
+        // `Map<Filter<AxisHistogramIter, P>, F>` shape as
+        // [`Self::observed`] with the complementary predicate. Fixture
+        // is the empty histogram so the coverage gap is the full axis
+        // and the reverse walk yields axis_cardinality elements.
+        let hist: AxisHistogram<A> = AxisHistogram::empty();
+        let forward: Vec<A> = hist.unobserved().collect();
+        let mut reversed: Vec<A> = hist.unobserved().rev().collect();
+        reversed.reverse();
+        assert_eq!(
+            forward,
+            reversed,
+            "unobserved().rev() must reverse the forward walk on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_unobserved_clone_yields_independent_walks<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug + PartialEq,
+    {
+        // The [`Clone`] contract on the [`Self::unobserved`]
+        // composition surface: same `Map<Filter<AxisHistogramIter, P>,
+        // F>` shape as [`Self::observed`]; fixture is the empty
+        // histogram so the coverage gap has axis_cardinality elements
+        // and the clone-walk equality carries non-trivial content.
+        let hist: AxisHistogram<A> = AxisHistogram::empty();
+        let first = hist.unobserved();
+        let second = first.clone();
+        let via_first: Vec<A> = first.collect();
+        let via_second: Vec<A> = second.collect();
+        assert_eq!(
+            via_first,
+            via_second,
+            "unobserved().clone() must yield equal walks on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
     fn assert_total_equals_input_length<A>()
     where
         A: ClosedAxis + std::fmt::Debug,
@@ -15049,6 +15270,67 @@ mod tests {
         macro_rules! check {
             ($ty:ident) => {
                 assert_iter_equals_borrowed_into_iter::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_nonzero_rev_reverses_forward_walk_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_nonzero_rev_reverses_forward_walk::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_nonzero_clone_yields_independent_walks_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_nonzero_clone_yields_independent_walks::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_observed_rev_reverses_forward_walk_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_observed_rev_reverses_forward_walk::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_observed_clone_yields_independent_walks_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_observed_clone_yields_independent_walks::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_unobserved_rev_reverses_forward_walk_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_unobserved_rev_reverses_forward_walk::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_unobserved_clone_yields_independent_walks_for_every_closed_axis_implementor()
+    {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_unobserved_clone_yields_independent_walks::<$ty>();
             };
         }
         for_each_closed_axis_implementor!(check);
