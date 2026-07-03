@@ -4257,6 +4257,38 @@ impl PathContest {
     ///     == runner_up().or(Some(coarsest()))    // aliases coarsest when uncontested (len == 1)
     /// ```
     ///
+    /// # Reverse walk
+    ///
+    /// The returned iterator is a [`DoubleEndedIterator`]: callers that
+    /// want the trailing-first (specific→coarse) order — the diagnostic
+    /// walk a "decider X overrides runner-up Y overrides coarsest Z"
+    /// renderer wants — chain `.rev()` and pay zero allocation for the
+    /// reversal. The reverse-endpoint identities against
+    /// [`Self::decider`] / [`Self::coarsest`]:
+    ///
+    /// ```text
+    /// contributors_iter().rev().next()         ==  Some(decider)
+    /// contributors_iter().rev().last()         ==  Some(coarsest())
+    /// contributors_iter().rev().collect::<Vec<_>>()
+    ///     == { let mut v = contributors(); v.reverse(); v }
+    /// ```
+    ///
+    /// # Independent walks
+    ///
+    /// The returned iterator is [`Clone`]: consumers that need to walk
+    /// the contributor stream twice (e.g. render once, then re-walk to
+    /// find a positional match) clone the iterator handle up front and
+    /// pay two independent zero-allocation walks against the same
+    /// substrate-owned [`Self::overridden`] slice, versus materializing
+    /// [`Self::contributors`] once and holding the owned [`Vec`] for the
+    /// second walk. The clone-then-walk equality:
+    ///
+    /// ```text
+    /// let a = contributors_iter();
+    /// let b = a.clone();
+    /// a.collect::<Vec<_>>() == b.collect::<Vec<_>>() == contributors()
+    /// ```
+    ///
     /// The [`Option<PathContest>`] boundary against the free-fn
     /// contributor-list dual on the same axis:
     ///
@@ -4284,7 +4316,8 @@ impl PathContest {
     /// `.enumerate()` / `.position()` walks — pay zero allocation for
     /// the full contributor stream, versus [`Self::contributors`]'s
     /// obligatory [`Vec`] materialization.
-    pub fn contributors_iter(&self) -> impl Iterator<Item = &'static str> + '_ {
+    #[must_use]
+    pub fn contributors_iter(&self) -> impl DoubleEndedIterator<Item = &'static str> + Clone + '_ {
         self.overridden
             .iter()
             .copied()
@@ -10823,6 +10856,144 @@ mod tests {
         let iter_collected: Vec<&'static str> = contest.contributors_iter().collect();
         assert_eq!(iter_collected, contributor_names(&layers));
         assert_eq!(iter_collected, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn path_contest_contributors_iter_rev_reverses_forward_walk_across_fixture() {
+        // The reverse walk is the ordered inverse of the forward walk:
+        // `.rev().collect()` equals `contributors()` with `Vec::reverse`
+        // applied to it. Pins the DoubleEndedIterator sharpening against
+        // the `Vec::reverse` semantics on the same materialized value
+        // across the {0, 1, ≥ 2} silenced-cardinality partition.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        for layers in [
+            vec![sole.as_ref()],
+            vec![pair_coarse.as_ref(), pair_specific.as_ref()],
+            vec![sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()],
+        ] {
+            let contest = contest_at(&layers, &["k"]).expect("k is touched");
+            let mut expected = contest.contributors();
+            expected.reverse();
+            let reversed: Vec<&'static str> = contest.contributors_iter().rev().collect();
+            assert_eq!(reversed, expected);
+        }
+    }
+
+    #[test]
+    fn path_contest_contributors_iter_rev_endpoints_alias_decider_and_coarsest() {
+        // Reverse-endpoint identities on the DoubleEndedIterator: the
+        // *back* end of the reverse walk emits `coarsest` (the original
+        // leading element), and the *front* end emits `decider` (the
+        // original trailing element). Aliased against the O(1) accessors
+        // on both the uncontested-singleton and multi-writer branches.
+        let uncontested = PathContest {
+            decider: "solo",
+            overridden: vec![],
+        };
+        assert_eq!(uncontested.contributors_iter().rev().next(), Some("solo"));
+        assert_eq!(uncontested.contributors_iter().rev().last(), Some("solo"));
+        assert_eq!(
+            uncontested.contributors_iter().rev().next(),
+            Some(uncontested.decider),
+        );
+        assert_eq!(
+            uncontested.contributors_iter().rev().last(),
+            Some(uncontested.coarsest()),
+        );
+
+        let multi = PathContest {
+            decider: "tenancy",
+            overridden: vec!["platform", "cloud", "orchestrator"],
+        };
+        assert_eq!(multi.contributors_iter().rev().next(), Some("tenancy"));
+        assert_eq!(multi.contributors_iter().rev().last(), Some("platform"));
+        assert_eq!(multi.contributors_iter().rev().next(), Some(multi.decider),);
+        assert_eq!(
+            multi.contributors_iter().rev().last(),
+            Some(multi.coarsest()),
+        );
+    }
+
+    #[test]
+    fn path_contest_contributors_iter_rev_nth_walks_specific_to_coarse() {
+        // Positional identities on the reverse walk: index 0 aliases
+        // `decider`, index 1 aliases `runner_up` (on the contested
+        // branch), index n-1 aliases `coarsest`. Pins the diagnostic
+        // renderer's specific→coarse walk against the three ordered
+        // endpoints callers actually name.
+        let multi = PathContest {
+            decider: "tenancy",
+            overridden: vec!["platform", "cloud", "orchestrator"],
+        };
+        assert_eq!(multi.contributors_iter().rev().nth(0), Some(multi.decider));
+        assert_eq!(multi.contributors_iter().rev().nth(1), multi.runner_up());
+        let last_idx = multi.contributor_count() - 1;
+        assert_eq!(
+            multi.contributors_iter().rev().nth(last_idx),
+            Some(multi.coarsest()),
+        );
+    }
+
+    #[test]
+    fn path_contest_contributors_iter_clone_yields_independent_walks() {
+        // The Clone bound closes the "two independent walks over the
+        // same substrate-owned slice" seam without materializing the
+        // owned Vec. The two clones each walk the full stream and yield
+        // the same result; interleaving them (advance one, then the
+        // other) preserves per-clone position.
+        let contest = PathContest {
+            decider: "tenancy",
+            overridden: vec!["platform", "cloud", "orchestrator"],
+        };
+        let a = contest.contributors_iter();
+        let b = a.clone();
+        let a_collected: Vec<&'static str> = a.collect();
+        let b_collected: Vec<&'static str> = b.collect();
+        assert_eq!(a_collected, b_collected);
+        assert_eq!(a_collected, contest.contributors());
+
+        // Interleaved walk: one clone advances, the other stays behind.
+        let mut left = contest.contributors_iter();
+        let mut right = left.clone();
+        assert_eq!(left.next(), Some(contest.coarsest()));
+        // Right is still at the head — hasn't seen the first name.
+        assert_eq!(right.next(), Some(contest.coarsest()));
+        assert_eq!(left.next(), Some("cloud"));
+        assert_eq!(right.next(), Some("cloud"));
+        assert_eq!(left.next(), Some("orchestrator"));
+        assert_eq!(left.next(), Some(contest.decider));
+        assert_eq!(left.next(), None);
+        // Right still has orchestrator + decider to go — position is
+        // per-clone, not shared.
+        assert_eq!(right.next(), Some("orchestrator"));
+        assert_eq!(right.next(), Some(contest.decider));
+        assert_eq!(right.next(), None);
+    }
+
+    #[test]
+    fn path_contest_contributors_iter_clone_and_rev_compose_across_fixture() {
+        // Composition test: `.clone().rev()` and `.rev().clone()` yield
+        // the same reversed stream, and the reverse of a clone matches
+        // the reverse of the original — pinning that Clone and
+        // DoubleEndedIterator compose commutatively at the trait level
+        // across the {0, 1, ≥ 2} silenced-cardinality partition.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        for layers in [
+            vec![sole.as_ref()],
+            vec![pair_coarse.as_ref(), pair_specific.as_ref()],
+            vec![sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()],
+        ] {
+            let contest = contest_at(&layers, &["k"]).expect("k is touched");
+            let base: Vec<&'static str> = contest.contributors_iter().rev().collect();
+            let via_clone_then_rev: Vec<&'static str> =
+                contest.contributors_iter().clone().rev().collect();
+            let via_rev_then_clone: Vec<&'static str> = {
+                let rev = contest.contributors_iter().rev();
+                rev.clone().collect()
+            };
+            assert_eq!(base, via_clone_then_rev);
+            assert_eq!(base, via_rev_then_clone);
+        }
     }
 
     // -------- PathContest::coarsest --------
