@@ -4458,6 +4458,119 @@ impl PathContest {
         &self.overridden
     }
 
+    /// The **silenced** stream — the ordered names of every layer whose
+    /// opinion at the queried path was overridden by [`Self::decider`],
+    /// in application order (coarse→specific), as a zero-allocation
+    /// iterator. The iterator-shaped dual of [`Self::silenced`] (which
+    /// returns a zero-alloc slice over the same substrate) and the
+    /// losers-only sibling of [`Self::contributors_iter`] (the
+    /// winners+losers iterator over the same touchers partition).
+    /// Together, the pair `(contributors_iter, silenced_iter)` gives the
+    /// touchers partition uniform iterator-shaped access at the method
+    /// surface — winners+losers as an iterator, losers as an iterator —
+    /// with [`Self::silenced`] (slice) and [`Self::contributors`] (owned
+    /// [`Vec`]) retained for call sites that want the substrate handle or
+    /// an owned copy.
+    ///
+    /// The naming register at the method altitude. Before this method,
+    /// consumers wanting a losers-side iterator matching the shape of
+    /// [`Self::contributors_iter`] (`impl DoubleEndedIterator<Item =
+    /// &'static str> + Clone + '_`) open-coded one of two forms —
+    /// `contest.silenced().iter().copied()` (three chained calls off
+    /// the slice seam) or `contest.contributors_iter().take(contest
+    /// .silenced_count())` (walk the full contributors stream and cut
+    /// at the decider). The lift names the projection at one site so
+    /// that call sites reach for `.silenced_iter()` symmetrically with
+    /// `.contributors_iter()`, and the pair reads structurally the
+    /// same at every altitude the diagnostic seams switch across.
+    ///
+    /// # Identities
+    ///
+    /// The materialization equality against [`Self::silenced`]:
+    ///
+    /// ```text
+    /// silenced_iter().collect::<Vec<_>>()     ==  silenced().to_vec()
+    /// silenced_iter().count()                 ==  silenced().len()
+    ///                                          ==  silenced_count()
+    /// ```
+    ///
+    /// The concatenation identity against [`Self::contributors_iter`]:
+    ///
+    /// ```text
+    /// silenced_iter().chain(std::iter::once(decider))
+    ///                                          ==  contributors_iter()
+    /// ```
+    ///
+    /// The presence-boundary identity against [`Self::is_contested`]:
+    ///
+    /// ```text
+    /// silenced_iter().next().is_none()        ==  !is_contested()
+    /// silenced_iter().next().is_some()        ==  is_contested()
+    /// ```
+    ///
+    /// The endpoint identities against [`Self::coarsest_silenced`] /
+    /// [`Self::runner_up`]:
+    ///
+    /// ```text
+    /// silenced_iter().next()                  ==  coarsest_silenced()
+    /// silenced_iter().last()                  ==  runner_up()
+    /// ```
+    ///
+    /// The [`Option<PathContest>`] boundary against the free-fn
+    /// losers-list dual on the same axis:
+    ///
+    /// ```text
+    /// contest_at(layers, p).map_or(vec![], |c| c.silenced_iter().collect())
+    ///     ==  silenced_at(layers, p)
+    /// ```
+    ///
+    /// # Reverse walk
+    ///
+    /// The returned iterator is [`DoubleEndedIterator`]: consumers
+    /// rendering the losers specific→coarse (trailing-first, "runner-up
+    /// first, coarsest silenced last") walk chain `.rev()` and pay zero
+    /// allocation for the reversal. The reverse-endpoint identities
+    /// against [`Self::runner_up`] / [`Self::coarsest_silenced`]:
+    ///
+    /// ```text
+    /// silenced_iter().rev().next()            ==  runner_up()
+    /// silenced_iter().rev().last()            ==  coarsest_silenced()
+    /// ```
+    ///
+    /// # Length in constant time
+    ///
+    /// The returned iterator is [`ExactSizeIterator`]: the underlying
+    /// [`slice::Iter`] carries the exact length and [`Iterator::copied`]
+    /// preserves it. Consumers that need the losers count without
+    /// exhausting the iterator reach `.len()` in `O(1)` on the handle
+    /// directly, at parity with [`Self::silenced_count`].
+    ///
+    /// # Independent walks
+    ///
+    /// The returned iterator is [`Clone`]: consumers that need to walk
+    /// the silenced stream twice (e.g. render once, then re-walk to find
+    /// a positional match) clone the iterator handle up front and pay two
+    /// independent zero-allocation walks over the same substrate-owned
+    /// [`Self::overridden`] slice, versus [`Self::silenced`]`.to_vec()`
+    /// then reusing the owned [`Vec`] for the second walk.
+    ///
+    /// # Cost
+    ///
+    /// `O(1)` per element, zero heap allocation. A single
+    /// [`std::iter::Copied`] adapter over the [`Self::overridden`] slice
+    /// — stack-only. Strictly cheaper than [`silenced_at`] (which walks
+    /// every layer again and allocates a fresh [`Vec`]); strictly cheaper
+    /// than [`Self::silenced`]`.to_vec()` for iterate-only consumers
+    /// (`.silenced_iter()` skips the owned-`Vec` materialization);
+    /// pointwise equal to [`Self::silenced`]`.iter().copied()` on the
+    /// substrate side.
+    #[must_use]
+    pub fn silenced_iter(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = &'static str> + ExactSizeIterator + Clone + '_ {
+        self.overridden.iter().copied()
+    }
+
     /// The **coarsest** toucher — the first-in-application-order layer
     /// that placed an opinion at the queried path. Named dually to
     /// [`Self::decider`]: `decider` is the most-specific opinion (the
@@ -11258,6 +11371,240 @@ mod tests {
             assert_eq!(base, via_clone_then_rev);
             assert_eq!(base, via_rev_then_clone);
         }
+    }
+
+    // -------- PathContest::silenced_iter --------
+
+    #[test]
+    fn path_contest_silenced_iter_empty_on_uncontested_singleton() {
+        // Empty-losers boundary: with `overridden.is_empty()`, the
+        // `Copied<Iter>` over the empty slice yields nothing — the
+        // dual of `contributors_iter()` collapsing to just the decider
+        // on the same input.
+        let contest = PathContest {
+            decider: "solo",
+            overridden: vec![],
+        };
+        assert_eq!(contest.silenced_iter().count(), 0);
+        assert!(contest.silenced_iter().next().is_none());
+        assert!(contest.silenced_iter().last().is_none());
+        assert_eq!(
+            contest.silenced_iter().count(),
+            contest.silenced_count(),
+            "count identity holds on the empty-losers boundary",
+        );
+    }
+
+    #[test]
+    fn path_contest_silenced_iter_matches_silenced_across_fixture() {
+        // Materialization equality: `silenced_iter().collect() ==
+        // silenced().to_vec()` pointwise across the {0, 1, ≥ 2}
+        // silenced-cardinality partition. Pins the iterator dual as
+        // extensionally equal to the slice seam on every fixture cell.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        for layers in [
+            &[sole.as_ref()][..],
+            &[pair_coarse.as_ref(), pair_specific.as_ref()][..],
+            &[sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()][..],
+        ] {
+            let contest = contest_at(layers, &["k"]).unwrap();
+            let via_iter: Vec<&'static str> = contest.silenced_iter().collect();
+            assert_eq!(
+                via_iter,
+                contest.silenced().to_vec(),
+                "silenced_iter().collect() disagrees with silenced().to_vec() on a {}-silenced fixture",
+                contest.silenced_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_silenced_iter_chain_once_decider_matches_contributors_iter() {
+        // Concatenation identity on the substrate side:
+        //   silenced_iter().chain(once(decider)) == contributors_iter()
+        // Pins the (winners+losers, losers) iterator pair as literally
+        // composable at the method surface across the fixture spectrum.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        for layers in [
+            &[sole.as_ref()][..],
+            &[pair_coarse.as_ref(), pair_specific.as_ref()][..],
+            &[sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()][..],
+        ] {
+            let contest = contest_at(layers, &["k"]).unwrap();
+            let via_chain: Vec<&'static str> = contest
+                .silenced_iter()
+                .chain(std::iter::once(contest.decider))
+                .collect();
+            let via_contributors: Vec<&'static str> = contest.contributors_iter().collect();
+            assert_eq!(
+                via_chain, via_contributors,
+                "chain(once(decider)) disagrees with contributors_iter()",
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_silenced_iter_endpoints_alias_coarsest_silenced_and_runner_up() {
+        // Endpoint identities: `.next() == coarsest_silenced()` and
+        // `.last() == runner_up()`. On the uncontested singleton both
+        // aliases collapse onto `None`; on the singly contested pair the
+        // two endpoints alias each other and the sole silenced layer; on
+        // the multiply-silenced triple they diverge structurally.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        // Uncontested: both endpoints None.
+        let layers: [&dyn DiscoveryLayer; 1] = [sole.as_ref()];
+        let contest = contest_at(&layers, &["k"]).unwrap();
+        assert_eq!(contest.silenced_iter().next(), contest.coarsest_silenced());
+        assert_eq!(contest.silenced_iter().last(), contest.runner_up());
+        assert!(contest.silenced_iter().next().is_none());
+        // Singly contested: single silenced layer at both endpoints.
+        let layers: [&dyn DiscoveryLayer; 2] = [pair_coarse.as_ref(), pair_specific.as_ref()];
+        let contest = contest_at(&layers, &["k"]).unwrap();
+        assert_eq!(contest.silenced_iter().next(), contest.coarsest_silenced());
+        assert_eq!(contest.silenced_iter().last(), contest.runner_up());
+        assert_eq!(
+            contest.silenced_iter().next(),
+            contest.silenced_iter().last(),
+            "singly silenced: endpoints alias",
+        );
+        // Multiply silenced: structurally distinct endpoints.
+        let layers: [&dyn DiscoveryLayer; 3] =
+            [sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()];
+        let contest = contest_at(&layers, &["k"]).unwrap();
+        assert_eq!(contest.silenced_iter().next(), contest.coarsest_silenced());
+        assert_eq!(contest.silenced_iter().last(), contest.runner_up());
+        assert_ne!(
+            contest.silenced_iter().next(),
+            contest.silenced_iter().last(),
+            "multiply silenced: endpoints structurally distinct",
+        );
+    }
+
+    #[test]
+    fn path_contest_silenced_iter_count_and_len_match_silenced_count() {
+        // Cardinality identity across the fixture spectrum:
+        //   silenced_iter().count() == silenced_count()
+        //   silenced_iter().len()   == silenced_count()    (ExactSizeIterator)
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        for layers in [
+            &[sole.as_ref()][..],
+            &[pair_coarse.as_ref(), pair_specific.as_ref()][..],
+            &[sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()][..],
+        ] {
+            let contest = contest_at(layers, &["k"]).unwrap();
+            assert_eq!(contest.silenced_iter().count(), contest.silenced_count());
+            assert_eq!(contest.silenced_iter().len(), contest.silenced_count());
+            // Consistency between the two Iterator/ExactSizeIterator
+            // readings of the same length.
+            assert_eq!(
+                contest.silenced_iter().count(),
+                contest.silenced_iter().len()
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_silenced_iter_matches_silenced_at_across_paths() {
+        // Option<PathContest> boundary identity across a multi-path grid:
+        //   contest_at(layers, p).map_or(vec![], |c| c.silenced_iter().collect())
+        //     == silenced_at(layers, p)
+        // Pins the accessor-boundary contract on every fixture cell.
+        let platform = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("mode", Value::from("live")),
+                    ("setpoint", Value::from(0.80)),
+                ])),
+            )]),
+        );
+        let cloud = Fixed(
+            "cloud",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let tenancy = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("live"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 3] = [&platform, &cloud, &tenancy];
+        for path in [
+            &[][..],
+            &["breathe"][..],
+            &["breathe", "mode"][..],
+            &["breathe", "setpoint"][..],
+            &["absent"][..],
+        ] {
+            let via_method: Vec<&'static str> =
+                contest_at(&layers, path).map_or(vec![], |c| c.silenced_iter().collect());
+            let via_free_fn = silenced_at(&layers, path);
+            assert_eq!(
+                via_method, via_free_fn,
+                "silenced_iter().collect() disagrees with silenced_at at path {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_silenced_iter_rev_reverses_forward_walk_across_fixture() {
+        // The reverse walk is the ordered inverse of the forward walk:
+        // `.rev().collect()` equals `silenced().to_vec()` with
+        // `Vec::reverse` applied to it. Pins the DoubleEndedIterator
+        // sharpening against `Vec::reverse` semantics on the same
+        // materialized value across the fixture partition.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        for layers in [
+            vec![sole.as_ref()],
+            vec![pair_coarse.as_ref(), pair_specific.as_ref()],
+            vec![sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()],
+        ] {
+            let contest = contest_at(&layers, &["k"]).expect("k is touched");
+            let mut expected = contest.silenced().to_vec();
+            expected.reverse();
+            let reversed: Vec<&'static str> = contest.silenced_iter().rev().collect();
+            assert_eq!(reversed, expected);
+        }
+    }
+
+    #[test]
+    fn path_contest_silenced_iter_rev_endpoints_swap_endpoints() {
+        // Reverse-endpoint identities on the DoubleEndedIterator: the
+        // *back* end of the reverse walk emits `coarsest_silenced` (the
+        // original leading element), and the *front* end emits
+        // `runner_up` (the original trailing element). The trailing-
+        // first specificity walk a diagnostic renderer wants.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        let layers: [&dyn DiscoveryLayer; 3] =
+            [sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()];
+        let contest = contest_at(&layers, &["k"]).expect("k is touched");
+        assert_eq!(contest.silenced_iter().rev().next(), contest.runner_up());
+        assert_eq!(
+            contest.silenced_iter().rev().last(),
+            contest.coarsest_silenced(),
+        );
+    }
+
+    #[test]
+    fn path_contest_silenced_iter_clone_yields_independent_walks() {
+        // Clone-then-walk equality: two independent walks over the same
+        // substrate-owned overridden slice yield the same sequence,
+        // without materializing an owned Vec for the second pass.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        let layers: [&dyn DiscoveryLayer; 3] =
+            [sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()];
+        let contest = contest_at(&layers, &["k"]).expect("k is touched");
+        let a = contest.silenced_iter();
+        let b = a.clone();
+        let via_a: Vec<&'static str> = a.collect();
+        let via_b: Vec<&'static str> = b.collect();
+        assert_eq!(via_a, via_b);
+        assert_eq!(via_a, contest.silenced().to_vec());
     }
 
     // -------- PathContest::coarsest --------
