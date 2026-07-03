@@ -4207,6 +4207,90 @@ impl PathContest {
         out
     }
 
+    /// The full ordered contributor stream — every layer that touched
+    /// the queried path, in application order (coarse→specific), as a
+    /// zero-allocation iterator. The lazy dual of [`Self::contributors`]
+    /// (which materializes the same sequence into a fresh
+    /// `Vec<&'static str>` of length `overridden.len() + 1`) and the
+    /// iterator-shaped sibling of [`Self::silenced`] (which returns a
+    /// zero-alloc slice over the losers only). Together, the pair
+    /// `(silenced, contributors_iter)` closes the zero-allocation
+    /// accessor surface for both projections of the touchers partition:
+    /// losers as a slice, winners+losers as an iterator, decider as a
+    /// scalar field.
+    ///
+    /// The concatenation identity holds against [`Self::silenced`] and
+    /// [`Self::decider`]:
+    ///
+    /// ```text
+    /// contributors_iter()
+    ///     == silenced().iter().copied().chain(std::iter::once(decider))
+    /// ```
+    ///
+    /// # Identities
+    ///
+    /// The materialization identity against [`Self::contributors`]:
+    ///
+    /// ```text
+    /// contributors_iter().collect::<Vec<_>>()  ==  contributors()
+    /// ```
+    ///
+    /// The cardinality identity against [`Self::contributor_count`]:
+    ///
+    /// ```text
+    /// contributors_iter().count()              ==  contributor_count()
+    ///                                          ==  silenced_count() + 1
+    /// ```
+    ///
+    /// The endpoint identities against [`Self::coarsest`] /
+    /// [`Self::decider`]:
+    ///
+    /// ```text
+    /// contributors_iter().next()               ==  Some(coarsest())
+    /// contributors_iter().last()               ==  Some(decider)
+    /// ```
+    ///
+    /// The one-step-back identity against [`Self::runner_up`]:
+    ///
+    /// ```text
+    /// contributors_iter().nth(contributor_count() - 2)
+    ///     == runner_up().or(Some(coarsest()))    // aliases coarsest when uncontested (len == 1)
+    /// ```
+    ///
+    /// The [`Option<PathContest>`] boundary against the free-fn
+    /// contributor-list dual on the same axis:
+    ///
+    /// ```text
+    /// contest_at(layers, p).map(|c| c.contributors_iter().collect::<Vec<_>>())
+    ///     == Some(contributors_at(layers, p))          // when contest_at(layers, p).is_some()
+    /// contest_at(layers, p)
+    ///     .map_or(vec![], |c| c.contributors_iter().collect::<Vec<_>>())
+    ///     == contributors_at(layers, p)                // total on both sides
+    /// ```
+    ///
+    /// # Cost
+    ///
+    /// `O(1)` per element, zero heap allocation. Two iterator adapters
+    /// ([`std::iter::Copied`] over the [`Self::overridden`] slice,
+    /// [`std::iter::Chain`] with a [`std::iter::once`] of the decider) —
+    /// all stack-allocated. Strictly cheaper than [`Self::contributors`]
+    /// (which pays a `+1`-length [`Vec`] allocation to fuse the same
+    /// sequence into an owned handle); strictly cheaper than
+    /// [`contributors_at`] (which walks every layer again and allocates
+    /// afresh). Consumers that need an owned value chain
+    /// `.contributors_iter().collect::<Vec<_>>()` at parity with
+    /// [`Self::contributors`]'s allocation cost; consumers that only
+    /// iterate — for renderers, `for` loops, `.count()` /
+    /// `.enumerate()` / `.position()` walks — pay zero allocation for
+    /// the full contributor stream, versus [`Self::contributors`]'s
+    /// obligatory [`Vec`] materialization.
+    pub fn contributors_iter(&self) -> impl Iterator<Item = &'static str> + '_ {
+        self.overridden
+            .iter()
+            .copied()
+            .chain(std::iter::once(self.decider))
+    }
+
     /// The **silenced** list — the ordered names of every layer whose
     /// opinion at the queried path was overridden by [`Self::decider`],
     /// in application order (coarse→specific). The method-altitude,
@@ -10508,6 +10592,237 @@ mod tests {
         assert_eq!(contest.contributors(), vec!["a", "b"]);
         assert_eq!(contest.decider, "b");
         assert_eq!(contest.overridden, vec!["a"]);
+    }
+
+    // -------- PathContest::contributors_iter --------
+
+    #[test]
+    fn path_contest_contributors_iter_singleton_yields_decider_only() {
+        // Uncontested singleton: 1 toucher, 0 silenced. The iterator
+        // yields exactly one element — the decider itself. This pins
+        // the empty-losers boundary: with `overridden.is_empty()`, the
+        // `Copied<Iter>` half of the chain yields nothing, and the
+        // `Once<decider>` tail is the only element materialized.
+        let contest = PathContest {
+            decider: "solo",
+            overridden: vec![],
+        };
+        let materialized: Vec<&'static str> = contest.contributors_iter().collect();
+        assert_eq!(
+            materialized,
+            vec!["solo"],
+            "sole toucher yields exactly [decider]",
+        );
+        assert_eq!(
+            contest.contributors_iter().count(),
+            1,
+            ".count() aliases contributor_count() on the uncontested singleton",
+        );
+        assert_eq!(
+            contest.contributors_iter().count(),
+            contest.contributor_count(),
+            "count identity holds on the empty-losers boundary",
+        );
+    }
+
+    #[test]
+    fn path_contest_contributors_iter_matches_contributors_across_fixture() {
+        // Materialization identity: `.contributors_iter().collect() ==
+        // .contributors()` pointwise across the {0, 1, ≥ 2} silenced-
+        // cardinality partition. Pins the lazy/eager pair as
+        // extensionally equal on every fixture cell.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        for layers in [
+            &[sole.as_ref()][..],
+            &[pair_coarse.as_ref(), pair_specific.as_ref()][..],
+            &[sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()][..],
+        ] {
+            let contest = contest_at(layers, &["k"]).unwrap();
+            let lazy: Vec<&'static str> = contest.contributors_iter().collect();
+            assert_eq!(
+                lazy,
+                contest.contributors(),
+                "iter().collect() disagrees with contributors() on a {}-toucher fixture",
+                contest.contributor_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_contributors_iter_matches_silenced_chain_decider() {
+        // The concatenation identity on the substrate side:
+        //   contributors_iter() == silenced().iter().copied().chain(once(decider))
+        // Pins the lazy composition as literally equal to the
+        // hand-rolled chain a caller would otherwise open-code — the
+        // structural rationale for exposing the iterator at all.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        for layers in [
+            &[sole.as_ref()][..],
+            &[pair_coarse.as_ref(), pair_specific.as_ref()][..],
+            &[sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()][..],
+        ] {
+            let contest = contest_at(layers, &["k"]).unwrap();
+            let via_method: Vec<&'static str> = contest.contributors_iter().collect();
+            let via_hand: Vec<&'static str> = contest
+                .silenced()
+                .iter()
+                .copied()
+                .chain(std::iter::once(contest.decider))
+                .collect();
+            assert_eq!(
+                via_method, via_hand,
+                "iter() disagrees with the substrate-side concat chain",
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_contributors_iter_endpoints_alias_coarsest_and_decider() {
+        // Endpoint identities: `.next() == Some(coarsest())` and
+        // `.last() == Some(decider)`. On the uncontested singleton both
+        // aliases collapse onto the sole toucher; on the contested
+        // triple they diverge structurally.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        // Singleton branch: leading == trailing == decider.
+        let layers: [&dyn DiscoveryLayer; 1] = [sole.as_ref()];
+        let contest = contest_at(&layers, &["k"]).unwrap();
+        assert_eq!(contest.contributors_iter().next(), Some(contest.coarsest()));
+        assert_eq!(contest.contributors_iter().last(), Some(contest.decider));
+        assert_eq!(contest.coarsest(), contest.decider, "singleton collapse");
+        // Contested-triple branch: leading != trailing.
+        let layers: [&dyn DiscoveryLayer; 3] =
+            [sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()];
+        let contest = contest_at(&layers, &["k"]).unwrap();
+        assert_eq!(contest.contributors_iter().next(), Some(contest.coarsest()));
+        assert_eq!(contest.contributors_iter().last(), Some(contest.decider));
+        assert_ne!(
+            contest.coarsest(),
+            contest.decider,
+            "contested-triple endpoints are structurally distinct",
+        );
+    }
+
+    #[test]
+    fn path_contest_contributors_iter_count_matches_contributor_count() {
+        // Cardinality identity across the fixture spectrum:
+        //   contributors_iter().count() == contributor_count()
+        //                                == silenced_count() + 1
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        for layers in [
+            &[sole.as_ref()][..],
+            &[pair_coarse.as_ref(), pair_specific.as_ref()][..],
+            &[sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()][..],
+        ] {
+            let contest = contest_at(layers, &["k"]).unwrap();
+            assert_eq!(
+                contest.contributors_iter().count(),
+                contest.contributor_count(),
+            );
+            assert_eq!(
+                contest.contributors_iter().count(),
+                contest.silenced_count() + 1,
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_contributors_iter_matches_contributors_at_across_paths() {
+        // Option<PathContest> boundary identity across a multi-path
+        // grid: the lazy method peer folds through `contest_at` and
+        // `.map_or(vec![], collect)` to the free-fn point primitive
+        // `contributors_at`. Pins the accessor-boundary contract on
+        // every fixture cell.
+        let platform = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("mode", Value::from("live")),
+                    ("setpoint", Value::from(0.80)),
+                ])),
+            )]),
+        );
+        let cloud = Fixed(
+            "cloud",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let tenancy = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("live"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 3] = [&platform, &cloud, &tenancy];
+        for path in [
+            &[][..],
+            &["breathe"][..],
+            &["breathe", "mode"][..],
+            &["breathe", "setpoint"][..],
+            &["absent"][..],
+        ] {
+            let via_method: Vec<&'static str> =
+                contest_at(&layers, path).map_or(vec![], |c| c.contributors_iter().collect());
+            let via_free_fn = contributors_at(&layers, path);
+            assert_eq!(
+                via_method, via_free_fn,
+                "iter().collect() disagrees with contributors_at at path {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_contributors_iter_enumerate_pins_positions() {
+        // Positional identities on the enumerated stream — the
+        // consumer-side workload the iterator exists to serve without
+        // materializing the full `Vec`. Pins:
+        //   - index 0 == coarsest() (leading endpoint)
+        //   - index contributor_count() - 1 == decider (trailing endpoint)
+        //   - index contributor_count() - 2 == runner_up() on the
+        //     contested branch (one-step-back-from-decider identity)
+        //   - the enumerated pairs align with contributors()[i]
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        let layers: [&dyn DiscoveryLayer; 3] =
+            [sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()];
+        let contest = contest_at(&layers, &["k"]).unwrap();
+        let materialized = contest.contributors();
+        for (idx, name) in contest.contributors_iter().enumerate() {
+            assert_eq!(
+                name, materialized[idx],
+                "enumerated iterator diverges from contributors() at index {idx}",
+            );
+        }
+        let last_idx = contest.contributor_count() - 1;
+        assert_eq!(contest.contributors_iter().nth(0), Some(contest.coarsest()),);
+        assert_eq!(
+            contest.contributors_iter().nth(last_idx),
+            Some(contest.decider),
+        );
+        assert_eq!(
+            contest.contributors_iter().nth(last_idx - 1),
+            contest.runner_up(),
+            "index n-2 aliases runner_up() on the contested branch",
+        );
+    }
+
+    #[test]
+    fn path_contest_contributors_iter_root_specialization_matches_contributor_names() {
+        // Root altitude: at the empty path, every layer that returns a
+        // non-empty dict is a toucher, so `.contributors_iter().collect()`
+        // aliases `contributor_names` on the same stack — the whole-
+        // layer projection this iterator method-altitude specializes to
+        // at the root.
+        let a = Fixed("a", dict(&[("x", Value::from(1i64))]));
+        let silent = Fixed("silent", Dict::new());
+        let b = Fixed("b", dict(&[("y", Value::from(2i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &silent, &b];
+        let contest = contest_at(&layers, &[]).expect("root is touched");
+        let iter_collected: Vec<&'static str> = contest.contributors_iter().collect();
+        assert_eq!(iter_collected, contributor_names(&layers));
+        assert_eq!(iter_collected, vec!["a", "b"]);
     }
 
     // -------- PathContest::coarsest --------
