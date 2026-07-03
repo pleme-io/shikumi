@@ -3936,6 +3936,75 @@ impl PathContest {
     pub fn coarsest(&self) -> &'static str {
         self.overridden.first().copied().unwrap_or(self.decider)
     }
+
+    /// The **runner-up** — the most-specific-with-an-opinion layer whose
+    /// vote was directly overridden by [`Self::decider`]. `None` iff the
+    /// contest is uncontested (the sole toucher is the decider, so nothing
+    /// stood one-step-back from it on the specificity axis).
+    ///
+    /// The trailing-element projection of [`Self::overridden`] and the
+    /// one-step-back sibling of [`Self::decider`] on the touchers axis —
+    /// where [`Self::coarsest`] is the *leading* element of the ordered
+    /// touchers list, `runner_up` is the *second-to-last* element on that
+    /// same list. Together, `(coarsest, runner_up, decider)` frame the
+    /// three ordered specificity endpoints callers actually name when
+    /// rendering the override cascade: "the coarsest layer that opened
+    /// this key" / "the closest challenger the decider silenced" / "the
+    /// layer that decided its final value".
+    ///
+    /// The diagnostic seam. In a HOCON-shaped cascade
+    /// `platform → cloud → orchestrator → tenancy` where `tenancy`
+    /// decides, `runner_up` is `orchestrator` — the answer to "what
+    /// would this key have been if the decider hadn't touched it?".
+    /// A renderer producing "expected: one of {…}; got: {…} at
+    /// breathe.mode; decider: tenancy; overridden most directly:
+    /// orchestrator" reads `.decider` and `.runner_up()` off the
+    /// same value with no re-walk of the layer stack.
+    ///
+    /// # Identities
+    ///
+    /// The trailing-of-losers identity against [`Self::overridden`]:
+    ///
+    /// ```text
+    /// runner_up()                       == overridden.last().copied()
+    /// ```
+    ///
+    /// The one-step-back identity against [`Self::contributors`]:
+    ///
+    /// ```text
+    /// runner_up()
+    ///     == contributors().iter().nth_back(1).copied()   // second-to-last of contributors
+    /// ```
+    ///
+    /// The presence-boundary identity against [`Self::is_contested`]:
+    ///
+    /// ```text
+    /// runner_up().is_some()             == is_contested()
+    /// runner_up().is_none()             == !is_contested()
+    /// runner_up().is_some()             == (silenced_count() >= 1)
+    /// ```
+    ///
+    /// The pairing with [`Self::coarsest`] on the shared touchers axis:
+    ///
+    /// ```text
+    /// !is_contested()          =>  runner_up() == None
+    ///                              && coarsest() == decider
+    /// silenced_count() == 1    =>  runner_up() == Some(coarsest())        // singly contested: runner-up and coarsest alias
+    /// silenced_count() >= 2    =>  runner_up() != Some(coarsest())        // structurally distinct positions on `overridden`
+    /// ```
+    ///
+    /// # Cost
+    ///
+    /// `O(1)` — one [`Vec::last`] pointer read on `overridden` and one
+    /// [`Option::copied`] on `&&'static str` (a scalar copy). No
+    /// allocation, no walk of the layer stack. Strictly cheaper than
+    /// re-invoking any point-primitive projection; strictly cheaper
+    /// than materializing [`Self::contributors`] and reading its
+    /// second-to-last element.
+    #[must_use]
+    pub fn runner_up(&self) -> Option<&'static str> {
+        self.overridden.last().copied()
+    }
 }
 
 /// The full **per-path override contest** at `path` — decider (winner)
@@ -13403,6 +13472,181 @@ mod tests {
                 assert!(
                     contest.is_contested(),
                     "≥ 2 silenced must imply ≥ 1 silenced"
+                );
+            }
+        }
+    }
+
+    // ---- PathContest::runner_up -----------------------------------------
+
+    #[test]
+    fn path_contest_runner_up_none_when_uncontested() {
+        // Uncontested singleton: overridden is empty, so runner_up
+        // collapses to None. Pins the presence-boundary at the "no
+        // silenced" endpoint — the sole toucher is the decider itself
+        // and there is nothing one step back from it on the touchers
+        // axis.
+        let (sole, _, _) = contest_fixture();
+        let layers: [&dyn DiscoveryLayer; 1] = [sole.as_ref()];
+        let contest = contest_at(&layers, &["k"]).unwrap();
+        assert!(!contest.is_contested(), "uncontested singleton");
+        assert_eq!(
+            contest.runner_up(),
+            None,
+            "runner_up is None on the no-silenced boundary",
+        );
+    }
+
+    #[test]
+    fn path_contest_runner_up_some_when_singly_contested() {
+        // Strict-contest pair: overridden = [pair_coarse], so
+        // runner_up = Some("pair_coarse"). At exactly one silenced,
+        // runner_up and coarsest alias structurally — the sole silenced
+        // layer occupies both the leading and trailing positions of
+        // `overridden` at once.
+        let (_, pair_coarse, pair_specific) = contest_fixture();
+        let layers: [&dyn DiscoveryLayer; 2] = [pair_coarse.as_ref(), pair_specific.as_ref()];
+        let contest = contest_at(&layers, &["k"]).unwrap();
+        assert!(contest.is_contested(), "strict contest");
+        assert_eq!(
+            contest.runner_up(),
+            Some("pair_coarse"),
+            "runner_up is the sole silenced layer",
+        );
+        assert_eq!(
+            contest.runner_up(),
+            Some(contest.coarsest()),
+            "at exactly one silenced, runner_up == Some(coarsest)",
+        );
+    }
+
+    #[test]
+    fn path_contest_runner_up_multiply_silenced_returns_finest_loser() {
+        // Multiply-silenced triple: overridden = [sole, pair_coarse],
+        // decider = pair_specific. runner_up returns the trailing
+        // (most-specific) silenced layer — pair_coarse — which is
+        // structurally distinct from coarsest (sole). Pins the ≥ 2
+        // silenced cell where the leading and trailing endpoints of
+        // `overridden` diverge.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        let layers: [&dyn DiscoveryLayer; 3] =
+            [sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()];
+        let contest = contest_at(&layers, &["k"]).unwrap();
+        assert!(contest.is_multiply_silenced(), "≥ 2 silenced");
+        assert_eq!(
+            contest.runner_up(),
+            Some("pair_coarse"),
+            "runner_up is the finest (most-specific) silenced layer",
+        );
+        assert_ne!(
+            contest.runner_up(),
+            Some(contest.coarsest()),
+            "at ≥ 2 silenced, runner_up and coarsest occupy distinct positions",
+        );
+        assert_ne!(
+            contest.runner_up(),
+            Some(contest.decider),
+            "runner_up is never the decider — the decider is the winner, not a loser",
+        );
+    }
+
+    #[test]
+    fn path_contest_runner_up_matches_overridden_last() {
+        // Identity: runner_up() == overridden.last().copied() pointwise
+        // across the fixture spectrum. Pins the field-projection
+        // definition against every cell of the {0, 1, ≥ 2} silenced
+        // partition.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        for layers in [
+            &[sole.as_ref()][..],
+            &[pair_coarse.as_ref(), pair_specific.as_ref()][..],
+            &[sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()][..],
+        ] {
+            let contest = contest_at(layers, &["k"]).unwrap();
+            assert_eq!(
+                contest.runner_up(),
+                contest.overridden.last().copied(),
+                "runner_up disagrees with overridden.last() on {}-toucher fixture",
+                contest.contributor_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_runner_up_matches_contributors_nth_back_one() {
+        // Cross-axis identity: runner_up() ==
+        // contributors().iter().nth_back(1).copied() — the touchers-axis
+        // "one step back from decider" projection. Since contributors()
+        // is overridden ++ [decider], nth_back(1) picks the second-to-last
+        // toucher = overridden.last() (or None when overridden is empty).
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        for layers in [
+            &[sole.as_ref()][..],
+            &[pair_coarse.as_ref(), pair_specific.as_ref()][..],
+            &[sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()][..],
+        ] {
+            let contest = contest_at(layers, &["k"]).unwrap();
+            let via_contributors = contest.contributors().iter().nth_back(1).copied();
+            assert_eq!(
+                contest.runner_up(),
+                via_contributors,
+                "runner_up disagrees with contributors().nth_back(1) on {}-toucher fixture",
+                contest.contributor_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_runner_up_is_some_iff_is_contested() {
+        // Presence-boundary identity: runner_up().is_some() ==
+        // is_contested() pointwise across the fixture spectrum. The
+        // {0, ≥ 1} silenced partition on the runner_up presence bit
+        // aligns exactly with the {≤ 0, ≥ 1} silenced partition on the
+        // is_contested boolean — same boundary, two projections of the
+        // same fact.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        for layers in [
+            &[sole.as_ref()][..],
+            &[pair_coarse.as_ref(), pair_specific.as_ref()][..],
+            &[sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()][..],
+        ] {
+            let contest = contest_at(layers, &["k"]).unwrap();
+            assert_eq!(
+                contest.runner_up().is_some(),
+                contest.is_contested(),
+                "runner_up presence disagrees with is_contested on {}-toucher fixture",
+                contest.contributor_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_runner_up_never_equals_decider() {
+        // Structural invariant: runner_up is drawn exclusively from the
+        // losers list — the decider is the winner and never appears
+        // there. When runner_up is Some, its value is one of the
+        // overridden layers, structurally distinct from the decider.
+        // (The layer-name spelling could coincidentally alias in
+        // exotic fixtures, but on the substrate-owned contest_at all
+        // touchers have distinct names by construction of the test
+        // Fixed layers.)
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        for layers in [
+            &[sole.as_ref()][..],
+            &[pair_coarse.as_ref(), pair_specific.as_ref()][..],
+            &[sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()][..],
+        ] {
+            let contest = contest_at(layers, &["k"]).unwrap();
+            if let Some(runner) = contest.runner_up() {
+                assert_ne!(
+                    runner,
+                    contest.decider,
+                    "runner_up must not alias decider on {}-toucher fixture",
+                    contest.contributor_count(),
+                );
+                assert!(
+                    contest.overridden.contains(&runner),
+                    "runner_up must be drawn from the overridden list",
                 );
             }
         }
