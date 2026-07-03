@@ -4053,6 +4053,96 @@ impl PathContest {
         out
     }
 
+    /// The **silenced** list — the ordered names of every layer whose
+    /// opinion at the queried path was overridden by [`Self::decider`],
+    /// in application order (coarse→specific). The method-altitude,
+    /// naming-consistent, zero-allocation dual of the [`silenced_at`]
+    /// free-function on the losers axis of the touchers partition and
+    /// the method-altitude sibling of [`Self::contributors`] (winners
+    /// ∪ losers) on the winners+losers axis.
+    ///
+    /// Names, not renames. The underlying storage is the [`Self::overridden`]
+    /// field — a caller reading directly off `.overridden` gets the same
+    /// slice bytes. What `silenced` adds is *vocabulary uniformity*: the
+    /// substrate's point-primitive naming register (`silenced_at`,
+    /// `silenced_count`, `is_multiply_silenced`, `silenced_count_at`,
+    /// `silent_layer_count`, `silent_layer_names`, `has_silent_layer`,
+    /// `has_multiple_silent_layers`, `is_multiply_silenced_at`) speaks
+    /// of *silenced* touchers on the losers axis. `.silenced()`
+    /// completes the accessor register at the method altitude so the
+    /// diagnostic seam — "which layers did the decider silence?" —
+    /// reads structurally the same at every altitude, without a
+    /// caller-side `overridden`↔`silenced` translation and without
+    /// forcing consumers to reach past the method surface into a
+    /// raw field.
+    ///
+    /// The reconstruction identity holds against [`Self::contributors`]
+    /// with the trailing-of-touchers position for the decider:
+    ///
+    /// ```text
+    /// [silenced(), &[decider]].concat()  ==  contributors()
+    /// contributors()[..contributors().len() - 1]
+    ///     == silenced()                        // total, since contributors().len() >= 1
+    /// ```
+    ///
+    /// # Identities
+    ///
+    /// The zero-allocation slice equality against [`Self::overridden`]:
+    ///
+    /// ```text
+    /// silenced()                        == overridden.as_slice()
+    /// silenced().len()                  == overridden.len()
+    ///                                    == silenced_count()
+    /// silenced().is_empty()             == !is_contested()
+    /// silenced().first().copied()       == coarsest_of_silenced           // Some iff is_contested()
+    /// silenced().last().copied()        == runner_up()
+    /// ```
+    ///
+    /// The [`Option<PathContest>`] boundary against the free-fn
+    /// losers-list dual on the same axis:
+    ///
+    /// ```text
+    /// contest_at(layers, p).map(|c| c.silenced().to_vec())
+    ///     == Some(silenced_at(layers, p))              // when contest_at(layers, p).is_some()
+    /// contest_at(layers, p).map_or(vec![], |c| c.silenced().to_vec())
+    ///     == silenced_at(layers, p)                    // total on both sides
+    /// ```
+    ///
+    /// The pairing with [`Self::is_contested`] on the same losers axis:
+    ///
+    /// ```text
+    /// silenced().is_empty()             == !is_contested()
+    /// silenced().is_empty()             == (silenced_count() == 0)
+    /// silenced().len() >= 2             == is_multiply_silenced()
+    /// ```
+    ///
+    /// The specificity endpoint identities (leading/trailing of losers):
+    ///
+    /// ```text
+    /// silenced().first().copied()       == overridden.first().copied()
+    /// silenced().last().copied()        == overridden.last().copied()
+    ///                                    == runner_up()
+    /// ```
+    ///
+    /// # Cost
+    ///
+    /// `O(1)` — one slice-reference read of [`Self::overridden`]. No
+    /// allocation, no per-element copy, no walk of the layer stack.
+    /// Strictly cheaper than [`silenced_at`] (which walks every layer
+    /// once and allocates a fresh [`Vec`]); strictly cheaper than
+    /// [`Self::contributors`] (which allocates a `+1`-length `Vec` to
+    /// fuse the losers with the decider); strictly cheaper than
+    /// materializing [`Self::contributors`] and taking its leading
+    /// `.len() - 1` entries. Consumers that need an owned value chain
+    /// `.silenced().to_vec()` at parity with [`silenced_at`]'s
+    /// allocation cost; consumers that only iterate or index chain
+    /// nothing and pay zero allocation for the loser list, versus
+    /// [`silenced_at`]'s obligatory `Vec` materialization.
+    #[must_use]
+    pub fn silenced(&self) -> &[&'static str] {
+        &self.overridden
+    }
+
     /// The **coarsest** toucher — the first-in-application-order layer
     /// that placed an opinion at the queried path. Named dually to
     /// [`Self::decider`]: `decider` is the most-specific opinion (the
@@ -14105,6 +14195,161 @@ mod tests {
         // Sibling endpoints alignment on the root triple.
         assert_eq!(coarsest_at(&layers, &[]), Some("platform"));
         assert_eq!(decider_at(&layers, &[]), Some("tenancy"));
+    }
+
+    #[test]
+    fn path_contest_silenced_empty_iff_uncontested() {
+        // Uncontested contest (sole toucher is the decider): silenced()
+        // is an empty slice, aliasing the boolean !is_contested() and
+        // the scalar silenced_count() == 0 on the same losers axis.
+        // Structural empty-boundary identity at the method surface.
+        let sole = Fixed("only", dict(&[("k", Value::from(1i64))]));
+        let layers: [&dyn DiscoveryLayer; 1] = [&sole];
+        let contest = contest_at(&layers, &["k"]).expect("sole toucher yields Some");
+        assert!(contest.silenced().is_empty(), "no silenced touchers");
+        assert_eq!(contest.silenced().len(), 0);
+        assert_eq!(contest.silenced().len(), contest.silenced_count());
+        assert_eq!(contest.silenced().is_empty(), !contest.is_contested());
+    }
+
+    #[test]
+    fn path_contest_silenced_singleton_holds_leading_and_trailing_at_once() {
+        // Singly-contested cell (one silenced toucher): silenced() is a
+        // one-element slice whose leading and trailing entries alias.
+        // Structurally, silenced().last() == runner_up() and
+        // silenced().first() names the sole loser — which are the same
+        // name at silenced_count() == 1.
+        let coarse = Fixed("platform", dict(&[("mode", Value::from("live"))]));
+        let specific = Fixed("tenancy", dict(&[("mode", Value::from("dry"))]));
+        let layers: [&dyn DiscoveryLayer; 2] = [&coarse, &specific];
+        let contest = contest_at(&layers, &["mode"]).expect("two touchers yield Some");
+        let silenced = contest.silenced();
+        assert_eq!(silenced, &["platform"]);
+        assert_eq!(silenced.len(), 1);
+        assert_eq!(silenced.first().copied(), Some("platform"));
+        assert_eq!(silenced.last().copied(), contest.runner_up());
+        assert_eq!(silenced.first().copied(), silenced.last().copied());
+    }
+
+    #[test]
+    fn path_contest_silenced_multi_preserves_coarse_to_specific_order() {
+        // Multiply-silenced contest (two or more silenced touchers):
+        // silenced() preserves the coarse→specific application order,
+        // and its trailing entry equals runner_up(), while its leading
+        // entry is structurally distinct from its trailing entry —
+        // pinning the ≥ 2 threshold at the method surface.
+        let l0 = Fixed("platform", dict(&[("mode", Value::from(0i64))]));
+        let l1 = Fixed("cloud", dict(&[("mode", Value::from(1i64))]));
+        let l2 = Fixed("orchestrator", dict(&[("mode", Value::from(2i64))]));
+        let l3 = Fixed("tenancy", dict(&[("mode", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 4] = [&l0, &l1, &l2, &l3];
+        let contest = contest_at(&layers, &["mode"]).expect("four touchers yield Some");
+        let silenced = contest.silenced();
+        assert_eq!(silenced, &["platform", "cloud", "orchestrator"]);
+        assert_eq!(silenced.last().copied(), contest.runner_up());
+        assert_eq!(silenced.first().copied(), Some(contest.coarsest()));
+        assert_ne!(silenced.first().copied(), silenced.last().copied());
+        assert_eq!(silenced.len() >= 2, contest.is_multiply_silenced());
+    }
+
+    #[test]
+    fn path_contest_silenced_matches_silenced_at_across_paths() {
+        // Cross-path Option-boundary identity between the method and
+        // free-function siblings: for every path,
+        // contest_at(..).map_or(vec![], |c| c.silenced().to_vec()) ==
+        // silenced_at(..). Grid: root (whole-layer), dict-container,
+        // multi-writer leaf, single-writer leaf, absent path.
+        let base = Fixed(
+            "platform",
+            dict(&[
+                (
+                    "breathe",
+                    Value::from(dict(&[
+                        ("setpoint", Value::from(0.80)),
+                        ("mode", Value::from("live")),
+                    ])),
+                ),
+                ("only_in_base", Value::from(0i64)),
+            ]),
+        );
+        let overlay = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("mode", Value::from("dry")),
+                    ("only_in_overlay", Value::from(1i64)),
+                ])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 2] = [&base, &overlay];
+        for path in [
+            vec![],
+            vec!["breathe"],
+            vec!["breathe", "mode"],
+            vec!["breathe", "only_in_overlay"],
+            vec!["only_in_base"],
+            vec!["missing"],
+        ] {
+            let free = silenced_at(&layers, &path);
+            let method_owned =
+                contest_at(&layers, &path).map_or_else(Vec::new, |c| c.silenced().to_vec());
+            assert_eq!(
+                method_owned, free,
+                "silenced().to_vec() == silenced_at at path {path:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_silenced_plus_decider_reconstructs_contributors() {
+        // Reconstruction identity at the method surface:
+        // [c.silenced(), &[c.decider]].concat() == c.contributors(). The
+        // structural symmetry ".silenced() ⊎ {decider}" makes the
+        // partition arithmetic hold at the accessor altitude without
+        // ever touching the underlying `overridden` field name.
+        let l0 = Fixed("platform", dict(&[("k", Value::from(0i64))]));
+        let l1 = Fixed("cloud", dict(&[("k", Value::from(1i64))]));
+        let l2 = Fixed("tenancy", dict(&[("k", Value::from(2i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&l0, &l1, &l2];
+        let contest = contest_at(&layers, &["k"]).expect("three touchers yield Some");
+        let mut recomposed: Vec<&'static str> = contest.silenced().to_vec();
+        recomposed.push(contest.decider);
+        assert_eq!(recomposed, contest.contributors());
+    }
+
+    #[test]
+    fn path_contest_silenced_aliases_overridden_field_slice() {
+        // The zero-allocation body identity: silenced() and
+        // overridden.as_slice() return bit-identical slice contents.
+        // This test pins the "names, not renames" property — a rename
+        // of the field or a future re-storage of the losers list must
+        // preserve this equality by construction.
+        let l0 = Fixed("platform", dict(&[("k", Value::from(0i64))]));
+        let l1 = Fixed("cloud", dict(&[("k", Value::from(1i64))]));
+        let l2 = Fixed("orchestrator", dict(&[("k", Value::from(2i64))]));
+        let l3 = Fixed("tenancy", dict(&[("k", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 4] = [&l0, &l1, &l2, &l3];
+        let contest = contest_at(&layers, &["k"]).expect("four touchers yield Some");
+        assert_eq!(contest.silenced(), contest.overridden.as_slice());
+    }
+
+    #[test]
+    fn path_contest_silenced_root_specialization_matches_silenced_at_root() {
+        // Root specialization: contest_at at &[] projects the
+        // whole-layer touchers partition, and silenced() at that
+        // altitude equals silenced_at(&[]) modulo owned/borrowed. Silent
+        // (empty) layers between contributors are filtered by both
+        // sides, so an empty layer inserted between two non-empty
+        // layers does not perturb the losers list.
+        let coarse = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+        let middle = Fixed("cloud", dict(&[("c", Value::from(3i64))]));
+        let specific = Fixed("tenancy", dict(&[("b", Value::from(2i64))]));
+        let layers: [&dyn DiscoveryLayer; 4] = [&coarse, &silent, &middle, &specific];
+        let contest = contest_at(&layers, &[]).expect("root has touchers");
+        assert_eq!(contest.silenced(), &["platform", "cloud"]);
+        assert_eq!(contest.silenced().to_vec(), silenced_at(&layers, &[]));
     }
 
     /// Test-side clone helper — the `Fixed` layer is deliberately
