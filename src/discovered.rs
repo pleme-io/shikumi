@@ -461,6 +461,24 @@ impl LayerAttribution {
     /// leaf yields that leaf plus every descendant; a `prefix` that
     /// names no subtree yields the empty iterator.
     ///
+    /// The concrete return type is [`LayerAttributionSubtreeIter`], a
+    /// thin newtype around
+    /// [`std::collections::btree_map::Range<'a, Vec<String>, &'static str>`]
+    /// plus the `prefix` reborrow and an `exhausted` latch. Naming the
+    /// return type at the API boundary (rather than
+    /// `impl Iterator<Item = ...> + Clone + 'a`) exposes the
+    /// [`std::iter::FusedIterator`] impl the substrate structurally
+    /// carries and gives callers a spellable type — a diagnostic
+    /// renderer storing the handle in a struct field or returning it
+    /// up through its own API no longer smuggles an unnameable
+    /// [`impl Trait`][impl-trait] across every seam. The
+    /// [`Self::iter`] sweep to [`LayerAttributionIter`] introduced by
+    /// e235366 lands the same lift here, closing the "every
+    /// zero-allocation iterator return on the discovered algebra
+    /// carries a named concrete type at the API boundary" invariant.
+    ///
+    /// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
+    ///
     /// **Cost.** `O(log n + m · path.len())` where `n` is the total
     /// leaf count and `m` is the number of matching leaves — one
     /// [`BTreeMap::range`] seek to the subtree's first entry, then a
@@ -473,46 +491,60 @@ impl LayerAttribution {
     ///
     /// **Contiguity.** In the underlying `BTreeMap<Vec<String>, _>`'s
     /// lex order every entry prefixed by `prefix` occupies a
-    /// contiguous run, and the take-while formulation reads the
-    /// `path_has_prefix` invariant directly rather than computing a
-    /// lex successor of `prefix` — so a prefix-extending sibling
-    /// (e.g. leaf at `["breatheZ"]` when the subtree is `["breathe"]`,
-    /// which lands lex-adjacent but is *not* a descendant) is
-    /// correctly excluded at the boundary. Pinned by
+    /// contiguous run, and the `path_has_prefix` boundary check reads
+    /// the descendant predicate directly rather than computing a lex
+    /// successor of `prefix` — so a prefix-extending sibling (e.g.
+    /// leaf at `["breatheZ"]` when the subtree is `["breathe"]`, which
+    /// lands lex-adjacent but is *not* a descendant) is correctly
+    /// excluded at the boundary. Pinned by
     /// `subtree_iter_stops_at_prefix_extending_sibling_key` in this
     /// module's test cohort.
     ///
     /// # Independent walks
     ///
-    /// The returned iterator is [`Clone`]. The backing
-    /// `BTreeMap::range` is `Clone`, the `take_while` closure captures
-    /// only the `Copy` reborrow `prefix: &'a [String]`, and the `map`
-    /// closure captures nothing — so the compound iterator carries
-    /// `Clone` at zero runtime cost. Callers that need to walk the
-    /// subtree twice (render once, then re-walk to find a positional
-    /// match) clone the handle up front instead of allocating an
-    /// intermediate `Vec` or re-invoking the range seek.
+    /// The returned [`LayerAttributionSubtreeIter`] is [`Clone`]. The
+    /// backing `BTreeMap::range` is [`Clone`], the `prefix` reborrow
+    /// is [`Copy`], and the `exhausted` latch is a `bool` — so the
+    /// compound handle carries [`Clone`] at zero runtime cost.
+    /// Callers that need to walk the subtree twice (render once, then
+    /// re-walk to find a positional match) clone the handle up front
+    /// instead of allocating an intermediate `Vec` or re-invoking the
+    /// range seek.
+    ///
+    /// # Fused exhaustion
+    ///
+    /// The returned iterator is [`std::iter::FusedIterator`]: once the
+    /// prefix boundary check fails (or the underlying [`BTreeMap`]
+    /// range is drained), the `exhausted` latch pins the iterator at
+    /// [`None`] on every subsequent pull. The prior `impl Iterator +
+    /// Clone` return carried the fused invariant through
+    /// [`Iterator::take_while`]'s [`std::iter::FusedIterator`] impl but
+    /// erased it at the API boundary; the concrete-named return
+    /// surfaces it directly so composite consumers relying on the fused
+    /// contract (`.chain`, `.peekable`, `.by_ref`) get the invariant
+    /// spelled at the type-signature altitude.
     ///
     /// # No reverse walk
     ///
     /// The returned iterator is *not* [`DoubleEndedIterator`]: while
     /// the underlying [`BTreeMap`] range yields both ends in
-    /// `O(log n)`, [`Iterator::take_while`] has no back-end — it
-    /// cannot know where the "would-stop" boundary sits without
-    /// walking forward. Callers that need the subtree in reverse
-    /// order [`Iterator::collect`] into an owned [`Vec`] and reverse
-    /// it, or reach for [`Self::subtree`] to materialize the
-    /// restricted attribution whose [`Self::iter`] is
-    /// double-ended.
-    pub fn subtree_iter<'a>(
-        &'a self,
-        prefix: &'a [String],
-    ) -> impl Iterator<Item = (&'a [String], &'static str)> + Clone + 'a {
+    /// `O(log n)`, the prefix-boundary invariant is a forward-only
+    /// stopping condition — walking from the back would need to know
+    /// where the "would-stop" boundary sits without walking forward.
+    /// Callers that need the subtree in reverse order
+    /// [`Iterator::collect`] into an owned [`Vec`] and reverse it, or
+    /// reach for [`Self::subtree`] to materialize the restricted
+    /// attribution whose [`Self::iter`] is double-ended.
+    #[must_use]
+    pub fn subtree_iter<'a>(&'a self, prefix: &'a [String]) -> LayerAttributionSubtreeIter<'a> {
         use std::ops::Bound;
-        self.inner
-            .range::<[String], _>((Bound::Included(prefix), Bound::Unbounded))
-            .take_while(move |(k, _)| path_has_prefix(k, prefix))
-            .map(|(k, l)| (k.as_slice(), *l))
+        LayerAttributionSubtreeIter {
+            inner: self
+                .inner
+                .range::<[String], _>((Bound::Included(prefix), Bound::Unbounded)),
+            prefix,
+            exhausted: false,
+        }
     }
 
     /// Projection: a fresh [`LayerAttribution`] restricted to the
@@ -1807,6 +1839,67 @@ impl<'a> IntoIterator for &'a LayerAttribution {
         self.iter()
     }
 }
+
+/// The concrete return type of [`LayerAttribution::subtree_iter`] — a
+/// thin newtype around
+/// [`std::collections::btree_map::Range<'a, Vec<String>, &'static
+/// str>`][std::collections::btree_map::Range] carrying the `prefix`
+/// reborrow and an `exhausted` latch that pins the iterator at
+/// [`None`] once the boundary check fails.
+///
+/// Impls [`Iterator`] + [`std::iter::FusedIterator`] + [`Clone`] +
+/// [`Debug`][std::fmt::Debug]. Peer to [`LayerAttributionIter`] on
+/// the [`LayerAttribution`] iterator algebra and
+/// [`PathContestContributorsIter`] / [`PathContestSilencedIter`] on
+/// the [`PathContest`] touchers partition — every zero-allocation
+/// iterator return on the discovered substrate now carries a named
+/// concrete type at the API boundary.
+///
+/// Not [`DoubleEndedIterator`]: the prefix-boundary is a forward-only
+/// stopping condition, structurally the same reason
+/// [`Iterator::take_while`] carries no `next_back`. Callers that need
+/// the subtree in reverse order [`Iterator::collect`] into a [`Vec`]
+/// and reverse it, or reach for [`LayerAttribution::subtree`] to
+/// materialize the restricted attribution whose
+/// [`LayerAttribution::iter`] is double-ended.
+///
+/// Not [`ExactSizeIterator`]: the number of matching leaves under
+/// `prefix` is not known without walking the range, unlike the
+/// full-attribution [`LayerAttribution::iter`] whose length equals
+/// [`LayerAttribution::len`] verbatim.
+#[derive(Debug, Clone)]
+pub struct LayerAttributionSubtreeIter<'a> {
+    inner: std::collections::btree_map::Range<'a, Vec<String>, &'static str>,
+    prefix: &'a [String],
+    exhausted: bool,
+}
+
+impl<'a> Iterator for LayerAttributionSubtreeIter<'a> {
+    type Item = (&'a [String], &'static str);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.exhausted {
+            return None;
+        }
+        match self.inner.next() {
+            Some((k, l)) if path_has_prefix(k, self.prefix) => Some((k.as_slice(), *l)),
+            _ => {
+                self.exhausted = true;
+                None
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        if self.exhausted {
+            (0, Some(0))
+        } else {
+            (0, self.inner.size_hint().1)
+        }
+    }
+}
+
+impl std::iter::FusedIterator for LayerAttributionSubtreeIter<'_> {}
 
 /// The result of composing a stack of [`DiscoveryLayer`]s with per-leaf
 /// provenance tracking.
@@ -6691,6 +6784,129 @@ mod tests {
             via_iter_clone.map(|(p, l)| (p.to_vec(), l)).collect();
         assert_eq!(sub_collected, sub_clone_collected);
         assert_eq!(sub_collected, iter_clone_collected);
+    }
+
+    // -------- LayerAttributionSubtreeIter (concrete-named subtree iter) --------
+
+    #[test]
+    fn subtree_iter_named_type_carries_trait_algebra() {
+        // The concrete return type carries the full trait algebra at
+        // the API boundary: `LayerAttributionSubtreeIter<'_>`
+        // implements `Iterator + FusedIterator + Clone + Debug`. The
+        // `is_x` helpers below compile only if the corresponding
+        // trait is implemented — a regression that erases any of the
+        // traits from the concrete type would fail to compile, pinning
+        // the algebra invariant at the type-signature level rather
+        // than at a value-level behaviour check.
+        //
+        // Not asserted: DoubleEndedIterator (prefix boundary is a
+        // forward-only stopping condition, structurally the same
+        // reason take_while carries no next_back) and
+        // ExactSizeIterator (matching-leaf count under `prefix` is
+        // not known without walking the range).
+        fn is_iter<'a, I: Iterator<Item = (&'a [String], &'static str)>>(_: &I) {}
+        fn is_fused<'a, I: std::iter::FusedIterator<Item = (&'a [String], &'static str)>>(_: &I) {}
+        fn is_clone<T: Clone>(_: &T) {}
+        fn is_debug<T: std::fmt::Debug>(_: &T) {}
+
+        let out = subtree_fixture();
+        let prefix: Vec<String> = vec![s("breathe")];
+        let iter: LayerAttributionSubtreeIter<'_> = out.attribution.subtree_iter(&prefix);
+        is_iter(&iter);
+        is_fused(&iter);
+        is_clone(&iter);
+        is_debug(&iter);
+    }
+
+    #[test]
+    fn subtree_iter_is_fused_past_exhaustion() {
+        // `LayerAttributionSubtreeIter` is `FusedIterator` — every
+        // call past exhaustion continues to return `None`. The
+        // `exhausted` latch pins the iterator at `None` once the
+        // prefix boundary check fails (or the underlying range
+        // drains), even if the underlying `BTreeMap::range` still
+        // has non-descendant entries lex-after the subtree. The
+        // prior `impl Iterator + Clone` return carried the fused
+        // invariant through `take_while`'s FusedIterator impl but
+        // erased it at the API boundary; the concrete-named return
+        // surfaces it directly.
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        let mut iter = out.attribution.subtree_iter(&prefix);
+        // Drain the two-leaf breathe.* subtree.
+        while iter.next().is_some() {}
+        // Fused invariant: further pulls continue to return `None`
+        // — no panic, no phantom re-yield of the lex-adjacent
+        // non-descendant siblings the underlying range would still
+        // deliver.
+        for _ in 0..4 {
+            assert!(iter.next().is_none(), "fused past forward exhaustion");
+        }
+    }
+
+    #[test]
+    fn subtree_iter_stays_fused_across_absent_prefix() {
+        // A prefix naming no subtree yields the empty iterator on the
+        // first pull; the fused invariant then pins every subsequent
+        // pull at `None`. The `exhausted` latch trips at the boundary
+        // check — the first `inner.next()` returns an entry whose
+        // path does not descend from `prefix`, so the iterator
+        // switches to permanent `None` without emitting anything.
+        let out = subtree_fixture();
+        let absent = vec![s("no_such_key")];
+        let mut iter = out.attribution.subtree_iter(&absent);
+        assert!(iter.next().is_none(), "absent prefix yields empty");
+        for _ in 0..4 {
+            assert!(iter.next().is_none(), "fused past empty");
+        }
+    }
+
+    #[test]
+    fn subtree_iter_debug_formats() {
+        // `Debug` impl on the concrete type formats the handle
+        // without panicking — the derive on the struct forwards to
+        // `BTreeMap::Range`'s Debug (stable since Rust 1.17) and
+        // includes the `prefix` reborrow plus the `exhausted` latch.
+        // The prior `impl Trait` return could not be formatted at
+        // all — a diagnostic renderer wanting to log the handle had
+        // to reach for `.collect()` and format the Vec.
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        let iter = out.attribution.subtree_iter(&prefix);
+        let s_fmt = format!("{iter:?}");
+        assert!(
+            s_fmt.contains("LayerAttributionSubtreeIter"),
+            "Debug output names the type: {s_fmt}",
+        );
+    }
+
+    #[test]
+    fn subtree_iter_named_type_binds_as_struct_field() {
+        // The concrete return type is spellable — a diagnostic
+        // renderer can store the handle in a struct field for later
+        // resumption instead of smuggling an unnameable `impl Trait`
+        // through every seam. The prior `impl Iterator + Clone`
+        // return could only be held as a generic (`fn foo<I:
+        // Iterator<Item = ...>>`) or boxed (`Box<dyn Iterator<Item =
+        // ...>>`), both of which pay ergonomic or heap overhead.
+        struct Cursor<'a> {
+            iter: LayerAttributionSubtreeIter<'a>,
+        }
+        impl<'a> Cursor<'a> {
+            fn advance(&mut self) -> Option<(&'a [String], &'static str)> {
+                self.iter.next()
+            }
+        }
+
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        let mut cursor = Cursor {
+            iter: out.attribution.subtree_iter(&prefix),
+        };
+        // Two live leaves under breathe.*.
+        assert!(cursor.advance().is_some(), "first entry present");
+        assert!(cursor.advance().is_some(), "second entry present");
+        assert!(cursor.advance().is_none(), "subtree exhausted");
     }
 
     // -------- LayerAttribution::subtree_surviving_layer_names --------
