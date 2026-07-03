@@ -107,7 +107,54 @@ pub trait ClosedAxis: Copy + Eq + Hash + 'static {
 /// cube-coverage loops, dashboard initializers, attestation manifest
 /// builders). Generic in the axis type so the helper is inherited
 /// uniformly across the closed-axis discipline.
-pub fn axis_iter<A: ClosedAxis>() -> impl Iterator<Item = A> {
+///
+/// # Reverse walk
+///
+/// The returned iterator is [`DoubleEndedIterator`] — the backing
+/// expression `A::ALL.iter().copied()` is
+/// [`std::iter::Copied`]`<`[`std::slice::Iter`]`<'static, A>>`, and
+/// [`std::slice::Iter`] is [`DoubleEndedIterator`] while
+/// [`std::iter::Copied`] preserves the trait when the underlying
+/// iterator carries it and the item type is [`Copy`] (the
+/// [`ClosedAxis`] super-trait pins [`Copy`], so the preservation
+/// bound is always satisfied). Consumers rendering the axis
+/// specific→coarse (last-declared cell first, matching a
+/// reverse-declaration-order attestation manifest emitter or a
+/// dashboard laying out axis cells right-to-left) reach for
+/// `axis_iter::<A>().rev()` directly without a
+/// `.collect::<Vec<_>>().into_iter().rev()` roundtrip that pays an
+/// axis-cardinality-length [`Vec`] allocation.
+///
+/// # Length at the type level
+///
+/// The returned iterator is [`ExactSizeIterator`] — the backing
+/// [`std::slice::Iter`] is [`ExactSizeIterator`] and
+/// [`std::iter::Copied`] preserves the trait. Consumers reaching
+/// [`ExactSizeIterator::len`] on `axis_iter::<A>()` get exactly
+/// [`axis_cardinality::<A>()`][axis_cardinality] at the type level —
+/// the two helpers agree by construction on every implementor
+/// (the trait-uniform
+/// [`tests::axis_iter_len_matches_axis_cardinality_for_every_closed_axis_implementor`]
+/// pins the identity across the full closed-axis implementor set).
+/// Downstream consumers pre-sizing a `Vec::with_capacity(_)` or a
+/// dense bitset reach the length through the iterator handle without
+/// a separate call to `axis_cardinality::<A>()`.
+///
+/// # Independent walks
+///
+/// The returned iterator is [`Clone`] — the backing
+/// [`std::slice::Iter`] is [`Clone`] and [`std::iter::Copied`]
+/// preserves the trait when the underlying iterator is [`Clone`].
+/// Callers that need two independent walks over the axis (render
+/// once, then re-walk to find a positional match on the axis, or
+/// zip against a per-cell projection) clone the handle up front
+/// instead of re-invoking `axis_iter::<A>()` at every walk (the
+/// re-invocation form works and is zero-cost, but the clone form
+/// composes cleanly inside a generic pipeline stage that only sees
+/// the iterator handle, not the free-function entry point).
+#[must_use]
+pub fn axis_iter<A: ClosedAxis>()
+-> impl DoubleEndedIterator<Item = A> + ExactSizeIterator + std::iter::FusedIterator + Clone {
     A::ALL.iter().copied()
 }
 
@@ -11855,6 +11902,91 @@ mod tests {
         }
     }
 
+    fn assert_axis_iter_rev_reverses_forward_walk<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug + PartialEq,
+    {
+        // The [`DoubleEndedIterator`] contract on the sharpened
+        // [`axis_iter`] surface: collecting through `.rev()` and
+        // reversing the result recovers the forward pair sequence
+        // pointwise. Pins that the sharpened return type restores the
+        // reverse-walk capability the prior bare-`impl Iterator` erased
+        // — a consumer rendering the axis specific→coarse
+        // (last-declared cell first) no longer needs a
+        // `.collect::<Vec<_>>().into_iter().rev()` roundtrip that pays
+        // an axis-cardinality-length `Vec` allocation. The trait
+        // preservation chain is `Copied<slice::Iter<'static, A>>` —
+        // `slice::Iter` is `DoubleEndedIterator`, and `Copied`
+        // preserves the trait when the item is `Copy` (which the
+        // `ClosedAxis` super-trait pins).
+        let forward: Vec<A> = axis_iter::<A>().collect();
+        let mut reversed: Vec<A> = axis_iter::<A>().rev().collect();
+        reversed.reverse();
+        assert_eq!(
+            forward,
+            reversed,
+            "axis_iter().rev() must reverse the forward walk on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_axis_iter_len_matches_axis_cardinality<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The [`ExactSizeIterator`] contract on the sharpened
+        // [`axis_iter`] surface: `.len()` on the iterator handle
+        // agrees with [`axis_cardinality::<A>()`] and with
+        // `<A as ClosedAxis>::ALL.len()` — the three witnesses of the
+        // axis cardinality land at one value. Pins that the sharpened
+        // return type restores the length-at-the-type-level capability
+        // the prior bare-`impl Iterator` erased — a consumer
+        // pre-sizing a `Vec::with_capacity(_)` or a dense bitset reaches
+        // the length through the iterator handle without a separate
+        // call to `axis_cardinality::<A>()`. The trait preservation
+        // chain is `Copied<slice::Iter<'static, A>>` — `slice::Iter`
+        // is `ExactSizeIterator`, and `Copied` preserves the trait.
+        assert_eq!(
+            axis_iter::<A>().len(),
+            axis_cardinality::<A>(),
+            "axis_iter().len() must equal axis_cardinality on axis {}",
+            std::any::type_name::<A>(),
+        );
+        assert_eq!(
+            axis_iter::<A>().len(),
+            <A as ClosedAxis>::ALL.len(),
+            "axis_iter().len() must equal ClosedAxis::ALL length on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_axis_iter_clone_yields_independent_walks<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug + PartialEq,
+    {
+        // The [`Clone`] contract on the sharpened [`axis_iter`]
+        // surface: cloning the iterator handle gives two independent
+        // walks over the axis, whose pointwise-`collect` results agree.
+        // Pins that the sharpened return type restores the clone
+        // capability the prior bare-`impl Iterator` erased — a two-pass
+        // consumer (render once, re-walk to find a positional match)
+        // clones the handle up front instead of re-invoking
+        // `axis_iter::<A>()` at every walk. The trait preservation
+        // chain is `Copied<slice::Iter<'static, A>>` — `slice::Iter`
+        // is `Clone`, and `Copied` preserves the trait when the
+        // underlying iterator is `Clone`.
+        let first = axis_iter::<A>();
+        let second = first.clone();
+        let via_first: Vec<A> = first.collect();
+        let via_second: Vec<A> = second.collect();
+        assert_eq!(
+            via_first,
+            via_second,
+            "axis_iter().clone() must yield equal walks on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
     fn assert_axis_cardinality_matches_trait_all<A>(expected: usize)
     where
         A: ClosedAxis + std::fmt::Debug,
@@ -11993,6 +12125,36 @@ mod tests {
             };
         }
         for_each_product_cube!(check);
+    }
+
+    #[test]
+    fn axis_iter_rev_reverses_forward_walk_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_axis_iter_rev_reverses_forward_walk::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_iter_len_matches_axis_cardinality_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_axis_iter_len_matches_axis_cardinality::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_iter_clone_yields_independent_walks_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_axis_iter_clone_yields_independent_walks::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
     }
 
     // ---- axis_cardinality pins today's variant / cell counts ----
