@@ -2196,10 +2196,55 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     /// many cells are nonzero — the iteration covers the full axis,
     /// not just observed cells. The ordering agrees with
     /// [`axis_iter::<A>()`][axis_iter] pointwise.
-    pub fn iter(&self) -> impl Iterator<Item = (A, usize)> + '_ {
-        axis_iter::<A>()
-            .enumerate()
-            .map(|(i, v)| (v, self.counts[i]))
+    ///
+    /// Returns the concrete [`AxisHistogramIter`] type so the iterator
+    /// nameably implements [`Iterator`], [`ExactSizeIterator`],
+    /// [`std::iter::FusedIterator`], [`DoubleEndedIterator`], and
+    /// [`Clone`] — the same trait surface as the [`IntoIterator for
+    /// &AxisHistogram<A>`][IntoIterator] impl (this method is its
+    /// idiom-peer at the inherent-method altitude) and as
+    /// [`Self::iter_mut`] plus [`Clone`] (mutable iterators cannot be
+    /// cloned without violating aliasing — the canonical stdlib
+    /// convention). Peer to the named concrete borrowing iterators
+    /// every stdlib collection exposes ([`slice::iter`],
+    /// [`Vec::iter`], [`std::collections::HashMap::iter`],
+    /// [`std::collections::BTreeMap::iter`]).
+    ///
+    /// # Reverse walk
+    ///
+    /// The returned iterator is [`DoubleEndedIterator`] — the
+    /// underlying [`std::slice::Iter`] over the counts vector yields
+    /// both ends in `O(1)`, and `.enumerate()` preserves the trait.
+    /// Consumers rendering the pair sequence specific→coarse
+    /// (last-declared axis cell first) reach for `iter().rev()`
+    /// directly, versus the prior state where reversal forced a full
+    /// `.collect::<Vec<_>>().into_iter().rev()` chain that paid the
+    /// `axis_cardinality`-length [`Vec`] allocation the zero-alloc
+    /// iterator was introduced to avoid.
+    ///
+    /// # Exact length
+    ///
+    /// The returned iterator is [`ExactSizeIterator`] — the length is
+    /// exactly [`axis_cardinality::<A>()`][axis_cardinality], pinned
+    /// at the type level. [`ExactSizeIterator::len`] reads off the
+    /// cardinality without consuming the iterator, peer to the
+    /// [`Self::iter_mut`] length surface.
+    ///
+    /// # Independent walks
+    ///
+    /// The returned iterator is [`Clone`] — the underlying
+    /// [`std::slice::Iter`] is [`Clone`] (a slice iterator wraps two
+    /// raw pointers, both `Copy`), and `.enumerate()` preserves the
+    /// trait. Callers that need two independent walks over the same
+    /// substrate-owned counts vector (render once, then re-walk to
+    /// find a positional match) clone the handle up front instead of
+    /// materializing an intermediate `Vec`.
+    #[must_use]
+    pub fn iter(&self) -> AxisHistogramIter<'_, A> {
+        AxisHistogramIter {
+            counts: self.counts.iter().enumerate(),
+            _marker: std::marker::PhantomData,
+        }
     }
 
     /// Iterate every `(axis-value, &mut count)` pair in declaration order
@@ -14731,6 +14776,112 @@ mod tests {
         );
     }
 
+    fn assert_iter_length_equals_axis_cardinality<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The [`ExactSizeIterator`] contract on the borrowing surface:
+        // the iterator's `len()` reads off exactly
+        // [`axis_cardinality::<A>()`] before any element is consumed
+        // (the full-axis scan, not just the support). Reachable at the
+        // named `iter()` method altitude by the sharpened return type —
+        // the prior bare-`impl Iterator + '_` erased [`ExactSizeIterator`]
+        // at the API boundary; the sharpening restores it.
+        let hist = AxisHistogram::<A>::empty();
+        let len = hist.iter().len();
+        assert_eq!(
+            len,
+            axis_cardinality::<A>(),
+            "iter().len() must equal axis_cardinality on axis {}",
+            std::any::type_name::<A>(),
+        );
+        let collected: Vec<(A, usize)> = hist.iter().collect();
+        assert_eq!(
+            collected.len(),
+            axis_cardinality::<A>(),
+            "iter must yield axis_cardinality pairs on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_iter_rev_reverses_forward_walk<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The [`DoubleEndedIterator`] contract on the borrowing surface:
+        // collecting through `.rev()` and reversing the result recovers
+        // the forward pair sequence pointwise. Pins that the sharpened
+        // return type restores the reverse-walk capability the prior
+        // bare-`impl Iterator + '_` erased — a consumer rendering the
+        // pair sequence specific→coarse (last-declared axis cell first)
+        // no longer needs a `.collect::<Vec<_>>().into_iter().rev()`
+        // roundtrip that pays an axis_cardinality-length `Vec`
+        // allocation. Fixture observes every cell twice so the counts
+        // vary and the reverse-walk carries non-trivial pair identity.
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let forward: Vec<(A, usize)> = hist.iter().collect();
+        let mut reversed: Vec<(A, usize)> = hist.iter().rev().collect();
+        reversed.reverse();
+        assert_eq!(
+            forward,
+            reversed,
+            "iter().rev() must reverse the forward walk on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_iter_clone_yields_independent_walks<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The [`Clone`] contract on the borrowing surface: cloning the
+        // iterator handle gives two independent walks over the same
+        // substrate-owned counts vector, whose pointwise-`collect`
+        // results agree. Pins that the sharpened return type restores
+        // the clone capability the prior bare-`impl Iterator + '_`
+        // erased — a two-pass consumer (render once, re-walk to find a
+        // positional match) no longer materializes a `Vec` twice or
+        // holds the owned `Vec` across both walks. Fixture observes
+        // every cell twice so the pair sequence carries non-trivial
+        // counts.
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let first = hist.iter();
+        let second = first.clone();
+        let via_first: Vec<(A, usize)> = first.collect();
+        let via_second: Vec<(A, usize)> = second.collect();
+        assert_eq!(
+            via_first,
+            via_second,
+            "iter().clone() must yield equal walks on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_iter_equals_borrowed_into_iter<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // The idiom-peer contract between the named `iter()` inherent
+        // method and the [`IntoIterator for &AxisHistogram<A>`]
+        // borrowed-collection surface: `hist.iter().collect::<Vec<_>>()`
+        // is pointwise-equal to `(&hist).into_iter().collect::<Vec<_>>()`
+        // on every histogram. Pinned by the sharpened `iter()` return
+        // type (both now return the same concrete
+        // [`AxisHistogramIter`]); the two alternate spellings of the
+        // borrowed pair-iterator surface agree by construction. Peer to
+        // the same law on the mutable surface pinned by
+        // [`assert_into_iter_mut_equals_iter_mut`].
+        let hist: AxisHistogram<A> = axis_iter::<A>().chain(axis_iter::<A>()).collect();
+        let via_iter: Vec<(A, usize)> = hist.iter().collect();
+        let via_into_iter: Vec<(A, usize)> = (&hist).into_iter().collect();
+        assert_eq!(
+            via_iter,
+            via_into_iter,
+            "iter must equal (&hist).into_iter() pointwise on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
     fn assert_total_equals_input_length<A>()
     where
         A: ClosedAxis + std::fmt::Debug,
@@ -14858,6 +15009,46 @@ mod tests {
         macro_rules! check {
             ($ty:ident) => {
                 assert_iter_matches_axis_iter_pointwise::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_iter_length_equals_axis_cardinality_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_iter_length_equals_axis_cardinality::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_iter_rev_reverses_forward_walk_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_iter_rev_reverses_forward_walk::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_iter_clone_yields_independent_walks_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_iter_clone_yields_independent_walks::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_iter_equals_borrowed_into_iter_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_iter_equals_borrowed_into_iter::<$ty>();
             };
         }
         for_each_closed_axis_implementor!(check);
