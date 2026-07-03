@@ -4579,21 +4579,45 @@ impl PathContest {
     /// [`Self::overridden`] slice, versus [`Self::silenced`]`.to_vec()`
     /// then reusing the owned [`Vec`] for the second walk.
     ///
+    /// # Length in constant time and fused exhaustion
+    ///
+    /// The returned [`PathContestSilencedIter`] is
+    /// [`ExactSizeIterator`], so `.len()` returns `overridden.len()` in
+    /// `O(1)` — the trait-level parity of [`Self::silenced_count`] on
+    /// the iterator surface. Callers that want the losers count without
+    /// walking the stream write `.silenced_iter().len()` directly
+    /// instead of `.silenced_iter().count()` (which walks) or the
+    /// method-altitude peer [`Self::silenced_count`]:
+    ///
+    /// ```text
+    /// silenced_iter().len()                    ==  silenced_count()
+    /// silenced_iter().size_hint()              ==  (n, Some(n))
+    ///                                           where n == silenced_count()
+    /// ```
+    ///
+    /// The iterator is also [`std::iter::FusedIterator`]: once
+    /// exhausted, every further `.next()` / `.next_back()` returns
+    /// [`None`] — the invariant every closed-form iterator carries at
+    /// the trait surface, matching the pair on
+    /// [`Self::contributors_iter`].
+    ///
     /// # Cost
     ///
-    /// `O(1)` per element, zero heap allocation. A single
-    /// [`std::iter::Copied`] adapter over the [`Self::overridden`] slice
-    /// — stack-only. Strictly cheaper than [`silenced_at`] (which walks
-    /// every layer again and allocates a fresh [`Vec`]); strictly cheaper
-    /// than [`Self::silenced`]`.to_vec()` for iterate-only consumers
+    /// `O(1)` per element, zero heap allocation. The concrete return
+    /// type ([`PathContestSilencedIter`]) is a thin newtype over a
+    /// [`std::iter::Copied`] adapter of [`Self::overridden`] — a
+    /// single stack-allocated slice-iterator handle. Strictly cheaper
+    /// than [`silenced_at`] (which walks every layer again and
+    /// allocates a fresh [`Vec`]); strictly cheaper than
+    /// [`Self::silenced`]`.to_vec()` for iterate-only consumers
     /// (`.silenced_iter()` skips the owned-`Vec` materialization);
     /// pointwise equal to [`Self::silenced`]`.iter().copied()` on the
     /// substrate side.
     #[must_use]
-    pub fn silenced_iter(
-        &self,
-    ) -> impl DoubleEndedIterator<Item = &'static str> + ExactSizeIterator + Clone + '_ {
-        self.overridden.iter().copied()
+    pub fn silenced_iter(&self) -> PathContestSilencedIter<'_> {
+        PathContestSilencedIter {
+            inner: self.overridden.iter().copied(),
+        }
     }
 
     /// The **coarsest** toucher — the first-in-application-order layer
@@ -4899,6 +4923,81 @@ impl ExactSizeIterator for PathContestContributorsIter<'_> {
 }
 
 impl std::iter::FusedIterator for PathContestContributorsIter<'_> {}
+
+/// Zero-allocation losers stream — the ordered names of every layer
+/// whose opinion at the queried path was overridden by the decider,
+/// coarse→specific, yielded as `&'static str`. The concrete return
+/// type of [`PathContest::silenced_iter`] and the losers-only sibling
+/// of [`PathContestContributorsIter`]'s winners+losers stream.
+///
+/// Naming the return type at the API boundary (rather than
+/// `impl Trait + ...`) closes the naming asymmetry the pair
+/// (`contributors_iter`, `silenced_iter`) previously carried at the
+/// concrete-type level — `contributors_iter` names
+/// [`PathContestContributorsIter`], and after this lift
+/// `silenced_iter` names `PathContestSilencedIter` — and additionally
+/// exposes the [`std::iter::FusedIterator`] impl the substrate
+/// (`Copied<slice::Iter<'a, &'static str>>`) structurally carries but
+/// the prior `impl DoubleEndedIterator + ExactSizeIterator + Clone`
+/// return did not surface. The pair
+/// (`PathContestContributorsIter`, `PathContestSilencedIter`) now
+/// reads structurally symmetric both at the type-signature level
+/// and at the named-type level: both derive [`Debug`] + [`Clone`],
+/// both name `Iterator + DoubleEndedIterator + ExactSizeIterator +
+/// FusedIterator` on the `&'static str` item.
+///
+/// Follows the same idiom as
+/// [`AxisHistogramIter`][crate::AxisHistogramIter] /
+/// [`AxisHistogramIntoIter`][crate::AxisHistogramIntoIter] on the
+/// cube algebra and [`PathContestContributorsIter`] on the touchers
+/// axis — every zero-allocation iterator return on the discovered
+/// substrate now carries a named concrete type at the API boundary.
+#[derive(Debug, Clone)]
+pub struct PathContestSilencedIter<'a> {
+    inner: std::iter::Copied<std::slice::Iter<'a, &'static str>>,
+}
+
+impl Iterator for PathContestSilencedIter<'_> {
+    type Item = &'static str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+
+    fn count(self) -> usize {
+        self.inner.count()
+    }
+
+    fn last(self) -> Option<Self::Item> {
+        self.inner.last()
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.inner.nth(n)
+    }
+}
+
+impl DoubleEndedIterator for PathContestSilencedIter<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        self.inner.nth_back(n)
+    }
+}
+
+impl ExactSizeIterator for PathContestSilencedIter<'_> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for PathContestSilencedIter<'_> {}
 
 /// The full **per-path override contest** at `path` — decider (winner)
 /// and losers, fused into one [`PathContest`]. `None` iff no layer
@@ -11890,6 +11989,177 @@ mod tests {
         let via_b: Vec<&'static str> = b.collect();
         assert_eq!(via_a, via_b);
         assert_eq!(via_a, contest.silenced().to_vec());
+    }
+
+    // -------- PathContest::silenced_iter — named concrete type sharpening --------
+
+    #[test]
+    fn path_contest_silenced_iter_len_matches_silenced_count_across_fixture() {
+        // ExactSizeIterator .len() reports the losers cardinality in
+        // O(1) — the trait-level parity of PathContest::silenced_count
+        // on the iterator surface. Fail-before-pass-after: before the
+        // sharpening, .len() did not resolve on the impl-Trait return
+        // even though the underlying Copied<slice::Iter> carries the
+        // impl. Now it does, and the identity holds across the {0,
+        // 1, ≥ 2} silenced-cardinality partition of the fixture.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        for layers in [
+            vec![sole.as_ref()],
+            vec![pair_coarse.as_ref(), pair_specific.as_ref()],
+            vec![sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()],
+        ] {
+            let contest = contest_at(&layers, &["k"]).expect("k is touched");
+            let iter = contest.silenced_iter();
+            let via_len = iter.len();
+            assert_eq!(via_len, contest.silenced_count());
+            assert_eq!(via_len, contest.silenced().len());
+        }
+    }
+
+    #[test]
+    fn path_contest_silenced_iter_size_hint_reports_exact_length() {
+        // The size_hint (lower, Some(upper)) coincides at the exact
+        // length — the ExactSizeIterator invariant lifted through the
+        // named wrapper. Pinned across the same {0, 1, ≥ 2} silenced-
+        // cardinality partition; the `(n, Some(n))` shape guarantees
+        // callers relying on size_hint for capacity presizing pay
+        // zero unused-capacity waste on the losers stream.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        for layers in [
+            vec![sole.as_ref()],
+            vec![pair_coarse.as_ref(), pair_specific.as_ref()],
+            vec![sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()],
+        ] {
+            let contest = contest_at(&layers, &["k"]).expect("k is touched");
+            let iter = contest.silenced_iter();
+            let n = contest.silenced_count();
+            assert_eq!(iter.size_hint(), (n, Some(n)));
+        }
+    }
+
+    #[test]
+    fn path_contest_silenced_iter_len_decreases_by_one_per_advance() {
+        // Advancing either end of the DoubleEndedIterator drops .len()
+        // by exactly one until exhaustion, then holds at zero. Pins
+        // the ExactSize + DoubleEnded interaction on the losers axis
+        // symmetrically with the contributors_iter suite.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        let layers: [&dyn DiscoveryLayer; 3] =
+            [sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()];
+        let contest = contest_at(&layers, &["k"]).expect("k is touched");
+        let n = contest.silenced_count();
+        assert!(n >= 2, "fixture chosen so silenced_count() >= 2");
+
+        // Forward-end drain.
+        let mut it = contest.silenced_iter();
+        let mut remaining = n;
+        assert_eq!(it.len(), remaining);
+        while it.next().is_some() {
+            remaining -= 1;
+            assert_eq!(it.len(), remaining);
+        }
+        assert_eq!(remaining, 0);
+        assert_eq!(it.len(), 0);
+
+        // Back-end drain.
+        let mut it = contest.silenced_iter();
+        let mut remaining = n;
+        while it.next_back().is_some() {
+            remaining -= 1;
+            assert_eq!(it.len(), remaining);
+        }
+        assert_eq!(remaining, 0);
+        assert_eq!(it.len(), 0);
+    }
+
+    #[test]
+    fn path_contest_silenced_iter_is_fused_past_exhaustion() {
+        // FusedIterator invariant: once exhausted, further .next() and
+        // .next_back() calls stay None on both ends. The `impl
+        // Trait` return did not carry FusedIterator to callers even
+        // though the underlying Copied<slice::Iter> is fused; the
+        // named concrete type surfaces the impl at the type-signature
+        // level and this test pins the runtime invariant.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        let layers: [&dyn DiscoveryLayer; 3] =
+            [sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()];
+        let contest = contest_at(&layers, &["k"]).expect("k is touched");
+
+        let mut it = contest.silenced_iter();
+        while it.next().is_some() {}
+        for _ in 0..4 {
+            assert_eq!(it.next(), None);
+            assert_eq!(it.next_back(), None);
+        }
+
+        let mut it = contest.silenced_iter();
+        while it.next_back().is_some() {}
+        for _ in 0..4 {
+            assert_eq!(it.next(), None);
+            assert_eq!(it.next_back(), None);
+        }
+    }
+
+    #[test]
+    fn path_contest_silenced_iter_named_type_carries_trait_algebra() {
+        // The concrete return type carries the full trait algebra at
+        // the API boundary: `PathContestSilencedIter<'_>` implements
+        // `Iterator + DoubleEndedIterator + ExactSizeIterator +
+        // FusedIterator + Clone + Debug`. The `is_x` helpers below
+        // compile only if the corresponding trait is implemented — a
+        // regression that erases any of the traits from the concrete
+        // type would fail to compile, pinning the algebra invariant
+        // at the type-signature level rather than at a value-level
+        // behaviour check. Structurally symmetric with the analogous
+        // pin for `PathContestContributorsIter`, closing the type-
+        // algebra parity on the touchers partition.
+        fn is_iter<I: Iterator<Item = &'static str>>(_: &I) {}
+        fn is_double_ended<I: DoubleEndedIterator<Item = &'static str>>(_: &I) {}
+        fn is_exact_size<I: ExactSizeIterator<Item = &'static str>>(_: &I) {}
+        fn is_fused<I: std::iter::FusedIterator<Item = &'static str>>(_: &I) {}
+        fn is_clone<T: Clone>(_: &T) {}
+        fn is_debug<T: std::fmt::Debug>(_: &T) {}
+
+        let contest = PathContest {
+            decider: "d",
+            overridden: vec!["o0", "o1"],
+        };
+        let iter: PathContestSilencedIter<'_> = contest.silenced_iter();
+        is_iter(&iter);
+        is_double_ended(&iter);
+        is_exact_size(&iter);
+        is_fused(&iter);
+        is_clone(&iter);
+        is_debug(&iter);
+    }
+
+    #[test]
+    fn path_contest_silenced_iter_nth_and_nth_back_walk_indices() {
+        // .nth(k) and .nth_back(k) forward through to the underlying
+        // Copied<slice::Iter> — pinned against direct slice indexing
+        // to guarantee the sharpened wrapper preserves the substrate
+        // semantics rather than re-implementing them.
+        let contest = PathContest {
+            decider: "d",
+            overridden: vec!["o0", "o1", "o2", "o3"],
+        };
+        let expected = contest.silenced().to_vec();
+        let n = expected.len();
+
+        for k in 0..n {
+            let mut it = contest.silenced_iter();
+            assert_eq!(it.nth(k), Some(expected[k]));
+        }
+        // Past-the-end nth on a fresh iterator is None.
+        let mut it = contest.silenced_iter();
+        assert_eq!(it.nth(n), None);
+
+        for k in 0..n {
+            let mut it = contest.silenced_iter();
+            assert_eq!(it.nth_back(k), Some(expected[n - 1 - k]));
+        }
+        let mut it = contest.silenced_iter();
+        assert_eq!(it.nth_back(n), None);
     }
 
     // -------- PathContest::coarsest --------
