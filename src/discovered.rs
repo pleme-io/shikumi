@@ -2529,6 +2529,164 @@ pub fn has_multiple_contributors(layers: &[&dyn DiscoveryLayer]) -> bool {
         .is_some()
 }
 
+/// True iff **at least two declared layers** returned an empty
+/// [`DiscoveryLayer::discover`] dict — the whole-layer "≥ 2" boolean
+/// predicate on the *silent* axis.
+///
+/// The **silent-axis dual of [`has_multiple_contributors`]**: that
+/// primitive folds the "two or more contributors" bit over the
+/// `!discover().is_empty()` predicate with an [`Iterator::nth`]
+/// short-circuit at the second hit; this primitive folds the "two or
+/// more silent layers" bit over the inverted `discover().is_empty()`
+/// predicate with the same [`Iterator::nth`] short-circuit — the exact
+/// walk [`silent_layer_count`] would perform if its [`Iterator::count`]
+/// fold were replaced by [`Iterator::nth(1).is_some()`] on the losing
+/// side of the whole-layer partition.
+///
+/// The **boolean-cardinality-threshold "≥ 2" endpoint** of the
+/// whole-layer silent axis: [`has_silent_layer`] closes the "≥ 1"
+/// endpoint of the same axis (with an [`Iterator::any`] short-circuit
+/// at the first silent layer); this primitive closes the "≥ 2"
+/// endpoint (with an [`Iterator::nth`] short-circuit at the second
+/// silent layer). Together the pair partitions the exact-cardinality
+/// trichotomy on the whole-layer silent axis:
+///
+/// ```text
+/// silent_layer_count(layers) == 0   ⇔  !has_silent_layer(layers)
+/// silent_layer_count(layers) == 1   ⇔   has_silent_layer(layers) && !has_multiple_silent_layers(layers)
+/// silent_layer_count(layers) >= 2   ⇔   has_multiple_silent_layers(layers)
+/// ```
+///
+/// the silent-axis mirror of the
+/// `(has_contributor, has_multiple_contributors)` trichotomy on the
+/// contributors axis, with the monotonic chain
+/// `has_multiple_silent_layers ⇒ has_silent_layer` shifting the
+/// predicate axis by exactly one hit.
+///
+/// The **3×3 truth table** over
+/// `(has_multiple_contributors, has_multiple_silent_layers)` closes
+/// the whole-layer "≥ 2" cardinality-threshold partition in
+/// short-circuiting boolean arithmetic on both partition subsets at
+/// once — the "≥ 2" analog of the
+/// `(has_contributor, has_silent_layer)` 2×2 truth table on the "≥ 1"
+/// endpoints. Every reachable state — empty stack, one-contributor,
+/// two-contributor, mixed one-and-one, all-silent — is distinguished
+/// by an ordered-pair of two short-circuiting boolean reads without
+/// folding either partition scalar.
+///
+/// # Identities
+///
+/// The four presence-boundary projections on the whole-layer silent
+/// axis at the "≥ 2" cardinality-threshold collapse onto one
+/// substrate-owned primitive with a **short-circuit forward walk**:
+///
+/// - `has_multiple_silent_layers(layers) == `[`silent_layer_count`]`(layers) >= 2`
+///   (cardinality-threshold identity at "≥ 2")
+/// - `has_multiple_silent_layers(layers) == (`[`silent_layer_names`]`(layers).len() >= 2)`
+///   (ordered-list cardinality-threshold dual on the silent-names axis)
+/// - `has_multiple_silent_layers(layers) == (`[`layer_names`]`(layers).len() >= `[`contributor_count`]`(layers) + 2)`
+///   (partition-complement identity: "≥ 2 silent" iff "declared
+///   denominator exceeds the contributor scalar by at least 2",
+///   holding across the empty stack in pure-scalar arithmetic against
+///   the partition-count law
+///   `contributor_count + silent_layer_count == layer_names.len()`)
+/// - `has_multiple_silent_layers(layers) == (`[`layer_names`]`(layers).len() >= `[`nonempty_layer_dicts`]`(layers).len() + 2)`
+///   (pair-partition-complement identity: the contributor-side
+///   `Vec::len` folded through the same partition-count law at the
+///   "≥ 2" threshold)
+///
+/// The monotonic chain against the "≥ 1" endpoint:
+///
+/// ```text
+/// has_multiple_silent_layers(layers)  =>  has_silent_layer(layers)
+/// !has_silent_layer(layers)           =>  !has_multiple_silent_layers(layers)
+/// ```
+///
+/// The singleton characterization on the exact-cardinality silent axis:
+///
+/// ```text
+/// has_silent_layer(layers) && !has_multiple_silent_layers(layers)
+///     <=>  silent_layer_count(layers) == 1
+/// ```
+///
+/// — the silent-axis mirror of the point-altitude singleton
+/// characterization
+/// `has_contributor(layers) && !has_multiple_contributors(layers)
+///   <=> contributor_count(layers) == 1`.
+///
+/// All four routes are algebraically identical on their shared
+/// boolean output; this primitive is the strictly-cheapest route when
+/// the caller wants only the "≥ 2 silent axes" presence predicate and
+/// does not need the ordered silent-layer names, the exact silent
+/// count, or the contributors-side partition scalar.
+///
+/// # Semantics
+///
+/// The set of silent layers is exactly the [`silent_layer_names`]
+/// projection: every layer whose `discover()` returns an empty
+/// [`Dict`]. Two silent layers is the true-boundary; the
+/// zero-silent-layer and one-silent-layer cases (every declared axis
+/// contributes, or exactly one is silent) are the two false-boundaries,
+/// collapsed under the same `false` return. A `true` return says the
+/// declared axis surface has **more than one undetectable axis** — the
+/// necessary condition for a discovery diagnostic that wants to
+/// distinguish "one axis is unavailable" from "many axes are
+/// unavailable" without folding the silent scalar.
+///
+/// # Cost
+///
+/// Walks layers forward with a **short-circuit on the second silent
+/// layer** — worst-case `O(n)` on the layer count (fewer than two
+/// silent layers, so [`Iterator::nth`] runs the full stack),
+/// best-case `O(2)` (the two coarsest layers are both silent and
+/// short-circuit the walk at the second hit). Zero allocation on the
+/// walker itself. Strictly cheaper than every alternative on the
+/// same axis:
+///
+/// - [`silent_layer_names`]`(layers).len() >= 2` walks every layer
+///   and allocates the full `Vec<&'static str>` of silent names, then
+///   reads the length off the fat pointer and compares — no
+///   short-circuit at any hit.
+/// - [`silent_layer_count`]`(layers) >= 2` walks every layer with
+///   [`Iterator::count`] and reads a scalar comparison off the total —
+///   no short-circuit at the second hit.
+/// - `layer_names(layers).len() >= contributor_count(layers) + 2`
+///   walks every layer twice — once for the declared-name `Vec`
+///   allocation, once for the contributor filter — then reads a
+///   scalar comparison off the two totals.
+///
+/// This primitive short-circuits at the second silent layer *and*
+/// returns the boolean directly without projecting through an owned
+/// name — the [`Iterator::nth`] adapter compiles to a single-branch
+/// forward walk over the same is-empty-discover predicate that
+/// [`silent_layer_count`] folds, only stopped at the second hit.
+///
+/// # HOCON analogue
+///
+/// The substrate-owned counterpart to "did more than one declared
+/// configuration source fail to contribute?" — Lightbend HOCON's
+/// `ConfigFactory.parseResources` silently drops missing sources, so
+/// the answer is not recoverable from a merged `Config` at all.
+/// Figment 0.10's per-value `Tag` names surviving-leaf origins but
+/// exposes no whole-provider "≥ 2 silent sources" bit — a Figment
+/// diagnostic pane that wants to say "many declared providers had
+/// nothing to say" iterates the provider stack by hand, walks each
+/// provider's `data()`, and counts empty results.
+/// `has_multiple_silent_layers` packages that bit as one
+/// substrate-owned primitive over the same is-empty-source predicate
+/// that [`silent_layer_names`] and [`silent_layer_count`] share, with
+/// the short-circuiting `.nth(1).is_some()` walk that matches
+/// [`has_multiple_contributors`]'s presence-axis short-circuit
+/// semantics on the complementary partition subset.
+#[must_use]
+pub fn has_multiple_silent_layers(layers: &[&dyn DiscoveryLayer]) -> bool {
+    layers
+        .iter()
+        .filter(|layer| layer.discover().is_empty())
+        .nth(1)
+        .is_some()
+}
+
 /// True iff `dict` has *some* value along `path` — the layer holds an
 /// opinion about the leaf at `path`. Zero allocation, `O(path.len())`.
 ///
@@ -12212,6 +12370,296 @@ mod tests {
         assert_eq!(
             has_multiple_contributors(&single),
             contributor_count(&single) >= 2,
+        );
+    }
+
+    // -------- has_multiple_silent_layers (root ≥2 boolean predicate on the silent axis) --------
+
+    #[test]
+    fn has_multiple_silent_layers_matches_silent_layer_count_threshold() {
+        // Cardinality-threshold identity at "≥ 2":
+        // has_multiple_silent_layers(layers) == silent_layer_count(layers) >= 2.
+        // Both routes share the is-empty-discover predicate; the
+        // boolean short-circuits at the second silent layer, the
+        // scalar walks the whole stack.
+        let owned = count_contributor_fixture();
+        let layers = as_refs(&owned);
+
+        let via_primitive = has_multiple_silent_layers(&layers);
+        let via_threshold = silent_layer_count(&layers) >= 2;
+        assert_eq!(
+            via_primitive, via_threshold,
+            "has_multiple_silent_layers != silent_layer_count >= 2",
+        );
+        assert!(
+            via_primitive,
+            "the fixture has three silent layers — the ≥ 2 threshold holds",
+        );
+
+        // Threshold identity holds on every zero/one-silent-layer
+        // degenerate stack: the empty stack (count == 0 ⇒ false),
+        // the every-layer-contributes stack (count == 0 ⇒ false),
+        // and the single-silent-layer stack (count == 1 ⇒ false)
+        // all collapse the "≥ 2" bit and the boolean to false.
+        let empty: [&dyn DiscoveryLayer; 0] = [];
+        assert!(!has_multiple_silent_layers(&empty));
+        assert_eq!(
+            has_multiple_silent_layers(&empty),
+            silent_layer_count(&empty) >= 2,
+        );
+
+        let a = Fixed("a", dict(&[("k1", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k2", Value::from(2i64))]));
+        let all_contribute: [&dyn DiscoveryLayer; 3] = [&a, &b, &a];
+        assert!(!has_multiple_silent_layers(&all_contribute));
+        assert_eq!(
+            has_multiple_silent_layers(&all_contribute),
+            silent_layer_count(&all_contribute) >= 2,
+        );
+
+        let silent = Fixed("undetectable", Dict::new());
+        let single: [&dyn DiscoveryLayer; 4] = [&a, &silent, &b, &a];
+        assert!(!has_multiple_silent_layers(&single));
+        assert_eq!(
+            has_multiple_silent_layers(&single),
+            silent_layer_count(&single) >= 2,
+        );
+    }
+
+    #[test]
+    fn has_multiple_silent_layers_matches_silent_names_len_threshold() {
+        // Ordered-list cardinality-threshold dual on the silent axis:
+        // has_multiple_silent_layers(layers) == silent_layer_names(layers).len() >= 2.
+        // The list-length reduction pins the same "≥ 2" boundary
+        // the boolean returns without materializing the name Vec.
+        let owned = count_contributor_fixture();
+        let layers = as_refs(&owned);
+
+        let via_primitive = has_multiple_silent_layers(&layers);
+        let via_names_len = silent_layer_names(&layers).len() >= 2;
+        assert_eq!(
+            via_primitive, via_names_len,
+            "has_multiple_silent_layers != silent_layer_names.len() >= 2",
+        );
+    }
+
+    #[test]
+    fn has_multiple_silent_layers_matches_partition_complement() {
+        // Partition-complement identity against the partition-count law
+        // `contributor_count + silent_layer_count == layer_names.len()`:
+        //   has_multiple_silent_layers(layers)
+        //     == layer_names(layers).len() >= contributor_count(layers) + 2.
+        // Holding across every degenerate stack in pure-scalar arithmetic
+        // against the declared denominator.
+        let owned = count_contributor_fixture();
+        let layers = as_refs(&owned);
+        let via_primitive = has_multiple_silent_layers(&layers);
+        let via_complement = layer_names(&layers).len() >= contributor_count(&layers) + 2;
+        assert_eq!(
+            via_primitive, via_complement,
+            "has_multiple_silent_layers != layer_names.len() >= contributor_count + 2",
+        );
+
+        // Empty stack: both sides false.
+        let empty: [&dyn DiscoveryLayer; 0] = [];
+        assert_eq!(
+            has_multiple_silent_layers(&empty),
+            layer_names(&empty).len() >= contributor_count(&empty) + 2,
+        );
+
+        // All-silent stack: three silent layers, zero contributors,
+        // declared denominator 3, so 3 >= 0 + 2 = true. Silent scalar
+        // is 3 and the bit fires.
+        let silent = Fixed("undetectable", Dict::new());
+        let all_silent: [&dyn DiscoveryLayer; 3] = [&silent, &silent, &silent];
+        assert!(has_multiple_silent_layers(&all_silent));
+        assert_eq!(
+            has_multiple_silent_layers(&all_silent),
+            layer_names(&all_silent).len() >= contributor_count(&all_silent) + 2,
+        );
+
+        // Pair-partition-complement identity through
+        // nonempty_layer_dicts.len(): the (name, dict) pair Vec has
+        // one entry per contributor, so its length is the same
+        // partition scalar as contributor_count; the identity closes
+        // the "≥ 2 silent" threshold at the pair altitude.
+        let via_pair_complement =
+            layer_names(&layers).len() >= nonempty_layer_dicts(&layers).len() + 2;
+        assert_eq!(
+            via_primitive, via_pair_complement,
+            "has_multiple_silent_layers != layer_names.len() >= nonempty_layer_dicts.len() + 2",
+        );
+    }
+
+    #[test]
+    fn has_multiple_silent_layers_partitions_trichotomy_with_has_silent_layer() {
+        // Trichotomy on (has_silent_layer, has_multiple_silent_layers)
+        // — the silent-axis mirror of
+        // (has_contributor, has_multiple_contributors):
+        //   (F, F) ⇔ silent_layer_count == 0 (empty stack or all
+        //             contribute)
+        //   (T, F) ⇔ silent_layer_count == 1 (exactly one undetectable
+        //             axis)
+        //   (T, T) ⇔ silent_layer_count >= 2 (many undetectable axes)
+        //   (F, T) ⇔ impossible (monotonic chain)
+        //
+        // Each state is reached by a distinct fixture; the pair pins
+        // the trichotomy as an ordered-pair equality against a
+        // hand-computed truth table.
+
+        // (F, F): empty stack — no declared layers, no silent layers.
+        let empty: [&dyn DiscoveryLayer; 0] = [];
+        assert!(!has_silent_layer(&empty));
+        assert!(!has_multiple_silent_layers(&empty));
+
+        // (F, F): every-layer-contributes stack — three contributors,
+        // no silent layers.
+        let a = Fixed("a", dict(&[("k1", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k2", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("k3", Value::from(3i64))]));
+        let all_contribute: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        assert!(!has_silent_layer(&all_contribute));
+        assert!(!has_multiple_silent_layers(&all_contribute));
+
+        // (T, F): exactly one silent layer — the sole undetectable
+        // axis; the "≥ 2" bit is unreachable.
+        let silent = Fixed("undetectable", Dict::new());
+        let single_silent: [&dyn DiscoveryLayer; 3] = [&a, &silent, &b];
+        assert!(has_silent_layer(&single_silent));
+        assert!(!has_multiple_silent_layers(&single_silent));
+        assert_eq!(silent_layer_count(&single_silent), 1);
+
+        // (T, T): the fixture — three silent layers — both endpoints
+        // fire.
+        let owned = count_contributor_fixture();
+        let layered = as_refs(&owned);
+        assert!(has_silent_layer(&layered));
+        assert!(has_multiple_silent_layers(&layered));
+        assert!(silent_layer_count(&layered) >= 2);
+
+        // Singleton characterization on the exact-cardinality silent
+        // axis:
+        //   has_silent_layer && !has_multiple_silent_layers
+        //     <=> silent_layer_count == 1
+        // holds pointwise across each fixture.
+        for fixture in [
+            &empty as &[&dyn DiscoveryLayer],
+            &all_contribute as &[&dyn DiscoveryLayer],
+            &single_silent as &[&dyn DiscoveryLayer],
+            &layered,
+        ] {
+            let via_pair = has_silent_layer(fixture) && !has_multiple_silent_layers(fixture);
+            let via_scalar = silent_layer_count(fixture) == 1;
+            assert_eq!(
+                via_pair,
+                via_scalar,
+                "singleton characterization mismatched on fixture with \
+                 silent_layer_count == {}",
+                silent_layer_count(fixture),
+            );
+        }
+    }
+
+    #[test]
+    fn has_multiple_silent_layers_monotonic_chain_with_has_silent_layer() {
+        // Monotonic implication
+        // `has_multiple_silent_layers ⇒ has_silent_layer` and its
+        // contrapositive
+        // `!has_silent_layer ⇒ !has_multiple_silent_layers` hold across
+        // every fixture — the "≥ 2" threshold is a strict refinement
+        // of the "≥ 1" threshold on the same axis.
+        let silent = Fixed("undetectable", Dict::new());
+        let a = Fixed("a", dict(&[("k1", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k2", Value::from(2i64))]));
+
+        let empty: [&dyn DiscoveryLayer; 0] = [];
+        let all_contribute: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        let single_silent: [&dyn DiscoveryLayer; 3] = [&a, &silent, &b];
+        let pair_silent: [&dyn DiscoveryLayer; 2] = [&silent, &silent];
+        let owned = count_contributor_fixture();
+        let layered = as_refs(&owned);
+
+        for fixture in [
+            &empty as &[&dyn DiscoveryLayer],
+            &all_contribute as &[&dyn DiscoveryLayer],
+            &single_silent as &[&dyn DiscoveryLayer],
+            &pair_silent as &[&dyn DiscoveryLayer],
+            &layered,
+        ] {
+            if has_multiple_silent_layers(fixture) {
+                assert!(
+                    has_silent_layer(fixture),
+                    "has_multiple_silent_layers ⇒ has_silent_layer was violated",
+                );
+            }
+            if !has_silent_layer(fixture) {
+                assert!(
+                    !has_multiple_silent_layers(fixture),
+                    "!has_silent_layer ⇒ !has_multiple_silent_layers was violated",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn has_multiple_silent_layers_dual_of_has_multiple_contributors() {
+        // Silent-axis mirror of the contributors-axis "≥ 2" primitive.
+        // Swapping every layer's discover result between empty and
+        // non-empty flips the boolean partition: the "≥ 2 silent" bit
+        // on the original stack equals the "≥ 2 contributor" bit on
+        // the swapped stack, since both walks fold the same predicate
+        // shape under one hop of inversion.
+        let a = Fixed("a", dict(&[("k1", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k2", Value::from(2i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+
+        // Two silent + one contributor: multi-silent fires,
+        // multi-contributor does not.
+        let two_silent_one_contrib: [&dyn DiscoveryLayer; 3] = [&silent, &a, &silent];
+        assert!(has_multiple_silent_layers(&two_silent_one_contrib));
+        assert!(!has_multiple_contributors(&two_silent_one_contrib));
+
+        // Swap: two contributors + one silent: the mirror holds.
+        let two_contrib_one_silent: [&dyn DiscoveryLayer; 3] = [&a, &silent, &b];
+        assert!(!has_multiple_silent_layers(&two_contrib_one_silent));
+        assert!(has_multiple_contributors(&two_contrib_one_silent));
+    }
+
+    #[test]
+    fn has_multiple_silent_layers_short_circuits_on_early_pair() {
+        // Short-circuit correctness: a stack whose two coarsest
+        // layers are both silent short-circuits to true at the second
+        // hit. Iterator::nth(1).is_some() terminates on the second
+        // element on this fixture; the test pins the returned bit
+        // (not the walk length, which is not observable from the
+        // returned bool).
+        let a = Fixed("a", dict(&[("k1", Value::from(1i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+        let early_pair: [&dyn DiscoveryLayer; 5] = [&silent, &silent, &a, &a, &a];
+        assert!(has_multiple_silent_layers(&early_pair));
+        assert_eq!(
+            has_multiple_silent_layers(&early_pair),
+            silent_layer_count(&early_pair) >= 2,
+        );
+
+        // Dual short-circuit: the two trailing silent layers — every
+        // earlier layer contributes — still folds to true (worst-case
+        // walk on the filter path, but the returned bit is unchanged).
+        let late_pair: [&dyn DiscoveryLayer; 5] = [&a, &a, &a, &silent, &silent];
+        assert!(has_multiple_silent_layers(&late_pair));
+        assert_eq!(
+            has_multiple_silent_layers(&late_pair),
+            silent_layer_count(&late_pair) >= 2,
+        );
+
+        // Boundary at the single-silent stack: only one silent layer
+        // means .nth(1) returns None and the bit collapses to false,
+        // matching the "≥ 2" scalar boundary.
+        let single: [&dyn DiscoveryLayer; 5] = [&a, &a, &silent, &a, &a];
+        assert!(!has_multiple_silent_layers(&single));
+        assert_eq!(
+            has_multiple_silent_layers(&single),
+            silent_layer_count(&single) >= 2,
         );
     }
 }
