@@ -73,13 +73,13 @@ pub use cube::{
     unrealizable_at, unrealizable_count, unrealizable_iter, unrealizable_ordinal,
 };
 pub use discovered::{
-    DiscoveryComposition, DiscoveryLayer, LayerAttribution, PathContest, coarsest_at,
-    coarsest_silenced_at, compose as compose_discovery, compose_with_provenance, contest_at,
-    contributor_count, contributor_count_at, contributor_names, contributors_at, decider_at,
-    deep_merge, has_contributor, has_multiple_contributors, has_multiple_silent_layers,
-    has_silent_layer, is_contested_at, is_multiply_silenced_at, is_touched_at, layer_names,
-    nonempty_layer_dicts, runner_up_at, silenced_at, silenced_count_at, silent_layer_count,
-    silent_layer_names,
+    DiscoveryComposition, DiscoveryLayer, LayerAttribution, PathContest,
+    PathContestContributorsIter, coarsest_at, coarsest_silenced_at, compose as compose_discovery,
+    compose_with_provenance, contest_at, contributor_count, contributor_count_at,
+    contributor_names, contributors_at, decider_at, deep_merge, has_contributor,
+    has_multiple_contributors, has_multiple_silent_layers, has_silent_layer, is_contested_at,
+    is_multiply_silenced_at, is_touched_at, layer_names, nonempty_layer_dicts, runner_up_at,
+    silenced_at, silenced_count_at, silent_layer_count, silent_layer_names,
 };
 pub use discovery::{
     ConfigDiscovery, Format, FormatCoordinates, FormatMetadataTag, FormatProvenance,

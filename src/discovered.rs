@@ -4344,16 +4344,41 @@ impl PathContest {
     ///     == contributors_at(layers, p)                // total on both sides
     /// ```
     ///
+    /// # Length
+    ///
+    /// The returned [`PathContestContributorsIter`] is an
+    /// [`ExactSizeIterator`], so `.len()` returns
+    /// `overridden.len() + 1` in `O(1)` — the trait-level parity of
+    /// [`Self::contributor_count`] on the iterator surface. Callers
+    /// that want the length without materializing the sequence write
+    /// `.contributors_iter().len()` directly instead of
+    /// `.contributors_iter().count()` (walks the stream) or the
+    /// method-altitude peer [`Self::contributor_count`]:
+    ///
+    /// ```text
+    /// contributors_iter().len()               ==  contributor_count()
+    /// contributors_iter().size_hint()         ==  (n, Some(n))
+    ///                                          where n == contributor_count()
+    /// ```
+    ///
+    /// The iterator is also [`std::iter::FusedIterator`]: once
+    /// exhausted, every further `.next()` / `.next_back()` returns
+    /// [`None`] — the invariant every closed-form iterator carries at
+    /// the trait surface, matching the pair on
+    /// [`Self::silenced_iter`].
+    ///
     /// # Cost
     ///
-    /// `O(1)` per element, zero heap allocation. Two iterator adapters
-    /// ([`std::iter::Copied`] over the [`Self::overridden`] slice,
-    /// [`std::iter::Chain`] with a [`std::iter::once`] of the decider) —
-    /// all stack-allocated. Strictly cheaper than [`Self::contributors`]
-    /// (which pays a `+1`-length [`Vec`] allocation to fuse the same
-    /// sequence into an owned handle); strictly cheaper than
-    /// [`contributors_at`] (which walks every layer again and allocates
-    /// afresh). Consumers that need an owned value chain
+    /// `O(1)` per element, zero heap allocation. The concrete return
+    /// type ([`PathContestContributorsIter`]) is a two-field stack
+    /// value — a [`std::iter::Copied`] over the [`Self::overridden`]
+    /// slice plus an [`Option<&'static str>`] holding the decider
+    /// until it is consumed at either end — all stack-allocated.
+    /// Strictly cheaper than [`Self::contributors`] (which pays a
+    /// `+1`-length [`Vec`] allocation to fuse the same sequence into
+    /// an owned handle); strictly cheaper than [`contributors_at`]
+    /// (which walks every layer again and allocates afresh).
+    /// Consumers that need an owned value chain
     /// `.contributors_iter().collect::<Vec<_>>()` at parity with
     /// [`Self::contributors`]'s allocation cost; consumers that only
     /// iterate — for renderers, `for` loops, `.count()` /
@@ -4361,11 +4386,11 @@ impl PathContest {
     /// the full contributor stream, versus [`Self::contributors`]'s
     /// obligatory [`Vec`] materialization.
     #[must_use]
-    pub fn contributors_iter(&self) -> impl DoubleEndedIterator<Item = &'static str> + Clone + '_ {
-        self.overridden
-            .iter()
-            .copied()
-            .chain(std::iter::once(self.decider))
+    pub fn contributors_iter(&self) -> PathContestContributorsIter<'_> {
+        PathContestContributorsIter {
+            overridden: self.overridden.iter().copied(),
+            decider: Some(self.decider),
+        }
     }
 
     /// The **silenced** list — the ordered names of every layer whose
@@ -4795,6 +4820,85 @@ impl PathContest {
         self.overridden.first().copied()
     }
 }
+
+/// Zero-allocation contributor stream — the ordered names of every
+/// layer that touched the queried path, coarse→specific, yielded as
+/// `&'static str`. The concrete return type of
+/// [`PathContest::contributors_iter`] and the winners+losers dual of
+/// [`PathContest::silenced_iter`]'s losers-only stream.
+///
+/// Naming the return type at the API boundary (rather than
+/// `impl Trait + ...`) closes the full trait algebra the substrate
+/// structurally holds: [`ExactSizeIterator`] over `overridden.len() + 1`
+/// (the O(1) parity of [`PathContest::contributor_count`] at the trait
+/// level) and [`std::iter::FusedIterator`] (calls after `None` stay
+/// `None` — the invariant every closed-form iterator ought to name at
+/// the trait surface). Callers writing `let n = contest
+/// .contributors_iter().len()` now get the O(1) length directly instead
+/// of walking to `.count()` or reaching for the sibling
+/// [`PathContest::contributor_count`] method. The pair
+/// (`PathContestContributorsIter`, [`PathContest::silenced_iter`]) reads
+/// structurally symmetric at the type-signature level — both carry
+/// `DoubleEndedIterator + ExactSizeIterator + FusedIterator + Clone` on
+/// the `&'static str` item — closing the shape asymmetry the prior
+/// `impl DoubleEndedIterator + Clone` return on `contributors_iter`
+/// carried (`Chain<Copied<slice::Iter>, Once>` does not implement
+/// [`ExactSizeIterator`] in stable Rust — the two halves' `usize` sum
+/// may in principle overflow, so [`std::iter::Chain`] does not carry
+/// the impl even when both halves do; the fusion state a
+/// `PathContestContributorsIter` owns directly avoids that issue).
+///
+/// Follows the same idiom as [`AxisHistogramIter`][crate::AxisHistogramIter] /
+/// [`AxisHistogramIntoIter`][crate::AxisHistogramIntoIter] on the cube
+/// algebra — every zero-allocation iterator return on the discovered
+/// substrate now carries a named concrete type at the API boundary.
+#[derive(Debug, Clone)]
+pub struct PathContestContributorsIter<'a> {
+    overridden: std::iter::Copied<std::slice::Iter<'a, &'static str>>,
+    decider: Option<&'static str>,
+}
+
+impl Iterator for PathContestContributorsIter<'_> {
+    type Item = &'static str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.overridden.next().or_else(|| self.decider.take())
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.len();
+        (len, Some(len))
+    }
+
+    fn count(self) -> usize {
+        self.len()
+    }
+
+    fn last(mut self) -> Option<Self::Item> {
+        // The decider — when still held — is the trailing element of the
+        // forward walk; otherwise the trailing element sits at the back of
+        // whatever remains of the overridden slice.
+        if self.decider.is_some() {
+            self.decider.take()
+        } else {
+            self.overridden.last()
+        }
+    }
+}
+
+impl DoubleEndedIterator for PathContestContributorsIter<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.decider.take().or_else(|| self.overridden.next_back())
+    }
+}
+
+impl ExactSizeIterator for PathContestContributorsIter<'_> {
+    fn len(&self) -> usize {
+        self.overridden.len() + usize::from(self.decider.is_some())
+    }
+}
+
+impl std::iter::FusedIterator for PathContestContributorsIter<'_> {}
 
 /// The full **per-path override contest** at `path` — decider (winner)
 /// and losers, fused into one [`PathContest`]. `None` iff no layer
@@ -11371,6 +11475,187 @@ mod tests {
             assert_eq!(base, via_clone_then_rev);
             assert_eq!(base, via_rev_then_clone);
         }
+    }
+
+    // -------- PathContest::contributors_iter — ExactSizeIterator sharpening --------
+
+    #[test]
+    fn path_contest_contributors_iter_len_matches_contributor_count_across_fixture() {
+        // ExactSizeIterator sharpening: the O(1) `.len()` on the concrete
+        // return type equals `contributor_count()` on every branch of the
+        // {0, 1, ≥ 2} silenced-cardinality partition. Before this change
+        // the return type was `Chain<Copied<slice::Iter>, Once<_>>` (via
+        // `impl DoubleEndedIterator + Clone`), which stable Rust does not
+        // impl `ExactSizeIterator` for — the sum of the two halves' `usize`
+        // lengths could in principle overflow, so `Chain` structurally
+        // opts out. The concrete `PathContestContributorsIter` fuses the
+        // two halves into a two-field state and can carry the trait.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        for layers in [
+            vec![sole.as_ref()],
+            vec![pair_coarse.as_ref(), pair_specific.as_ref()],
+            vec![sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()],
+        ] {
+            let contest = contest_at(&layers, &["k"]).expect("k is touched");
+            let iter = contest.contributors_iter();
+            assert_eq!(iter.len(), contest.contributor_count());
+            // A fresh iter's `.count()` (which consumes the iterator) must
+            // agree with the O(1) `.len()` on the same-shaped iter.
+            assert_eq!(
+                contest.contributors_iter().count(),
+                contest.contributor_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_contributors_iter_size_hint_reports_exact_length() {
+        // ExactSizeIterator implies `.size_hint()` returns `(n, Some(n))`
+        // where `n == contributor_count()` — the trait-level guarantee
+        // consumers reach for when pre-allocating output buffers via
+        // `Vec::with_capacity(iter.size_hint().0)`. Pinned across the
+        // uncontested-singleton and multi-writer branches to prove the
+        // exact-length hint is not a fortunate size_hint coincidence but
+        // the structural guarantee the trait now names.
+        let uncontested = PathContest {
+            decider: "solo",
+            overridden: vec![],
+        };
+        let hint = uncontested.contributors_iter().size_hint();
+        assert_eq!(hint, (1, Some(1)));
+
+        let multi = PathContest {
+            decider: "tenancy",
+            overridden: vec!["platform", "cloud", "orchestrator"],
+        };
+        let hint = multi.contributors_iter().size_hint();
+        assert_eq!(hint, (4, Some(4)));
+    }
+
+    #[test]
+    fn path_contest_contributors_iter_len_decreases_by_one_per_advance() {
+        // ExactSizeIterator + Iterator contract: `.len()` decreases by
+        // exactly 1 on every `.next()`/`.next_back()` that yields a
+        // `Some`, and stays 0 once exhausted. Pins the size-hint /
+        // remaining-length bookkeeping across mixed forward+backward
+        // walks — the state machine `PathContestContributorsIter` owns
+        // (a `Copied<slice::Iter>` plus an `Option<&'static str>`) must
+        // report the correct remaining length at every partial-consumption
+        // point, not just at the endpoints.
+        let multi = PathContest {
+            decider: "tenancy",
+            overridden: vec!["platform", "cloud", "orchestrator"],
+        };
+        let mut iter = multi.contributors_iter();
+        assert_eq!(iter.len(), 4);
+        assert_eq!(iter.next(), Some("platform"));
+        assert_eq!(iter.len(), 3);
+        assert_eq!(iter.next_back(), Some("tenancy"));
+        assert_eq!(iter.len(), 2);
+        assert_eq!(iter.next(), Some("cloud"));
+        assert_eq!(iter.len(), 1);
+        assert_eq!(iter.next_back(), Some("orchestrator"));
+        assert_eq!(iter.len(), 0);
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.len(), 0);
+        assert_eq!(iter.next_back(), None);
+        assert_eq!(iter.len(), 0);
+    }
+
+    #[test]
+    fn path_contest_contributors_iter_is_fused_past_exhaustion() {
+        // `PathContestContributorsIter` is `FusedIterator` — every call
+        // after the first `None` continues to return `None`, on both
+        // `.next()` and `.next_back()`. The trait carries a semantic
+        // guarantee (chained adapters like `.fuse()` are no-ops), so
+        // pinning the observable behaviour at the value level guards
+        // against a future refactor that swaps in a non-fused inner
+        // state and silently regresses the trait promise.
+        let uncontested = PathContest {
+            decider: "solo",
+            overridden: vec![],
+        };
+        let mut iter = uncontested.contributors_iter();
+        assert_eq!(iter.next(), Some("solo"));
+        for _ in 0..4 {
+            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next_back(), None);
+        }
+
+        let pair = PathContest {
+            decider: "tenancy",
+            overridden: vec!["platform"],
+        };
+        let mut iter = pair.contributors_iter();
+        assert_eq!(iter.next(), Some("platform"));
+        assert_eq!(iter.next(), Some("tenancy"));
+        for _ in 0..4 {
+            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next_back(), None);
+        }
+    }
+
+    #[test]
+    fn path_contest_contributors_iter_last_returns_decider_end_of_forward_walk() {
+        // `.last()` is a specialization on the Iterator trait — for
+        // ExactSizeIterator + DoubleEndedIterator implementations that
+        // want O(1) trailing-element access without walking the whole
+        // stream. The default `Iterator::last` would loop `.next()` to
+        // exhaustion; the specialization on `PathContestContributorsIter`
+        // reaches for the trailing element directly. Pinned against the
+        // forward-walk trailing element (decider) on the multi-writer
+        // branch and the sole-toucher branch, and against the
+        // partially-consumed branch (where next_back has already taken
+        // the decider, so `.last()` falls through to the overridden
+        // slice's own trailing element).
+        let multi = PathContest {
+            decider: "tenancy",
+            overridden: vec!["platform", "cloud", "orchestrator"],
+        };
+        assert_eq!(multi.contributors_iter().last(), Some("tenancy"));
+
+        let uncontested = PathContest {
+            decider: "solo",
+            overridden: vec![],
+        };
+        assert_eq!(uncontested.contributors_iter().last(), Some("solo"));
+
+        // After `next_back()` consumes the decider, `.last()` returns
+        // the trailing element of the remaining overridden slice.
+        let mut partially = multi.contributors_iter();
+        assert_eq!(partially.next_back(), Some("tenancy"));
+        assert_eq!(partially.last(), Some("orchestrator"));
+    }
+
+    #[test]
+    fn path_contest_contributors_iter_named_type_carries_trait_algebra() {
+        // The concrete return type carries the full trait algebra at
+        // the API boundary: `PathContestContributorsIter<'_>` implements
+        // `Iterator + DoubleEndedIterator + ExactSizeIterator +
+        // FusedIterator + Clone + Debug`. The `is_x` helpers below
+        // compile only if the corresponding trait is implemented — a
+        // regression that erases any of the traits from the concrete
+        // type would fail to compile, pinning the algebra invariant
+        // at the type-signature level rather than at a value-level
+        // behaviour check.
+        fn is_iter<I: Iterator<Item = &'static str>>(_: &I) {}
+        fn is_double_ended<I: DoubleEndedIterator<Item = &'static str>>(_: &I) {}
+        fn is_exact_size<I: ExactSizeIterator<Item = &'static str>>(_: &I) {}
+        fn is_fused<I: std::iter::FusedIterator<Item = &'static str>>(_: &I) {}
+        fn is_clone<T: Clone>(_: &T) {}
+        fn is_debug<T: std::fmt::Debug>(_: &T) {}
+
+        let contest = PathContest {
+            decider: "d",
+            overridden: vec!["o0", "o1"],
+        };
+        let iter: PathContestContributorsIter<'_> = contest.contributors_iter();
+        is_iter(&iter);
+        is_double_ended(&iter);
+        is_exact_size(&iter);
+        is_fused(&iter);
+        is_clone(&iter);
+        is_debug(&iter);
     }
 
     // -------- PathContest::silenced_iter --------
