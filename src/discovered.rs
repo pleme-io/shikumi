@@ -3518,6 +3518,165 @@ pub fn is_touched_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> bool {
         .any(|layer| touches_path(&layer.discover(), path))
 }
 
+/// True iff **at least two layers** have their opinion at `path`
+/// overridden by the effective decider — the point-restricted
+/// **"≥ 2" silenced-axis boolean** on the (path, layer) axis.
+///
+/// The **losers-axis "≥ 2" endpoint** of the point-primitive
+/// cardinality-threshold lattice: [`silenced_at`] returns the
+/// ordered list of overridden touchers, [`silenced_count_at`]
+/// returns their scalar cardinality, and this primitive returns
+/// the boolean predicate "two or more of them" — the losers-axis
+/// analog of [`is_contested_at`] shifted one hit deeper along the
+/// same touchers filter. Where [`is_contested_at`] closes the
+/// "≥ 1 silenced" endpoint (equivalently "≥ 2 touchers"), this
+/// primitive closes the "≥ 2 silenced" endpoint (equivalently
+/// "≥ 3 touchers") on the same walk.
+///
+/// The **cardinality-threshold strict refinement** of
+/// [`is_contested_at`] on the shared touchers filter:
+///
+/// ```text
+/// contributor_count_at(layers, p) == 0   ⇔  !is_touched_at(layers, p)
+/// contributor_count_at(layers, p) == 1   ⇔   is_touched_at(layers, p)
+///                                           && !is_contested_at(layers, p)
+/// contributor_count_at(layers, p) == 2   ⇔   is_contested_at(layers, p)
+///                                           && !is_multiply_silenced_at(layers, p)
+/// contributor_count_at(layers, p) >= 3   ⇔   is_multiply_silenced_at(layers, p)
+/// ```
+///
+/// The **four-way partition** of the point-primitive touchers axis
+/// closes with three short-circuiting boolean reads —
+/// `(is_touched_at, is_contested_at, is_multiply_silenced_at)` —
+/// each running the same `touches_path` filter with a progressively
+/// deeper [`Iterator::nth`] termination
+/// (`.any()` / `.nth(1).is_some()` / `.nth(2).is_some()`). The
+/// monotonic chain
+/// `is_multiply_silenced_at ⇒ is_contested_at ⇒ is_touched_at`
+/// shifts the predicate axis by exactly one hit at each step.
+///
+/// # Identities
+///
+/// The five presence-boundary projections on the silenced axis at
+/// the "≥ 2" cardinality-threshold collapse onto one substrate-owned
+/// primitive with a **short-circuit forward walk**:
+///
+/// - `is_multiply_silenced_at(layers, p) == `[`silenced_count_at`]`(layers, p) >= 2`
+///   (cardinality-threshold identity at "≥ 2" on the silenced axis)
+/// - `is_multiply_silenced_at(layers, p) == (`[`silenced_at`]`(layers, p).len() >= 2)`
+///   (ordered-list length-threshold dual on the losers axis)
+/// - `is_multiply_silenced_at(layers, p) == (`[`contributor_count_at`]`(layers, p) >= 3)`
+///   (contributors-side cardinality-threshold dual: the partition-count
+///   law `silenced_count_at + usize::from(is_touched_at) ==
+///   contributor_count_at` shifts the "≥ 2 silenced" threshold by
+///   exactly one against the touchers scalar)
+/// - `is_multiply_silenced_at(layers, p) == (`[`contributors_at`]`(layers, p).len() >= 3)`
+///   (ordered-touchers cardinality-threshold dual)
+/// - `is_multiply_silenced_at(layers, p) == `[`contest_at`]`(layers, p)
+///   .is_some_and(|c| c.silenced_count() >= 2)` (folded-value method call:
+///   the [`None`] branch on the fused side maps to `false` in agreement
+///   with the no-toucher `false` branch on the primitive side)
+///
+/// The monotonic chain against the "≥ 1 silenced" endpoint (which
+/// [`is_contested_at`] closes on the shared filter):
+///
+/// ```text
+/// is_multiply_silenced_at(layers, p)  =>   is_contested_at(layers, p)
+/// !is_contested_at(layers, p)         =>  !is_multiply_silenced_at(layers, p)
+/// ```
+///
+/// The singleton characterization on the exact-cardinality silenced
+/// axis:
+///
+/// ```text
+/// is_contested_at(layers, p) && !is_multiply_silenced_at(layers, p)
+///     <=>  silenced_count_at(layers, p) == 1
+///     <=>  contributor_count_at(layers, p) == 2
+/// ```
+///
+/// pins the "exactly one loser" state — a single override contest
+/// with no chain of overrides — as an ordered-pair of two
+/// short-circuiting boolean reads.
+///
+/// All five routes are algebraically identical on their shared
+/// boolean output; this primitive is the strictly-cheapest route
+/// when the caller wants only the "≥ 2 overridden touchers" presence
+/// predicate and does not need the ordered losers list, the exact
+/// losers count, the ordered touchers list, or the fused
+/// [`PathContest`].
+///
+/// # Semantics
+///
+/// The set of losers is the leading prefix of the [`contributors_at`]
+/// projection with the trailing decider popped: every layer whose
+/// `discover()` touched `path` and whose opinion was subsequently
+/// overridden by a more-specific toucher. Two losers is the
+/// true-boundary; zero losers (no toucher or single uncontested
+/// toucher) and one loser (single override contest) are collapsed
+/// under the same `false` return. A `true` return says the path
+/// carries a **chain of overrides** — at least three layers had an
+/// opinion, two of which were silenced by the trailing decider.
+///
+/// # Cost
+///
+/// Walks layers forward with a **short-circuit on the third toucher**
+/// — worst-case `O(layers × path.len())` (fewer than three touchers,
+/// so [`Iterator::nth`] runs the full stack), best-case
+/// `O(3 × path.len())` (the three coarsest layers all touch and
+/// short-circuit the walk at the third hit). Zero allocation on the
+/// walker itself. Strictly cheaper than every alternative on the
+/// same axis:
+///
+/// - [`silenced_at`]`(layers, p).len() >= 2` walks every layer,
+///   allocates the losers `Vec<&'static str>`, then reads a length
+///   comparison off the fat pointer — no short-circuit at the third
+///   hit.
+/// - [`silenced_count_at`]`(layers, p) >= 2` walks every layer with
+///   [`Iterator::count`] and one saturating subtraction, then reads
+///   a scalar comparison — no short-circuit at the third hit.
+/// - [`contributor_count_at`]`(layers, p) >= 3` walks every layer
+///   with [`Iterator::count`] and reads a scalar comparison — no
+///   short-circuit at the third hit.
+/// - [`contest_at`]`(layers, p).is_some_and(|c| c.silenced_count() >= 2)`
+///   walks every layer, allocates the [`PathContest`]'s `overridden`
+///   `Vec`, then reads a `.len() >= 2` off the fused struct.
+///
+/// This primitive short-circuits at the third toucher *and* returns
+/// the boolean directly without projecting through an owned name or
+/// scalar — the [`Iterator::nth`] adapter compiles to a
+/// single-branch forward walk over the same touchers filter
+/// [`is_contested_at`] runs, only stopped at the third hit rather
+/// than the second.
+///
+/// # HOCON analogue
+///
+/// The substrate-owned counterpart to "did this key get overridden
+/// more than once?" — Lightbend HOCON callers reconstruct the answer
+/// by iterating each source's [`Config.entrySet()`] at the key,
+/// counting hits, and comparing against a threshold.
+/// `is_multiply_silenced_at` packages the "≥ 2 overrides" bit as one
+/// substrate-owned primitive over the same pre-merge touchers set
+/// that [`silenced_at`], [`silenced_count_at`], and
+/// [`is_contested_at`] share, with the short-circuiting
+/// `.nth(2).is_some()` walk that closes the silenced-axis
+/// cardinality-threshold lattice at the "≥ 2" endpoint. Figment
+/// 0.10's per-value [`Tag`] names the surviving-leaf's origin but
+/// exposes no predicate for a chain of overrides — the "did several
+/// sources shadow this key?" question is unreachable without a
+/// per-source `entrySet()` walk. `is_multiply_silenced_at` closes
+/// that missing chain-of-overrides predicate seam.
+///
+/// [`Config.entrySet()`]: https://lightbend.github.io/config/latest/api/com/typesafe/config/Config.html#entrySet--
+/// [`Tag`]: https://docs.rs/figment/latest/figment/value/struct.Tag.html
+#[must_use]
+pub fn is_multiply_silenced_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> bool {
+    layers
+        .iter()
+        .filter(|layer| touches_path(&layer.discover(), path))
+        .nth(2)
+        .is_some()
+}
+
 /// A per-path override contest — the decider (winner) and the ordered
 /// losers along `path`. Returned by [`contest_at`]; the typed fusion of
 /// the pre-merge point primitives [`decider_at`] (winner projection)
@@ -12660,6 +12819,371 @@ mod tests {
         assert_eq!(
             has_multiple_silent_layers(&single),
             silent_layer_count(&single) >= 2,
+        );
+    }
+
+    // -------- is_multiply_silenced_at (point ≥2 boolean predicate on the silenced axis) --------
+
+    /// A three-layer fixture where each point exercises a distinct
+    /// cell of the four-way `(is_touched_at, is_contested_at,
+    /// is_multiply_silenced_at)` partition:
+    ///
+    /// - `["absent"]` — zero touchers (F, F, F)
+    /// - `["solo"]` — one toucher, `a` only (T, F, F)
+    /// - `["pair", "mode"]` — two touchers, `a` and `b` (T, T, F)
+    /// - `["chain", "mode"]` — three touchers, `a`, `b`, `c` (T, T, T)
+    fn multi_silenced_fixture() -> [Box<dyn DiscoveryLayer>; 3] {
+        let a: Box<dyn DiscoveryLayer> = Box::new(Fixed(
+            "a",
+            dict(&[
+                ("solo", Value::from(1i64)),
+                ("pair", Value::from(dict(&[("mode", Value::from("live"))]))),
+                ("chain", Value::from(dict(&[("mode", Value::from("live"))]))),
+            ]),
+        ));
+        let b: Box<dyn DiscoveryLayer> = Box::new(Fixed(
+            "b",
+            dict(&[
+                (
+                    "pair",
+                    Value::from(dict(&[("mode", Value::from("shadow"))])),
+                ),
+                (
+                    "chain",
+                    Value::from(dict(&[("mode", Value::from("staging"))])),
+                ),
+            ]),
+        ));
+        let c: Box<dyn DiscoveryLayer> = Box::new(Fixed(
+            "c",
+            dict(&[(
+                "chain",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        ));
+        [a, b, c]
+    }
+
+    #[test]
+    fn is_multiply_silenced_at_matches_silenced_count_threshold() {
+        // Cardinality-threshold identity at "≥ 2" on the silenced axis:
+        //   is_multiply_silenced_at(layers, p) ==
+        //     silenced_count_at(layers, p) >= 2.
+        // Both routes share the same touches_path filter; the primitive
+        // short-circuits at the third toucher, the scalar walks the
+        // whole stack and applies one saturating subtraction.
+        let owned = multi_silenced_fixture();
+        let layers = as_refs(&owned);
+        for path in [
+            &[][..],
+            &["absent"][..],
+            &["solo"][..],
+            &["pair"][..],
+            &["pair", "mode"][..],
+            &["chain"][..],
+            &["chain", "mode"][..],
+        ] {
+            let via_primitive = is_multiply_silenced_at(&layers, path);
+            let via_threshold = silenced_count_at(&layers, path) >= 2;
+            assert_eq!(
+                via_primitive, via_threshold,
+                "is_multiply_silenced_at != silenced_count_at >= 2 at {path:?}",
+            );
+        }
+
+        // The four-way partition on the chain path fires the deepest
+        // endpoint: three contributors, two silenced.
+        assert!(is_multiply_silenced_at(&layers, &["chain", "mode"]));
+        assert_eq!(silenced_count_at(&layers, &["chain", "mode"]), 2);
+
+        // The pair path fires is_contested but not is_multiply_silenced:
+        // two contributors, one silenced.
+        assert!(!is_multiply_silenced_at(&layers, &["pair", "mode"]));
+        assert!(is_contested_at(&layers, &["pair", "mode"]));
+    }
+
+    #[test]
+    fn is_multiply_silenced_at_matches_silenced_len_threshold() {
+        // Ordered-list length-threshold dual on the losers axis:
+        //   is_multiply_silenced_at(layers, p) ==
+        //     silenced_at(layers, p).len() >= 2.
+        // The list-length reduction pins the same "≥ 2 losers" boundary
+        // the boolean returns without materializing the losers Vec.
+        let owned = multi_silenced_fixture();
+        let layers = as_refs(&owned);
+        for path in [
+            &[][..],
+            &["absent"][..],
+            &["solo"][..],
+            &["pair", "mode"][..],
+            &["chain", "mode"][..],
+        ] {
+            let via_primitive = is_multiply_silenced_at(&layers, path);
+            let via_len = silenced_at(&layers, path).len() >= 2;
+            assert_eq!(
+                via_primitive, via_len,
+                "is_multiply_silenced_at != silenced_at.len() >= 2 at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn is_multiply_silenced_at_matches_contributor_count_at_ge_three() {
+        // Contributors-side cardinality-threshold dual: the partition-count
+        // law silenced_count_at + usize::from(is_touched_at) ==
+        // contributor_count_at shifts the "≥ 2 silenced" threshold by
+        // exactly one hit against the touchers scalar. So:
+        //   is_multiply_silenced_at(layers, p) ==
+        //     contributor_count_at(layers, p) >= 3.
+        let owned = multi_silenced_fixture();
+        let layers = as_refs(&owned);
+        for path in [
+            &[][..],
+            &["absent"][..],
+            &["solo"][..],
+            &["pair"][..],
+            &["pair", "mode"][..],
+            &["chain"][..],
+            &["chain", "mode"][..],
+        ] {
+            let via_primitive = is_multiply_silenced_at(&layers, path);
+            let via_touchers = contributor_count_at(&layers, path) >= 3;
+            assert_eq!(
+                via_primitive, via_touchers,
+                "is_multiply_silenced_at != contributor_count_at >= 3 at {path:?}",
+            );
+            let via_touchers_vec = contributors_at(&layers, path).len() >= 3;
+            assert_eq!(
+                via_primitive, via_touchers_vec,
+                "is_multiply_silenced_at != contributors_at.len() >= 3 at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn is_multiply_silenced_at_matches_contest_at_folded_projection() {
+        // Folded-value method call: is_multiply_silenced_at(layers, p) ==
+        // contest_at(layers, p).is_some_and(|c| c.silenced_count() >= 2).
+        // The None branch on the fused side maps to false in agreement
+        // with the no-toucher false branch on the primitive side; the
+        // single-toucher (Some, silenced_count=0) branch collapses to
+        // false too.
+        let owned = multi_silenced_fixture();
+        let layers = as_refs(&owned);
+        for path in [
+            &[][..],
+            &["absent"][..],
+            &["solo"][..],
+            &["pair"][..],
+            &["pair", "mode"][..],
+            &["chain"][..],
+            &["chain", "mode"][..],
+        ] {
+            let via_primitive = is_multiply_silenced_at(&layers, path);
+            let via_fused = contest_at(&layers, path).is_some_and(|c| c.silenced_count() >= 2);
+            assert_eq!(
+                via_primitive, via_fused,
+                "is_multiply_silenced_at != contest_at.is_some_and(silenced_count >= 2) at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn is_multiply_silenced_at_partitions_four_way_touchers_axis() {
+        // Four-way partition of the point touchers axis via three
+        // short-circuiting boolean reads:
+        //   (F, F, F) ⇔ 0 touchers  — nobody touched
+        //   (T, F, F) ⇔ 1 toucher   — uncontested singleton
+        //   (T, T, F) ⇔ 2 touchers  — single override contest
+        //   (T, T, T) ⇔ 3+ touchers — chain of overrides
+        // Every other triple is unreachable under the monotonic chain.
+        let owned = multi_silenced_fixture();
+        let layers = as_refs(&owned);
+
+        // (F, F, F) — path absent from every layer.
+        assert!(!is_touched_at(&layers, &["absent"]));
+        assert!(!is_contested_at(&layers, &["absent"]));
+        assert!(!is_multiply_silenced_at(&layers, &["absent"]));
+
+        // (T, F, F) — only `a` touches "solo".
+        assert!(is_touched_at(&layers, &["solo"]));
+        assert!(!is_contested_at(&layers, &["solo"]));
+        assert!(!is_multiply_silenced_at(&layers, &["solo"]));
+
+        // (T, T, F) — `a` and `b` touch "pair/mode"; `c` doesn't.
+        assert!(is_touched_at(&layers, &["pair", "mode"]));
+        assert!(is_contested_at(&layers, &["pair", "mode"]));
+        assert!(!is_multiply_silenced_at(&layers, &["pair", "mode"]));
+
+        // (T, T, T) — all three touch "chain/mode".
+        assert!(is_touched_at(&layers, &["chain", "mode"]));
+        assert!(is_contested_at(&layers, &["chain", "mode"]));
+        assert!(is_multiply_silenced_at(&layers, &["chain", "mode"]));
+
+        // Singleton characterization on the exact-cardinality silenced
+        // axis:
+        //   is_contested_at && !is_multiply_silenced_at
+        //     <=> silenced_count_at == 1
+        //     <=> contributor_count_at == 2
+        // holds pointwise across each cell of the partition.
+        for path in [
+            &["absent"][..],
+            &["solo"][..],
+            &["pair", "mode"][..],
+            &["chain", "mode"][..],
+        ] {
+            let via_pair =
+                is_contested_at(&layers, path) && !is_multiply_silenced_at(&layers, path);
+            let via_silenced = silenced_count_at(&layers, path) == 1;
+            let via_touchers = contributor_count_at(&layers, path) == 2;
+            assert_eq!(
+                via_pair, via_silenced,
+                "singleton characterization != silenced_count_at == 1 at {path:?}",
+            );
+            assert_eq!(
+                via_pair, via_touchers,
+                "singleton characterization != contributor_count_at == 2 at {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn is_multiply_silenced_at_monotonic_chain_with_is_contested_at() {
+        // Monotonic implications along the touchers axis:
+        //   is_multiply_silenced_at ⇒ is_contested_at
+        //   is_multiply_silenced_at ⇒ is_touched_at
+        //   !is_contested_at        ⇒ !is_multiply_silenced_at
+        //   !is_touched_at          ⇒ !is_multiply_silenced_at
+        // The "≥ 2 silenced" endpoint is a strict refinement of every
+        // shallower cardinality-threshold endpoint on the same filter.
+        let owned = multi_silenced_fixture();
+        let layers = as_refs(&owned);
+        for path in [
+            &[][..],
+            &["absent"][..],
+            &["solo"][..],
+            &["pair"][..],
+            &["pair", "mode"][..],
+            &["chain"][..],
+            &["chain", "mode"][..],
+        ] {
+            if is_multiply_silenced_at(&layers, path) {
+                assert!(
+                    is_contested_at(&layers, path),
+                    "is_multiply_silenced_at ⇒ is_contested_at was violated at {path:?}",
+                );
+                assert!(
+                    is_touched_at(&layers, path),
+                    "is_multiply_silenced_at ⇒ is_touched_at was violated at {path:?}",
+                );
+            }
+            if !is_contested_at(&layers, path) {
+                assert!(
+                    !is_multiply_silenced_at(&layers, path),
+                    "!is_contested_at ⇒ !is_multiply_silenced_at was violated at {path:?}",
+                );
+            }
+            if !is_touched_at(&layers, path) {
+                assert!(
+                    !is_multiply_silenced_at(&layers, path),
+                    "!is_touched_at ⇒ !is_multiply_silenced_at was violated at {path:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn is_multiply_silenced_at_covers_prefix_scalar_erasure() {
+        // Prefix-scalar erasure: three layers each cover the deep leaf
+        // via a wholesale-replace or a proper subtree; every one
+        // touches the deep path pre-merge even though only the trailing
+        // scalar survives on the composed dict. is_multiply_silenced_at
+        // fires because ≥ 3 layers touched pre-merge — symmetric to
+        // is_contested_at's erasure coverage.
+        let a = Fixed(
+            "a",
+            dict(&[("k", Value::from(dict(&[("leaf", Value::from(1i64))])))]),
+        );
+        let b = Fixed("b", dict(&[("k", Value::from("shadowed"))]));
+        let c = Fixed("c", dict(&[("k", Value::from("erased"))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        assert!(is_multiply_silenced_at(&layers, &["k", "leaf"]));
+        assert!(is_multiply_silenced_at(&layers, &["k"]));
+        assert_eq!(contributor_count_at(&layers, &["k"]), 3);
+        assert_eq!(silenced_count_at(&layers, &["k"]), 2);
+    }
+
+    #[test]
+    fn is_multiply_silenced_at_root_specialization_filters_silent_layers() {
+        // Root specialization at path=[]: touches_path collapses to
+        // !dict.is_empty(), so is_multiply_silenced_at(layers, &[])
+        // == contributor_count(layers) >= 3. Silent layers between
+        // contributors are filtered on the touchers walk and do not
+        // shift the endpoint.
+        let coarse = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+        let middle = Fixed("cloud", dict(&[("c", Value::from(3i64))]));
+        let specific = Fixed("tenancy", dict(&[("b", Value::from(2i64))]));
+
+        // Three contributors interleaved with silent layers — root
+        // is multi-silenced.
+        let three: [&dyn DiscoveryLayer; 5] = [&coarse, &silent, &middle, &silent, &specific];
+        assert!(is_multiply_silenced_at(&three, &[]));
+        assert_eq!(
+            is_multiply_silenced_at(&three, &[]),
+            contributor_count(&three) >= 3,
+        );
+
+        // Two contributors interleaved with silent layers — root is
+        // contested but not multi-silenced.
+        let two: [&dyn DiscoveryLayer; 4] = [&coarse, &silent, &middle, &silent];
+        assert!(!is_multiply_silenced_at(&two, &[]));
+        assert!(is_contested_at(&two, &[]));
+        assert_eq!(
+            is_multiply_silenced_at(&two, &[]),
+            contributor_count(&two) >= 3,
+        );
+
+        // Only silent layers — no contributor touches root.
+        let none: [&dyn DiscoveryLayer; 3] = [&silent, &silent, &silent];
+        assert!(!is_multiply_silenced_at(&none, &[]));
+        assert!(!is_contested_at(&none, &[]));
+        assert!(!is_touched_at(&none, &[]));
+    }
+
+    #[test]
+    fn is_multiply_silenced_at_short_circuits_on_early_triple() {
+        // Short-circuit correctness: a stack whose three coarsest
+        // layers all touch the path short-circuits to true at the
+        // third hit. Iterator::nth(2).is_some() terminates on the
+        // third element on this fixture; the test pins the returned
+        // bit (not the walk length, which is not observable from the
+        // returned bool).
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("k", Value::from(3i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+
+        // Three coarsest layers touch; the trailing silent tail does
+        // not extend the walk beyond the third hit.
+        let early_triple: [&dyn DiscoveryLayer; 5] = [&a, &b, &c, &silent, &silent];
+        assert!(is_multiply_silenced_at(&early_triple, &["k"]));
+
+        // Dual short-circuit: three trailing touchers, two coarser
+        // silent layers. The full stack walks past the silent prefix
+        // but the returned bit is unchanged.
+        let late_triple: [&dyn DiscoveryLayer; 5] = [&silent, &silent, &a, &b, &c];
+        assert!(is_multiply_silenced_at(&late_triple, &["k"]));
+
+        // Boundary at exactly two touchers: only `a` and `b` touch,
+        // so .nth(2) returns None and the bit collapses to false. The
+        // "≥ 2 silenced" scalar boundary agrees.
+        let two_touchers: [&dyn DiscoveryLayer; 5] = [&a, &silent, &b, &silent, &silent];
+        assert!(!is_multiply_silenced_at(&two_touchers, &["k"]));
+        assert!(is_contested_at(&two_touchers, &["k"]));
+        assert_eq!(
+            is_multiply_silenced_at(&two_touchers, &["k"]),
+            silenced_count_at(&two_touchers, &["k"]) >= 2,
         );
     }
 }
