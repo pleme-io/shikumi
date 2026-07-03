@@ -3739,6 +3739,58 @@ impl PathContest {
         !self.overridden.is_empty()
     }
 
+    /// True iff **two or more** layers' opinions at the queried path were
+    /// overridden — i.e. `overridden.len() >= 2`. The `PathContest`
+    /// method-altitude dual of the free-fn [`is_multiply_silenced_at`]
+    /// and the "≥ 2 silenced" endpoint of the losers-side boolean
+    /// cardinality-threshold lattice at the point altitude, sibling to
+    /// [`Self::is_contested`] (the "≥ 1 silenced" boolean, arithmetically
+    /// equivalent to the "≥ 2 contributors" strict-contest predicate).
+    /// Cannot short-circuit before `is_contested`: an uncontested contest
+    /// (`overridden.is_empty()`) collapses this predicate to `false`
+    /// by inspection.
+    ///
+    /// # Identities
+    ///
+    /// The three-way cardinality-threshold lattice on `overridden.len()`
+    /// closes at the method surface:
+    ///
+    /// ```text
+    /// is_contested()              <=>  silenced_count() >= 1
+    ///                             <=>  overridden.len() >= 1
+    ///                             <=>  contributor_count() >= 2
+    /// is_multiply_silenced()      <=>  silenced_count() >= 2
+    ///                             <=>  overridden.len() >= 2
+    ///                             <=>  contributor_count() >= 3
+    /// is_multiply_silenced()      =>   is_contested()
+    /// !is_contested()             =>   !is_multiply_silenced()
+    /// ```
+    ///
+    /// The [`Option<PathContest>`] boundary against the free-fn peer:
+    ///
+    /// ```text
+    /// contest_at(layers, p).is_some_and(|c| c.is_multiply_silenced())
+    ///     == is_multiply_silenced_at(layers, p)
+    /// contest_at(layers, p).map_or(false, |c| c.is_multiply_silenced())
+    ///     == is_multiply_silenced_at(layers, p)
+    /// ```
+    ///
+    /// # Cost
+    ///
+    /// `O(1)` — one field-length read on `overridden` and one
+    /// comparison. No allocation, no walk of the layer stack. Strictly
+    /// cheaper than [`is_multiply_silenced_at`] (which calls
+    /// `discover()` on every layer); strictly cheaper than chaining
+    /// [`Self::silenced_count`] with `>= 2` (still `O(1)` but two
+    /// method calls, one integer materialization) — the point of the
+    /// dedicated boolean is that a caller predicating on the "≥ 2
+    /// silenced" threshold names the intent structurally rather than
+    /// spelling out the arithmetic at every consumer.
+    #[must_use]
+    pub fn is_multiply_silenced(&self) -> bool {
+        self.overridden.len() >= 2
+    }
+
     /// Total number of layers that touched the queried path — the
     /// decider plus every overridden toucher. Equals
     /// `contributors_at(layers, path).len()` on the same input. Never
@@ -13185,5 +13237,189 @@ mod tests {
             is_multiply_silenced_at(&two_touchers, &["k"]),
             silenced_count_at(&two_touchers, &["k"]) >= 2,
         );
+    }
+
+    // ---- PathContest::is_multiply_silenced ------------------------------
+
+    /// The three-way touchers-count fixture reused across the
+    /// `path_contest_is_multiply_silenced_*` battery: an uncontested
+    /// singleton (1 toucher / 0 silenced), a strict-contest pair
+    /// (2 touchers / 1 silenced — contested but not multiply silenced),
+    /// and a multiply-silenced triple (3 touchers / 2 silenced). The
+    /// three points span the {< 1, = 1, ≥ 2} silenced cardinality
+    /// partition on the losers axis, so every method-altitude boolean
+    /// primitive on that axis has one pinning input for each cell.
+    fn contest_fixture() -> (
+        Box<dyn DiscoveryLayer>,
+        Box<dyn DiscoveryLayer>,
+        Box<dyn DiscoveryLayer>,
+    ) {
+        let sole = Fixed("sole", dict(&[("k", Value::from(1i64))]));
+        let pair_coarse = Fixed("pair_coarse", dict(&[("k", Value::from(1i64))]));
+        let pair_specific = Fixed("pair_specific", dict(&[("k", Value::from(2i64))]));
+        (
+            Box::new(sole),
+            Box::new(pair_coarse),
+            Box::new(pair_specific),
+        )
+    }
+
+    #[test]
+    fn path_contest_is_multiply_silenced_false_when_uncontested() {
+        // Uncontested singleton: 1 toucher, 0 silenced → both
+        // is_contested and is_multiply_silenced collapse to false.
+        let (sole, _, _) = contest_fixture();
+        let layers: [&dyn DiscoveryLayer; 1] = [sole.as_ref()];
+        let contest = contest_at(&layers, &["k"]).unwrap();
+        assert!(!contest.is_contested(), "uncontested singleton");
+        assert!(
+            !contest.is_multiply_silenced(),
+            "≥ 2 silenced predicate collapses to false on uncontested singleton"
+        );
+    }
+
+    #[test]
+    fn path_contest_is_multiply_silenced_false_when_singly_contested() {
+        // Strict-contest pair: 2 touchers, 1 silenced → is_contested
+        // is true (≥ 1 silenced), is_multiply_silenced is false (< 2
+        // silenced). Pins the "contested but not multiply silenced"
+        // cell that distinguishes the two boolean thresholds.
+        let (_, pair_coarse, pair_specific) = contest_fixture();
+        let layers: [&dyn DiscoveryLayer; 2] = [pair_coarse.as_ref(), pair_specific.as_ref()];
+        let contest = contest_at(&layers, &["k"]).unwrap();
+        assert!(contest.is_contested(), "strict contest");
+        assert!(
+            !contest.is_multiply_silenced(),
+            "≥ 2 silenced predicate collapses to false at exactly one silenced"
+        );
+    }
+
+    #[test]
+    fn path_contest_is_multiply_silenced_true_when_multiply_silenced() {
+        // Multiply-silenced triple: 3 touchers, 2 silenced → both
+        // is_contested and is_multiply_silenced are true.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        let layers: [&dyn DiscoveryLayer; 3] =
+            [sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()];
+        let contest = contest_at(&layers, &["k"]).unwrap();
+        assert!(contest.is_contested(), "still strictly contested");
+        assert!(
+            contest.is_multiply_silenced(),
+            "≥ 2 silenced predicate is true"
+        );
+    }
+
+    #[test]
+    fn path_contest_is_multiply_silenced_matches_silenced_count_threshold() {
+        // Method-level identity: is_multiply_silenced() <=>
+        // silenced_count() >= 2 pointwise across the fixture spectrum.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        let three: [&dyn DiscoveryLayer; 3] =
+            [sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()];
+        let contest = contest_at(&three, &["k"]).unwrap();
+        assert_eq!(
+            contest.is_multiply_silenced(),
+            contest.silenced_count() >= 2
+        );
+        let two: [&dyn DiscoveryLayer; 2] = [pair_coarse.as_ref(), pair_specific.as_ref()];
+        let contest = contest_at(&two, &["k"]).unwrap();
+        assert_eq!(
+            contest.is_multiply_silenced(),
+            contest.silenced_count() >= 2
+        );
+        let one: [&dyn DiscoveryLayer; 1] = [sole.as_ref()];
+        let contest = contest_at(&one, &["k"]).unwrap();
+        assert_eq!(
+            contest.is_multiply_silenced(),
+            contest.silenced_count() >= 2
+        );
+    }
+
+    #[test]
+    fn path_contest_is_multiply_silenced_matches_contributor_count_ge_three() {
+        // Cross-side identity: is_multiply_silenced() <=>
+        // contributor_count() >= 3 (i.e. the losers-side ≥ 2 threshold
+        // aligns arithmetically with the touchers-side ≥ 3 threshold,
+        // because contributor_count() == silenced_count() + 1 on any
+        // PathContest — the decider always adds exactly one to the
+        // touchers-side).
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        for layers in [
+            &[sole.as_ref()][..],
+            &[pair_coarse.as_ref(), pair_specific.as_ref()][..],
+            &[sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()][..],
+        ] {
+            let contest = contest_at(layers, &["k"]).unwrap();
+            assert_eq!(
+                contest.is_multiply_silenced(),
+                contest.contributor_count() >= 3,
+                "method identity fails on {}-toucher fixture",
+                contest.contributor_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_is_multiply_silenced_matches_is_multiply_silenced_at_via_contest_at() {
+        // Option<PathContest> boundary identity — the method peer folds
+        // through `contest_at` to the free-fn point primitive:
+        //   contest_at(layers, p).is_some_and(|c| c.is_multiply_silenced())
+        //       == is_multiply_silenced_at(layers, p)
+        // Also covers the no-toucher case: contest_at returns None,
+        // is_some_and collapses to false, is_multiply_silenced_at also
+        // returns false.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        let silent = Fixed("silent", Dict::new());
+        for layers in [
+            &[silent.clone_boxed().as_ref()][..], // untouched path -> None
+            &[sole.as_ref()][..],
+            &[pair_coarse.as_ref(), pair_specific.as_ref()][..],
+            &[sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()][..],
+        ] {
+            let via_method = contest_at(layers, &["k"]).is_some_and(|c| c.is_multiply_silenced());
+            let via_free_fn = is_multiply_silenced_at(layers, &["k"]);
+            assert_eq!(
+                via_method, via_free_fn,
+                "method peer disagrees with free-fn point primitive"
+            );
+        }
+    }
+
+    #[test]
+    fn path_contest_is_multiply_silenced_implies_is_contested() {
+        // Cardinality-threshold monotonicity: the ≥ 2 predicate on any
+        // scalar always implies the ≥ 1 predicate on that same scalar.
+        // On the losers axis at the PathContest method surface, that
+        // reads: is_multiply_silenced() ⇒ is_contested(). Pinned
+        // pointwise across the fixture spectrum.
+        let (sole, pair_coarse, pair_specific) = contest_fixture();
+        for layers in [
+            &[sole.as_ref()][..],
+            &[pair_coarse.as_ref(), pair_specific.as_ref()][..],
+            &[sole.as_ref(), pair_coarse.as_ref(), pair_specific.as_ref()][..],
+        ] {
+            let contest = contest_at(layers, &["k"]).unwrap();
+            if contest.is_multiply_silenced() {
+                assert!(
+                    contest.is_contested(),
+                    "≥ 2 silenced must imply ≥ 1 silenced"
+                );
+            }
+        }
+    }
+
+    /// Test-side clone helper — the `Fixed` layer is deliberately
+    /// non-`Clone` at the type-signature level (the trait is
+    /// object-safe and callers should always use `&dyn DiscoveryLayer`),
+    /// so this trait extends the boxed handle with a per-test-only
+    /// deep-clone used by the mixed-fixture identity test above. Not
+    /// exported.
+    trait CloneBoxed {
+        fn clone_boxed(&self) -> Box<dyn DiscoveryLayer>;
+    }
+    impl CloneBoxed for Fixed {
+        fn clone_boxed(&self) -> Box<dyn DiscoveryLayer> {
+            Box::new(Fixed(self.0, self.1.clone()))
+        }
     }
 }
