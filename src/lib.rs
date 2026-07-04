@@ -79,8 +79,8 @@ pub use discovered::{
     contest_at, contributor_count, contributor_count_at, contributor_names, contributor_names_iter,
     contributors_at, decider_at, deep_merge, has_contributor, has_multiple_contributors,
     has_multiple_silent_layers, has_silent_layer, is_contested_at, is_multiply_silenced_at,
-    is_touched_at, layer_names, nonempty_layer_dicts, runner_up_at, silenced_at, silenced_count_at,
-    silent_layer_count, silent_layer_names, silent_layer_names_iter,
+    is_touched_at, layer_names, layer_names_iter, nonempty_layer_dicts, runner_up_at, silenced_at,
+    silenced_count_at, silent_layer_count, silent_layer_names, silent_layer_names_iter,
 };
 pub use discovery::{
     ConfigDiscovery, Format, FormatCoordinates, FormatMetadataTag, FormatProvenance,

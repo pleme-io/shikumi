@@ -94,6 +94,78 @@ pub fn layer_names(layers: &[&dyn DiscoveryLayer]) -> Vec<&'static str> {
     layers.iter().map(|layer| layer.name()).collect()
 }
 
+/// Zero-allocation iterator dual of [`layer_names`] — streams the declared
+/// layer names lazily, in application order (coarse→specific), so callers
+/// that only want the head (`.next()`), a positional match
+/// (`.find(_)` / `.position(_)`), a bounded prefix (`.take(n)`), the reverse
+/// walk (`.rev()`), or the exact cardinality (`.len()`) skip the obligatory
+/// `Vec<&'static str>` allocation the collecting form always pays.
+///
+/// The **declared-name axis dual** on the whole-layer free-function surface —
+/// the two-way partition **source** that both [`contributor_names_iter`] (on
+/// the contributed axis) and [`silent_layer_names_iter`] (on the silent axis)
+/// project from through the very same
+/// `Copied<slice::Iter<'a, &'a dyn DiscoveryLayer>>` prefix. This iter reads
+/// off the layer's declared [`DiscoveryLayer::name`] directly and pays *no*
+/// [`DiscoveryLayer::discover`] calls; the two projections pay one
+/// `discover()` per layer inspected to run the partition predicate on top of
+/// the same slice walk. Collecting through `.collect::<Vec<_>>()` recovers
+/// [`layer_names`] verbatim; the obligatory equivalence pin lives in
+/// `layer_names_iter_collect_matches_layer_names` in the test module.
+///
+/// # Partition-source law
+///
+/// For every layer stack, chaining
+/// `contributor_names_iter(layers).chain(silent_layer_names_iter(layers))`
+/// yields the same *set* of names as `layer_names_iter(layers)` — the
+/// declared-name axis is the ordered superset that the two iter duals
+/// partition disjointly on the [`DiscoveryLayer::discover`] emptiness
+/// predicate. Pinned by
+/// `layer_names_iter_is_partition_source_for_contributor_and_silent_iters`
+/// in the test module. This is the iter-altitude, source-side counterpart to
+/// the sink-side partition law that
+/// `silent_layer_names_iter_chained_with_contributor_names_iter_covers_layer_names`
+/// already pins on the two projections.
+///
+/// # Trait algebra
+///
+/// The returned iterator carries [`DoubleEndedIterator`],
+/// [`ExactSizeIterator`], [`std::iter::FusedIterator`], and [`Clone`] on top
+/// of [`Iterator`], naming the capabilities the underlying
+/// `Map<Copied<slice::Iter<'a, &'a dyn DiscoveryLayer>>>` composition
+/// structurally holds. This is **one capability richer** than the two
+/// sibling iters ([`contributor_names_iter`] and [`silent_layer_names_iter`])
+/// — both sit behind a [`std::iter::Filter`] that discards elements based on
+/// the per-layer `discover()` predicate, so their `len()` contract cannot be
+/// honored at the type level. The declared-name axis carries no such
+/// filter, so [`ExactSizeIterator`] survives all the way to the return
+/// boundary and consumers can call `.len()` / `.size_hint()` at zero heap
+/// cost — the direct iter-altitude counterpart to `layer_names(layers).len()`.
+///
+/// # Cost
+///
+/// Zero [`DiscoveryLayer::discover`] calls, zero heap allocation for the
+/// iterator itself — the returned handle is a stack composition of
+/// [`std::iter::Copied`] and [`std::iter::Map`] over the input slice's
+/// borrowed iterator. Every yielded [`&'static str`] is a copied dyn-trait
+/// method call on a layer reference, `O(1)` per element. Consumers that
+/// short-circuit (`.next()`, `.find(_)`, `.take(n)`) pay `O(k)` name reads
+/// for `k` layers visited, versus [`layer_names`]'s obligatory `O(n)` sweep
+/// plus its `Vec` allocation. A `.clone()` yields an independent walk from
+/// the head; the two walks read each layer's name independently (the closure
+/// is a zero-sized captureless [`Copy`] type, so cloning is free at the
+/// iterator state level).
+#[must_use]
+pub fn layer_names_iter<'a>(
+    layers: &'a [&'a dyn DiscoveryLayer],
+) -> impl DoubleEndedIterator<Item = &'static str>
++ ExactSizeIterator
++ std::iter::FusedIterator
++ Clone
++ 'a {
+    layers.iter().copied().map(|layer| layer.name())
+}
+
 /// Per-leaf provenance for a composed [`DiscoveryLayer`] stack: the name
 /// of the winning layer at every leaf path of the merged dict.
 ///
@@ -5629,6 +5701,224 @@ mod tests {
         let a = Fixed("platform", Dict::new());
         let b = Fixed("tenancy", Dict::new());
         assert_eq!(layer_names(&[&a, &b]), vec!["platform", "tenancy"]);
+    }
+
+    // -------- layer_names_iter --------
+
+    #[test]
+    fn layer_names_iter_collect_matches_layer_names() {
+        // The core equivalence: the zero-alloc iter surface, once
+        // materialized, is bit-identical to the collecting form on the
+        // same axis. Every downstream `layer_names` caller can switch
+        // to the iter form without semantic drift — the mirror of the
+        // same pin on `contributor_names_iter` and `silent_layer_names_iter`
+        // on the two partitioning axes.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let quiet = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &quiet, &c];
+        assert_eq!(
+            layer_names_iter(&layers).collect::<Vec<_>>(),
+            layer_names(&layers),
+            "iter → Vec matches layer_names verbatim",
+        );
+    }
+
+    #[test]
+    fn layer_names_iter_empty_stack_is_empty_stream() {
+        // The degenerate: no layers → the stream is drained at once.
+        // Pins that the fused invariant holds at the zero-length
+        // boundary, symmetric with the two sibling iters' pins.
+        let layers: [&dyn DiscoveryLayer; 0] = [];
+        assert!(
+            layer_names_iter(&layers).next().is_none(),
+            "no layers → no declared names",
+        );
+    }
+
+    #[test]
+    fn layer_names_iter_preserves_application_order() {
+        // The DoubleEndedIterator forward walk is coarse→specific,
+        // matching layer_names — the slice iteration order threads
+        // through Copied/Map unchanged. No Filter in the composition,
+        // so no element can be dropped between the slice and the
+        // yielded name.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let b = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        assert_eq!(
+            layer_names_iter(&layers).collect::<Vec<_>>(),
+            vec!["platform", "cloud", "tenancy"],
+            "iter yields names coarse→specific in application order",
+        );
+    }
+
+    #[test]
+    fn layer_names_iter_rev_reverses_forward_walk() {
+        // DoubleEndedIterator contract: `.rev().collect()` equals
+        // `.collect().into_iter().rev().collect()` — the composition
+        // preserves the reverse walk end-to-end through Copied → Map.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let b = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        let forward = layer_names_iter(&layers).collect::<Vec<_>>();
+        let reverse = layer_names_iter(&layers).rev().collect::<Vec<_>>();
+        assert_eq!(
+            reverse,
+            forward.iter().rev().copied().collect::<Vec<_>>(),
+            ".rev() over the iter recovers the reverse of the forward walk",
+        );
+    }
+
+    #[test]
+    fn layer_names_iter_clone_yields_independent_walks() {
+        // Clone contract: cloning the iter and walking both
+        // independently yields two equal-shape sequences — the closure
+        // captures nothing, so the two iterator states advance from a
+        // shared origin without interference.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let b = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        let one = layer_names_iter(&layers);
+        let two = one.clone();
+        assert_eq!(
+            one.collect::<Vec<_>>(),
+            two.collect::<Vec<_>>(),
+            "two independent walks agree",
+        );
+    }
+
+    #[test]
+    fn layer_names_iter_is_fused_past_exhaustion() {
+        // FusedIterator contract: once drained, every subsequent
+        // `.next()` continues to return `None`. Map preserves
+        // FusedIterator when the underlying Copied<slice::Iter>
+        // carries it (slice::Iter is std-guaranteed fused).
+        let a = Fixed("platform", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 1] = [&a];
+        let mut it = layer_names_iter(&layers);
+        assert_eq!(it.next(), Some("platform"));
+        for _ in 0..4 {
+            assert!(it.next().is_none(), "post-exhaustion pulls stay None");
+        }
+    }
+
+    #[test]
+    fn layer_names_iter_exact_size_matches_layer_names_len() {
+        // ExactSizeIterator contract — the extra capability the
+        // declared-name axis carries over its two projections. No
+        // Filter in the composition ⇒ `len()` survives all the way
+        // to the return boundary; consumers pay zero heap cost for
+        // the cardinality that `layer_names(layers).len()` obtained
+        // only after materializing the Vec.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let b = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        let it = layer_names_iter(&layers);
+        assert_eq!(it.len(), 3, ".len() equals the layer count");
+        assert_eq!(
+            it.size_hint(),
+            (3, Some(3)),
+            ".size_hint() is exact on both bounds",
+        );
+    }
+
+    #[test]
+    fn layer_names_iter_exact_size_shrinks_as_walk_advances() {
+        // ExactSizeIterator contract, mid-walk: after each `.next()`
+        // the remaining `.len()` decrements by exactly one. Pins that
+        // the trait bound isn't just satisfied at the return boundary
+        // but honored through the Copied → Map composition on every
+        // pull.
+        let a = Fixed("platform", Dict::new());
+        let b = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        let mut it = layer_names_iter(&layers);
+        assert_eq!(it.len(), 3);
+        let _ = it.next();
+        assert_eq!(it.len(), 2, "one pull ⇒ len drops by one");
+        let _ = it.next();
+        assert_eq!(it.len(), 1);
+        let _ = it.next();
+        assert_eq!(it.len(), 0, "fully drained ⇒ len is zero");
+    }
+
+    #[test]
+    fn layer_names_iter_head_short_circuits_without_full_sweep() {
+        // The compounding value the iter surface adds beyond
+        // `layer_names`: consumers that only need the head (`.next()`)
+        // pay one `layer.name()` call, not `n` — and, unlike the two
+        // sibling iters, zero `discover()` calls at any depth. The
+        // declared-name axis is the cheapest of the three whole-layer
+        // free-function iter surfaces to walk.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let b = Fixed("cloud", dict(&[("b", Value::from(2i64))]));
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        assert_eq!(
+            layer_names_iter(&layers).next(),
+            Some("platform"),
+            ".next() yields the first declared name without walking the rest",
+        );
+    }
+
+    #[test]
+    fn layer_names_iter_ignores_discover_shape() {
+        // The declared-name axis is independent of `discover()`
+        // results: a silent axis, an contributing axis, and a mixed
+        // stack all yield the same name walk (the names, in
+        // application order) because no `Filter` sits between the
+        // slice and the yielded name. Distinguishes the source iter
+        // from its two partition projections at the free-function
+        // altitude.
+        let a1 = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let b1 = Fixed("cloud", dict(&[("b", Value::from(2i64))]));
+        let a2 = Fixed("platform", Dict::new());
+        let b2 = Fixed("cloud", Dict::new());
+        let contributing: [&dyn DiscoveryLayer; 2] = [&a1, &b1];
+        let silent: [&dyn DiscoveryLayer; 2] = [&a2, &b2];
+        let mixed: [&dyn DiscoveryLayer; 2] = [&a1, &b2];
+        assert_eq!(
+            layer_names_iter(&contributing).collect::<Vec<_>>(),
+            layer_names_iter(&silent).collect::<Vec<_>>(),
+            "same names on contributing and silent stacks",
+        );
+        assert_eq!(
+            layer_names_iter(&mixed).collect::<Vec<_>>(),
+            layer_names_iter(&contributing).collect::<Vec<_>>(),
+            "mixed stack yields the same name walk",
+        );
+    }
+
+    #[test]
+    fn layer_names_iter_is_partition_source_for_contributor_and_silent_iters() {
+        // Partition-source law at the iter altitude: the two iter
+        // duals `contributor_names_iter` and `silent_layer_names_iter`
+        // together yield exactly the same *set* of names as
+        // `layer_names_iter`. This is the source-side counterpart to
+        // the sink-side pin
+        // `silent_layer_names_iter_chained_with_contributor_names_iter_covers_layer_names`
+        // — that one pins the union against the collected `layer_names`,
+        // this one pins it against the iter dual, keeping the whole
+        // partition arithmetic on the zero-alloc surface end-to-end.
+        let coarse = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let empty1 = Fixed("cloud", Dict::new());
+        let mid = Fixed("region", dict(&[("b", Value::from(2i64))]));
+        let empty2 = Fixed("tenancy", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 4] = [&coarse, &empty1, &mid, &empty2];
+        let source: std::collections::BTreeSet<_> = layer_names_iter(&layers).collect();
+        let chained: std::collections::BTreeSet<_> = contributor_names_iter(&layers)
+            .chain(silent_layer_names_iter(&layers))
+            .collect();
+        assert_eq!(
+            chained, source,
+            "contributor_iter ⨄ silent_iter covers layer_names_iter",
+        );
     }
 
     // -------- compose_with_provenance --------
