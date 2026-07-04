@@ -3353,6 +3353,124 @@ pub fn contributors_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> Vec<&'s
         .collect()
 }
 
+/// Zero-allocation iterator dual of [`contributors_at`] — streams the
+/// per-path contributor layer names lazily, in application order
+/// (coarse→specific), so callers that only want the head (`.next()`), a
+/// positional match (`.find(_)` / `.position(_)`), a bounded prefix
+/// (`.take(n)`), or the trailing decider (`.last()`) skip the obligatory
+/// `Vec<&'static str>` allocation the collecting form always pays.
+///
+/// The **point-restricted** dual of [`contributor_names_iter`] at the
+/// same free-function altitude: identical input shape (a layer slice), an
+/// additional `path` parameter closed over by the filter closure,
+/// identical trait-algebra return shape, `touches_path(discover(), path)`
+/// substituted for the `!discover().is_empty()` predicate. When
+/// `path.is_empty()` (the root), the two agree pointwise —
+/// [`contributor_names_iter`] is `contributors_at_iter(layers, &[])` on
+/// every layer stack. Pinned by
+/// `contributors_at_iter_empty_path_matches_contributor_names_iter` in
+/// the test module.
+///
+/// The **pre-materialization** free-function counterpart of the
+/// method-altitude [`PathContest::contributors_iter`] on the
+/// winners+losers axis at a path — both stream the "layers that had an
+/// opinion at this leaf" set as `&'static str` names in application
+/// order. The two-cost split matches
+/// (`contributor_names_iter`, `LayerAttribution::iter`) on the
+/// whole-layer axis:
+/// [`PathContest::contributors_iter`] pays one [`PathContest`]
+/// construction cost up front (which itself walks the layer stack and
+/// materializes the winners/losers slice) and then walks a pre-populated
+/// buffer at zero further `discover()` cost;
+/// `contributors_at_iter` pays zero materialization cost up front and
+/// re-invokes `discover()` for every layer visited during the walk.
+/// Consumers that only need one path's contributors reach for the
+/// free-function iter; consumers that need the same path answered
+/// through *multiple* projections (contributors + silenced + decider,
+/// or a `.rev()`-walk paired with a forward walk on the same slice)
+/// reach for [`contest_at`] once and query the materialized
+/// [`PathContest`].
+///
+/// Collecting through `.collect::<Vec<_>>()` recovers
+/// [`contributors_at`] verbatim; the obligatory equivalence pin lives in
+/// `contributors_at_iter_collect_matches_contributors_at` in the test
+/// module.
+///
+/// # Subset chains
+///
+/// The three-tier subset chain
+/// `silenced_at ⊆ contributors_at ⊆ contributor_names` carries to the
+/// iter altitude via `.collect::<BTreeSet<_>>()` on every projection,
+/// with the paired scalar identities
+/// `contributors_at_iter(layers, p).count() == contributor_count_at(layers, p)`
+/// on the cardinality axis and
+/// `contributors_at_iter(layers, p).last() ==
+///     compose_with_provenance(layers).attribution.layer_of(p)` (when the
+/// leaf survives) on the trailing-decider axis. Pinned by
+/// `contributors_at_iter_last_element_equals_layer_of_when_leaf_survives`
+/// and `contributors_at_iter_count_matches_contributor_count_at` in the
+/// test module.
+///
+/// # Trait algebra
+///
+/// The returned iterator carries [`DoubleEndedIterator`],
+/// [`std::iter::FusedIterator`], and [`Clone`] on top of [`Iterator`],
+/// naming the capabilities the underlying
+/// `Map<Filter<Copied<slice::Iter<'a, &'a dyn DiscoveryLayer>>>>`
+/// composition structurally holds. [`ExactSizeIterator`] is *not*
+/// carried — [`std::iter::Filter`] discards elements based on the
+/// per-layer `touches_path(discover(), path)` predicate, so the `len()`
+/// contract cannot be honored at the type level. Consumers that want the
+/// length without materializing the stream reach for the peer scalar
+/// [`contributor_count_at`] — the point-altitude counterpart of the
+/// redirect [`contributor_names_iter`] and [`silent_layer_names_iter`]
+/// make to [`contributor_count`] and [`silent_layer_count`] on the
+/// whole-layer axis. Note that the paired method-altitude iter
+/// [`PathContest::contributors_iter`] *does* carry
+/// [`ExactSizeIterator`] — the `PathContest` materialization amortizes
+/// the length computation into the up-front cost, so the walker knows
+/// the length structurally; this pre-materialization iter cannot.
+///
+/// # Cost
+///
+/// One `discover()` call per element inspected, matching
+/// [`contributors_at`]'s pointwise cost on the same predicate. Zero
+/// heap allocation for the iterator itself — the returned handle is a
+/// stack composition of [`std::iter::Copied`], [`std::iter::Filter`],
+/// and [`std::iter::Map`], with `path` captured by value in the filter
+/// closure (a two-word slice reference). Consumers that short-circuit
+/// (`.next()`, `.find(_)`, `.take(n)`) pay `O(k × path.len())`
+/// `discover()`-and-walk cost for `k` layers visited, versus
+/// [`contributors_at`]'s obligatory `O(layers × path.len())` sweep +
+/// Vec allocation. A `.clone()` yields an independent walk from the
+/// head; the two walks re-invoke `discover()` per layer they visit (the
+/// trade-off for the zero-alloc handle — the layers are not memoized
+/// between clones, matching the two sibling iter duals).
+///
+/// # HOCON analogue
+///
+/// The lazy, path-parameterized companion to Lightbend HOCON's
+/// [`Config.entrySet()`] grouped by [`ConfigOrigin`]: HOCON's origin
+/// projection materializes every entry's source before the caller can
+/// slice by key; `contributors_at_iter` restricts the same question to
+/// a single leaf coordinate *and* defers materialization, so a
+/// "which source touched this key first?" pane pays one `discover()`
+/// call and one `touches_path` walk down `path`, then stops.
+///
+/// [`Config.entrySet()`]: https://lightbend.github.io/config/latest/api/com/typesafe/config/Config.html#entrySet--
+/// [`ConfigOrigin`]: https://lightbend.github.io/config/latest/api/com/typesafe/config/ConfigOrigin.html
+#[must_use]
+pub fn contributors_at_iter<'a>(
+    layers: &'a [&'a dyn DiscoveryLayer],
+    path: &'a [&'a str],
+) -> impl DoubleEndedIterator<Item = &'static str> + std::iter::FusedIterator + Clone + 'a {
+    layers
+        .iter()
+        .copied()
+        .filter(move |layer| touches_path(&layer.discover(), path))
+        .map(|layer| layer.name())
+}
+
 /// The names of layers whose [`DiscoveryLayer::discover`] dict had an
 /// opinion at `path` but were **overridden** by a later layer whose
 /// `discover()` dict also had an opinion at `path` — the losers of the
@@ -11842,6 +11960,274 @@ mod tests {
         assert_eq!(
             contributors_at(&[&match_layer, &disjoint], &["a", "b"]),
             vec!["match"],
+        );
+    }
+
+    // -------- contributors_at_iter --------
+
+    #[test]
+    fn contributors_at_iter_collect_matches_contributors_at() {
+        // The core equivalence: the zero-alloc iter surface, once
+        // materialized, is bit-identical to the collecting form on the
+        // same (per-path contributors) axis. Every downstream
+        // `contributors_at` caller can switch to the iter form without
+        // semantic drift — the point-restricted analogue of the
+        // `contributor_names_iter_collect_matches_contributor_names`
+        // pin on the whole-layer axis.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("other", Value::from(3i64))]));
+        let silent = Fixed("silent", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 4] = [&a, &b, &c, &silent];
+        for path in [&["k"][..], &["other"][..], &["nope"][..], &[][..]] {
+            assert_eq!(
+                contributors_at_iter(&layers, path).collect::<Vec<_>>(),
+                contributors_at(&layers, path),
+                "iter → Vec matches contributors_at at path {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn contributors_at_iter_empty_layers_is_empty_stream() {
+        // The degenerate: no layers → the stream is drained at once
+        // at every path. Pins that the fused invariant holds at the
+        // zero-length boundary, symmetric with the sibling iter pins
+        // on the whole-layer axis.
+        let layers: [&dyn DiscoveryLayer; 0] = [];
+        assert!(contributors_at_iter(&layers, &["k"]).next().is_none());
+        assert!(contributors_at_iter(&layers, &[]).next().is_none());
+    }
+
+    #[test]
+    fn contributors_at_iter_empty_path_matches_contributor_names_iter() {
+        // Subset chain at the root path, lifted to the iter altitude:
+        // `contributors_at_iter(layers, &[])` streams the same names
+        // in the same order as `contributor_names_iter(layers)`. Pins
+        // the substrate-owned identity between the point-primitive
+        // iter at the root path and its whole-layer counterpart on
+        // the free-function surface.
+        let coarse = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+        let specific = Fixed("tenancy", dict(&[("b", Value::from(2i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&coarse, &silent, &specific];
+        assert_eq!(
+            contributors_at_iter(&layers, &[]).collect::<Vec<_>>(),
+            contributor_names_iter(&layers).collect::<Vec<_>>(),
+            "empty path collapses to the whole-layer contributor stream",
+        );
+    }
+
+    #[test]
+    fn contributors_at_iter_preserves_application_order() {
+        // The DoubleEndedIterator forward walk is coarse→specific,
+        // matching `contributors_at` — the slice iteration order threads
+        // through Copied → Filter → Map unchanged. Order is
+        // caller-declared, NOT alphabetical.
+        let coarse = Fixed("tenancy", dict(&[("k", Value::from(1i64))]));
+        let specific = Fixed("platform", dict(&[("k", Value::from(2i64))]));
+        let layers: [&dyn DiscoveryLayer; 2] = [&coarse, &specific];
+        assert_eq!(
+            contributors_at_iter(&layers, &["k"]).collect::<Vec<_>>(),
+            vec!["tenancy", "platform"],
+        );
+    }
+
+    #[test]
+    fn contributors_at_iter_rev_reverses_forward_walk() {
+        // DoubleEndedIterator contract: `.rev().collect()` equals
+        // `.collect().into_iter().rev().collect()` — the composition
+        // preserves the reverse walk end-to-end through
+        // Copied → Filter → Map on the path-restricted projection.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let disjoint = Fixed("disjoint", dict(&[("other", Value::from(9i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &disjoint, &b];
+        let forward = contributors_at_iter(&layers, &["k"]).collect::<Vec<_>>();
+        let reverse = contributors_at_iter(&layers, &["k"])
+            .rev()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            reverse,
+            forward.iter().rev().copied().collect::<Vec<_>>(),
+            ".rev() over the iter recovers the reverse of the forward walk",
+        );
+    }
+
+    #[test]
+    fn contributors_at_iter_clone_yields_independent_walks() {
+        // Clone contract: cloning the iter and walking both
+        // independently yields two equal-shape sequences — the closure
+        // captures `path` by value (a two-word slice reference), so the
+        // two iterator states advance from a shared origin without
+        // interference. This is what the trait algebra name promises at
+        // the free-function boundary.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("other", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        let one = contributors_at_iter(&layers, &["k"]);
+        let two = one.clone();
+        assert_eq!(
+            one.collect::<Vec<_>>(),
+            two.collect::<Vec<_>>(),
+            "two independent walks agree",
+        );
+    }
+
+    #[test]
+    fn contributors_at_iter_is_fused_past_exhaustion() {
+        // FusedIterator contract: once drained, every subsequent
+        // `.next()` continues to return `None`. Filter preserves
+        // FusedIterator when the underlying Copied<slice::Iter> carries
+        // it (slice::Iter is std-guaranteed fused).
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let layers: [&dyn DiscoveryLayer; 1] = [&a];
+        let mut it = contributors_at_iter(&layers, &["k"]);
+        assert_eq!(it.next(), Some("a"));
+        for _ in 0..4 {
+            assert!(it.next().is_none(), "post-exhaustion pulls stay None");
+        }
+    }
+
+    #[test]
+    fn contributors_at_iter_head_short_circuits_without_full_sweep() {
+        // The compounding value the iter surface adds beyond
+        // `contributors_at`: consumers that only need the coarsest
+        // contributor (`.next()`) — the "who first shaped this leaf?"
+        // pane a diagnostic renderer reaches for — pay one matching
+        // `discover()`-and-`touches_path` walk, not `n`, and skip the
+        // `Vec<&'static str>` allocation entirely. Mirror of the
+        // sibling
+        // `contributor_names_iter_head_short_circuits_without_full_sweep`
+        // pin on the whole-layer axis.
+        let a = Fixed("platform", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("cloud", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("tenancy", dict(&[("k", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        assert_eq!(
+            contributors_at_iter(&layers, &["k"]).next(),
+            Some("platform"),
+            ".next() yields the coarsest contributor without walking the rest",
+        );
+    }
+
+    #[test]
+    fn contributors_at_iter_last_element_equals_layer_of_when_leaf_survives() {
+        // Iter-altitude projection identity: when the effective outcome
+        // at `path` is a leaf, `.last()` on the iter recovers the
+        // `LayerAttribution.layer_of` winner — the same trailing-decider
+        // identity `contributors_at.last()` pins on the collecting form.
+        // Nested-dict, sibling-preservation flavor, mirroring
+        // `contributors_at_last_element_equals_layer_of_when_leaf_survives`.
+        let coarse = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[
+                    ("setpoint", Value::from(0.80)),
+                    ("mode", Value::from("live")),
+                ])),
+            )]),
+        );
+        let specific = Fixed(
+            "tenancy",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("shadow"))])),
+            )]),
+        );
+        let layers: [&dyn DiscoveryLayer; 2] = [&coarse, &specific];
+        let out = compose_with_provenance(&layers);
+        assert_eq!(
+            contributors_at_iter(&layers, &["breathe", "mode"]).last(),
+            out.attribution.layer_of(&["breathe", "mode"]),
+            "iter .last() equals attribution.layer_of on a surviving contested leaf",
+        );
+        assert_eq!(
+            contributors_at_iter(&layers, &["breathe", "setpoint"]).last(),
+            out.attribution.layer_of(&["breathe", "setpoint"]),
+            "iter .last() equals attribution.layer_of on a surviving uncontested leaf",
+        );
+    }
+
+    #[test]
+    fn contributors_at_iter_count_matches_contributor_count_at() {
+        // Cardinality projection identity: `.count()` on the iter equals
+        // `contributor_count_at(layers, path)` — the peer scalar the
+        // trait-algebra doc redirects to when the caller wants length
+        // without materializing the stream. The point-restricted mirror
+        // of the whole-layer redirect from `contributor_names_iter` to
+        // `contributor_count`. Pinned across paths that stress the
+        // filter (contested leaf, uncontested leaf, no-touchers path,
+        // and the empty root path collapsing to the whole-layer count).
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("other", Value::from(3i64))]));
+        let silent = Fixed("silent", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 4] = [&a, &b, &c, &silent];
+        for path in [&["k"][..], &["other"][..], &["nope"][..], &[][..]] {
+            assert_eq!(
+                contributors_at_iter(&layers, path).count(),
+                contributor_count_at(&layers, path),
+                ".count() on the iter matches the scalar contributor_count_at at path {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn contributors_at_iter_ignores_layers_with_disjoint_content() {
+        // Under `deep_merge`, a layer whose top-level key doesn't
+        // match any prefix of `path` contributes nothing to that leaf
+        // and must be filtered out at the iter altitude too. Mirror
+        // of the collecting-form pin
+        // `contributors_at_ignores_layers_with_disjoint_content`.
+        let match_layer = Fixed(
+            "match",
+            dict(&[("a", Value::from(dict(&[("b", Value::from(1i64))])))]),
+        );
+        let disjoint = Fixed("disjoint", dict(&[("z", Value::from(9i64))]));
+        let layers: [&dyn DiscoveryLayer; 2] = [&match_layer, &disjoint];
+        assert_eq!(
+            contributors_at_iter(&layers, &["a", "b"]).collect::<Vec<_>>(),
+            vec!["match"],
+        );
+    }
+
+    #[test]
+    fn contributors_at_iter_agrees_with_path_contest_contributors_iter() {
+        // Cross-altitude agreement: the free-function pre-materialization
+        // iter and the method-altitude post-materialization iter emit
+        // the same `&'static str` names in the same order. Distinguishes
+        // the two costs (one `discover()` per layer visited vs. amortized
+        // `PathContest` construction + zero further `discover()` calls)
+        // while pinning the pair-projection identity at the substrate
+        // level. When `contest_at` returns `None` (nobody touches the
+        // path), the free-function iter is empty too.
+        let coarse = Fixed("platform", dict(&[("k", Value::from("via_platform"))]));
+        let mid = Fixed("cloud", dict(&[("k", Value::from("via_cloud"))]));
+        let specific = Fixed("tenancy", dict(&[("k", Value::from("via_tenancy"))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&coarse, &mid, &specific];
+
+        let via_free_function: Vec<&'static str> = contributors_at_iter(&layers, &["k"]).collect();
+        let via_contest: Vec<&'static str> = contest_at(&layers, &["k"])
+            .expect("three touchers materialize a PathContest")
+            .contributors_iter()
+            .collect();
+        assert_eq!(
+            via_free_function, via_contest,
+            "both iter altitudes agree on the winners+losers walk",
+        );
+
+        // No touchers ⇒ the free-function iter is empty and contest_at
+        // is None on the same layer stack.
+        assert!(
+            contributors_at_iter(&layers, &["nope"]).next().is_none(),
+            "no touchers → the iter is drained at once",
+        );
+        assert!(
+            contest_at(&layers, &["nope"]).is_none(),
+            "no touchers → no PathContest to materialize",
         );
     }
 
