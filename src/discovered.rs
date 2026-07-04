@@ -2077,6 +2077,58 @@ pub fn contributor_names(layers: &[&dyn DiscoveryLayer]) -> Vec<&'static str> {
         .collect()
 }
 
+/// Zero-allocation iterator dual of [`contributor_names`] — streams the
+/// contributing layer names lazily, in application order (coarse→specific),
+/// so callers that only want the head (`.next()`), a positional match
+/// (`.find(_)` / `.position(_)`), or a bounded prefix (`.take(n)`) skip the
+/// obligatory `Vec<&'static str>` allocation the collecting form always
+/// pays.
+///
+/// The whole-layer, free-function counterpart of the point-primitive
+/// [`PathContest::contributors_iter`] on the winners+losers axis at a
+/// path — both project the "layers that had an opinion" set as a lazy
+/// stream of `&'static str` names in application order. Collecting through
+/// `.collect::<Vec<_>>()` recovers [`contributor_names`] verbatim; the
+/// obligatory equivalence pin lives in
+/// `contributor_names_iter_collect_matches_contributor_names` in the test
+/// module.
+///
+/// # Trait algebra
+///
+/// The returned iterator carries [`DoubleEndedIterator`],
+/// [`std::iter::FusedIterator`], and [`Clone`] on top of [`Iterator`],
+/// naming the capabilities the underlying
+/// `Map<Filter<Copied<slice::Iter<'a, &'a dyn DiscoveryLayer>>>>`
+/// composition structurally holds. [`ExactSizeIterator`] is *not*
+/// carried — [`std::iter::Filter`] discards elements based on the
+/// per-layer `discover()` predicate, so the `len()` contract cannot be
+/// honored at the type level. Consumers that want the length without
+/// materializing the stream reach for the peer scalar-cardinality
+/// primitive [`contributor_count`].
+///
+/// # Cost
+///
+/// One `discover()` call per element inspected, matching
+/// [`contributor_names`]'s pointwise cost on the same predicate. Zero
+/// heap allocation for the iterator itself — the returned handle is a
+/// stack composition of [`std::iter::Copied`], [`std::iter::Filter`],
+/// and [`std::iter::Map`]. Consumers that short-circuit (`.next()`,
+/// `.find(_)`, `.take(n)`) pay `O(k)` `discover()` calls for `k` layers
+/// visited, versus [`contributor_names`]'s obligatory `O(n)` sweep + Vec
+/// allocation. A `.clone()` yields an independent walk from the head; the
+/// two walks re-invoke `discover()` per layer they visit (the trade-off
+/// for the zero-alloc handle — the layers are not memoized between clones).
+#[must_use]
+pub fn contributor_names_iter<'a>(
+    layers: &'a [&'a dyn DiscoveryLayer],
+) -> impl DoubleEndedIterator<Item = &'static str> + std::iter::FusedIterator + Clone + 'a {
+    layers
+        .iter()
+        .copied()
+        .filter(|layer| !layer.discover().is_empty())
+        .map(|layer| layer.name())
+}
+
 /// The names of layers whose [`DiscoveryLayer::discover`] returned an
 /// *empty* [`Dict`] — axes that were declared but couldn't answer in
 /// the running environment. The diagnostic dual of [`contributor_names`]
@@ -7224,6 +7276,138 @@ mod tests {
         assert_eq!(
             compose(&[&coarse, &specific]).get("setpoint"),
             Some(&Value::from(0.70)),
+        );
+    }
+
+    // -------- contributor_names_iter --------
+
+    #[test]
+    fn contributor_names_iter_collect_matches_contributor_names() {
+        // The core equivalence: the zero-alloc iter surface, once
+        // materialized, is bit-identical to the collecting form on the
+        // same axis. Every downstream `contributor_names` caller can
+        // switch to the iter form without semantic drift.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let quiet = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &quiet, &c];
+        assert_eq!(
+            contributor_names_iter(&layers).collect::<Vec<_>>(),
+            contributor_names(&layers),
+            "iter → Vec matches contributor_names verbatim",
+        );
+    }
+
+    #[test]
+    fn contributor_names_iter_empty_stack_is_empty_stream() {
+        // The degenerate: no layers → the stream is drained at once.
+        // Pins that the fused invariant holds at the zero-length boundary.
+        let layers: [&dyn DiscoveryLayer; 0] = [];
+        assert!(
+            contributor_names_iter(&layers).next().is_none(),
+            "no layers → no contributors",
+        );
+    }
+
+    #[test]
+    fn contributor_names_iter_all_undetectable_is_empty_stream() {
+        // Every layer's discover() returned an empty dict ⇒ the filter
+        // rejects every element ⇒ the composed iter is empty. The
+        // Filter's empty-tail case must not leak through as a stray
+        // yield.
+        let a = Fixed("platform", Dict::new());
+        let b = Fixed("cloud", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        assert!(
+            contributor_names_iter(&layers).next().is_none(),
+            "every axis silent → the stream is empty",
+        );
+    }
+
+    #[test]
+    fn contributor_names_iter_preserves_application_order() {
+        // The DoubleEndedIterator forward walk is coarse→specific, matching
+        // contributor_names — the slice iteration order threads through
+        // Copied/Filter/Map unchanged.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let b = Fixed("cloud", dict(&[("b", Value::from(2i64))]));
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        assert_eq!(
+            contributor_names_iter(&layers).collect::<Vec<_>>(),
+            vec!["platform", "cloud", "tenancy"],
+            "iter yields names coarse→specific in application order",
+        );
+    }
+
+    #[test]
+    fn contributor_names_iter_rev_reverses_forward_walk() {
+        // DoubleEndedIterator contract: `.rev().collect()` equals
+        // `.collect().into_iter().rev().collect()` — the composition
+        // preserves the reverse walk end-to-end through Copied → Filter → Map.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let quiet = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &quiet, &c];
+        let forward = contributor_names_iter(&layers).collect::<Vec<_>>();
+        let reverse = contributor_names_iter(&layers).rev().collect::<Vec<_>>();
+        assert_eq!(
+            reverse,
+            forward.iter().rev().copied().collect::<Vec<_>>(),
+            ".rev() over the iter recovers the reverse of the forward walk",
+        );
+    }
+
+    #[test]
+    fn contributor_names_iter_clone_yields_independent_walks() {
+        // Clone contract: cloning the iter and walking both independently
+        // yields two equal-shape sequences — the closures capture nothing,
+        // so the two iterator states advance from a shared origin without
+        // interference. This is what the trait algebra name promises at
+        // the free-function boundary.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let quiet = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &quiet, &c];
+        let one = contributor_names_iter(&layers);
+        let two = one.clone();
+        assert_eq!(
+            one.collect::<Vec<_>>(),
+            two.collect::<Vec<_>>(),
+            "two independent walks agree",
+        );
+    }
+
+    #[test]
+    fn contributor_names_iter_is_fused_past_exhaustion() {
+        // FusedIterator contract: once drained, every subsequent
+        // `.next()` continues to return `None`. Filter + Map both
+        // preserve FusedIterator when the underlying Copied<slice::Iter>
+        // carries it (slice::Iter is std-guaranteed fused).
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let layers: [&dyn DiscoveryLayer; 1] = [&a];
+        let mut it = contributor_names_iter(&layers);
+        assert_eq!(it.next(), Some("platform"));
+        for _ in 0..4 {
+            assert!(it.next().is_none(), "post-exhaustion pulls stay None");
+        }
+    }
+
+    #[test]
+    fn contributor_names_iter_head_short_circuits_without_full_sweep() {
+        // The compounding value the iter surface adds beyond
+        // contributor_names: consumers that only need the head
+        // (`.next()`) pay one discover() call, not `n` — the Filter
+        // predicate short-circuits as soon as the first non-empty
+        // dict is seen.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let b = Fixed("cloud", dict(&[("b", Value::from(2i64))]));
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        assert_eq!(
+            contributor_names_iter(&layers).next(),
+            Some("platform"),
+            ".next() yields the first contributor without walking the rest",
         );
     }
 
