@@ -2373,6 +2373,107 @@ pub fn nonempty_layer_dicts(layers: &[&dyn DiscoveryLayer]) -> Vec<(&'static str
         .collect()
 }
 
+/// Zero-allocation iterator dual of [`nonempty_layer_dicts`] — streams the
+/// `(name, discovered dict)` pairs lazily in application order
+/// (coarse→specific), so callers that only want the head (`.next()` for a
+/// "first contributing axis + its dict" pane), a positional match
+/// (`.find(_)` / `.position(_)`), a bounded prefix (`.take(n)`), the reverse
+/// walk (`.rev()` for specific-first traversal), or an early-terminating
+/// fold ([`Iterator::try_fold`] on a discovered-tier composer that stops
+/// once the running dict is dense enough) skip the obligatory
+/// `Vec<(&'static str, Dict)>` allocation the collecting form always pays.
+///
+/// The **(name, dict) pair-source dual** on the whole-layer free-function
+/// iter surface — the two-way partition **source** that both
+/// [`contributor_names_iter`] (the ordered-names projection through
+/// `.map(|(n, _)| n)`) and [`compose`] (the merged-dict projection through
+/// `.fold(Dict::new(), |acc, (_, d)| deep_merge(&mut acc, d); acc)`) factor
+/// through in a single walk of the layer slice. Contrast with the paired
+/// call-site pattern `contributor_names(layers)` + `compose(layers)`, which
+/// pays 2× the `discover()` cost by walking the slice twice; this iter (or
+/// its collecting form [`nonempty_layer_dicts`]) does both in one sweep,
+/// and this iter form does it without the `Vec<(name, Dict)>` allocation
+/// on top.
+///
+/// Collecting through `.collect::<Vec<_>>()` recovers [`nonempty_layer_dicts`]
+/// verbatim; the obligatory equivalence pin lives in
+/// `nonempty_layer_dicts_iter_collect_matches_nonempty_layer_dicts` in the
+/// test module. Every downstream `nonempty_layer_dicts` caller can switch
+/// to the iter form without semantic drift.
+///
+/// # Partition-source law
+///
+/// For every layer stack, mapping through the first projection
+/// `.map(|(n, _)| n)` yields the same sequence as
+/// [`contributor_names_iter`]: the (name, dict) pair source and the
+/// bare-name projection share the same predicate (non-empty `discover()`)
+/// and the same slice iteration order, so their name axes agree
+/// pointwise. Pinned by
+/// `nonempty_layer_dicts_iter_names_project_to_contributor_names_iter` in
+/// the test module. Symmetrically, folding through the second projection
+/// with [`deep_merge`] recovers [`compose`] byte-for-byte on the merged
+/// dict, closing the second projection identity — pinned by
+/// `nonempty_layer_dicts_iter_fold_deep_merge_matches_compose`. Together
+/// the two identities pin the "one sweep, two projections" property this
+/// iter carries beyond its two paired siblings.
+///
+/// # Trait algebra
+///
+/// The returned iterator carries [`DoubleEndedIterator`],
+/// [`std::iter::FusedIterator`], and [`Clone`] on top of [`Iterator`],
+/// naming the capabilities the underlying
+/// `FilterMap<Copied<slice::Iter<'a, &'a dyn DiscoveryLayer>>, _>`
+/// composition structurally holds. [`ExactSizeIterator`] is *not* carried
+/// — [`std::iter::FilterMap`] discards elements based on the per-layer
+/// `discover()` predicate (via its `Option<T>` return), so the `len()`
+/// contract cannot be honored at the type level. Consumers that want the
+/// length without materializing the stream reach for the peer
+/// scalar-cardinality primitive [`contributor_count`] — the same
+/// substitution the two sibling iters ([`contributor_names_iter`] and
+/// [`silent_layer_names_iter`]) redirect to.
+///
+/// # Cost
+///
+/// One `discover()` call per layer inspected, matching
+/// [`nonempty_layer_dicts`]'s pointwise cost on the same predicate. Each
+/// yielded [`Dict`] is owned (byte-identical to what that layer's
+/// `discover()` returned on this call — no pre-merge, no filtering of
+/// inner keys), so callers can consume the pair without threading a
+/// lifetime back to the layer stack. Zero heap allocation for the
+/// iterator itself — the returned handle is a stack composition of
+/// [`std::iter::Copied`] and [`std::iter::FilterMap`]. Consumers that
+/// short-circuit (`.next()`, `.find(_)`, `.take(n)`) pay `O(k)`
+/// `discover()` calls for `k` layers visited, versus
+/// [`nonempty_layer_dicts`]'s obligatory `O(n)` sweep plus its
+/// `Vec<(name, Dict)>` allocation. A `.clone()` yields an independent
+/// walk from the head; the two walks re-invoke `discover()` per layer
+/// they visit (the trade-off for the zero-alloc handle — the (name,
+/// dict) pairs are not memoized between clones, just as the two sibling
+/// iters do not memoize their `Filter` predicate).
+///
+/// # HOCON analogue
+///
+/// The lazy substrate-owned counterpart to Lightbend HOCON's
+/// `Config.entrySet()` grouped by [origin], but at the *layer*
+/// granularity this substrate exposes and with a zero-alloc walker on
+/// top: one entry per contributing axis, each carrying its full partial
+/// view of the config, streamed on demand.
+///
+/// [origin]: https://lightbend.github.io/config/latest/api/com/typesafe/config/ConfigOrigin.html
+#[must_use]
+pub fn nonempty_layer_dicts_iter<'a>(
+    layers: &'a [&'a dyn DiscoveryLayer],
+) -> impl DoubleEndedIterator<Item = (&'static str, Dict)> + std::iter::FusedIterator + Clone + 'a {
+    layers.iter().copied().filter_map(|layer| {
+        let dict = layer.discover();
+        if dict.is_empty() {
+            None
+        } else {
+            Some((layer.name(), dict))
+        }
+    })
+}
+
 /// The **number of layers** whose [`DiscoveryLayer::discover`] returned a
 /// non-empty [`Dict`] — the count of axes that had *some* opinion in the
 /// running environment.
@@ -7880,6 +7981,220 @@ mod tests {
         assert_eq!(
             nonempty_layer_dicts(&[&coarse, &specific]),
             vec![("platform", coarse_dict), ("tenancy", specific_dict)],
+        );
+    }
+
+    // -------- nonempty_layer_dicts_iter --------
+
+    #[test]
+    fn nonempty_layer_dicts_iter_collect_matches_nonempty_layer_dicts() {
+        // The core equivalence: the zero-alloc iter surface, once
+        // materialized, is bit-identical to the collecting form on the
+        // same (name, dict) pair axis. Every downstream
+        // `nonempty_layer_dicts` caller can switch to the iter form
+        // without semantic drift — the pair-source analogue of the
+        // `contributor_names_iter_collect_matches_contributor_names` pin
+        // on the bare-name projection.
+        let a_dict = dict(&[("k", Value::from(1i64)), ("side", Value::from("A"))]);
+        let c_dict = dict(&[("k", Value::from(2i64))]);
+        let a = Fixed("platform", a_dict);
+        let quiet = Fixed("undetectable", Dict::new());
+        let c = Fixed("tenancy", c_dict);
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &quiet, &c];
+        assert_eq!(
+            nonempty_layer_dicts_iter(&layers).collect::<Vec<_>>(),
+            nonempty_layer_dicts(&layers),
+            "iter → Vec matches nonempty_layer_dicts verbatim",
+        );
+    }
+
+    #[test]
+    fn nonempty_layer_dicts_iter_empty_stack_is_empty_stream() {
+        // The degenerate: no layers → the stream is drained at once.
+        // Pins that the fused invariant holds at the zero-length
+        // boundary, symmetric with the sibling iter pins on the two
+        // name-only projections.
+        let layers: [&dyn DiscoveryLayer; 0] = [];
+        assert!(
+            nonempty_layer_dicts_iter(&layers).next().is_none(),
+            "no layers → no pairs",
+        );
+    }
+
+    #[test]
+    fn nonempty_layer_dicts_iter_all_undetectable_is_empty_stream() {
+        // Every layer's discover() returned an empty dict ⇒ the
+        // FilterMap's None-branch rejects every element ⇒ the composed
+        // iter is empty. Mirror of
+        // `contributor_names_iter_all_undetectable_is_empty_stream` on
+        // the pair-source axis.
+        let a = Fixed("platform", Dict::new());
+        let b = Fixed("cloud", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        assert!(
+            nonempty_layer_dicts_iter(&layers).next().is_none(),
+            "every axis silent → the stream is empty",
+        );
+    }
+
+    #[test]
+    fn nonempty_layer_dicts_iter_preserves_application_order() {
+        // The DoubleEndedIterator forward walk is coarse→specific,
+        // matching nonempty_layer_dicts — the slice iteration order
+        // threads through Copied → FilterMap unchanged. Order is
+        // caller-declared, NOT alphabetical.
+        let a = Fixed("tenancy", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("platform", dict(&[("k", Value::from(2i64))]));
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        let names: Vec<&'static str> = nonempty_layer_dicts_iter(&layers).map(|(n, _)| n).collect();
+        assert_eq!(names, vec!["tenancy", "platform"]);
+    }
+
+    #[test]
+    fn nonempty_layer_dicts_iter_rev_reverses_forward_walk() {
+        // DoubleEndedIterator contract: `.rev().collect()` equals
+        // `.collect().into_iter().rev().collect()` — the composition
+        // preserves the reverse walk end-to-end through
+        // Copied → FilterMap on the paired projection.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let quiet = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &quiet, &c];
+        let forward = nonempty_layer_dicts_iter(&layers).collect::<Vec<_>>();
+        let reverse = nonempty_layer_dicts_iter(&layers).rev().collect::<Vec<_>>();
+        assert_eq!(
+            reverse,
+            forward.iter().rev().cloned().collect::<Vec<_>>(),
+            ".rev() over the iter recovers the reverse of the forward walk",
+        );
+    }
+
+    #[test]
+    fn nonempty_layer_dicts_iter_clone_yields_independent_walks() {
+        // Clone contract: cloning the iter and walking both
+        // independently yields two equal-shape sequences — the closure
+        // captures nothing, so the two iterator states advance from a
+        // shared origin without interference. This is what the trait
+        // algebra name promises at the free-function boundary.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let quiet = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &quiet, &c];
+        let one = nonempty_layer_dicts_iter(&layers);
+        let two = one.clone();
+        assert_eq!(
+            one.collect::<Vec<_>>(),
+            two.collect::<Vec<_>>(),
+            "two independent walks agree",
+        );
+    }
+
+    #[test]
+    fn nonempty_layer_dicts_iter_is_fused_past_exhaustion() {
+        // FusedIterator contract: once drained, every subsequent
+        // `.next()` continues to return `None`. FilterMap preserves
+        // FusedIterator when the underlying Copied<slice::Iter> carries
+        // it (slice::Iter is std-guaranteed fused).
+        let a = Fixed("platform", dict(&[("k", Value::from(1i64))]));
+        let layers: [&dyn DiscoveryLayer; 1] = [&a];
+        let mut it = nonempty_layer_dicts_iter(&layers);
+        assert_eq!(it.next().map(|(n, _)| n), Some("platform"));
+        for _ in 0..4 {
+            assert!(it.next().is_none(), "post-exhaustion pulls stay None");
+        }
+    }
+
+    #[test]
+    fn nonempty_layer_dicts_iter_head_short_circuits_without_full_sweep() {
+        // The compounding value the iter surface adds beyond
+        // nonempty_layer_dicts: consumers that only need the head pair
+        // (`.next()`) — the "first contributing axis + its dict" pane
+        // downstream config-show renderers reach for — pay one
+        // discover() call, not `n`, and skip the Vec<(name, Dict)>
+        // allocation entirely. Mirror of the sibling
+        // `contributor_names_iter_head_short_circuits_without_full_sweep`
+        // pin on the bare-name projection.
+        let a_dict = dict(&[("a", Value::from(1i64))]);
+        let b_dict = dict(&[("b", Value::from(2i64))]);
+        let c_dict = dict(&[("c", Value::from(3i64))]);
+        let a = Fixed("platform", a_dict.clone());
+        let b = Fixed("cloud", b_dict);
+        let c = Fixed("tenancy", c_dict);
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        assert_eq!(
+            nonempty_layer_dicts_iter(&layers).next(),
+            Some(("platform", a_dict)),
+            ".next() yields the first contributor's (name, dict) without walking the rest",
+        );
+    }
+
+    #[test]
+    fn nonempty_layer_dicts_iter_names_project_to_contributor_names_iter() {
+        // Iter-altitude projection identity: mapping through the first
+        // component recovers the sibling `contributor_names_iter` walk
+        // pointwise. The (name, dict) pair-source and the bare-name
+        // projection share the same predicate (non-empty discover) and
+        // the same slice iteration order, so their name axes agree.
+        // Pins the compounding claim in the fn's `# Partition-source law`
+        // section — the pair-source factors through the bare-name
+        // projection at zero cost.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let quiet = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &quiet, &c];
+        let via_pair: Vec<&'static str> =
+            nonempty_layer_dicts_iter(&layers).map(|(n, _)| n).collect();
+        let via_name: Vec<&'static str> = contributor_names_iter(&layers).collect();
+        assert_eq!(
+            via_pair, via_name,
+            "map(first) over the pair iter recovers contributor_names_iter",
+        );
+    }
+
+    #[test]
+    fn nonempty_layer_dicts_iter_fold_deep_merge_matches_compose() {
+        // Iter-altitude second projection identity: folding the pair
+        // iter with `deep_merge` recovers `compose` byte-for-byte on the
+        // merged dict. Pins the compounding claim — one walk of the
+        // layer slice, one allocation of the accumulator, no separate
+        // discover() sweep for names + one for compose. The paired seam
+        // this iter is the substrate-owned counterpart to.
+        let coarse = Fixed(
+            "platform",
+            dict(&[
+                ("setpoint", Value::from(0.80)),
+                ("floor", Value::from("256Mi")),
+            ]),
+        );
+        let mid = Fixed("undetectable", Dict::new());
+        let specific = Fixed("tenancy", dict(&[("setpoint", Value::from(0.70))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&coarse, &mid, &specific];
+        let derived: Dict =
+            nonempty_layer_dicts_iter(&layers).fold(Dict::new(), |mut acc, (_, d)| {
+                deep_merge(&mut acc, d);
+                acc
+            });
+        assert_eq!(derived, compose(&layers), "fold(deep_merge) == compose");
+        assert_eq!(derived.get("setpoint"), Some(&Value::from(0.70)));
+        assert_eq!(derived.get("floor"), Some(&Value::from("256Mi")));
+    }
+
+    #[test]
+    fn nonempty_layer_dicts_iter_count_matches_contributor_count() {
+        // Cardinality projection identity: `.count()` on the pair iter
+        // equals `contributor_count(layers)` — the same scalar the two
+        // sibling iters redirect to when the caller wants length
+        // without materializing the stream. Pins that the FilterMap
+        // walk agrees with the substrate-owned scalar-cardinality
+        // endpoint on the same axis.
+        let a = Fixed("platform", dict(&[("k", Value::from(1i64))]));
+        let quiet = Fixed("undetectable", Dict::new());
+        let c = Fixed("tenancy", dict(&[("k", Value::from(2i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &quiet, &c];
+        assert_eq!(
+            nonempty_layer_dicts_iter(&layers).count(),
+            contributor_count(&layers),
+            ".count() on the pair iter matches the scalar contributor_count",
         );
     }
 
