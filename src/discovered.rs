@@ -2177,6 +2177,71 @@ pub fn silent_layer_names(layers: &[&dyn DiscoveryLayer]) -> Vec<&'static str> {
         .collect()
 }
 
+/// Zero-allocation iterator dual of [`silent_layer_names`] — streams the
+/// silent (undetectable-axis) layer names lazily, in application order
+/// (coarse→specific), so callers that only want the head (`.next()`), a
+/// positional match (`.find(_)` / `.position(_)`), or a bounded prefix
+/// (`.take(n)`) skip the obligatory `Vec<&'static str>` allocation the
+/// collecting form always pays.
+///
+/// The mirror of [`contributor_names_iter`] on the silent axis: identical
+/// input shape, identical trait-algebra return shape, inverted `discover()`
+/// predicate. `contributor_names_iter` streams axes whose `discover()`
+/// produced a non-empty [`Dict`]; `silent_layer_names_iter` streams axes
+/// whose `discover()` produced [`Dict::new`]. Collecting through
+/// `.collect::<Vec<_>>()` recovers [`silent_layer_names`] verbatim; the
+/// obligatory equivalence pin lives in
+/// `silent_layer_names_iter_collect_matches_silent_layer_names` in the test
+/// module.
+///
+/// # Partition law
+///
+/// For every layer stack, chaining
+/// `contributor_names_iter(layers).chain(silent_layer_names_iter(layers))`
+/// yields the same *set* of names as `layer_names(layers)` — the two iter
+/// duals partition the declared-axis roster on the same
+/// contributed-vs-silent predicate their collecting forms do, up to the
+/// coarse→specific-then-coarse→specific ordering the chain composes. Pinned
+/// by
+/// `silent_layer_names_iter_chained_with_contributor_names_iter_covers_layer_names`
+/// in the test module.
+///
+/// # Trait algebra
+///
+/// The returned iterator carries [`DoubleEndedIterator`],
+/// [`std::iter::FusedIterator`], and [`Clone`] on top of [`Iterator`],
+/// naming the capabilities the underlying
+/// `Map<Filter<Copied<slice::Iter<'a, &'a dyn DiscoveryLayer>>>>`
+/// composition structurally holds. [`ExactSizeIterator`] is *not* carried
+/// — [`std::iter::Filter`] discards elements based on the per-layer
+/// `discover()` predicate, so the `len()` contract cannot be honored at
+/// the type level. Consumers that want the length without materializing
+/// the stream reach for the peer scalar-cardinality primitive
+/// [`silent_layer_count`].
+///
+/// # Cost
+///
+/// One `discover()` call per element inspected, matching
+/// [`silent_layer_names`]'s pointwise cost on the same predicate. Zero
+/// heap allocation for the iterator itself — the returned handle is a
+/// stack composition of [`std::iter::Copied`], [`std::iter::Filter`],
+/// and [`std::iter::Map`]. Consumers that short-circuit (`.next()`,
+/// `.find(_)`, `.take(n)`) pay `O(k)` `discover()` calls for `k` layers
+/// visited, versus [`silent_layer_names`]'s obligatory `O(n)` sweep + Vec
+/// allocation. A `.clone()` yields an independent walk from the head; the
+/// two walks re-invoke `discover()` per layer they visit (the trade-off
+/// for the zero-alloc handle — the layers are not memoized between clones).
+#[must_use]
+pub fn silent_layer_names_iter<'a>(
+    layers: &'a [&'a dyn DiscoveryLayer],
+) -> impl DoubleEndedIterator<Item = &'static str> + std::iter::FusedIterator + Clone + 'a {
+    layers
+        .iter()
+        .copied()
+        .filter(|layer| layer.discover().is_empty())
+        .map(|layer| layer.name())
+}
+
 /// The `(name, discovered dict)` pairs for every layer whose
 /// [`DiscoveryLayer::discover`] returned a non-empty [`Dict`], in
 /// application order (coarse→specific).
@@ -7897,6 +7962,187 @@ mod tests {
         );
         assert_eq!(silent, std::collections::BTreeSet::from(["undetectable"]));
         assert_eq!(survivors, std::collections::BTreeSet::from(["specific"]));
+    }
+
+    // -------- silent_layer_names_iter --------
+
+    #[test]
+    fn silent_layer_names_iter_collect_matches_silent_layer_names() {
+        // The core equivalence: the zero-alloc iter surface, once
+        // materialized, is bit-identical to the collecting form on the
+        // same axis. Every downstream `silent_layer_names` caller can
+        // switch to the iter form without semantic drift — the mirror
+        // of the same pin on `contributor_names_iter`.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let quiet = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &quiet, &c];
+        assert_eq!(
+            silent_layer_names_iter(&layers).collect::<Vec<_>>(),
+            silent_layer_names(&layers),
+            "iter → Vec matches silent_layer_names verbatim",
+        );
+    }
+
+    #[test]
+    fn silent_layer_names_iter_empty_stack_is_empty_stream() {
+        // The degenerate: no layers → the stream is drained at once.
+        // Pins that the fused invariant holds at the zero-length
+        // boundary, symmetric with the `contributor_names_iter` pin.
+        let layers: [&dyn DiscoveryLayer; 0] = [];
+        assert!(
+            silent_layer_names_iter(&layers).next().is_none(),
+            "no layers → no silent names",
+        );
+    }
+
+    #[test]
+    fn silent_layer_names_iter_all_contributing_is_empty_stream() {
+        // Every layer's discover() returned a non-empty dict ⇒ the
+        // (inverted) filter rejects every element ⇒ the composed iter
+        // is empty. Direct mirror of
+        // `contributor_names_iter_all_undetectable_is_empty_stream` on
+        // the silent axis.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let b = Fixed("cloud", dict(&[("b", Value::from(2i64))]));
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &b];
+        assert!(
+            silent_layer_names_iter(&layers).next().is_none(),
+            "every axis contributes → the stream is empty",
+        );
+    }
+
+    #[test]
+    fn silent_layer_names_iter_all_silent_yields_every_declared_name() {
+        // The symmetric extreme: every layer's discover() returned an
+        // empty dict ⇒ the (inverted) filter admits every element ⇒
+        // the composed iter reproduces `layer_names` verbatim. Pins
+        // that when the silent axis eats the whole stack, no name
+        // slips through the filter.
+        let a = Fixed("platform", Dict::new());
+        let b = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        assert_eq!(
+            silent_layer_names_iter(&layers).collect::<Vec<_>>(),
+            layer_names(&layers),
+            "all silent ⇒ silent iter reproduces layer_names",
+        );
+    }
+
+    #[test]
+    fn silent_layer_names_iter_preserves_application_order() {
+        // The DoubleEndedIterator forward walk is coarse→specific,
+        // matching silent_layer_names — the slice iteration order
+        // threads through Copied/Filter/Map unchanged.
+        let a = Fixed("platform", Dict::new());
+        let b = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        assert_eq!(
+            silent_layer_names_iter(&layers).collect::<Vec<_>>(),
+            vec!["platform", "cloud", "tenancy"],
+            "iter yields names coarse→specific in application order",
+        );
+    }
+
+    #[test]
+    fn silent_layer_names_iter_rev_reverses_forward_walk() {
+        // DoubleEndedIterator contract: `.rev().collect()` equals
+        // `.collect().into_iter().rev().collect()` — the composition
+        // preserves the reverse walk end-to-end through
+        // Copied → Filter → Map on the inverted predicate.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let quiet1 = Fixed("cloud", Dict::new());
+        let quiet2 = Fixed("region", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 4] = [&a, &quiet1, &quiet2, &c];
+        let forward = silent_layer_names_iter(&layers).collect::<Vec<_>>();
+        let reverse = silent_layer_names_iter(&layers).rev().collect::<Vec<_>>();
+        assert_eq!(
+            reverse,
+            forward.iter().rev().copied().collect::<Vec<_>>(),
+            ".rev() over the iter recovers the reverse of the forward walk",
+        );
+    }
+
+    #[test]
+    fn silent_layer_names_iter_clone_yields_independent_walks() {
+        // Clone contract: cloning the iter and walking both
+        // independently yields two equal-shape sequences — the
+        // closures capture nothing, so the two iterator states advance
+        // from a shared origin without interference.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let quiet = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &quiet, &c];
+        let one = silent_layer_names_iter(&layers);
+        let two = one.clone();
+        assert_eq!(
+            one.collect::<Vec<_>>(),
+            two.collect::<Vec<_>>(),
+            "two independent walks agree",
+        );
+    }
+
+    #[test]
+    fn silent_layer_names_iter_is_fused_past_exhaustion() {
+        // FusedIterator contract: once drained, every subsequent
+        // `.next()` continues to return `None`. Filter + Map both
+        // preserve FusedIterator when the underlying Copied<slice::Iter>
+        // carries it (slice::Iter is std-guaranteed fused).
+        let a = Fixed("platform", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 1] = [&a];
+        let mut it = silent_layer_names_iter(&layers);
+        assert_eq!(it.next(), Some("platform"));
+        for _ in 0..4 {
+            assert!(it.next().is_none(), "post-exhaustion pulls stay None");
+        }
+    }
+
+    #[test]
+    fn silent_layer_names_iter_head_short_circuits_without_full_sweep() {
+        // The compounding value the iter surface adds beyond
+        // silent_layer_names: consumers that only need the head
+        // (`.next()`) pay one discover() call per contributor visited
+        // until the first silent axis, not `n` — the (inverted) Filter
+        // predicate short-circuits as soon as the first empty dict is
+        // seen.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let quiet = Fixed("cloud", Dict::new());
+        let b = Fixed("region", dict(&[("b", Value::from(2i64))]));
+        let quieter = Fixed("tenancy", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 4] = [&a, &quiet, &b, &quieter];
+        assert_eq!(
+            silent_layer_names_iter(&layers).next(),
+            Some("cloud"),
+            ".next() yields the first silent axis without walking the rest",
+        );
+    }
+
+    #[test]
+    fn silent_layer_names_iter_chained_with_contributor_names_iter_covers_layer_names() {
+        // Partition law at the iter altitude: the two iter duals
+        // together yield exactly the same *set* of names as
+        // `layer_names`, mirroring the same partition law the
+        // collecting forms establish
+        // (`silent_layer_names_partitions_layer_names_disjointly`).
+        // The chain composes the two ordered walks; sets erase the
+        // group-then-group ordering, so the union equality holds
+        // regardless of how the two coarse→specific runs interleave.
+        let coarse = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let empty1 = Fixed("cloud", Dict::new());
+        let mid = Fixed("region", dict(&[("b", Value::from(2i64))]));
+        let empty2 = Fixed("tenancy", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 4] = [&coarse, &empty1, &mid, &empty2];
+        let all: std::collections::BTreeSet<_> = layer_names(&layers).into_iter().collect();
+        let chained: std::collections::BTreeSet<_> = contributor_names_iter(&layers)
+            .chain(silent_layer_names_iter(&layers))
+            .collect();
+        assert_eq!(
+            chained, all,
+            "contributor_iter ⨄ silent_iter covers layer_names"
+        );
     }
 
     #[test]
