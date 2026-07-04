@@ -80,8 +80,8 @@ pub use discovered::{
     contributors_at, contributors_at_iter, decider_at, deep_merge, has_contributor,
     has_multiple_contributors, has_multiple_silent_layers, has_silent_layer, is_contested_at,
     is_multiply_silenced_at, is_touched_at, layer_names, layer_names_iter, nonempty_layer_dicts,
-    nonempty_layer_dicts_iter, runner_up_at, silenced_at, silenced_count_at, silent_layer_count,
-    silent_layer_names, silent_layer_names_iter,
+    nonempty_layer_dicts_iter, runner_up_at, silenced_at, silenced_at_iter, silenced_count_at,
+    silent_layer_count, silent_layer_names, silent_layer_names_iter,
 };
 pub use discovery::{
     ConfigDiscovery, Format, FormatCoordinates, FormatMetadataTag, FormatProvenance,

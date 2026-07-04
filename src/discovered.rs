@@ -3559,6 +3559,183 @@ pub fn silenced_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> Vec<&'stati
     names
 }
 
+/// Zero-allocation iterator dual of [`silenced_at`] — streams the
+/// per-path *losers* of the override contest lazily, in application
+/// order (coarse→specific), so callers that only want the head
+/// (`.next()`), a positional match (`.find(_)` / `.position(_)`), a
+/// bounded prefix (`.take(n)`), or the trailing runner-up (`.last()`)
+/// skip the obligatory `Vec<&'static str>` allocation the collecting
+/// form always pays.
+///
+/// The **losers-side** dual of [`contributors_at_iter`] at the same
+/// free-function, point-primitive altitude: identical input shape (a
+/// layer slice plus a `path`), the same `touches_path(discover(), path)`
+/// per-layer predicate, but with a stateful **drop-last** projection
+/// substituted for the plain identity `.map(|layer| layer.name())`. The
+/// same "silenced ⊆ contributors" subset chain [`silenced_at`] pins on
+/// the collecting form carries pointwise to the iter altitude —
+/// `.collect::<BTreeSet<_>>()` on `silenced_at_iter` is always a subset
+/// of the same projection on `contributors_at_iter` (see the
+/// `silenced_at_iter_is_subset_of_contributors_at_iter` pin).
+///
+/// The **pre-materialization** free-function counterpart of the
+/// method-altitude [`PathContest::silenced_iter`] on the losers axis at
+/// a path — both stream the "layers that had an opinion at this leaf
+/// but were overridden" set as `&'static str` names in application
+/// order. The two-cost split matches
+/// (`contributors_at_iter`, `PathContest::contributors_iter`) on the
+/// winners+losers axis: [`PathContest::silenced_iter`] pays one
+/// [`PathContest`] construction cost up front (which itself walks the
+/// layer stack and materializes the losers slice) and then walks a
+/// pre-populated buffer at zero further `discover()` cost;
+/// `silenced_at_iter` pays zero materialization cost up front and
+/// re-invokes `discover()` for every layer visited during the walk.
+/// Consumers that only need one path's losers reach for the
+/// free-function iter; consumers that need the same path answered
+/// through *multiple* projections (contributors + silenced + decider)
+/// reach for [`contest_at`] once and query the materialized
+/// [`PathContest`].
+///
+/// Collecting through `.collect::<Vec<_>>()` recovers [`silenced_at`]
+/// verbatim; the obligatory equivalence pin lives in
+/// `silenced_at_iter_collect_matches_silenced_at` in the test module.
+///
+/// # Semantics
+///
+/// For a path with `k` touchers ordered coarse→specific, the stream
+/// yields the first `k − 1` names — every layer whose opinion at
+/// `path` was superseded by a later toucher on the same path. When
+/// `k ∈ {0, 1}` (nobody touched, or only one toucher = no override
+/// contest), the stream is empty from the start. Erasure via
+/// wholesale-replace at a proper prefix counts as touching, so a
+/// coarse layer that placed a leaf at `path` is streamed as silenced
+/// when a later layer's prefix-scalar erases the whole subtree.
+///
+/// # Subset chains and cardinality
+///
+/// The three-tier subset chain
+/// `silenced_at ⊆ contributors_at ⊆ contributor_names` carries to the
+/// iter altitude via `.collect::<BTreeSet<_>>()` on every projection,
+/// with the paired scalar identities
+/// `silenced_at_iter(layers, p).count() == silenced_count_at(layers, p)`
+/// on the cardinality axis and
+/// `silenced_at_iter(layers, p).last() == runner_up_at(layers, p)` on
+/// the trailing-loser axis. Pinned by
+/// `silenced_at_iter_count_matches_silenced_count_at` and
+/// `silenced_at_iter_last_element_equals_runner_up_at` in the test
+/// module.
+///
+/// # Trait algebra
+///
+/// The returned iterator carries [`std::iter::FusedIterator`] and
+/// [`Clone`] on top of [`Iterator`], naming the capabilities the
+/// underlying drop-last state machine structurally holds.
+/// [`ExactSizeIterator`] is *not* carried — the per-layer
+/// `touches_path` predicate discards elements, so the `len()` contract
+/// cannot be honored at the type level (the same reason
+/// [`contributors_at_iter`] cannot carry it). [`DoubleEndedIterator`]
+/// is *not* carried either — the "all-but-last" projection is
+/// inherently forward-directional at the pre-materialization altitude
+/// (the drop-last state machine buffers one lookahead in the forward
+/// direction). Consumers that want the length without materializing
+/// the stream reach for the peer scalar [`silenced_count_at`]; the
+/// paired method-altitude iter [`PathContest::silenced_iter`] *does*
+/// carry [`DoubleEndedIterator`] + [`ExactSizeIterator`] because the
+/// `PathContest` materialization amortizes the losers slice into the
+/// up-front cost.
+///
+/// # Cost
+///
+/// One `discover()` call per layer inspected, matching [`silenced_at`]
+/// on the same predicate. Zero heap allocation for the iterator itself
+/// — the returned handle is a stack composition of a
+/// [`std::slice::Iter`] cursor over `layers`, a two-word slice
+/// reference for `path`, and a two-word `Option<&'static str>` buffer
+/// for the drop-last lookahead. Consumers that short-circuit
+/// (`.next()`, `.find(_)`, `.take(n)`) pay `O(k × path.len())`
+/// `discover()`-and-walk cost for `k` layers visited, versus
+/// [`silenced_at`]'s obligatory `O(layers × path.len())` sweep + Vec
+/// allocation. A `.clone()` yields an independent walk from the head;
+/// the two walks re-invoke `discover()` per layer they visit (the
+/// trade-off for the zero-alloc handle — the layers are not memoized
+/// between clones, matching the sibling iter duals).
+///
+/// # HOCON analogue
+///
+/// The lazy, path-parameterized dual of Lightbend HOCON's "which
+/// sources were shadowed by later sources at this key?" question:
+/// HOCON's [`Config.entrySet()`] grouped by [`ConfigOrigin`] surfaces
+/// winners wholesale; the *losers* are recovered by set-differencing
+/// pre-merge origins against post-merge origins. `silenced_at_iter`
+/// is the point, pre-merge, lazy primitive that answers the same
+/// question at a single leaf coordinate without a full-config sweep.
+///
+/// [`Config.entrySet()`]: https://lightbend.github.io/config/latest/api/com/typesafe/config/Config.html#entrySet--
+/// [`ConfigOrigin`]: https://lightbend.github.io/config/latest/api/com/typesafe/config/ConfigOrigin.html
+#[must_use]
+pub fn silenced_at_iter<'a>(
+    layers: &'a [&'a dyn DiscoveryLayer],
+    path: &'a [&'a str],
+) -> impl Iterator<Item = &'static str> + std::iter::FusedIterator + Clone + 'a {
+    SilencedAtIter {
+        layers: layers.iter(),
+        path,
+        buffered: None,
+        primed: false,
+    }
+}
+
+/// Drop-last adapter powering [`silenced_at_iter`]. Holds one buffered
+/// touching-layer name and one lookahead into the layer slice; yields
+/// the buffered name only when a subsequent toucher is found (i.e. the
+/// buffered layer is provably not the decider).
+///
+/// Kept private: consumers see the anonymous
+/// `impl Iterator + FusedIterator + Clone + 'a` return type on
+/// [`silenced_at_iter`]. `#[derive(Clone)]` requires only that every
+/// field be `Clone`, which they are — [`std::slice::Iter`] is [`Clone`]
+/// unconditionally, [`Option<&'static str>`] and [`bool`] are [`Copy`],
+/// and `&'a [&'a str]` is a shared slice reference.
+#[derive(Clone)]
+struct SilencedAtIter<'a> {
+    layers: std::slice::Iter<'a, &'a dyn DiscoveryLayer>,
+    path: &'a [&'a str],
+    buffered: Option<&'static str>,
+    primed: bool,
+}
+
+impl<'a> SilencedAtIter<'a> {
+    /// Advance the layer cursor to the next touching layer's name, or
+    /// [`None`] if the slice is exhausted. Every element yielded by
+    /// [`Iterator::next`] passes through this helper, so the two
+    /// [`std::slice::Iter::next`] pumps per emitted item — one for the
+    /// buffered head, one for the lookahead — share the same
+    /// touches-path filter without duplication.
+    fn next_touching_name(&mut self) -> Option<&'static str> {
+        for &layer in self.layers.by_ref() {
+            if touches_path(&layer.discover(), self.path) {
+                return Some(layer.name());
+            }
+        }
+        None
+    }
+}
+
+impl<'a> Iterator for SilencedAtIter<'a> {
+    type Item = &'static str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if !self.primed {
+            self.buffered = self.next_touching_name();
+            self.primed = true;
+        }
+        let lookahead = self.next_touching_name()?;
+        self.buffered.replace(lookahead)
+    }
+}
+
+impl<'a> std::iter::FusedIterator for SilencedAtIter<'a> {}
+
 /// The name of the layer that *decides* `path` — the most-specific
 /// (last-applied) layer whose [`DiscoveryLayer::discover`] dict has an
 /// opinion at `path`. `None` when no layer touches `path`.
@@ -12427,6 +12604,307 @@ mod tests {
                 "silenced_at({path:?}) = {silenced:?} not ⊆ contributors_at = {contributors:?}",
             );
         }
+    }
+
+    // -------- silenced_at_iter --------
+
+    #[test]
+    fn silenced_at_iter_collect_matches_silenced_at() {
+        // The core equivalence: the zero-alloc losers-side iter, once
+        // materialized, is bit-identical to the collecting `silenced_at`
+        // on the same (per-path override-losers) axis. Every downstream
+        // `silenced_at` caller can switch to the iter form without
+        // semantic drift — the point-restricted, losers-side analogue
+        // of the `contributors_at_iter_collect_matches_contributors_at`
+        // pin on the winners+losers axis.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("other", Value::from(3i64))]));
+        let silent = Fixed("silent", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 4] = [&a, &b, &c, &silent];
+        for path in [&["k"][..], &["other"][..], &["nope"][..], &[][..]] {
+            assert_eq!(
+                silenced_at_iter(&layers, path).collect::<Vec<_>>(),
+                silenced_at(&layers, path),
+                "iter → Vec matches silenced_at at path {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn silenced_at_iter_empty_layers_is_empty_stream() {
+        // The degenerate: no layers → the stream is drained at once at
+        // every path. Pins that the drop-last state machine correctly
+        // handles the zero-length boundary — prime the buffer with
+        // `None`, look for a lookahead, find `None`, return `None`.
+        let layers: [&dyn DiscoveryLayer; 0] = [];
+        assert!(silenced_at_iter(&layers, &["k"]).next().is_none());
+        assert!(silenced_at_iter(&layers, &[]).next().is_none());
+    }
+
+    #[test]
+    fn silenced_at_iter_single_toucher_is_empty_stream() {
+        // The k = 1 boundary: exactly one toucher means no override
+        // contest, hence no losers. Pins the drop-last logic drops the
+        // sole toucher (it is the decider) rather than emitting it.
+        let a = Fixed("only", dict(&[("k", Value::from(1i64))]));
+        let disjoint = Fixed("disjoint", dict(&[("other", Value::from(9i64))]));
+        let layers: [&dyn DiscoveryLayer; 2] = [&a, &disjoint];
+        assert!(silenced_at_iter(&layers, &["k"]).next().is_none());
+    }
+
+    #[test]
+    fn silenced_at_iter_preserves_application_order() {
+        // Coarse→specific order on the losers side, matching
+        // `silenced_at`. The slice iteration order threads through the
+        // drop-last state machine unchanged; the decider (`platform`,
+        // the last toucher) drops off the tail, not the head.
+        let coarse = Fixed("tenancy", dict(&[("k", Value::from(1i64))]));
+        let middle = Fixed("cloud", dict(&[("k", Value::from(2i64))]));
+        let specific = Fixed("platform", dict(&[("k", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&coarse, &middle, &specific];
+        assert_eq!(
+            silenced_at_iter(&layers, &["k"]).collect::<Vec<_>>(),
+            vec!["tenancy", "cloud"],
+        );
+    }
+
+    #[test]
+    fn silenced_at_iter_clone_yields_independent_walks() {
+        // Clone contract: cloning the iter and walking both
+        // independently yields two equal-shape sequences — the two
+        // `slice::Iter` cursors advance from a shared origin without
+        // interference, and the `path` slice reference and the
+        // `Option<&'static str>` buffer are Copy so both walks own
+        // their own drop-last state.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("k", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        let one = silenced_at_iter(&layers, &["k"]);
+        let two = one.clone();
+        assert_eq!(
+            one.collect::<Vec<_>>(),
+            two.collect::<Vec<_>>(),
+            "two independent walks agree",
+        );
+    }
+
+    #[test]
+    fn silenced_at_iter_is_fused_past_exhaustion() {
+        // FusedIterator contract: once drained, every subsequent
+        // `.next()` continues to return `None`. The drop-last state
+        // machine is idempotent past exhaustion — the primed buffer
+        // holds `None` and the underlying `slice::Iter` is std-fused.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("k", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        let mut it = silenced_at_iter(&layers, &["k"]);
+        assert_eq!(it.next(), Some("a"));
+        assert_eq!(it.next(), Some("b"));
+        for _ in 0..4 {
+            assert!(it.next().is_none(), "post-exhaustion pulls stay None");
+        }
+    }
+
+    #[test]
+    fn silenced_at_iter_head_short_circuits_without_full_sweep() {
+        // The compounding value beyond `silenced_at`: consumers that
+        // only need the coarsest silenced layer (`.next()`) pay
+        // exactly two touching-layer `discover()`-and-walk pulls (one
+        // to prime the buffer, one to confirm a lookahead exists) plus
+        // any intervening non-touching pulls, and skip the
+        // `Vec<&'static str>` allocation entirely.
+        let a = Fixed("platform", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("cloud", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("tenancy", dict(&[("k", Value::from(3i64))]));
+        let d = Fixed("dev", dict(&[("k", Value::from(4i64))]));
+        let layers: [&dyn DiscoveryLayer; 4] = [&a, &b, &c, &d];
+        assert_eq!(
+            silenced_at_iter(&layers, &["k"]).next(),
+            Some("platform"),
+            ".next() yields the coarsest silenced layer without walking the rest",
+        );
+    }
+
+    #[test]
+    fn silenced_at_iter_last_element_equals_runner_up_at() {
+        // Iter-altitude projection identity: `.last()` on the iter
+        // recovers the `runner_up_at` primitive — the trailing element
+        // of the losers list, i.e. the most-specific silenced layer.
+        // The point-restricted, losers-side analogue of the
+        // `contributors_at_iter_last_element_equals_layer_of_when_leaf_survives`
+        // pin on the winners+losers axis (see `runner_up_at`'s own
+        // definition, which pins the same trailing-of-losers identity
+        // on the collecting form).
+        let coarse = Fixed("platform", dict(&[("k", Value::from(1i64))]));
+        let middle = Fixed("cloud", dict(&[("k", Value::from(2i64))]));
+        let specific = Fixed("tenancy", dict(&[("k", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&coarse, &middle, &specific];
+        assert_eq!(
+            silenced_at_iter(&layers, &["k"]).last(),
+            runner_up_at(&layers, &["k"]),
+            "iter .last() equals runner_up_at on a contested leaf",
+        );
+        // Degenerate: no touchers or one toucher → both are None /
+        // empty tail. Pins the total-on-both-boundaries agreement.
+        let solo = Fixed("solo", dict(&[("k", Value::from(1i64))]));
+        let disjoint = Fixed("disjoint", dict(&[("other", Value::from(9i64))]));
+        let layers: [&dyn DiscoveryLayer; 2] = [&solo, &disjoint];
+        assert_eq!(silenced_at_iter(&layers, &["k"]).last(), None);
+        assert_eq!(runner_up_at(&layers, &["k"]), None);
+    }
+
+    #[test]
+    fn silenced_at_iter_count_matches_silenced_count_at() {
+        // Cardinality projection identity: `.count()` on the iter
+        // equals `silenced_count_at(layers, path)` — the peer scalar
+        // the trait-algebra doc redirects to when the caller wants
+        // length without materializing the stream. Point-restricted
+        // mirror of the whole-layer redirect from
+        // `silent_layer_names_iter` to `silent_layer_count`. Pinned
+        // across paths that stress the drop-last filter (contested
+        // leaf, uncontested leaf, no-touchers path, and the empty
+        // root path collapsing to `contributor_count.saturating_sub(1)`).
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("other", Value::from(3i64))]));
+        let silent = Fixed("silent", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 4] = [&a, &b, &c, &silent];
+        for path in [&["k"][..], &["other"][..], &["nope"][..], &[][..]] {
+            assert_eq!(
+                silenced_at_iter(&layers, path).count(),
+                silenced_count_at(&layers, path),
+                ".count() on the iter matches the scalar silenced_count_at at path {path:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn silenced_at_iter_is_subset_of_contributors_at_iter() {
+        // The three-tier subset chain
+        // `silenced_at ⊆ contributors_at ⊆ contributor_names` carries
+        // from the collecting form to the iter altitude via
+        // `.collect::<BTreeSet<_>>()` on each projection. This pin
+        // covers the losers-side leg (silenced ⊆ contributors) with
+        // the two duals both entered through their zero-alloc iter
+        // surface. Rendered as a set comparison so ordering can't hide
+        // an off-by-one in the drop-last state machine.
+        let a = Fixed("a", dict(&[("k", Value::from(1i64))]));
+        let b = Fixed("b", dict(&[("k", Value::from(2i64))]));
+        let c = Fixed("c", dict(&[("other", Value::from(3i64))]));
+        let silent = Fixed("silent", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 4] = [&a, &b, &c, &silent];
+        for path in [&["k"][..], &["other"][..], &["nope"][..], &[][..]] {
+            let contributors: std::collections::BTreeSet<_> =
+                contributors_at_iter(&layers, path).collect();
+            let silenced: std::collections::BTreeSet<_> = silenced_at_iter(&layers, path).collect();
+            assert!(
+                silenced.is_subset(&contributors),
+                "silenced_at_iter({path:?}) = {silenced:?} not ⊆ contributors_at_iter = {contributors:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn silenced_at_iter_credits_earlier_writer_when_prefix_scalar_erases_subtree() {
+        // Wholesale-replace at a proper prefix silences every earlier
+        // toucher on the erased subtree. Pins that the drop-last iter
+        // preserves `silenced_at`'s erasure semantics: the coarse
+        // layer that placed a leaf at `path` is emitted as silenced
+        // when a later layer's prefix-scalar erases the whole subtree.
+        let coarse = Fixed(
+            "platform",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("live"))])),
+            )]),
+        );
+        let eraser = Fixed("tenancy", dict(&[("breathe", Value::from("disabled"))]));
+        let layers: [&dyn DiscoveryLayer; 2] = [&coarse, &eraser];
+        assert_eq!(
+            silenced_at_iter(&layers, &["breathe", "mode"]).collect::<Vec<_>>(),
+            vec!["platform"],
+            "prefix-scalar erasure silences the earlier subtree writer",
+        );
+    }
+
+    #[test]
+    fn silenced_at_iter_ignores_layers_with_disjoint_content() {
+        // Under `deep_merge`, a layer whose top-level key doesn't
+        // match any prefix of `path` never enters the override
+        // contest at `path` and must be dropped by the drop-last
+        // filter before the buffered-lookahead comparison. Mirror of
+        // the collecting-form pin and its winners+losers sibling
+        // `contributors_at_iter_ignores_layers_with_disjoint_content`.
+        let match_a = Fixed(
+            "a",
+            dict(&[("a", Value::from(dict(&[("b", Value::from(1i64))])))]),
+        );
+        let disjoint = Fixed("disjoint", dict(&[("z", Value::from(9i64))]));
+        let match_b = Fixed(
+            "b",
+            dict(&[("a", Value::from(dict(&[("b", Value::from(2i64))])))]),
+        );
+        let layers: [&dyn DiscoveryLayer; 3] = [&match_a, &disjoint, &match_b];
+        assert_eq!(
+            silenced_at_iter(&layers, &["a", "b"]).collect::<Vec<_>>(),
+            vec!["a"],
+            "disjoint layer is filtered before the drop-last comparison",
+        );
+    }
+
+    #[test]
+    fn silenced_at_iter_agrees_with_path_contest_silenced_iter() {
+        // Cross-altitude agreement: the free-function
+        // pre-materialization losers-side iter and the method-altitude
+        // post-materialization losers-side iter emit the same
+        // `&'static str` names in the same order. Distinguishes the
+        // two costs (one `discover()` per layer visited vs. amortized
+        // `PathContest` construction + zero further `discover()`
+        // calls) while pinning the pair-projection identity at the
+        // substrate level. When `contest_at` returns `None` (nobody
+        // touches the path), the free-function iter is empty too.
+        let coarse = Fixed("platform", dict(&[("k", Value::from("via_platform"))]));
+        let mid = Fixed("cloud", dict(&[("k", Value::from("via_cloud"))]));
+        let specific = Fixed("tenancy", dict(&[("k", Value::from("via_tenancy"))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&coarse, &mid, &specific];
+
+        let via_free_function: Vec<&'static str> = silenced_at_iter(&layers, &["k"]).collect();
+        let via_contest: Vec<&'static str> = contest_at(&layers, &["k"])
+            .expect("three touchers materialize a PathContest")
+            .silenced_iter()
+            .collect();
+        assert_eq!(
+            via_free_function, via_contest,
+            "both iter altitudes agree on the losers walk",
+        );
+
+        // No touchers ⇒ the free-function iter is empty and contest_at
+        // is None on the same layer stack.
+        assert!(
+            silenced_at_iter(&layers, &["nope"]).next().is_none(),
+            "no touchers → the iter is drained at once",
+        );
+        assert!(
+            contest_at(&layers, &["nope"]).is_none(),
+            "no touchers → no PathContest to materialize",
+        );
+
+        // Single-toucher degenerate ⇒ the iter is empty and
+        // `PathContest::silenced_iter` is also empty (the sole
+        // toucher is the decider, not silenced).
+        let solo = Fixed("solo", dict(&[("only", Value::from("value"))]));
+        let one_layer: [&dyn DiscoveryLayer; 1] = [&solo];
+        assert!(silenced_at_iter(&one_layer, &["only"]).next().is_none());
+        assert!(
+            contest_at(&one_layer, &["only"])
+                .expect("one toucher materializes a PathContest")
+                .silenced_iter()
+                .next()
+                .is_none(),
+        );
     }
 
     // -------- decider_at --------
