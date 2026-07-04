@@ -11388,7 +11388,61 @@ pub trait PartialInverseCube: ProductCube {
 /// `impl PartialInverseCube` declaration. The output cardinality
 /// equals [`realizable_count::<C>()`][realizable_count] by the
 /// `invert().is_some() == is_realizable()` invariant the trait pins.
-pub fn realizable_images<C: PartialInverseCube>() -> impl Iterator<Item = C::Image> {
+///
+/// # Reverse walk
+///
+/// The returned iterator is [`DoubleEndedIterator`] — the backing
+/// composition is
+/// [`std::iter::FilterMap`]`<`[`std::iter::Copied`]`<`[`std::slice::Iter`]`<'static,
+/// C>>, fn(C) -> Option<C::Image>>`, [`std::slice::Iter`] is
+/// [`DoubleEndedIterator`], [`std::iter::Copied`] preserves the trait
+/// when the item is [`Copy`] (the [`ClosedAxis`] super-trait on `C`
+/// pins [`Copy`]), and [`std::iter::FilterMap`] preserves the trait
+/// unconditionally on the closure type (`fn(C) -> Option<C::Image>` is
+/// a fn-pointer and is [`Copy`] + [`Clone`]). Consumers walking the
+/// realized image last-declared-first — an attestation manifest
+/// emitter surfacing the recognized image cells in reverse cube-
+/// declaration order for a stable-across-axis-extension hash-prefix
+/// rendering pass, or a diagnostic renderer displaying the finest
+/// realizable image cell before the coarser ones — reach
+/// `realizable_images::<C>().rev()` directly without a
+/// `.collect::<Vec<_>>().into_iter().rev()` roundtrip that would pay
+/// a [`realizable_count::<C>()`][realizable_count]-length [`Vec`]
+/// allocation.
+///
+/// # Fused exhaustion
+///
+/// The returned iterator is [`std::iter::FusedIterator`] — the
+/// underlying `Copied<slice::Iter>` substrate is fused, and
+/// [`std::iter::FilterMap`] preserves the trait unconditionally.
+/// Composite consumers relying on the fused contract (`.chain`,
+/// `.peekable`, `.by_ref` past exhaustion) get the invariant at the
+/// type-signature altitude rather than as an unnamed implementation
+/// detail behind an unnameable combinator.
+///
+/// # Independent walks
+///
+/// The returned iterator is [`Clone`] — the underlying
+/// `Copied<slice::Iter>` substrate is [`Clone`], and
+/// [`std::iter::FilterMap`] is [`Clone`] when the underlying iterator
+/// is [`Clone`] and the closure is [`Clone`] (the fn-pointer
+/// `fn(C) -> Option<C::Image>` is a zero-sized type that is trivially
+/// [`Copy`] + [`Clone`]). Callers that need two independent walks
+/// over the realized image (render once, then re-walk to find a
+/// positional match on the image-keyed row) clone the handle up front
+/// instead of re-invoking `realizable_images::<C>()` at each walk.
+///
+/// # `ExactSizeIterator` is structurally lost
+///
+/// [`std::iter::FilterMap`] does NOT preserve
+/// [`ExactSizeIterator`] — the closure discards `None` outputs, so
+/// the trait's `len` contract cannot be honored at the type level.
+/// Callers needing the length reach
+/// [`realizable_count::<C>()`][realizable_count] directly (a
+/// zero-cost constant folded over `C::ALL`).
+#[must_use]
+pub fn realizable_images<C: PartialInverseCube>()
+-> impl DoubleEndedIterator<Item = C::Image> + std::iter::FusedIterator + Clone {
     C::ALL
         .iter()
         .copied()
@@ -12407,6 +12461,104 @@ mod tests {
         );
     }
 
+    fn assert_realizable_images_rev_reverses_forward_walk<C>()
+    where
+        C: PartialInverseCube + std::fmt::Debug,
+    {
+        // The [`DoubleEndedIterator`] contract on the sharpened
+        // [`realizable_images`] surface: collecting through `.rev()`
+        // and reversing the result recovers the forward walk pointwise.
+        // Pins that the sharpened return type restores the reverse-
+        // walk capability the prior bare-`impl Iterator` erased — a
+        // consumer walking the realized image last-declared-first
+        // (an attestation manifest emitter surfacing the recognized
+        // image cells in reverse cube-declaration order) no longer
+        // needs a `.collect::<Vec<_>>().into_iter().rev()` roundtrip
+        // that pays a `realizable_count::<C>()`-length `Vec` allocation.
+        // The trait preservation chain is
+        // `FilterMap<Copied<slice::Iter<'static, C>>, fn(C) -> Option<C::Image>>` —
+        // `Copied<slice::Iter>` is `DoubleEndedIterator`, and
+        // `FilterMap` preserves the trait when the underlying iterator
+        // carries it (the fn-pointer closure preserves the trait
+        // unconditionally).
+        let forward: Vec<<C as PartialInverseCube>::Image> = realizable_images::<C>().collect();
+        let mut reversed: Vec<<C as PartialInverseCube>::Image> =
+            realizable_images::<C>().rev().collect();
+        reversed.reverse();
+        assert_eq!(
+            forward,
+            reversed,
+            "realizable_images().rev() must reverse the forward walk on cube {}",
+            std::any::type_name::<C>(),
+        );
+    }
+
+    fn assert_realizable_images_clone_yields_independent_walks<C>()
+    where
+        C: PartialInverseCube + std::fmt::Debug,
+    {
+        // The [`Clone`] contract on the sharpened [`realizable_images`]
+        // surface: cloning the iterator handle gives two independent
+        // walks over the realized image, whose pointwise-`collect`
+        // results agree. Pins that the sharpened return type restores
+        // the clone capability the prior bare-`impl Iterator` erased —
+        // a two-pass consumer (render once, re-walk to find a
+        // positional match on the image-keyed row) clones the handle
+        // up front instead of re-invoking `realizable_images::<C>()`
+        // at each walk. The trait preservation chain is
+        // `FilterMap<Copied<slice::Iter<'static, C>>, fn(C) -> Option<C::Image>>` —
+        // `Copied<slice::Iter>` is `Clone`, `FilterMap` preserves the
+        // trait when the underlying iterator is `Clone` and the
+        // closure is `Clone` (the fn-pointer is trivially
+        // `Copy` + `Clone`).
+        let first = realizable_images::<C>();
+        let second = first.clone();
+        let via_first: Vec<<C as PartialInverseCube>::Image> = first.collect();
+        let via_second: Vec<<C as PartialInverseCube>::Image> = second.collect();
+        assert_eq!(
+            via_first,
+            via_second,
+            "realizable_images().clone() must yield equal walks on cube {}",
+            std::any::type_name::<C>(),
+        );
+    }
+
+    fn assert_realizable_images_is_fused_past_exhaustion<C>()
+    where
+        C: PartialInverseCube + std::fmt::Debug,
+    {
+        // The [`std::iter::FusedIterator`] contract on the sharpened
+        // [`realizable_images`] surface: once the iterator returns
+        // `None`, every subsequent pull continues to return `None`.
+        // Pins that the sharpened return type names the fused
+        // invariant at the API boundary rather than leaving it as an
+        // unnamed implementation detail behind an unnameable
+        // combinator. Drain the iterator, then pull four more times;
+        // each subsequent pull must yield `None`. The drained
+        // cardinality is pinned equal to
+        // [`realizable_count::<C>()`][realizable_count] (which equals
+        // [`axis_cardinality::<C::Image>()`][axis_cardinality] by the
+        // partial-inverse bijection invariant).
+        let mut iter = realizable_images::<C>();
+        let mut drained = 0usize;
+        while iter.next().is_some() {
+            drained += 1;
+        }
+        assert_eq!(
+            drained,
+            realizable_count::<C>(),
+            "realizable_images cardinality must equal realizable_count on cube {}",
+            std::any::type_name::<C>(),
+        );
+        for _ in 0..4 {
+            assert!(
+                iter.next().is_none(),
+                "realizable_images must stay `None` past exhaustion on cube {}",
+                std::any::type_name::<C>(),
+            );
+        }
+    }
+
     fn assert_axis_cardinality_matches_trait_all<A>(expected: usize)
     where
         A: ClosedAxis + std::fmt::Debug,
@@ -12676,6 +12828,38 @@ mod tests {
         macro_rules! check {
             ($ty:ident) => {
                 assert_forward_iter_len_matches_image_cardinality::<$ty>();
+            };
+        }
+        for_each_partial_inverse_cube!(check);
+    }
+
+    // ---- realizable_images carries the sharpened trait algebra ----
+
+    #[test]
+    fn realizable_images_rev_reverses_forward_walk_for_every_partial_inverse_cube() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_realizable_images_rev_reverses_forward_walk::<$ty>();
+            };
+        }
+        for_each_partial_inverse_cube!(check);
+    }
+
+    #[test]
+    fn realizable_images_clone_yields_independent_walks_for_every_partial_inverse_cube() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_realizable_images_clone_yields_independent_walks::<$ty>();
+            };
+        }
+        for_each_partial_inverse_cube!(check);
+    }
+
+    #[test]
+    fn realizable_images_is_fused_past_exhaustion_for_every_partial_inverse_cube() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_realizable_images_is_fused_past_exhaustion::<$ty>();
             };
         }
         for_each_partial_inverse_cube!(check);
