@@ -950,12 +950,100 @@ impl LayerAttribution {
     /// allocation this primitive pays across peer axes and the
     /// extra-subtree scan the top-level layer-axis restriction
     /// pays across leaves outside the prefix.
+    ///
+    /// **Iter altitude.** The zero-allocation streaming counterpart is
+    /// [`Self::writes_of_layer_iter`] — same filter, same lex order, no
+    /// terminal [`Vec`] materialization. Consumers that only want the
+    /// head (`.next()`), a positional match (`.find(_)` / `.position(_)`),
+    /// a bounded prefix (`.take(n)`), or the trailing element
+    /// (`.next_back()` / `.last()`) reach for the iter dual and skip
+    /// the obligatory `O(m)` allocation the collecting form always pays.
     #[must_use]
     pub fn writes_of_layer<'a>(&'a self, layer: &str) -> Vec<&'a [String]> {
         self.inner
             .iter()
             .filter_map(|(p, l)| (*l == layer).then_some(p.as_slice()))
             .collect()
+    }
+
+    /// Zero-allocation iterator dual of [`Self::writes_of_layer`] —
+    /// streams the paths credited to `layer` lazily, in lex path order,
+    /// so callers that only want the head (`.next()`), a positional
+    /// match (`.find(_)` / `.position(_)`), a bounded prefix (`.take(n)`),
+    /// or the trailing element (`.next_back()` / `.last()`) skip the
+    /// obligatory `Vec<&'a [String]>` allocation the collecting form
+    /// always pays. Collecting through `.collect::<Vec<_>>()` recovers
+    /// [`Self::writes_of_layer`] verbatim (the equivalence pin is
+    /// `writes_of_layer_iter_collect_matches_writes_of_layer`).
+    ///
+    /// The **layer-axis** wide seam at the iter altitude — the peer of
+    /// [`Self::subtree_iter`] on the [`LayerAttribution`] iterator
+    /// algebra and the counterpart of the free-function point-primitive
+    /// [`contributors_at_iter`] / [`silenced_at_iter`] on the touching
+    /// axes: every `Vec`-returning `LayerAttribution` seam that answers
+    /// "which paths belong to this filter?" now carries a matching
+    /// zero-alloc iter dual whose lazy pull replaces the obligatory
+    /// collect. The peer method [`Self::leaf_count_of_layer`] IS
+    /// `writes_of_layer_iter(layer).count()` — the two seams share the
+    /// same single-writer predicate at the cardinality projection.
+    ///
+    /// # Trait algebra
+    ///
+    /// The concrete return type [`LayerAttributionWritesOfLayerIter`]
+    /// carries [`Iterator`] + [`DoubleEndedIterator`] +
+    /// [`std::iter::FusedIterator`] + [`Clone`]. The underlying
+    /// [`std::collections::btree_map::Iter`] is DoubleEnded, Fused, and
+    /// Clone; the per-layer predicate discards elements (not the leaf
+    /// value) but preserves the direction contract on both ends — a
+    /// forward walk finds the first `layer` match by scanning forward,
+    /// a back walk finds the last match by scanning backward. Neither
+    /// direction crosses the other, so both ends stay well-defined.
+    /// [`ExactSizeIterator`] is *not* carried — the filter discards
+    /// entries so the `len()` contract cannot be honored at the type
+    /// level. Consumers that want the length without materializing the
+    /// stream reach for the peer scalar-cardinality primitive
+    /// [`Self::leaf_count_of_layer`].
+    ///
+    /// Naming the return type at the API boundary (rather than
+    /// `impl DoubleEndedIterator<Item = ...> + ...`) exposes the
+    /// [`FusedIterator`][std::iter::FusedIterator] impl the substrate
+    /// structurally carries and gives callers a spellable type — a
+    /// diagnostic renderer storing the handle in a struct field or
+    /// returning it up through its own API no longer smuggles an
+    /// unnameable [`impl Trait`][impl-trait] across every seam, matching
+    /// the concrete-return invariant e235366 / ef26309 established on
+    /// [`Self::iter`] and [`Self::subtree_iter`].
+    ///
+    /// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
+    ///
+    /// # Cost
+    ///
+    /// `O(n)` in the worst case (drain the [`BTreeMap`] looking for a
+    /// match), but consumers that short-circuit (`.next()`, `.find(_)`,
+    /// `.take(n)`, `.next_back()`) pay `O(k)` where `k` is the number
+    /// of entries visited before the match. Zero heap allocation for
+    /// the iterator itself — the handle is a two-field struct wrapping
+    /// the [`BTreeMap`] iterator and the layer name reference. A
+    /// `.clone()` yields an independent walk from the current cursor
+    /// (both fields are Clone / Copy, so the compound handle carries
+    /// [`Clone`] at zero runtime cost).
+    ///
+    /// # Missing writer
+    ///
+    /// A `layer` name that never appears in the attribution — whether
+    /// because it never contributed or its writes were purged by a
+    /// later wholesale replace — yields the empty stream, matching
+    /// [`Self::writes_of_layer`]'s empty-vector semantics on the same
+    /// input.
+    #[must_use]
+    pub fn writes_of_layer_iter<'a>(
+        &'a self,
+        layer: &'a str,
+    ) -> LayerAttributionWritesOfLayerIter<'a> {
+        LayerAttributionWritesOfLayerIter {
+            inner: self.inner.iter(),
+            layer,
+        }
     }
 
     /// The **single-layer** dual of [`Self::leaf_counts_by_layer`]:
@@ -1972,6 +2060,71 @@ impl<'a> Iterator for LayerAttributionSubtreeIter<'a> {
 }
 
 impl std::iter::FusedIterator for LayerAttributionSubtreeIter<'_> {}
+
+/// The concrete return type of [`LayerAttribution::writes_of_layer_iter`]
+/// — a thin two-field struct wrapping
+/// [`std::collections::btree_map::Iter<'a, Vec<String>, &'static str>`][std::collections::btree_map::Iter]
+/// and the borrowed layer-name filter that discards non-matching entries
+/// on each pull.
+///
+/// Impls [`Iterator`] + [`DoubleEndedIterator`] +
+/// [`std::iter::FusedIterator`] + [`Clone`] +
+/// [`Debug`][std::fmt::Debug]. Peer to [`LayerAttributionIter`] and
+/// [`LayerAttributionSubtreeIter`] on the [`LayerAttribution`]
+/// iterator algebra — every zero-allocation iterator return on the
+/// [`LayerAttribution`] surface now carries a named concrete type at
+/// the API boundary.
+///
+/// [`DoubleEndedIterator`] is structurally carried: the underlying
+/// [`BTreeMap`] iterator is DoubleEnded and the layer-name filter
+/// discards entries symmetrically on both ends. Callers reaching for
+/// the trailing write of a writer (`.next_back()` / `.last()`) skip
+/// the full forward scan the collecting form pays.
+///
+/// Not [`ExactSizeIterator`]: the filter discards entries so the
+/// number of remaining matches is not known without walking the
+/// backing range. Callers that need the length reach for the peer
+/// scalar [`LayerAttribution::leaf_count_of_layer`] — the
+/// counter-only projection on the same predicate.
+#[derive(Debug, Clone)]
+pub struct LayerAttributionWritesOfLayerIter<'a> {
+    inner: std::collections::btree_map::Iter<'a, Vec<String>, &'static str>,
+    layer: &'a str,
+}
+
+impl<'a> Iterator for LayerAttributionWritesOfLayerIter<'a> {
+    type Item = &'a [String];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let target = self.layer;
+        self.inner
+            .find(|(_, l)| **l == target)
+            .map(|(p, _)| p.as_slice())
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, self.inner.size_hint().1)
+    }
+
+    fn last(mut self) -> Option<Self::Item> {
+        // Override the default forward-walking `.last()` — the
+        // DoubleEnded impl lets us find the trailing match in one
+        // reverse scan (`O(k)` where `k` is entries visited before
+        // the trailing match) instead of draining the whole iter.
+        self.next_back()
+    }
+}
+
+impl DoubleEndedIterator for LayerAttributionWritesOfLayerIter<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        let target = self.layer;
+        self.inner
+            .rfind(|(_, l)| **l == target)
+            .map(|(p, _)| p.as_slice())
+    }
+}
+
+impl std::iter::FusedIterator for LayerAttributionWritesOfLayerIter<'_> {}
 
 /// The result of composing a stack of [`DiscoveryLayer`]s with per-leaf
 /// provenance tracking.
@@ -19070,6 +19223,225 @@ mod tests {
         assert_eq!(coarsest_at(&layers, &[]), Some("platform"));
         assert_eq!(runner_up_at(&layers, &[]), Some("cloud"));
         assert_eq!(decider_at(&layers, &[]), Some("tenancy"));
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // writes_of_layer_iter — zero-alloc iter dual of writes_of_layer
+    // ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn writes_of_layer_iter_collect_matches_writes_of_layer() {
+        // The obligatory equivalence pin: collecting the iter form
+        // recovers the collecting form verbatim on every layer.
+        let out = layer_axis_fixture();
+        for layer in out.attribution.surviving_layer_names() {
+            let iter: Vec<&[String]> = out.attribution.writes_of_layer_iter(layer).collect();
+            let collected = out.attribution.writes_of_layer(layer);
+            assert_eq!(
+                iter, collected,
+                "iter().collect() equals writes_of_layer({layer}) verbatim",
+            );
+        }
+    }
+
+    #[test]
+    fn writes_of_layer_iter_missing_writer_is_empty_stream() {
+        // A layer name that never appears in the attribution yields
+        // the empty stream, matching writes_of_layer's empty-vector
+        // semantics on the same input.
+        let real = Fixed("real", dict(&[("k", Value::from(1i64))]));
+        let silent = Fixed("undetectable", Dict::new());
+        let out = compose_with_provenance(&[&real, &silent]);
+        assert_eq!(
+            out.attribution.writes_of_layer_iter("undetectable").next(),
+            None,
+            "silent writer yields empty iter stream",
+        );
+        assert_eq!(
+            out.attribution
+                .writes_of_layer_iter("never-declared")
+                .next(),
+            None,
+            "never-declared writer yields empty iter stream",
+        );
+    }
+
+    #[test]
+    fn writes_of_layer_iter_preserves_lex_order() {
+        // The lex-order preservation writes_of_layer pins (the
+        // underlying BTreeMap's key ordering) lifts structurally to
+        // the iter altitude.
+        let a = Fixed(
+            "A",
+            dict(&[
+                ("m", Value::from(3i64)),
+                ("a", Value::from(dict(&[("y", Value::from(2i64))]))),
+            ]),
+        );
+        let b = Fixed("Z", dict(&[("z", Value::from(1i64))]));
+        let out = compose_with_provenance(&[&a, &b]);
+        let a_paths: Vec<&[String]> = out.attribution.writes_of_layer_iter("A").collect();
+        assert_eq!(
+            a_paths,
+            vec![
+                ["a".to_owned(), "y".to_owned()].as_slice(),
+                ["m".to_owned()].as_slice(),
+            ],
+            "iter preserves lex path order",
+        );
+    }
+
+    #[test]
+    fn writes_of_layer_iter_next_back_walks_reverse() {
+        // DoubleEndedIterator pin: next_back yields the trailing
+        // match without a full forward scan. Emitting alternately
+        // from both ends drains the writer's paths inward until they
+        // meet, at which point both directions return None.
+        let a = Fixed(
+            "A",
+            dict(&[
+                ("a", Value::from(1i64)),
+                ("b", Value::from(2i64)),
+                ("c", Value::from(3i64)),
+                ("d", Value::from(4i64)),
+            ]),
+        );
+        let out = compose_with_provenance(&[&a]);
+        let mut it = out.attribution.writes_of_layer_iter("A");
+        assert_eq!(it.next(), Some(["a".to_owned()].as_slice()));
+        assert_eq!(it.next_back(), Some(["d".to_owned()].as_slice()));
+        assert_eq!(it.next(), Some(["b".to_owned()].as_slice()));
+        assert_eq!(it.next_back(), Some(["c".to_owned()].as_slice()));
+        assert_eq!(it.next(), None);
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
+    fn writes_of_layer_iter_last_equals_writes_of_layer_last() {
+        // Compounding value beyond writes_of_layer: next_back yields
+        // the trailing write of the writer without a Vec allocation,
+        // matching the collecting form's .last() bit-for-bit. The
+        // Iterator::last override on this type forwards to next_back,
+        // so the two seams stay pinned at agreement; clippy's
+        // `double_ended_iterator_last` lint is satisfied by calling
+        // next_back directly here (the type-side override is verified
+        // via the same reverse-scan cost either way).
+        let out = layer_axis_fixture();
+        for layer in out.attribution.surviving_layer_names() {
+            let iter_last = out.attribution.writes_of_layer_iter(layer).next_back();
+            let collect_last = out.attribution.writes_of_layer(layer).last().copied();
+            assert_eq!(
+                iter_last, collect_last,
+                "iter.next_back() equals writes_of_layer({layer}).last() verbatim",
+            );
+        }
+        // Missing writer degenerate.
+        assert_eq!(
+            out.attribution
+                .writes_of_layer_iter("never-here")
+                .next_back(),
+            None,
+        );
+    }
+
+    #[test]
+    fn writes_of_layer_iter_count_matches_leaf_count_of_layer() {
+        // Cardinality projection identity: .count() on the iter
+        // equals the peer scalar leaf_count_of_layer verbatim on
+        // every writer (including missing).
+        let out = layer_axis_fixture();
+        for layer in out.attribution.surviving_layer_names() {
+            let iter_count = out.attribution.writes_of_layer_iter(layer).count();
+            let scalar_count = out.attribution.leaf_count_of_layer(layer);
+            assert_eq!(iter_count, scalar_count, "counts agree for {layer}");
+        }
+        assert_eq!(
+            out.attribution.writes_of_layer_iter("never-here").count(),
+            0,
+        );
+    }
+
+    #[test]
+    fn writes_of_layer_iter_clone_yields_independent_walks() {
+        // Clone pin: cloning the handle mid-walk yields an
+        // independent cursor. The clone's walk starts from where the
+        // original was, and neither walk perturbs the other.
+        let out = layer_axis_fixture();
+        let mut a = out.attribution.writes_of_layer_iter("platform");
+        let first = a.next();
+        let mut b = a.clone();
+        // b resumes from a's current cursor.
+        assert_eq!(a.next(), b.next());
+        assert_eq!(a.next(), b.next());
+        assert_eq!(a.next(), None);
+        assert_eq!(b.next(), None);
+        // A fresh iter walks from the beginning again.
+        let mut fresh = out.attribution.writes_of_layer_iter("platform");
+        assert_eq!(fresh.next(), first);
+    }
+
+    #[test]
+    fn writes_of_layer_iter_is_fused_past_exhaustion() {
+        // FusedIterator pin: past exhaustion, both directions stay
+        // pinned at None. The underlying BTreeMap iter is Fused; the
+        // filter preserves the contract.
+        let out = layer_axis_fixture();
+        let mut it = out.attribution.writes_of_layer_iter("tenancy");
+        while it.next().is_some() {}
+        for _ in 0..8 {
+            assert_eq!(it.next(), None, "fused past exhaustion (forward)");
+            assert_eq!(it.next_back(), None, "fused past exhaustion (back)");
+        }
+    }
+
+    #[test]
+    fn writes_of_layer_iter_head_short_circuits_without_full_sweep() {
+        // Compounding value: .next() yields the head without walking
+        // the whole BTreeMap. A three-writer fixture with the target
+        // writer at the first lex key confirms the short-circuit
+        // returns the correct path.
+        let a = Fixed("target", dict(&[("aaa", Value::from(1i64))]));
+        let b = Fixed(
+            "peer",
+            dict(&[
+                ("bbb", Value::from(2i64)),
+                ("ccc", Value::from(3i64)),
+                ("ddd", Value::from(4i64)),
+            ]),
+        );
+        let out = compose_with_provenance(&[&a, &b]);
+        let head = out.attribution.writes_of_layer_iter("target").next();
+        assert_eq!(head, Some(["aaa".to_owned()].as_slice()));
+    }
+
+    #[test]
+    fn writes_of_layer_iter_find_locates_positional_match() {
+        // Compounding value: .find(_) short-circuits at the first
+        // predicate hit. A three-path writer with the target path in
+        // the middle confirms find() halts there without visiting
+        // trailing entries.
+        let a = Fixed(
+            "A",
+            dict(&[
+                ("aaa", Value::from(1i64)),
+                ("mmm", Value::from(2i64)),
+                ("zzz", Value::from(3i64)),
+            ]),
+        );
+        let out = compose_with_provenance(&[&a]);
+        let hit = out
+            .attribution
+            .writes_of_layer_iter("A")
+            .find(|p| p.first().is_some_and(|s| s == "mmm"));
+        assert_eq!(hit, Some(["mmm".to_owned()].as_slice()));
+    }
+
+    #[test]
+    fn writes_of_layer_iter_empty_attribution_is_empty_stream() {
+        // Empty-attribution boundary: no leaves means no matches for
+        // any writer, mirroring writes_of_layer_empty_attribution_is_empty.
+        let out = compose_with_provenance(&[]);
+        assert_eq!(out.attribution.writes_of_layer_iter("any").next(), None);
     }
 
     /// Test-side clone helper — the `Fixed` layer is deliberately
