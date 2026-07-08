@@ -784,12 +784,103 @@ impl LayerAttribution {
     /// [`leaf_counts_by_layer`]: Self::leaf_counts_by_layer
     #[must_use]
     pub fn subtree_surviving_layer_names(&self, prefix: &[String]) -> Vec<&'static str> {
+        self.subtree_surviving_layer_names_iter(prefix).collect()
+    }
+
+    /// Zero-allocation iterator dual of
+    /// [`Self::subtree_surviving_layer_names`] — streams the distinct
+    /// writer names live under (or at) `prefix` lazily, in the same
+    /// lex-on-layer-name order the collecting form emits, so callers that
+    /// only want the head (`.next()`), a positional match (`.find(_)` /
+    /// `.position(_)`), a bounded prefix (`.take(n)`), the exact writer
+    /// count (`.len()` / `.count()`), the reverse walk (`.rev()`), or the
+    /// trailing survivor (`.next_back()` / `.last()`) skip the obligatory
+    /// `Vec<&'static str>` allocation
+    /// [`Self::subtree_surviving_layer_names`] pays. Collecting through
+    /// `.collect::<Vec<_>>()` recovers [`Self::subtree_surviving_layer_names`]
+    /// verbatim; the equivalence pin is
+    /// `subtree_surviving_layer_names_iter_collect_matches_subtree_surviving_layer_names`
+    /// in the test module.
+    ///
+    /// The concrete return type is
+    /// [`LayerAttributionSubtreeSurvivingLayerNamesIter`], a thin newtype
+    /// around
+    /// [`std::collections::btree_set::IntoIter<&'static str>`][std::collections::btree_set::IntoIter].
+    /// Naming the return type at the API boundary (rather than
+    /// `impl DoubleEndedIterator<Item = ...> + ...`) exposes the
+    /// [`ExactSizeIterator`] and [`std::iter::FusedIterator`] impls the
+    /// substrate structurally carries and gives callers a spellable type
+    /// — matching the concrete-return invariant every zero-allocation
+    /// iterator return on the [`LayerAttribution`] surface obeys.
+    ///
+    /// **Trait algebra.** The returned iterator carries
+    /// [`DoubleEndedIterator`], [`ExactSizeIterator`], and
+    /// [`std::iter::FusedIterator`] on top of [`Iterator`], plus
+    /// [`Debug`][std::fmt::Debug]. [`Clone`] is *not* carried — the
+    /// underlying [`std::collections::btree_set::IntoIter`] consumes the
+    /// source [`BTreeSet`] and is not [`Clone`]-able. This matches the
+    /// same consuming asymmetry [`LayerAttributionSurvivingLayerNamesIter`]
+    /// carries at the free-axis altitude.
+    ///
+    /// **Load-bearing internal reuse.**
+    /// [`Self::subtree_surviving_layer_names`] itself routes through this
+    /// seam as `self.subtree_surviving_layer_names_iter(prefix).collect()`,
+    /// so the two primitives share the same [`BTreeSet`]-based dedup path
+    /// with no logic duplication — the collecting form is now a one-line
+    /// `.collect()` at the substrate boundary, matching the same routing
+    /// discipline [`Self::surviving_layer_names`] applies at the top-level
+    /// altitude.
+    ///
+    /// **Cost.** `O(log n + m log k)` in the constructor — one
+    /// [`BTreeMap::range`] seek to the subtree's first entry (via
+    /// [`Self::subtree_iter`]), a linear walk that halts at the first
+    /// non-prefixed key, one [`BTreeSet`] insertion per matching leaf —
+    /// where `n` is the total leaf count, `m` is the number of matching
+    /// leaves under the subtree, and `k` is the distinct-writer count
+    /// *under the subtree*. Once constructed, `.next()` / `.next_back()` /
+    /// `.len()` are `O(log k)` amortized on the underlying
+    /// [`std::collections::btree_set::IntoIter`]. Consumers that
+    /// short-circuit before draining still pay the range-walk-plus-dedup
+    /// constructor — the dedup discipline cannot be deferred past the
+    /// first pull because writer names arrive in path-order via
+    /// [`Self::subtree_iter`], not in lex-name order. The saved
+    /// allocation is the `Vec<&'static str>` of length `k` the collecting
+    /// form materializes at the end, plus the `O(m)` owned-key allocations
+    /// [`Self::subtree`]`(prefix).surviving_layer_names_iter()` would
+    /// otherwise pay on a materialized restricted attribution.
+    ///
+    /// **Empty attribution / absent prefix.** An empty attribution or a
+    /// prefix that names no subtree yields the empty stream and reports
+    /// `.len() == 0` / `.size_hint() == (0, Some(0))` at `O(1)` after the
+    /// range-walk terminates.
+    ///
+    /// **Prefix-extending sibling boundary.** Inherited from
+    /// [`Self::subtree_iter`]: a lex-adjacent sibling that shares the
+    /// string prefix of the last `prefix` element but is not a path
+    /// descendant (e.g. `["breatheZ"]` vs prefix `["breathe"]`) is
+    /// correctly excluded — the writer of that sibling is not credited
+    /// against this subtree. Pinned by
+    /// `subtree_surviving_layer_names_iter_stops_at_prefix_extending_sibling_key`.
+    ///
+    /// **Frontier corner.** The subtree-restricted, iter-altitude dual on
+    /// the surviving-writer-name axis — the (subtree × surviving × iter)
+    /// cell completing the {top-level, subtree} × {surviving-name} × iter
+    /// grid that
+    /// [`Self::surviving_layer_names_iter`] opened on the free-axis
+    /// altitude.
+    #[must_use]
+    pub fn subtree_surviving_layer_names_iter(
+        &self,
+        prefix: &[String],
+    ) -> LayerAttributionSubtreeSurvivingLayerNamesIter {
         use std::collections::BTreeSet;
         let mut set: BTreeSet<&'static str> = BTreeSet::new();
         for (_, layer) in self.subtree_iter(prefix) {
             set.insert(layer);
         }
-        set.into_iter().collect()
+        LayerAttributionSubtreeSurvivingLayerNamesIter {
+            inner: set.into_iter(),
+        }
     }
 
     /// The **subtree-restricted** dual of [`Self::leaf_counts_by_layer`]:
@@ -2661,6 +2752,82 @@ impl ExactSizeIterator for LayerAttributionSurvivingLayerNamesIter {
 }
 
 impl std::iter::FusedIterator for LayerAttributionSurvivingLayerNamesIter {}
+
+/// The concrete return type of
+/// [`LayerAttribution::subtree_surviving_layer_names_iter`] — a thin
+/// single-field newtype around
+/// [`std::collections::btree_set::IntoIter<&'static str>`][std::collections::btree_set::IntoIter]
+/// that streams every distinct writer name live under (or at) a `prefix`
+/// in [`BTreeSet`]-order (lex on the layer name), matching the ordering
+/// [`LayerAttribution::subtree_surviving_layer_names`] emits.
+///
+/// The subtree-restricted, iter-altitude peer of
+/// [`LayerAttributionSurvivingLayerNamesIter`] — same trait algebra, same
+/// dedup discipline, restricted to a subtree via [`LayerAttribution::subtree_iter`].
+///
+/// Impls [`Iterator`] + [`DoubleEndedIterator`] +
+/// [`ExactSizeIterator`] + [`std::iter::FusedIterator`] +
+/// [`Debug`][std::fmt::Debug]. [`Clone`] is *not* carried — the
+/// underlying [`std::collections::btree_set::IntoIter`] consumes the
+/// source [`BTreeSet`] and is not [`Clone`]-able. This matches the
+/// same consuming asymmetry [`LayerAttributionSurvivingLayerNamesIter`]
+/// carries at the free-axis altitude.
+///
+/// **Trait algebra.** [`ExactSizeIterator`] survives — the constructor
+/// already dedup'd the writer set into a [`BTreeSet`] whose
+/// [`std::collections::btree_set::IntoIter`] carries the known-length
+/// contract, so consumers reading `.len()` / `.size_hint()` see the
+/// exact subtree-distinct-writer count at `O(1)` without walking the
+/// stream. [`DoubleEndedIterator`] survives on the same backing type —
+/// consumers reaching for the trailing (largest lex-name) survivor via
+/// `.next_back()` / `.last()` skip the full forward scan the collecting
+/// form pays.
+///
+/// The [`Iterator::last`] default is overridden to route through
+/// [`DoubleEndedIterator::next_back`], so `.last()` finds the trailing
+/// name in one reverse step instead of draining the whole iterator —
+/// clippy's `double_ended_iterator_last` lint fires on the default impl
+/// on any [`DoubleEndedIterator`], so the override closes the compounding
+/// value at the impl altitude for every consumer without them having to
+/// reach for `.next_back()`.
+#[derive(Debug)]
+pub struct LayerAttributionSubtreeSurvivingLayerNamesIter {
+    inner: std::collections::btree_set::IntoIter<&'static str>,
+}
+
+impl Iterator for LayerAttributionSubtreeSurvivingLayerNamesIter {
+    type Item = &'static str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+
+    fn count(self) -> usize {
+        self.inner.count()
+    }
+
+    fn last(mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl DoubleEndedIterator for LayerAttributionSubtreeSurvivingLayerNamesIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl ExactSizeIterator for LayerAttributionSubtreeSurvivingLayerNamesIter {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for LayerAttributionSubtreeSurvivingLayerNamesIter {}
 
 /// The result of composing a stack of [`DiscoveryLayer`]s with per-leaf
 /// provenance tracking.
@@ -8619,6 +8786,302 @@ mod tests {
                 .subtree_surviving_layer_names(&[s("any")])
                 .is_empty(),
         );
+    }
+
+    // -------- subtree_surviving_layer_names_iter --------
+
+    #[test]
+    fn subtree_surviving_layer_names_iter_collect_matches_subtree_surviving_layer_names() {
+        // Core equivalence pin: collecting the iter dual reproduces the
+        // collecting form verbatim across every prefix in the shared
+        // subtree-cohort fixture — same lex-name order, same name-set.
+        // If the iter yielded in path-order (rather than lex-name order)
+        // the two would diverge.
+        let out = subtree_fixture();
+        for prefix in [
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("nonexistent")],
+        ] {
+            assert_eq!(
+                out.attribution
+                    .subtree_surviving_layer_names_iter(&prefix)
+                    .collect::<Vec<_>>(),
+                out.attribution.subtree_surviving_layer_names(&prefix),
+                "iter dual collects to the same Vec as the collecting form at {prefix:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_iter_empty_prefix_matches_surviving_layer_names_iter() {
+        // Empty-prefix identity at the iter altitude: the subtree-restricted
+        // iter dual at `&[]` is pointwise equal to the top-level iter dual —
+        // the same identity `subtree_iter(&[]) == iter()` lifts through the
+        // BTreeSet-dedup path to the surviving-name axis.
+        let out = subtree_fixture();
+        assert_eq!(
+            out.attribution
+                .subtree_surviving_layer_names_iter(&[])
+                .collect::<Vec<_>>(),
+            out.attribution
+                .surviving_layer_names_iter()
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_iter_empty_attribution_is_empty_stream() {
+        // Empty-source boundary: no leaves ⇒ zero-length stream at every
+        // prefix. ExactSizeIterator::len reads zero without walking values,
+        // and size_hint agrees at O(1).
+        let empty = compose_with_provenance(&[]);
+        for prefix in [vec![], vec![s("any")], vec![s("nested"), s("under")]] {
+            let iter = empty
+                .attribution
+                .subtree_surviving_layer_names_iter(&prefix);
+            assert_eq!(iter.len(), 0, "empty attribution at {prefix:?}");
+            assert_eq!(iter.size_hint(), (0, Some(0)));
+            assert_eq!(
+                empty
+                    .attribution
+                    .subtree_surviving_layer_names_iter(&prefix)
+                    .collect::<Vec<_>>(),
+                Vec::<&'static str>::new(),
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_iter_absent_prefix_is_empty_stream() {
+        // A prefix that names no subtree yields the empty stream — the
+        // range walk halts before accumulating any writer, and the
+        // BTreeSet-backed ExactSizeIterator reports zero.
+        let out = subtree_fixture();
+        let iter = out
+            .attribution
+            .subtree_surviving_layer_names_iter(&[s("nonexistent")]);
+        assert_eq!(iter.len(), 0);
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+        assert_eq!(
+            out.attribution
+                .subtree_surviving_layer_names_iter(&[s("nonexistent")])
+                .collect::<Vec<_>>(),
+            Vec::<&'static str>::new(),
+        );
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_iter_len_equals_distinct_writer_count_under_subtree() {
+        // ExactSizeIterator::len and size_hint report the exact
+        // subtree-distinct-writer count at O(1), matching
+        // subtree_surviving_layer_names(prefix).len() verbatim across the
+        // fixture's prefixes.
+        let out = subtree_fixture();
+        for prefix in [vec![], vec![s("breathe")], vec![s("alpha")]] {
+            let iter = out.attribution.subtree_surviving_layer_names_iter(&prefix);
+            let expected = out.attribution.subtree_surviving_layer_names(&prefix).len();
+            assert_eq!(iter.len(), expected, "len at {prefix:?}");
+            assert_eq!(iter.size_hint(), (expected, Some(expected)));
+        }
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_iter_yields_lex_order_on_layer_name() {
+        // Application order is [Z-layer, A-layer]; the iter dual sorts lex
+        // on layer name (BTreeSet iteration), matching the collecting form
+        // at the same subtree altitude. Both writers touch leaves under
+        // the `svc.*` subtree.
+        let z_layer = Fixed(
+            "Z",
+            dict(&[("svc", Value::from(dict(&[("k1", Value::from(1i64))])))]),
+        );
+        let a_layer = Fixed(
+            "A",
+            dict(&[("svc", Value::from(dict(&[("k2", Value::from(2i64))])))]),
+        );
+        let out = compose_with_provenance(&[&z_layer, &a_layer]);
+        let prefix = vec![s("svc")];
+        assert_eq!(
+            out.attribution
+                .subtree_surviving_layer_names_iter(&prefix)
+                .collect::<Vec<_>>(),
+            vec!["A", "Z"],
+            "lex order, not application order",
+        );
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_iter_rev_matches_iter_reversed() {
+        // DoubleEndedIterator::rev matches the collecting form reversed —
+        // pins the trailing half of the ordered stream and confirms the
+        // BTreeSet::IntoIter DoubleEnded contract survives at the subtree
+        // altitude.
+        let z_layer = Fixed(
+            "Z",
+            dict(&[("svc", Value::from(dict(&[("k1", Value::from(1i64))])))]),
+        );
+        let a_layer = Fixed(
+            "A",
+            dict(&[("svc", Value::from(dict(&[("k2", Value::from(2i64))])))]),
+        );
+        let m_layer = Fixed(
+            "M",
+            dict(&[("svc", Value::from(dict(&[("k3", Value::from(3i64))])))]),
+        );
+        let out = compose_with_provenance(&[&z_layer, &a_layer, &m_layer]);
+        let prefix = vec![s("svc")];
+        let forward = out.attribution.subtree_surviving_layer_names(&prefix);
+        let mut expected = forward.clone();
+        expected.reverse();
+        assert_eq!(
+            out.attribution
+                .subtree_surviving_layer_names_iter(&prefix)
+                .rev()
+                .collect::<Vec<_>>(),
+            expected,
+        );
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_iter_last_matches_reverse_head() {
+        // The overridden Iterator::last routes through next_back on the
+        // underlying BTreeSet::IntoIter — the trailing lex name lands
+        // directly instead of draining the whole stream. Pinned pointwise
+        // against the collecting form's last entry.
+        let z_layer = Fixed(
+            "Z",
+            dict(&[("svc", Value::from(dict(&[("k1", Value::from(1i64))])))]),
+        );
+        let a_layer = Fixed(
+            "A",
+            dict(&[("svc", Value::from(dict(&[("k2", Value::from(2i64))])))]),
+        );
+        let out = compose_with_provenance(&[&z_layer, &a_layer]);
+        let prefix = vec![s("svc")];
+        assert_eq!(
+            out.attribution
+                .subtree_surviving_layer_names_iter(&prefix)
+                .last(),
+            out.attribution
+                .subtree_surviving_layer_names(&prefix)
+                .last()
+                .copied(),
+        );
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_iter_head_short_circuits_to_lex_first() {
+        // Consumers short-circuiting on `.next()` see the lex-first
+        // surviving writer under the subtree, regardless of application
+        // order. Under `svc.*` here that is "A" (before "Z").
+        let z_layer = Fixed(
+            "Z",
+            dict(&[("svc", Value::from(dict(&[("k1", Value::from(1i64))])))]),
+        );
+        let a_layer = Fixed(
+            "A",
+            dict(&[("svc", Value::from(dict(&[("k2", Value::from(2i64))])))]),
+        );
+        let out = compose_with_provenance(&[&z_layer, &a_layer]);
+        let prefix = vec![s("svc")];
+        assert_eq!(
+            out.attribution
+                .subtree_surviving_layer_names_iter(&prefix)
+                .next(),
+            Some("A"),
+        );
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_iter_dedups_multi_write_writer_under_subtree() {
+        // A writer with three live leaves under the subtree appears
+        // exactly once — the BTreeSet dedup in the constructor collapses
+        // the three subtree-iter sightings into one output.
+        let only = Fixed(
+            "only",
+            dict(&[(
+                "svc",
+                Value::from(dict(&[
+                    ("a", Value::from(1i64)),
+                    ("b", Value::from(2i64)),
+                    ("c", Value::from(3i64)),
+                ])),
+            )]),
+        );
+        let out = compose_with_provenance(&[&only]);
+        let prefix = vec![s("svc")];
+        assert_eq!(
+            out.attribution
+                .subtree_surviving_layer_names_iter(&prefix)
+                .collect::<Vec<_>>(),
+            vec!["only"],
+        );
+        assert_eq!(
+            out.attribution
+                .subtree_surviving_layer_names_iter(&prefix)
+                .count(),
+            1,
+        );
+        assert_eq!(
+            out.attribution
+                .subtree_surviving_layer_names_iter(&prefix)
+                .len(),
+            1,
+            "ExactSizeIterator::len reads 1 despite three underlying sightings",
+        );
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_iter_stops_at_prefix_extending_sibling_key() {
+        // The take_while boundary inherited from subtree_iter: `specific`
+        // writes ONLY the prefix-extending sibling `["breatheZ"]`, never
+        // a real descendant of `breathe`. Its writer must NOT appear in
+        // the subtree name-set at prefix `["breathe"]`, even though its
+        // key is lex-adjacent to the subtree's last entry.
+        let coarse = Fixed(
+            "coarse",
+            dict(&[(
+                "breathe",
+                Value::from(dict(&[("mode", Value::from("live"))])),
+            )]),
+        );
+        let specific_only_sibling = Fixed("specific", dict(&[("breatheZ", Value::from(9i64))]));
+        let out = compose_with_provenance(&[&coarse, &specific_only_sibling]);
+        let prefix = vec![s("breathe")];
+        assert_eq!(
+            out.attribution
+                .subtree_surviving_layer_names_iter(&prefix)
+                .collect::<Vec<_>>(),
+            vec!["coarse"],
+            "the prefix-extending sibling's writer is NOT credited against the subtree",
+        );
+        // Sanity: the top-level iter DOES list `specific` — it wrote a
+        // live leaf at `["breatheZ"]`, just not one under `breathe.*`.
+        assert_eq!(
+            out.attribution
+                .surviving_layer_names_iter()
+                .collect::<Vec<_>>(),
+            vec!["coarse", "specific"],
+        );
+    }
+
+    #[test]
+    fn subtree_surviving_layer_names_iter_fused_after_exhaustion() {
+        // FusedIterator contract: past the last element, `.next()` stays
+        // at None on every subsequent pull, at the subtree altitude.
+        let only = Fixed(
+            "only",
+            dict(&[("svc", Value::from(dict(&[("k", Value::from(1i64))])))]),
+        );
+        let out = compose_with_provenance(&[&only]);
+        let prefix = vec![s("svc")];
+        let mut iter = out.attribution.subtree_surviving_layer_names_iter(&prefix);
+        assert_eq!(iter.next(), Some("only"));
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next(), None);
     }
 
     // -------- contributor_names --------
