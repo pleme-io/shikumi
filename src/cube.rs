@@ -10790,15 +10790,55 @@ pub trait ProductCube: ClosedAxis {
 /// `Copied<slice::Iter>` substrate is [`Clone`], and
 /// [`std::iter::Filter`] preserves the trait when the underlying
 /// iterator is [`Clone`] and the predicate closure is [`Clone`]
-/// (the captureless zero-sized closure is trivially [`Copy`] +
-/// [`Clone`]). Callers that need two independent walks over the
-/// realizable image (render once, then re-walk to find a positional
-/// match on the recognized half) clone the handle up front instead
-/// of re-invoking `realizable_iter::<C>()` at each walk.
+/// (the fn-pointer `fn(&C) -> bool` is a zero-sized type that is
+/// trivially [`Copy`] + [`Clone`]). Callers that need two
+/// independent walks over the realizable image (render once, then
+/// re-walk to find a positional match on the recognized half) clone
+/// the handle up front instead of re-invoking `realizable_iter::<C>()`
+/// at each walk.
+///
+/// # Type ownership at the API boundary
+///
+/// The concrete return type is [`RealizableIter<C>`] — a thin
+/// one-field newtype around
+/// [`std::iter::Filter`]`<`[`std::iter::Copied`]`<`[`std::slice::Iter`]`<'static,
+/// C>>, fn(&C) -> bool>` that spells its full trait algebra
+/// ([`Iterator`] + [`DoubleEndedIterator`] +
+/// [`std::iter::FusedIterator`] + [`Clone`] +
+/// [`Debug`][std::fmt::Debug]) at the type level rather than behind
+/// an unnameable [`impl Trait`][impl-trait] combinator. Consumers
+/// holding the handle in a struct field or returning it up through
+/// their own API spell it as [`RealizableIter<C>`] instead of
+/// smuggling an unnameable combinator across every seam. The
+/// realizable-surface cube-slot walk now carries the same
+/// concrete-return invariant every filter-based iter peer
+/// ([`AxisHistogramNonzero`], [`AxisHistogramObserved`],
+/// [`AxisHistogramUnobserved`]) already spells.
+///
+/// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
 #[must_use]
-pub fn realizable_iter<C: ProductCube>()
--> impl DoubleEndedIterator<Item = C> + std::iter::FusedIterator + Clone {
-    C::ALL.iter().copied().filter(|c| c.is_realizable())
+pub fn realizable_iter<C: ProductCube>() -> RealizableIter<C> {
+    // The fn-item type of `realizable_predicate::<C>` coerces to the
+    // fn-pointer type `fn(&C) -> bool` at the struct-literal field
+    // assignment site (a coercion site per the reference), so the
+    // resulting `Filter<_, fn(&C) -> bool>` matches the newtype field
+    // type without an explicit `as` cast at the call site.
+    let predicate: fn(&C) -> bool = realizable_predicate::<C>;
+    RealizableIter {
+        inner: C::ALL.iter().copied().filter(predicate),
+    }
+}
+
+// Captureless fn-item that coerces to `fn(&C) -> bool` at the
+// [`realizable_iter`] construction site. Hoisted out of the closure
+// body so the predicate's type is a fn-pointer (nameable, `Copy +
+// Clone` trivially, [`Send`] + [`Sync`] unconditionally, and
+// therefore surviving the [`std::iter::Filter`] trait-preservation
+// bounds structurally) rather than a per-call closure type
+// (unnameable, and forcing every seam to smuggle the anonymous
+// closure type through `impl Trait`).
+fn realizable_predicate<C: ProductCube>(c: &C) -> bool {
+    C::is_realizable(*c)
 }
 
 /// Iterate the unrealizable cells of a [`ProductCube`] —
@@ -10871,6 +10911,140 @@ pub fn realizable_count<C: ProductCube>() -> usize {
 pub fn unrealizable_count<C: ProductCube>() -> usize {
     unrealizable_iter::<C>().count()
 }
+
+/// Zero-allocation stream of every realizable cell of a [`ProductCube`]
+/// — the [`ClosedAxis::ALL`] slice on `C` filtered by
+/// [`ProductCube::is_realizable`], returned by [`realizable_iter`].
+///
+/// Naming the return type at the API boundary (rather than
+/// [`impl Trait`][impl-trait]) exposes the full trait algebra the
+/// underlying [`std::iter::Filter`]`<`[`std::iter::Copied`]`<`[`std::slice::Iter`]`<'static,
+/// C>>, fn(&C) -> bool>` cursor structurally carries directly at the
+/// type level — the same idiom every filter-based iter peer
+/// ([`AxisHistogramNonzero`], [`AxisHistogramObserved`],
+/// [`AxisHistogramUnobserved`]) already spells at its own API seam.
+/// Consumers storing the handle in a struct field or returning it up
+/// through their own API no longer smuggle an unnameable
+/// [`impl Trait`][impl-trait] across every seam.
+///
+/// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
+///
+/// # Trait algebra
+///
+/// Impls [`Iterator`], [`DoubleEndedIterator`],
+/// [`std::iter::FusedIterator`], [`Clone`], and
+/// [`Debug`][std::fmt::Debug] — the same five-trait bundle the
+/// filter-based histogram-altitude siblings
+/// ([`AxisHistogramNonzero`], [`AxisHistogramObserved`],
+/// [`AxisHistogramUnobserved`]) carry. Minus [`ExactSizeIterator`]:
+/// the underlying [`std::iter::Filter`] discards cells based on the
+/// runtime [`ProductCube::is_realizable`] predicate, so the
+/// exact-length contract cannot be honored at the type level
+/// (element-preserving iter peers [`AxisIter`],
+/// [`crate::ProvenanceMapEntries`], and [`ForwardIter`] carry
+/// [`ExactSizeIterator`] because their projections do not drop
+/// elements). Callers needing the realizable-image length reach
+/// [`realizable_count::<C>()`][realizable_count] directly.
+///
+/// The trait algebra is a strict widening of the prior
+/// `impl DoubleEndedIterator<Item = C> + std::iter::FusedIterator +
+/// Clone` return: the concrete return type unlocks the
+/// nameable-struct-field and nameable-return-position seams the
+/// `impl Trait` shape erased, and the [`Debug`][std::fmt::Debug]
+/// impl surfaces nameably (was erased at the `impl Trait` boundary).
+///
+/// # Field access
+///
+/// The struct field is private — the public surface is the five
+/// trait impls above. The wrapped
+/// [`std::iter::Filter`]`<`[`std::iter::Copied`]`<`[`std::slice::Iter`]`<'static,
+/// C>>, fn(&C) -> bool>` cursor is a fixed-size borrowed handle that
+/// already carries every trait this iter forwards; the newtype
+/// exists to name the substrate composition at the type level rather
+/// than to add state on top.
+pub struct RealizableIter<C: ProductCube> {
+    // The three-level nested generic (`Filter<Copied<slice::Iter>,
+    // fn>`) is deliberate — the newtype's whole purpose is to name
+    // the concrete stdlib composition at the type level so its
+    // trait algebra survives the seam. A type alias would either
+    // duplicate the parameter (`type Inner<C> = Filter<Copied<..>,
+    // fn(&C) -> bool>`) with no gain, or hide the composition and
+    // defeat the point of the sharpen. Suppress `type_complexity`
+    // here rather than factor.
+    #[allow(clippy::type_complexity)]
+    inner: std::iter::Filter<std::iter::Copied<std::slice::Iter<'static, C>>, fn(&C) -> bool>,
+}
+
+impl<C: ProductCube> Clone for RealizableIter<C> {
+    fn clone(&self) -> Self {
+        // Manual (not derived) because [`ProductCube`] does not
+        // require `C: Clone` (its [`ClosedAxis`] super-trait bounds
+        // `Copy + Eq + Hash + 'static` only, and `Copy` implies
+        // `Clone` at the value level, but a `#[derive(Clone)]` on
+        // this generic newtype would leak a `C: Clone` bound the
+        // trait doesn't guarantee via the derive's structural
+        // synthesizer). Delegates to the wrapped
+        // `Filter<Copied<slice::Iter>, fn>::clone()`; the underlying
+        // substrate is unconditionally [`Clone`] (the
+        // `Copied<slice::Iter>` cursor is [`Clone`],
+        // [`std::iter::Filter`] preserves [`Clone`] when both the
+        // iterator and predicate are [`Clone`], and the fn-pointer
+        // predicate `fn(&C) -> bool` is trivially [`Copy`] +
+        // [`Clone`]).
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<C: ProductCube> std::fmt::Debug for RealizableIter<C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Skip the `inner` field: neither [`ProductCube`] nor its
+        // [`ClosedAxis`] super-trait requires `C: Debug` (the
+        // super-trait bounds are `Copy + Eq + Hash + 'static` only,
+        // so a future implementor without `Debug` can still
+        // participate in the discipline), and a `#[derive(Debug)]`
+        // on this struct would leak a `C: Debug` bound via the
+        // `slice::Iter<'static, C>` cursor in the wrapped
+        // `Filter<...>` field. Report the cursor's upper-bound
+        // remaining cell count (`size_hint().1`) — the cube cells
+        // still to walk before the filter reaches the tail — as a
+        // diagnostic scalar instead. Same
+        // `Debug`-with-a-field-substitution pattern the axis-altitude
+        // [`AxisIter`], the filter-based histogram-altitude siblings
+        // ([`AxisHistogramNonzero`], [`AxisHistogramObserved`],
+        // [`AxisHistogramUnobserved`]), and the partial-inverse-cube
+        // element-preserving [`ForwardIter`] carry against their own
+        // non-`Debug`-guaranteed cursor state.
+        f.debug_struct("RealizableIter")
+            .field("cell_remaining_upper_bound", &self.inner.size_hint().1)
+            .finish()
+    }
+}
+
+impl<C: ProductCube> Iterator for RealizableIter<C> {
+    type Item = C;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        // Lower bound zero (every remaining cell could still be
+        // unrealizable and get skipped); upper bound the full
+        // underlying walk (no filter adds elements beyond the
+        // underlying cube walk).
+        self.inner.size_hint()
+    }
+}
+
+impl<C: ProductCube> DoubleEndedIterator for RealizableIter<C> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl<C: ProductCube> std::iter::FusedIterator for RealizableIter<C> {}
 
 /// Dense ordinal of a [`ProductCube`] cell over the realizable surface
 /// — the position of `cell` in [`realizable_iter::<C>()`], or [`None`]
@@ -13984,6 +14158,167 @@ mod tests {
         assert!(
             rendered.contains('4'),
             "Debug output must report the initial cursor length (4): {rendered}",
+        );
+    }
+
+    // ---- RealizableIter — named concrete return type at the realizable_iter API boundary ----
+
+    #[test]
+    fn realizable_iter_return_type_is_nameable_realizable_iter() {
+        // Pins the sharpen at the type-signature level: a struct
+        // field bound on `RealizableIter<C>` holds the handle across
+        // a return, so the concrete return type of
+        // [`realizable_iter`] is spellable at the API boundary. This
+        // test compiles ⇔ the sharpen holds; if the return type ever
+        // regresses back to `impl Trait`, the struct field bound
+        // ceases to name the substrate and the test fails to compile.
+        // The realizable-surface cube-slot walk peer of the
+        // partial-inverse-cube-altitude
+        // `forward_iter_return_type_is_nameable_forward_iter`, the
+        // axis-altitude `axis_iter_return_type_is_nameable_axis_iter`,
+        // and the tier-altitude
+        // `provenance_map_entries_return_type_is_nameable_provenance_map_entries`
+        // pins. Fixture: the four-realizable-cell `FormatCoordinates`
+        // cube.
+        struct Holder {
+            iter: crate::RealizableIter<FormatCoordinates>,
+        }
+        let holder = Holder {
+            iter: realizable_iter::<FormatCoordinates>(),
+        };
+        let collected: Vec<FormatCoordinates> = holder.iter.collect();
+        let expected: Vec<FormatCoordinates> = FormatCoordinates::ALL
+            .iter()
+            .copied()
+            .filter(|c| ProductCube::is_realizable(*c))
+            .collect();
+        assert_eq!(collected, expected);
+    }
+
+    #[test]
+    fn realizable_iter_clone_preserves_four_traits() {
+        // Compile-time witness that [`crate::RealizableIter`] carries
+        // the four-trait bundle `Iterator + DoubleEndedIterator +
+        // FusedIterator + Clone` — the underlying
+        // `Filter<Copied<slice::Iter<'static, C>>, fn(&C) -> bool>`
+        // cursor's trait algebra survives the newtype seam. The
+        // static bound accepts the named handle by reference
+        // (proving the trait bundle at type check), then a `.clone()`
+        // walks the same sequence as the original (runtime cross-walk
+        // proof). Matches the four-trait bundle carried by the
+        // filter-based histogram-altitude siblings
+        // [`crate::AxisHistogramNonzero`],
+        // [`crate::AxisHistogramObserved`], and
+        // [`crate::AxisHistogramUnobserved`]; strictly weaker than
+        // the five-trait bundle carried by the element-preserving
+        // peers [`crate::AxisIter`], [`crate::ProvenanceMapEntries`],
+        // and [`crate::ForwardIter`] (which additionally carry
+        // [`ExactSizeIterator`], impossible here because the filter
+        // discards elements based on the runtime predicate).
+        fn accepts<I>(_iter: &I)
+        where
+            I: Iterator<Item = FormatCoordinates>
+                + DoubleEndedIterator
+                + std::iter::FusedIterator
+                + Clone,
+        {
+        }
+        let handle: crate::RealizableIter<FormatCoordinates> =
+            realizable_iter::<FormatCoordinates>();
+        accepts(&handle);
+        let clone_walk: Vec<FormatCoordinates> = handle.clone().collect();
+        let original_walk: Vec<FormatCoordinates> = handle.collect();
+        assert_eq!(clone_walk, original_walk);
+    }
+
+    #[test]
+    fn realizable_iter_next_back_walks_specific_to_coarse() {
+        // The [`DoubleEndedIterator`] contract on the sharpened
+        // [`crate::RealizableIter`] surface at the runtime level. The
+        // `FormatCoordinates` fixture has four realizable cells (the
+        // diagonal where `provenance == format.provenance()` over
+        // `Format::ALL == [Yaml, Toml, Lisp, Nix]`): the tail cursor
+        // yields them last-declared first (`Nix`-realizable, then
+        // `Lisp`-realizable, then `Toml`-realizable), then the head
+        // cursor yields the remaining `Yaml`-realizable, then both
+        // cursors report `None` on further pulls. Catches accidental
+        // regressions to a single-ended state machine.
+        let mut it: crate::RealizableIter<FormatCoordinates> =
+            realizable_iter::<FormatCoordinates>();
+        let realizable_forward: Vec<FormatCoordinates> = FormatCoordinates::ALL
+            .iter()
+            .copied()
+            .filter(|c| ProductCube::is_realizable(*c))
+            .collect();
+        assert_eq!(realizable_forward.len(), 4);
+        assert_eq!(it.next_back(), Some(realizable_forward[3]));
+        assert_eq!(it.next_back(), Some(realizable_forward[2]));
+        assert_eq!(it.next(), Some(realizable_forward[0]));
+        assert_eq!(it.next(), Some(realizable_forward[1]));
+        assert_eq!(it.next(), None);
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
+    fn realizable_iter_size_hint_upper_bounds_all_cardinality() {
+        // Pins the [`Iterator::size_hint`] contract on the sharpened
+        // [`crate::RealizableIter`] surface at the runtime level. The
+        // filter cannot narrow the lower bound below zero (every
+        // remaining cell could still be unrealizable and get
+        // skipped), and cannot narrow the upper bound above the
+        // underlying `Copied<slice::Iter>` remaining length (no
+        // filter adds elements). Fixture: the eight-cell
+        // `FormatCoordinates` cube, initial `size_hint()` is
+        // `(0, Some(8))`; after pulling the first realizable cell
+        // (which advances the underlying cursor past the first
+        // realizable index — 0 for `FormatCoordinates::ALL[0]` which
+        // is `Yaml/Yaml`), the upper bound decrements by the number
+        // of cells consumed from the front.
+        let mut it: crate::RealizableIter<FormatCoordinates> =
+            realizable_iter::<FormatCoordinates>();
+        assert_eq!(it.size_hint(), (0, Some(FormatCoordinates::ALL.len())));
+        let first_realizable_index = FormatCoordinates::ALL
+            .iter()
+            .position(|c| ProductCube::is_realizable(*c))
+            .expect("FormatCoordinates has at least one realizable cell");
+        assert!(it.next().is_some());
+        let (lower, upper) = it.size_hint();
+        assert_eq!(lower, 0);
+        assert_eq!(
+            upper,
+            Some(FormatCoordinates::ALL.len() - first_realizable_index - 1),
+            "upper bound must equal remaining underlying-cursor length after consuming through the first realizable cell",
+        );
+    }
+
+    #[test]
+    fn realizable_iter_debug_impl_names_the_struct() {
+        // Pins the manual Debug impl at the format-string level: the
+        // rendered output names the struct (`RealizableIter`) and
+        // reports the `cell_remaining_upper_bound` field rather than
+        // leaking per-cell values or requiring a `C: Debug` bound the
+        // [`ProductCube`] trait doesn't guarantee (via its
+        // [`ClosedAxis`] super-trait, which bounds only `Copy + Eq +
+        // Hash + 'static`). Catches accidental regressions to
+        // `#[derive(Debug)]` (which would leak a `C: Debug` bound
+        // through the `slice::Iter<'static, C>` cursor in the wrapped
+        // `Filter<...>` field, breaking future ProductCube
+        // implementors without Debug) or a rename of the reported
+        // field. The realizable-surface cube-slot walk peer of the
+        // partial-inverse-cube-altitude
+        // `forward_iter_debug_impl_names_the_struct` and the
+        // histogram-altitude
+        // `axis_histogram_nonzero_debug_impl_names_the_struct`
+        // fixtures.
+        let it: crate::RealizableIter<FormatCoordinates> = realizable_iter::<FormatCoordinates>();
+        let rendered = format!("{it:?}");
+        assert!(
+            rendered.contains("RealizableIter"),
+            "Debug output must name the struct: {rendered}",
+        );
+        assert!(
+            rendered.contains("cell_remaining_upper_bound"),
+            "Debug output must name the cell_remaining_upper_bound field: {rendered}",
         );
     }
 
