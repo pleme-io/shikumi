@@ -68,11 +68,11 @@ pub use cube::{
     ParsePartitionFaceError, ParsePartitionOrdinalError, ParseSupportBoundaryDistanceError,
     ParseSupportCardinalityClassError, ParseSupportMagnitudeDirectionError, PartialInverseCube,
     PartitionFace, PartitionOrdinal, ProductCube, RealizableIter, SupportBoundaryDistance,
-    SupportCardinalityClass, SupportMagnitudeDirection, at_partition_ordinal, axis_at,
-    axis_cardinality, axis_from_label, axis_histogram, axis_iter, axis_label, axis_ordinal,
-    forward_iter, partition_ordinal, realizable_at, realizable_count, realizable_images,
-    realizable_iter, realizable_ordinal, unrealizable_at, unrealizable_count, unrealizable_iter,
-    unrealizable_ordinal,
+    SupportCardinalityClass, SupportMagnitudeDirection, UnrealizableIter, at_partition_ordinal,
+    axis_at, axis_cardinality, axis_from_label, axis_histogram, axis_iter, axis_label,
+    axis_ordinal, forward_iter, partition_ordinal, realizable_at, realizable_count,
+    realizable_images, realizable_iter, realizable_ordinal, unrealizable_at, unrealizable_count,
+    unrealizable_iter, unrealizable_ordinal,
 };
 pub use discovered::{
     ContributorNamesIter, ContributorsAtIter, DiscoveryComposition, DiscoveryLayer,
