@@ -4317,8 +4317,9 @@ pub fn compose_with_provenance(layers: &[&dyn DiscoveryLayer]) -> DiscoveryCompo
             &mut dict,
             layer.discover(),
             &[],
-            layer.name(),
+            &layer.name(),
             &mut attribution,
+            false,
         );
     }
     DiscoveryComposition {
@@ -4327,18 +4328,46 @@ pub fn compose_with_provenance(layers: &[&dyn DiscoveryLayer]) -> DiscoveryCompo
     }
 }
 
-/// Deep-merge helper that mirrors [`deep_merge`] while threading
-/// per-leaf attribution. Kept private: the public seam is
-/// [`compose_with_provenance`], which owns the `prefix` / `layer` /
-/// `attribution` protocol.
-fn deep_merge_attributed(
+/// Deep-merge helper that mirrors [`deep_merge`] while threading per-leaf
+/// attribution, generic over the attribution **mark** codomain `A`.
+///
+/// One fold owns two consumers: [`compose_with_provenance`] threads a
+/// `&'static str` layer name (`A = &'static str`, `on_change_only = false`
+/// — pure last-writer), and the tier-fold in [`crate::tiered`] threads a
+/// typed `Provenance` (`A = Provenance`, `on_change_only = true` —
+/// last-*changer*). Kept `pub(crate)`: the public seams are
+/// [`compose_with_provenance`] (discovery-layer stack) and
+/// [`crate::TieredConfig::resolve_progressive`] (tier stack), which each
+/// own the `prefix` / `mark` / `attribution` protocol.
+///
+/// # `on_change_only` — last-writer vs last-changer
+///
+/// When `false`, every overlay leaf re-attributes to `mark` (the
+/// discovery-layer semantics `compose_with_provenance` pins). When `true`,
+/// a leaf whose incoming value **equals** the value already at that path is
+/// skipped wholesale — value and attribution both stay put, so the effective
+/// value keeps the provenance of the lower layer that first set it. This is
+/// what makes tier provenance meaningful across full-`Self` tiers: a
+/// `prescribed_default()` built on `discovered()` re-emits the detected
+/// value unchanged, so that leaf stays attributed to `Discovered` rather than
+/// being falsely claimed by `Default`.
+pub(crate) fn deep_merge_attributed<A: Clone>(
     base: &mut Dict,
     overlay: Dict,
     prefix: &[String],
-    layer: &'static str,
-    attribution: &mut BTreeMap<Vec<String>, &'static str>,
+    mark: &A,
+    attribution: &mut BTreeMap<Vec<String>, A>,
+    on_change_only: bool,
 ) {
     for (key, incoming) in overlay {
+        // Change-aware skip: an incoming value identical to the one already
+        // at this path leaves the prior attribution (and value) intact — the
+        // effective value "comes from" the lower layer that first set it.
+        // Only engaged in last-changer (`on_change_only`) mode; the
+        // last-writer discovery-layer path never takes this branch.
+        if on_change_only && base.get(&key) == Some(&incoming) {
+            continue;
+        }
         let mut path = Vec::with_capacity(prefix.len() + 1);
         path.extend_from_slice(prefix);
         path.push(key.clone());
@@ -4346,7 +4375,14 @@ fn deep_merge_attributed(
             // Two maps: recurse so sibling keys keep their prior
             // attribution.
             (Some(Value::Dict(_, base_inner)), Value::Dict(_, over_inner)) => {
-                deep_merge_attributed(base_inner, over_inner, &path, layer, attribution);
+                deep_merge_attributed(
+                    base_inner,
+                    over_inner,
+                    &path,
+                    mark,
+                    attribution,
+                    on_change_only,
+                );
             }
             // Anything else: wholesale replace. Any prior sub-leaves
             // under this path are gone from the merged dict, so their
@@ -4354,7 +4390,7 @@ fn deep_merge_attributed(
             // value's leaves before installing.
             (_, incoming) => {
                 attribution.retain(|p, _| !path_has_prefix(p, &path));
-                attribute_leaves(&incoming, &path, layer, attribution);
+                attribute_leaves(&incoming, &path, mark, attribution);
                 base.insert(key, incoming);
             }
         }
@@ -4370,22 +4406,22 @@ fn path_has_prefix(path: &[String], prefix: &[String]) -> bool {
 /// Record `layer` as the writer of every leaf reachable from `path`
 /// inside `v`. Recurses into [`Value::Dict`]; every other variant is a
 /// leaf that gets attributed at `path` itself.
-fn attribute_leaves(
+pub(crate) fn attribute_leaves<A: Clone>(
     v: &Value,
     path: &[String],
-    layer: &'static str,
-    attribution: &mut BTreeMap<Vec<String>, &'static str>,
+    mark: &A,
+    attribution: &mut BTreeMap<Vec<String>, A>,
 ) {
     match v {
         Value::Dict(_, inner) => {
             for (k, sub) in inner {
                 let mut sub_path = path.to_vec();
                 sub_path.push(k.clone());
-                attribute_leaves(sub, &sub_path, layer, attribution);
+                attribute_leaves(sub, &sub_path, mark, attribution);
             }
         }
         _ => {
-            attribution.insert(path.to_vec(), layer);
+            attribution.insert(path.to_vec(), mark.clone());
         }
     }
 }
