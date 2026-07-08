@@ -152,11 +152,152 @@ pub trait ClosedAxis: Copy + Eq + Hash + 'static {
 /// re-invocation form works and is zero-cost, but the clone form
 /// composes cleanly inside a generic pipeline stage that only sees
 /// the iterator handle, not the free-function entry point).
+///
+/// # Type ownership at the API boundary
+///
+/// The concrete return type is [`AxisIter<A>`] — a thin one-field
+/// newtype around
+/// [`std::iter::Copied`]`<`[`std::slice::Iter`]`<'static, A>>` that
+/// spells its full trait algebra ([`Iterator`] +
+/// [`DoubleEndedIterator`] + [`ExactSizeIterator`] +
+/// [`std::iter::FusedIterator`] + [`Clone`] +
+/// [`Debug`][std::fmt::Debug]) at the type level rather than behind an
+/// unnameable [`impl Trait`][impl-trait] combinator. Consumers holding
+/// the handle in a struct field or returning it up through their own
+/// API spell it as [`AxisIter<A>`] instead of smuggling an unnameable
+/// combinator across every seam. The flagship free-function iter on
+/// the trait-uniform closed-axis discipline now carries the same
+/// concrete-return invariant every free-function iter dual on
+/// `discovered.rs` ([`crate::ContributorNamesIter`],
+/// [`crate::LayerNamesIter`], [`crate::SilentLayerNamesIter`],
+/// [`crate::NonemptyLayerDictsIter`], [`crate::ContributorsAtIter`],
+/// [`crate::SilencedAtIter`]) and on `tiered.rs`
+/// ([`crate::ProvenanceMapEntries`]) already spells.
+///
+/// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
 #[must_use]
-pub fn axis_iter<A: ClosedAxis>()
--> impl DoubleEndedIterator<Item = A> + ExactSizeIterator + std::iter::FusedIterator + Clone {
-    A::ALL.iter().copied()
+pub fn axis_iter<A: ClosedAxis>() -> AxisIter<A> {
+    AxisIter {
+        inner: A::ALL.iter().copied(),
+    }
 }
+
+/// Zero-allocation stream of every value of a [`ClosedAxis`] in
+/// declaration order over [`ClosedAxis::ALL`], returned by
+/// [`axis_iter`].
+///
+/// Naming the return type at the API boundary (rather than
+/// [`impl Trait`][impl-trait]) exposes the full trait algebra the
+/// underlying [`std::iter::Copied`]`<`[`std::slice::Iter`]`<'static,
+/// A>>` cursor structurally carries directly at the type level — the
+/// same idiom every free-function iter dual on the discovery altitude
+/// ([`crate::ContributorNamesIter`], [`crate::LayerNamesIter`],
+/// [`crate::SilentLayerNamesIter`],
+/// [`crate::NonemptyLayerDictsIter`], [`crate::ContributorsAtIter`],
+/// [`crate::SilencedAtIter`]) and the tier altitude
+/// ([`crate::ProvenanceMapEntries`]) already spells at its own API
+/// seam. Consumers storing the handle in a struct field or returning
+/// it up through their own API no longer smuggle an unnameable
+/// [`impl Trait`][impl-trait] across every seam.
+///
+/// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
+///
+/// # Trait algebra
+///
+/// Impls [`Iterator`], [`DoubleEndedIterator`], [`ExactSizeIterator`],
+/// [`std::iter::FusedIterator`], [`Clone`], and
+/// [`Debug`][std::fmt::Debug]. The underlying
+/// [`std::iter::Copied`]`<`[`std::slice::Iter`]`<'static, A>>` carries
+/// the same trait algebra unconditionally — the [`ClosedAxis`]
+/// super-trait bound `Copy` on `A` satisfies the `Copied` preservation
+/// requirement, and the element-preserving projection lets
+/// [`ExactSizeIterator`] survive at the type level (unlike the
+/// filter-based whole-layer siblings [`crate::ContributorNamesIter`],
+/// [`crate::SilentLayerNamesIter`], [`crate::NonemptyLayerDictsIter`],
+/// whose emptiness filter discards elements based on `discover()` and
+/// so cannot honor the exact-size contract). The tier-altitude peer
+/// [`crate::ProvenanceMapEntries`] carries the same six-trait algebra
+/// through the same element-preserving projection over a
+/// [`std::collections::btree_map::Iter`]-backed cursor.
+///
+/// # Field access
+///
+/// The struct field is private — the public surface is the six trait
+/// impls above. The wrapped
+/// [`std::iter::Copied`]`<`[`std::slice::Iter`]`<'static, A>>` cursor
+/// is a two-word borrowed handle that already carries every trait this
+/// iter forwards; the newtype exists to name the substrate composition
+/// at the type level rather than to add state on top.
+#[derive(Clone)]
+pub struct AxisIter<A: ClosedAxis> {
+    inner: std::iter::Copied<std::slice::Iter<'static, A>>,
+}
+
+impl<A: ClosedAxis> std::fmt::Debug for AxisIter<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Skip the `inner` field: [`ClosedAxis`] does not require
+        // `A: Debug` (the trait bounds are `Copy + Eq + Hash + 'static`
+        // only, so a future implementor without `Debug` can still
+        // participate in the discipline), so the underlying
+        // `Copied<slice::Iter<'static, A>>` cannot forward `Debug`
+        // unconditionally. Report the cursor's remaining length
+        // instead — enough for a diagnostic dump to distinguish
+        // "just started" from "half-way through" without leaking
+        // per-cell values or requiring an `A: Debug` bound the trait
+        // doesn't guarantee. Same `Debug`-with-a-field-substitution
+        // pattern the whole-layer discovery-altitude siblings
+        // ([`crate::ContributorNamesIter`],
+        // [`crate::LayerNamesIter`],
+        // [`crate::SilentLayerNamesIter`],
+        // [`crate::NonemptyLayerDictsIter`]) carry against the same
+        // non-`Debug`-guaranteed cursor element.
+        f.debug_struct("AxisIter")
+            .field("axis_remaining", &self.inner.len())
+            .finish()
+    }
+}
+
+impl<A: ClosedAxis> Iterator for AxisIter<A> {
+    type Item = A;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+
+    fn count(self) -> usize {
+        self.inner.count()
+    }
+
+    fn last(self) -> Option<Self::Item> {
+        self.inner.last()
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.inner.nth(n)
+    }
+}
+
+impl<A: ClosedAxis> DoubleEndedIterator for AxisIter<A> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        self.inner.nth_back(n)
+    }
+}
+
+impl<A: ClosedAxis> ExactSizeIterator for AxisIter<A> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl<A: ClosedAxis> std::iter::FusedIterator for AxisIter<A> {}
 
 /// Cardinality of a [`ClosedAxis`] — `A::ALL.len()` collapsed to one
 /// named helper.
@@ -12727,6 +12868,145 @@ mod tests {
             };
         }
         for_each_closed_axis_implementor!(check);
+    }
+
+    // ---- AxisIter — named concrete return type at the axis_iter API boundary ----
+
+    #[test]
+    fn axis_iter_return_type_is_nameable_axis_iter() {
+        // Pins the sharpen at the type-signature level: a struct field
+        // bound on `AxisIter<A>` holds the handle across a return, so
+        // the concrete return type of [`axis_iter`] is spellable at the
+        // API boundary. This test compiles ⇔ the sharpen holds; if the
+        // return type ever regresses back to `impl Trait`, the struct
+        // field bound ceases to name the substrate and the test fails
+        // to compile. The peer of the discovered-altitude
+        // `contributor_names_iter_return_type_is_nameable_contributor_names_iter`
+        // pin on the free-function iter dual, and the tier-altitude
+        // `provenance_map_entries_return_type_is_nameable_provenance_map_entries`
+        // pin on `tiered.rs::ProvenanceMap::entries`.
+        struct Holder {
+            iter: crate::AxisIter<Format>,
+        }
+        let holder = Holder {
+            iter: axis_iter::<Format>(),
+        };
+        let collected: Vec<Format> = holder.iter.collect();
+        assert_eq!(collected, Format::ALL.to_vec());
+    }
+
+    #[test]
+    fn axis_iter_clone_preserves_static_traits() {
+        // Compile-time witness that [`crate::AxisIter`] carries the
+        // full trait algebra `Iterator + DoubleEndedIterator +
+        // ExactSizeIterator + FusedIterator + Clone` — the underlying
+        // `Copied<slice::Iter<'static, A>>` cursor's trait algebra
+        // survives the newtype seam. The static bound accepts the
+        // named handle by reference (proving the trait bundle at type
+        // check), then a `.clone()` walks the same sequence as the
+        // original (runtime cross-walk proof). Stronger than the
+        // whole-layer discovery-altitude sibling
+        // (`contributor_names_iter_clone_preserves_static_traits`,
+        // four-trait bundle without `ExactSizeIterator`) — the
+        // element-preserving projection buys the exact-length promise
+        // the filter-based siblings can't honor. Matches the
+        // tier-altitude peer
+        // (`provenance_map_entries_clone_preserves_static_traits`)
+        // on the same five-trait bundle over an element-preserving
+        // projection.
+        fn accepts<I>(_iter: &I)
+        where
+            I: Iterator<Item = Format>
+                + DoubleEndedIterator
+                + ExactSizeIterator
+                + std::iter::FusedIterator
+                + Clone,
+        {
+        }
+        let handle: crate::AxisIter<Format> = axis_iter::<Format>();
+        accepts(&handle);
+        let clone_walk: Vec<Format> = handle.clone().collect();
+        let original_walk: Vec<Format> = handle.collect();
+        assert_eq!(clone_walk, original_walk);
+    }
+
+    #[test]
+    fn axis_iter_next_back_walks_specific_to_coarse() {
+        // The [`DoubleEndedIterator`] contract on the sharpened
+        // [`crate::AxisIter`] surface at the runtime level. The
+        // four-variant [`Format`] fixture (`Yaml`, `Toml`, `Lisp`,
+        // `Nix` in declaration order) walks both cursor ends
+        // independently: the tail cursor yields `Nix`, then `Lisp`,
+        // then `Toml`; the head cursor yields `Yaml`; both cursors
+        // then report `None` on further pulls. Catches accidental
+        // regressions to a single-ended state machine. The
+        // element-preserving `Copied<slice::Iter>` cursor makes the
+        // reverse walk zero-cost — no `.collect().into_iter().rev()`
+        // roundtrip. The specific→coarse-side peer of the
+        // whole-layer discovery-altitude
+        // `contributor_names_iter_next_back_walks_specific_to_coarse`
+        // fixture.
+        let mut it: crate::AxisIter<Format> = axis_iter::<Format>();
+        assert_eq!(it.next_back(), Some(Format::Nix));
+        assert_eq!(it.next_back(), Some(Format::Lisp));
+        assert_eq!(it.next_back(), Some(Format::Toml));
+        assert_eq!(it.next(), Some(Format::Yaml));
+        assert_eq!(it.next(), None);
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
+    fn axis_iter_len_matches_remaining_pulls() {
+        // Pins the [`ExactSizeIterator`] impl at every seam: initial
+        // `len()` == `axis_cardinality::<Format>()` == 4, then
+        // decrements pointwise as `.next()` / `.next_back()` pull
+        // elements from either end, terminating at 0 with an
+        // exhausted `.next()`. Catches a regression to a filter-based
+        // iter body that would silently drop the exact-size contract.
+        // The five-trait-bundle peer of the tier-altitude
+        // `provenance_map_entries_len_matches_remaining_pulls` on the
+        // same element-preserving projection axis.
+        let mut it: crate::AxisIter<Format> = axis_iter::<Format>();
+        assert_eq!(it.len(), 4);
+        assert_eq!(it.next(), Some(Format::Yaml));
+        assert_eq!(it.len(), 3);
+        assert_eq!(it.next_back(), Some(Format::Nix));
+        assert_eq!(it.len(), 2);
+        assert_eq!(it.next(), Some(Format::Toml));
+        assert_eq!(it.len(), 1);
+        assert_eq!(it.next_back(), Some(Format::Lisp));
+        assert_eq!(it.len(), 0);
+        assert_eq!(it.next(), None);
+        assert_eq!(it.len(), 0);
+    }
+
+    #[test]
+    fn axis_iter_debug_impl_names_the_struct() {
+        // Pins the manual Debug impl at the format-string level: the
+        // rendered output names the struct (`AxisIter`) and reports
+        // the remaining axis-cell count (`axis_remaining`) rather
+        // than leaking per-cell values or requiring an `A: Debug`
+        // bound the [`ClosedAxis`] trait doesn't guarantee. Catches
+        // accidental regressions to `#[derive(Debug)]` (which would
+        // add an `A: Debug` bound, breaking future ClosedAxis
+        // implementors that don't carry Debug) or a rename of the
+        // reported field. The whole-layer discovery-altitude peer of
+        // the `contributor_names_iter_debug_impl_omits_layers_handle`
+        // fixture.
+        let it: crate::AxisIter<Format> = axis_iter::<Format>();
+        let rendered = format!("{it:?}");
+        assert!(
+            rendered.contains("AxisIter"),
+            "Debug output must name the struct: {rendered}",
+        );
+        assert!(
+            rendered.contains("axis_remaining"),
+            "Debug output must name the axis_remaining field: {rendered}",
+        );
+        assert!(
+            rendered.contains('4'),
+            "Debug output must report the initial cursor length (4): {rendered}",
+        );
     }
 
     // ---- realizable_iter / unrealizable_iter carry the sharpened trait algebra ----
