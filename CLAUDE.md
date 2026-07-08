@@ -30,6 +30,8 @@ for Nix-managed desktop applications. Four modules, each independently testable:
 | `provider.rs` | Figment provider chain builder | `ProviderChain` |
 | `store.rs` | ArcSwap hot-reload store | `ConfigStore<T>` |
 | `watcher.rs` | Symlink-aware file watcher | `ConfigWatcher`, `symlink_target` |
+| `tiered.rs` | Tiered progressive-discovery resolution (the default) | `TieredConfig`, `ConfigTier`, `resolve_progressive`, `Provenance`, `ProgressiveResolution`, `ConfigDiff` |
+| `discovered.rs` | Per-leaf attributed deep-merge fold (kanchi discovery composition) | `discovered_from_layers`, `deep_merge_attributed`, `LayerAttribution` |
 | `error.rs` | Error types | `ShikumiError` |
 
 ### Config Discovery Precedence
@@ -46,6 +48,24 @@ Serde defaults → Environment variables (PREFIX_) → Config file (YAML/TOML)
 ```
 
 Later layers override earlier ones. File format auto-detected by extension.
+
+### Tiered Progressive-Discovery Resolution (the default)
+
+The fleet config default (per `theory/CONFIGURATION-MANAGEMENT.md` Primitive 5)
+is the sealed fold `bare() → discovered()[kanchi] → prescribed_default() → file
+→ env → runtime`, resolved in typed `ConfigTier` `ClosedAxis` precedence order:
+
+```rust
+let ProgressiveResolution { value, provenance } = MyConfig::resolve_progressive();
+```
+
+Every effective value carries a typed `Provenance { tier, source }`. Wire the
+`discovered()` tier declaratively from kanchi axes — `fn discovered() -> Self {
+Self::discovered_from_layers(&[&WindowLayer, &FontLayer]) }` — never a hand-rolled
+struct literal. Tier-honest seal grades (precedence-order + discovery-totality
+truly-unrep; provenance construction-complete with a side-map ceiling) live in
+[`docs/PROGRESSIVE-DISCOVERY-VERIFICATION.md`](./docs/PROGRESSIVE-DISCOVERY-VERIFICATION.md).
+The legacy single-tier `resolve_tier` / `resolve_from_env` path is preserved.
 
 ### Symlink-Aware Watching
 
