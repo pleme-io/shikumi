@@ -637,12 +637,9 @@ impl LayerAttribution {
     /// the walk, then `O(m)` allocations for the fresh owned keys.
     #[must_use]
     pub fn subtree(&self, prefix: &[String]) -> LayerAttribution {
-        LayerAttribution {
-            inner: self
-                .subtree_iter(prefix)
-                .map(|(p, l)| (p.to_vec(), l))
-                .collect(),
-        }
+        self.subtree_iter(prefix)
+            .map(|(p, l)| (p.to_vec(), l))
+            .collect()
     }
 
     /// The **subtree-restricted** dual of [`Self::surviving_layer_names`]:
@@ -2116,6 +2113,90 @@ impl<'a> IntoIterator for &'a LayerAttribution {
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
+    }
+}
+
+/// Build a [`LayerAttribution`] from a stream of `(path, layer)` pairs —
+/// the construction-side dual of [`IntoIterator for &LayerAttribution`]
+/// on the reading side. Every path–layer pair emitted by the source
+/// iterator becomes one attributed leaf; the composed
+/// [`LayerAttribution`] stores them in lex order on the owned
+/// `Vec<String>` key, the same order [`LayerAttribution::iter`] emits.
+///
+/// One seam every std keyed collection with an [`IntoIterator for &Self`]
+/// getter surfaces on the ownership boundary
+/// ([`FromIterator`][std::iter::FromIterator] on
+/// [`BTreeMap`][std::collections::BTreeMap] /
+/// [`HashMap`][std::collections::HashMap], on [`Vec`], on
+/// [`BTreeSet`][std::collections::BTreeSet]) — closing the shared idiom
+/// on the discovered algebra so consumers reach for the `.collect()`
+/// form directly instead of naming
+/// `LayerAttribution { inner: ... }` at every construction site.
+/// [`LayerAttribution::inner`] stays private; this trait is the
+/// substrate-owned build path.
+///
+/// # Roundtrip
+///
+/// The pair with [`IntoIterator for &LayerAttribution`] roundtrips
+/// through the owned `(Vec<String>, &'static str)` shape:
+///
+/// ```text
+/// let attr: LayerAttribution = ...;
+/// let round: LayerAttribution = attr.iter()
+///     .map(|(p, l)| (p.to_vec(), l))
+///     .collect();
+/// assert_eq!(attr, round);
+/// ```
+///
+/// # Duplicate paths
+///
+/// The underlying [`BTreeMap`][std::collections::BTreeMap] insertion
+/// discipline holds: repeated pairs at the same path resolve *last-write
+/// wins*, matching the leaf-overwrite semantics of
+/// [`compose_with_provenance`] on layer stacks that all touch the same
+/// leaf. An empty source produces
+/// [`LayerAttribution::default`][Default::default].
+///
+/// # Callers
+///
+/// [`LayerAttribution::subtree`] uses this trait directly — the internal
+/// `.map(|(p, l)| (p.to_vec(), l)).collect()` chain reads off
+/// [`LayerAttribution::subtree_iter`] with no reference to the private
+/// `inner` field.
+impl FromIterator<(Vec<String>, &'static str)> for LayerAttribution {
+    fn from_iter<I: IntoIterator<Item = (Vec<String>, &'static str)>>(iter: I) -> Self {
+        LayerAttribution {
+            inner: iter.into_iter().collect(),
+        }
+    }
+}
+
+/// Extend a [`LayerAttribution`] with additional `(path, layer)` pairs —
+/// the grow-in-place dual of [`FromIterator for LayerAttribution`] and
+/// the matching `Extend` impl every std keyed collection carries
+/// alongside its `FromIterator` (on
+/// [`BTreeMap`][std::collections::BTreeMap] /
+/// [`HashMap`][std::collections::HashMap], on
+/// [`BTreeSet`][std::collections::BTreeSet]). Every pair inserted keeps
+/// the same lex order on the owned `Vec<String>` key
+/// [`LayerAttribution::iter`] emits.
+///
+/// # Duplicate paths
+///
+/// Same last-write-wins discipline as [`FromIterator`][Self]: a pair at
+/// an existing path replaces the prior attribution. An empty source
+/// leaves `self` untouched.
+///
+/// # Cost
+///
+/// Forwards to [`BTreeMap::extend`][std::collections::BTreeMap], which
+/// is `O(m log(n + m))` where `n` is the current leaf count and `m` the
+/// pairs supplied — the same amortized insertion cost every consumer
+/// pays by constructing a fresh [`LayerAttribution`] via
+/// [`FromIterator`][Self] and merging by hand.
+impl Extend<(Vec<String>, &'static str)> for LayerAttribution {
+    fn extend<I: IntoIterator<Item = (Vec<String>, &'static str)>>(&mut self, iter: I) {
+        self.inner.extend(iter);
     }
 }
 
@@ -19934,6 +20015,101 @@ mod tests {
                 .next(),
             None,
         );
+    }
+
+    // -------- FromIterator / Extend on LayerAttribution --------
+
+    #[test]
+    fn from_iter_empty_source_produces_default_attribution() {
+        // Zero-pair source ⇒ Default. Pins the empty-source contract:
+        // `.collect::<LayerAttribution>()` on an empty stream is
+        // observationally identical to `LayerAttribution::default()`,
+        // and every scalar/name projection on it returns the empty
+        // answer — the same clean degenerate every std keyed
+        // FromIterator carries at the empty boundary.
+        let empty: LayerAttribution = std::iter::empty::<(Vec<String>, &'static str)>().collect();
+        assert_eq!(empty, LayerAttribution::default());
+        assert!(empty.is_empty());
+        assert_eq!(empty.len(), 0);
+    }
+
+    #[test]
+    fn from_iter_roundtrips_through_owned_pairs() {
+        // The iterator/collector dual holds against
+        // `IntoIterator for &LayerAttribution`: iterating a
+        // LayerAttribution out to owned (Vec<String>, &'static str)
+        // pairs and collecting back reconstructs the same handle.
+        // Pins the roundtrip identity the doc block claims.
+        let out = subtree_fixture();
+        let round: LayerAttribution = (&out.attribution)
+            .into_iter()
+            .map(|(p, l)| (p.to_vec(), l))
+            .collect();
+        assert_eq!(round, out.attribution);
+    }
+
+    #[test]
+    fn from_iter_last_write_wins_at_duplicate_path() {
+        // Duplicate paths in the source stream resolve last-write-wins,
+        // matching the BTreeMap::collect insertion discipline the
+        // impl forwards to. Pins the leaf-overwrite semantics the doc
+        // block claims — the same seam compose_with_provenance uses
+        // when a later layer touches a leaf a prior layer wrote.
+        let attr: LayerAttribution = vec![
+            (vec![s("a")], "first"),
+            (vec![s("a")], "second"),
+            (vec![s("b")], "first"),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(attr.layer_of_owned(&[s("a")]), Some("second"));
+        assert_eq!(attr.layer_of_owned(&[s("b")]), Some("first"));
+        assert_eq!(attr.len(), 2);
+    }
+
+    #[test]
+    fn subtree_agrees_with_direct_from_iter_collect() {
+        // `LayerAttribution::subtree` is the FromIterator collect
+        // form: the projection materializes via `.collect()` from the
+        // subtree_iter stream. Pins the equivalence with the direct
+        // FromIterator call site — no reference to the private `inner`
+        // field survives.
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        let via_subtree = out.attribution.subtree(&prefix);
+        let via_from_iter: LayerAttribution = out
+            .attribution
+            .subtree_iter(&prefix)
+            .map(|(p, l)| (p.to_vec(), l))
+            .collect();
+        assert_eq!(via_subtree, via_from_iter);
+    }
+
+    #[test]
+    fn extend_appends_and_overwrites_prior_entries() {
+        // Extend keeps existing entries at non-conflicting paths and
+        // overwrites at conflicting ones, matching FromIterator's
+        // last-write-wins semantics. Pins the grow-in-place seam the
+        // doc block claims — the same seam every std keyed Extend
+        // carries alongside its FromIterator.
+        let mut attr: LayerAttribution = vec![(vec![s("a")], "first"), (vec![s("b")], "first")]
+            .into_iter()
+            .collect();
+        attr.extend(vec![(vec![s("b")], "second"), (vec![s("c")], "second")]);
+        assert_eq!(attr.layer_of_owned(&[s("a")]), Some("first"));
+        assert_eq!(attr.layer_of_owned(&[s("b")]), Some("second"));
+        assert_eq!(attr.layer_of_owned(&[s("c")]), Some("second"));
+        assert_eq!(attr.len(), 3);
+    }
+
+    #[test]
+    fn extend_with_empty_source_preserves_attribution() {
+        // Empty source ⇒ no-op. Pins the neutral-element identity of
+        // Extend on the empty stream.
+        let out = subtree_fixture();
+        let mut attr = out.attribution.clone();
+        attr.extend(std::iter::empty::<(Vec<String>, &'static str)>());
+        assert_eq!(attr, out.attribution);
     }
 
     /// Test-side clone helper — the `Fixed` layer is deliberately
