@@ -11957,14 +11957,173 @@ pub fn realizable_images<C: PartialInverseCube>()
 /// over the forward image (render once, then re-walk to find a
 /// positional match on the image-keyed row) clone the handle up front
 /// instead of re-invoking `forward_iter::<C>()` at each walk.
+///
+/// # Type ownership at the API boundary
+///
+/// The concrete return type is [`ForwardIter<C>`] — a thin one-field
+/// newtype around
+/// [`std::iter::Map`]`<`[`std::iter::Copied`]`<`[`std::slice::Iter`]`<'static,
+/// C::Image>>, fn(C::Image) -> C>` that spells its full trait algebra
+/// ([`Iterator`] + [`DoubleEndedIterator`] + [`ExactSizeIterator`] +
+/// [`std::iter::FusedIterator`] + [`Clone`] +
+/// [`Debug`][std::fmt::Debug]) at the type level rather than behind an
+/// unnameable [`impl Trait`][impl-trait] combinator. Consumers holding
+/// the handle in a struct field or returning it up through their own
+/// API spell it as [`ForwardIter<C>`] instead of smuggling an
+/// unnameable combinator across every seam. The image→cube morphism
+/// walk on the partial-inverse cube discipline now carries the same
+/// concrete-return invariant every element-preserving iter peer
+/// ([`AxisIter`], [`crate::ProvenanceMapEntries`]) already spells.
+///
+/// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
 #[must_use]
-pub fn forward_iter<C: PartialInverseCube>()
--> impl DoubleEndedIterator<Item = C> + ExactSizeIterator + std::iter::FusedIterator + Clone {
-    <C::Image as ClosedAxis>::ALL
-        .iter()
-        .copied()
-        .map(C::forward)
+pub fn forward_iter<C: PartialInverseCube>() -> ForwardIter<C> {
+    ForwardIter {
+        inner: <C::Image as ClosedAxis>::ALL
+            .iter()
+            .copied()
+            .map(C::forward),
+    }
 }
+
+/// Zero-allocation stream of every value of a [`PartialInverseCube`]
+/// under the forward image→cube morphism [`PartialInverseCube::forward`]
+/// over [`ClosedAxis::ALL`] on [`PartialInverseCube::Image`], returned
+/// by [`forward_iter`].
+///
+/// Naming the return type at the API boundary (rather than
+/// [`impl Trait`][impl-trait]) exposes the full trait algebra the
+/// underlying [`std::iter::Map`]`<`[`std::iter::Copied`]`<`[`std::slice::Iter`]`<'static,
+/// C::Image>>, fn(C::Image) -> C>` cursor structurally carries
+/// directly at the type level — the same idiom every element-preserving
+/// iter peer ([`AxisIter`], [`crate::ProvenanceMapEntries`]) already
+/// spells at its own API seam. Consumers storing the handle in a
+/// struct field or returning it up through their own API no longer
+/// smuggle an unnameable [`impl Trait`][impl-trait] across every seam.
+///
+/// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
+///
+/// # Trait algebra
+///
+/// Impls [`Iterator`], [`DoubleEndedIterator`], [`ExactSizeIterator`],
+/// [`std::iter::FusedIterator`], [`Clone`], and
+/// [`Debug`][std::fmt::Debug]. The underlying
+/// [`std::iter::Map`]`<`[`std::iter::Copied`]`<`[`std::slice::Iter`]`<'static,
+/// C::Image>>, fn(C::Image) -> C>` cursor carries the same trait
+/// algebra unconditionally — the [`ClosedAxis`] super-trait on
+/// `C::Image` pins [`Copy`] (satisfying the `Copied` preservation
+/// bound), the fn-pointer closure `fn(C::Image) -> C` is trivially
+/// [`Copy`] + [`Clone`] (satisfying the `Map` preservation bounds
+/// unconditionally), and the element-preserving projection lets
+/// [`ExactSizeIterator`] survive at the type level (unlike the
+/// filter-based histogram-altitude siblings [`AxisHistogramNonzero`],
+/// [`AxisHistogramObserved`], [`AxisHistogramUnobserved`], whose
+/// filter discards elements and so cannot honor the exact-size
+/// contract).
+///
+/// The trait algebra is a strict widening of the prior
+/// `impl DoubleEndedIterator<Item = C> + ExactSizeIterator +
+/// std::iter::FusedIterator + Clone` return: the concrete return type
+/// unlocks the nameable-struct-field and nameable-return-position
+/// seams the `impl Trait` shape erased, and the [`Debug`][std::fmt::Debug]
+/// impl surfaces nameably (was erased at the `impl Trait` boundary).
+///
+/// # Field access
+///
+/// The struct field is private — the public surface is the six trait
+/// impls above. The wrapped
+/// [`std::iter::Map`]`<`[`std::iter::Copied`]`<`[`std::slice::Iter`]`<'static,
+/// C::Image>>, fn(C::Image) -> C>` cursor is a fixed-size borrowed
+/// handle that already carries every trait this iter forwards; the
+/// newtype exists to name the substrate composition at the type level
+/// rather than to add state on top.
+pub struct ForwardIter<C: PartialInverseCube> {
+    // The three-level nested generic (`Map<Copied<slice::Iter>,
+    // fn>`) is deliberate — the newtype's whole purpose is to name
+    // the concrete stdlib composition at the type level so its trait
+    // algebra survives the seam. A type alias would either duplicate
+    // the parameter (`type Inner<C> = Map<Copied<..>, fn(C::Image) ->
+    // C>`) with no gain, or hide the composition and defeat the
+    // point of the sharpen. Suppress `type_complexity` here rather
+    // than factor.
+    #[allow(clippy::type_complexity)]
+    inner:
+        std::iter::Map<std::iter::Copied<std::slice::Iter<'static, C::Image>>, fn(C::Image) -> C>,
+}
+
+impl<C: PartialInverseCube> Clone for ForwardIter<C> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<C: PartialInverseCube> std::fmt::Debug for ForwardIter<C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Skip the `inner` field: neither [`PartialInverseCube`] nor
+        // its [`ClosedAxis`] super-trait requires `C: Debug` (the
+        // super-trait bounds are `Copy + Eq + Hash + 'static` only, so
+        // a future implementor without `Debug` can still participate
+        // in the discipline), and a `#[derive(Debug)]` on this struct
+        // would leak a `C: Debug` bound via the `fn(C::Image) -> C`
+        // closure appearing in the `inner` field. Report the cursor's
+        // remaining length instead — enough for a diagnostic dump to
+        // distinguish "just started" from "half-way through" without
+        // leaking per-cell values or requiring a `C: Debug` bound the
+        // trait doesn't guarantee. Same
+        // `Debug`-with-a-field-substitution pattern the axis-altitude
+        // [`AxisIter`] and the filter-based histogram-altitude
+        // siblings ([`AxisHistogramNonzero`],
+        // [`AxisHistogramObserved`], [`AxisHistogramUnobserved`])
+        // carry against their own non-`Debug`-guaranteed cursor state.
+        f.debug_struct("ForwardIter")
+            .field("image_remaining", &self.inner.len())
+            .finish()
+    }
+}
+
+impl<C: PartialInverseCube> Iterator for ForwardIter<C> {
+    type Item = C;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+
+    fn count(self) -> usize {
+        self.inner.count()
+    }
+
+    fn last(self) -> Option<Self::Item> {
+        self.inner.last()
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.inner.nth(n)
+    }
+}
+
+impl<C: PartialInverseCube> DoubleEndedIterator for ForwardIter<C> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        self.inner.nth_back(n)
+    }
+}
+
+impl<C: PartialInverseCube> ExactSizeIterator for ForwardIter<C> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl<C: PartialInverseCube> std::iter::FusedIterator for ForwardIter<C> {}
 
 #[cfg(test)]
 mod tests {
@@ -13676,6 +13835,155 @@ mod tests {
         assert!(
             rendered.contains("axis_remaining_upper_bound"),
             "Debug output must name the axis_remaining_upper_bound field: {rendered}",
+        );
+    }
+
+    // ---- ForwardIter — named concrete return type at the forward_iter API boundary ----
+
+    #[test]
+    fn forward_iter_return_type_is_nameable_forward_iter() {
+        // Pins the sharpen at the type-signature level: a struct field
+        // bound on `ForwardIter<C>` holds the handle across a return,
+        // so the concrete return type of [`forward_iter`] is spellable
+        // at the API boundary. This test compiles ⇔ the sharpen holds;
+        // if the return type ever regresses back to `impl Trait`, the
+        // struct field bound ceases to name the substrate and the test
+        // fails to compile. The partial-inverse-cube-altitude peer of
+        // the axis-altitude `axis_iter_return_type_is_nameable_axis_iter`
+        // and the tier-altitude
+        // `provenance_map_entries_return_type_is_nameable_provenance_map_entries`
+        // pins on element-preserving projections. Fixture: the
+        // `FormatCoordinates` partial-inverse cube (Image = Format).
+        struct Holder {
+            iter: crate::ForwardIter<FormatCoordinates>,
+        }
+        let holder = Holder {
+            iter: forward_iter::<FormatCoordinates>(),
+        };
+        let collected: Vec<FormatCoordinates> = holder.iter.collect();
+        let expected: Vec<FormatCoordinates> = Format::ALL
+            .iter()
+            .copied()
+            .map(Format::format_coordinates)
+            .collect();
+        assert_eq!(collected, expected);
+    }
+
+    #[test]
+    fn forward_iter_clone_preserves_static_traits() {
+        // Compile-time witness that [`crate::ForwardIter`] carries the
+        // full trait algebra `Iterator + DoubleEndedIterator +
+        // ExactSizeIterator + FusedIterator + Clone` — the underlying
+        // `Map<Copied<slice::Iter<'static, C::Image>>, fn(C::Image) -> C>`
+        // cursor's trait algebra survives the newtype seam, and the
+        // element-preserving projection lets [`ExactSizeIterator`]
+        // survive at the type level. The static bound accepts the
+        // named handle by reference (proving the trait bundle at type
+        // check), then a `.clone()` walks the same sequence as the
+        // original (runtime cross-walk proof). Matches the five-trait
+        // bundle carried by the element-preserving peers
+        // [`crate::AxisIter`] and [`crate::ProvenanceMapEntries`];
+        // stronger than the filter-based histogram-altitude siblings
+        // ([`crate::AxisHistogramNonzero`],
+        // [`crate::AxisHistogramObserved`],
+        // [`crate::AxisHistogramUnobserved`]) which cannot carry
+        // [`ExactSizeIterator`] through their zero-count filter.
+        fn accepts<I>(_iter: &I)
+        where
+            I: Iterator<Item = FormatCoordinates>
+                + DoubleEndedIterator
+                + ExactSizeIterator
+                + std::iter::FusedIterator
+                + Clone,
+        {
+        }
+        let handle: crate::ForwardIter<FormatCoordinates> = forward_iter::<FormatCoordinates>();
+        accepts(&handle);
+        let clone_walk: Vec<FormatCoordinates> = handle.clone().collect();
+        let original_walk: Vec<FormatCoordinates> = handle.collect();
+        assert_eq!(clone_walk, original_walk);
+    }
+
+    #[test]
+    fn forward_iter_next_back_walks_specific_to_coarse() {
+        // The [`DoubleEndedIterator`] contract on the sharpened
+        // [`crate::ForwardIter`] surface at the runtime level. The
+        // four-image [`FormatCoordinates`] fixture walks both cursor
+        // ends independently: over `Format::ALL == [Yaml, Toml, Lisp,
+        // Nix]`, the tail cursor yields `Nix.format_coordinates()`,
+        // then `Lisp.format_coordinates()`, then
+        // `Toml.format_coordinates()`; the head cursor yields
+        // `Yaml.format_coordinates()`; both cursors then report `None`
+        // on further pulls. Catches accidental regressions to a
+        // single-ended state machine. The element-preserving
+        // `Map<Copied<slice::Iter>, fn(_) -> _>` cursor makes the
+        // reverse walk zero-cost — no
+        // `.collect().into_iter().rev()` roundtrip.
+        let mut it: crate::ForwardIter<FormatCoordinates> = forward_iter::<FormatCoordinates>();
+        assert_eq!(it.next_back(), Some(Format::Nix.format_coordinates()));
+        assert_eq!(it.next_back(), Some(Format::Lisp.format_coordinates()));
+        assert_eq!(it.next_back(), Some(Format::Toml.format_coordinates()));
+        assert_eq!(it.next(), Some(Format::Yaml.format_coordinates()));
+        assert_eq!(it.next(), None);
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
+    fn forward_iter_len_matches_remaining_pulls() {
+        // Pins the [`ExactSizeIterator`] impl at every seam: initial
+        // `len()` == `axis_cardinality::<Format>()` == 4 (the image
+        // cardinality of [`FormatCoordinates`], which equals its
+        // realizable-cell count by the bijection invariant), then
+        // decrements pointwise as `.next()` / `.next_back()` pull
+        // elements from either end, terminating at 0 with an exhausted
+        // `.next()`. Catches a regression to a filter-based iter body
+        // that would silently drop the exact-size contract. The
+        // five-trait-bundle peer of the axis-altitude
+        // `axis_iter_len_matches_remaining_pulls` on the same
+        // element-preserving projection axis.
+        let mut it: crate::ForwardIter<FormatCoordinates> = forward_iter::<FormatCoordinates>();
+        assert_eq!(it.len(), 4);
+        assert_eq!(it.next(), Some(Format::Yaml.format_coordinates()));
+        assert_eq!(it.len(), 3);
+        assert_eq!(it.next_back(), Some(Format::Nix.format_coordinates()));
+        assert_eq!(it.len(), 2);
+        assert_eq!(it.next(), Some(Format::Toml.format_coordinates()));
+        assert_eq!(it.len(), 1);
+        assert_eq!(it.next_back(), Some(Format::Lisp.format_coordinates()));
+        assert_eq!(it.len(), 0);
+        assert_eq!(it.next(), None);
+        assert_eq!(it.len(), 0);
+    }
+
+    #[test]
+    fn forward_iter_debug_impl_names_the_struct() {
+        // Pins the manual Debug impl at the format-string level: the
+        // rendered output names the struct (`ForwardIter`) and reports
+        // the `image_remaining` field rather than leaking per-cell
+        // values or requiring a `C: Debug` bound the
+        // [`PartialInverseCube`] trait doesn't guarantee (via its
+        // [`ClosedAxis`] super-trait, which bounds only `Copy + Eq +
+        // Hash + 'static`). Catches accidental regressions to
+        // `#[derive(Debug)]` (which would leak a `C: Debug` bound
+        // through the `fn(C::Image) -> C` closure in the wrapped
+        // `Map<...>` field, breaking future PartialInverseCube
+        // implementors without Debug) or a rename of the reported
+        // field. The partial-inverse-cube-altitude peer of the
+        // axis-altitude `axis_iter_debug_impl_names_the_struct`
+        // fixture.
+        let it: crate::ForwardIter<FormatCoordinates> = forward_iter::<FormatCoordinates>();
+        let rendered = format!("{it:?}");
+        assert!(
+            rendered.contains("ForwardIter"),
+            "Debug output must name the struct: {rendered}",
+        );
+        assert!(
+            rendered.contains("image_remaining"),
+            "Debug output must name the image_remaining field: {rendered}",
+        );
+        assert!(
+            rendered.contains('4'),
+            "Debug output must report the initial cursor length (4): {rendered}",
         );
     }
 

@@ -64,7 +64,7 @@ pub use coverage::{ConfigCoverage, CoverageReport};
 pub use cube::{
     AxisHistogram, AxisHistogramIntoIter, AxisHistogramIter, AxisHistogramIterMut,
     AxisHistogramNonzero, AxisHistogramObserved, AxisHistogramUnobserved, AxisIter, ClosedAxis,
-    ClosedAxisLabel, ModalityClass, ParseAxisHistogramError, ParseModalityClassError,
+    ClosedAxisLabel, ForwardIter, ModalityClass, ParseAxisHistogramError, ParseModalityClassError,
     ParsePartitionFaceError, ParsePartitionOrdinalError, ParseSupportBoundaryDistanceError,
     ParseSupportCardinalityClassError, ParseSupportMagnitudeDirectionError, PartialInverseCube,
     PartitionFace, PartitionOrdinal, ProductCube, SupportBoundaryDistance, SupportCardinalityClass,
