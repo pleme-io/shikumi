@@ -4458,39 +4458,165 @@ pub fn contributor_names(layers: &[&dyn DiscoveryLayer]) -> Vec<&'static str> {
 ///
 /// # Trait algebra
 ///
-/// The returned iterator carries [`DoubleEndedIterator`],
+/// The returned [`ContributorNamesIter`] carries [`DoubleEndedIterator`],
 /// [`std::iter::FusedIterator`], and [`Clone`] on top of [`Iterator`],
 /// naming the capabilities the underlying
-/// `Map<Filter<Copied<slice::Iter<'a, &'a dyn DiscoveryLayer>>>>`
-/// composition structurally holds. [`ExactSizeIterator`] is *not*
-/// carried — [`std::iter::Filter`] discards elements based on the
+/// [`std::slice::Iter<'a, &'a dyn DiscoveryLayer>`][std::slice::Iter]
+/// cursor structurally holds when the per-layer emptiness predicate is
+/// applied inside `next` / `next_back`. [`ExactSizeIterator`] is *not*
+/// carried — the emptiness filter discards elements based on the
 /// per-layer `discover()` predicate, so the `len()` contract cannot be
 /// honored at the type level. Consumers that want the length without
 /// materializing the stream reach for the peer scalar-cardinality
 /// primitive [`contributor_count`].
 ///
+/// The concrete return type is [`ContributorNamesIter`], a thin newtype
+/// around
+/// [`std::slice::Iter<'a, &'a dyn DiscoveryLayer>`][std::slice::Iter]
+/// that skips silent layers (`discover().is_empty()`) at every
+/// `.next()` / `.next_back()` seam and projects each surviving cursor
+/// tick to its [`DiscoveryLayer::name`]. Naming the return type at the
+/// API boundary (rather than `impl Trait + ...`) exposes the three
+/// trait impls the substrate structurally carries directly at the
+/// type level — the same idiom every zero-alloc iter dual on the
+/// discovered substrate now carries at its API seam
+/// ([`LayerNamesIter`] on the partition source, [`SilencedAtIter`] on
+/// the per-path losers stream, the `LayerAttribution*Iter` family on
+/// the post-merge writers axis). Consumers storing the handle in a
+/// struct field or returning it up through their own API no longer
+/// smuggle an unnameable [`impl Trait`][impl-trait] across every seam.
+///
+/// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
+///
 /// # Cost
 ///
 /// One `discover()` call per element inspected, matching
 /// [`contributor_names`]'s pointwise cost on the same predicate. Zero
-/// heap allocation for the iterator itself — the returned handle is a
-/// stack composition of [`std::iter::Copied`], [`std::iter::Filter`],
-/// and [`std::iter::Map`]. Consumers that short-circuit (`.next()`,
-/// `.find(_)`, `.take(n)`) pay `O(k)` `discover()` calls for `k` layers
-/// visited, versus [`contributor_names`]'s obligatory `O(n)` sweep + Vec
-/// allocation. A `.clone()` yields an independent walk from the head; the
-/// two walks re-invoke `discover()` per layer they visit (the trade-off
-/// for the zero-alloc handle — the layers are not memoized between clones).
+/// heap allocation for the iterator itself — the returned handle wraps
+/// the input slice's borrowed iterator directly and reads off each
+/// contributor's [`DiscoveryLayer::name`] per `.next()` / `.next_back()`
+/// pull. Consumers that short-circuit (`.next()`, `.find(_)`,
+/// `.take(n)`) pay `O(k)` `discover()` calls for `k` layers visited,
+/// versus [`contributor_names`]'s obligatory `O(n)` sweep + Vec
+/// allocation. A `.clone()` yields an independent walk from the head;
+/// the two walks re-invoke `discover()` per layer they visit (the
+/// trade-off for the zero-alloc handle — the layers are not memoized
+/// between clones).
 #[must_use]
 pub fn contributor_names_iter<'a>(
     layers: &'a [&'a dyn DiscoveryLayer],
-) -> impl DoubleEndedIterator<Item = &'static str> + std::iter::FusedIterator + Clone + 'a {
-    layers
-        .iter()
-        .copied()
-        .filter(|layer| !layer.discover().is_empty())
-        .map(|layer| layer.name())
+) -> ContributorNamesIter<'a> {
+    ContributorNamesIter {
+        inner: layers.iter(),
+    }
 }
+
+/// Zero-allocation contributor-name stream — the ordered names of every
+/// layer whose [`DiscoveryLayer::discover`] returned a non-empty
+/// [`Dict`], in application order (coarse→specific), yielded as
+/// [`&'static str`]. The concrete return type of
+/// [`contributor_names_iter`] and one half of the two-way partition
+/// [`LayerNamesIter`] streams over the declared-name axis
+/// ([`SilencedAtIter`]'s sibling on the whole-layer altitude is
+/// [`SilentLayerNamesIter`]'s absence — the silent projection is the
+/// dual sitting behind [`silent_layer_names_iter`]).
+///
+/// Naming the return type at the API boundary (rather than
+/// [`impl Trait`][impl-trait]) exposes the [`DoubleEndedIterator`],
+/// [`std::iter::FusedIterator`], and [`Clone`] impls the substrate
+/// structurally carries directly at the type level — the same idiom
+/// every zero-alloc iter dual on the discovered substrate
+/// ([`LayerNamesIter`] on the partition source,
+/// [`PathContestContributorsIter`] / [`PathContestSilencedIter`] on
+/// per-path contests, [`SilencedAtIter`] on the pre-materialization
+/// losers stream, and the `LayerAttribution*Iter` family on the
+/// post-merge writers axis) already spells at its own API seam.
+/// Consumers storing the handle in a struct field or returning it up
+/// through their own API no longer smuggle an unnameable
+/// [`impl Trait`][impl-trait] across every seam.
+///
+/// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
+///
+/// # Trait algebra
+///
+/// Impls [`Iterator`] + [`DoubleEndedIterator`] +
+/// [`std::iter::FusedIterator`] + [`Clone`] + [`Debug`][std::fmt::Debug].
+/// **One capability short** of the partition source
+/// [`LayerNamesIter`] — the emptiness filter applied inside `next` /
+/// `next_back` discards elements based on the per-layer `discover()`
+/// predicate, so [`ExactSizeIterator`]'s `len()` contract cannot be
+/// honored at the type level. Same trait algebra as the sibling
+/// [`silent_layer_names_iter`]'s return: both filter the same slice
+/// under inverted predicates, so both stop at the same rung. Consumers
+/// that want the cardinality without materializing the stream reach
+/// for the peer scalar-cardinality primitive [`contributor_count`].
+///
+/// # Field access
+///
+/// The struct fields are private — the public surface is the five
+/// trait impls above. The wrapped
+/// [`std::slice::Iter<'a, &'a dyn DiscoveryLayer>`][std::slice::Iter]
+/// cursor is a two-word borrowed handle that already carries every
+/// trait this iter forwards; the newtype exists to skip silent layers
+/// and project the pointwise
+/// (`layer.name()`) transformation at the type level rather than to
+/// add state on top.
+#[derive(Clone)]
+pub struct ContributorNamesIter<'a> {
+    inner: std::slice::Iter<'a, &'a dyn DiscoveryLayer>,
+}
+
+impl std::fmt::Debug for ContributorNamesIter<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Skip the `inner` field: `&dyn DiscoveryLayer` is not `Debug`
+        // (the trait deliberately does not require it, so consumers can
+        // implement it on non-`Debug` handles), so the underlying
+        // `slice::Iter` cannot forward `Debug` either. Report the
+        // cursor's remaining length instead — enough for a diagnostic
+        // dump to distinguish "just started" from "half-way through"
+        // without leaking the individual handles. Same
+        // `Debug`-with-a-field-substitution pattern [`LayerNamesIter`]
+        // and [`SilencedAtIter`] carry against the same non-`Debug`
+        // trait-object cursor.
+        f.debug_struct("ContributorNamesIter")
+            .field("layers_remaining", &self.inner.len())
+            .finish()
+    }
+}
+
+impl Iterator for ContributorNamesIter<'_> {
+    type Item = &'static str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for &layer in self.inner.by_ref() {
+            if !layer.discover().is_empty() {
+                return Some(layer.name());
+            }
+        }
+        None
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        // Upper bound is the raw layer count (every remaining layer might
+        // contribute); lower bound is 0 (every remaining layer might be
+        // silent). The emptiness filter cannot be inspected without pulling
+        // `discover()`, which we defer to `next` for the zero-alloc contract.
+        (0, Some(self.inner.len()))
+    }
+}
+
+impl DoubleEndedIterator for ContributorNamesIter<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        while let Some(&layer) = self.inner.next_back() {
+            if !layer.discover().is_empty() {
+                return Some(layer.name());
+            }
+        }
+        None
+    }
+}
+
+impl std::iter::FusedIterator for ContributorNamesIter<'_> {}
 
 /// The names of layers whose [`DiscoveryLayer::discover`] returned an
 /// *empty* [`Dict`] — axes that were declared but couldn't answer in
@@ -10907,6 +11033,129 @@ mod tests {
             contributor_names_iter(&layers).next(),
             Some("platform"),
             ".next() yields the first contributor without walking the rest",
+        );
+    }
+
+    #[test]
+    fn contributor_names_iter_return_type_is_nameable_contributor_names_iter() {
+        // The sharpen from `impl DoubleEndedIterator + FusedIterator +
+        // Clone + 'a` to the concrete `ContributorNamesIter<'a>` lets
+        // consumers spell the return type. A struct field bound on
+        // `ContributorNamesIter<'a>` holds the handle across a return
+        // without smuggling an unnameable `impl Trait` — the same
+        // field-storage compounding value the partition-source sibling
+        // `LayerNamesIter` closed on the declared-name axis (9867952)
+        // and `SilencedAtIter` closed on the losers-stream axis at the
+        // same free-function altitude (e6068ad). This test compiles ⇔
+        // the sharpen holds; if the return type ever regresses back to
+        // `impl Trait`, this ceases to compile.
+        struct HoldsContributorNames<'a> {
+            iter: ContributorNamesIter<'a>,
+        }
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let b = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        let held = HoldsContributorNames {
+            iter: contributor_names_iter(&layers),
+        };
+        let out: Vec<&'static str> = held.iter.collect();
+        assert_eq!(out, vec!["platform", "tenancy"]);
+    }
+
+    #[test]
+    fn contributor_names_iter_clone_preserves_static_traits() {
+        // The public struct carries `Clone`, `DoubleEndedIterator`, and
+        // `FusedIterator`. A trait-uniform helper that only accepts the
+        // full triple-trait bound on the named handle would fail to
+        // compile if any of the three regressed — this test wires the
+        // compile-time proof to a runtime cross-walk assertion. Ratchets
+        // the trait algebra one capability short of the paired
+        // `layer_names_iter_clone_preserves_static_traits` pin (which
+        // accepts `ExactSizeIterator` too) — the emptiness filter kills
+        // the exact-length promise, matching the `SilencedAtIter`
+        // reduced bound on the same filter-mediated altitude.
+        fn requires_full_traits<I>(_it: &I)
+        where
+            I: Iterator + DoubleEndedIterator + std::iter::FusedIterator + Clone,
+        {
+        }
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let b = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        let it: ContributorNamesIter<'_> = contributor_names_iter(&layers);
+        requires_full_traits(&it);
+        let clone = it.clone();
+        let via_original: Vec<&'static str> = it.collect();
+        let via_clone: Vec<&'static str> = clone.collect();
+        assert_eq!(
+            via_original, via_clone,
+            "cloned handle walks the same contributor stream",
+        );
+    }
+
+    #[test]
+    fn contributor_names_iter_next_back_walks_specific_to_coarse() {
+        // The public struct impls `DoubleEndedIterator`. The
+        // reverse walk emits contributors specific→coarse, matching
+        // `.rev()` over the forward walk — but without collecting.
+        // The emptiness filter must apply on the tail cursor too:
+        // silent trailing layers are skipped just as silent leading
+        // layers are.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let quiet = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let tail_quiet = Fixed("aftermath", Dict::new());
+        let layers: [&dyn DiscoveryLayer; 4] = [&a, &quiet, &c, &tail_quiet];
+        let mut it = contributor_names_iter(&layers);
+        assert_eq!(
+            it.next_back(),
+            Some("tenancy"),
+            "tail silent 'aftermath' is skipped and 'tenancy' is the first reverse yield",
+        );
+        assert_eq!(
+            it.next_back(),
+            Some("platform"),
+            "mid silent 'cloud' is skipped and 'platform' is next in reverse",
+        );
+        assert!(
+            it.next_back().is_none(),
+            "both remaining cursor ends have been swept by next_back",
+        );
+    }
+
+    #[test]
+    fn contributor_names_iter_debug_impl_omits_layers_handle() {
+        // The public struct impls `Debug`, but the wrapped
+        // `slice::Iter<'_, &'_ dyn DiscoveryLayer>` is not `Debug`
+        // (the trait deliberately does not require it). The manual
+        // impl skips the raw layers cursor and reports its remaining
+        // length instead — enough for a diagnostic dump to distinguish
+        // "just started" from "half-way through" without leaking the
+        // individual handles. This test pins the impl at the string
+        // level to catch accidental regressions to `#[derive(Debug)]`
+        // (which would fail to compile) or a rename of the reported
+        // field. Same `Debug`-with-a-field-substitution pattern
+        // `LayerNamesIter` and `SilencedAtIter` carry against the same
+        // non-`Debug` trait-object cursor.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let b = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        let it: ContributorNamesIter<'_> = contributor_names_iter(&layers);
+        let rendered = format!("{it:?}");
+        assert!(
+            rendered.starts_with("ContributorNamesIter"),
+            "Debug names the concrete struct: {rendered}",
+        );
+        assert!(
+            rendered.contains("layers_remaining"),
+            "Debug reports the remaining layer count: {rendered}",
+        );
+        assert!(
+            rendered.contains('3'),
+            "Debug reports the initial cursor length: {rendered}",
         );
     }
 
