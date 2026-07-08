@@ -2137,6 +2137,104 @@ impl LayerAttribution {
         }
     }
 
+    /// The **name-only** dual of [`Self::layer_ranking_iter`]: streams
+    /// every surviving layer name in the same count-descending /
+    /// lex-name-ascending order the `(name, count)` peer emits, but
+    /// drops the count column. `.next()` equals [`Self::dominant_layer`]
+    /// verbatim; `.next_back()` (equivalently `.last()`) equals
+    /// [`Self::weakest_layer`] verbatim — the two ranking endpoints
+    /// lifted to the name-only iter surface.
+    ///
+    /// The **name-only, ranking-order** peer of
+    /// [`Self::surviving_layer_names_iter`] (name-only, lex-name order)
+    /// and [`Self::layer_ranking_iter`] (name+count, ranking order) —
+    /// closing the {name-only, name+count} × {lex-name, ranking} × iter
+    /// grid at the top-level altitude. Consumers that need the sorted
+    /// writer names without the counts (a "top writer, runner-up,
+    /// weakest" strip renderer, a diagnostics banner that only prints
+    /// names, a `.take(k).collect::<Vec<_>>()` pane naming the loudest
+    /// axes) reach for this seam directly instead of mapping
+    /// `.map(|(n, _)| n)` over [`Self::layer_ranking_iter`] and losing
+    /// the concrete named iterator type at the API boundary.
+    ///
+    /// The concrete return type is
+    /// [`LayerAttributionLayerRankingNamesIter`], a thin single-field
+    /// newtype around
+    /// [`std::vec::IntoIter<&'static str>`][std::vec::IntoIter] over
+    /// the pre-sorted ranking's names. Impls [`Iterator`] +
+    /// [`DoubleEndedIterator`] + [`ExactSizeIterator`] +
+    /// [`std::iter::FusedIterator`] + [`Clone`] +
+    /// [`Debug`][std::fmt::Debug]. Naming the return type at the API
+    /// boundary (rather than `impl Iterator<Item = &'static str> + …`)
+    /// exposes the four trait bounds the substrate structurally
+    /// carries and gives callers a spellable type — matches the
+    /// concrete-return invariant every zero-alloc iterator return on
+    /// the [`LayerAttribution`] surface obeys.
+    ///
+    /// **Zero final Vec on short-circuit consumers.** Consumers that
+    /// only want the top name (`.next()`), a positional match
+    /// (`.find(_)` / `.position(_)`), a bounded top-`k`
+    /// (`.take(k)`), the exact distinct-writer count (`.len()` /
+    /// `.count()`), the reverse walk (`.rev()`), or the trailing
+    /// (weakest) name (`.next_back()` / `.last()`) skip the
+    /// `Vec<&'static str>` allocation the collecting form would
+    /// materialize at the API boundary. The sorted backing `Vec` is
+    /// inevitable (the ranking is defined by a stable sort), but the
+    /// caller doesn't materialize a second one on top.
+    ///
+    /// **Endpoint identities on the iter surface.** `.next()` equals
+    /// [`Self::dominant_layer`] verbatim (the argmax endpoint), and
+    /// `.next_back()` (equivalently `.last()`) equals
+    /// [`Self::weakest_layer`] verbatim (the argmin endpoint). Pinned
+    /// by `layer_ranking_names_iter_next_agrees_with_dominant_layer`
+    /// and `layer_ranking_names_iter_next_back_agrees_with_weakest_layer`
+    /// in this module's test cohort.
+    ///
+    /// **Cross-projection identity.**
+    /// `layer_ranking_names_iter().collect::<Vec<_>>()` equals
+    /// `layer_ranking_iter().map(|(n, _)| n).collect::<Vec<_>>()`
+    /// pointwise; the set of emitted names equals
+    /// [`Self::surviving_layer_names`] verbatim (as a set). Pinned by
+    /// `layer_ranking_names_iter_matches_layer_ranking_iter_map_name`
+    /// and `layer_ranking_names_iter_set_equals_surviving_layer_names`.
+    ///
+    /// **`.last()` in `O(1)`.** The overridden [`Iterator::last`]
+    /// routes through [`DoubleEndedIterator::next_back`] on the
+    /// underlying [`std::vec::IntoIter`], so the trailing name lands
+    /// directly instead of draining the whole stream — clippy's
+    /// `double_ended_iterator_last` lint fires on the default impl on
+    /// any [`DoubleEndedIterator`], so the override closes the
+    /// compounding value at the impl altitude for every consumer.
+    ///
+    /// # Cost
+    ///
+    /// `O(n log k + k log k)` time and `O(k)` space, identical to
+    /// [`Self::layer_ranking_iter`] — one [`Self::leaf_counts_by_layer`]
+    /// counter pass, one collect into a [`Vec`], one stable [`sort_by`]
+    /// on the vector, one `.into_iter().map(|(n, _)| n).collect()` to
+    /// drop the count column. The final `Vec<&'static str>` the peer
+    /// name-only [`Self::surviving_layer_names`] allocates at the API
+    /// boundary is not paid when consumers short-circuit on the iter
+    /// surface.
+    ///
+    /// [`sort_by`]: Vec::sort_by
+    ///
+    /// # Independent walks
+    ///
+    /// The returned iterator is [`Clone`] — the backing
+    /// [`std::vec::IntoIter`] carries [`Clone`] when the item type is
+    /// [`Clone`], and `&'static str` is [`Copy`]. Callers that need
+    /// to walk the ranked names twice (render top-3, then re-walk for
+    /// a matching name) clone the handle up front instead of
+    /// reallocating the `Vec` or re-sorting.
+    #[must_use]
+    pub fn layer_ranking_names_iter(&self) -> LayerAttributionLayerRankingNamesIter {
+        let names: Vec<&'static str> = self.layer_ranking_iter().map(|(n, _)| n).collect();
+        LayerAttributionLayerRankingNamesIter {
+            inner: names.into_iter(),
+        }
+    }
+
     /// The **subtree-restricted** dual of [`Self::layer_ranking`]:
     /// every [`DiscoveryLayer`] that wrote at least one leaf under (or
     /// at) `prefix`, paired with its subtree leaf count, sorted by
@@ -2308,6 +2406,93 @@ impl LayerAttribution {
         });
         LayerAttributionSubtreeLayerRankingIter {
             inner: ranking.into_iter(),
+        }
+    }
+
+    /// The **subtree-restricted, name-only** dual of
+    /// [`Self::subtree_layer_ranking_iter`]: streams every layer name
+    /// whose writer touched at least one leaf under (or at) `prefix`,
+    /// in the same count-descending / lex-name-ascending order the
+    /// `(name, count)` peer emits, but drops the count column. A
+    /// `prefix` of `&[]` equals [`Self::layer_ranking_names_iter`]
+    /// pointwise; a `prefix` that names no subtree yields the empty
+    /// iterator.
+    ///
+    /// The **subtree × name-only × ranking-order** peer closing the
+    /// {name-only, name+count} × {lex-name, ranking} × iter grid at
+    /// the subtree altitude — paired with
+    /// [`Self::subtree_surviving_layer_names_iter`] (name-only,
+    /// lex-name order), [`Self::subtree_layer_ranking_iter`]
+    /// (name+count, ranking order), and
+    /// [`Self::subtree_leaf_counts_by_layer_iter`] (name+count,
+    /// lex-name order). Consumers scoped to one subsystem's ranked
+    /// writer names — a per-subtree config-show pane rendering "top
+    /// writer under `breathe.*`", a diagnostics banner naming the
+    /// two loudest axes under a prefix that only needs `.take(k)`,
+    /// a per-subtree "who dominates" strip — reach for `.next()` /
+    /// `.take(n)` / `.len()` directly at zero final-Vec cost.
+    ///
+    /// The concrete return type is
+    /// [`LayerAttributionSubtreeLayerRankingNamesIter`], a thin
+    /// single-field newtype around
+    /// [`std::vec::IntoIter<&'static str>`][std::vec::IntoIter] over
+    /// the pre-sorted subtree ranking's names. Impls [`Iterator`] +
+    /// [`DoubleEndedIterator`] + [`ExactSizeIterator`] +
+    /// [`std::iter::FusedIterator`] + [`Clone`] +
+    /// [`Debug`][std::fmt::Debug]. Mirrors the free-axis peer
+    /// [`LayerAttributionLayerRankingNamesIter`] at the subtree
+    /// altitude — the same six-way trait algebra powers both.
+    ///
+    /// **Endpoint identities on the iter surface.** `.next()` equals
+    /// [`Self::subtree_dominant_layer`]`(prefix)` verbatim (the
+    /// subtree argmax endpoint), and `.next_back()` (equivalently
+    /// `.last()`) equals [`Self::subtree_weakest_layer`]`(prefix)`
+    /// verbatim (the subtree argmin endpoint). Pinned by
+    /// `subtree_layer_ranking_names_iter_next_agrees_with_subtree_dominant_layer`
+    /// and
+    /// `subtree_layer_ranking_names_iter_next_back_agrees_with_subtree_weakest_layer`
+    /// in this module's test cohort.
+    ///
+    /// **Cross-projection identities.**
+    /// `subtree_layer_ranking_names_iter(prefix).collect::<Vec<_>>()`
+    /// equals
+    /// `subtree_layer_ranking_iter(prefix).map(|(n, _)| n).collect::<Vec<_>>()`
+    /// pointwise; the set of emitted names equals
+    /// [`Self::subtree_surviving_layer_names`]`(prefix)` verbatim (as
+    /// a set); and `subtree_layer_ranking_names_iter(&[])` equals
+    /// [`Self::layer_ranking_names_iter`] pointwise (the empty-prefix
+    /// corner).
+    ///
+    /// **`.last()` in `O(1)`.** The overridden [`Iterator::last`]
+    /// routes through [`DoubleEndedIterator::next_back`] on the
+    /// underlying [`std::vec::IntoIter`], so the trailing name lands
+    /// directly instead of draining the whole stream.
+    ///
+    /// # Cost
+    ///
+    /// `O(log n + m + k' log k')` time and `O(k')` space where `n` is
+    /// the total leaf count, `m` is the number of matching leaves
+    /// under the subtree, and `k'` is the distinct-writer count *under
+    /// the subtree* — identical to [`Self::subtree_layer_ranking_iter`]
+    /// plus one `.into_iter().map(|(n, _)| n).collect()` to drop the
+    /// count column.
+    ///
+    /// # Independent walks
+    ///
+    /// The returned iterator is [`Clone`]. Callers that need to walk
+    /// the ranked names twice under the same subtree clone the handle
+    /// up front instead of reallocating the `Vec` or re-sorting.
+    #[must_use]
+    pub fn subtree_layer_ranking_names_iter(
+        &self,
+        prefix: &[String],
+    ) -> LayerAttributionSubtreeLayerRankingNamesIter {
+        let names: Vec<&'static str> = self
+            .subtree_layer_ranking_iter(prefix)
+            .map(|(n, _)| n)
+            .collect();
+        LayerAttributionSubtreeLayerRankingNamesIter {
+            inner: names.into_iter(),
         }
     }
 
@@ -3662,6 +3847,152 @@ impl ExactSizeIterator for LayerAttributionSubtreeLayerRankingIter {
 }
 
 impl std::iter::FusedIterator for LayerAttributionSubtreeLayerRankingIter {}
+
+/// The concrete return type of
+/// [`LayerAttribution::layer_ranking_names_iter`] — a thin single-field
+/// newtype around
+/// [`std::vec::IntoIter<&'static str>`][std::vec::IntoIter] that
+/// streams every surviving layer name in count-descending /
+/// lex-name-ascending order, matching the ordering
+/// [`LayerAttribution::layer_ranking`] emits when its name column is
+/// projected.
+///
+/// The **name-only** ranking-order peer of
+/// [`LayerAttributionLayerRankingIter`] (the (name, count) peer at
+/// the same altitude) and [`LayerAttributionSurvivingLayerNamesIter`]
+/// (the name-only, lex-name-order peer), closing the {name-only,
+/// name+count} × {lex-name, ranking} × iter grid at the top-level
+/// altitude.
+///
+/// Impls [`Iterator`] + [`DoubleEndedIterator`] +
+/// [`ExactSizeIterator`] + [`std::iter::FusedIterator`] + [`Clone`] +
+/// [`Debug`][std::fmt::Debug].
+///
+/// **Trait algebra.** [`ExactSizeIterator`] survives — the
+/// constructor already collected the ranked name projection into a
+/// [`Vec`] whose [`std::vec::IntoIter`] carries the known-length
+/// contract, so consumers reading `.len()` / `.size_hint()` see the
+/// exact distinct-writer count at `O(1)` without walking the stream.
+/// [`DoubleEndedIterator`] survives on the same backing type —
+/// consumers reaching for the trailing (weakest) name via
+/// `.next_back()` / `.last()` skip the full forward scan the
+/// collecting form pays.
+///
+/// The [`Iterator::last`] default is overridden to route through
+/// [`DoubleEndedIterator::next_back`], so `.last()` finds the
+/// trailing name in one reverse step instead of draining the whole
+/// iterator — clippy's `double_ended_iterator_last` lint fires on
+/// the default impl on any [`DoubleEndedIterator`], so the override
+/// closes the compounding value at the impl altitude for every
+/// consumer without them having to reach for `.next_back()`.
+///
+/// **Endpoint identities.** `.next()` equals
+/// [`LayerAttribution::dominant_layer`] verbatim; `.next_back()`
+/// (equivalently `.last()`) equals
+/// [`LayerAttribution::weakest_layer`] verbatim — the two ranking
+/// endpoints lifted to the name-only iter surface.
+#[derive(Debug, Clone)]
+pub struct LayerAttributionLayerRankingNamesIter {
+    inner: std::vec::IntoIter<&'static str>,
+}
+
+impl Iterator for LayerAttributionLayerRankingNamesIter {
+    type Item = &'static str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+
+    fn count(self) -> usize {
+        self.inner.count()
+    }
+
+    fn last(mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl DoubleEndedIterator for LayerAttributionLayerRankingNamesIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl ExactSizeIterator for LayerAttributionLayerRankingNamesIter {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for LayerAttributionLayerRankingNamesIter {}
+
+/// The concrete return type of
+/// [`LayerAttribution::subtree_layer_ranking_names_iter`] — a thin
+/// single-field newtype around
+/// [`std::vec::IntoIter<&'static str>`][std::vec::IntoIter] that
+/// streams every subtree-surviving layer name in count-descending /
+/// lex-name-ascending order, matching the ordering
+/// [`LayerAttribution::subtree_layer_ranking`] emits when its name
+/// column is projected.
+///
+/// The subtree-restricted peer of
+/// [`LayerAttributionLayerRankingNamesIter`] on the same axis at the
+/// same iter altitude — one type owns the free-axis ranked names,
+/// one type owns the subtree-restricted ranked names, both carry the
+/// same six-way trait algebra.
+///
+/// Impls [`Iterator`] + [`DoubleEndedIterator`] +
+/// [`ExactSizeIterator`] + [`std::iter::FusedIterator`] + [`Clone`] +
+/// [`Debug`][std::fmt::Debug].
+///
+/// **Endpoint identities.** `.next()` equals
+/// [`LayerAttribution::subtree_dominant_layer`]`(prefix)` verbatim;
+/// `.next_back()` (equivalently `.last()`) equals
+/// [`LayerAttribution::subtree_weakest_layer`]`(prefix)` verbatim —
+/// the two subtree ranking endpoints lifted to the name-only iter
+/// surface.
+#[derive(Debug, Clone)]
+pub struct LayerAttributionSubtreeLayerRankingNamesIter {
+    inner: std::vec::IntoIter<&'static str>,
+}
+
+impl Iterator for LayerAttributionSubtreeLayerRankingNamesIter {
+    type Item = &'static str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+
+    fn count(self) -> usize {
+        self.inner.count()
+    }
+
+    fn last(mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl DoubleEndedIterator for LayerAttributionSubtreeLayerRankingNamesIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl ExactSizeIterator for LayerAttributionSubtreeLayerRankingNamesIter {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for LayerAttributionSubtreeLayerRankingNamesIter {}
 
 /// The concrete return type of
 /// [`LayerAttribution::writes_by_layer_iter`] — a thin single-field
@@ -14273,6 +14604,394 @@ mod tests {
         let via_clone: Vec<_> = clone.collect();
         assert_eq!(via_original, via_clone);
         assert_eq!(via_original, out.attribution.subtree_layer_ranking(&prefix));
+    }
+
+    // -------- layer_ranking_names_iter --------
+
+    #[test]
+    fn layer_ranking_names_iter_matches_layer_ranking_iter_map_name() {
+        // Core cross-projection identity: the name-only iter emits the
+        // same names in the same order as `layer_ranking_iter()` with
+        // the count column stripped. Any drift in ordering or dedup
+        // discipline between the two peers would break this pin.
+        for out in [subtree_fixture(), inversion_fixture(), layer_axis_fixture()] {
+            let via_names_iter: Vec<&'static str> =
+                out.attribution.layer_ranking_names_iter().collect();
+            let via_ranking_map: Vec<&'static str> = out
+                .attribution
+                .layer_ranking_iter()
+                .map(|(n, _)| n)
+                .collect();
+            assert_eq!(via_names_iter, via_ranking_map);
+        }
+    }
+
+    #[test]
+    fn layer_ranking_names_iter_empty_attribution_is_empty_stream() {
+        // Empty-source boundary: no leaves ⇒ zero-length stream.
+        // ExactSizeIterator::len reads zero at O(1); size_hint agrees.
+        let empty = compose_with_provenance(&[]);
+        let iter = empty.attribution.layer_ranking_names_iter();
+        assert_eq!(iter.len(), 0);
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+        assert_eq!(
+            empty
+                .attribution
+                .layer_ranking_names_iter()
+                .collect::<Vec<_>>(),
+            Vec::<&'static str>::new(),
+        );
+    }
+
+    #[test]
+    fn layer_ranking_names_iter_len_equals_distinct_writer_count() {
+        // ExactSizeIterator::len and size_hint report the exact
+        // distinct-writer count at O(1), matching layer_ranking().len()
+        // verbatim — the name-only projection preserves cardinality.
+        for out in [subtree_fixture(), inversion_fixture(), layer_axis_fixture()] {
+            let iter = out.attribution.layer_ranking_names_iter();
+            let expected = out.attribution.layer_ranking().len();
+            assert_eq!(iter.len(), expected);
+            assert_eq!(iter.size_hint(), (expected, Some(expected)));
+        }
+    }
+
+    #[test]
+    fn layer_ranking_names_iter_next_agrees_with_dominant_layer() {
+        // Endpoint identity: `.next()` equals `dominant_layer()`
+        // verbatim — the head of the sorted name stream is the argmax.
+        let out = layer_axis_fixture();
+        let head = out.attribution.layer_ranking_names_iter().next();
+        assert_eq!(head, out.attribution.dominant_layer());
+    }
+
+    #[test]
+    fn layer_ranking_names_iter_next_back_agrees_with_weakest_layer() {
+        // Endpoint identity on the reverse iter surface: `.next_back()`
+        // (equivalently `.last()`) equals `weakest_layer()` verbatim —
+        // the tail of the sorted name stream is the argmin. Overrides
+        // the default `.last()` to route through `.next_back()` on the
+        // underlying Vec::IntoIter.
+        let out = layer_axis_fixture();
+        let tail = out.attribution.layer_ranking_names_iter().next_back();
+        assert_eq!(tail, out.attribution.weakest_layer());
+        assert_eq!(out.attribution.layer_ranking_names_iter().last(), tail);
+    }
+
+    #[test]
+    fn layer_ranking_names_iter_rev_matches_names_reversed() {
+        // DoubleEndedIterator::rev matches the collecting form
+        // reversed — confirms the Vec::IntoIter DoubleEnded contract
+        // survives at the name-only ranking altitude.
+        let out = inversion_fixture();
+        let mut expected: Vec<&'static str> = out
+            .attribution
+            .layer_ranking()
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        expected.reverse();
+        assert_eq!(
+            out.attribution
+                .layer_ranking_names_iter()
+                .rev()
+                .collect::<Vec<_>>(),
+            expected,
+        );
+    }
+
+    #[test]
+    fn layer_ranking_names_iter_take_short_circuits_at_top_k() {
+        // `.take(k)` short-circuits at the first k names — no
+        // materialization of the tail, and pointwise agreement with
+        // the ranking's [0..k] slice's name column.
+        let out = inversion_fixture();
+        let full: Vec<&'static str> = out
+            .attribution
+            .layer_ranking()
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        for k in 0..=full.len() {
+            let via_iter: Vec<&'static str> =
+                out.attribution.layer_ranking_names_iter().take(k).collect();
+            assert_eq!(via_iter, full[..k].to_vec(), "top-{k} slice");
+        }
+    }
+
+    #[test]
+    fn layer_ranking_names_iter_set_equals_surviving_layer_names() {
+        // Cross-projection set identity: the set of emitted names
+        // equals `surviving_layer_names()` verbatim — the ranking's
+        // name column is a re-ordering of the survivor set. Pins the
+        // partition-law bridge to the lex-order name-only peer.
+        for out in [subtree_fixture(), inversion_fixture(), layer_axis_fixture()] {
+            let via_ranking_names: std::collections::BTreeSet<&'static str> =
+                out.attribution.layer_ranking_names_iter().collect();
+            let via_survivors: std::collections::BTreeSet<&'static str> = out
+                .attribution
+                .surviving_layer_names()
+                .into_iter()
+                .collect();
+            assert_eq!(via_ranking_names, via_survivors);
+        }
+    }
+
+    #[test]
+    fn layer_ranking_names_iter_fused_after_exhaustion() {
+        // FusedIterator contract: past exhaustion, subsequent pulls
+        // pin at None. Composite consumers relying on the fused
+        // contract (`.chain`, `.peekable`, `.by_ref`) get the invariant
+        // spelled at the type-signature altitude.
+        let out = layer_axis_fixture();
+        let mut iter = out.attribution.layer_ranking_names_iter();
+        while iter.next().is_some() {}
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn layer_ranking_names_iter_clone_walks_independently() {
+        // Clone: the Vec::IntoIter is Clone when Item is Clone, and
+        // `&'static str` is Copy — so the compound handle is Clone.
+        // Advancing one clone leaves the other pinned at the head,
+        // so each clone traverses the ranked names in full independently.
+        let out = inversion_fixture();
+        let iter = out.attribution.layer_ranking_names_iter();
+        let clone = iter.clone();
+        let via_original: Vec<_> = iter.collect();
+        let via_clone: Vec<_> = clone.collect();
+        assert_eq!(via_original, via_clone);
+        let expected: Vec<&'static str> = out
+            .attribution
+            .layer_ranking()
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert_eq!(via_original, expected);
+    }
+
+    // -------- subtree_layer_ranking_names_iter --------
+
+    #[test]
+    fn subtree_layer_ranking_names_iter_matches_ranking_iter_map_name() {
+        // Core cross-projection identity at the subtree altitude:
+        // the name-only iter emits the same names in the same order
+        // as `subtree_layer_ranking_iter(prefix)` with the count
+        // column stripped, across every prefix in the shared fixture.
+        let out = subtree_fixture();
+        for prefix in [
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("nonexistent")],
+        ] {
+            let via_names_iter: Vec<&'static str> = out
+                .attribution
+                .subtree_layer_ranking_names_iter(&prefix)
+                .collect();
+            let via_ranking_map: Vec<&'static str> = out
+                .attribution
+                .subtree_layer_ranking_iter(&prefix)
+                .map(|(n, _)| n)
+                .collect();
+            assert_eq!(via_names_iter, via_ranking_map, "at {prefix:?}");
+        }
+    }
+
+    #[test]
+    fn subtree_layer_ranking_names_iter_empty_prefix_matches_free_axis() {
+        // Empty-prefix identity at the iter altitude: the subtree-
+        // restricted name-only iter dual at `&[]` is pointwise equal
+        // to the top-level name-only iter dual.
+        for out in [subtree_fixture(), inversion_fixture(), layer_axis_fixture()] {
+            assert_eq!(
+                out.attribution
+                    .subtree_layer_ranking_names_iter(&[])
+                    .collect::<Vec<_>>(),
+                out.attribution
+                    .layer_ranking_names_iter()
+                    .collect::<Vec<_>>(),
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_layer_ranking_names_iter_empty_attribution_is_empty_stream() {
+        // Empty-source boundary: no leaves ⇒ zero-length stream at
+        // every prefix. ExactSizeIterator::len reads zero at O(1);
+        // size_hint agrees.
+        let empty = compose_with_provenance(&[]);
+        for prefix in [vec![], vec![s("any")], vec![s("nested"), s("under")]] {
+            let iter = empty.attribution.subtree_layer_ranking_names_iter(&prefix);
+            assert_eq!(iter.len(), 0, "empty attribution at {prefix:?}");
+            assert_eq!(iter.size_hint(), (0, Some(0)));
+            assert_eq!(
+                empty
+                    .attribution
+                    .subtree_layer_ranking_names_iter(&prefix)
+                    .collect::<Vec<_>>(),
+                Vec::<&'static str>::new(),
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_layer_ranking_names_iter_absent_prefix_is_empty_stream() {
+        // A prefix that names no subtree yields the empty stream — the
+        // range walk halts before accumulating any name, and the
+        // Vec::IntoIter-backed ExactSizeIterator reports zero.
+        let out = subtree_fixture();
+        let iter = out
+            .attribution
+            .subtree_layer_ranking_names_iter(&[s("nonexistent")]);
+        assert_eq!(iter.len(), 0);
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+        assert_eq!(
+            out.attribution
+                .subtree_layer_ranking_names_iter(&[s("nonexistent")])
+                .collect::<Vec<_>>(),
+            Vec::<&'static str>::new(),
+        );
+    }
+
+    #[test]
+    fn subtree_layer_ranking_names_iter_len_equals_distinct_writer_count_under_subtree() {
+        // ExactSizeIterator::len and size_hint report the exact
+        // subtree-distinct-writer count at O(1), matching
+        // subtree_layer_ranking(prefix).len() verbatim.
+        let out = subtree_fixture();
+        for prefix in [vec![], vec![s("breathe")], vec![s("alpha")]] {
+            let iter = out.attribution.subtree_layer_ranking_names_iter(&prefix);
+            let expected = out.attribution.subtree_layer_ranking(&prefix).len();
+            assert_eq!(iter.len(), expected, "len at {prefix:?}");
+            assert_eq!(iter.size_hint(), (expected, Some(expected)));
+        }
+    }
+
+    #[test]
+    fn subtree_layer_ranking_names_iter_next_agrees_with_subtree_dominant_layer() {
+        // Endpoint identity at the subtree altitude: `.next()` equals
+        // `subtree_dominant_layer(prefix)` verbatim — the head of the
+        // sorted subtree name stream is the subtree argmax.
+        let out = subtree_fixture();
+        for prefix in [vec![], vec![s("breathe")], vec![s("alpha")]] {
+            let head = out
+                .attribution
+                .subtree_layer_ranking_names_iter(&prefix)
+                .next();
+            assert_eq!(
+                head,
+                out.attribution.subtree_dominant_layer(&prefix),
+                "head endpoint at {prefix:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_layer_ranking_names_iter_next_back_agrees_with_subtree_weakest_layer() {
+        // Endpoint identity on the reverse iter surface at the subtree
+        // altitude: `.next_back()` (equivalently `.last()`) equals
+        // `subtree_weakest_layer(prefix)` verbatim.
+        let out = subtree_fixture();
+        for prefix in [vec![], vec![s("breathe")], vec![s("alpha")]] {
+            let tail = out
+                .attribution
+                .subtree_layer_ranking_names_iter(&prefix)
+                .next_back();
+            assert_eq!(
+                tail,
+                out.attribution.subtree_weakest_layer(&prefix),
+                "tail endpoint at {prefix:?}",
+            );
+            assert_eq!(
+                out.attribution
+                    .subtree_layer_ranking_names_iter(&prefix)
+                    .last(),
+                tail,
+                "overridden .last() at {prefix:?} matches .next_back()",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_layer_ranking_names_iter_set_equals_subtree_surviving_layer_names() {
+        // Cross-projection set identity at the subtree altitude: the
+        // set of emitted names equals
+        // `subtree_surviving_layer_names(prefix)` verbatim — the
+        // subtree ranking's name column is a re-ordering of the
+        // subtree survivor set.
+        let out = subtree_fixture();
+        for prefix in [vec![], vec![s("breathe")], vec![s("alpha")]] {
+            let via_ranking_names: std::collections::BTreeSet<&'static str> = out
+                .attribution
+                .subtree_layer_ranking_names_iter(&prefix)
+                .collect();
+            let via_survivors: std::collections::BTreeSet<&'static str> = out
+                .attribution
+                .subtree_surviving_layer_names(&prefix)
+                .into_iter()
+                .collect();
+            assert_eq!(via_ranking_names, via_survivors, "at {prefix:?}");
+        }
+    }
+
+    #[test]
+    fn subtree_layer_ranking_names_iter_subset_of_free_axis() {
+        // Subset invariant: the subtree name-set is a subset of the
+        // free-axis name-set — the subtree cannot rank a name that
+        // never wrote anywhere. Pins the boundary at the ranking-name
+        // altitude, mirroring the same invariant on
+        // `subtree_layer_ranking_iter`.
+        let out = subtree_fixture();
+        let global_names: std::collections::BTreeSet<&'static str> =
+            out.attribution.layer_ranking_names_iter().collect();
+        let subtree_names: std::collections::BTreeSet<&'static str> = out
+            .attribution
+            .subtree_layer_ranking_names_iter(&[s("breathe")])
+            .collect();
+        assert!(
+            subtree_names.is_subset(&global_names),
+            "subtree names ⊆ global names",
+        );
+    }
+
+    #[test]
+    fn subtree_layer_ranking_names_iter_fused_after_exhaustion() {
+        // FusedIterator contract: past exhaustion, subsequent pulls
+        // pin at None across every prefix.
+        let out = subtree_fixture();
+        for prefix in [vec![], vec![s("breathe")], vec![s("nonexistent")]] {
+            let mut iter = out.attribution.subtree_layer_ranking_names_iter(&prefix);
+            while iter.next().is_some() {}
+            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next(), None);
+        }
+    }
+
+    #[test]
+    fn subtree_layer_ranking_names_iter_clone_walks_independently() {
+        // Clone at the subtree altitude: Vec::IntoIter is Clone when
+        // Item is Clone; `&'static str` is Copy — so the compound
+        // handle carries Clone. Each clone walks the sorted subtree
+        // ranked names in full, independently of the source iterator's
+        // cursor.
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        let iter = out.attribution.subtree_layer_ranking_names_iter(&prefix);
+        let clone = iter.clone();
+        let via_original: Vec<_> = iter.collect();
+        let via_clone: Vec<_> = clone.collect();
+        assert_eq!(via_original, via_clone);
+        let expected: Vec<&'static str> = out
+            .attribution
+            .subtree_layer_ranking(&prefix)
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert_eq!(via_original, expected);
     }
 
     // -------- weakest_layer / subtree_weakest_layer
