@@ -129,11 +129,11 @@ pub fn layer_names(layers: &[&dyn DiscoveryLayer]) -> Vec<&'static str> {
 ///
 /// # Trait algebra
 ///
-/// The returned iterator carries [`DoubleEndedIterator`],
+/// The returned [`LayerNamesIter`] carries [`DoubleEndedIterator`],
 /// [`ExactSizeIterator`], [`std::iter::FusedIterator`], and [`Clone`] on top
 /// of [`Iterator`], naming the capabilities the underlying
-/// `Map<Copied<slice::Iter<'a, &'a dyn DiscoveryLayer>>>` composition
-/// structurally holds. This is **one capability richer** than the two
+/// [`std::slice::Iter<'a, &'a dyn DiscoveryLayer>`][std::slice::Iter]
+/// cursor structurally holds. This is **one capability richer** than the two
 /// sibling iters ([`contributor_names_iter`] and [`silent_layer_names_iter`])
 /// — both sit behind a [`std::iter::Filter`] that discards elements based on
 /// the per-layer `discover()` predicate, so their `len()` contract cannot be
@@ -142,29 +142,143 @@ pub fn layer_names(layers: &[&dyn DiscoveryLayer]) -> Vec<&'static str> {
 /// boundary and consumers can call `.len()` / `.size_hint()` at zero heap
 /// cost — the direct iter-altitude counterpart to `layer_names(layers).len()`.
 ///
+/// The concrete return type is [`LayerNamesIter`], a thin newtype around
+/// [`std::slice::Iter<'a, &'a dyn DiscoveryLayer>`][std::slice::Iter] that
+/// projects each cursor tick to its [`DiscoveryLayer::name`] at every
+/// `.next()` / `.next_back()` seam. Naming the return type at the API
+/// boundary (rather than `impl Trait + ...`) exposes the four trait impls
+/// the substrate structurally carries directly at the type level — the
+/// same idiom every zero-alloc iter dual on the discovered substrate now
+/// carries at its API seam. Consumers storing the handle in a struct field
+/// or returning it up through their own API no longer smuggle an
+/// unnameable [`impl Trait`][impl-trait] across every seam.
+///
+/// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
+///
 /// # Cost
 ///
 /// Zero [`DiscoveryLayer::discover`] calls, zero heap allocation for the
-/// iterator itself — the returned handle is a stack composition of
-/// [`std::iter::Copied`] and [`std::iter::Map`] over the input slice's
-/// borrowed iterator. Every yielded [`&'static str`] is a copied dyn-trait
-/// method call on a layer reference, `O(1)` per element. Consumers that
-/// short-circuit (`.next()`, `.find(_)`, `.take(n)`) pay `O(k)` name reads
-/// for `k` layers visited, versus [`layer_names`]'s obligatory `O(n)` sweep
-/// plus its `Vec` allocation. A `.clone()` yields an independent walk from
-/// the head; the two walks read each layer's name independently (the closure
-/// is a zero-sized captureless [`Copy`] type, so cloning is free at the
-/// iterator state level).
+/// iterator itself — the returned handle wraps the input slice's borrowed
+/// iterator directly and reads off each layer's [`DiscoveryLayer::name`]
+/// per `.next()` / `.next_back()` pull. Every yielded [`&'static str`] is
+/// one dyn-trait method call on a layer reference, `O(1)` per element.
+/// Consumers that short-circuit (`.next()`, `.find(_)`, `.take(n)`) pay
+/// `O(k)` name reads for `k` layers visited, versus [`layer_names`]'s
+/// obligatory `O(n)` sweep plus its `Vec` allocation. A `.clone()` yields
+/// an independent walk from the head; the two walks read each layer's name
+/// independently (the wrapped [`std::slice::Iter`] is unconditionally
+/// [`Clone`], so cloning is free at the iterator state level).
 #[must_use]
-pub fn layer_names_iter<'a>(
-    layers: &'a [&'a dyn DiscoveryLayer],
-) -> impl DoubleEndedIterator<Item = &'static str>
-+ ExactSizeIterator
-+ std::iter::FusedIterator
-+ Clone
-+ 'a {
-    layers.iter().copied().map(|layer| layer.name())
+pub fn layer_names_iter<'a>(layers: &'a [&'a dyn DiscoveryLayer]) -> LayerNamesIter<'a> {
+    LayerNamesIter {
+        inner: layers.iter(),
+    }
 }
+
+/// Zero-allocation declared-name stream — the ordered names of every layer
+/// in the input stack, in application order (coarse→specific), yielded as
+/// [`&'static str`]. The concrete return type of [`layer_names_iter`] and
+/// the **partition source** the two projection iters
+/// ([`contributor_names_iter`], [`silent_layer_names_iter`]) filter from.
+///
+/// Naming the return type at the API boundary (rather than
+/// [`impl Trait`][impl-trait]) exposes the [`DoubleEndedIterator`],
+/// [`ExactSizeIterator`], [`std::iter::FusedIterator`], and [`Clone`]
+/// impls the substrate structurally carries directly at the type level —
+/// the same idiom every zero-alloc iter dual on the discovered substrate
+/// (`AxisHistogramIter`, `PathContestContributorsIter`,
+/// `PathContestSilencedIter`, `SilencedAtIter`, and the
+/// `LayerAttribution*Iter` family) already spells at its own API seam.
+/// Consumers storing the handle in a struct field or returning it up
+/// through their own API no longer smuggle an unnameable [`impl Trait`][impl-trait]
+/// across every seam.
+///
+/// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
+///
+/// # Trait algebra
+///
+/// Impls [`Iterator`] + [`DoubleEndedIterator`] + [`ExactSizeIterator`] +
+/// [`std::iter::FusedIterator`] + [`Clone`] + [`Debug`][std::fmt::Debug].
+/// **One capability richer** than the two sibling iters
+/// ([`contributor_names_iter`] and [`silent_layer_names_iter`]) — both sit
+/// behind a [`std::iter::Filter`] that discards elements based on the
+/// per-layer `discover()` predicate, so their `len()` contract cannot be
+/// honored at the type level. The declared-name axis carries no such
+/// filter, so [`ExactSizeIterator`] survives all the way to the return
+/// boundary — the direct iter-altitude counterpart to
+/// `layer_names(layers).len()`.
+///
+/// # Field access
+///
+/// The struct fields are private — the public surface is the six trait
+/// impls above. The wrapped
+/// [`std::slice::Iter<'a, &'a dyn DiscoveryLayer>`][std::slice::Iter]
+/// cursor is a two-word borrowed handle that already carries every trait
+/// this iter forwards; the newtype exists to name the pointwise projection
+/// (`layer.name()`) at the type level rather than to add state on top.
+#[derive(Clone)]
+pub struct LayerNamesIter<'a> {
+    inner: std::slice::Iter<'a, &'a dyn DiscoveryLayer>,
+}
+
+impl std::fmt::Debug for LayerNamesIter<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Skip the `inner` field: `&dyn DiscoveryLayer` is not `Debug`
+        // (the trait deliberately does not require it, so consumers can
+        // implement it on non-`Debug` handles), so the underlying
+        // `slice::Iter` cannot forward `Debug` either. Report the
+        // cursor's remaining length instead — enough for a diagnostic
+        // dump to distinguish "just started" from "half-way through"
+        // without leaking the individual handles. Same
+        // `Debug`-with-a-field-substitution pattern `SilencedAtIter`
+        // carries against the same non-`Debug` trait-object cursor.
+        f.debug_struct("LayerNamesIter")
+            .field("layers_remaining", &self.inner.len())
+            .finish()
+    }
+}
+
+impl Iterator for LayerNamesIter<'_> {
+    type Item = &'static str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(|&layer| layer.name())
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+
+    fn count(self) -> usize {
+        self.inner.len()
+    }
+
+    fn last(mut self) -> Option<Self::Item> {
+        self.inner.next_back().map(|&layer| layer.name())
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.inner.nth(n).map(|&layer| layer.name())
+    }
+}
+
+impl DoubleEndedIterator for LayerNamesIter<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back().map(|&layer| layer.name())
+    }
+
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        self.inner.nth_back(n).map(|&layer| layer.name())
+    }
+}
+
+impl ExactSizeIterator for LayerNamesIter<'_> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for LayerNamesIter<'_> {}
 
 /// Per-leaf provenance for a composed [`DiscoveryLayer`] stack: the name
 /// of the winning layer at every leaf path of the merged dict.
@@ -8559,6 +8673,99 @@ mod tests {
         assert_eq!(
             chained, source,
             "contributor_iter ⨄ silent_iter covers layer_names_iter",
+        );
+    }
+
+    #[test]
+    fn layer_names_iter_return_type_is_nameable_layer_names_iter() {
+        // The sharpen from `impl DoubleEndedIterator + ExactSizeIterator
+        // + FusedIterator + Clone + 'a` to the concrete `LayerNamesIter<'a>`
+        // lets consumers spell the return type. A struct field bound on
+        // `LayerNamesIter<'a>` holds the handle across a return without
+        // smuggling an unnameable `impl Trait` — the same field-storage
+        // compounding value the sibling `SilencedAtIter` closed on the
+        // losers-stream axis at the same free-function altitude
+        // (e6068ad). This test compiles ⇔ the sharpen holds; if the
+        // return type ever regresses back to `impl Trait`, this ceases
+        // to compile.
+        struct HoldsLayerNames<'a> {
+            iter: LayerNamesIter<'a>,
+        }
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let b = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        let held = HoldsLayerNames {
+            iter: layer_names_iter(&layers),
+        };
+        let out: Vec<&'static str> = held.iter.collect();
+        assert_eq!(out, vec!["platform", "cloud", "tenancy"]);
+    }
+
+    #[test]
+    fn layer_names_iter_clone_preserves_static_traits() {
+        // The public struct carries `Clone`, `DoubleEndedIterator`,
+        // `ExactSizeIterator`, and `FusedIterator`. A trait-uniform
+        // helper that only accepts the full quad-trait bound on the
+        // named handle would fail to compile if any of the four traits
+        // regressed — this test wires the compile-time proof to a
+        // runtime cross-walk assertion.
+        fn requires_full_traits<I>(_it: &I)
+        where
+            I: Iterator
+                + DoubleEndedIterator
+                + ExactSizeIterator
+                + std::iter::FusedIterator
+                + Clone,
+        {
+        }
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let b = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        let it: LayerNamesIter<'_> = layer_names_iter(&layers);
+        requires_full_traits(&it);
+        assert_eq!(it.len(), 3, "ExactSizeIterator survives the sharpen");
+        let clone = it.clone();
+        let via_original: Vec<&'static str> = it.collect();
+        let via_clone: Vec<&'static str> = clone.collect();
+        assert_eq!(
+            via_original, via_clone,
+            "cloned handle walks the same declared-name stream",
+        );
+    }
+
+    #[test]
+    fn layer_names_iter_debug_impl_omits_layers_handle() {
+        // The public struct impls `Debug`, but the wrapped
+        // `slice::Iter<'_, &'_ dyn DiscoveryLayer>` is not `Debug` (the
+        // trait deliberately does not require it). The manual impl
+        // skips the raw layers cursor and reports its remaining length
+        // instead — enough for a diagnostic dump to distinguish "just
+        // started" from "half-way through" without leaking the
+        // individual handles. This test pins the impl at the string
+        // level to catch accidental regressions to `#[derive(Debug)]`
+        // (which would fail to compile) or a rename of the reported
+        // field. Same `Debug`-with-a-field-substitution pattern
+        // `SilencedAtIter` carries against the same non-`Debug`
+        // trait-object cursor.
+        let a = Fixed("platform", dict(&[("a", Value::from(1i64))]));
+        let b = Fixed("cloud", Dict::new());
+        let c = Fixed("tenancy", dict(&[("c", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&a, &b, &c];
+        let it: LayerNamesIter<'_> = layer_names_iter(&layers);
+        let rendered = format!("{it:?}");
+        assert!(
+            rendered.starts_with("LayerNamesIter"),
+            "Debug names the concrete struct: {rendered}",
+        );
+        assert!(
+            rendered.contains("layers_remaining"),
+            "Debug reports the remaining layer count: {rendered}",
+        );
+        assert!(
+            rendered.contains('3'),
+            "Debug reports the initial cursor length: {rendered}",
         );
     }
 

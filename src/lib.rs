@@ -80,7 +80,7 @@ pub use discovered::{
     LayerAttributionSubtreeLeafCountsByLayerIter, LayerAttributionSubtreeSurvivingLayerNamesIter,
     LayerAttributionSubtreeWritesByLayerIter, LayerAttributionSubtreeWritesOfLayerIter,
     LayerAttributionSurvivingLayerNamesIter, LayerAttributionWritesByLayerIter,
-    LayerAttributionWritesOfLayerIter, PathContest, PathContestContributorsIter,
+    LayerAttributionWritesOfLayerIter, LayerNamesIter, PathContest, PathContestContributorsIter,
     PathContestSilencedIter, SilencedAtIter, coarsest_at, coarsest_silenced_at,
     compose as compose_discovery, compose_with_provenance, contest_at, contributor_count,
     contributor_count_at, contributor_names, contributor_names_iter, contributors_at,
