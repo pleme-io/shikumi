@@ -517,12 +517,87 @@ impl LayerAttribution {
     /// tie-break, one step down from this compact name-set.
     #[must_use]
     pub fn surviving_layer_names(&self) -> Vec<&'static str> {
+        self.surviving_layer_names_iter().collect()
+    }
+
+    /// Zero-allocation iterator dual of [`Self::surviving_layer_names`]
+    /// — streams the distinct surviving writer names lazily, in the
+    /// same lex-on-layer-name order the collecting form emits, so
+    /// callers that only want the head (`.next()`), a positional match
+    /// (`.find(_)` / `.position(_)`), a bounded prefix (`.take(n)`),
+    /// the exact writer count (`.len()` / `.count()`), the reverse
+    /// walk (`.rev()`), or the trailing survivor (`.next_back()` /
+    /// `.last()`) skip the obligatory `Vec<&'static str>` allocation
+    /// [`Self::surviving_layer_names`] pays. Collecting through
+    /// `.collect::<Vec<_>>()` recovers [`Self::surviving_layer_names`]
+    /// verbatim; the equivalence pin is
+    /// `surviving_layer_names_iter_collect_matches_surviving_layer_names`
+    /// in the test module.
+    ///
+    /// The concrete return type is
+    /// [`LayerAttributionSurvivingLayerNamesIter`], a thin newtype
+    /// around
+    /// [`std::collections::btree_set::IntoIter<&'static str>`][std::collections::btree_set::IntoIter].
+    /// Naming the return type at the API boundary (rather than
+    /// `impl DoubleEndedIterator<Item = ...> + ...`) exposes the
+    /// [`ExactSizeIterator`] and [`std::iter::FusedIterator`] impls
+    /// the substrate structurally carries and gives callers a
+    /// spellable type — matching the concrete-return invariant every
+    /// zero-allocation iterator return on the [`LayerAttribution`]
+    /// surface obeys.
+    ///
+    /// **Trait algebra.** The returned iterator carries
+    /// [`DoubleEndedIterator`], [`ExactSizeIterator`], and
+    /// [`std::iter::FusedIterator`] on top of [`Iterator`], plus
+    /// [`Debug`][std::fmt::Debug]. [`Clone`] is *not* carried — the
+    /// underlying [`std::collections::btree_set::IntoIter`] consumes
+    /// the source [`BTreeSet`] and is not [`Clone`]-able. This
+    /// matches the same consuming asymmetry
+    /// [`LayerAttributionIntoIter`] carries.
+    ///
+    /// **Load-bearing internal reuse.** [`Self::surviving_layer_names`]
+    /// itself routes through this seam as
+    /// `self.surviving_layer_names_iter().collect()`, so the two
+    /// primitives share the same [`BTreeSet`]-based dedup path with
+    /// no logic duplication — the collecting form is now a one-line
+    /// `.collect()` at the substrate boundary.
+    ///
+    /// **Cost.** `O(n log k)` in the constructor — one pass over
+    /// `self.inner.values()`, one [`BTreeSet`] insertion per leaf —
+    /// where `n` is the leaf count and `k` is the distinct-writer
+    /// count. Once constructed, `.next()` / `.next_back()` /
+    /// `.len()` are `O(log k)` amortized on the underlying
+    /// [`std::collections::btree_set::IntoIter`]. Consumers that
+    /// short-circuit before draining still pay the `O(n log k)`
+    /// constructor — the dedup discipline cannot be deferred past
+    /// the first pull because writer names arrive in path-order via
+    /// [`std::collections::btree_map::Values`], not in lex-name
+    /// order. The saved allocation is the `Vec<&'static str>` of
+    /// length `k` the collecting form materializes at the end.
+    ///
+    /// **Empty attribution.** An empty attribution yields the empty
+    /// stream and reports `.len() == 0` / `.size_hint() == (0,
+    /// Some(0))` at `O(1)` without probing values.
+    ///
+    /// **Frontier corner.** The post-merge, iter-altitude dual on
+    /// the surviving-writer-name axis — the closing corner of the
+    /// {declared, contributed, silent, surviving} × iter grid that
+    /// [`layer_names_iter`] (declared), [`contributor_names_iter`]
+    /// (contributed), and [`silent_layer_names_iter`] (silent) opened
+    /// on the pre-merge free-function surface; the post-merge dual
+    /// lives on the [`LayerAttribution`] method surface where the
+    /// distinct-writer set already has to reach into the composed
+    /// leaf histogram to be dedup'd.
+    #[must_use]
+    pub fn surviving_layer_names_iter(&self) -> LayerAttributionSurvivingLayerNamesIter {
         use std::collections::BTreeSet;
         let mut set: BTreeSet<&'static str> = BTreeSet::new();
         for &layer in self.inner.values() {
             set.insert(layer);
         }
-        set.into_iter().collect()
+        LayerAttributionSurvivingLayerNamesIter {
+            inner: set.into_iter(),
+        }
     }
 
     /// Iterator over the `(path, layer)` entries whose path descends
@@ -2514,6 +2589,78 @@ impl<'a> Iterator for LayerAttributionSubtreeWritesOfLayerIter<'a> {
 }
 
 impl std::iter::FusedIterator for LayerAttributionSubtreeWritesOfLayerIter<'_> {}
+
+/// The concrete return type of
+/// [`LayerAttribution::surviving_layer_names_iter`] — a thin
+/// single-field newtype around
+/// [`std::collections::btree_set::IntoIter<&'static str>`][std::collections::btree_set::IntoIter]
+/// that streams every distinct surviving writer name in
+/// [`BTreeSet`]-order (lex on the layer name), matching the ordering
+/// [`LayerAttribution::surviving_layer_names`] emits.
+///
+/// Impls [`Iterator`] + [`DoubleEndedIterator`] +
+/// [`ExactSizeIterator`] + [`std::iter::FusedIterator`] +
+/// [`Debug`][std::fmt::Debug]. [`Clone`] is *not* carried — the
+/// underlying [`std::collections::btree_set::IntoIter`] consumes the
+/// source [`BTreeSet`] and is not [`Clone`]-able. This matches the
+/// same consuming asymmetry [`LayerAttributionIntoIter`] carries
+/// against its borrowing peer.
+///
+/// **Trait algebra.** [`ExactSizeIterator`] survives — the
+/// constructor already dedup'd the writer set into a [`BTreeSet`]
+/// whose [`std::collections::btree_set::IntoIter`] carries the
+/// known-length contract, so consumers reading `.len()` /
+/// `.size_hint()` see the exact distinct-writer count at `O(1)`
+/// without walking the stream. [`DoubleEndedIterator`] survives on
+/// the same backing type — consumers reaching for the trailing
+/// (largest lex-name) survivor via `.next_back()` / `.last()` skip
+/// the full forward scan the collecting form pays.
+///
+/// The [`Iterator::last`] default is overridden to route through
+/// [`DoubleEndedIterator::next_back`], so `.last()` finds the
+/// trailing name in one reverse step instead of draining the whole
+/// iterator — clippy's `double_ended_iterator_last` lint fires on
+/// the default impl on any [`DoubleEndedIterator`], so the override
+/// closes the compounding value at the impl altitude for every
+/// consumer without them having to reach for `.next_back()`.
+#[derive(Debug)]
+pub struct LayerAttributionSurvivingLayerNamesIter {
+    inner: std::collections::btree_set::IntoIter<&'static str>,
+}
+
+impl Iterator for LayerAttributionSurvivingLayerNamesIter {
+    type Item = &'static str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+
+    fn count(self) -> usize {
+        self.inner.count()
+    }
+
+    fn last(mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl DoubleEndedIterator for LayerAttributionSurvivingLayerNamesIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl ExactSizeIterator for LayerAttributionSurvivingLayerNamesIter {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for LayerAttributionSurvivingLayerNamesIter {}
 
 /// The result of composing a stack of [`DiscoveryLayer`]s with per-leaf
 /// provenance tracking.
@@ -9243,6 +9390,164 @@ mod tests {
             survivors, contribs,
             "no writer overridden ⇒ survivors and contributors agree as sets",
         );
+    }
+
+    // -------- surviving_layer_names_iter --------
+
+    #[test]
+    fn surviving_layer_names_iter_collect_matches_surviving_layer_names() {
+        // Core equivalence pin: collecting the iter dual reproduces the
+        // collecting form verbatim across a stack that mixes writers
+        // whose layer names are NOT lex-monotone in application order.
+        // If the iter yielded in path-order (rather than lex-name
+        // order) the two would diverge.
+        let z = Fixed("Z", dict(&[("path_first", Value::from(1i64))]));
+        let a = Fixed(
+            "A",
+            dict(&[
+                ("a", Value::from(dict(&[("y", Value::from(2i64))]))),
+                ("m", Value::from(3i64)),
+            ]),
+        );
+        let m = Fixed("M", dict(&[("q", Value::from(4i64))]));
+        let out = compose_with_provenance(&[&z, &a, &m]);
+        assert_eq!(
+            out.attribution
+                .surviving_layer_names_iter()
+                .collect::<Vec<_>>(),
+            out.attribution.surviving_layer_names(),
+            "iter dual collects to the same Vec as the collecting form",
+        );
+    }
+
+    #[test]
+    fn surviving_layer_names_iter_empty_attribution_is_empty_stream() {
+        // Empty-source boundary: no leaves ⇒ zero-length stream,
+        // ExactSizeIterator::len reads zero without walking values.
+        let empty = compose_with_provenance(&[]);
+        let iter = empty.attribution.surviving_layer_names_iter();
+        assert_eq!(iter.len(), 0);
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+        assert_eq!(
+            empty
+                .attribution
+                .surviving_layer_names_iter()
+                .collect::<Vec<_>>(),
+            Vec::<&'static str>::new(),
+        );
+    }
+
+    #[test]
+    fn surviving_layer_names_iter_len_equals_distinct_writer_count() {
+        // ExactSizeIterator::len and size_hint report the exact
+        // distinct-writer count at O(1), matching
+        // surviving_layer_names().len() verbatim.
+        let a = Fixed("platform", dict(&[("k1", Value::from(1i64))]));
+        let b = Fixed(
+            "tenancy",
+            dict(&[("k2", Value::from(2i64)), ("k3", Value::from(3i64))]),
+        );
+        let out = compose_with_provenance(&[&a, &b]);
+        let iter = out.attribution.surviving_layer_names_iter();
+        let expected = out.attribution.surviving_layer_names().len();
+        assert_eq!(iter.len(), expected);
+        assert_eq!(iter.size_hint(), (expected, Some(expected)));
+    }
+
+    #[test]
+    fn surviving_layer_names_iter_yields_lex_order() {
+        // The seven-writer fixture with application-order names not
+        // matching lex-name order pins the ordering axis: the iter
+        // emits in BTreeSet order (lex on layer name), not path-order
+        // and not application-order.
+        let z = Fixed("Z", dict(&[("z", Value::from(1i64))]));
+        let a = Fixed("A", dict(&[("a", Value::from(2i64))]));
+        let m = Fixed("M", dict(&[("m", Value::from(3i64))]));
+        let out = compose_with_provenance(&[&z, &a, &m]);
+        let seq: Vec<_> = out.attribution.surviving_layer_names_iter().collect();
+        assert_eq!(seq, vec!["A", "M", "Z"]);
+    }
+
+    #[test]
+    fn surviving_layer_names_iter_rev_matches_iter_reversed() {
+        // DoubleEndedIterator::rev matches iter().rev() and the
+        // reverse of surviving_layer_names(), pinning the trailing
+        // half of the ordered stream.
+        let z = Fixed("Z", dict(&[("z", Value::from(1i64))]));
+        let a = Fixed("A", dict(&[("a", Value::from(2i64))]));
+        let m = Fixed("M", dict(&[("m", Value::from(3i64))]));
+        let out = compose_with_provenance(&[&z, &a, &m]);
+        let forward = out.attribution.surviving_layer_names();
+        let mut expected = forward.clone();
+        expected.reverse();
+        assert_eq!(
+            out.attribution
+                .surviving_layer_names_iter()
+                .rev()
+                .collect::<Vec<_>>(),
+            expected,
+        );
+    }
+
+    #[test]
+    fn surviving_layer_names_iter_last_matches_reverse_head() {
+        // The overridden Iterator::last routes through next_back on
+        // the underlying BTreeSet::IntoIter — the trailing lex name
+        // lands directly instead of draining the whole stream. Pinned
+        // pointwise against the collecting form's last entry.
+        let z = Fixed("Z", dict(&[("z", Value::from(1i64))]));
+        let a = Fixed("A", dict(&[("a", Value::from(2i64))]));
+        let m = Fixed("M", dict(&[("m", Value::from(3i64))]));
+        let out = compose_with_provenance(&[&z, &a, &m]);
+        assert_eq!(
+            out.attribution.surviving_layer_names_iter().last(),
+            out.attribution.surviving_layer_names().last().copied(),
+        );
+    }
+
+    #[test]
+    fn surviving_layer_names_iter_head_short_circuits_to_lex_first() {
+        // Consumers short-circuiting on `.next()` see the lex-first
+        // surviving writer, regardless of application order.
+        let z = Fixed("Z", dict(&[("z", Value::from(1i64))]));
+        let a = Fixed("A", dict(&[("a", Value::from(2i64))]));
+        let out = compose_with_provenance(&[&z, &a]);
+        assert_eq!(
+            out.attribution.surviving_layer_names_iter().next(),
+            Some("A"),
+        );
+    }
+
+    #[test]
+    fn surviving_layer_names_iter_dedups_duplicate_writes_at_writer_altitude() {
+        // A single writer with two live leaves appears exactly once
+        // on the iter dual — the BTreeSet dedup in the constructor
+        // collapses the two `values()` sightings into one output.
+        let a = Fixed(
+            "solo",
+            dict(&[("k1", Value::from(1i64)), ("k2", Value::from(2i64))]),
+        );
+        let out = compose_with_provenance(&[&a]);
+        assert_eq!(
+            out.attribution
+                .surviving_layer_names_iter()
+                .collect::<Vec<_>>(),
+            vec!["solo"],
+        );
+        assert_eq!(out.attribution.surviving_layer_names_iter().count(), 1);
+    }
+
+    #[test]
+    fn surviving_layer_names_iter_fused_after_exhaustion() {
+        // FusedIterator contract: past the last element, `.next()`
+        // stays at None on every subsequent pull.
+        let a = Fixed("only", dict(&[("k", Value::from(1i64))]));
+        let out = compose_with_provenance(&[&a]);
+        let mut iter = out.attribution.surviving_layer_names_iter();
+        assert_eq!(iter.next(), Some("only"));
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next(), None);
     }
 
     // -------- silent_layer_names --------
