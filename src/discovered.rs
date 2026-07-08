@@ -5157,7 +5157,23 @@ pub fn silenced_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> Vec<&'stati
 ///
 /// # Trait algebra
 ///
-/// The returned iterator carries [`std::iter::FusedIterator`] and
+/// The concrete return type is [`SilencedAtIter`], a thin drop-last
+/// state machine over a [`std::slice::Iter`] cursor on `layers` — the
+/// counterpart of [`PathContestSilencedIter`] on the pre-materialization
+/// (free-function) altitude. Naming the return type at the API
+/// boundary (rather than `impl Iterator + FusedIterator + Clone + 'a`)
+/// exposes the fused-and-cloneable contract the substrate structurally
+/// carries and gives callers a spellable type — a diagnostic renderer
+/// storing the handle in a struct field or returning it up through its
+/// own API no longer smuggles an unnameable [`impl Trait`][impl-trait]
+/// across every seam, matching the concrete-return invariant
+/// [`PathContestSilencedIter`] closes on the method-altitude peer
+/// (established by 48a4868) and every other zero-allocation iterator
+/// return on the discovered surface obeys.
+///
+/// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
+///
+/// [`SilencedAtIter`] carries [`std::iter::FusedIterator`] and
 /// [`Clone`] on top of [`Iterator`], naming the capabilities the
 /// underlying drop-last state machine structurally holds.
 /// [`ExactSizeIterator`] is *not* carried — the per-layer
@@ -5206,7 +5222,7 @@ pub fn silenced_at(layers: &[&dyn DiscoveryLayer], path: &[&str]) -> Vec<&'stati
 pub fn silenced_at_iter<'a>(
     layers: &'a [&'a dyn DiscoveryLayer],
     path: &'a [&'a str],
-) -> impl Iterator<Item = &'static str> + std::iter::FusedIterator + Clone + 'a {
+) -> SilencedAtIter<'a> {
     SilencedAtIter {
         layers: layers.iter(),
         path,
@@ -5215,23 +5231,75 @@ pub fn silenced_at_iter<'a>(
     }
 }
 
-/// Drop-last adapter powering [`silenced_at_iter`]. Holds one buffered
-/// touching-layer name and one lookahead into the layer slice; yields
-/// the buffered name only when a subsequent toucher is found (i.e. the
-/// buffered layer is provably not the decider).
+/// Zero-allocation losers stream — the ordered names of every layer
+/// whose opinion at the queried path was overridden by the decider,
+/// coarse→specific, yielded as `&'static str`. The concrete return
+/// type of [`silenced_at_iter`] and the pre-materialization,
+/// free-function counterpart of the method-altitude
+/// [`PathContestSilencedIter`] on the same losers axis.
 ///
-/// Kept private: consumers see the anonymous
-/// `impl Iterator + FusedIterator + Clone + 'a` return type on
-/// [`silenced_at_iter`]. `#[derive(Clone)]` requires only that every
-/// field be `Clone`, which they are — [`std::slice::Iter`] is [`Clone`]
-/// unconditionally, [`Option<&'static str>`] and [`bool`] are [`Copy`],
-/// and `&'a [&'a str]` is a shared slice reference.
+/// Naming the return type at the API boundary (rather than
+/// `impl Trait + ...`) closes the naming asymmetry the pair
+/// (`silenced_at_iter`, `PathContest::silenced_iter`) previously
+/// carried at the concrete-type level — `PathContest::silenced_iter`
+/// names [`PathContestSilencedIter`] since 48a4868, and after this
+/// lift `silenced_at_iter` names `SilencedAtIter` — so both the
+/// free-function pre-materialization altitude and the method
+/// post-materialization altitude spell their losers-stream type
+/// publicly. Consumers storing the handle in a struct field or
+/// returning it up through their own API no longer smuggle an
+/// unnameable [`impl Trait`][impl-trait] across every seam.
+///
+/// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
+///
+/// # Trait algebra
+///
+/// Impls [`Iterator`] + [`std::iter::FusedIterator`] + [`Clone`] +
+/// [`Debug`][std::fmt::Debug]. Does *not* impl
+/// [`DoubleEndedIterator`] (the drop-last state machine buffers one
+/// lookahead in the forward direction — reverse traversal would need
+/// a look-back the pre-materialization altitude does not support) nor
+/// [`ExactSizeIterator`] (the per-layer `touches_path` predicate
+/// discards elements — the same reason the sibling
+/// [`contributors_at_iter`] cannot carry it). The paired method
+/// altitude iter [`PathContestSilencedIter`] carries both because the
+/// [`PathContest`] materialization amortizes the losers slice into
+/// the up-front cost. Consumers that want the length without
+/// materializing the stream reach for the peer scalar
+/// [`silenced_count_at`]; consumers that need reverse traversal reach
+/// for [`contest_at`] once and then walk [`PathContest::silenced_iter`].
+///
+/// # Field access
+///
+/// The struct fields are private — the public surface is the
+/// `Iterator` / `FusedIterator` / `Clone` trait impls plus the
+/// [`Debug`][std::fmt::Debug] impl below.
+///
+/// [`PathContestSilencedIter`]: crate::PathContestSilencedIter
 #[derive(Clone)]
-struct SilencedAtIter<'a> {
+pub struct SilencedAtIter<'a> {
     layers: std::slice::Iter<'a, &'a dyn DiscoveryLayer>,
     path: &'a [&'a str],
     buffered: Option<&'static str>,
     primed: bool,
+}
+
+impl std::fmt::Debug for SilencedAtIter<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Skip the `layers` field: `&dyn DiscoveryLayer` is not
+        // `Debug` (the trait deliberately does not require it, so
+        // consumers can implement it on non-`Debug` handles), so the
+        // underlying `slice::Iter` cannot forward `Debug` either.
+        // Report the cursor's remaining length instead — enough for
+        // a diagnostic dump to distinguish "just started" from
+        // "half-way through" without leaking the individual handles.
+        f.debug_struct("SilencedAtIter")
+            .field("layers_remaining", &self.layers.len())
+            .field("path", &self.path)
+            .field("buffered", &self.buffered)
+            .field("primed", &self.primed)
+            .finish()
+    }
 }
 
 impl<'a> SilencedAtIter<'a> {
@@ -15692,6 +15760,93 @@ mod tests {
                 .silenced_iter()
                 .next()
                 .is_none(),
+        );
+    }
+
+    #[test]
+    fn silenced_at_iter_return_type_is_nameable_silenced_at_iter() {
+        // The sharpen from `impl Iterator + FusedIterator + Clone + 'a`
+        // to the concrete `SilencedAtIter<'a>` lets consumers spell the
+        // return type. A struct field bound on `SilencedAtIter<'a>`
+        // holds the handle across a return without smuggling an
+        // unnameable `impl Trait` — the same field-storage compounding
+        // value the sibling `PathContestSilencedIter` closes on the
+        // method-altitude peer (48a4868). This test compiles ⇔ the
+        // sharpen holds; if the return type ever regresses back to
+        // `impl Trait`, this ceases to compile.
+        struct HoldsSilenced<'a> {
+            iter: SilencedAtIter<'a>,
+        }
+        let coarse = Fixed("platform", dict(&[("k", Value::from(1i64))]));
+        let mid = Fixed("cloud", dict(&[("k", Value::from(2i64))]));
+        let specific = Fixed("tenancy", dict(&[("k", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&coarse, &mid, &specific];
+        let path = ["k"];
+        let held = HoldsSilenced {
+            iter: silenced_at_iter(&layers, &path),
+        };
+        let out: Vec<&'static str> = held.iter.collect();
+        assert_eq!(out, vec!["platform", "cloud"]);
+    }
+
+    #[test]
+    fn silenced_at_iter_clone_preserves_static_traits() {
+        // The public struct carries `Clone` and `FusedIterator`. A
+        // trait-uniform helper that only accepts `Iterator +
+        // FusedIterator + Clone` on the named handle would fail to
+        // compile if either trait regressed — this test wires the
+        // compile-time proof to a runtime assertion.
+        fn requires_fused_clone<I>(_it: &I)
+        where
+            I: Iterator + std::iter::FusedIterator + Clone,
+        {
+        }
+        let coarse = Fixed("platform", dict(&[("k", Value::from(1i64))]));
+        let mid = Fixed("cloud", dict(&[("k", Value::from(2i64))]));
+        let specific = Fixed("tenancy", dict(&[("k", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&coarse, &mid, &specific];
+        let path = ["k"];
+        let it: SilencedAtIter<'_> = silenced_at_iter(&layers, &path);
+        requires_fused_clone(&it);
+        let clone = it.clone();
+        let via_original: Vec<&'static str> = it.collect();
+        let via_clone: Vec<&'static str> = clone.collect();
+        assert_eq!(
+            via_original, via_clone,
+            "cloned handle walks the same losers stream",
+        );
+    }
+
+    #[test]
+    fn silenced_at_iter_debug_impl_omits_layers_handle() {
+        // The public struct impls `Debug`, but the wrapped
+        // `slice::Iter<'_, &'_ dyn DiscoveryLayer>` is not `Debug`
+        // (the trait deliberately does not require it). The manual
+        // impl skips the raw layers cursor and reports its remaining
+        // length instead — enough for a diagnostic dump to
+        // distinguish "just started" from "half-way through" without
+        // leaking the individual handles. This test pins the impl at
+        // the string level to catch accidental regressions to
+        // `#[derive(Debug)]` (which would fail to compile) or a rename
+        // of the reported fields.
+        let coarse = Fixed("platform", dict(&[("k", Value::from(1i64))]));
+        let mid = Fixed("cloud", dict(&[("k", Value::from(2i64))]));
+        let specific = Fixed("tenancy", dict(&[("k", Value::from(3i64))]));
+        let layers: [&dyn DiscoveryLayer; 3] = [&coarse, &mid, &specific];
+        let path = ["k"];
+        let it: SilencedAtIter<'_> = silenced_at_iter(&layers, &path);
+        let rendered = format!("{it:?}");
+        assert!(
+            rendered.starts_with("SilencedAtIter"),
+            "Debug names the concrete struct: {rendered}",
+        );
+        assert!(
+            rendered.contains("layers_remaining"),
+            "Debug reports the remaining layer count: {rendered}",
+        );
+        assert!(
+            rendered.contains("path"),
+            "Debug reports the query path: {rendered}",
         );
     }
 
