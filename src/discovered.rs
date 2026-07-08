@@ -1176,6 +1176,125 @@ impl LayerAttribution {
             .collect()
     }
 
+    /// Zero-allocation iterator dual of [`Self::subtree_writes_of_layer`]
+    /// — streams the paths credited to `layer` **under (or at)** `prefix`
+    /// lazily, in lex path order, so callers that only want the head
+    /// (`.next()`), a positional match (`.find(_)` / `.position(_)`), a
+    /// bounded prefix (`.take(n)`), or the trailing subtree/writer count
+    /// (`.count()`) skip the obligatory `Vec<&'a [String]>` allocation
+    /// the collecting form always pays. Collecting through
+    /// `.collect::<Vec<_>>()` recovers [`Self::subtree_writes_of_layer`]
+    /// verbatim (the equivalence pin is
+    /// `subtree_writes_of_layer_iter_collect_matches_subtree_writes_of_layer`).
+    ///
+    /// The **2D-restricted iter seam** — the (subtree, single-layer,
+    /// iter) cell completing the four-cell grid of {path axis, layer
+    /// axis} × {restricted, free} on the iterator altitude, alongside
+    /// [`Self::subtree_iter`] (subtree × free × iter),
+    /// [`Self::writes_of_layer_iter`] (free × single-layer × iter), and
+    /// [`Self::iter`] (free × free × iter). Every `Vec`-returning
+    /// [`LayerAttribution`] seam that answers "which paths belong to
+    /// this filter?" now carries a matching zero-alloc iter dual whose
+    /// lazy pull replaces the obligatory collect. The peer scalar
+    /// [`Self::subtree_leaf_count_of_layer`]`(prefix, layer)` IS
+    /// `subtree_writes_of_layer_iter(prefix, layer).count()` — the two
+    /// seams share the same 2D-restricted predicate at the cardinality
+    /// projection.
+    ///
+    /// # Trait algebra
+    ///
+    /// The concrete return type
+    /// [`LayerAttributionSubtreeWritesOfLayerIter`] carries
+    /// [`Iterator`] + [`std::iter::FusedIterator`] + [`Clone`] +
+    /// [`Debug`][std::fmt::Debug]. The underlying
+    /// [`LayerAttributionSubtreeIter`] is Fused (its `exhausted` latch
+    /// pins [`None`] past the prefix boundary) and [`Clone`] (its
+    /// backing [`BTreeMap::range`] is [`Clone`] and the prefix reborrow
+    /// is [`Copy`]) — the per-layer filter preserves both invariants on
+    /// each pull.
+    ///
+    /// [`DoubleEndedIterator`] is structurally *not* carried — inherited
+    /// from [`LayerAttributionSubtreeIter`]: the prefix-boundary
+    /// take_while is a forward-only stopping condition, walking from
+    /// the back would need to know where the "would-stop" boundary
+    /// sits without walking forward. This matches [`Self::subtree_iter`]
+    /// (also forward-only) and is the reason the free-axis peer
+    /// [`Self::writes_of_layer_iter`] carries [`DoubleEndedIterator`]
+    /// (its backing [`std::collections::btree_map::Iter`] does) while
+    /// this restriction-axis peer does not. Callers that need the
+    /// subtree × single-layer stream in reverse order [`Iterator::collect`]
+    /// into a [`Vec`] and reverse it, or reach for [`Self::subtree`] and
+    /// call [`Self::writes_of_layer_iter`] on the fresh restricted
+    /// attribution whose backing iter is double-ended.
+    ///
+    /// [`ExactSizeIterator`] is structurally not carried — the
+    /// layer-name filter discards non-matching entries, matching the
+    /// free-axis peer [`Self::writes_of_layer_iter`]. Consumers that
+    /// want the length without materializing the stream reach for the
+    /// peer scalar-cardinality primitive
+    /// [`Self::subtree_leaf_count_of_layer`].
+    ///
+    /// Naming the return type at the API boundary (rather than
+    /// `impl Iterator<Item = ...> + ...`) exposes the
+    /// [`FusedIterator`][std::iter::FusedIterator] impl the substrate
+    /// structurally carries and gives callers a spellable type — a
+    /// diagnostic renderer storing the handle in a struct field or
+    /// returning it up through its own API no longer smuggles an
+    /// unnameable [`impl Trait`][impl-trait] across every seam, matching
+    /// the concrete-return invariant e235366 / ef26309 established on
+    /// [`Self::iter`] and [`Self::subtree_iter`].
+    ///
+    /// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
+    ///
+    /// # Cost
+    ///
+    /// `O(log n + m)` time in the worst case (one [`BTreeMap::range`]
+    /// seek to the subtree's first entry, a linear walk that halts at
+    /// the first non-prefixed key, one predicate check per entry), but
+    /// consumers that short-circuit (`.next()`, `.find(_)`, `.take(n)`)
+    /// pay only for the entries visited before the match. Zero heap
+    /// allocation for the iterator itself — the handle is a two-field
+    /// struct wrapping the [`LayerAttributionSubtreeIter`] and the
+    /// borrowed layer-name filter. A `.clone()` yields an independent
+    /// walk from the current cursor (both fields are Clone / Copy, so
+    /// the compound handle carries [`Clone`] at zero runtime cost).
+    ///
+    /// # Empty-prefix corner
+    ///
+    /// `subtree_writes_of_layer_iter(&[], layer)` matches every leaf
+    /// under `[]` and equals [`Self::writes_of_layer_iter`]`(layer)` on
+    /// the same input (same lex order, same filtered set, same
+    /// backing predicate).
+    ///
+    /// # Missing writer / missing subtree
+    ///
+    /// A `layer` name that never appears under the subtree — whether
+    /// the writer was silent globally, was purged under this subtree, or
+    /// never wrote here — yields the empty stream, mirroring
+    /// [`Self::subtree_writes_of_layer`]'s empty-vector semantics on the
+    /// same input. A `prefix` that names no subtree yields the empty
+    /// stream for every writer.
+    ///
+    /// # Prefix-extending sibling boundary
+    ///
+    /// Inherited from [`Self::subtree_iter`]: a lex-adjacent sibling
+    /// that shares the string prefix of the last `prefix` element but
+    /// is not a path descendant (e.g. `["breatheZ"]` vs prefix
+    /// `["breathe"]`) is correctly excluded — even when it belongs to
+    /// `layer` in the parent's [`Self::writes_of_layer_iter`]`(layer)`
+    /// stream.
+    #[must_use]
+    pub fn subtree_writes_of_layer_iter<'a>(
+        &'a self,
+        prefix: &'a [String],
+        layer: &'a str,
+    ) -> LayerAttributionSubtreeWritesOfLayerIter<'a> {
+        LayerAttributionSubtreeWritesOfLayerIter {
+            inner: self.subtree_iter(prefix),
+            layer,
+        }
+    }
+
     /// The **subtree × single-layer** dual of
     /// [`Self::leaf_counts_by_layer`]: the number of leaves credited
     /// to `layer` under (or at) `prefix`, without materializing the
@@ -2125,6 +2244,56 @@ impl DoubleEndedIterator for LayerAttributionWritesOfLayerIter<'_> {
 }
 
 impl std::iter::FusedIterator for LayerAttributionWritesOfLayerIter<'_> {}
+
+/// The concrete return type of
+/// [`LayerAttribution::subtree_writes_of_layer_iter`] — a thin
+/// two-field struct wrapping a [`LayerAttributionSubtreeIter`] and the
+/// borrowed layer-name filter that discards non-matching entries on
+/// each pull.
+///
+/// Impls [`Iterator`] + [`std::iter::FusedIterator`] + [`Clone`] +
+/// [`Debug`][std::fmt::Debug]. The (subtree, single-layer, iter) peer
+/// of [`LayerAttributionIter`] (free × free × iter),
+/// [`LayerAttributionSubtreeIter`] (subtree × free × iter), and
+/// [`LayerAttributionWritesOfLayerIter`] (free × single-layer × iter)
+/// on the [`LayerAttribution`] iterator algebra — every zero-allocation
+/// iterator return on the [`LayerAttribution`] surface now carries a
+/// named concrete type at the API boundary.
+///
+/// [`DoubleEndedIterator`] is structurally *not* carried — inherited
+/// from [`LayerAttributionSubtreeIter`]: the prefix-boundary
+/// stopping condition is forward-only, so walking from the back would
+/// need to locate the "would-stop" boundary without walking forward.
+/// This matches [`LayerAttributionSubtreeIter`] and is the reason
+/// [`LayerAttributionWritesOfLayerIter`] (whose backing
+/// [`std::collections::btree_map::Iter`] is double-ended) carries
+/// [`DoubleEndedIterator`] while this peer does not.
+///
+/// Not [`ExactSizeIterator`]: the layer-name filter discards entries so
+/// the number of remaining matches is not known without walking the
+/// backing range. Callers that need the length reach for the peer
+/// scalar [`LayerAttribution::subtree_leaf_count_of_layer`] — the
+/// counter-only projection on the same 2D-restricted predicate.
+#[derive(Debug, Clone)]
+pub struct LayerAttributionSubtreeWritesOfLayerIter<'a> {
+    inner: LayerAttributionSubtreeIter<'a>,
+    layer: &'a str,
+}
+
+impl<'a> Iterator for LayerAttributionSubtreeWritesOfLayerIter<'a> {
+    type Item = &'a [String];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let target = self.layer;
+        self.inner.find_map(|(p, l)| (l == target).then_some(p))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, self.inner.size_hint().1)
+    }
+}
+
+impl std::iter::FusedIterator for LayerAttributionSubtreeWritesOfLayerIter<'_> {}
 
 /// The result of composing a stack of [`DiscoveryLayer`]s with per-leaf
 /// provenance tracking.
@@ -19442,6 +19611,329 @@ mod tests {
         // any writer, mirroring writes_of_layer_empty_attribution_is_empty.
         let out = compose_with_provenance(&[]);
         assert_eq!(out.attribution.writes_of_layer_iter("any").next(), None);
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // subtree_writes_of_layer_iter — zero-alloc iter dual of
+    // subtree_writes_of_layer (2D-restricted single-writer stream)
+    // ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn subtree_writes_of_layer_iter_collect_matches_subtree_writes_of_layer() {
+        // The obligatory equivalence pin: collecting the iter form
+        // recovers the collecting form verbatim on every (prefix,
+        // layer) input — including surviving writers, the empty
+        // prefix, absent prefixes, and never-declared writers.
+        let out = subtree_fixture();
+        for prefix in [
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("nonexistent")],
+        ] {
+            for layer in ["coarse", "specific", "never-declared"] {
+                let iter: Vec<&[String]> = out
+                    .attribution
+                    .subtree_writes_of_layer_iter(&prefix, layer)
+                    .collect();
+                let collected = out.attribution.subtree_writes_of_layer(&prefix, layer);
+                assert_eq!(
+                    iter, collected,
+                    "iter.collect() at prefix {prefix:?} equals subtree_writes_of_layer({layer}) verbatim",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_writes_of_layer_iter_empty_prefix_equals_writes_of_layer_iter() {
+        // Empty-prefix corner: the 2D-restricted iter collapses to
+        // the top-level layer-axis iter verbatim on every surviving
+        // writer and on never-declared names — the iter-altitude
+        // counterpart of subtree_writes_of_layer_empty_prefix_equals_writes_of_layer.
+        let out = layer_axis_fixture();
+        for layer in out.attribution.surviving_layer_names() {
+            let sub: Vec<&[String]> = out
+                .attribution
+                .subtree_writes_of_layer_iter(&[], layer)
+                .collect();
+            let top: Vec<&[String]> = out.attribution.writes_of_layer_iter(layer).collect();
+            assert_eq!(
+                sub, top,
+                "empty prefix ⇒ subtree_writes_of_layer_iter({layer}) equals writes_of_layer_iter({layer})",
+            );
+        }
+        assert_eq!(
+            out.attribution
+                .subtree_writes_of_layer_iter(&[], "never-declared")
+                .next(),
+            None,
+            "empty prefix + never-declared writer ⇒ empty stream",
+        );
+    }
+
+    #[test]
+    fn subtree_writes_of_layer_iter_stops_at_prefix_extending_sibling() {
+        // The take_while boundary inherited from subtree_iter:
+        // `["breatheZ"]` (written by `specific`) is a top-level
+        // writes_of_layer_iter("specific") entry but is NOT a
+        // descendant of `["breathe"]`. The 2D-restricted iter correctly
+        // excludes it, even though the top-level iter DOES include it.
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        let sub: Vec<Vec<String>> = out
+            .attribution
+            .subtree_writes_of_layer_iter(&prefix, "specific")
+            .map(<[String]>::to_vec)
+            .collect();
+        assert!(
+            !sub.contains(&vec![s("breatheZ")]),
+            "prefix-extending sibling is excluded from the 2D-restricted iter",
+        );
+        let parent: Vec<Vec<String>> = out
+            .attribution
+            .writes_of_layer_iter("specific")
+            .map(<[String]>::to_vec)
+            .collect();
+        assert!(
+            parent.contains(&vec![s("breatheZ")]),
+            "the excluded sibling IS in the top-level layer-axis iter",
+        );
+    }
+
+    #[test]
+    fn subtree_writes_of_layer_iter_preserves_lex_order() {
+        // The 2D-restricted iter lands in the same lex order
+        // subtree_iter emits — the iter-altitude counterpart of
+        // subtree_writes_of_layer_preserves_lex_order.
+        let a = Fixed(
+            "A",
+            dict(&[
+                (
+                    "s",
+                    Value::from(dict(&[
+                        ("m", Value::from(3i64)),
+                        ("a", Value::from(dict(&[("y", Value::from(2i64))]))),
+                    ])),
+                ),
+                ("t", Value::from(4i64)),
+            ]),
+        );
+        let b = Fixed(
+            "B",
+            dict(&[("s", Value::from(dict(&[("p", Value::from(9i64))])))]),
+        );
+        let out = compose_with_provenance(&[&a, &b]);
+        let prefix = vec![s("s")];
+        let a_paths: Vec<Vec<String>> = out
+            .attribution
+            .subtree_writes_of_layer_iter(&prefix, "A")
+            .map(<[String]>::to_vec)
+            .collect();
+        assert_eq!(
+            a_paths,
+            vec![vec![s("s"), s("a"), s("y")], vec![s("s"), s("m")]],
+            "2D-restricted iter preserves lex path order under the subtree",
+        );
+    }
+
+    #[test]
+    fn subtree_writes_of_layer_iter_absent_prefix_is_empty_stream() {
+        // A prefix naming no subtree ⇒ subtree_iter yields nothing
+        // ⇒ every writer's 2D-restricted iter is empty on every pull.
+        let out = subtree_fixture();
+        for layer in ["coarse", "specific", "never-declared"] {
+            assert_eq!(
+                out.attribution
+                    .subtree_writes_of_layer_iter(&[s("nonexistent")], layer)
+                    .next(),
+                None,
+                "absent prefix ⇒ subtree_writes_of_layer_iter({layer}) is empty",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_writes_of_layer_iter_missing_writer_is_empty_stream() {
+        // A layer name that never wrote under the subtree yields the
+        // empty stream, matching subtree_writes_of_layer_missing_writer_is_empty.
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        assert_eq!(
+            out.attribution
+                .subtree_writes_of_layer_iter(&prefix, "never-declared")
+                .next(),
+            None,
+        );
+        // A writer active elsewhere but silent under the queried subtree
+        // ⇒ empty stream (subtree scope is a scope decision, not a
+        // never-written decision).
+        let elsewhere = Fixed("elsewhere", dict(&[("outside", Value::from(1i64))]));
+        let under = Fixed(
+            "under",
+            dict(&[("root", Value::from(dict(&[("leaf", Value::from(2i64))])))]),
+        );
+        let out2 = compose_with_provenance(&[&elsewhere, &under]);
+        assert_eq!(
+            out2.attribution
+                .subtree_writes_of_layer_iter(&[s("root")], "elsewhere")
+                .next(),
+            None,
+            "writer active elsewhere but silent under the subtree ⇒ empty stream",
+        );
+    }
+
+    #[test]
+    fn subtree_writes_of_layer_iter_count_matches_subtree_leaf_count_of_layer() {
+        // Cardinality projection identity: .count() on the 2D-restricted
+        // iter equals the peer scalar subtree_leaf_count_of_layer on
+        // every (prefix, layer), including surviving writers, absent
+        // prefixes, and never-declared writers. The iter-altitude
+        // counterpart of writes_of_layer_iter_count_matches_leaf_count_of_layer.
+        let out = subtree_fixture();
+        for prefix in [
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("nonexistent")],
+        ] {
+            for layer in ["coarse", "specific", "never-declared"] {
+                let iter_count = out
+                    .attribution
+                    .subtree_writes_of_layer_iter(&prefix, layer)
+                    .count();
+                let scalar_count = out.attribution.subtree_leaf_count_of_layer(&prefix, layer);
+                assert_eq!(
+                    iter_count, scalar_count,
+                    "iter.count() at prefix {prefix:?} equals subtree_leaf_count_of_layer({layer})",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn subtree_writes_of_layer_iter_clone_yields_independent_walks() {
+        // Clone pin: cloning the handle mid-walk yields an independent
+        // cursor. The clone's walk starts from where the original was,
+        // and neither walk perturbs the other. Iter-altitude
+        // counterpart of writes_of_layer_iter_clone_yields_independent_walks.
+        let a = Fixed(
+            "A",
+            dict(&[(
+                "s",
+                Value::from(dict(&[
+                    ("a", Value::from(1i64)),
+                    ("b", Value::from(2i64)),
+                    ("c", Value::from(3i64)),
+                ])),
+            )]),
+        );
+        let out = compose_with_provenance(&[&a]);
+        let prefix = vec![s("s")];
+        let mut walk_a = out.attribution.subtree_writes_of_layer_iter(&prefix, "A");
+        let first = walk_a.next();
+        assert_eq!(first, Some([s("s"), s("a")].as_slice()));
+        let mut walk_b = walk_a.clone();
+        // walk_b resumes from walk_a's current cursor.
+        assert_eq!(walk_a.next(), walk_b.next());
+        assert_eq!(walk_a.next(), walk_b.next());
+        assert_eq!(walk_a.next(), None);
+        assert_eq!(walk_b.next(), None);
+        // A fresh iter walks from the beginning again.
+        let mut fresh = out.attribution.subtree_writes_of_layer_iter(&prefix, "A");
+        assert_eq!(fresh.next(), first);
+    }
+
+    #[test]
+    fn subtree_writes_of_layer_iter_is_fused_past_exhaustion() {
+        // FusedIterator pin: past exhaustion the iter stays pinned at
+        // None. The underlying subtree_iter is Fused (its `exhausted`
+        // latch); the per-layer filter preserves the contract.
+        let out = subtree_fixture();
+        let prefix = vec![s("breathe")];
+        let mut it = out
+            .attribution
+            .subtree_writes_of_layer_iter(&prefix, "coarse");
+        while it.next().is_some() {}
+        for _ in 0..8 {
+            assert_eq!(it.next(), None, "fused past exhaustion (forward)");
+        }
+    }
+
+    #[test]
+    fn subtree_writes_of_layer_iter_head_short_circuits_without_full_sweep() {
+        // Compounding value: .next() yields the head without walking
+        // the whole subtree. A three-writer subtree with the target
+        // writer at the first lex key under the prefix confirms the
+        // short-circuit returns the correct path.
+        let a = Fixed(
+            "target",
+            dict(&[("sub", Value::from(dict(&[("aaa", Value::from(1i64))])))]),
+        );
+        let b = Fixed(
+            "peer",
+            dict(&[(
+                "sub",
+                Value::from(dict(&[
+                    ("bbb", Value::from(2i64)),
+                    ("ccc", Value::from(3i64)),
+                    ("ddd", Value::from(4i64)),
+                ])),
+            )]),
+        );
+        let out = compose_with_provenance(&[&a, &b]);
+        let prefix = [s("sub")];
+        let head = out
+            .attribution
+            .subtree_writes_of_layer_iter(&prefix, "target")
+            .next();
+        assert_eq!(head, Some([s("sub"), s("aaa")].as_slice()));
+    }
+
+    #[test]
+    fn subtree_writes_of_layer_iter_find_locates_positional_match() {
+        // Compounding value: .find(_) short-circuits at the first
+        // predicate hit under the subtree. A three-path writer with
+        // the target leaf in the middle confirms find() halts there
+        // without visiting trailing entries.
+        let a = Fixed(
+            "A",
+            dict(&[(
+                "sub",
+                Value::from(dict(&[
+                    ("aaa", Value::from(1i64)),
+                    ("mmm", Value::from(2i64)),
+                    ("zzz", Value::from(3i64)),
+                ])),
+            )]),
+        );
+        let out = compose_with_provenance(&[&a]);
+        let prefix = [s("sub")];
+        let hit = out
+            .attribution
+            .subtree_writes_of_layer_iter(&prefix, "A")
+            .find(|p| p.last().is_some_and(|s| s == "mmm"));
+        assert_eq!(hit, Some([s("sub"), s("mmm")].as_slice()));
+    }
+
+    #[test]
+    fn subtree_writes_of_layer_iter_empty_attribution_is_empty_stream() {
+        // Empty-attribution boundary: no leaves means no matches for
+        // any (prefix, writer) — the iter-altitude counterpart of
+        // subtree_writes_of_layer's empty-attribution behavior.
+        let out = compose_with_provenance(&[]);
+        assert_eq!(
+            out.attribution
+                .subtree_writes_of_layer_iter(&[], "any")
+                .next(),
+            None,
+        );
+        assert_eq!(
+            out.attribution
+                .subtree_writes_of_layer_iter(&[s("root")], "any")
+                .next(),
+            None,
+        );
     }
 
     /// Test-side clone helper — the `Fixed` layer is deliberately
