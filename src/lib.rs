@@ -116,6 +116,6 @@ pub use source::{
 pub use store::ConfigStore;
 pub use tiered::{
     ConfigDiff, ConfigTier, ConfigTierKind, DiffLine, DiffLineKind, ProgressiveLayer,
-    ProgressiveResolution, Provenance, ProvenanceMap, TieredConfig,
+    ProgressiveResolution, Provenance, ProvenanceMap, ProvenanceMapEntries, TieredConfig,
 };
 pub use watcher::{ConfigWatcher, WatchEventClass, symlink_target};

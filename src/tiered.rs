@@ -704,8 +704,27 @@ impl ProvenanceMap {
     }
 
     /// Sorted `(path, provenance)` entries, lexicographic by path.
-    pub fn entries(&self) -> impl Iterator<Item = (&[String], &Provenance)> + '_ {
-        self.inner.iter().map(|(k, v)| (k.as_slice(), v))
+    ///
+    /// Naming the return type at the API boundary (rather than
+    /// `impl Iterator<Item = ...> + '_`) exposes the full trait algebra
+    /// the underlying [`BTreeMap::iter`][std::collections::BTreeMap::iter]
+    /// walker structurally carries — [`DoubleEndedIterator`],
+    /// [`ExactSizeIterator`], [`std::iter::FusedIterator`], and
+    /// [`Clone`] — and lets consumers hold the handle in a struct field
+    /// or return it up through their own API without smuggling an
+    /// unnameable [`impl Trait`][impl-trait] across every seam. The
+    /// tier-level peer of the concrete-typed
+    /// [`crate::discovered::LayerAttribution::iter`] on the discovered
+    /// altitude: both walkers project the same
+    /// `(&[String], &Attribution)` pair shape, and both spell their
+    /// concrete return type at the API boundary.
+    ///
+    /// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
+    #[must_use]
+    pub fn entries(&self) -> ProvenanceMapEntries<'_> {
+        ProvenanceMapEntries {
+            inner: self.inner.iter(),
+        }
     }
 
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
@@ -723,6 +742,80 @@ impl ProvenanceMap {
         seen
     }
 }
+
+/// Zero-allocation `(&[String], &Provenance)` stream over the sorted
+/// leaves of a [`ProvenanceMap`], lexicographic by path.
+///
+/// The concrete return type of [`ProvenanceMap::entries`]. Naming the
+/// handle at the API boundary (rather than
+/// `impl Iterator<Item = (&[String], &Provenance)> + '_`) exposes the
+/// full trait algebra the underlying [`BTreeMap`]-backed walker
+/// structurally carries — [`DoubleEndedIterator`],
+/// [`ExactSizeIterator`], [`std::iter::FusedIterator`], and
+/// [`Clone`] — and lets consumers hold the handle in a struct field or
+/// return it up through their own API without smuggling an unnameable
+/// [`impl Trait`][impl-trait] across every seam. Closes the last
+/// `impl Iterator`-returning surface on `tiered.rs`, matching the
+/// concrete-return invariant every free-function iter dual on
+/// `discovered.rs` (whole-layer: [`crate::ContributorNamesIter`],
+/// [`crate::LayerNamesIter`], [`crate::SilentLayerNamesIter`],
+/// [`crate::NonemptyLayerDictsIter`]; point-restricted:
+/// [`crate::ContributorsAtIter`], [`crate::SilencedAtIter`]) already
+/// carries.
+///
+/// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
+///
+/// # Trait algebra
+///
+/// Impls [`Iterator`] + [`DoubleEndedIterator`] +
+/// [`ExactSizeIterator`] + [`std::iter::FusedIterator`] + [`Clone`] +
+/// [`Debug`][std::fmt::Debug]. The underlying
+/// [`std::collections::btree_map::Iter`] carries the same trait algebra
+/// on any `(Vec<String>, Provenance)` map, so this newtype forwards
+/// each impl seam-for-seam with the projection
+/// `(&Vec<String>, &Provenance) → (&[String], &Provenance)` (via
+/// [`Vec::as_slice`]) applied at every `.next()` / `.next_back()`
+/// pull. The projection preserves element count, so
+/// [`ExactSizeIterator`] survives at the type level — the tier-level
+/// peer of [`crate::discovered::LayerAttribution::iter`]'s
+/// [`crate::LayerAttributionIter`] concrete handle.
+///
+/// # Field access
+///
+/// The struct fields are private — the public surface is the
+/// `Iterator` / `DoubleEndedIterator` / `ExactSizeIterator` /
+/// `FusedIterator` / `Clone` trait impls plus the
+/// [`Debug`][std::fmt::Debug] derive.
+#[derive(Clone, Debug)]
+pub struct ProvenanceMapEntries<'a> {
+    inner: std::collections::btree_map::Iter<'a, Vec<String>, Provenance>,
+}
+
+impl<'a> Iterator for ProvenanceMapEntries<'a> {
+    type Item = (&'a [String], &'a Provenance);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(|(k, v)| (k.as_slice(), v))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for ProvenanceMapEntries<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back().map(|(k, v)| (k.as_slice(), v))
+    }
+}
+
+impl ExactSizeIterator for ProvenanceMapEntries<'_> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for ProvenanceMapEntries<'_> {}
 
 // ── ProgressiveLayer — one operator overlay in the progressive fold ──
 
@@ -2343,6 +2436,114 @@ mod progressive_tests {
                 vec!["c".to_string()],
                 vec!["d".to_string()],
             ],
+        );
+    }
+
+    #[test]
+    fn provenance_map_entries_return_type_is_nameable_provenance_map_entries() {
+        // Pin the sharpen at the type-signature level: a struct field bound
+        // on `ProvenanceMapEntries<'a>` holds the handle across a return.
+        // This test compiles iff the sharpen holds; if `entries()` ever
+        // regresses back to `impl Trait`, this ceases to compile because
+        // `impl Trait` return types are unnameable at struct-field bounds.
+        struct Held<'a> {
+            walker: ProvenanceMapEntries<'a>,
+        }
+        fn hold(map: &ProvenanceMap) -> Held<'_> {
+            Held {
+                walker: map.entries(),
+            }
+        }
+        let r = Prog::resolve_progressive();
+        let mut h = hold(r.provenance());
+        assert!(h.walker.next().is_some());
+    }
+
+    #[test]
+    fn provenance_map_entries_clone_preserves_static_traits() {
+        // A static bound accepting Iterator + DoubleEndedIterator +
+        // ExactSizeIterator + FusedIterator + Clone verifies the full
+        // trait algebra survives the sharpen at compile time — the
+        // tier-level dual of the same triple-trait pair pinned on the
+        // discovered-altitude siblings, with ExactSizeIterator added
+        // because the projection preserves element count (unlike the
+        // filtered discovered-side iters). Then a runtime cross-walk
+        // asserts the cloned walker yields the same (path, provenance)
+        // pair stream as the original.
+        fn assert_algebra<'a, I>(_: &I)
+        where
+            I: Iterator<Item = (&'a [String], &'a Provenance)>
+                + DoubleEndedIterator
+                + ExactSizeIterator
+                + std::iter::FusedIterator
+                + Clone,
+        {
+        }
+        let r = Prog::resolve_progressive();
+        let it = r.provenance().entries();
+        assert_algebra(&it);
+        let cloned = it.clone();
+        let a: Vec<Vec<String>> = it.map(|(p, _)| p.to_vec()).collect();
+        let b: Vec<Vec<String>> = cloned.map(|(p, _)| p.to_vec()).collect();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn provenance_map_entries_next_back_walks_specific_to_coarse() {
+        // Pin the DoubleEndedIterator impl at the runtime level: the tail
+        // cursor walks the sorted BTreeMap in reverse, yielding leaves
+        // from lexicographically last to first. Catches a regression to
+        // a single-ended state machine.
+        let r = Prog::resolve_progressive();
+        let mut it = r.provenance().entries();
+        let (last, _) = it.next_back().unwrap();
+        assert_eq!(last, &["d".to_string()][..]);
+        let (before_last, _) = it.next_back().unwrap();
+        assert_eq!(before_last, &["c".to_string()][..]);
+        let (head, _) = it.next().unwrap();
+        assert_eq!(head, &["a".to_string()][..]);
+        // Exhaust: the two remaining pulls from opposite ends meet at the
+        // last surviving element `b`, then both cursors report `None`.
+        let (mid, _) = it.next_back().unwrap();
+        assert_eq!(mid, &["b".to_string()][..]);
+        assert!(it.next().is_none());
+        assert!(it.next_back().is_none());
+    }
+
+    #[test]
+    fn provenance_map_entries_len_matches_remaining_pulls() {
+        // Pin the ExactSizeIterator impl: `len()` reports the exact
+        // remaining count at every seam. The projection
+        // `(&Vec<String>, &Provenance) → (&[String], &Provenance)` is
+        // element-preserving (unlike the filter-based discovered-side
+        // iters), so `len()` is honored at the type level.
+        let r = Prog::resolve_progressive();
+        let mut it = r.provenance().entries();
+        assert_eq!(it.len(), 4);
+        it.next();
+        assert_eq!(it.len(), 3);
+        it.next_back();
+        assert_eq!(it.len(), 2);
+        it.next();
+        it.next_back();
+        assert_eq!(it.len(), 0);
+        assert!(it.next().is_none());
+    }
+
+    #[test]
+    fn provenance_map_entries_debug_impl_names_the_struct() {
+        // Pin the derived Debug impl at the format-string level: the
+        // rendered output names the struct (`ProvenanceMapEntries`).
+        // The inner `BTreeMap::Iter` forwards its own Debug, which
+        // renders every remaining (path, provenance) pair — enough
+        // to distinguish "just started" from "half-way through"
+        // without a manual impl.
+        let r = Prog::resolve_progressive();
+        let it = r.provenance().entries();
+        let s = format!("{it:?}");
+        assert!(
+            s.contains("ProvenanceMapEntries"),
+            "Debug output should name the struct type, got: {s}"
         );
     }
 
