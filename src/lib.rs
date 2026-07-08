@@ -74,8 +74,9 @@ pub use cube::{
 };
 pub use discovered::{
     DiscoveryComposition, DiscoveryLayer, LayerAttribution, LayerAttributionIntoIter,
-    LayerAttributionIter, LayerAttributionLayerRankingIter, LayerAttributionSubtreeIter,
-    LayerAttributionSubtreeLayerRankingIter, LayerAttributionSubtreeSurvivingLayerNamesIter,
+    LayerAttributionIter, LayerAttributionLayerRankingIter, LayerAttributionLeafCountsByLayerIter,
+    LayerAttributionSubtreeIter, LayerAttributionSubtreeLayerRankingIter,
+    LayerAttributionSubtreeLeafCountsByLayerIter, LayerAttributionSubtreeSurvivingLayerNamesIter,
     LayerAttributionSubtreeWritesOfLayerIter, LayerAttributionSurvivingLayerNamesIter,
     LayerAttributionWritesOfLayerIter, PathContest, PathContestContributorsIter,
     PathContestSilencedIter, coarsest_at, coarsest_silenced_at, compose as compose_discovery,

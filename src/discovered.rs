@@ -456,6 +456,88 @@ impl LayerAttribution {
         out
     }
 
+    /// Zero-allocation iterator dual of [`Self::leaf_counts_by_layer`]
+    /// — streams every surviving `(layer, count)` pair lazily, in the
+    /// same lex order on layer name the collecting form emits (the
+    /// underlying [`BTreeMap`]'s ordering), so callers that only want
+    /// the head (`.next()`), a positional match (`.find(_)` /
+    /// `.position(_)`), a bounded prefix (`.take(n)`), the exact
+    /// distinct-writer count (`.len()` / `.count()`), the reverse walk
+    /// (`.rev()`), or the trailing (largest lex-name) pair
+    /// (`.next_back()` / `.last()`) skip the [`BTreeMap`] the
+    /// collecting form materializes at the API boundary. Collecting
+    /// through `.collect::<BTreeMap<_, _>>()` recovers
+    /// [`Self::leaf_counts_by_layer`] verbatim; the equivalence pin is
+    /// `leaf_counts_by_layer_iter_collect_matches_leaf_counts_by_layer`
+    /// in this module's test cohort.
+    ///
+    /// The concrete return type is
+    /// [`LayerAttributionLeafCountsByLayerIter`], a thin single-field
+    /// newtype around
+    /// [`std::collections::btree_map::IntoIter<&'static str, usize>`][std::collections::btree_map::IntoIter].
+    /// Naming the return type at the API boundary (rather than
+    /// `impl DoubleEndedIterator<Item = ...> + ...`) exposes the
+    /// [`ExactSizeIterator`] and [`std::iter::FusedIterator`] impls
+    /// the substrate structurally carries and gives callers a
+    /// spellable type — matching the concrete-return invariant every
+    /// zero-allocation iterator return on the [`LayerAttribution`]
+    /// surface obeys.
+    ///
+    /// **Trait algebra.** The returned iterator carries
+    /// [`DoubleEndedIterator`], [`ExactSizeIterator`], and
+    /// [`std::iter::FusedIterator`] on top of [`Iterator`], plus
+    /// [`Debug`][std::fmt::Debug]. [`Clone`] is *not* carried — the
+    /// underlying [`std::collections::btree_map::IntoIter`] consumes
+    /// the source [`BTreeMap`] and is not [`Clone`]-able. This
+    /// matches the same consuming asymmetry
+    /// [`LayerAttributionSurvivingLayerNamesIter`] and
+    /// [`LayerAttributionIntoIter`] carry against their borrowing
+    /// peers.
+    ///
+    /// **Cost.** `O(n log k)` in the constructor — one pass over
+    /// `self.inner.values()`, one [`BTreeMap`] counter increment per
+    /// leaf (via [`Self::leaf_counts_by_layer`]) — where `n` is the
+    /// leaf count and `k` is the distinct-writer count. Once
+    /// constructed, `.next()` / `.next_back()` / `.len()` are `O(log k)`
+    /// amortized on the underlying
+    /// [`std::collections::btree_map::IntoIter`]. Consumers that
+    /// short-circuit before draining still pay the `O(n log k)`
+    /// constructor — the counter discipline cannot be deferred past
+    /// the first pull because writer names arrive in path-order via
+    /// [`std::collections::btree_map::Values`], not in lex-name order.
+    /// The counter [`BTreeMap`] itself is inevitable (the histogram is
+    /// defined by a group-by on writer name), but the caller doesn't
+    /// materialize a second map on top.
+    ///
+    /// **`.last()` in `O(1)`.** The overridden [`Iterator::last`]
+    /// routes through [`DoubleEndedIterator::next_back`] on the
+    /// underlying [`std::collections::btree_map::IntoIter`], so the
+    /// trailing pair lands directly instead of draining the whole
+    /// stream — clippy's `double_ended_iterator_last` lint fires on
+    /// the default impl on any [`DoubleEndedIterator`], so the
+    /// override closes the compounding value at the impl altitude for
+    /// every consumer.
+    ///
+    /// **Empty attribution.** An empty attribution yields the empty
+    /// stream and reports `.len() == 0` / `.size_hint() == (0,
+    /// Some(0))` at `O(1)` without probing values.
+    ///
+    /// **Cross-projection identity.** For every attribution:
+    /// `leaf_counts_by_layer_iter().map(|(n, _)| n)` equals
+    /// [`Self::surviving_layer_names_iter`] pointwise (both stream in
+    /// lex-on-name order and share the same key set), and the sum of
+    /// every emitted `count` equals [`Self::len`] verbatim. The pair
+    /// ordering is the *lex-on-name* dual of
+    /// [`Self::layer_ranking_iter`]'s count-descending / lex-name
+    /// ascending order — the two iter surfaces close the {lex-name,
+    /// count-desc} × iter grid on the histogram axis.
+    #[must_use]
+    pub fn leaf_counts_by_layer_iter(&self) -> LayerAttributionLeafCountsByLayerIter {
+        LayerAttributionLeafCountsByLayerIter {
+            inner: self.leaf_counts_by_layer().into_iter(),
+        }
+    }
+
     /// Compact name-set companion to [`Self::writes_by_layer`] and
     /// [`Self::leaf_counts_by_layer`]: every [`DiscoveryLayer`] with
     /// at least one live leaf in the attribution, in the same lex
@@ -964,6 +1046,92 @@ impl LayerAttribution {
             *out.entry(layer).or_insert(0) += 1;
         }
         out
+    }
+
+    /// The **subtree-restricted iter dual** of
+    /// [`Self::subtree_leaf_counts_by_layer`]: streams every surviving
+    /// `(layer, count)` pair whose writer touched at least one leaf
+    /// under (or at) `prefix`, in the same lex order on layer name
+    /// (the underlying [`BTreeMap`]'s ordering) the collecting form
+    /// emits. A `prefix` of `&[]` equals
+    /// [`Self::leaf_counts_by_layer_iter`] pointwise; a `prefix` that
+    /// names no subtree yields the empty iterator.
+    ///
+    /// The concrete return type is
+    /// [`LayerAttributionSubtreeLeafCountsByLayerIter`], a thin
+    /// single-field newtype around
+    /// [`std::collections::btree_map::IntoIter<&'static str, usize>`][std::collections::btree_map::IntoIter].
+    /// Impls [`Iterator`] + [`DoubleEndedIterator`] +
+    /// [`ExactSizeIterator`] + [`std::iter::FusedIterator`] +
+    /// [`Debug`][std::fmt::Debug]. Matches the concrete-return
+    /// invariant every zero-alloc iterator return on the
+    /// [`LayerAttribution`] surface obeys, and mirrors the free-axis
+    /// peer [`LayerAttributionLeafCountsByLayerIter`] at the subtree
+    /// altitude — the same trait algebra powers both.
+    ///
+    /// **Zero final map on short-circuit consumers.** Consumers
+    /// scoped to one subsystem's per-writer counts — a per-subtree
+    /// health-check gauge that only reads the head via `.next()`, a
+    /// diagnostics banner reporting a bounded prefix via `.take(k)`,
+    /// a per-subtree exact-count via `.len()` — reach for the iter
+    /// surface at zero final [`BTreeMap`] cost instead of paying the
+    /// [`BTreeMap<&'static str, usize>`] allocation the collecting
+    /// form materializes at the API boundary. The counter
+    /// [`BTreeMap`] itself is inevitable (the histogram is defined by
+    /// a group-by on writer name), but the caller doesn't materialize
+    /// a second map on top.
+    ///
+    /// **`.last()` in `O(1)`.** The overridden [`Iterator::last`]
+    /// routes through [`DoubleEndedIterator::next_back`] on the
+    /// underlying [`std::collections::btree_map::IntoIter`], so the
+    /// trailing (largest lex-name) pair lands directly instead of
+    /// draining the whole stream — clippy's
+    /// `double_ended_iterator_last` lint fires on the default impl
+    /// on any [`DoubleEndedIterator`], so the override closes the
+    /// compounding value at the impl altitude for every consumer.
+    ///
+    /// # Cost
+    ///
+    /// `O(log n + m + k')` time and `O(k')` space, identical to
+    /// [`Self::subtree_leaf_counts_by_layer`] — one
+    /// [`BTreeMap::range`] seek to the subtree's first entry, a
+    /// linear walk that halts at the first non-prefixed key (via
+    /// [`Self::subtree_iter`]), one [`BTreeMap`] counter increment
+    /// per matching leaf, one wrap into the iter handle. The final
+    /// [`BTreeMap<&'static str, usize>`] the collecting form
+    /// allocates at the API boundary is not paid when consumers
+    /// short-circuit on the iter surface.
+    ///
+    /// # Cross-projection identity
+    ///
+    /// For every prefix and every attribution:
+    /// `subtree_leaf_counts_by_layer_iter(prefix).map(|(n, _)| n)`
+    /// equals [`Self::subtree_surviving_layer_names_iter`]`(prefix)`
+    /// pointwise (both stream in lex-on-name order and share the same
+    /// key set), and the sum of every emitted `count` equals
+    /// [`Self::subtree_iter`]`(prefix).count()` verbatim. The pair
+    /// ordering is the *lex-on-name* dual of
+    /// [`Self::subtree_layer_ranking_iter`]'s count-descending /
+    /// lex-name ascending order — the two iter surfaces close the
+    /// {lex-name, count-desc} × iter grid on the subtree histogram
+    /// axis.
+    ///
+    /// # Fused exhaustion
+    ///
+    /// The returned iterator is [`std::iter::FusedIterator`]: once
+    /// the underlying [`std::collections::btree_map::IntoIter`]
+    /// drains, subsequent pulls pin at [`None`]. Composite consumers
+    /// relying on the fused contract (`.chain`, `.peekable`,
+    /// `.by_ref`) get the invariant spelled at the type-signature
+    /// altitude.
+    #[must_use]
+    pub fn subtree_leaf_counts_by_layer_iter(
+        &self,
+        prefix: &[String],
+    ) -> LayerAttributionSubtreeLeafCountsByLayerIter {
+        LayerAttributionSubtreeLeafCountsByLayerIter {
+            inner: self.subtree_leaf_counts_by_layer(prefix).into_iter(),
+        }
     }
 
     /// The **subtree-restricted** dual of [`Self::writes_by_layer`]:
@@ -3019,6 +3187,172 @@ impl ExactSizeIterator for LayerAttributionSubtreeSurvivingLayerNamesIter {
 }
 
 impl std::iter::FusedIterator for LayerAttributionSubtreeSurvivingLayerNamesIter {}
+
+/// The concrete return type of
+/// [`LayerAttribution::leaf_counts_by_layer_iter`] — a thin
+/// single-field newtype around
+/// [`std::collections::btree_map::IntoIter<&'static str, usize>`][std::collections::btree_map::IntoIter]
+/// that streams every surviving `(layer, count)` pair in the same
+/// lex order on layer name (the underlying [`BTreeMap`]'s ordering)
+/// [`LayerAttribution::leaf_counts_by_layer`] emits when iterated.
+///
+/// Impls [`Iterator`], [`DoubleEndedIterator`],
+/// [`ExactSizeIterator`], [`std::iter::FusedIterator`], and
+/// [`Debug`][std::fmt::Debug]. [`Clone`] is *not* carried — the
+/// underlying [`std::collections::btree_map::IntoIter`] consumes the
+/// source [`BTreeMap`] and is not [`Clone`]-able. This matches the
+/// same consuming asymmetry
+/// [`LayerAttributionSurvivingLayerNamesIter`] and
+/// [`LayerAttributionIntoIter`] carry against their borrowing peers.
+///
+/// The **lex-on-name** dual of
+/// [`LayerAttributionLayerRankingIter`] on the histogram axis —
+/// where the ranking iter streams `(name, count)` pairs in
+/// count-descending / lex-name-ascending order, this peer streams
+/// them in the natural lex-on-name order every other
+/// `BTreeMap<&'static str, _>` seam on [`LayerAttribution`]
+/// ([`LayerAttribution::writes_by_layer`],
+/// [`LayerAttribution::leaf_counts_by_layer`],
+/// [`LayerAttribution::surviving_layer_names`]) already iterates.
+/// Together with [`LayerAttributionSurvivingLayerNamesIter`] on the
+/// name-only axis, the three peers close the {name-only, name+count}
+/// × {lex-name, count-desc} × iter grid at the top-level altitude.
+///
+/// **Trait algebra.** [`ExactSizeIterator`] survives — the
+/// constructor already collected the histogram into a [`BTreeMap`]
+/// whose [`std::collections::btree_map::IntoIter`] carries the
+/// known-length contract, so consumers reading `.len()` /
+/// `.size_hint()` see the exact distinct-writer count at `O(1)`
+/// without walking the stream. [`DoubleEndedIterator`] survives on
+/// the same backing type — consumers reaching for the trailing
+/// (largest lex-name) pair via `.next_back()` / `.last()` skip the
+/// full forward scan the collecting form pays.
+///
+/// The [`Iterator::last`] default is overridden to route through
+/// [`DoubleEndedIterator::next_back`], so `.last()` finds the
+/// trailing pair in one reverse step instead of draining the whole
+/// iterator — clippy's `double_ended_iterator_last` lint fires on
+/// the default impl on any [`DoubleEndedIterator`], so the override
+/// closes the compounding value at the impl altitude for every
+/// consumer without them having to reach for `.next_back()`.
+#[derive(Debug)]
+pub struct LayerAttributionLeafCountsByLayerIter {
+    inner: std::collections::btree_map::IntoIter<&'static str, usize>,
+}
+
+impl Iterator for LayerAttributionLeafCountsByLayerIter {
+    type Item = (&'static str, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+
+    fn count(self) -> usize {
+        self.inner.count()
+    }
+
+    fn last(mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl DoubleEndedIterator for LayerAttributionLeafCountsByLayerIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl ExactSizeIterator for LayerAttributionLeafCountsByLayerIter {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for LayerAttributionLeafCountsByLayerIter {}
+
+/// The concrete return type of
+/// [`LayerAttribution::subtree_leaf_counts_by_layer_iter`] — a thin
+/// single-field newtype around
+/// [`std::collections::btree_map::IntoIter<&'static str, usize>`][std::collections::btree_map::IntoIter]
+/// that streams every `(layer, count)` pair whose writer touched at
+/// least one leaf under (or at) a `prefix`, in the same lex order on
+/// layer name (the underlying [`BTreeMap`]'s ordering)
+/// [`LayerAttribution::subtree_leaf_counts_by_layer`] emits when
+/// iterated.
+///
+/// The subtree-restricted, iter-altitude peer of
+/// [`LayerAttributionLeafCountsByLayerIter`] — same trait algebra,
+/// same counter discipline, restricted to a subtree via
+/// [`LayerAttribution::subtree_iter`].
+///
+/// Impls [`Iterator`], [`DoubleEndedIterator`],
+/// [`ExactSizeIterator`], [`std::iter::FusedIterator`], and
+/// [`Debug`][std::fmt::Debug]. [`Clone`] is *not* carried — the
+/// underlying [`std::collections::btree_map::IntoIter`] consumes the
+/// source [`BTreeMap`] and is not [`Clone`]-able. This matches the
+/// same consuming asymmetry
+/// [`LayerAttributionLeafCountsByLayerIter`] carries at the
+/// free-axis altitude.
+///
+/// **Trait algebra.** [`ExactSizeIterator`] survives — the
+/// constructor already collected the subtree histogram into a
+/// [`BTreeMap`] whose [`std::collections::btree_map::IntoIter`]
+/// carries the known-length contract, so consumers reading `.len()`
+/// / `.size_hint()` see the exact subtree-distinct-writer count at
+/// `O(1)` without walking the stream. [`DoubleEndedIterator`]
+/// survives on the same backing type — consumers reaching for the
+/// trailing (largest lex-name) pair via `.next_back()` / `.last()`
+/// skip the full forward scan the collecting form pays.
+///
+/// The [`Iterator::last`] default is overridden to route through
+/// [`DoubleEndedIterator::next_back`], so `.last()` finds the
+/// trailing pair in one reverse step instead of draining the whole
+/// iterator — clippy's `double_ended_iterator_last` lint fires on
+/// the default impl on any [`DoubleEndedIterator`], so the override
+/// closes the compounding value at the impl altitude for every
+/// consumer without them having to reach for `.next_back()`.
+#[derive(Debug)]
+pub struct LayerAttributionSubtreeLeafCountsByLayerIter {
+    inner: std::collections::btree_map::IntoIter<&'static str, usize>,
+}
+
+impl Iterator for LayerAttributionSubtreeLeafCountsByLayerIter {
+    type Item = (&'static str, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+
+    fn count(self) -> usize {
+        self.inner.count()
+    }
+
+    fn last(mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl DoubleEndedIterator for LayerAttributionSubtreeLeafCountsByLayerIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl ExactSizeIterator for LayerAttributionSubtreeLeafCountsByLayerIter {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for LayerAttributionSubtreeLeafCountsByLayerIter {}
 
 /// The concrete return type of
 /// [`LayerAttribution::layer_ranking_iter`] — a thin single-field
@@ -10351,6 +10685,462 @@ mod tests {
         assert_eq!(iter.next(), None);
         assert_eq!(iter.next(), None);
         assert_eq!(iter.next(), None);
+    }
+
+    // -------- leaf_counts_by_layer_iter --------
+
+    #[test]
+    fn leaf_counts_by_layer_iter_collect_matches_leaf_counts_by_layer() {
+        // Core equivalence pin: collecting the iter dual into a
+        // BTreeMap reproduces the collecting form verbatim across a
+        // stack that mixes writers whose layer names are NOT
+        // lex-monotone in application order. If the iter yielded in
+        // path-order (rather than lex-name order) the two would
+        // diverge as BTreeMaps.
+        let z = Fixed(
+            "Z",
+            dict(&[
+                ("path_first", Value::from(1i64)),
+                ("z_leaf", Value::from(9i64)),
+            ]),
+        );
+        let a = Fixed(
+            "A",
+            dict(&[
+                ("a", Value::from(dict(&[("y", Value::from(2i64))]))),
+                ("m", Value::from(3i64)),
+            ]),
+        );
+        let m = Fixed("M", dict(&[("q", Value::from(4i64))]));
+        let out = compose_with_provenance(&[&z, &a, &m]);
+        assert_eq!(
+            out.attribution
+                .leaf_counts_by_layer_iter()
+                .collect::<BTreeMap<_, _>>(),
+            out.attribution.leaf_counts_by_layer(),
+            "iter dual collects to the same BTreeMap as the collecting form",
+        );
+    }
+
+    #[test]
+    fn leaf_counts_by_layer_iter_empty_attribution_is_empty_stream() {
+        // Empty-source boundary: no leaves ⇒ zero-length stream.
+        // ExactSizeIterator::len reads zero without walking pairs, and
+        // size_hint agrees at O(1).
+        let empty = compose_with_provenance(&[]);
+        let iter = empty.attribution.leaf_counts_by_layer_iter();
+        assert_eq!(iter.len(), 0);
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+        assert_eq!(
+            empty
+                .attribution
+                .leaf_counts_by_layer_iter()
+                .collect::<Vec<_>>(),
+            Vec::<(&'static str, usize)>::new(),
+        );
+    }
+
+    #[test]
+    fn leaf_counts_by_layer_iter_len_equals_distinct_writer_count() {
+        // ExactSizeIterator::len and size_hint report the exact
+        // distinct-writer count at O(1), matching
+        // leaf_counts_by_layer().len() verbatim.
+        let a = Fixed("platform", dict(&[("k1", Value::from(1i64))]));
+        let b = Fixed(
+            "tenancy",
+            dict(&[("k2", Value::from(2i64)), ("k3", Value::from(3i64))]),
+        );
+        let out = compose_with_provenance(&[&a, &b]);
+        let iter = out.attribution.leaf_counts_by_layer_iter();
+        let expected = out.attribution.leaf_counts_by_layer().len();
+        assert_eq!(iter.len(), expected);
+        assert_eq!(iter.size_hint(), (expected, Some(expected)));
+    }
+
+    #[test]
+    fn leaf_counts_by_layer_iter_yields_lex_order_on_layer_name() {
+        // The seven-writer-like fixture with application-order names
+        // not matching lex-name order pins the ordering axis: the
+        // iter emits in BTreeMap order (lex on layer name), not
+        // path-order and not application-order. Counts propagate
+        // pointwise.
+        let z = Fixed("Z", dict(&[("z", Value::from(1i64))]));
+        let a = Fixed(
+            "A",
+            dict(&[("a1", Value::from(2i64)), ("a2", Value::from(3i64))]),
+        );
+        let m = Fixed("M", dict(&[("m", Value::from(4i64))]));
+        let out = compose_with_provenance(&[&z, &a, &m]);
+        let seq: Vec<_> = out.attribution.leaf_counts_by_layer_iter().collect();
+        assert_eq!(seq, vec![("A", 2), ("M", 1), ("Z", 1)]);
+    }
+
+    #[test]
+    fn leaf_counts_by_layer_iter_next_is_first_lex_name_entry() {
+        // `.next()` short-circuits at the first (lex-first) entry
+        // without materializing the tail. Regardless of application
+        // order, the head names the smallest lex writer with its
+        // count.
+        let z = Fixed("Z", dict(&[("z", Value::from(1i64))]));
+        let a = Fixed(
+            "A",
+            dict(&[("a", Value::from(2i64)), ("b", Value::from(3i64))]),
+        );
+        let out = compose_with_provenance(&[&z, &a]);
+        assert_eq!(
+            out.attribution.leaf_counts_by_layer_iter().next(),
+            Some(("A", 2)),
+        );
+    }
+
+    #[test]
+    fn leaf_counts_by_layer_iter_next_back_is_last_lex_name_entry() {
+        // `.next_back()` (equivalently `.last()`) names the largest
+        // lex writer with its count. Overridden `.last()` routes
+        // through `.next_back()` on the underlying
+        // BTreeMap::IntoIter — the trailing pair lands directly
+        // instead of draining the whole stream.
+        let z = Fixed("Z", dict(&[("z", Value::from(1i64))]));
+        let a = Fixed(
+            "A",
+            dict(&[("a", Value::from(2i64)), ("b", Value::from(3i64))]),
+        );
+        let out = compose_with_provenance(&[&z, &a]);
+        let tail = out.attribution.leaf_counts_by_layer_iter().next_back();
+        assert_eq!(tail, Some(("Z", 1)));
+        assert_eq!(out.attribution.leaf_counts_by_layer_iter().last(), tail);
+    }
+
+    #[test]
+    fn leaf_counts_by_layer_iter_rev_matches_iter_reversed() {
+        // DoubleEndedIterator::rev matches the collecting form's
+        // BTreeMap iterated in reverse — confirms the
+        // BTreeMap::IntoIter DoubleEnded contract survives at the
+        // histogram altitude.
+        let z = Fixed("Z", dict(&[("z", Value::from(1i64))]));
+        let a = Fixed("A", dict(&[("a", Value::from(2i64))]));
+        let m = Fixed("M", dict(&[("m", Value::from(3i64))]));
+        let out = compose_with_provenance(&[&z, &a, &m]);
+        let mut expected: Vec<(&'static str, usize)> =
+            out.attribution.leaf_counts_by_layer().into_iter().collect();
+        expected.reverse();
+        assert_eq!(
+            out.attribution
+                .leaf_counts_by_layer_iter()
+                .rev()
+                .collect::<Vec<_>>(),
+            expected,
+        );
+    }
+
+    #[test]
+    fn leaf_counts_by_layer_iter_names_match_surviving_layer_names_iter() {
+        // Cross-projection identity on the name axis: dropping the
+        // count column from the histogram iter yields exactly the
+        // name-only iter — the two iter surfaces close the
+        // {name-only, name+count} × lex-name × iter grid on the
+        // free axis. Pointwise equality holds because both stream
+        // in the same lex-on-name order and share the same key set.
+        let z = Fixed("Z", dict(&[("z", Value::from(1i64))]));
+        let a = Fixed(
+            "A",
+            dict(&[("a", Value::from(2i64)), ("b", Value::from(3i64))]),
+        );
+        let m = Fixed("M", dict(&[("m", Value::from(4i64))]));
+        let out = compose_with_provenance(&[&z, &a, &m]);
+        let via_counts: Vec<&'static str> = out
+            .attribution
+            .leaf_counts_by_layer_iter()
+            .map(|(n, _)| n)
+            .collect();
+        let via_names: Vec<&'static str> = out.attribution.surviving_layer_names_iter().collect();
+        assert_eq!(via_counts, via_names);
+    }
+
+    #[test]
+    fn leaf_counts_by_layer_iter_counts_sum_to_len() {
+        // Partition-count law at the iter altitude: the sum of every
+        // emitted count equals `LayerAttribution::len` verbatim — the
+        // histogram partitions the leaf set by winning writer.
+        let z = Fixed("Z", dict(&[("z", Value::from(1i64))]));
+        let a = Fixed(
+            "A",
+            dict(&[("a", Value::from(2i64)), ("b", Value::from(3i64))]),
+        );
+        let m = Fixed("M", dict(&[("m", Value::from(4i64))]));
+        let out = compose_with_provenance(&[&z, &a, &m]);
+        let total: usize = out
+            .attribution
+            .leaf_counts_by_layer_iter()
+            .map(|(_, c)| c)
+            .sum();
+        assert_eq!(total, out.attribution.len());
+    }
+
+    #[test]
+    fn leaf_counts_by_layer_iter_take_short_circuits_at_lex_prefix() {
+        // `.take(k)` short-circuits at the first k (lex-name) pairs —
+        // no materialization of the tail, and pointwise agreement
+        // with a slice of the collecting form's BTreeMap iteration.
+        let z = Fixed("Z", dict(&[("z", Value::from(1i64))]));
+        let a = Fixed("A", dict(&[("a", Value::from(2i64))]));
+        let m = Fixed("M", dict(&[("m", Value::from(3i64))]));
+        let out = compose_with_provenance(&[&z, &a, &m]);
+        let full: Vec<(&'static str, usize)> =
+            out.attribution.leaf_counts_by_layer().into_iter().collect();
+        for k in 0..=full.len() {
+            let via_iter: Vec<_> = out
+                .attribution
+                .leaf_counts_by_layer_iter()
+                .take(k)
+                .collect();
+            assert_eq!(via_iter, full[..k].to_vec(), "top-{k} lex slice");
+        }
+    }
+
+    #[test]
+    fn leaf_counts_by_layer_iter_fused_after_exhaustion() {
+        // FusedIterator contract: past exhaustion, subsequent pulls
+        // pin at None. Composite consumers relying on the fused
+        // contract (`.chain`, `.peekable`, `.by_ref`) get the
+        // invariant spelled at the type-signature altitude.
+        let a = Fixed("only", dict(&[("k", Value::from(1i64))]));
+        let out = compose_with_provenance(&[&a]);
+        let mut iter = out.attribution.leaf_counts_by_layer_iter();
+        assert_eq!(iter.next(), Some(("only", 1)));
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next(), None);
+        assert_eq!(iter.next(), None);
+    }
+
+    // -------- subtree_leaf_counts_by_layer_iter --------
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_iter_collect_matches_subtree_leaf_counts_by_layer() {
+        // Core equivalence pin at the subtree altitude: collecting
+        // the iter dual into a BTreeMap reproduces the collecting
+        // form verbatim across every prefix in the shared
+        // subtree-cohort fixture — same lex-on-name order, same
+        // per-writer count.
+        let out = subtree_fixture();
+        for prefix in [
+            vec![],
+            vec![s("breathe")],
+            vec![s("alpha")],
+            vec![s("nonexistent")],
+        ] {
+            assert_eq!(
+                out.attribution
+                    .subtree_leaf_counts_by_layer_iter(&prefix)
+                    .collect::<BTreeMap<_, _>>(),
+                out.attribution.subtree_leaf_counts_by_layer(&prefix),
+                "iter dual collects to the same BTreeMap at {prefix:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_iter_empty_prefix_matches_leaf_counts_by_layer_iter() {
+        // Empty-prefix identity at the iter altitude: the
+        // subtree-restricted iter dual at `&[]` is pointwise equal to
+        // the top-level iter dual — the same identity
+        // `subtree_leaf_counts_by_layer(&[]) == leaf_counts_by_layer()`
+        // lifts through the BTreeMap::IntoIter path to the iter
+        // altitude.
+        for out in [subtree_fixture(), inversion_fixture(), layer_axis_fixture()] {
+            assert_eq!(
+                out.attribution
+                    .subtree_leaf_counts_by_layer_iter(&[])
+                    .collect::<Vec<_>>(),
+                out.attribution
+                    .leaf_counts_by_layer_iter()
+                    .collect::<Vec<_>>(),
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_iter_empty_attribution_is_empty_stream() {
+        // Empty-source boundary at every prefix: no leaves ⇒
+        // zero-length stream. ExactSizeIterator::len reads zero
+        // without walking pairs, and size_hint agrees at O(1).
+        let empty = compose_with_provenance(&[]);
+        for prefix in [vec![], vec![s("any")], vec![s("nested"), s("under")]] {
+            let iter = empty.attribution.subtree_leaf_counts_by_layer_iter(&prefix);
+            assert_eq!(iter.len(), 0, "empty attribution at {prefix:?}");
+            assert_eq!(iter.size_hint(), (0, Some(0)));
+            assert_eq!(
+                empty
+                    .attribution
+                    .subtree_leaf_counts_by_layer_iter(&prefix)
+                    .collect::<Vec<_>>(),
+                Vec::<(&'static str, usize)>::new(),
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_iter_absent_prefix_is_empty_stream() {
+        // A prefix that names no subtree yields the empty stream —
+        // the range walk halts before accumulating any pair, and the
+        // BTreeMap::IntoIter-backed ExactSizeIterator reports zero.
+        let out = subtree_fixture();
+        let iter = out
+            .attribution
+            .subtree_leaf_counts_by_layer_iter(&[s("nonexistent")]);
+        assert_eq!(iter.len(), 0);
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+        assert_eq!(
+            out.attribution
+                .subtree_leaf_counts_by_layer_iter(&[s("nonexistent")])
+                .collect::<Vec<_>>(),
+            Vec::<(&'static str, usize)>::new(),
+        );
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_iter_len_equals_distinct_writer_count_under_subtree() {
+        // ExactSizeIterator::len and size_hint report the exact
+        // subtree-distinct-writer count at O(1), matching
+        // subtree_leaf_counts_by_layer(prefix).len() verbatim across
+        // the fixture's prefixes.
+        let out = subtree_fixture();
+        for prefix in [vec![], vec![s("breathe")], vec![s("alpha")]] {
+            let iter = out.attribution.subtree_leaf_counts_by_layer_iter(&prefix);
+            let expected = out.attribution.subtree_leaf_counts_by_layer(&prefix).len();
+            assert_eq!(iter.len(), expected, "len at {prefix:?}");
+            assert_eq!(iter.size_hint(), (expected, Some(expected)));
+        }
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_iter_names_match_subtree_surviving_layer_names_iter() {
+        // Cross-projection identity at the subtree altitude:
+        // dropping the count column from the subtree histogram iter
+        // yields exactly the subtree name-only iter — closes the
+        // {name-only, name+count} × lex-name × iter grid on the
+        // subtree axis. Pointwise equality holds because both stream
+        // in the same lex-on-name order and share the same key set.
+        let out = subtree_fixture();
+        for prefix in [vec![], vec![s("breathe")], vec![s("alpha")]] {
+            let via_counts: Vec<&'static str> = out
+                .attribution
+                .subtree_leaf_counts_by_layer_iter(&prefix)
+                .map(|(n, _)| n)
+                .collect();
+            let via_names: Vec<&'static str> = out
+                .attribution
+                .subtree_surviving_layer_names_iter(&prefix)
+                .collect();
+            assert_eq!(via_counts, via_names, "at {prefix:?}");
+        }
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_iter_counts_sum_to_subtree_leaf_count() {
+        // Partition-count law at the subtree iter altitude: the sum
+        // of every emitted count equals subtree_iter(prefix).count()
+        // verbatim — the subtree histogram partitions the subtree's
+        // leaf set by winning writer.
+        let out = subtree_fixture();
+        for prefix in [vec![], vec![s("breathe")], vec![s("alpha")]] {
+            let total: usize = out
+                .attribution
+                .subtree_leaf_counts_by_layer_iter(&prefix)
+                .map(|(_, c)| c)
+                .sum();
+            assert_eq!(
+                total,
+                out.attribution.subtree_iter(&prefix).count(),
+                "sum at {prefix:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_iter_stops_at_prefix_extending_sibling_key() {
+        // The `["breatheZ"]` vs prefix `["breathe"]` boundary from
+        // subtree_iter propagates through the BTreeMap::IntoIter
+        // path — the sibling's writer is NOT credited against the
+        // `breathe.*` subtree even though the top-level histogram
+        // DOES include it. Pins the boundary condition at the
+        // subtree altitude on the histogram axis.
+        let out = subtree_fixture();
+        let global_names: std::collections::BTreeSet<&'static str> = out
+            .attribution
+            .leaf_counts_by_layer_iter()
+            .map(|(n, _)| n)
+            .collect();
+        let subtree_names: std::collections::BTreeSet<&'static str> = out
+            .attribution
+            .subtree_leaf_counts_by_layer_iter(&[s("breathe")])
+            .map(|(n, _)| n)
+            .collect();
+        // Subtree names ⊆ global names.
+        assert!(
+            subtree_names.is_subset(&global_names),
+            "subtree names ⊆ global names",
+        );
+        // The `specific` writer contributes 1 leaf under `breathe`
+        // (setpoint), NOT 2 — the `breatheZ` sibling is excluded.
+        let counts: BTreeMap<&'static str, usize> = out
+            .attribution
+            .subtree_leaf_counts_by_layer_iter(&[s("breathe")])
+            .collect();
+        assert_eq!(counts.get("specific").copied(), Some(1));
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_iter_head_and_tail_track_lex_endpoints() {
+        // `.next()` names the smallest lex writer with its count;
+        // `.next_back()` (and the overridden `.last()`) names the
+        // largest lex writer with its count. Pinned across the
+        // subtree fixture's prefixes.
+        let out = subtree_fixture();
+        for prefix in [vec![], vec![s("breathe")]] {
+            let head = out
+                .attribution
+                .subtree_leaf_counts_by_layer_iter(&prefix)
+                .next();
+            let expected_head = out
+                .attribution
+                .subtree_leaf_counts_by_layer(&prefix)
+                .into_iter()
+                .next();
+            assert_eq!(head, expected_head, "head at {prefix:?}");
+            let tail = out
+                .attribution
+                .subtree_leaf_counts_by_layer_iter(&prefix)
+                .next_back();
+            let expected_tail = out
+                .attribution
+                .subtree_leaf_counts_by_layer(&prefix)
+                .into_iter()
+                .next_back();
+            assert_eq!(tail, expected_tail, "tail at {prefix:?}");
+            assert_eq!(
+                out.attribution
+                    .subtree_leaf_counts_by_layer_iter(&prefix)
+                    .last(),
+                tail,
+                "overridden .last() at {prefix:?} matches .next_back()",
+            );
+        }
+    }
+
+    #[test]
+    fn subtree_leaf_counts_by_layer_iter_fused_after_exhaustion() {
+        // FusedIterator contract at the subtree altitude: past
+        // exhaustion, subsequent pulls pin at None across every
+        // prefix.
+        let out = subtree_fixture();
+        for prefix in [vec![], vec![s("breathe")], vec![s("nonexistent")]] {
+            let mut iter = out.attribution.subtree_leaf_counts_by_layer_iter(&prefix);
+            while iter.next().is_some() {}
+            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next(), None);
+            assert_eq!(iter.next(), None);
+        }
     }
 
     // -------- silent_layer_names --------
