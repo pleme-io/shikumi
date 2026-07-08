@@ -92,8 +92,14 @@
 //!    config field without thinking about its bare value fails the
 //!    test.
 
+use crate::discovered::{DiscoveryLayer, compose, deep_merge, deep_merge_attributed};
+use crate::source::ConfigSource;
+use figment::value::Dict;
+use figment::{Figment, providers::Serialized};
 use serde::{Serialize, de::DeserializeOwned};
+use std::collections::BTreeMap;
 use std::env;
+use std::path::PathBuf;
 
 // ── ConfigTierKind — variant-tag projection of ConfigTier
 
@@ -409,12 +415,413 @@ pub trait TieredConfig: Sized + Clone + Serialize + DeserializeOwned {
         Self::resolve_tier(ConfigTier::from_env(env_var))
     }
 
+    /// **The sealed progressive fold — the first-class default resolution.**
+    ///
+    /// Folds every tier in [`ConfigTier`] precedence order —
+    /// `bare() → discovered() → prescribed_default()` — into ONE resolved
+    /// config, stamping each effective leaf with the typed [`Provenance`]
+    /// of the tier that produced it. This is the entry point the ~90%
+    /// "default" path should reach for: unlike
+    /// [`Self::resolve_tier`]`(`[`ConfigTier::Default`]`)` — which returns
+    /// `prescribed_default()` *alone* and so silently skips discovery — the
+    /// fold composes the [`Self::discovered`] auto-detect tier *underneath*
+    /// the curated defaults, so a value the environment detected shows
+    /// through wherever `prescribed_default()` doesn't override it.
+    ///
+    /// [`Self::resolve_tier`] / [`Self::resolve_from_env`] are unchanged:
+    /// they pick ONE baseline tier (legacy single-tier semantics preserved).
+    /// This method is the additive, provenance-carrying FOLD across all
+    /// tiers — the (value, provenance) pair is co-constructed here and
+    /// returned together, so a progressively-resolved value is never
+    /// separable from its provenance.
+    #[must_use]
+    fn resolve_progressive() -> ProgressiveResolution<Self> {
+        Self::resolve_progressive_with(&[])
+    }
+
+    /// [`Self::resolve_progressive`] with operator `overlays` (file / env /
+    /// runtime override) appended above the three trait tiers.
+    ///
+    /// Each [`ProgressiveLayer`] carries its own [`Provenance`]; the fold
+    /// **stable-sorts the whole layer stack by the const [`ConfigTierKind`]
+    /// [`crate::ClosedAxis`] precedence ordinal BEFORE merging**, so no
+    /// input ordering can let a lower tier beat a higher one — the
+    /// precedence IS the ordering, structurally (a mis-ordered overlay is
+    /// re-sorted to its tier's rank; same-tier overlays keep caller order).
+    ///
+    /// Attribution is **last-changer**: a leaf is credited to the highest
+    /// tier that set it to its final value, so a `prescribed_default()`
+    /// built on `discovered()` that re-emits a detected value unchanged
+    /// leaves that leaf credited to `Discovered`, not `Default`.
+    #[must_use]
+    fn resolve_progressive_with(overlays: &[ProgressiveLayer]) -> ProgressiveResolution<Self> {
+        // 1. Assemble the three trait tiers, each serialized to a dict and
+        //    tagged with its computed-defaults provenance.
+        let mut layers: Vec<(Provenance, Dict)> = vec![
+            (
+                Provenance::computed(ConfigTierKind::Bare),
+                tiered_to_dict(&Self::bare()),
+            ),
+            (
+                Provenance::computed(ConfigTierKind::Discovered),
+                tiered_to_dict(&Self::discovered()),
+            ),
+            (
+                Provenance::computed(ConfigTierKind::Default),
+                tiered_to_dict(&Self::prescribed_default()),
+            ),
+        ];
+        layers.extend(
+            overlays
+                .iter()
+                .map(|ov| (ov.provenance().clone(), ov.dict().clone())),
+        );
+        // 2. Order by the const ConfigTierKind ClosedAxis ordinal. A stable
+        //    sort keeps same-tier overlays (e.g. two files) in caller order.
+        layers.sort_by_key(|(prov, _)| prov.tier_ordinal());
+
+        // 3. Fold with per-leaf, change-aware provenance attribution — the
+        //    ONLY construction path for a progressively-resolved provenance
+        //    map, so "a lower tier silently beats a higher one" has no path.
+        let mut merged = Dict::new();
+        let mut attribution: BTreeMap<Vec<String>, Provenance> = BTreeMap::new();
+        for (prov, dict) in layers {
+            deep_merge_attributed(&mut merged, dict, &[], &prov, &mut attribution, true);
+        }
+
+        // 4. Materialize `Self` from the folded dict. Every input is a valid
+        //    `Self` serialization (or an operator overlay merged over one),
+        //    so extraction succeeds; the defensive fallback keeps totality.
+        let value = Figment::new()
+            .merge(Serialized::defaults(&merged))
+            .extract::<Self>()
+            .unwrap_or_else(|_| Self::prescribed_default());
+        ProgressiveResolution {
+            value,
+            provenance: ProvenanceMap { inner: attribution },
+        }
+    }
+
+    /// Low-ceremony standard seam for wiring the [`Self::discovered`] tier
+    /// from a declarative stack of [`DiscoveryLayer`]s (typically one per
+    /// `kanchi` axis-group) instead of hand-rolling a struct literal.
+    ///
+    /// `bare()` is the floor; the [`compose`]d discovery dict deep-merges
+    /// over it per leaf, so an undetectable axis (empty dict) degenerates
+    /// cleanly to the bare value — **discovery totality by construction**
+    /// (`kanchi`'s `Option<T>` + `_or_fallback` never panics, and an
+    /// empty-dict layer is a no-op here). A consumer's whole `discovered()`
+    /// collapses to:
+    ///
+    /// ```ignore
+    /// fn discovered() -> Self {
+    ///     Self::discovered_from_layers(&[&WindowLayer, &FontLayer])
+    /// }
+    /// ```
+    ///
+    /// where each layer's [`DiscoveryLayer::discover`] returns a partial
+    /// dict built from `kanchi::detect_*_or_fallback()` — no per-consumer
+    /// merge code, and the same [`compose`] machinery that already powers
+    /// [`crate::ProviderChain::with_discovery_layers`].
+    #[must_use]
+    fn discovered_from_layers(layers: &[&dyn DiscoveryLayer]) -> Self {
+        let mut merged = tiered_to_dict(&Self::bare());
+        deep_merge(&mut merged, compose(layers));
+        Figment::new()
+            .merge(Serialized::defaults(&merged))
+            .extract::<Self>()
+            .unwrap_or_else(|_| Self::bare())
+    }
+
     /// Diff `self` against `baseline`. Default: serialize both to
     /// YAML and produce a line-oriented diff.
     fn diff_against(&self, baseline: &Self) -> ConfigDiff {
         let a = serde_yaml::to_string(baseline).unwrap_or_default();
         let b = serde_yaml::to_string(self).unwrap_or_default();
         ConfigDiff::from_yaml_pair(&a, &b)
+    }
+}
+
+/// Serialize a tiered value into a figment [`Dict`] for the progressive
+/// fold. A value that serializes to a non-dict shape (no struct-shaped
+/// config does) yields an empty dict — the fold then treats that tier as
+/// contributing nothing, never panicking. This is the exact
+/// `Serialized::defaults(_)` mechanism [`crate::ProviderChain::with_discovered`]
+/// already uses, run in the extract direction.
+fn tiered_to_dict<T: Serialize>(value: &T) -> Dict {
+    Figment::new()
+        .merge(Serialized::defaults(value))
+        .extract::<Dict>()
+        .unwrap_or_default()
+}
+
+// ── Provenance — the typed (tier, source) origin of an effective value ──
+
+/// The typed origin of one effective configuration value: **which
+/// [`ConfigTier`] and which [`ConfigSource`]** produced it.
+///
+/// A [`Provenance`] composes the two provenance primitives shikumi already
+/// owns — the [`ConfigTierKind`] closed axis (which conceptual tier) and
+/// the [`ConfigSource`] closed enum (which provider kind, with its file
+/// path / env prefix payload) — into the pair the progressive fold stamps
+/// per leaf. The three computed tiers (`bare` / `discovered` / `prescribed`)
+/// carry [`ConfigSource::Defaults`] — the same layer-kind
+/// [`crate::ProviderChain::with_discovered`] records for machine-derived
+/// layers; operator overlays carry [`ConfigSource::File`] /
+/// [`ConfigSource::Env`].
+///
+/// Precedence — "which tier outranks which" — is read from the const
+/// [`ConfigTierKind`] [`crate::ClosedAxis`] declaration order via
+/// [`Self::tier_ordinal`]; it is never re-minted here.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Provenance {
+    tier: ConfigTierKind,
+    source: ConfigSource,
+}
+
+impl Provenance {
+    /// Construct a provenance from an explicit `(tier, source)` pair.
+    #[must_use]
+    pub fn new(tier: ConfigTierKind, source: ConfigSource) -> Self {
+        Self { tier, source }
+    }
+
+    /// A computed-defaults tier (`bare` / `discovered` / `prescribed`):
+    /// source is [`ConfigSource::Defaults`] — machine-derived, not
+    /// operator-supplied.
+    #[must_use]
+    pub fn computed(tier: ConfigTierKind) -> Self {
+        Self {
+            tier,
+            source: ConfigSource::Defaults,
+        }
+    }
+
+    /// An operator FILE overlay — tier [`ConfigTierKind::Custom`], source
+    /// [`ConfigSource::File`].
+    #[must_use]
+    pub fn file(path: impl Into<PathBuf>) -> Self {
+        Self {
+            tier: ConfigTierKind::Custom,
+            source: ConfigSource::File(path.into()),
+        }
+    }
+
+    /// An operator ENV overlay — tier [`ConfigTierKind::Custom`], source
+    /// [`ConfigSource::Env`] with the given prefix.
+    #[must_use]
+    pub fn env(prefix: impl Into<String>) -> Self {
+        Self {
+            tier: ConfigTierKind::Custom,
+            source: ConfigSource::Env(prefix.into()),
+        }
+    }
+
+    /// The conceptual tier that produced the value.
+    #[must_use]
+    pub fn tier(&self) -> ConfigTierKind {
+        self.tier
+    }
+
+    /// The provider source that produced the value.
+    #[must_use]
+    pub fn source(&self) -> &ConfigSource {
+        &self.source
+    }
+
+    /// The const [`crate::ClosedAxis`] precedence ordinal of this
+    /// provenance's tier — the single source of truth for "which tier
+    /// outranks which" (reused from [`ConfigTierKind`]'s declaration order,
+    /// never re-minted). A higher ordinal wins in the progressive fold.
+    #[must_use]
+    pub fn tier_ordinal(&self) -> usize {
+        crate::axis_ordinal(self.tier)
+    }
+}
+
+impl std::fmt::Display for Provenance {
+    /// Typed emission: the tier label ([`ConfigTierKind::as_str`]) plus the
+    /// source detail (env prefix / file path) rendered through the typed
+    /// [`ConfigSource`] — no free-form string composition.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.tier.as_str())?;
+        match &self.source {
+            ConfigSource::Defaults => Ok(()),
+            ConfigSource::Env(prefix) => write!(f, " (env: {prefix})"),
+            ConfigSource::File(path) => write!(f, " (file: {})", path.display()),
+        }
+    }
+}
+
+// ── ProvenanceMap — per-leaf provenance of a resolved config ──
+
+/// Per-leaf provenance for a progressively-resolved config: the
+/// [`Provenance`] of the tier that produced every effective leaf.
+///
+/// Keys are dotted-path components (`Vec<String>`) so keys containing `.`
+/// round-trip unambiguously; ordered lexicographically ([`BTreeMap`]
+/// iteration) for deterministic dumps. The tier-level peer of
+/// [`crate::discovered::LayerAttribution`] (which attributes discovery-layer
+/// leaves to a `&'static str` layer name) — both are produced by the one
+/// generic [`deep_merge_attributed`] fold, differing only in the
+/// attribution codomain.
+///
+/// Constructed **only** by [`TieredConfig::resolve_progressive`] /
+/// [`TieredConfig::resolve_progressive_with`]; seeded from `bare()` (which
+/// enumerates every field), so every leaf of the resolved config has a
+/// provenance entry by construction.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProvenanceMap {
+    inner: BTreeMap<Vec<String>, Provenance>,
+}
+
+impl ProvenanceMap {
+    /// Number of leaves attributed. Equal to the leaf count of the
+    /// resolved config (`bare()` seeds every leaf).
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// True iff no leaves are attributed.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    /// [`Provenance`] of the effective leaf named by dotted `path`, or
+    /// [`None`] if `path` names no leaf in the resolved config.
+    #[must_use]
+    pub fn provenance_of(&self, path: &[&str]) -> Option<&Provenance> {
+        self.provenance_of_owned(&path.iter().map(|&s| s.to_owned()).collect::<Vec<String>>())
+    }
+
+    /// Allocation-free variant of [`Self::provenance_of`] for callers that
+    /// already carry an owned path.
+    #[must_use]
+    pub fn provenance_of_owned(&self, path: &[String]) -> Option<&Provenance> {
+        self.inner.get(path)
+    }
+
+    /// Sorted `(path, provenance)` entries, lexicographic by path.
+    pub fn entries(&self) -> impl Iterator<Item = (&[String], &Provenance)> + '_ {
+        self.inner.iter().map(|(k, v)| (k.as_slice(), v))
+    }
+
+    /// The distinct tiers that produced ≥1 surviving effective leaf, in
+    /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
+    /// opinions survived".
+    #[must_use]
+    pub fn contributing_tiers(&self) -> Vec<ConfigTierKind> {
+        let mut seen: Vec<ConfigTierKind> = Vec::new();
+        for prov in self.inner.values() {
+            if !seen.contains(&prov.tier) {
+                seen.push(prov.tier);
+            }
+        }
+        seen.sort_by_key(|k| crate::axis_ordinal(*k));
+        seen
+    }
+}
+
+// ── ProgressiveLayer — one operator overlay in the progressive fold ──
+
+/// One operator overlay contribution to
+/// [`TieredConfig::resolve_progressive_with`]: a partial config [`Dict`]
+/// tagged with the [`Provenance`] to stamp on every leaf it wins.
+///
+/// Typically built from the operator's file / env layer via
+/// [`Self::file`] / [`Self::env`]; the fold appends it above the three
+/// trait tiers and re-sorts by tier precedence, so a caller cannot place
+/// an overlay out of precedence order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProgressiveLayer {
+    provenance: Provenance,
+    dict: Dict,
+}
+
+impl ProgressiveLayer {
+    /// Construct an overlay from an explicit provenance + partial dict.
+    #[must_use]
+    pub fn new(provenance: Provenance, dict: Dict) -> Self {
+        Self { provenance, dict }
+    }
+
+    /// An operator FILE overlay — [`Provenance::file`].
+    #[must_use]
+    pub fn file(path: impl Into<PathBuf>, dict: Dict) -> Self {
+        Self {
+            provenance: Provenance::file(path),
+            dict,
+        }
+    }
+
+    /// An operator ENV overlay — [`Provenance::env`].
+    #[must_use]
+    pub fn env(prefix: impl Into<String>, dict: Dict) -> Self {
+        Self {
+            provenance: Provenance::env(prefix),
+            dict,
+        }
+    }
+
+    /// The provenance stamped on every leaf this overlay wins.
+    #[must_use]
+    pub fn provenance(&self) -> &Provenance {
+        &self.provenance
+    }
+
+    /// The partial config dict this overlay contributes.
+    #[must_use]
+    pub fn dict(&self) -> &Dict {
+        &self.dict
+    }
+}
+
+// ── ProgressiveResolution — the (value, provenance) pair the fold returns ──
+
+/// The atomic result of [`TieredConfig::resolve_progressive`]: the resolved
+/// config `value` and the [`ProvenanceMap`] naming which tier produced each
+/// effective leaf.
+///
+/// The two are co-constructed by the fold and returned together, so a
+/// progressively-resolved value is never handed out without its provenance
+/// — the (value, provenance) pair is atomic at this API boundary.
+#[derive(Debug, Clone)]
+pub struct ProgressiveResolution<T> {
+    value: T,
+    provenance: ProvenanceMap,
+}
+
+impl<T> ProgressiveResolution<T> {
+    /// The resolved config value.
+    #[must_use]
+    pub fn value(&self) -> &T {
+        &self.value
+    }
+
+    /// The per-leaf provenance map.
+    #[must_use]
+    pub fn provenance(&self) -> &ProvenanceMap {
+        &self.provenance
+    }
+
+    /// Consume, yielding the resolved value (dropping provenance).
+    #[must_use]
+    pub fn into_value(self) -> T {
+        self.value
+    }
+
+    /// Consume, yielding both the value and its provenance map.
+    #[must_use]
+    pub fn into_parts(self) -> (T, ProvenanceMap) {
+        (self.value, self.provenance)
+    }
+}
+
+impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value && self.provenance == other.provenance
     }
 }
 
@@ -1736,6 +2143,369 @@ mod tests {
         assert_eq!(
             serde_yaml::to_string(&DiffLineKind::Context).unwrap(),
             "context\n",
+        );
+    }
+}
+
+// ── Progressive-discovery fold + typed provenance coverage ──────────
+#[cfg(test)]
+mod progressive_tests {
+    use super::*;
+    use crate::ConfigSource;
+    use figment::value::{Dict, Value};
+    use serde::{Deserialize, Serialize};
+
+    // A config where `discovered()` detects `a` + `d`, and
+    // `prescribed_default()` is built ON discovered(): it re-emits `a`
+    // unchanged, curates `b`, and overrides `d`. `c` never rises above the
+    // bare floor. This is the canonical last-changer fixture.
+    #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+    struct Prog {
+        a: u32,
+        b: u32,
+        c: u32,
+        d: u32,
+    }
+
+    impl TieredConfig for Prog {
+        fn bare() -> Self {
+            Self {
+                a: 0,
+                b: 0,
+                c: 0,
+                d: 0,
+            }
+        }
+        fn discovered() -> Self {
+            Self {
+                a: 10,
+                b: 0,
+                c: 0,
+                d: 5,
+            }
+        }
+        fn prescribed_default() -> Self {
+            Self {
+                a: 10,
+                b: 20,
+                c: 0,
+                d: 7,
+            }
+        }
+    }
+
+    #[test]
+    fn progressive_value_folds_all_tiers() {
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            *r.value(),
+            Prog {
+                a: 10,
+                b: 20,
+                c: 0,
+                d: 7
+            }
+        );
+    }
+
+    #[test]
+    fn progressive_provenance_credits_each_leaf_to_its_producing_tier() {
+        let r = Prog::resolve_progressive();
+        let p = r.provenance();
+        // a: detected at Discovered, re-emitted unchanged by prescribed → Discovered.
+        assert_eq!(
+            p.provenance_of(&["a"]).unwrap().tier(),
+            ConfigTierKind::Discovered
+        );
+        // b: curated at prescribed → Default.
+        assert_eq!(
+            p.provenance_of(&["b"]).unwrap().tier(),
+            ConfigTierKind::Default
+        );
+        // c: never rose above the floor → Bare.
+        assert_eq!(
+            p.provenance_of(&["c"]).unwrap().tier(),
+            ConfigTierKind::Bare
+        );
+        // d: detected 5 at Discovered, OVERRIDDEN to 7 at prescribed → Default.
+        assert_eq!(
+            p.provenance_of(&["d"]).unwrap().tier(),
+            ConfigTierKind::Default
+        );
+    }
+
+    #[test]
+    fn progressive_discovery_shows_through_where_prescribed_does_not_override() {
+        // The gap-2 seal: resolve_tier(Default) == prescribed_default() (no
+        // discovery); resolve_progressive folds discovered() UNDER prescribed,
+        // so a detected value survives where prescribed didn't touch it.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.value().a, 10, "discovered a=10 shows through");
+        assert_eq!(
+            r.provenance().provenance_of(&["a"]).unwrap().tier(),
+            ConfigTierKind::Discovered,
+        );
+        // The legacy single-tier path is unchanged.
+        assert_eq!(
+            Prog::resolve_tier(ConfigTier::Default),
+            Prog::prescribed_default()
+        );
+    }
+
+    #[test]
+    fn progressive_provenance_is_complete_over_every_leaf() {
+        let r = Prog::resolve_progressive();
+        // Every field of the resolved config has a provenance entry (bare()
+        // seeds every leaf) — completeness by construction of the fold.
+        assert_eq!(r.provenance().len(), 4);
+        for leaf in [["a"], ["b"], ["c"], ["d"]] {
+            assert!(
+                r.provenance().provenance_of(&leaf).is_some(),
+                "leaf {leaf:?} must have provenance"
+            );
+        }
+        assert!(!r.provenance().is_empty());
+    }
+
+    #[test]
+    fn progressive_higher_tier_beats_lower_on_override() {
+        // d: discovered=5, prescribed=7 → the higher tier's value wins.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.value().d, 7);
+        assert_eq!(
+            r.provenance().provenance_of(&["d"]).unwrap().tier(),
+            ConfigTierKind::Default
+        );
+    }
+
+    #[test]
+    fn progressive_overlay_file_beats_prescribed_and_carries_file_provenance() {
+        let mut d = Dict::new();
+        d.insert("b".to_owned(), Value::from(99_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", d)]);
+        assert_eq!(r.value().b, 99, "file overlay beats prescribed b=20");
+        let prov = r.provenance().provenance_of(&["b"]).unwrap();
+        assert_eq!(prov.tier(), ConfigTierKind::Custom);
+        assert_eq!(prov.source(), &ConfigSource::File("/etc/prog.yaml".into()));
+        // a untouched by the overlay → still Discovered.
+        assert_eq!(
+            r.provenance().provenance_of(&["a"]).unwrap().tier(),
+            ConfigTierKind::Discovered
+        );
+    }
+
+    #[test]
+    fn progressive_fold_reorders_a_misordered_low_tier_overlay() {
+        // A caller-supplied overlay carrying a LOW-tier provenance is sorted
+        // to its tier rank BEFORE the fold, so it cannot beat a higher tier:
+        // a Bare-tagged overlay setting a=999 lands below Discovered's a=10.
+        let mut d = Dict::new();
+        d.insert("a".to_owned(), Value::from(999_u32));
+        let sneaky = ProgressiveLayer::new(
+            Provenance::new(ConfigTierKind::Bare, ConfigSource::Defaults),
+            d,
+        );
+        let r = Prog::resolve_progressive_with(&[sneaky]);
+        assert_eq!(
+            r.value().a,
+            10,
+            "a low-tier overlay cannot beat the Discovered tier"
+        );
+        assert_eq!(
+            r.provenance().provenance_of(&["a"]).unwrap().tier(),
+            ConfigTierKind::Discovered
+        );
+    }
+
+    #[test]
+    fn progressive_contributing_tiers_in_precedence_order() {
+        let r = Prog::resolve_progressive();
+        // Bare (c), Discovered (a), Default (b, d) all survive.
+        assert_eq!(
+            r.provenance().contributing_tiers(),
+            vec![
+                ConfigTierKind::Bare,
+                ConfigTierKind::Discovered,
+                ConfigTierKind::Default
+            ],
+        );
+    }
+
+    #[test]
+    fn progressive_entries_iterate_lexicographically() {
+        let r = Prog::resolve_progressive();
+        let paths: Vec<Vec<String>> = r.provenance().entries().map(|(p, _)| p.to_vec()).collect();
+        assert_eq!(
+            paths,
+            vec![
+                vec!["a".to_string()],
+                vec!["b".to_string()],
+                vec!["c".to_string()],
+                vec!["d".to_string()],
+            ],
+        );
+    }
+
+    #[test]
+    fn progressive_pair_is_atomic_via_into_parts() {
+        let (value, prov) = Prog::resolve_progressive().into_parts();
+        assert_eq!(value.a, 10);
+        assert_eq!(
+            prov.provenance_of(&["a"]).unwrap().tier(),
+            ConfigTierKind::Discovered
+        );
+    }
+
+    // ── Nested per-leaf attribution ──
+
+    #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+    struct Win {
+        w: u32,
+        h: u32,
+    }
+    #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+    struct Nested {
+        win: Win,
+        theme: u32,
+    }
+    impl TieredConfig for Nested {
+        fn bare() -> Self {
+            Self {
+                win: Win { w: 0, h: 0 },
+                theme: 0,
+            }
+        }
+        fn discovered() -> Self {
+            Self {
+                win: Win { w: 100, h: 0 },
+                theme: 0,
+            }
+        }
+        fn prescribed_default() -> Self {
+            Self {
+                win: Win { w: 100, h: 50 },
+                theme: 7,
+            }
+        }
+    }
+
+    #[test]
+    fn progressive_attributes_nested_leaves_independently() {
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.value().win.w, 100);
+        assert_eq!(r.value().win.h, 50);
+        // win.w detected → Discovered; win.h curated → Default; sibling leaves
+        // under `win` keep independent credit.
+        assert_eq!(
+            r.provenance().provenance_of(&["win", "w"]).unwrap().tier(),
+            ConfigTierKind::Discovered,
+        );
+        assert_eq!(
+            r.provenance().provenance_of(&["win", "h"]).unwrap().tier(),
+            ConfigTierKind::Default,
+        );
+        assert_eq!(
+            r.provenance().provenance_of(&["theme"]).unwrap().tier(),
+            ConfigTierKind::Default,
+        );
+    }
+
+    // ── discovered_from_layers — the low-ceremony kanchi seam ──
+
+    struct AxisLayer {
+        key: &'static str,
+        val: u32,
+    }
+    impl DiscoveryLayer for AxisLayer {
+        fn name(&self) -> &'static str {
+            "axis"
+        }
+        fn discover(&self) -> Dict {
+            let mut d = Dict::new();
+            d.insert(self.key.to_owned(), Value::from(self.val));
+            d
+        }
+    }
+
+    // A config whose `discovered()` is wired DECLARATIVELY from layers (the
+    // gap-1 seam), and whose `prescribed_default()` is built on discovered()
+    // — the mado pattern, without the hand-rolled struct literal.
+    #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+    struct Seam {
+        a: u32,
+        b: u32,
+    }
+    impl TieredConfig for Seam {
+        fn bare() -> Self {
+            Self { a: 0, b: 0 }
+        }
+        fn discovered() -> Self {
+            Self::discovered_from_layers(&[&AxisLayer { key: "a", val: 42 }])
+        }
+        fn prescribed_default() -> Self {
+            let mut s = Self::discovered();
+            s.b = 2;
+            s
+        }
+    }
+
+    #[test]
+    fn discovered_from_layers_overlays_detected_axes_on_bare() {
+        let d = Seam::discovered();
+        assert_eq!(d.a, 42, "detected axis a overlays bare");
+        assert_eq!(d.b, 0, "an axis no layer set keeps the bare floor");
+    }
+
+    #[test]
+    fn discovered_from_layers_empty_stack_is_bare() {
+        // Totality: no layers (or an undetectable axis) degenerates to bare.
+        assert_eq!(Seam::discovered_from_layers(&[]), Seam::bare());
+    }
+
+    #[test]
+    fn seam_progressive_shows_detected_axis_through_prescribed() {
+        let r = Seam::resolve_progressive();
+        assert_eq!(*r.value(), Seam { a: 42, b: 2 });
+        assert_eq!(
+            r.provenance().provenance_of(&["a"]).unwrap().tier(),
+            ConfigTierKind::Discovered,
+        );
+        assert_eq!(
+            r.provenance().provenance_of(&["b"]).unwrap().tier(),
+            ConfigTierKind::Default,
+        );
+    }
+
+    // ── Provenance primitive surface ──
+
+    #[test]
+    fn provenance_display_is_typed() {
+        assert_eq!(
+            Provenance::computed(ConfigTierKind::Discovered).to_string(),
+            "discovered"
+        );
+        assert_eq!(
+            Provenance::file("/x.yaml").to_string(),
+            "custom (file: /x.yaml)"
+        );
+        assert_eq!(Provenance::env("APP_").to_string(), "custom (env: APP_)");
+    }
+
+    #[test]
+    fn provenance_tier_ordinal_reuses_closed_axis_order() {
+        // Precedence reuses the const ConfigTierKind ClosedAxis declaration
+        // order — Bare < Discovered < Default < Custom.
+        assert!(
+            Provenance::computed(ConfigTierKind::Bare).tier_ordinal()
+                < Provenance::computed(ConfigTierKind::Discovered).tier_ordinal()
+        );
+        assert!(
+            Provenance::computed(ConfigTierKind::Discovered).tier_ordinal()
+                < Provenance::computed(ConfigTierKind::Default).tier_ordinal()
+        );
+        assert!(
+            Provenance::computed(ConfigTierKind::Default).tier_ordinal()
+                < Provenance::file("/x").tier_ordinal()
         );
     }
 }
