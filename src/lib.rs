@@ -63,9 +63,9 @@ mod watcher;
 pub use coverage::{ConfigCoverage, CoverageReport};
 pub use cube::{
     AxisHistogram, AxisHistogramIntoIter, AxisHistogramIter, AxisHistogramIterMut,
-    AxisHistogramNonzero, AxisIter, ClosedAxis, ClosedAxisLabel, ModalityClass,
-    ParseAxisHistogramError, ParseModalityClassError, ParsePartitionFaceError,
-    ParsePartitionOrdinalError, ParseSupportBoundaryDistanceError,
+    AxisHistogramNonzero, AxisHistogramObserved, AxisHistogramUnobserved, AxisIter, ClosedAxis,
+    ClosedAxisLabel, ModalityClass, ParseAxisHistogramError, ParseModalityClassError,
+    ParsePartitionFaceError, ParsePartitionOrdinalError, ParseSupportBoundaryDistanceError,
     ParseSupportCardinalityClassError, ParseSupportMagnitudeDirectionError, PartialInverseCube,
     PartitionFace, PartitionOrdinal, ProductCube, SupportBoundaryDistance, SupportCardinalityClass,
     SupportMagnitudeDirection, at_partition_ordinal, axis_at, axis_cardinality, axis_from_label,
