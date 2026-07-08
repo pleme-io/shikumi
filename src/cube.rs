@@ -2556,8 +2556,8 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     /// to find a positional match on the support) clone the handle
     /// up front instead of materializing an intermediate `Vec`.
     #[must_use]
-    pub fn nonzero(&self) -> impl DoubleEndedIterator<Item = (A, usize)> + Clone + '_ {
-        self.iter().filter(|&(_, c)| c > 0)
+    pub fn nonzero(&self) -> AxisHistogramNonzero<'_, A> {
+        AxisHistogramNonzero { inner: self.iter() }
     }
 
     /// Iterate the axis cells that received at least one observation
@@ -7965,6 +7965,108 @@ impl<'a, A: ClosedAxis> IntoIterator for &'a mut AxisHistogram<A> {
     }
 }
 
+/// Borrowing iterator over the `(axis-value, count)` pairs of an
+/// [`AxisHistogram`] whose count is strictly positive, yielded in
+/// declaration order over [`ClosedAxis::ALL`].
+///
+/// The concrete return type of [`AxisHistogram::nonzero`] — the
+/// zero-alloc *observed-support* projection on the histogram surface.
+/// The support-restricted peer of the full-axis [`AxisHistogramIter`],
+/// with the same `(A, usize)` item shape but the zero-count cells
+/// skipped past at every seam via the stdlib [`Iterator::find`] /
+/// [`DoubleEndedIterator::rfind`] cursor primitives. Every stdlib
+/// filtered-walk projection exposes a nameable concrete type at its
+/// public boundary ([`std::iter::Filter`], [`std::iter::SkipWhile`]);
+/// the observed-support projection joins that peerage at the
+/// [`AxisHistogram::nonzero`] boundary as a named type consumers can
+/// spell in struct fields, generic return positions, and extension
+/// trait impls without smuggling an unnameable `impl Trait` across
+/// every seam.
+///
+/// The histogram-altitude peer of the axis-altitude [`AxisIter`], the
+/// tier-altitude [`crate::ProvenanceMapEntries`], and the discovery-
+/// altitude free-function iter duals ([`crate::ContributorNamesIter`],
+/// [`crate::LayerNamesIter`], [`crate::SilentLayerNamesIter`],
+/// [`crate::NonemptyLayerDictsIter`], [`crate::ContributorsAtIter`],
+/// [`crate::SilencedAtIter`]) on the concrete-return invariant. The
+/// four altitudes of the shikumi Pillar-2 provenance stack — axis,
+/// histogram, discovery, tier — now spell their filtered-walk
+/// projections at the API boundary uniformly.
+///
+/// # Trait algebra
+///
+/// Implements [`Iterator`], [`DoubleEndedIterator`],
+/// [`std::iter::FusedIterator`], [`Clone`], and [`std::fmt::Debug`] —
+/// the same five-trait bundle the whole-layer discovery-altitude
+/// siblings carry, minus [`ExactSizeIterator`] (the filter drops the
+/// zero-count cells, so the exact-length contract cannot be honored;
+/// the pair-preserving [`AxisIter`] and [`crate::ProvenanceMapEntries`]
+/// carry [`ExactSizeIterator`] because their projections are element-
+/// preserving, not filter-based).
+///
+/// The trait algebra is a strict widening of the prior
+/// `impl DoubleEndedIterator<Item = (A, usize)> + Clone + '_` return:
+/// [`std::iter::FusedIterator`] surfaces nameably (was erased), and
+/// the concrete return type unlocks the nameable-struct-field and
+/// nameable-return-position seams the `impl Trait` shape erased.
+///
+/// # Field access
+///
+/// The struct field is private — the public surface is the trait impls
+/// above. The wrapped [`AxisHistogramIter`] cursor already carries every
+/// trait this iter forwards over the full axis; the newtype exists to
+/// name the observed-support projection at the type level and to skip
+/// zero-count cells at each seam through the stdlib
+/// [`Iterator::find`] / [`DoubleEndedIterator::rfind`] primitives (both
+/// stateful, both fused past exhaustion).
+#[derive(Clone)]
+pub struct AxisHistogramNonzero<'a, A: ClosedAxis> {
+    inner: AxisHistogramIter<'a, A>,
+}
+
+impl<A: ClosedAxis> std::fmt::Debug for AxisHistogramNonzero<'_, A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Skip the `inner` field: [`ClosedAxis`] does not require
+        // `A: Debug` (the trait bounds are `Copy + Eq + Hash + 'static`
+        // only), and the derive-`Debug` bound on [`AxisHistogramIter`]
+        // would leak an `A: Debug` requirement through this newtype the
+        // trait doesn't guarantee. Report the underlying cursor's
+        // upper-bound remaining axis-cell count (`size_hint().1`) — the
+        // axis cells still to walk before the filter reaches the tail —
+        // as a diagnostic scalar instead. Same
+        // `Debug`-with-a-field-substitution pattern the axis-altitude
+        // [`AxisIter`] and the whole-layer discovery-altitude siblings
+        // ([`crate::ContributorNamesIter`] and family) carry against
+        // their own non-`Debug`-guaranteed cursor state.
+        f.debug_struct("AxisHistogramNonzero")
+            .field("axis_remaining_upper_bound", &self.inner.size_hint().1)
+            .finish()
+    }
+}
+
+impl<A: ClosedAxis> Iterator for AxisHistogramNonzero<'_, A> {
+    type Item = (A, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.find(|&(_, c)| c > 0)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        // Lower bound zero (every remaining cell could still be zero
+        // and get skipped); upper bound the full underlying walk (no
+        // filter adds elements beyond the underlying axis walk).
+        (0, self.inner.size_hint().1)
+    }
+}
+
+impl<A: ClosedAxis> DoubleEndedIterator for AxisHistogramNonzero<'_, A> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.rfind(|&(_, c)| c > 0)
+    }
+}
+
+impl<A: ClosedAxis> std::iter::FusedIterator for AxisHistogramNonzero<'_, A> {}
+
 impl<A: ClosedAxis> std::iter::Sum<AxisHistogram<A>> for AxisHistogram<A> {
     /// Reduce an iterator of histograms by pointwise sum — the canonical
     /// Rust [`Sum`][std::iter::Sum] trait idiom for the monoid
@@ -13006,6 +13108,144 @@ mod tests {
         assert!(
             rendered.contains('4'),
             "Debug output must report the initial cursor length (4): {rendered}",
+        );
+    }
+
+    // ---- AxisHistogramNonzero — named concrete return type at the nonzero API boundary ----
+
+    #[test]
+    fn axis_histogram_nonzero_return_type_is_nameable_axis_histogram_nonzero() {
+        // Pins the sharpen at the type-signature level: a struct field
+        // bound on `AxisHistogramNonzero<'a, A>` holds the handle across
+        // a return, so the concrete return type of
+        // [`AxisHistogram::nonzero`] is spellable at the API boundary.
+        // This test compiles ⇔ the sharpen holds; if the return type
+        // ever regresses back to `impl Trait`, the struct field bound
+        // ceases to name the substrate and the test fails to compile.
+        // The histogram-altitude peer of the axis-altitude
+        // `axis_iter_return_type_is_nameable_axis_iter` and the
+        // tier-altitude
+        // `provenance_map_entries_return_type_is_nameable_provenance_map_entries`.
+        struct Holder<'a> {
+            iter: crate::AxisHistogramNonzero<'a, Format>,
+        }
+        let hist: AxisHistogram<Format> = [Format::Yaml, Format::Yaml, Format::Toml, Format::Nix]
+            .into_iter()
+            .collect();
+        let holder = Holder {
+            iter: hist.nonzero(),
+        };
+        let collected: Vec<(Format, usize)> = holder.iter.collect();
+        assert_eq!(
+            collected,
+            vec![(Format::Yaml, 2), (Format::Toml, 1), (Format::Nix, 1)],
+        );
+    }
+
+    #[test]
+    fn axis_histogram_nonzero_clone_preserves_static_traits() {
+        // Compile-time witness that [`crate::AxisHistogramNonzero`]
+        // carries the trait bundle `Iterator + DoubleEndedIterator +
+        // FusedIterator + Clone` — the underlying
+        // `AxisHistogramIter<'a, A>` cursor's trait algebra survives
+        // the filter-projection newtype seam, and `FusedIterator`
+        // surfaces nameably (the prior `impl Trait` return erased it).
+        // The static bound accepts the named handle by reference
+        // (proving the trait bundle at type check), then a `.clone()`
+        // walks the same sequence as the original (runtime cross-walk
+        // proof). One trait short of the five-bundle peer on
+        // [`crate::AxisIter`] and [`crate::ProvenanceMapEntries`] —
+        // [`ExactSizeIterator`] cannot survive a filter-based
+        // projection that discards elements. The histogram-altitude
+        // peer on the concrete-return invariant.
+        fn accepts<I>(_iter: &I)
+        where
+            I: Iterator<Item = (Format, usize)>
+                + DoubleEndedIterator
+                + std::iter::FusedIterator
+                + Clone,
+        {
+        }
+        let hist: AxisHistogram<Format> = [Format::Yaml, Format::Toml, Format::Nix]
+            .into_iter()
+            .collect();
+        let handle: crate::AxisHistogramNonzero<'_, Format> = hist.nonzero();
+        accepts(&handle);
+        let clone_walk: Vec<(Format, usize)> = handle.clone().collect();
+        let original_walk: Vec<(Format, usize)> = handle.collect();
+        assert_eq!(clone_walk, original_walk);
+    }
+
+    #[test]
+    fn axis_histogram_nonzero_next_back_walks_specific_to_coarse() {
+        // The [`DoubleEndedIterator`] contract on the sharpened
+        // [`crate::AxisHistogramNonzero`] surface at the runtime level.
+        // A three-cell fixture (`Yaml=1, Toml=0, Lisp=2, Nix=1` in
+        // declaration order over [`Format`]) walks both cursor ends
+        // independently: the tail cursor yields `(Nix, 1)`, then
+        // `(Lisp, 2)`; the head cursor yields `(Yaml, 1)`; both
+        // cursors then report `None` on further pulls. Catches
+        // accidental regressions to a single-ended state machine and
+        // pins the zero-skip semantics on the reverse-walk half (the
+        // `(Toml, 0)` slot is skipped by [`Iterator::rfind`] just as
+        // it is by [`Iterator::find`] on the forward walk).
+        let mut hist: AxisHistogram<Format> = AxisHistogram::empty();
+        hist.observe(Format::Yaml);
+        hist.observe(Format::Lisp);
+        hist.observe(Format::Lisp);
+        hist.observe(Format::Nix);
+        let mut it: crate::AxisHistogramNonzero<'_, Format> = hist.nonzero();
+        assert_eq!(it.next_back(), Some((Format::Nix, 1)));
+        assert_eq!(it.next_back(), Some((Format::Lisp, 2)));
+        assert_eq!(it.next(), Some((Format::Yaml, 1)));
+        assert_eq!(it.next(), None);
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
+    fn axis_histogram_nonzero_is_fused_past_exhaustion() {
+        // Pins the [`std::iter::FusedIterator`] contract at the
+        // runtime level: past first `None`, every subsequent pull on
+        // either end continues to yield `None`. The prior
+        // `impl DoubleEndedIterator + Clone` return type erased the
+        // `FusedIterator` bound at the API boundary; the sharpen
+        // surfaces it nameably, so consumers reaching for
+        // `by_ref()` / `chain()` / `zip()`-with-a-fused-tail can bind
+        // on the fused contract without smuggling an unnameable
+        // `impl Trait`. Fixture: one-cell histogram (`Yaml=1`).
+        let hist: AxisHistogram<Format> = std::iter::once(Format::Yaml).collect();
+        let mut it: crate::AxisHistogramNonzero<'_, Format> = hist.nonzero();
+        assert_eq!(it.next(), Some((Format::Yaml, 1)));
+        assert_eq!(it.next(), None);
+        assert_eq!(it.next(), None);
+        assert_eq!(it.next_back(), None);
+        assert_eq!(it.next(), None);
+    }
+
+    #[test]
+    fn axis_histogram_nonzero_debug_impl_names_the_struct() {
+        // Pins the manual Debug impl at the format-string level: the
+        // rendered output names the struct
+        // (`AxisHistogramNonzero`) and reports the
+        // `axis_remaining_upper_bound` field rather than leaking
+        // per-cell values or requiring an `A: Debug` bound the
+        // [`ClosedAxis`] trait doesn't guarantee. Catches accidental
+        // regressions to `#[derive(Debug)]` (which would leak an
+        // `A: Debug` bound through the wrapped `AxisHistogramIter`
+        // field, breaking future ClosedAxis implementors without
+        // Debug) or a rename of the reported field. The
+        // histogram-altitude peer of the axis-altitude
+        // `axis_iter_debug_impl_names_the_struct` fixture.
+        let hist: AxisHistogram<Format> = std::iter::once(Format::Yaml).collect();
+        let it: crate::AxisHistogramNonzero<'_, Format> = hist.nonzero();
+        let rendered = format!("{it:?}");
+        assert!(
+            rendered.contains("AxisHistogramNonzero"),
+            "Debug output must name the struct: {rendered}",
+        );
+        assert!(
+            rendered.contains("axis_remaining_upper_bound"),
+            "Debug output must name the axis_remaining_upper_bound field: {rendered}",
         );
     }
 
