@@ -2116,6 +2116,145 @@ impl<'a> IntoIterator for &'a LayerAttribution {
     }
 }
 
+/// Consuming iterator over the owned `(Vec<String>, &'static str)` pairs
+/// of a [`LayerAttribution`], yielded in lex order on the path.
+///
+/// The concrete return type of
+/// [`<LayerAttribution as IntoIterator>::into_iter`][IntoIterator] and
+/// the canonical Rust idiom-peer of
+/// [`std::collections::btree_map::IntoIter`] /
+/// [`std::vec::IntoIter`] / [`std::collections::hash_map::IntoIter`] —
+/// every stdlib keyed collection exposes a named consuming iterator
+/// alongside the named borrowing iterator on its `&Self` reference.
+/// The owned-ownership peer of the borrowing
+/// [`LayerAttributionIter`] on the ownership boundary: where the
+/// borrowing iterator yields `(&'a [String], &'static str)` and lets
+/// `self` outlive the walk, this consuming iterator yields
+/// `(Vec<String>, &'static str)` and takes `self` with it — the natural
+/// choice when the caller wants to move each owned key elsewhere
+/// (e.g. `.into_iter().collect::<BTreeMap<_, _>>()`, an owned
+/// `Vec<(Vec<String>, &'static str)>` audit dump, per-leaf `FnMut(Vec<String>,
+/// &'static str)` visitor callbacks) without paying an
+/// `.iter().map(|(p, l)| (p.to_vec(), l))` intermediate clone per key.
+///
+/// The **consume-side dual** of the collect-side [`FromIterator`]
+/// impl: `attr.into_iter().collect::<LayerAttribution>()` roundtrips
+/// through the owned `(Vec<String>, &'static str)` shape and equals
+/// the source verbatim, closing the ownership pair every std keyed
+/// collection carries alongside its `FromIterator` (a `BTreeMap<K, V>`
+/// with `IntoIterator` yielding `(K, V)` alongside its `FromIterator<(K,
+/// V)>`, a `Vec<T>` with `IntoIterator` yielding `T` alongside its
+/// `FromIterator<T>`).
+///
+/// Implements the same trait surface as the borrowing
+/// [`LayerAttributionIter`] minus [`Clone`]:
+/// [`Iterator`] + [`DoubleEndedIterator`] + [`ExactSizeIterator`] +
+/// [`std::iter::FusedIterator`] + [`Debug`][std::fmt::Debug].
+/// [`Clone`] is *not* carried — the underlying
+/// [`std::collections::btree_map::IntoIter`] consumes the source
+/// [`BTreeMap`] and is not [`Clone`]-able. This matches the same
+/// consuming/borrowing asymmetry
+/// [`AxisHistogramIntoIter`][crate::AxisHistogramIntoIter] carries on
+/// the cube algebra and every stdlib consuming iterator carries against
+/// its borrowing peer.
+#[derive(Debug)]
+pub struct LayerAttributionIntoIter {
+    inner: std::collections::btree_map::IntoIter<Vec<String>, &'static str>,
+}
+
+impl Iterator for LayerAttributionIntoIter {
+    type Item = (Vec<String>, &'static str);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+
+    fn count(self) -> usize {
+        self.inner.count()
+    }
+
+    fn last(mut self) -> Option<Self::Item> {
+        // Override the default forward-walking `.last()` — the
+        // DoubleEnded impl on the underlying `BTreeMap::IntoIter` finds
+        // the trailing entry in `O(log n)` instead of draining the
+        // whole iterator. Matches the same specialization
+        // `LayerAttributionWritesOfLayerIter::last` carries on the
+        // borrowing surface.
+        self.inner.next_back()
+    }
+}
+
+impl DoubleEndedIterator for LayerAttributionIntoIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl ExactSizeIterator for LayerAttributionIntoIter {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for LayerAttributionIntoIter {}
+
+/// `for entry in attribution` (by-value) iterates the owned
+/// `(Vec<String>, &'static str)` stream in the same lex order on the
+/// path as [`LayerAttribution::iter`] / [`IntoIterator for
+/// &LayerAttribution`][IntoIterator] — the consume-side dual of the
+/// borrow-side [`IntoIterator for &LayerAttribution`] impl above.
+/// One seam every std keyed collection surfaces on its owned handle
+/// (`Vec<T>`, `BTreeMap<K, V>`, `HashMap<K, V>`, `BTreeSet<T>`), closing
+/// the ownership pair on the discovered algebra so consumers reach for
+/// the by-value `for`-loop form directly (`for (path, layer) in
+/// attr { … }`) or `.into_iter().collect::<T>()` chains that move each
+/// owned path into a caller-owned collection without the
+/// `.iter().map(|(p, l)| (p.to_vec(), l))` intermediate clone the
+/// borrowing form requires.
+///
+/// # Roundtrip with `FromIterator`
+///
+/// The pair with [`FromIterator for LayerAttribution`] roundtrips
+/// through the owned `(Vec<String>, &'static str)` shape:
+///
+/// ```text
+/// let attr: LayerAttribution = ...;
+/// let round: LayerAttribution = attr.clone().into_iter().collect();
+/// assert_eq!(attr, round);
+/// ```
+///
+/// # Length
+///
+/// The returned [`LayerAttributionIntoIter`] is [`ExactSizeIterator`],
+/// so `.len()` returns [`LayerAttribution::len`] verbatim in `O(1)` —
+/// the trait-level parity of the borrowing [`LayerAttributionIter`] on
+/// the consume-side surface.
+///
+/// # Cost
+///
+/// `O(1)` per element, no per-key clone. Forwards to
+/// [`std::collections::btree_map::BTreeMap::into_iter`], which walks
+/// the sorted key axis of the underlying [`BTreeMap`] in lex order and
+/// yields each owned `Vec<String>` key with no reallocation. Strictly
+/// cheaper than the `.iter().map(|(p, l)| (p.to_vec(), l)).collect::<Vec<_>>()`
+/// chain the borrowing form requires when the caller wants each key by
+/// value (one `Vec<String>` clone per leaf, one `Vec<(Vec<String>,
+/// &'static str)>` allocation on top).
+impl IntoIterator for LayerAttribution {
+    type Item = (Vec<String>, &'static str);
+    type IntoIter = LayerAttributionIntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        LayerAttributionIntoIter {
+            inner: self.inner.into_iter(),
+        }
+    }
+}
+
 /// Build a [`LayerAttribution`] from a stream of `(path, layer)` pairs —
 /// the construction-side dual of [`IntoIterator for &LayerAttribution`]
 /// on the reading side. Every path–layer pair emitted by the source
@@ -20110,6 +20249,117 @@ mod tests {
         let mut attr = out.attribution.clone();
         attr.extend(std::iter::empty::<(Vec<String>, &'static str)>());
         assert_eq!(attr, out.attribution);
+    }
+
+    // -------- IntoIterator for LayerAttribution (owned) --------
+
+    #[test]
+    fn into_iter_owned_empty_attribution_is_empty_stream() {
+        // Empty-attribution boundary: the by-value IntoIterator on the
+        // default handle yields no pairs, and `.len()` reads zero
+        // without walking — the ExactSizeIterator dual of
+        // `LayerAttribution::is_empty` on the consume-side surface.
+        let attr = LayerAttribution::default();
+        let mut iter = attr.into_iter();
+        assert_eq!(iter.len(), 0);
+        assert_eq!(iter.size_hint(), (0, Some(0)));
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn into_iter_owned_yields_owned_pairs_in_lex_order() {
+        // The consume-side dual walks entries in the same lex order on
+        // the path as the borrow-side iter/IntoIterator, and yields
+        // each key by value (no `.to_vec()` on the caller side). Pins
+        // the lex-ordering contract the doc block claims against the
+        // borrowed peer.
+        let out = subtree_fixture();
+        let borrowed: Vec<(Vec<String>, &'static str)> = (&out.attribution)
+            .into_iter()
+            .map(|(p, l)| (p.to_vec(), l))
+            .collect();
+        let owned: Vec<(Vec<String>, &'static str)> = out.attribution.into_iter().collect();
+        assert_eq!(borrowed, owned);
+    }
+
+    #[test]
+    fn into_iter_owned_len_equals_attribution_len() {
+        // The ExactSizeIterator length identity: `.into_iter().len()`
+        // equals `LayerAttribution::len` verbatim in O(1), the
+        // trait-level parity the borrowing LayerAttributionIter carries
+        // on the consume-side surface. Pins the `.len()` contract the
+        // doc block claims.
+        let out = subtree_fixture();
+        let expected = out.attribution.len();
+        let iter = out.attribution.into_iter();
+        assert_eq!(iter.len(), expected);
+        assert_eq!(iter.size_hint(), (expected, Some(expected)));
+    }
+
+    #[test]
+    fn into_iter_owned_collect_roundtrips_through_from_iter() {
+        // The FromIterator/IntoIterator ownership pair roundtrips
+        // verbatim: consuming an attribution through by-value
+        // IntoIterator and collecting back via FromIterator
+        // reconstructs the same handle. Pins the roundtrip identity
+        // the doc block claims, and closes the ownership pair every
+        // std keyed collection carries alongside its FromIterator.
+        let out = subtree_fixture();
+        let round: LayerAttribution = out.attribution.clone().into_iter().collect();
+        assert_eq!(round, out.attribution);
+    }
+
+    #[test]
+    fn into_iter_owned_reverse_walk_matches_iter_rev() {
+        // The DoubleEndedIterator dual walks the sequence in reverse
+        // lex-path order, matching the borrow-side iter's `.rev()`
+        // sequence pointwise (up to the owned-vs-borrowed key shape).
+        // Pins the reverse-endpoint contract inherited from
+        // BTreeMap::IntoIter.
+        let out = subtree_fixture();
+        let borrowed_rev: Vec<(Vec<String>, &'static str)> = out
+            .attribution
+            .iter()
+            .rev()
+            .map(|(p, l)| (p.to_vec(), l))
+            .collect();
+        let owned_rev: Vec<(Vec<String>, &'static str)> =
+            out.attribution.into_iter().rev().collect();
+        assert_eq!(borrowed_rev, owned_rev);
+    }
+
+    #[test]
+    fn into_iter_owned_by_value_for_loop_yields_owned_keys() {
+        // Consumer idiom pin: `for (path, layer) in attr` walks the
+        // by-value pair stream without an explicit
+        // `.into_iter().map(|(p, l)| (p.to_vec(), l))` chain. Pins the
+        // by-value `for`-loop form the doc block advertises as the
+        // primary consumer entry point.
+        let out = subtree_fixture();
+        let expected_len = out.attribution.len();
+        let mut collected: Vec<(Vec<String>, &'static str)> = Vec::new();
+        for (path, layer) in out.attribution {
+            collected.push((path, layer));
+        }
+        assert_eq!(collected.len(), expected_len);
+        // Ordered against the borrow-side sequence: no explicit sort on
+        // the `Vec<String>` key needed — BTreeMap::IntoIter yields lex
+        // order verbatim.
+        let mut lex_sorted = collected.clone();
+        lex_sorted.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(collected, lex_sorted);
+    }
+
+    #[test]
+    fn into_iter_owned_last_matches_iter_last() {
+        // Endpoint identity for the trailing element: the overridden
+        // `.last()` on the consume-side matches the borrow-side
+        // `iter().last()` pointwise (up to the owned-vs-borrowed key
+        // shape). Pins the `.last()` override the impl carries.
+        let out = subtree_fixture();
+        let borrow_last = out.attribution.iter().last().map(|(p, l)| (p.to_vec(), l));
+        let owned_last = out.attribution.into_iter().last();
+        assert_eq!(borrow_last, owned_last);
     }
 
     /// Test-side clone helper — the `Fixed` layer is deliberately
