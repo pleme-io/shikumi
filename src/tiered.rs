@@ -1709,6 +1709,77 @@ impl ConfigDiff {
     pub fn present_kinds(&self) -> Vec<DiffLineKind> {
         self.kind_histogram().observed().collect()
     }
+
+    /// The distinct [`DiffLineKind`]s that appear as **zero** lines in
+    /// this diff, in [`DiffLineKind::ALL`] declaration order — the
+    /// coverage-gap peer of [`Self::present_kinds`] and the diff-altitude
+    /// dual of [`crate::ProvenanceMap::absent_tiers`] on the tier altitude.
+    ///
+    /// Routes through [`Self::kind_histogram`]:
+    /// [`crate::AxisHistogram::unobserved`] iterates the histogram's
+    /// **coverage gap** (the closed-axis cells with zero count) in
+    /// [`crate::ClosedAxis::ALL`] declaration order, which is the
+    /// [`DiffLineKind`] canonical order (`Removed → Added → Context`) by
+    /// construction — the closed-axis discipline provides the sort +
+    /// dedup automatically, so this method reads directly off the shikumi
+    /// cube-native primitive instead of hand-rolling
+    /// `DiffLineKind::ALL.iter().filter(|k| !self.present_kinds().
+    /// contains(k))` (`O(k·k)` in axis-cardinality, quadratic on the
+    /// observed side) at every operator-facing consumer asking *"which
+    /// diff-cell kinds are absent from this render?"* — the CLI
+    /// `config-diff` summary reading *"no removals; nothing to warn
+    /// on"*, the attestation manifest recording the diff-cell coverage
+    /// gap between two tiers, the alerting policy suppressing per-kind
+    /// bins that never fired for this rebuild window.
+    ///
+    /// The observed-cells peer ([`Self::present_kinds`]) and the
+    /// coverage-gap peer ([`Self::absent_kinds`]) together form the
+    /// **support / coverage-gap partition** on the diff altitude — every
+    /// cell of [`DiffLineKind::ALL`] lies in exactly one of the two, and
+    /// the two `Vec<DiffLineKind>` lengths sum to
+    /// [`crate::axis_cardinality::<DiffLineKind>()`][crate::axis_cardinality].
+    /// The diff-altitude dual of the tier-altitude
+    /// [`crate::ProvenanceMap::absent_tiers`] unobserved-cells peer (whose
+    /// observed-cells peer is [`crate::ProvenanceMap::contributing_tiers`])
+    /// — every altitude of the shikumi typescape now closes both halves
+    /// of the histogram's observed / unobserved partition at one named
+    /// `Vec<CellKind>` seam alongside the underlying `_histogram()`
+    /// primitive.
+    ///
+    /// # Invariants
+    ///
+    /// - `absent_kinds().len() == kind_histogram().unobserved_cells()` —
+    ///   both project the same coverage-gap cardinality off the
+    ///   histogram.
+    /// - `present_kinds().len() + absent_kinds().len() ==
+    ///   crate::axis_cardinality::<DiffLineKind>()` — the two peers
+    ///   partition the closed axis without remainder (every cell is
+    ///   either observed or unobserved, never both).
+    /// - `present_kinds()` and `absent_kinds()` are disjoint: no
+    ///   [`DiffLineKind`] appears in both.
+    /// - `absent_kinds().is_empty() == kind_histogram().is_full_cover()`
+    ///   — the coverage-gap is empty iff every diff-cell kind was
+    ///   observed at least once (all three of Removed / Added / Context
+    ///   appear as ≥1 line).
+    /// - `absent_kinds()` on an empty [`ConfigDiff`] (no lines) equals
+    ///   [`DiffLineKind::ALL`] — every kind is absent when no line
+    ///   contributed, the empty-diff / full-coverage-gap boundary.
+    /// - `absent_kinds()` is sorted strictly ascending by
+    ///   [`crate::axis_ordinal`] on [`DiffLineKind`] — dedup + sort for
+    ///   free from the closed-axis discipline.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the
+    /// coverage-gap scan). Both are `O(n)` in practice since the
+    /// diff-cell axis carries a fixed three-cell cardinality; the
+    /// returned `Vec<DiffLineKind>` is at most three elements long
+    /// regardless of line count.
+    #[must_use]
+    pub fn absent_kinds(&self) -> Vec<DiffLineKind> {
+        self.kind_histogram().unobserved().collect()
+    }
 }
 
 #[cfg(test)]
@@ -2646,6 +2717,348 @@ mod tests {
                 window[0],
                 window[1],
             );
+        }
+    }
+
+    // ── ConfigDiff::absent_kinds — unobserved-cells peer of
+    //    present_kinds on the diff altitude ──
+
+    #[test]
+    fn absent_kinds_matches_kind_histogram_unobserved_pointwise() {
+        // The coverage-gap pin: `absent_kinds` routes through
+        // `kind_histogram().unobserved().collect()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Diff-altitude peer
+        // of `absent_tiers_matches_tier_histogram_unobserved_pointwise`
+        // on the tier altitude.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Added("a".into()), DiffLine::Removed("r".into())],
+            },
+        ];
+        for diff in fixtures {
+            let via_direct = diff.absent_kinds();
+            let via_histogram: Vec<DiffLineKind> = diff.kind_histogram().unobserved().collect();
+            assert_eq!(
+                via_direct, via_histogram,
+                "absent_kinds must equal kind_histogram().unobserved().collect() pointwise",
+            );
+        }
+    }
+
+    #[test]
+    fn absent_kinds_empty_diff_is_full_axis() {
+        // A diff with no lines has no observed kinds — every cell of
+        // `DiffLineKind::ALL` lies in the coverage gap. The empty-diff
+        // / full-coverage-gap boundary of the observed / unobserved
+        // partition, diff-altitude peer of `absent_tiers_empty_map_
+        // is_full_axis` on the tier altitude.
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.absent_kinds(), DiffLineKind::ALL.to_vec());
+    }
+
+    #[test]
+    fn absent_kinds_iterates_in_declaration_order() {
+        // The coverage-gap iter walks `DiffLineKind::ALL` in
+        // declaration order (`Removed → Added → Context`) and yields
+        // only the cells with zero count. Pinned here on the empty
+        // diff, whose gap is the entire axis — the emitted order
+        // matches `DiffLineKind::ALL` verbatim.
+        let empty = ConfigDiff::default();
+        assert_eq!(
+            empty.absent_kinds(),
+            vec![
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+                DiffLineKind::Context,
+            ],
+        );
+    }
+
+    #[test]
+    fn absent_kinds_context_only_diff_is_added_and_removed() {
+        // A diff composed only of Context lines has exactly
+        // { Added, Removed } as its coverage gap — the changed-cell
+        // subset of the axis is entirely absent, and `is_empty_diff`
+        // returns true concurrently. Operator-facing pin on the
+        // "nothing changed; only Context lines" render.
+        let ctx_only = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("a".into()),
+                DiffLine::Context("b".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(
+            ctx_only.absent_kinds(),
+            vec![DiffLineKind::Removed, DiffLineKind::Added],
+        );
+        assert!(ctx_only.is_empty_diff());
+    }
+
+    #[test]
+    fn absent_kinds_len_matches_unobserved_cells() {
+        // The coverage-gap-cardinality invariant on the histogram's
+        // support / gap partition: `absent_kinds().len()` equals
+        // `kind_histogram().unobserved_cells()` pointwise across every
+        // fixture. Any future re-implementation of either seam must
+        // keep this equality.
+        let fixtures: [ConfigDiff; 5] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Added("a".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Added("a".into()), DiffLine::Added("b".into())],
+            },
+        ];
+        for diff in fixtures {
+            assert_eq!(
+                diff.absent_kinds().len(),
+                diff.kind_histogram().unobserved_cells(),
+                "absent_kinds().len() must equal kind_histogram().unobserved_cells()",
+            );
+        }
+    }
+
+    #[test]
+    fn absent_kinds_and_present_kinds_partition_axis() {
+        // The support / coverage-gap partition on the closed axis:
+        // every cell of `DiffLineKind::ALL` lies in exactly one of
+        // (observed, unobserved), so the two Vec lengths sum to the
+        // axis cardinality. Diff-altitude peer of
+        // `absent_tiers_and_contributing_tiers_partition_axis` on the
+        // tier altitude.
+        let axis_size = crate::axis_cardinality::<DiffLineKind>();
+        let fixtures: [ConfigDiff; 5] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Added("a".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Added("a".into()), DiffLine::Added("b".into())],
+            },
+        ];
+        for diff in fixtures {
+            let observed = diff.present_kinds();
+            let absent = diff.absent_kinds();
+            assert_eq!(observed.len() + absent.len(), axis_size);
+            for kind in &observed {
+                assert!(
+                    !absent.contains(kind),
+                    "kind {kind:?} appears in both present and absent",
+                );
+            }
+            for cell in DiffLineKind::ALL {
+                assert!(
+                    observed.contains(cell) || absent.contains(cell),
+                    "kind {cell:?} appears in neither present nor absent",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn absent_kinds_is_empty_iff_is_full_cover() {
+        // The coverage-gap is empty iff every diff-cell kind was
+        // observed at least once. Pinned across every fixture in the
+        // module against `kind_histogram().is_full_cover()`, plus a
+        // direct positive pin: a diff carrying one Removed, one Added,
+        // and one Context is full-cover; the coverage-gap is empty.
+        let fixtures: [ConfigDiff; 5] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Added("a".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Added("a".into()), DiffLine::Added("b".into())],
+            },
+        ];
+        for diff in fixtures {
+            assert_eq!(
+                diff.absent_kinds().is_empty(),
+                diff.kind_histogram().is_full_cover(),
+            );
+        }
+        let full_cover = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(full_cover.kind_histogram().is_full_cover());
+        assert_eq!(full_cover.absent_kinds(), Vec::<DiffLineKind>::new());
+        assert_eq!(full_cover.present_kinds(), DiffLineKind::ALL.to_vec());
+    }
+
+    #[test]
+    fn absent_kinds_is_strictly_ascending_by_axis_ordinal() {
+        // Structural sort pin: the coverage-gap walks the closed axis
+        // in declaration order, so `absent_kinds()` is strictly
+        // ascending by `crate::axis_ordinal` — the dedup + sort every
+        // hand-rolled walk would have to spell explicitly comes for
+        // free from the closed-axis discipline.
+        let fixtures: [ConfigDiff; 5] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Added("a".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Removed("r".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Added("a".into()), DiffLine::Added("b".into())],
+            },
+        ];
+        for diff in fixtures {
+            let absent = diff.absent_kinds();
+            for pair in absent.windows(2) {
+                assert!(
+                    crate::axis_ordinal(pair[0]) < crate::axis_ordinal(pair[1]),
+                    "absent_kinds must be strictly ascending: {absent:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn absent_kinds_full_cover_yields_empty() {
+        // The full-cover positive case: a diff containing ≥1 line of
+        // every DiffLineKind has an empty coverage gap. Symmetrically,
+        // the observed peer equals `DiffLineKind::ALL` (in declaration
+        // order) at full cover.
+        let full_cover = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(full_cover.kind_histogram().is_full_cover());
+        assert_eq!(full_cover.absent_kinds(), Vec::<DiffLineKind>::new());
+        assert_eq!(full_cover.present_kinds(), DiffLineKind::ALL.to_vec());
+    }
+
+    #[test]
+    fn absent_kinds_singleton_diff_yields_two_absent() {
+        // A diff of a single line has exactly `axis_cardinality - 1`
+        // absent kinds — every axis cell except the one carried by that
+        // line. Cross-verified against `present_kinds().len() +
+        // absent_kinds().len() == axis_cardinality`. Diff-altitude
+        // peer of the singleton pins on the chain-altitude present/
+        // absent seams.
+        let axis_size = crate::axis_cardinality::<DiffLineKind>();
+        for (line, present_kind) in [
+            (DiffLine::Removed("r".into()), DiffLineKind::Removed),
+            (DiffLine::Added("a".into()), DiffLineKind::Added),
+            (DiffLine::Context("c".into()), DiffLineKind::Context),
+        ] {
+            let diff = ConfigDiff { lines: vec![line] };
+            let absent = diff.absent_kinds();
+            assert_eq!(absent.len(), axis_size - 1);
+            assert!(
+                !absent.contains(&present_kind),
+                "the observed kind {present_kind:?} must not appear in the coverage gap",
+            );
+            for cell in DiffLineKind::ALL {
+                if *cell != present_kind {
+                    assert!(
+                        absent.contains(cell),
+                        "the singleton diff's coverage gap must contain \
+                         every non-observed axis cell — missing {cell:?}",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn absent_kinds_agrees_with_open_coded_coverage_gap_walk() {
+        // Parity against the exact `DiffLineKind::ALL.iter().filter(|k|
+        // !present_kinds().contains(k))` walk this lift replaces —
+        // both the named seam and the hand-rolled coverage-gap must
+        // pointwise agree over every fixture. Diff-altitude peer of
+        // `absent_tiers_agrees_with_open_coded_coverage_gap_walk` on
+        // the tier altitude.
+        let fixtures: [ConfigDiff; 6] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Added("a".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Added("a".into()), DiffLine::Added("b".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Removed("r".into())],
+            },
+        ];
+        for diff in fixtures {
+            let via_seam = diff.absent_kinds();
+            let present = diff.present_kinds();
+            let hand_rolled: Vec<DiffLineKind> = DiffLineKind::ALL
+                .iter()
+                .copied()
+                .filter(|k| !present.contains(k))
+                .collect();
+            assert_eq!(via_seam, hand_rolled);
         }
     }
 
