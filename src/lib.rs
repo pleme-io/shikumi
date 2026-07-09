@@ -47,6 +47,8 @@ mod cube;
 pub mod discovered;
 mod discovery;
 mod error;
+#[cfg(feature = "kube-discovery")]
+pub mod kube_discovery;
 #[cfg(feature = "lisp")]
 pub mod lisp_provider;
 pub mod nix_provider;
@@ -102,6 +104,10 @@ pub use error::{
     AttributionRule, AttributionSourceKindCoordinates, ErrorLocalizationCoordinates,
     FailingSourceAttribution, FieldPathLocalization, ShikumiError, ShikumiErrorKind,
 };
+#[cfg(feature = "kube-discovery")]
+pub use kube_discovery::KubeClusterDiscovery;
+#[cfg(feature = "kube")]
+pub use kube_discovery::KubeSecretReader;
 #[cfg(feature = "lisp")]
 pub use lisp_provider::{LispProvider, load_from_str as load_lisp_from_str};
 #[doc(hidden)]

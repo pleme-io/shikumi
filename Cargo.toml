@@ -59,6 +59,23 @@ vault-native = ["dep:reqwest", "dep:tokio"]
 # the consumer that already has auth plumbing. See RFC 0001.
 gcp-native = ["dep:reqwest", "dep:tokio"]
 
+# ConfigPlane DISCOVERED-tier cluster discovery — the `KubeClusterDiscovery`
+# DiscoveryLayer (src/kube_discovery.rs) + its kanchi::ClusterEnv seam. Pulls
+# in kanchi (the std-only detection leaf that owns the downward-API / service-DNS
+# probes + the ClusterEnv trait). NO Kubernetes API client here — the layer is
+# fully exercised against kanchi::MockClusterEnv, so shikumi stays
+# k8s-client-free with only this feature on. See CONFIGURATION-MANAGEMENT.md §IX.
+kube-discovery = ["dep:kanchi"]
+
+# The REAL in-cluster Kubernetes Secret reader (KubeSecretReader) behind the
+# kanchi::ClusterEnv seam: a thin reqwest-blocking GET against the Secret API
+# (SA bearer token + projected CA cert), base64-decoding the value. This is the
+# only arm that pulls an HTTP client, so it is the one that makes shikumi
+# "k8s-capable"; default builds and the mock-driven layer tests never touch it.
+# Tier-honest: compiled + type-checked, but proven only structurally + by mock
+# (no live cluster in CI) — a shadow-first live proof is the M0 gate.
+kube = ["kube-discovery", "dep:reqwest", "reqwest/blocking", "dep:base64"]
+
 [dependencies]
 arc-swap = "1.8"
 figment = { version = "0.10", features = ["env", "yaml", "toml"] }
@@ -98,6 +115,14 @@ tokio = { version = "1", features = ["rt"], optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 # Feature-gated for the `cli` feature — clap Args for ConfigShowCommand.
 clap = { version = "4", features = ["derive"], optional = true }
+# ConfigPlane DISCOVERED tier (`kube-discovery` feature) — the std-only
+# detection leaf that owns the cluster-wiring probes + the ClusterEnv seam that
+# KubeClusterDiscovery reads through. INTERIM rev-pin to the cluster-discovery
+# branch head (the cluster module is not yet on kanchi's main / crates.io);
+# repin to `version = "0.1"` once kanchi merges + auto-releases. pending-configplane.
+kanchi = { git = "https://github.com/pleme-io/kanchi", rev = "0569d9655ac9ab0784b9b82a61bc873fbf69ad14", optional = true }
+# base64 decode for the real in-cluster Secret value (`kube` feature only).
+base64 = { version = "0.22", optional = true }
 
 # macOS opts into the kqueue backend for notify. Gating via
 # `[target.'cfg(target_os = "macos")']` is the only way to keep this
