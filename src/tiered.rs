@@ -904,6 +904,89 @@ impl ProvenanceMap {
     pub fn absent_tiers(&self) -> Vec<ConfigTierKind> {
         self.tier_histogram().unobserved().collect()
     }
+
+    /// The tier whose overlay produced the greatest number of surviving
+    /// effective leaves on this resolved fold — the modal cell of
+    /// [`Self::tier_histogram`] on the tier altitude. `None` exactly
+    /// when the map is empty (no leaf contributed).
+    ///
+    /// Routes through [`Self::tier_histogram`]:
+    /// [`crate::AxisHistogram::dominant_cell`] picks the argmax cell in
+    /// [`crate::ClosedAxis::ALL`] declaration order, which is the
+    /// [`ConfigTier`] precedence order by construction — the closed-
+    /// axis discipline provides deterministic tie-breaking automatically,
+    /// so this method reads directly off the shikumi cube-native
+    /// primitive instead of hand-rolling
+    /// `hist.iter().filter(|&(_, c)| c > 0).max_by_key(|&(_, c)| c).map(|(v, _)| v)`
+    /// — the inline `max_by_key` form silently picks the *last* tied
+    /// cell (per [`Iterator::max_by_key`]'s contract), so two consumers
+    /// reading "the dominant tier" off the same fold would disagree
+    /// under ties unless every one carefully reversed the comparison.
+    /// The lift names the scalar at one site with a documented
+    /// tie-breaking rule.
+    ///
+    /// The tier-altitude scalar-mode peer of [`Self::contributing_tiers`]
+    /// (the observed-cells vector peer) and [`Self::absent_tiers`] (the
+    /// coverage-gap vector peer): the histogram surface now carries the
+    /// natural triple of "*which* tiers surfaced" / "*which* tiers
+    /// didn't" / "*which single* tier dominated" projections at the tier
+    /// altitude, each a named seam over the shared
+    /// [`Self::tier_histogram`] primitive. Operator-facing consumers
+    /// answering *"which tier dominated this resolved fold?"* — the
+    /// fleet dashboard headlining *"Default tier owns 47 of 53 leaves
+    /// this rebuild window"*, the attestation manifest recording the
+    /// modal tier of a resolved fold, the diagnostic dump reading *"tier
+    /// dominance: Discovered"* to explain why a runtime signal is
+    /// steering the resolution — now route through this named seam
+    /// instead of a per-consumer `max_by_key` walk.
+    ///
+    /// **Tie-breaking is deterministic by precedence order.** When
+    /// multiple tiers share the maximum leaf count, the tier earliest
+    /// in [`ConfigTierKind::ALL`] wins — the same [`ConfigTier`]
+    /// precedence order [`Self::contributing_tiers`] and
+    /// [`Self::absent_tiers`] walk. A uniform-cover fold (each tier
+    /// producing the same nonzero leaf count) therefore reports
+    /// `Some(ConfigTierKind::Bare)` — the first cell in declaration
+    /// order — pointwise stable regardless of the insertion order of
+    /// individual leaves into the underlying [`BTreeMap`].
+    ///
+    /// # Invariants
+    ///
+    /// - `dominant_tier().is_some() == !is_empty()` — the dominant tier
+    ///   is defined exactly when the fold has at least one leaf. Peer
+    ///   to the [`Self::is_empty`] boundary [`Self::contributing_tiers`]
+    ///   and [`Self::absent_tiers`] both witness.
+    /// - `dominant_tier() == tier_histogram().dominant_cell()` — both
+    ///   project the same modal cell off the same primitive; the named
+    ///   seam is the cube-native routing of the histogram surface.
+    /// - When `Some(t)`, `t` is a member of `contributing_tiers()` —
+    ///   the modal cell is by definition observed. Pinned by
+    ///   `dominant_tier_is_member_of_contributing_tiers`.
+    /// - When `Some(t)`, `t` is **not** a member of `absent_tiers()` —
+    ///   the observed / coverage-gap partition is disjoint. Pinned by
+    ///   `dominant_tier_is_not_member_of_absent_tiers`.
+    /// - `tier_histogram().count(dominant_tier().unwrap()) ==
+    ///   tier_histogram().peak_count()` whenever the map is non-empty —
+    ///   the modal cell carries the peak observation count. Peer to
+    ///   the (`dominant_cell`, `peak_count`) modal pair invariant on
+    ///   [`crate::AxisHistogram`].
+    /// - `dominant_tier()` on a uniform per-tier fold (one leaf per
+    ///   tier) equals `Some(ConfigTierKind::Bare)` — declaration-order
+    ///   tie-breaking on the four-cell axis picks the first cell.
+    /// - `dominant_tier()` on an empty [`ProvenanceMap`] equals `None`
+    ///   — the empty-map / empty-histogram boundary.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigTierKind>()` (the
+    /// argmax scan). Both are `O(n)` in practice since the tier axis
+    /// carries a fixed four-cell cardinality; the returned
+    /// `Option<ConfigTierKind>` reads one cell.
+    #[must_use]
+    pub fn dominant_tier(&self) -> Option<ConfigTierKind> {
+        self.tier_histogram().dominant_cell()
+    }
 }
 
 /// Zero-allocation `(&[String], &Provenance)` stream over the sorted
@@ -4150,6 +4233,219 @@ mod progressive_tests {
                 .collect();
             assert_eq!(via_seam, hand_rolled);
         }
+    }
+
+    #[test]
+    fn dominant_tier_matches_tier_histogram_dominant_cell_pointwise() {
+        // The modal-cell pin: `dominant_tier` routes through
+        // `tier_histogram().dominant_cell()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().dominant_cell();
+            assert_eq!(map.dominant_tier(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn dominant_tier_prog_fixture_is_default() {
+        // Prog attributes 4 leaves: a→Discovered, b→Default, c→Bare,
+        // d→Default. Default holds 2 of 4, uniquely dominant on the
+        // 4-cell tier axis. Direct pin — the named seam answers the
+        // operator's *"which tier dominated this resolved fold?"*
+        // question at one call, no `max_by_key` walk in the dashboard.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().dominant_tier(),
+            Some(ConfigTierKind::Default)
+        );
+    }
+
+    #[test]
+    fn dominant_tier_nested_fixture_is_default() {
+        // Nested attributes 3 leaves: win.w→Discovered, win.h→Default,
+        // theme→Default. Default holds 2 of 3, uniquely dominant on the
+        // tier axis under nested per-leaf attribution — the modal cell
+        // reads through the seam whether the fixture is flat or nested.
+        let r = Nested::resolve_progressive();
+        assert_eq!(
+            r.provenance().dominant_tier(),
+            Some(ConfigTierKind::Default)
+        );
+    }
+
+    #[test]
+    fn dominant_tier_empty_map_is_none() {
+        // An empty ProvenanceMap has no leaves and therefore no modal
+        // tier — the empty-map / empty-histogram boundary of the
+        // dominant-cell projection. Peer to
+        // `absent_tiers_empty_map_is_full_axis` (the same boundary on
+        // the coverage-gap side).
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.dominant_tier(), None);
+    }
+
+    #[test]
+    fn dominant_tier_is_some_iff_map_is_nonempty() {
+        // Cross-surface pin: the presence-of-modal-cell predicate
+        // agrees with the non-emptiness of the underlying map.
+        // Structural completeness of the `(is_empty, dominant_tier)`
+        // boundary — a well-formed fold with ≥1 leaf always has a
+        // modal cell, and an empty fold never does.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.dominant_tier().is_some(), !map.is_empty());
+        }
+    }
+
+    #[test]
+    fn dominant_tier_is_member_of_contributing_tiers() {
+        // Structural pin: whenever `dominant_tier()` is `Some(t)`, `t`
+        // must appear in `contributing_tiers()` (the modal cell is by
+        // definition observed). The support / dominance partition on
+        // the tier altitude reads consistently between the two named
+        // seams.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+        ] {
+            let dominant = map
+                .dominant_tier()
+                .expect("non-empty map has dominant tier");
+            assert!(
+                map.contributing_tiers().contains(&dominant),
+                "dominant tier {dominant:?} must appear in contributing_tiers",
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_tier_is_not_member_of_absent_tiers() {
+        // Structural pin: whenever `dominant_tier()` is `Some(t)`, `t`
+        // must NOT appear in `absent_tiers()` — the modal cell lies on
+        // the observed side of the observed / coverage-gap partition.
+        // Disjointness pin between the two named seams.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+        ] {
+            let dominant = map
+                .dominant_tier()
+                .expect("non-empty map has dominant tier");
+            assert!(
+                !map.absent_tiers().contains(&dominant),
+                "dominant tier {dominant:?} must not appear in absent_tiers",
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_tier_count_equals_peak_count_on_nonempty_map() {
+        // The (dominant_cell, peak_count) modal-pair invariant lifted
+        // to the tier altitude: the observation count of the dominant
+        // tier equals the histogram's peak count. Pins the fused form
+        // of the modal-pair the AxisHistogram surface carries as
+        // (dominant_cell(), peak_count()).
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+        ] {
+            let hist = map.tier_histogram();
+            let dominant = map
+                .dominant_tier()
+                .expect("non-empty map has dominant tier");
+            assert_eq!(hist.count(dominant), hist.peak_count());
+        }
+    }
+
+    #[test]
+    fn dominant_tier_ties_broken_by_declaration_order() {
+        // Structural tie-breaking pin: on a uniform per-tier fold
+        // (each of the four `ConfigTierKind` cells contributing
+        // exactly one leaf), `dominant_tier` reports
+        // `Some(ConfigTierKind::Bare)` — the first cell in
+        // `ConfigTierKind::ALL` declaration order. Constructed by
+        // overlaying a Custom operator layer on Prog (which spans
+        // Bare→Discovered→Default with 4 leaves distributed 1/1/2)
+        // that steals the second Default-tier leaf (b) into Custom,
+        // yielding a 1-leaf-per-tier full-cover fold. Any future
+        // switch to a nondeterministic `max_by_key` walk (which
+        // silently picks the LAST tied cell) would flip this pin to
+        // `Some(Custom)` — the seam names the tiebreak once.
+        let mut d = Dict::new();
+        d.insert("b".to_owned(), Value::from(99_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", d)]);
+        // Sanity: this construction produces the intended tier-count
+        // distribution (each tier owns exactly one leaf).
+        let hist = r.provenance().tier_histogram();
+        assert_eq!(hist.count(ConfigTierKind::Bare), 1);
+        assert_eq!(hist.count(ConfigTierKind::Discovered), 1);
+        assert_eq!(hist.count(ConfigTierKind::Default), 1);
+        assert_eq!(hist.count(ConfigTierKind::Custom), 1);
+        assert!(hist.is_full_cover());
+        // Tiebreak lands on the first cell in declaration order.
+        assert_eq!(r.provenance().dominant_tier(), Some(ConfigTierKind::Bare));
+    }
+
+    #[test]
+    fn dominant_tier_agrees_with_open_coded_argmax_walk() {
+        // Parity against the exact `hist.iter().filter(|&(_, c)| c > 0)
+        // .max_by(count-then-declaration-order)` walk this lift replaces
+        // — both the named seam and the hand-rolled argmax must
+        // pointwise agree over every fixture in the module. The
+        // hand-rolled form spells the declaration-order tiebreak
+        // explicitly (fold-forward with strict `>` inequality — the
+        // first tied cell wins, mirroring `AxisHistogram::dominant_cell`
+        // — rather than `max_by_key`'s LAST-tied-cell semantics).
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.dominant_tier();
+            let hist = map.tier_histogram();
+            let mut iter = hist.iter().filter(|&(_, c)| c > 0);
+            let hand_rolled = iter.next().map(|first| {
+                iter.fold(
+                    first,
+                    |best, current| {
+                        if current.1 > best.1 { current } else { best }
+                    },
+                )
+                .0
+            });
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn dominant_tier_uniform_cover_picks_first_cell() {
+        // Trait-uniform invariant: on a full-cover fold where every
+        // tier observes the same nonzero count, the dominant cell is
+        // the first cell of `ConfigTierKind::ALL` — the declaration-
+        // order tiebreak reduces to `Some(Bare)`. Peer of the trait-
+        // uniform `axis_histogram_dominant_cell_axis_cover_picks_first_*`
+        // laws in cube tests.
+        // Direct construction via `FromIterator`: one leaf per tier,
+        // full-cover with uniform count 1. `dominant_cell` then reduces
+        // to *"first cell of `ConfigTierKind::ALL`"* — the pin lives in
+        // the tiered.rs surface for the ProvenanceMap-scoped seam, not
+        // just the cube-generic trait law.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(m.tier_histogram().is_full_cover());
+        assert_eq!(m.dominant_tier(), Some(ConfigTierKind::Bare));
     }
 
     // ── Nested per-leaf attribution ──
