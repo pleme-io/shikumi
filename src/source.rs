@@ -1243,6 +1243,154 @@ pub trait ConfigSourceChain {
         self.file_format_histogram().dominant_cell()
     }
 
+    /// The [`crate::discovery::Format`] whose entries produced the
+    /// smallest nonzero number of recognized-extension file layers on this
+    /// chain — the anti-modal cell of [`Self::file_format_histogram`] on
+    /// the chain altitude. `None` exactly when the histogram is empty (no
+    /// chain entry projects through [`ConfigSource::file_format`] to a
+    /// recognized format).
+    ///
+    /// Routes through [`Self::file_format_histogram`]:
+    /// [`crate::AxisHistogram::recessive_cell`] picks the argmin cell over
+    /// the histogram's *support* (the nonzero cells) in
+    /// [`crate::ClosedAxis::ALL`] declaration order, which is the
+    /// [`crate::discovery::Format`] canonical order
+    /// (`Yaml → Toml → Lisp → Nix`) by construction — the closed-axis
+    /// discipline provides deterministic tie-breaking automatically, so
+    /// this method reads directly off the shikumi cube-native primitive
+    /// instead of hand-rolling
+    /// `hist.iter().filter(|&(_, c)| c > 0).min_by_key(|&(_, c)| c).map(|(v, _)| v)`
+    /// — the inline `min_by_key` form silently picks the *first* tied cell
+    /// (per [`Iterator::min_by_key`]'s contract, which reverses
+    /// [`Iterator::max_by_key`]'s "last on ties" behavior), so an
+    /// open-coded argmin and the open-coded argmax on the dominant side
+    /// would disagree on which tied cell to pick. The pair of lifts
+    /// ([`Self::dominant_file_format`] and [`Self::recessive_file_format`])
+    /// pins one consistent tie-breaking rule across both projections on
+    /// the chain-altitude file-format sub-axis.
+    ///
+    /// **Zero-count formats are excluded from the search.** The argmin is
+    /// taken over the histogram's support, not over the full axis. Formats
+    /// that contributed no recognized-extension file layer would trivially
+    /// be the minimum over the full axis and would shadow the rarest
+    /// *observed* format; excluding them surfaces the rarest format some
+    /// file layer actually landed on — the question the CLI `config-show`
+    /// summary, attestation manifest, and alerting policy ask when they
+    /// surface *"the runt file format this recipe saw"*. This matches
+    /// [`Self::dominant_file_format`]'s symmetry on the maximum side: both
+    /// projections operate over the nonzero support, so the empty-histogram
+    /// convention is identical (both return `None`) and the singleton-
+    /// support case is identical (both return the sole observed format).
+    ///
+    /// The chain-altitude anti-modal peer of [`Self::dominant_file_format`]
+    /// (the modal-cell scalar peer of the same
+    /// [`Self::file_format_histogram`] primitive) — the file-format sub-
+    /// axis of the chain-shape surface now carries the fused (dominant,
+    /// recessive) cell pair, matching the
+    /// ([`crate::AxisHistogram::dominant_cell`],
+    /// [`crate::AxisHistogram::recessive_cell`]) pair on the shared
+    /// [`crate::AxisHistogram`] primitive one altitude down. Direct sister
+    /// of [`Self::recessive_layer_kind`] on the layer-kind sub-axis of the
+    /// same chain altitude, [`crate::ProvenanceMap::recessive_tier`] on
+    /// the tier altitude, and [`crate::ConfigDiff::recessive_kind`] on the
+    /// diff altitude — all four project the anti-modal cell of their local
+    /// closed-axis histogram off the shared
+    /// [`crate::AxisHistogram::recessive_cell`] primitive, all four live
+    /// as an `Option<CellKind>` scalar alongside the modal-cell peer.
+    ///
+    /// Operator-facing consumers answering *"which file format is the
+    /// runt of this recipe?"* — the CLI `config-show` summary headlining
+    /// *"runt: Nix, 1 of 47 recognized files"*, the attestation manifest
+    /// recording the anti-modal file format between two `ProviderChain`
+    /// snapshots, the alerting policy reading *"format runt: Lisp"* to
+    /// flag a migration window where the Lisp overlay contributed almost
+    /// no file layers — now route through this named seam instead of a
+    /// per-consumer `min_by_key` walk.
+    ///
+    /// **Tie-breaking is deterministic by declaration order.** When
+    /// multiple observed formats share the minimum file-layer count, the
+    /// format earliest in [`crate::discovery::Format::ALL`] wins (`Yaml →
+    /// Toml → Lisp → Nix`) — the same order [`Self::present_file_formats`],
+    /// [`Self::absent_file_formats`], and [`Self::dominant_file_format`]
+    /// walk. A uniform-cover chain (each format producing the same nonzero
+    /// file-layer count) therefore reports
+    /// `Some(crate::discovery::Format::Yaml)` — the first cell in
+    /// declaration order — pointwise identical to
+    /// [`Self::dominant_file_format`] on the same input (the singleton-
+    /// modality degenerate where the modal and anti-modal cells coincide).
+    ///
+    /// # Invariants
+    ///
+    /// - `recessive_file_format().is_some() ==
+    ///   !file_format_histogram().is_empty()` — unlike
+    ///   [`Self::recessive_layer_kind`], the presence bound is *not*
+    ///   `!self.as_ref().is_empty()`: [`ConfigSource::Defaults`] /
+    ///   [`ConfigSource::Env`] / unrecognized-extension
+    ///   [`ConfigSource::File`] entries all project to [`None`] through
+    ///   [`ConfigSource::file_format`], so the histogram is empty even on
+    ///   a non-empty chain when no `File` entry carries a recognized
+    ///   extension. Mirrors [`Self::dominant_file_format`]'s presence
+    ///   bound at the same sub-axis one modality over.
+    /// - `recessive_file_format().is_some() == dominant_file_format().is_some()`
+    ///   — both projections are defined on the same support
+    ///   (`!file_format_histogram().is_empty()`), lifted from the
+    ///   [`crate::AxisHistogram::recessive_cell`] /
+    ///   [`crate::AxisHistogram::dominant_cell`] presence-bound law.
+    /// - `recessive_file_format() == file_format_histogram().recessive_cell()`
+    ///   — both project the same anti-modal cell off the same primitive;
+    ///   the named seam is the cube-native routing of the chain-shape
+    ///   surface.
+    /// - When `Some(f)`, `f` is a member of `present_file_formats()` —
+    ///   the anti-modal cell is by definition observed.
+    /// - When `Some(f)`, `f` is **not** a member of `absent_file_formats()`
+    ///   — the observed / coverage-gap partition is disjoint, and the
+    ///   argmin over the *support* never coincides with a zero-count
+    ///   cell.
+    /// - `file_format_histogram().count(recessive_file_format().unwrap()) ==
+    ///   file_format_histogram().trough_count()` whenever the histogram is
+    ///   non-empty — the anti-modal cell carries the trough-of-support
+    ///   observation count. Peer to the (`recessive_cell`,
+    ///   `trough_count`) anti-modal pair invariant on
+    ///   [`crate::AxisHistogram`].
+    /// - `file_format_histogram().count(recessive_file_format().unwrap()) <=
+    ///   file_format_histogram().count(dominant_file_format().unwrap())`
+    ///   whenever the histogram is non-empty — the trough-of-support count
+    ///   is bounded above by the peak count. Lifted from the trait-uniform
+    ///   `count(recessive_cell) <= count(dominant_cell)` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `recessive_file_format() == dominant_file_format()` whenever
+    ///   `present_file_formats().len() == 1` — a single observed format
+    ///   is both the modal and the anti-modal cell (the singleton-support
+    ///   degenerate).
+    /// - `recessive_file_format()` on a uniform full-cover chain (one file
+    ///   layer per format) equals
+    ///   `Some(crate::discovery::Format::Yaml)` — declaration-order
+    ///   tie-breaking on the four-cell axis picks the first cell,
+    ///   pointwise identical to `dominant_file_format()` on the same
+    ///   input.
+    /// - `recessive_file_format()` on an empty chain equals `None` — the
+    ///   empty-chain / empty-histogram boundary.
+    /// - `recessive_file_format()` on a chain of only
+    ///   [`ConfigSource::Defaults`] / [`ConfigSource::Env`] /
+    ///   unrecognized-extension [`ConfigSource::File`] layers equals
+    ///   `None` — the non-empty-chain / empty-histogram boundary the
+    ///   file-format sub-axis pins that the layer-kind sub-axis does not.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the argmin scan). Both are `O(n)` in practice since the
+    /// file-format axis carries a fixed four-cell cardinality; the
+    /// returned `Option<crate::discovery::Format>` reads one cell.
+    #[must_use]
+    fn recessive_file_format(&self) -> Option<crate::discovery::Format>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().recessive_cell()
+    }
+
     /// Dense per-env-prefix-presence tally of the chain's
     /// [`ConfigSource::Env`] layers over the [`EnvMetadataTagKind`] axis
     /// — the typed histogram every attestation manifest, structured-log
@@ -5065,6 +5213,421 @@ mod tests {
                 }
             }
             let via_seam = chain.as_slice().dominant_file_format();
+            assert_eq!(via_seam, manual.map(|(cell, _)| cell));
+        }
+    }
+
+    // ---- ConfigSourceChain::recessive_file_format — anti-modal-cell
+    //      scalar peer of file_format_histogram on the chain-shape
+    //      altitude ----
+
+    fn recessive_file_format_fixtures() -> Vec<Vec<ConfigSource>> {
+        // Reused fixture set for the recessive_file_format trait-uniform
+        // pins — mirrors the `dominant_file_format_matches_...` fixture
+        // set at that site (seven chains covering empty, sample, empty-
+        // histogram-non-empty-chain, toml-majority, full-cover, no-
+        // recognized-file, and mixed shapes).
+        vec![
+            Vec::new(),
+            sample_chain(),
+            vec![ConfigSource::Defaults, ConfigSource::Env(String::new())],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.nix")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.unknown")),
+                ConfigSource::File(PathBuf::from("/b")),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.nix")),
+                ConfigSource::File(PathBuf::from("/b.lisp")),
+                ConfigSource::File(PathBuf::from("/c.nix")),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+        ]
+    }
+
+    #[test]
+    fn recessive_file_format_matches_file_format_histogram_recessive_cell_pointwise() {
+        // The anti-modal-cell pin: `recessive_file_format` routes through
+        // `file_format_histogram().recessive_cell()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Direct
+        // sister of
+        // `recessive_layer_kind_matches_layer_kind_histogram_recessive_cell_pointwise`
+        // one sub-axis over on the same chain altitude, and dominant-side
+        // peer of
+        // `dominant_file_format_matches_file_format_histogram_dominant_cell_pointwise`.
+        for chain in recessive_file_format_fixtures() {
+            let via_histogram = chain.as_slice().file_format_histogram().recessive_cell();
+            assert_eq!(chain.as_slice().recessive_file_format(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn recessive_file_format_sample_chain_is_yaml() {
+        // Direct pin against `sample_chain()`: two `.yaml` file layers +
+        // one Env layer. Yaml is the sole observed format (Env layers
+        // don't contribute to the file-format histogram), so it is both
+        // the modal AND the anti-modal cell (singleton-support
+        // degenerate). Peer of `dominant_file_format_sample_chain_is_yaml`
+        // on the same named fixture.
+        use crate::discovery::Format;
+        let chain = sample_chain();
+        assert_eq!(chain.as_slice().recessive_file_format(), Some(Format::Yaml));
+        assert_eq!(
+            chain.as_slice().recessive_file_format(),
+            chain.as_slice().dominant_file_format(),
+        );
+    }
+
+    #[test]
+    fn recessive_file_format_toml_majority_is_yaml() {
+        // Direct pin against a toml-majority chain: three `.toml` file
+        // layers + one `.yaml` + one Env + one Defaults. Toml is the
+        // modal cell at count 3; Yaml is uniquely the anti-modal cell at
+        // count 1. Cross-verified against `hist.count(Yaml) ==
+        // hist.trough_count() == 1`. Peer of
+        // `dominant_file_format_toml_majority_is_toml` at the same
+        // fixture — the two projections partition the two-cell support.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.recessive_file_format(), Some(Format::Yaml));
+        let hist = slice.file_format_histogram();
+        assert_eq!(hist.count(Format::Yaml), 1);
+        assert_eq!(hist.count(Format::Toml), 3);
+        assert_eq!(hist.trough_count(), 1);
+    }
+
+    #[test]
+    fn recessive_file_format_empty_chain_is_none() {
+        // The empty-chain / `None` boundary — every chain-level histogram
+        // over an empty chain is the all-zero histogram, so
+        // `recessive_cell` reads `None`. Peer of
+        // `dominant_file_format_empty_chain_is_none` on the modal side,
+        // and `recessive_layer_kind_empty_chain_is_none` on the layer-
+        // kind sub-axis.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.recessive_file_format(), None);
+    }
+
+    #[test]
+    fn recessive_file_format_no_recognized_files_is_none() {
+        // The non-empty-chain / empty-histogram boundary the file-format
+        // sub-axis pins that the layer-kind sub-axis does *not*. A chain
+        // of only `Defaults` / `Env` / unrecognized-extension `File`
+        // layers is non-empty but has no `Some` file_format projection,
+        // so the histogram is empty and `recessive_file_format` reads
+        // `None`. Distinguishing pin against a mis-implementation that
+        // would confuse `!self.as_ref().is_empty()` (the layer-kind sub-
+        // axis's presence bound) with the file-format sub-axis's
+        // (`!file_format_histogram().is_empty()`). Peer of
+        // `dominant_file_format_no_recognized_files_is_none` on the
+        // modal side.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            assert!(!chain.is_empty(), "fixture must be non-empty");
+            assert!(
+                chain.as_slice().file_format_histogram().is_empty(),
+                "fixture must have empty file-format histogram",
+            );
+            assert_eq!(chain.as_slice().recessive_file_format(), None);
+        }
+    }
+
+    #[test]
+    fn recessive_file_format_is_some_iff_histogram_is_nonempty() {
+        // Structural completeness of the
+        // `(file_format_histogram().is_empty(), recessive_file_format)`
+        // cross-surface pair. Unlike `recessive_layer_kind`, the presence
+        // bound is the sub-axis histogram's `is_empty()` — a non-empty
+        // chain can still have an empty file-format histogram (only
+        // `Defaults` / `Env` / unrecognized `File` layers). Peer of
+        // `dominant_file_format_is_some_iff_histogram_is_nonempty` on the
+        // modal side.
+        let fixtures: [Vec<ConfigSource>; 6] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.toml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.unknown")),
+                ConfigSource::File(PathBuf::from("/b")),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().recessive_file_format().is_some(),
+                !chain.as_slice().file_format_histogram().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_file_format_is_some_iff_dominant_file_format_is_some() {
+        // Cross-projection pin lifted from the trait-uniform
+        // `recessive_cell().is_some() == dominant_cell().is_some()` law
+        // on AxisHistogram: both projections operate over the same
+        // nonzero support, so they agree on presence at every input.
+        // Peer of `recessive_layer_kind_is_some_iff_dominant_layer_kind_is_some`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            assert_eq!(
+                chain.as_slice().recessive_file_format().is_some(),
+                chain.as_slice().dominant_file_format().is_some(),
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_file_format_is_member_of_present_file_formats() {
+        // Structural pin: whenever `recessive_file_format()` is
+        // `Some(f)`, `f` must appear in `present_file_formats()` — the
+        // anti-modal cell is taken over the support, so it is by
+        // definition observed. Peer of
+        // `dominant_file_format_is_member_of_present_file_formats` on
+        // the modal side, and
+        // `recessive_layer_kind_is_member_of_present_layer_kinds` on
+        // the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let Some(recessive) = chain.as_slice().recessive_file_format() else {
+                continue;
+            };
+            let present = chain.as_slice().present_file_formats();
+            assert!(
+                present.contains(&recessive),
+                "recessive file format {recessive:?} must appear in \
+                 present_file_formats() = {present:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_file_format_is_not_member_of_absent_file_formats() {
+        // Structural pin: whenever `recessive_file_format()` is
+        // `Some(f)`, `f` must NOT appear in `absent_file_formats()` —
+        // the anti-modal cell lies on the observed side of the observed
+        // / coverage-gap partition by construction (argmin taken over
+        // the nonzero support). Disjointness pin between the two named
+        // seams. Peer of
+        // `dominant_file_format_is_not_member_of_absent_file_formats`
+        // on the modal side, and
+        // `recessive_layer_kind_is_not_member_of_absent_layer_kinds`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let Some(recessive) = chain.as_slice().recessive_file_format() else {
+                continue;
+            };
+            let absent = chain.as_slice().absent_file_formats();
+            assert!(
+                !absent.contains(&recessive),
+                "recessive file format {recessive:?} must NOT appear in \
+                 absent_file_formats() = {absent:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_file_format_count_equals_trough_count_on_nonempty_histogram() {
+        // The `(recessive_cell, trough_count)` anti-modal-pair invariant
+        // lifted to the chain altitude: the observation count of the
+        // recessive file format equals the histogram's trough count over
+        // the support. Peer of
+        // `dominant_file_format_count_equals_peak_count_on_nonempty_histogram`
+        // on the modal side, and
+        // `recessive_layer_kind_count_equals_trough_count_on_nonempty_chain`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let Some(recessive) = chain.as_slice().recessive_file_format() else {
+                continue;
+            };
+            let hist = chain.as_slice().file_format_histogram();
+            assert_eq!(hist.count(recessive), hist.trough_count());
+        }
+    }
+
+    #[test]
+    fn recessive_file_format_count_bounded_by_dominant_file_format_count() {
+        // Structural bound lifted from the trait-uniform
+        // `count(recessive_cell) <= count(dominant_cell)` law on
+        // AxisHistogram: the trough-of-support is bounded above by the
+        // peak-of-support at every fixture. Cross-projection pin between
+        // `recessive_file_format` and `dominant_file_format`. Peer of
+        // `recessive_layer_kind_count_bounded_by_dominant_layer_kind_count`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let Some(recessive) = chain.as_slice().recessive_file_format() else {
+                continue;
+            };
+            let Some(dominant) = chain.as_slice().dominant_file_format() else {
+                unreachable!("presence of recessive format implies presence of dominant format");
+            };
+            let hist = chain.as_slice().file_format_histogram();
+            assert!(
+                hist.count(recessive) <= hist.count(dominant),
+                "count(recessive={recessive:?})={r} must be <= count(dominant={dominant:?})={d}",
+                r = hist.count(recessive),
+                d = hist.count(dominant),
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_file_format_uniform_full_cover_picks_yaml() {
+        // Uniform full-cover chain — one file layer of each format (all
+        // four cells tied at count 1). The declaration-order tiebreak on
+        // `Format::ALL` (`Yaml → Toml → Lisp → Nix`) picks the FIRST
+        // tied cell — `Yaml` — pointwise identical to
+        // `dominant_file_format` on the same input (the singleton-
+        // modality degenerate where the modal and anti-modal cells
+        // coincide). Peer of
+        // `dominant_file_format_uniform_full_cover_picks_yaml` on the
+        // modal side, and
+        // `recessive_layer_kind_uniform_cover_picks_first_cell` on the
+        // layer-kind sub-axis.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.nix")),
+            ConfigSource::File(PathBuf::from("/b.lisp")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.yaml")),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.file_format_histogram();
+        assert!(hist.is_full_cover());
+        assert_eq!(hist.count(Format::Yaml), 1);
+        assert_eq!(hist.count(Format::Toml), 1);
+        assert_eq!(hist.count(Format::Lisp), 1);
+        assert_eq!(hist.count(Format::Nix), 1);
+        assert_eq!(hist.trough_count(), 1);
+        assert_eq!(slice.recessive_file_format(), Some(Format::Yaml));
+        assert_eq!(slice.recessive_file_format(), slice.dominant_file_format());
+    }
+
+    #[test]
+    fn recessive_file_format_two_way_tie_picks_earliest_declared_observed_cell() {
+        // Two-way tie between cells that are NOT the first cell of
+        // `Format::ALL`: 3 Yaml + 1 Toml + 1 Lisp, zero Nix. The
+        // support {Yaml, Toml, Lisp} has trough count 1 with Toml and
+        // Lisp tied. Toml wins because it precedes Lisp in `ALL` — the
+        // tiebreak is "earliest tied observed cell at the trough", not
+        // "first cell of `ALL` regardless of trough participation" (Yaml
+        // appears in `ALL` before Toml but has count 3 and does not
+        // participate in the trough tie). Distinguishing pin against a
+        // mis-implementation that would return `Yaml` (the first cell
+        // of `ALL`) instead of `Toml` (the first tied observed cell at
+        // the trough). Peer of
+        // `dominant_file_format_two_way_tie_picks_earliest_declared_observed_cell`
+        // on the modal side, and
+        // `recessive_layer_kind_two_way_tie_picks_earliest_declared_observed_cell`
+        // on the layer-kind sub-axis.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+            ConfigSource::File(PathBuf::from("/d.toml")),
+            ConfigSource::File(PathBuf::from("/e.lisp")),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.file_format_histogram();
+        assert_eq!(hist.count(Format::Yaml), 3);
+        assert_eq!(hist.count(Format::Toml), 1);
+        assert_eq!(hist.count(Format::Lisp), 1);
+        assert_eq!(hist.count(Format::Nix), 0);
+        assert_eq!(hist.trough_count(), 1);
+        assert_eq!(slice.recessive_file_format(), Some(Format::Toml));
+    }
+
+    #[test]
+    fn recessive_file_format_singleton_support_agrees_with_dominant_file_format() {
+        // Singleton-support degenerate lifted from the trait-uniform
+        // `distinct_cells() == 1 → dominant_cell() == recessive_cell()`
+        // law on AxisHistogram: when only one format contributes, that
+        // format is both the modal and the anti-modal cell. Direct
+        // construction: three `.toml` files + Env + Defaults (Toml is
+        // the sole observed format). Peer of
+        // `recessive_layer_kind_singleton_support_agrees_with_dominant_layer_kind`
+        // on the layer-kind sub-axis.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 1);
+        assert_eq!(slice.recessive_file_format(), slice.dominant_file_format());
+        assert_eq!(slice.recessive_file_format(), Some(Format::Toml));
+    }
+
+    #[test]
+    fn recessive_file_format_agrees_with_open_coded_argmin_walk() {
+        // Parity against the exact fold-forward argmin walk this lift
+        // replaces — spelling the declaration-order tiebreak explicitly
+        // with strict `<` inequality so the FIRST tied cell wins,
+        // mirroring `AxisHistogram::recessive_cell` rather than
+        // `min_by_key`'s FIRST-tied-cell semantics which agrees by
+        // coincidence but drifts under any reversed comparison. Peer of
+        // `dominant_file_format_agrees_with_open_coded_argmax_walk` on
+        // the modal side, and
+        // `recessive_layer_kind_agrees_with_open_coded_argmin_walk` on
+        // the layer-kind sub-axis.
+        use crate::discovery::Format;
+        for chain in recessive_file_format_fixtures() {
+            let hist = chain.as_slice().file_format_histogram();
+            let mut manual: Option<(Format, usize)> = None;
+            for cell in Format::ALL.iter().copied() {
+                let count = hist.count(cell);
+                if count == 0 {
+                    continue;
+                }
+                match manual {
+                    None => manual = Some((cell, count)),
+                    Some((_, best)) if count < best => manual = Some((cell, count)),
+                    _ => {}
+                }
+            }
+            let via_seam = chain.as_slice().recessive_file_format();
             assert_eq!(via_seam, manual.map(|(cell, _)| cell));
         }
     }
