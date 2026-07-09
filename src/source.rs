@@ -654,6 +654,82 @@ pub trait ConfigSourceChain {
         crate::axis_histogram(self.as_ref().iter().filter_map(ConfigSource::file_format))
     }
 
+    /// The distinct [`crate::discovery::Format`]s that appear as ≥1
+    /// recognized-extension file layer in this chain, in
+    /// [`crate::discovery::Format::ALL`] declaration order — the
+    /// chain-altitude dual of "which file formats actually surfaced in
+    /// this recipe".
+    ///
+    /// Routes through [`Self::file_format_histogram`]:
+    /// [`crate::AxisHistogram::observed`] iterates the histogram's
+    /// support (the closed-axis cells with nonzero count) in
+    /// [`crate::ClosedAxis::ALL`] declaration order, which is the
+    /// [`crate::discovery::Format`] canonical order
+    /// (`Yaml → Toml → Lisp → Nix`) by construction — the closed-axis
+    /// discipline provides the sort + dedup automatically, so this
+    /// method reads directly off the shikumi cube-native primitive
+    /// instead of hand-rolling `Vec::contains` (`O(n·k)` in the chain
+    /// length and distinct-format count) + explicit
+    /// `sort_by_key(axis_ordinal)` at every attestation manifest,
+    /// structured-log dashboard, or config-show renderer summarizing
+    /// which file formats contributed to the recipe.
+    ///
+    /// The chain-altitude sister of [`Self::present_layer_kinds`] on
+    /// the [`ConfigSourceKind`] layer-kind axis — same observed-cells
+    /// projection template, one axis over. Together with
+    /// [`Self::present_env_prefix_kinds`] the three chain-shape
+    /// histograms all carry the observed-cells peer alongside their
+    /// respective `_histogram()` primitive; every "which cells
+    /// surfaced?" question on the recipe reaches for the same named
+    /// seam at whichever sub-axis it lives on. Peer to
+    /// [`crate::ConfigDiff::present_kinds`] on the diff altitude and
+    /// [`crate::ProvenanceMap::contributing_tiers`] on the tier
+    /// altitude — all four project the observed-support of the
+    /// underlying [`crate::AxisHistogram`] over their local closed
+    /// axis, all four live as a `Vec<CellKind>` collect wrapper
+    /// alongside their respective `_histogram()` primitive, and all
+    /// four spell the closed-axis declaration-order cell iteration at
+    /// the API boundary.
+    ///
+    /// # Invariants
+    ///
+    /// - `present_file_formats().len() ==
+    ///   file_format_histogram().distinct_cells()` — both project the
+    ///   same support-cardinality off the histogram.
+    /// - `present_file_formats().is_empty() ==
+    ///   file_format_histogram().is_empty()` — a histogram with no
+    ///   observed file-format cell has no present formats, and vice
+    ///   versa. Unlike [`Self::present_layer_kinds`], the presence
+    ///   bound is NOT tied to `self.as_ref().is_empty()`: a chain of
+    ///   only [`ConfigSource::Defaults`] / [`ConfigSource::Env`] /
+    ///   unrecognized-extension [`ConfigSource::File`] layers is
+    ///   non-empty but has no present formats, because those entries
+    ///   project to [`None`] through [`ConfigSource::file_format`].
+    /// - `file_format_histogram().is_full_cover() ==
+    ///   (present_file_formats().len() ==
+    ///   crate::axis_cardinality::<crate::discovery::Format>())` —
+    ///   the full-cover predicate and the observed-cells cardinality
+    ///   agree by construction over the same shared histogram.
+    /// - `present_file_formats()` is sorted strictly ascending by
+    ///   [`crate::axis_ordinal`] on [`crate::discovery::Format`] —
+    ///   dedup and sort for free from the closed-axis discipline; no
+    ///   hand-rolled `sort_by_key` at the consumer.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram
+    /// build) and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the support scan). Both are `O(n)` in practice since the
+    /// file-format axis carries a fixed four-cell cardinality; the
+    /// returned `Vec<Format>` is at most four elements long regardless
+    /// of chain length.
+    fn present_file_formats(&self) -> Vec<crate::discovery::Format>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().observed().collect()
+    }
+
     /// Dense per-env-prefix-presence tally of the chain's
     /// [`ConfigSource::Env`] layers over the [`EnvMetadataTagKind`] axis
     /// — the typed histogram every attestation manifest, structured-log
@@ -2755,6 +2831,326 @@ mod tests {
             "mixed-extension chain: file_format_histogram total ({format_total}) \
              must be strictly less than layer_kind_histogram(File) ({file_kind_count})",
         );
+    }
+
+    // ---- ConfigSourceChain::present_file_formats — observed-cells
+    //      peer of ConfigSourceChain::file_format_histogram on the
+    //      chain-shape altitude ----
+
+    #[test]
+    fn present_file_formats_matches_file_format_histogram_observed_pointwise() {
+        // The observed-support pin: `present_file_formats` routes
+        // through `file_format_histogram().observed().collect()`, so
+        // the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared cube-native primitive.
+        // Sister of `present_layer_kinds_matches_layer_kind_histogram_observed_pointwise`
+        // one axis over.
+        use crate::discovery::Format;
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            sample_chain(),
+            vec![ConfigSource::Defaults, ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.nix")),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+                ConfigSource::File(PathBuf::from("/c.toml")),
+                ConfigSource::File(PathBuf::from("/d.unknown")),
+            ],
+        ];
+        for chain in &fixtures {
+            let via_direct = chain.as_slice().present_file_formats();
+            let via_histogram: Vec<Format> = chain
+                .as_slice()
+                .file_format_histogram()
+                .observed()
+                .collect();
+            assert_eq!(
+                via_direct,
+                via_histogram,
+                "present_file_formats must equal \
+                 file_format_histogram().observed().collect() pointwise \
+                 over chain of length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn present_file_formats_empty_chain_is_empty() {
+        // Empty-chain boundary: no entries, no observed formats. Sister
+        // of `present_layer_kinds_empty_chain_is_empty` on the file-
+        // format axis. Note the presence bound diverges from
+        // present_layer_kinds: a chain of only Defaults / Env / bad-
+        // extension File entries is non-empty but has no present
+        // formats — the file_format_histogram-emptiness law asserted
+        // in the separate `_no_recognized_files_is_empty` test below.
+        use crate::discovery::Format;
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(empty.present_file_formats().is_empty());
+        assert_eq!(empty.present_file_formats(), Vec::<Format>::new());
+    }
+
+    #[test]
+    fn present_file_formats_no_recognized_files_is_empty() {
+        // Presence-bound pin distinguishing this peer from
+        // `present_layer_kinds`: a non-empty chain of Defaults, Env,
+        // and unrecognized-extension File layers all project to None
+        // through file_format(), so present_file_formats() is empty
+        // even though the chain is not. Reads the histogram-empty law
+        // documented in the trait doc-string.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.unknown")),
+            ConfigSource::File(PathBuf::from("/b")),
+        ];
+        assert!(!chain.is_empty());
+        assert!(chain.as_slice().file_format_histogram().is_empty());
+        assert!(chain.as_slice().present_file_formats().is_empty());
+        assert_eq!(
+            chain.as_slice().present_file_formats(),
+            Vec::<Format>::new()
+        );
+    }
+
+    #[test]
+    fn present_file_formats_iterates_in_declaration_order() {
+        // Declaration-order pin: even when the observation order is
+        // Nix → Lisp → Toml → Yaml (the reverse of ::ALL), the returned
+        // Vec walks the closed axis in canonical
+        // (Yaml → Toml → Lisp → Nix) order — the closed-axis discipline
+        // provides the sort automatically. Sister of
+        // `present_layer_kinds_iterates_in_declaration_order` on the
+        // file-format axis.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        assert_eq!(
+            chain.as_slice().present_file_formats(),
+            vec![Format::Yaml, Format::Toml, Format::Lisp, Format::Nix],
+        );
+    }
+
+    #[test]
+    fn present_file_formats_dedups_across_repeated_observations() {
+        // Repeated observations of the same format collapse to one
+        // entry in the returned Vec — the closed-axis discipline
+        // provides dedup automatically. Six file layers split
+        // (3 Yaml × 2 Toml × 1 Nix) yield three present formats.
+        // Sister of `present_layer_kinds_dedups_across_repeated_observations`
+        // on the file-format axis.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+            ConfigSource::File(PathBuf::from("/d.toml")),
+            ConfigSource::File(PathBuf::from("/e.toml")),
+            ConfigSource::File(PathBuf::from("/f.nix")),
+        ];
+        assert_eq!(
+            chain.as_slice().present_file_formats(),
+            vec![Format::Yaml, Format::Toml, Format::Nix],
+        );
+    }
+
+    #[test]
+    fn present_file_formats_singleton_chain_yields_singleton_support() {
+        // A chain composed only of one file-format kind has exactly
+        // that format as its present-formats set — the support is the
+        // singleton observed cell. Boundary case pinning that
+        // unobserved cells do not leak into the returned Vec (the
+        // closed-axis discipline drops zero-count cells) — one
+        // fixture per Format::ALL cell.
+        use crate::discovery::Format;
+        for (format, path) in [
+            (Format::Yaml, "/a.yaml"),
+            (Format::Toml, "/a.toml"),
+            (Format::Lisp, "/a.lisp"),
+            (Format::Nix, "/a.nix"),
+        ] {
+            let chain = vec![
+                ConfigSource::File(PathBuf::from(path)),
+                ConfigSource::File(PathBuf::from(path)),
+            ];
+            assert_eq!(
+                chain.as_slice().present_file_formats(),
+                vec![format],
+                "singleton-support chain over {format:?} must yield \
+                 that single format",
+            );
+        }
+    }
+
+    #[test]
+    fn present_file_formats_len_matches_distinct_cells() {
+        // Support-cardinality invariant:
+        // `present_file_formats().len()` equals
+        // `file_format_histogram().distinct_cells()` pointwise. Both
+        // project the observed-cell count off the shared histogram
+        // over the Format closed axis. Sister of
+        // `present_layer_kinds_len_matches_distinct_cells` one axis
+        // over.
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.nix")),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().present_file_formats().len(),
+                chain.as_slice().file_format_histogram().distinct_cells(),
+                "present_file_formats().len() must equal \
+                 file_format_histogram().distinct_cells() over chain of length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn present_file_formats_full_cover_matches_axis_cardinality() {
+        // Cross-surface pin on the full-cover predicate: a chain whose
+        // `file_format_histogram().is_full_cover()` returns `true` has
+        // exactly `crate::axis_cardinality::<Format>()` observed
+        // cells, and `present_file_formats()` returns `Format::ALL` in
+        // declaration order.
+        use crate::discovery::Format;
+        let axis_cover = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        assert!(
+            axis_cover
+                .as_slice()
+                .file_format_histogram()
+                .is_full_cover()
+        );
+        assert_eq!(
+            axis_cover.as_slice().present_file_formats().len(),
+            crate::axis_cardinality::<Format>(),
+        );
+        assert_eq!(
+            axis_cover.as_slice().present_file_formats(),
+            Format::ALL.to_vec(),
+        );
+
+        // Strict-subset case: sample_chain has two `.yaml` files and
+        // no toml / lisp / nix, so it is NOT a full cover, and the
+        // present-formats cardinality is strictly less than the axis
+        // cardinality.
+        let chain = sample_chain();
+        assert!(!chain.as_slice().file_format_histogram().is_full_cover());
+        assert!(
+            chain.as_slice().present_file_formats().len() < crate::axis_cardinality::<Format>(),
+        );
+    }
+
+    #[test]
+    fn present_file_formats_is_strictly_ascending_by_axis_ordinal() {
+        // Structural-sort pin: the returned Vec is strictly ascending
+        // by `crate::axis_ordinal` on Format — dedup + sort for free
+        // from the closed-axis discipline. Every consecutive pair in
+        // the returned Vec has strictly increasing axis ordinal.
+        // Sister of `present_layer_kinds_is_strictly_ascending_by_axis_ordinal`
+        // one axis over.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/d.nix")),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/e.yaml")),
+        ];
+        let present = chain.as_slice().present_file_formats();
+        for window in present.windows(2) {
+            let a = crate::axis_ordinal(window[0]);
+            let b = crate::axis_ordinal(window[1]);
+            assert!(
+                a < b,
+                "present_file_formats must be strictly ascending by \
+                 axis_ordinal, but ord({:?})={a} >= ord({:?})={b}",
+                window[0],
+                window[1],
+            );
+        }
+    }
+
+    #[test]
+    fn present_file_formats_agrees_with_open_coded_dedup_walk() {
+        // Parity pin against a hand-rolled `Vec::contains` + sort_by_key
+        // consumer — the exact pattern the trait-level lift replaces.
+        // Any future divergence (e.g. `observed()` changing its
+        // iteration order, `file_format_histogram` projecting through
+        // a different file_format function) surfaces here as a
+        // structural mismatch between the lifted seam and the open-
+        // coded walk.
+        use crate::discovery::Format;
+        let chains = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.nix")),
+                ConfigSource::File(PathBuf::from("/d.unknown")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.lisp")),
+                ConfigSource::File(PathBuf::from("/b.lisp")),
+                ConfigSource::File(PathBuf::from("/c.yaml")),
+                ConfigSource::File(PathBuf::from("/d.toml")),
+                ConfigSource::File(PathBuf::from("/e.nix")),
+            ],
+        ];
+        for chain in &chains {
+            let lifted = chain.as_slice().present_file_formats();
+            let mut manual: Vec<Format> = Vec::new();
+            for source in chain {
+                if let Some(f) = source.file_format()
+                    && !manual.contains(&f)
+                {
+                    manual.push(f);
+                }
+            }
+            manual.sort_by_key(|f| crate::axis_ordinal(*f));
+            assert_eq!(
+                lifted,
+                manual,
+                "present_file_formats must equal the open-coded \
+                 contains+sort walk over chain of length {}",
+                chain.len(),
+            );
+        }
     }
 
     // ---- ConfigSource::env_prefix_kind ----
