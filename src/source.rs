@@ -807,6 +807,90 @@ pub trait ConfigSourceChain {
         self.file_format_histogram().observed().collect()
     }
 
+    /// The distinct [`crate::discovery::Format`]s that appear as **zero**
+    /// recognized-extension file layers in this chain, in
+    /// [`crate::discovery::Format::ALL`] declaration order — the coverage-
+    /// gap peer of [`Self::present_file_formats`] and the file-format-axis
+    /// sister of [`Self::absent_layer_kinds`] one axis over on the same
+    /// chain-shape surface.
+    ///
+    /// Routes through [`Self::file_format_histogram`]:
+    /// [`crate::AxisHistogram::unobserved`] iterates the histogram's
+    /// **coverage gap** (the closed-axis cells with zero count) in
+    /// [`crate::ClosedAxis::ALL`] declaration order, which is the
+    /// [`crate::discovery::Format`] canonical order
+    /// (`Yaml → Toml → Lisp → Nix`) by construction — the closed-axis
+    /// discipline provides the sort + dedup automatically, so this method
+    /// reads directly off the shikumi cube-native primitive instead of
+    /// hand-rolling
+    /// `crate::discovery::Format::ALL.iter().filter(|f| !self.present_file_formats().
+    /// contains(f))` (`O(k·k)` in axis-cardinality, quadratic on the
+    /// observed side) at every operator-facing consumer asking *"which
+    /// file formats are absent from this recipe?"* — the CLI `config-show`
+    /// summary reading *"no `.nix` loader; skip the nix-loader legend"*,
+    /// the attestation manifest recording the file-format coverage gap
+    /// of a `ProviderChain`, the alerting policy suppressing per-format
+    /// bins that never fired for this rebuild window.
+    ///
+    /// The observed-cells peer ([`Self::present_file_formats`]) and the
+    /// coverage-gap peer ([`Self::absent_file_formats`]) together form the
+    /// **support / coverage-gap partition** on the file-format sub-axis
+    /// — every cell of [`crate::discovery::Format::ALL`] lies in exactly
+    /// one of the two, and the two `Vec<Format>` lengths sum to
+    /// [`crate::axis_cardinality::<crate::discovery::Format>()`][crate::axis_cardinality].
+    /// The file-format-axis sister of [`Self::absent_layer_kinds`] on the
+    /// [`ConfigSourceKind`] layer-kind axis — same coverage-gap
+    /// projection template, one axis over. With this lift the chain-shape
+    /// surface now closes both halves of the histogram's observed /
+    /// unobserved partition at two named `Vec<CellKind>` seams over the
+    /// layer-kind and file-format sub-axes; only the env-prefix-presence
+    /// sub-axis still awaits its coverage-gap peer
+    /// ([`Self::absent_env_prefix_kinds`]).
+    ///
+    /// # Invariants
+    ///
+    /// - `absent_file_formats().len() ==
+    ///   file_format_histogram().unobserved_cells()` — both project the
+    ///   same coverage-gap cardinality off the histogram.
+    /// - `present_file_formats().len() + absent_file_formats().len() ==
+    ///   crate::axis_cardinality::<crate::discovery::Format>()` — the
+    ///   two peers partition the closed axis without remainder (every
+    ///   cell is either observed or unobserved, never both).
+    /// - `present_file_formats()` and `absent_file_formats()` are
+    ///   disjoint: no [`crate::discovery::Format`] appears in both.
+    /// - `absent_file_formats().is_empty() ==
+    ///   file_format_histogram().is_full_cover()` — the coverage-gap is
+    ///   empty iff every file format was observed at least once (all
+    ///   four of `Yaml` / `Toml` / `Lisp` / `Nix` appear as ≥1 file
+    ///   layer with the matching extension).
+    /// - `absent_file_formats()` on an empty chain (no layers) equals
+    ///   [`crate::discovery::Format::ALL`] — every format is absent
+    ///   when no layer contributed. Unlike
+    ///   [`Self::absent_layer_kinds`], the full-axis boundary also
+    ///   fires on any chain of only [`ConfigSource::Defaults`] /
+    ///   [`ConfigSource::Env`] / unrecognized-extension
+    ///   [`ConfigSource::File`] layers — those entries all project to
+    ///   [`None`] through [`ConfigSource::file_format`], so the
+    ///   histogram is empty even when the chain is not.
+    /// - `absent_file_formats()` is sorted strictly ascending by
+    ///   [`crate::axis_ordinal`] on [`crate::discovery::Format`] —
+    ///   dedup + sort for free from the closed-axis discipline.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the coverage-gap scan). Both are `O(n)` in practice since the
+    /// file-format axis carries a fixed four-cell cardinality; the
+    /// returned `Vec<Format>` is at most four elements long regardless
+    /// of chain length.
+    fn absent_file_formats(&self) -> Vec<crate::discovery::Format>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().unobserved().collect()
+    }
+
     /// Dense per-env-prefix-presence tally of the chain's
     /// [`ConfigSource::Env`] layers over the [`EnvMetadataTagKind`] axis
     /// — the typed histogram every attestation manifest, structured-log
@@ -3652,6 +3736,394 @@ mod tests {
                 manual,
                 "present_file_formats must equal the open-coded \
                  contains+sort walk over chain of length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    // ---- ConfigSourceChain::absent_file_formats — unobserved-cells
+    //      peer of present_file_formats on the chain-shape altitude ----
+
+    #[test]
+    fn absent_file_formats_matches_file_format_histogram_unobserved_pointwise() {
+        // The coverage-gap pin: `absent_file_formats` routes through
+        // `file_format_histogram().unobserved().collect()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Sister of
+        // `absent_layer_kinds_matches_layer_kind_histogram_unobserved_pointwise`
+        // one axis over on the same chain-shape surface.
+        use crate::discovery::Format;
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            sample_chain(),
+            vec![ConfigSource::Defaults, ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.nix")),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+                ConfigSource::File(PathBuf::from("/c.toml")),
+                ConfigSource::File(PathBuf::from("/d.unknown")),
+            ],
+        ];
+        for chain in &fixtures {
+            let via_direct = chain.as_slice().absent_file_formats();
+            let via_histogram: Vec<Format> = chain
+                .as_slice()
+                .file_format_histogram()
+                .unobserved()
+                .collect();
+            assert_eq!(
+                via_direct,
+                via_histogram,
+                "absent_file_formats must equal \
+                 file_format_histogram().unobserved().collect() pointwise \
+                 over chain of length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn absent_file_formats_empty_chain_is_full_axis() {
+        // An empty chain has no observed formats — every cell of
+        // `Format::ALL` lies in the coverage gap. Sister of
+        // `absent_layer_kinds_empty_chain_is_full_axis` one axis over
+        // on the same chain-shape surface.
+        use crate::discovery::Format;
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.absent_file_formats(), Format::ALL.to_vec(),);
+    }
+
+    #[test]
+    fn absent_file_formats_no_recognized_files_is_full_axis() {
+        // Presence-bound divergence from `absent_layer_kinds` — the
+        // chain is non-empty but every entry projects to None through
+        // `file_format()`, so the histogram is empty and every axis
+        // cell is absent. Peer of
+        // `present_file_formats_no_recognized_files_is_empty` on the
+        // coverage-gap side: a non-empty chain of Defaults, Env, and
+        // unrecognized-extension File layers has the full file-format
+        // axis as its coverage gap.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.unknown")),
+            ConfigSource::File(PathBuf::from("/b")),
+        ];
+        assert!(!chain.is_empty());
+        assert!(chain.as_slice().file_format_histogram().is_empty());
+        assert_eq!(chain.as_slice().absent_file_formats(), Format::ALL.to_vec(),);
+    }
+
+    #[test]
+    fn absent_file_formats_iterates_in_declaration_order() {
+        // The coverage-gap iter walks `Format::ALL` in declaration
+        // order (`Yaml → Toml → Lisp → Nix`) and yields only the cells
+        // with zero count. Pinned here on the empty chain, whose gap
+        // is the entire axis — the emitted order matches `Format::ALL`
+        // verbatim.
+        use crate::discovery::Format;
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(
+            empty.absent_file_formats(),
+            vec![Format::Yaml, Format::Toml, Format::Lisp, Format::Nix],
+        );
+    }
+
+    #[test]
+    fn absent_file_formats_yaml_only_chain_is_toml_lisp_nix() {
+        // A chain composed only of `.yaml` file layers has exactly
+        // { Toml, Lisp, Nix } as its coverage gap — the non-Yaml
+        // subset of the axis is entirely absent. Operator-facing pin
+        // on the "yaml-only recipe" — the common shikumi default
+        // where discovery locates only `.yaml` config files.
+        use crate::discovery::Format;
+        let yaml_only = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+        ];
+        assert_eq!(
+            yaml_only.as_slice().absent_file_formats(),
+            vec![Format::Toml, Format::Lisp, Format::Nix],
+        );
+    }
+
+    #[test]
+    fn absent_file_formats_toml_only_chain_is_yaml_lisp_nix() {
+        // A chain composed only of `.toml` file layers has exactly
+        // { Yaml, Lisp, Nix } as its coverage gap. Boundary pin on
+        // the "toml-only recipe" — the closed-axis discipline emits
+        // in declaration order regardless of observation order.
+        use crate::discovery::Format;
+        let toml_only = vec![
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+        ];
+        assert_eq!(
+            toml_only.as_slice().absent_file_formats(),
+            vec![Format::Yaml, Format::Lisp, Format::Nix],
+        );
+    }
+
+    #[test]
+    fn absent_file_formats_len_matches_unobserved_cells() {
+        // The coverage-gap-cardinality invariant on the histogram's
+        // support / gap partition:
+        // `absent_file_formats().len()` equals
+        // `file_format_histogram().unobserved_cells()` pointwise across
+        // every fixture. Sister of
+        // `absent_layer_kinds_len_matches_unobserved_cells` one axis
+        // over.
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.nix")),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().absent_file_formats().len(),
+                chain.as_slice().file_format_histogram().unobserved_cells(),
+                "absent_file_formats().len() must equal \
+                 file_format_histogram().unobserved_cells() over chain of length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn absent_file_formats_and_present_file_formats_partition_axis() {
+        // The support / coverage-gap partition on the closed axis:
+        // every cell of `Format::ALL` lies in exactly one of
+        // (observed, unobserved), so the two Vec lengths sum to the
+        // axis cardinality. Sister of
+        // `absent_layer_kinds_and_present_layer_kinds_partition_axis`
+        // one axis over.
+        use crate::discovery::Format;
+        let axis_size = crate::axis_cardinality::<Format>();
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.nix")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+                ConfigSource::File(PathBuf::from("/c.toml")),
+                ConfigSource::File(PathBuf::from("/d.unknown")),
+            ],
+        ];
+        for chain in &fixtures {
+            let observed = chain.as_slice().present_file_formats();
+            let absent = chain.as_slice().absent_file_formats();
+            assert_eq!(observed.len() + absent.len(), axis_size);
+            for format in &observed {
+                assert!(
+                    !absent.contains(format),
+                    "format {format:?} appears in both present and absent \
+                     over chain of length {}",
+                    chain.len(),
+                );
+            }
+            for cell in Format::ALL {
+                assert!(
+                    observed.contains(cell) || absent.contains(cell),
+                    "format {cell:?} appears in neither present nor absent \
+                     over chain of length {}",
+                    chain.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn absent_file_formats_is_empty_iff_is_full_cover() {
+        // The coverage-gap is empty iff every file format was observed
+        // at least once. Pinned across every fixture in the module
+        // against `file_format_histogram().is_full_cover()`, plus a
+        // direct positive pin: a chain carrying one `.yaml` + one
+        // `.toml` + one `.lisp` + one `.nix` is full-cover; the
+        // coverage-gap is empty.
+        use crate::discovery::Format;
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.nix")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().absent_file_formats().is_empty(),
+                chain.as_slice().file_format_histogram().is_full_cover(),
+            );
+        }
+        let full_cover = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        assert!(
+            full_cover
+                .as_slice()
+                .file_format_histogram()
+                .is_full_cover()
+        );
+        assert_eq!(
+            full_cover.as_slice().absent_file_formats(),
+            Vec::<Format>::new(),
+        );
+        assert_eq!(
+            full_cover.as_slice().present_file_formats(),
+            Format::ALL.to_vec(),
+        );
+    }
+
+    #[test]
+    fn absent_file_formats_is_strictly_ascending_by_axis_ordinal() {
+        // Structural sort pin: the coverage-gap walks the closed axis
+        // in declaration order, so `absent_file_formats()` is strictly
+        // ascending by `crate::axis_ordinal` — dedup + sort for free
+        // from the closed-axis discipline. Sister of
+        // `absent_layer_kinds_is_strictly_ascending_by_axis_ordinal`
+        // one axis over.
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.nix")),
+            ],
+        ];
+        for chain in &fixtures {
+            let absent = chain.as_slice().absent_file_formats();
+            for pair in absent.windows(2) {
+                assert!(
+                    crate::axis_ordinal(pair[0]) < crate::axis_ordinal(pair[1]),
+                    "absent_file_formats must be strictly ascending: {absent:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn absent_file_formats_singleton_chain_yields_three_absent() {
+        // A chain of a single recognized-extension file layer has
+        // exactly `axis_cardinality - 1` absent formats — every axis
+        // cell except the one carried by that layer. Sister of
+        // `absent_layer_kinds_singleton_chain_yields_two_absent` one
+        // axis over (the file-format axis carries cardinality four,
+        // so the singleton coverage-gap has three cells, not two).
+        use crate::discovery::Format;
+        let axis_size = crate::axis_cardinality::<Format>();
+        for (source, present_format) in [
+            (ConfigSource::File(PathBuf::from("/a.yaml")), Format::Yaml),
+            (ConfigSource::File(PathBuf::from("/a.toml")), Format::Toml),
+            (ConfigSource::File(PathBuf::from("/a.lisp")), Format::Lisp),
+            (ConfigSource::File(PathBuf::from("/a.nix")), Format::Nix),
+        ] {
+            let chain = vec![source];
+            let absent = chain.as_slice().absent_file_formats();
+            assert_eq!(absent.len(), axis_size - 1);
+            assert!(
+                !absent.contains(&present_format),
+                "the observed format {present_format:?} must not appear in \
+                 the coverage gap",
+            );
+            for cell in Format::ALL {
+                if *cell != present_format {
+                    assert!(
+                        absent.contains(cell),
+                        "the singleton chain's coverage gap must contain \
+                         every non-observed axis cell — missing {cell:?}",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn absent_file_formats_agrees_with_open_coded_coverage_gap_walk() {
+        // Parity against the exact `Format::ALL.iter().filter(|f|
+        // !present_file_formats().contains(f))` walk this lift
+        // replaces — both the named seam and the hand-rolled coverage-
+        // gap must pointwise agree over every fixture. Sister of
+        // `absent_layer_kinds_agrees_with_open_coded_coverage_gap_walk`
+        // one axis over.
+        use crate::discovery::Format;
+        let chains = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.nix")),
+                ConfigSource::File(PathBuf::from("/d.unknown")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.lisp")),
+                ConfigSource::File(PathBuf::from("/b.lisp")),
+                ConfigSource::File(PathBuf::from("/c.yaml")),
+                ConfigSource::File(PathBuf::from("/d.toml")),
+                ConfigSource::File(PathBuf::from("/e.nix")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.nix")),
+            ],
+        ];
+        for chain in &chains {
+            let lifted = chain.as_slice().absent_file_formats();
+            let present = chain.as_slice().present_file_formats();
+            let manual: Vec<Format> = Format::ALL
+                .iter()
+                .copied()
+                .filter(|f| !present.contains(f))
+                .collect();
+            assert_eq!(
+                lifted,
+                manual,
+                "absent_file_formats must equal the open-coded \
+                 coverage-gap walk over chain of length {}",
                 chain.len(),
             );
         }
