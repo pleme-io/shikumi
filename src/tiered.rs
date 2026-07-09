@@ -1863,6 +1863,93 @@ impl ConfigDiff {
     pub fn absent_kinds(&self) -> Vec<DiffLineKind> {
         self.kind_histogram().unobserved().collect()
     }
+
+    /// The [`DiffLineKind`] whose lines dominate this diff by count —
+    /// the modal cell of [`Self::kind_histogram`] on the diff altitude.
+    /// `None` exactly when the diff is empty (no lines).
+    ///
+    /// Routes through [`Self::kind_histogram`]:
+    /// [`crate::AxisHistogram::dominant_cell`] picks the argmax cell in
+    /// [`crate::ClosedAxis::ALL`] declaration order, which is the
+    /// [`DiffLineKind`] canonical order (`Removed → Added → Context`)
+    /// by construction — the closed-axis discipline provides deterministic
+    /// tie-breaking automatically, so this method reads directly off the
+    /// shikumi cube-native primitive instead of hand-rolling
+    /// `hist.iter().filter(|&(_, c)| c > 0).max_by_key(|&(_, c)| c).map(|(v, _)| v)`
+    /// — the inline `max_by_key` form silently picks the *last* tied
+    /// cell (per [`Iterator::max_by_key`]'s contract), so two consumers
+    /// reading "the dominant diff kind" off the same diff would disagree
+    /// under ties unless every one carefully reversed the comparison.
+    /// The lift names the scalar at one site with a documented
+    /// tie-breaking rule.
+    ///
+    /// The diff-altitude scalar-mode peer of [`Self::present_kinds`]
+    /// (the observed-cells vector peer) and [`Self::absent_kinds`] (the
+    /// coverage-gap vector peer): the histogram surface at the diff
+    /// altitude now carries the natural triple of "*which* diff kinds
+    /// surfaced" / "*which* diff kinds didn't" / "*which single* diff
+    /// kind dominated" projections, each a named seam over the shared
+    /// [`Self::kind_histogram`] primitive. The diff-altitude dual of
+    /// [`crate::ProvenanceMap::dominant_tier`] on the tier altitude —
+    /// both project the modal cell of their local closed-axis histogram
+    /// off the shared [`crate::AxisHistogram::dominant_cell`] primitive,
+    /// both live as an `Option<CellKind>` scalar alongside the observed-
+    /// cells / coverage-gap vector peers.
+    ///
+    /// Operator-facing consumers answering *"which diff-cell kind
+    /// dominated this render?"* — the CLI `config-diff` summary
+    /// headlining *"Context lines dominate: 47 of 53"*, the attestation
+    /// manifest recording the modal diff-cell kind between two tiers,
+    /// the alerting policy reading *"diff dominance: Added"* to flag a
+    /// rebuild window where net-new lines swamp the changed set — now
+    /// route through this named seam instead of a per-consumer
+    /// `max_by_key` walk.
+    ///
+    /// **Tie-breaking is deterministic by declaration order.** When
+    /// multiple diff-cell kinds share the maximum line count, the kind
+    /// earliest in [`DiffLineKind::ALL`] wins (`Removed → Added →
+    /// Context`) — the same order [`Self::present_kinds`] and
+    /// [`Self::absent_kinds`] walk. A uniform-cover diff (each kind
+    /// producing the same nonzero line count) therefore reports
+    /// `Some(DiffLineKind::Removed)` — the first cell in declaration
+    /// order — pointwise stable regardless of the insertion order of
+    /// individual lines into [`Self::lines`].
+    ///
+    /// # Invariants
+    ///
+    /// - `dominant_kind().is_some() == !self.lines.is_empty()` — the
+    ///   dominant kind is defined exactly when the diff has at least one
+    ///   line. Peer to the `is_empty` boundary [`Self::present_kinds`]
+    ///   and [`Self::absent_kinds`] both witness.
+    /// - `dominant_kind() == kind_histogram().dominant_cell()` — both
+    ///   project the same modal cell off the same primitive; the named
+    ///   seam is the cube-native routing of the histogram surface.
+    /// - When `Some(k)`, `k` is a member of `present_kinds()` — the
+    ///   modal cell is by definition observed.
+    /// - When `Some(k)`, `k` is **not** a member of `absent_kinds()` —
+    ///   the observed / coverage-gap partition is disjoint.
+    /// - `kind_histogram().count(dominant_kind().unwrap()) ==
+    ///   kind_histogram().peak_count()` whenever the diff is non-empty —
+    ///   the modal cell carries the peak observation count. Peer to
+    ///   the (`dominant_cell`, `peak_count`) modal pair invariant on
+    ///   [`crate::AxisHistogram`].
+    /// - `dominant_kind()` on a uniform per-kind diff (one line per kind)
+    ///   equals `Some(DiffLineKind::Removed)` — declaration-order
+    ///   tie-breaking on the three-cell axis picks the first cell.
+    /// - `dominant_kind()` on an empty [`ConfigDiff`] equals `None` —
+    ///   the empty-diff / empty-histogram boundary.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (the argmax scan).
+    /// Both are `O(n)` in practice since the diff-cell axis carries a
+    /// fixed three-cell cardinality; the returned
+    /// `Option<DiffLineKind>` reads one cell.
+    #[must_use]
+    pub fn dominant_kind(&self) -> Option<DiffLineKind> {
+        self.kind_histogram().dominant_cell()
+    }
 }
 
 #[cfg(test)]
@@ -3143,6 +3230,276 @@ mod tests {
                 .collect();
             assert_eq!(via_seam, hand_rolled);
         }
+    }
+
+    // ── ConfigDiff::dominant_kind — modal-cell scalar peer on the diff altitude ──
+
+    fn dominant_kind_fixtures() -> [ConfigDiff; 8] {
+        [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Removed("r".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Added("a".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Added("a".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Added("a".into()),
+                    DiffLine::Added("b".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                    DiffLine::Context("c3".into()),
+                    DiffLine::Removed("r".into()),
+                ],
+            },
+        ]
+    }
+
+    #[test]
+    fn dominant_kind_matches_kind_histogram_dominant_cell_pointwise() {
+        // The modal-cell pin: `dominant_kind` routes through
+        // `kind_histogram().dominant_cell()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Diff-altitude peer
+        // of `dominant_tier_matches_tier_histogram_dominant_cell_pointwise`
+        // on the tier altitude.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().dominant_cell();
+            assert_eq!(diff.dominant_kind(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn dominant_kind_context_dominated_fixture_is_context() {
+        // Direct pin: a diff of 3 Context + 1 Removed has Context
+        // uniquely dominant with 3 of 4 lines. The named seam answers
+        // the operator's *"which diff kind dominated this render?"*
+        // question at one call, no `max_by_key` walk in the summary.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(diff.dominant_kind(), Some(DiffLineKind::Context));
+    }
+
+    #[test]
+    fn dominant_kind_added_dominated_fixture_is_added() {
+        // Direct pin: a diff of 2 Added + 1 Context has Added uniquely
+        // dominant with 2 of 3 lines. Cross-verified against the
+        // per-kind count directly on the underlying histogram.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.dominant_kind(), Some(DiffLineKind::Added));
+        let hist = diff.kind_histogram();
+        assert_eq!(hist.count(DiffLineKind::Added), 2);
+        assert_eq!(hist.peak_count(), 2);
+    }
+
+    #[test]
+    fn dominant_kind_empty_diff_is_none() {
+        // An empty ConfigDiff has no lines and therefore no modal cell —
+        // the empty-diff / empty-histogram boundary of the dominant-cell
+        // projection. Diff-altitude peer of `dominant_tier_empty_map_is_none`
+        // and the empty-diff boundary on the coverage-gap side
+        // (`absent_kinds` returns `DiffLineKind::ALL`).
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.dominant_kind(), None);
+        assert!(empty.lines.is_empty());
+    }
+
+    #[test]
+    fn dominant_kind_is_some_iff_diff_is_nonempty() {
+        // Cross-surface pin: the presence-of-modal-cell predicate
+        // agrees with the non-emptiness of `self.lines`. Structural
+        // completeness of the `(is_empty, dominant_kind)` boundary — a
+        // well-formed diff with ≥1 line always has a modal cell, and an
+        // empty diff never does.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(diff.dominant_kind().is_some(), !diff.lines.is_empty());
+        }
+    }
+
+    #[test]
+    fn dominant_kind_is_member_of_present_kinds() {
+        // Structural pin: whenever `dominant_kind()` is `Some(k)`, `k`
+        // must appear in `present_kinds()` (the modal cell is by
+        // definition observed). The support / dominance partition on
+        // the diff altitude reads consistently between the two named
+        // seams. Diff-altitude peer of
+        // `dominant_tier_is_member_of_contributing_tiers`.
+        for diff in dominant_kind_fixtures() {
+            let Some(dominant) = diff.dominant_kind() else {
+                continue;
+            };
+            assert!(
+                diff.present_kinds().contains(&dominant),
+                "dominant kind {dominant:?} must appear in present_kinds",
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_kind_is_not_member_of_absent_kinds() {
+        // Structural pin: whenever `dominant_kind()` is `Some(k)`, `k`
+        // must NOT appear in `absent_kinds()` — the modal cell lies on
+        // the observed side of the observed / coverage-gap partition.
+        // Disjointness pin between the two named seams. Diff-altitude
+        // peer of `dominant_tier_is_not_member_of_absent_tiers`.
+        for diff in dominant_kind_fixtures() {
+            let Some(dominant) = diff.dominant_kind() else {
+                continue;
+            };
+            assert!(
+                !diff.absent_kinds().contains(&dominant),
+                "dominant kind {dominant:?} must not appear in absent_kinds",
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_kind_count_equals_peak_count_on_nonempty_diff() {
+        // The (dominant_cell, peak_count) modal-pair invariant lifted
+        // to the diff altitude: the observation count of the dominant
+        // kind equals the histogram's peak count. Pins the fused form
+        // of the modal-pair the AxisHistogram surface carries as
+        // (dominant_cell(), peak_count()).
+        for diff in dominant_kind_fixtures() {
+            let Some(dominant) = diff.dominant_kind() else {
+                continue;
+            };
+            let hist = diff.kind_histogram();
+            assert_eq!(hist.count(dominant), hist.peak_count());
+        }
+    }
+
+    #[test]
+    fn dominant_kind_ties_broken_by_declaration_order() {
+        // Structural tie-breaking pin: on a uniform per-kind diff
+        // (each of the three `DiffLineKind` cells contributing exactly
+        // one line), `dominant_kind` reports `Some(DiffLineKind::Removed)`
+        // — the first cell in `DiffLineKind::ALL` declaration order.
+        // Any future switch to a nondeterministic `max_by_key` walk
+        // (which silently picks the LAST tied cell) would flip this
+        // pin to `Some(Context)` — the seam names the tiebreak once.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        let hist = diff.kind_histogram();
+        assert_eq!(hist.count(DiffLineKind::Removed), 1);
+        assert_eq!(hist.count(DiffLineKind::Added), 1);
+        assert_eq!(hist.count(DiffLineKind::Context), 1);
+        assert!(hist.is_full_cover());
+        // Tiebreak lands on the first cell in declaration order.
+        assert_eq!(diff.dominant_kind(), Some(DiffLineKind::Removed));
+    }
+
+    #[test]
+    fn dominant_kind_two_way_tie_picks_declaration_order_first() {
+        // A two-way tie between Added and Context (2 each) with no
+        // Removed lines must still resolve to the declaration-order
+        // earliest cell — Added (which precedes Context in ALL) —
+        // even though Removed has zero count. Distinguishes the
+        // "first tied cell" tiebreak from a naive "first cell of ALL"
+        // fallback.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+            ],
+        };
+        let hist = diff.kind_histogram();
+        assert_eq!(hist.count(DiffLineKind::Removed), 0);
+        assert_eq!(hist.count(DiffLineKind::Added), 2);
+        assert_eq!(hist.count(DiffLineKind::Context), 2);
+        assert_eq!(diff.dominant_kind(), Some(DiffLineKind::Added));
+    }
+
+    #[test]
+    fn dominant_kind_agrees_with_open_coded_argmax_walk() {
+        // Parity against the exact `hist.iter().filter(|&(_, c)| c > 0)
+        // .fold(count-then-declaration-order)` walk this lift replaces —
+        // both the named seam and the hand-rolled argmax must
+        // pointwise agree over every fixture. The hand-rolled form
+        // spells the declaration-order tiebreak explicitly (fold-
+        // forward with strict `>` inequality — the first tied cell
+        // wins, mirroring `AxisHistogram::dominant_cell` — rather than
+        // `max_by_key`'s LAST-tied-cell semantics). Diff-altitude peer
+        // of `dominant_tier_agrees_with_open_coded_argmax_walk`.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.dominant_kind();
+            let hist = diff.kind_histogram();
+            let mut iter = hist.iter().filter(|&(_, c)| c > 0);
+            let hand_rolled = iter.next().map(|first| {
+                iter.fold(
+                    first,
+                    |best, current| {
+                        if current.1 > best.1 { current } else { best }
+                    },
+                )
+                .0
+            });
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn dominant_kind_uniform_cover_picks_first_cell() {
+        // Trait-uniform invariant: on a full-cover diff where every
+        // kind observes the same nonzero count (2 each here), the
+        // dominant cell is the first cell of `DiffLineKind::ALL` — the
+        // declaration-order tiebreak reduces to `Some(Removed)`. Peer
+        // of the trait-uniform
+        // `axis_histogram_dominant_cell_axis_cover_picks_first_*` laws
+        // in cube tests, and of
+        // `dominant_tier_uniform_cover_picks_first_cell` on the tier
+        // altitude.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+            ],
+        };
+        assert!(diff.kind_histogram().is_full_cover());
+        assert_eq!(diff.dominant_kind(), Some(DiffLineKind::Removed));
     }
 
     #[test]
