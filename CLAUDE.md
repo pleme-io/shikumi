@@ -10,6 +10,59 @@
 
 - **Pillar 2** (Configuration): Shikumi IS Pillar 2. Every service, tool, daemon in pleme-io discovers config via `ConfigDiscovery::new("app")`, loads strongly-typed structs via `ConfigStore::<T>::load`, hot-reloads through ArcSwap. No ad-hoc env parsing, no HashMap configs.
 
+## Destination — shikumi is ConfigPlane's default resolver (named, not shipped)
+
+New shikumi work aims at one destination: shikumi FULLY SUPPORTS the
+**ConfigPlane** default-config behavior by default. ConfigPlane is the reusable
+pleme-io configuration control plane (surface + API + tool; camelot the first
+consumer) — one central authority owns/discovers/reconciles config for services
+*and* per-tick controllers and pushes/syncs it down, while each component
+resolves its own slice the shikumi progressive-discovery way. Three pieces, all
+NAMED-not-shipped (a `Result::Err` is mitigation, not a guarantee):
+
+**(a) `resolve_progressive` — the sealed fold.** Fuse today's two separate
+pieces — the `TieredConfig` tier selector (`tiered.rs`) and the `ProviderChain`
+figment fold (`provider.rs`, incl. `with_discovered`) — into ONE canonical
+sealed fold in `ClosedAxis` precedence order, every resolved value carrying a
+typed `Provenance { tier, source }`:
+
+```text
+bare → discovered[kanchi] → prescribed_default → file → env → runtime
+```
+
+Today neither exists: selector and fold are unfused, and per-value
+`Provenance{tier,source}` is absent (`FormatProvenance` = format origin;
+`compose_with_provenance` = intra-discovered layer attribution — not whole-chain).
+`resolve_progressive` becomes the default entry for every new config.
+
+**(b) kanchi runtime-discovery layers (the DISCOVERED tier).** New
+`DiscoveryLayer` impls (`discovered.rs`) whose `discover()` reads the *running
+cluster* via new kanchi probes: k8s downward API (`POD_NAMESPACE`/`POD_NAME`),
+service DNS (peer / `db_host_name` / `auth_dns_internal`), k8s `Secret` reads
+(DEK / db_pwd / uam-shared-key), the MySQL `Service`, per-svc S3 buckets. Today
+kanchi carries only host + env/cloud-classification probes (screen/DPR/RAM,
+`in_cluster` / cgroup-limit, OS/arch) — no cluster-wiring discovery yet.
+
+**(c) central-authority + hot-reload-broadcast.** shikumi is the *per-component*
+resolver + hot-reload store (`ConfigStore` ArcSwap + `ConfigWatcher`); ConfigPlane
+pushes/syncs config down and broadcasts reloads. `ConfigStore` has NO
+central/broadcast mode today (per-process only) — the broadcast-subscribe surface
+is shikumi's slice of that pattern.
+
+**M0:** one service comes up on camelot-dev resolving `db_host_name` /
+`auth_dns_internal` / S3 / `metrics_port` from the cluster with ZERO hand-injected
+env — shadow-first, golden-conf-gated.
+
+**Shipped today** (what the above fuse/extend, never replace): `ConfigDiscovery` ·
+`ProviderChain` (incl. `with_discovered`) · `ConfigStore<T>` ArcSwap hot-reload ·
+`ConfigWatcher` · the `TieredConfig` selector · the `DiscoveryLayer` trait +
+`compose` · kanchi host/env/cloud probes.
+
+**Canonical:** [`theory/CONFIGURATION-MANAGEMENT.md`](https://github.com/pleme-io/theory/blob/main/CONFIGURATION-MANAGEMENT.md)
+(fleet config shape; the sealed fold + `Provenance{tier,source}` are named there).
+**Operator handle:** the `configplane` skill. Standing rule: a shikumi PR toward
+this destination advances a tier or leaves a `pending-configplane:` note.
+
 ## Build & Test
 
 ```bash
