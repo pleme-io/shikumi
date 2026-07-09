@@ -532,6 +532,74 @@ pub trait ConfigSourceChain {
         crate::axis_histogram(self.as_ref().iter().map(ConfigSource::kind))
     }
 
+    /// The distinct [`ConfigSourceKind`]s that appear as ≥1 layer in
+    /// this chain, in [`ConfigSourceKind::ALL`] declaration order —
+    /// the chain-altitude dual of "which layer kinds actually
+    /// surfaced in this recipe".
+    ///
+    /// Routes through [`Self::layer_kind_histogram`]:
+    /// [`crate::AxisHistogram::observed`] iterates the histogram's
+    /// support (the closed-axis cells with nonzero count) in
+    /// [`crate::ClosedAxis::ALL`] declaration order, which is the
+    /// [`ConfigSourceKind`] canonical order
+    /// (`Defaults → Env → File`) by construction — the closed-axis
+    /// discipline provides the sort + dedup automatically, so this
+    /// method reads directly off the shikumi cube-native primitive
+    /// instead of hand-rolling `Vec::contains` (`O(n·k)` in the
+    /// chain length and distinct-kind count) + explicit
+    /// `sort_by_key(axis_ordinal)` at every attestation manifest,
+    /// structured-log dashboard, or config-show renderer summarizing
+    /// which layer kinds contributed to the recipe.
+    ///
+    /// The chain-altitude peer of
+    /// [`crate::ConfigDiff::present_kinds`] on the diff altitude and
+    /// [`crate::ProvenanceMap::contributing_tiers`] on the tier
+    /// altitude — all three project the observed-support of the
+    /// underlying [`crate::AxisHistogram`] over their local closed
+    /// axis, all three live as a `Vec<CellKind>` collect wrapper
+    /// alongside their respective `_histogram()` primitive, and all
+    /// three spell the closed-axis declaration-order cell iteration
+    /// at the API boundary. Sister lifts on the same chain-shape
+    /// surface — the observed-cells peers of
+    /// [`Self::file_format_histogram`] and
+    /// [`Self::env_prefix_kind_histogram`] — inherit the same
+    /// template.
+    ///
+    /// # Invariants
+    ///
+    /// - `present_layer_kinds().len() ==
+    ///   layer_kind_histogram().distinct_cells()` — both project
+    ///   the same support-cardinality off the histogram.
+    /// - `present_layer_kinds().is_empty() ==
+    ///   self.as_ref().is_empty()` — an empty chain has no present
+    ///   kinds; a non-empty chain has ≥1 present kind (every entry
+    ///   projects to exactly one kind, so the histogram support is
+    ///   nonempty iff the chain is).
+    /// - `layer_kind_histogram().is_full_cover() ==
+    ///   (present_layer_kinds().len() ==
+    ///   crate::axis_cardinality::<ConfigSourceKind>())` — the
+    ///   full-cover predicate and the observed-cells cardinality
+    ///   agree by construction over the same shared histogram.
+    /// - `present_layer_kinds()` is sorted strictly ascending by
+    ///   [`crate::axis_ordinal`] on [`ConfigSourceKind`] — dedup and
+    ///   sort for free from the closed-axis discipline; no
+    ///   hand-rolled `sort_by_key` at the consumer.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram
+    /// build) and `k = crate::axis_cardinality::<ConfigSourceKind>()`
+    /// (the support scan). Both are `O(n)` in practice since the
+    /// layer-kind axis carries a fixed three-cell cardinality; the
+    /// returned `Vec<ConfigSourceKind>` is at most three elements
+    /// long regardless of chain length.
+    fn present_layer_kinds(&self) -> Vec<ConfigSourceKind>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().observed().collect()
+    }
+
     /// Dense per-format tally of the chain's [`ConfigSource::File`]
     /// layers over the [`crate::discovery::Format`] axis — the typed
     /// histogram every per-format dashboard, attestation manifest
@@ -2120,6 +2188,284 @@ mod tests {
                     chain.len(),
                 );
             }
+        }
+    }
+
+    // ---- ConfigSourceChain::present_layer_kinds — observed-cells
+    //      peer of ConfigDiff::present_kinds / ProvenanceMap::
+    //      contributing_tiers on the chain-shape altitude ----
+
+    #[test]
+    fn present_layer_kinds_matches_layer_kind_histogram_observed_pointwise() {
+        // The observed-support pin: `present_layer_kinds` routes
+        // through `layer_kind_histogram().observed().collect()`, so the
+        // two seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Mirror
+        // of `present_kinds_matches_kind_histogram_observed_pointwise`
+        // on the diff altitude and
+        // `contributing_tiers_matches_tier_histogram_observed` on the
+        // tier altitude.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            Vec::new(),
+            sample_chain(),
+            vec![ConfigSource::Defaults],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+        ];
+        for chain in &fixtures {
+            let via_direct = chain.as_slice().present_layer_kinds();
+            let via_histogram: Vec<ConfigSourceKind> =
+                chain.as_slice().layer_kind_histogram().observed().collect();
+            assert_eq!(
+                via_direct,
+                via_histogram,
+                "present_layer_kinds must equal \
+                 layer_kind_histogram().observed().collect() pointwise \
+                 over chain of length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn present_layer_kinds_empty_chain_is_empty() {
+        // The empty-boundary invariant: an empty chain has no present
+        // kinds; a non-empty chain has ≥1 present kind (every entry
+        // projects to exactly one kind). Peer of the same empty-
+        // boundary pin on `ConfigDiff::present_kinds` and
+        // `ProvenanceMap::contributing_tiers`.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(empty.present_layer_kinds().is_empty());
+        assert_eq!(empty.present_layer_kinds(), Vec::<ConfigSourceKind>::new());
+
+        let one_layer = vec![ConfigSource::Defaults];
+        assert!(!one_layer.is_empty());
+        assert!(!one_layer.as_slice().present_layer_kinds().is_empty());
+    }
+
+    #[test]
+    fn present_layer_kinds_iterates_in_declaration_order() {
+        // Declaration-order pin: even when the observation order is
+        // File → Env → Defaults (the reverse of ::ALL), the returned
+        // Vec walks the closed axis in canonical
+        // (Defaults → Env → File) order — the closed-axis discipline
+        // provides the sort automatically. Mirror of
+        // `present_kinds_iterates_in_declaration_order` on the diff
+        // altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Defaults,
+        ];
+        assert_eq!(
+            chain.as_slice().present_layer_kinds(),
+            vec![
+                ConfigSourceKind::Defaults,
+                ConfigSourceKind::Env,
+                ConfigSourceKind::File,
+            ],
+        );
+    }
+
+    #[test]
+    fn present_layer_kinds_dedups_across_repeated_observations() {
+        // Repeated observations of the same kind collapse to one entry
+        // in the returned Vec — the closed-axis discipline provides
+        // dedup automatically. Six layers split (2 Defaults × 3 File ×
+        // 1 Env) yield three present kinds. Mirror of
+        // `present_kinds_dedups_across_repeated_observations` on the
+        // diff altitude.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        assert_eq!(
+            chain.as_slice().present_layer_kinds(),
+            vec![
+                ConfigSourceKind::Defaults,
+                ConfigSourceKind::Env,
+                ConfigSourceKind::File,
+            ],
+        );
+    }
+
+    #[test]
+    fn present_layer_kinds_singleton_chain_yields_singleton_support() {
+        // A chain composed only of one kind has exactly that kind as
+        // its present-kinds set — the support is the singleton
+        // observed cell. Boundary case pinning that unobserved cells
+        // do not leak into the returned Vec (the closed-axis
+        // discipline drops zero-count cells).
+        let defaults_only = vec![ConfigSource::Defaults, ConfigSource::Defaults];
+        assert_eq!(
+            defaults_only.as_slice().present_layer_kinds(),
+            vec![ConfigSourceKind::Defaults],
+        );
+
+        let env_only = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        assert_eq!(
+            env_only.as_slice().present_layer_kinds(),
+            vec![ConfigSourceKind::Env],
+        );
+
+        let files_only = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+        ];
+        assert_eq!(
+            files_only.as_slice().present_layer_kinds(),
+            vec![ConfigSourceKind::File],
+        );
+    }
+
+    #[test]
+    fn present_layer_kinds_len_matches_distinct_cells() {
+        // The support-cardinality invariant:
+        // `present_layer_kinds().len()` equals
+        // `layer_kind_histogram().distinct_cells()` pointwise. Both
+        // project the observed-cell count off the shared histogram
+        // over the ConfigSourceKind closed axis. Mirror of
+        // `present_kinds_distinct_cells_matches_histogram` on the
+        // diff altitude.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().present_layer_kinds().len(),
+                chain.as_slice().layer_kind_histogram().distinct_cells(),
+                "present_layer_kinds().len() must equal \
+                 layer_kind_histogram().distinct_cells() over chain of length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn present_layer_kinds_full_cover_matches_axis_cardinality() {
+        // Cross-surface pin on the full-cover predicate: a chain
+        // whose `layer_kind_histogram().is_full_cover()` returns
+        // `true` has exactly
+        // `crate::axis_cardinality::<ConfigSourceKind>()` observed
+        // cells, and `present_layer_kinds()` returns
+        // `ConfigSourceKind::ALL` in declaration order. Reads the
+        // typed full-cover question directly off the observed-cells
+        // peer instead of open-coding
+        // `distinct_cells == axis_cardinality`.
+        let axis_cover = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        assert!(axis_cover.as_slice().layer_kind_histogram().is_full_cover());
+        assert_eq!(
+            axis_cover.as_slice().present_layer_kinds().len(),
+            crate::axis_cardinality::<ConfigSourceKind>(),
+        );
+        assert_eq!(
+            axis_cover.as_slice().present_layer_kinds(),
+            ConfigSourceKind::ALL.to_vec(),
+        );
+
+        // Strict-subset case: the sample chain has no Defaults entry,
+        // so it is NOT a full cover, and the present-kinds cardinality
+        // is strictly less than the axis cardinality.
+        let chain = sample_chain();
+        assert!(!chain.as_slice().layer_kind_histogram().is_full_cover());
+        assert!(
+            chain.as_slice().present_layer_kinds().len()
+                < crate::axis_cardinality::<ConfigSourceKind>(),
+        );
+    }
+
+    #[test]
+    fn present_layer_kinds_is_strictly_ascending_by_axis_ordinal() {
+        // Structural-sort pin: the returned Vec is strictly ascending
+        // by `crate::axis_ordinal` on ConfigSourceKind — dedup + sort
+        // for free from the closed-axis discipline. Every consecutive
+        // pair in the returned Vec has strictly increasing axis
+        // ordinal. Mirror of
+        // `present_kinds_is_strictly_ascending_by_axis_ordinal` on the
+        // diff altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Defaults,
+        ];
+        let present = chain.as_slice().present_layer_kinds();
+        for window in present.windows(2) {
+            let a = crate::axis_ordinal(window[0]);
+            let b = crate::axis_ordinal(window[1]);
+            assert!(
+                a < b,
+                "present_layer_kinds must be strictly ascending by \
+                 axis_ordinal, but ord({:?})={a} >= ord({:?})={b}",
+                window[0],
+                window[1],
+            );
+        }
+    }
+
+    #[test]
+    fn present_layer_kinds_agrees_with_open_coded_dedup_walk() {
+        // Parity pin against a hand-rolled `Vec::contains` + sort_by_key
+        // consumer — the exact pattern the trait-level lift replaces.
+        // Any future divergence (e.g. `observed()` changing its
+        // iteration order, `layer_kind_histogram` projecting through
+        // a different kind function) surfaces here as a structural
+        // mismatch between the lifted seam and the open-coded walk.
+        let chains = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &chains {
+            let lifted = chain.as_slice().present_layer_kinds();
+            let mut manual: Vec<ConfigSourceKind> = Vec::new();
+            for source in chain {
+                let k = source.kind();
+                if !manual.contains(&k) {
+                    manual.push(k);
+                }
+            }
+            manual.sort_by_key(|k| crate::axis_ordinal(*k));
+            assert_eq!(
+                lifted,
+                manual,
+                "present_layer_kinds must equal the open-coded \
+                 contains+sort walk over chain of length {}",
+                chain.len(),
+            );
         }
     }
 
