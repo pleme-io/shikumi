@@ -600,6 +600,83 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().observed().collect()
     }
 
+    /// The distinct [`ConfigSourceKind`]s that appear as **zero** layers in
+    /// this chain, in [`ConfigSourceKind::ALL`] declaration order — the
+    /// coverage-gap peer of [`Self::present_layer_kinds`] and the chain-
+    /// altitude dual of [`crate::ConfigDiff::absent_kinds`] on the diff
+    /// altitude and [`crate::ProvenanceMap::absent_tiers`] on the tier
+    /// altitude.
+    ///
+    /// Routes through [`Self::layer_kind_histogram`]:
+    /// [`crate::AxisHistogram::unobserved`] iterates the histogram's
+    /// **coverage gap** (the closed-axis cells with zero count) in
+    /// [`crate::ClosedAxis::ALL`] declaration order, which is the
+    /// [`ConfigSourceKind`] canonical order (`Defaults → Env → File`) by
+    /// construction — the closed-axis discipline provides the sort +
+    /// dedup automatically, so this method reads directly off the shikumi
+    /// cube-native primitive instead of hand-rolling
+    /// `ConfigSourceKind::ALL.iter().filter(|k| !self.present_layer_kinds().
+    /// contains(k))` (`O(k·k)` in axis-cardinality, quadratic on the
+    /// observed side) at every operator-facing consumer asking *"which
+    /// layer kinds are absent from this recipe?"* — the CLI `config-show`
+    /// summary reading *"no `Env` layers; skip the env-prefix legend"*,
+    /// the attestation manifest recording the layer-kind coverage gap of
+    /// a `ProviderChain`, the alerting policy suppressing per-kind bins
+    /// that never fired for this rebuild window.
+    ///
+    /// The observed-cells peer ([`Self::present_layer_kinds`]) and the
+    /// coverage-gap peer ([`Self::absent_layer_kinds`]) together form the
+    /// **support / coverage-gap partition** on the chain altitude — every
+    /// cell of [`ConfigSourceKind::ALL`] lies in exactly one of the two,
+    /// and the two `Vec<ConfigSourceKind>` lengths sum to
+    /// [`crate::axis_cardinality::<ConfigSourceKind>()`][crate::axis_cardinality].
+    /// The chain-altitude dual of the diff-altitude
+    /// [`crate::ConfigDiff::absent_kinds`] and the tier-altitude
+    /// [`crate::ProvenanceMap::absent_tiers`] — every altitude of the
+    /// shikumi typescape now closes both halves of the histogram's
+    /// observed / unobserved partition at one named `Vec<CellKind>` seam
+    /// alongside the underlying `_histogram()` primitive. Sister lifts
+    /// one axis over on the same chain-shape surface — the unobserved-
+    /// cells peers of [`Self::file_format_histogram`] and
+    /// [`Self::env_prefix_kind_histogram`] — inherit the same template.
+    ///
+    /// # Invariants
+    ///
+    /// - `absent_layer_kinds().len() ==
+    ///   layer_kind_histogram().unobserved_cells()` — both project the
+    ///   same coverage-gap cardinality off the histogram.
+    /// - `present_layer_kinds().len() + absent_layer_kinds().len() ==
+    ///   crate::axis_cardinality::<ConfigSourceKind>()` — the two peers
+    ///   partition the closed axis without remainder (every cell is
+    ///   either observed or unobserved, never both).
+    /// - `present_layer_kinds()` and `absent_layer_kinds()` are disjoint:
+    ///   no [`ConfigSourceKind`] appears in both.
+    /// - `absent_layer_kinds().is_empty() ==
+    ///   layer_kind_histogram().is_full_cover()` — the coverage-gap is
+    ///   empty iff every layer kind was observed at least once (all
+    ///   three of `Defaults` / `Env` / `File` appear as ≥1 layer).
+    /// - `absent_layer_kinds()` on an empty chain (no layers) equals
+    ///   [`ConfigSourceKind::ALL`] — every kind is absent when no layer
+    ///   contributed, the empty-chain / full-coverage-gap boundary.
+    /// - `absent_layer_kinds()` is sorted strictly ascending by
+    ///   [`crate::axis_ordinal`] on [`ConfigSourceKind`] — dedup + sort
+    ///   for free from the closed-axis discipline.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the
+    /// coverage-gap scan). Both are `O(n)` in practice since the layer-
+    /// kind axis carries a fixed three-cell cardinality; the returned
+    /// `Vec<ConfigSourceKind>` is at most three elements long regardless
+    /// of chain length.
+    fn absent_layer_kinds(&self) -> Vec<ConfigSourceKind>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().unobserved().collect()
+    }
+
     /// Dense per-format tally of the chain's [`ConfigSource::File`]
     /// layers over the [`crate::discovery::Format`] axis — the typed
     /// histogram every per-format dashboard, attestation manifest
@@ -2623,6 +2700,352 @@ mod tests {
                  contains+sort walk over chain of length {}",
                 chain.len(),
             );
+        }
+    }
+
+    // ---- ConfigSourceChain::absent_layer_kinds — unobserved-cells
+    //      peer of present_layer_kinds on the chain-shape altitude ----
+
+    #[test]
+    fn absent_layer_kinds_matches_layer_kind_histogram_unobserved_pointwise() {
+        // The coverage-gap pin: `absent_layer_kinds` routes through
+        // `layer_kind_histogram().unobserved().collect()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Chain-
+        // altitude peer of
+        // `absent_kinds_matches_kind_histogram_unobserved_pointwise` on
+        // the diff altitude and
+        // `absent_tiers_matches_tier_histogram_unobserved_pointwise` on
+        // the tier altitude.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            Vec::new(),
+            sample_chain(),
+            vec![ConfigSource::Defaults],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+        ];
+        for chain in &fixtures {
+            let via_direct = chain.as_slice().absent_layer_kinds();
+            let via_histogram: Vec<ConfigSourceKind> = chain
+                .as_slice()
+                .layer_kind_histogram()
+                .unobserved()
+                .collect();
+            assert_eq!(
+                via_direct,
+                via_histogram,
+                "absent_layer_kinds must equal \
+                 layer_kind_histogram().unobserved().collect() pointwise \
+                 over chain of length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn absent_layer_kinds_empty_chain_is_full_axis() {
+        // An empty chain has no observed kinds — every cell of
+        // `ConfigSourceKind::ALL` lies in the coverage gap. The empty-
+        // chain / full-coverage-gap boundary of the observed /
+        // unobserved partition, chain-altitude peer of
+        // `absent_kinds_empty_diff_is_full_axis` on the diff altitude
+        // and `absent_tiers_empty_map_is_full_axis` on the tier
+        // altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.absent_layer_kinds(), ConfigSourceKind::ALL.to_vec(),);
+    }
+
+    #[test]
+    fn absent_layer_kinds_iterates_in_declaration_order() {
+        // The coverage-gap iter walks `ConfigSourceKind::ALL` in
+        // declaration order (`Defaults → Env → File`) and yields
+        // only the cells with zero count. Pinned here on the empty
+        // chain, whose gap is the entire axis — the emitted order
+        // matches `ConfigSourceKind::ALL` verbatim.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(
+            empty.absent_layer_kinds(),
+            vec![
+                ConfigSourceKind::Defaults,
+                ConfigSourceKind::Env,
+                ConfigSourceKind::File,
+            ],
+        );
+    }
+
+    #[test]
+    fn absent_layer_kinds_defaults_only_chain_is_env_and_file() {
+        // A chain composed only of `Defaults` layers has exactly
+        // { Env, File } as its coverage gap — the non-Defaults
+        // subset of the axis is entirely absent. Operator-facing pin
+        // on the "only serde defaults; no env, no file" recipe.
+        let defaults_only = vec![ConfigSource::Defaults, ConfigSource::Defaults];
+        assert_eq!(
+            defaults_only.as_slice().absent_layer_kinds(),
+            vec![ConfigSourceKind::Env, ConfigSourceKind::File],
+        );
+    }
+
+    #[test]
+    fn absent_layer_kinds_env_only_chain_is_defaults_and_file() {
+        // A chain composed only of `Env` layers has exactly
+        // { Defaults, File } as its coverage gap. Boundary pin on the
+        // "env-only recipe" — e.g. a service reading only from
+        // environment variables — the closed-axis discipline gives
+        // dedup and canonical order automatically.
+        let env_only = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        assert_eq!(
+            env_only.as_slice().absent_layer_kinds(),
+            vec![ConfigSourceKind::Defaults, ConfigSourceKind::File],
+        );
+    }
+
+    #[test]
+    fn absent_layer_kinds_file_only_chain_is_defaults_and_env() {
+        // A chain composed only of `File` layers has exactly
+        // { Defaults, Env } as its coverage gap. Boundary pin on the
+        // "file-only recipe" — the coverage-gap iter emits in
+        // declaration order regardless of observation order.
+        let files_only = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+        ];
+        assert_eq!(
+            files_only.as_slice().absent_layer_kinds(),
+            vec![ConfigSourceKind::Defaults, ConfigSourceKind::Env],
+        );
+    }
+
+    #[test]
+    fn absent_layer_kinds_len_matches_unobserved_cells() {
+        // The coverage-gap-cardinality invariant on the histogram's
+        // support / gap partition: `absent_layer_kinds().len()` equals
+        // `layer_kind_histogram().unobserved_cells()` pointwise across
+        // every fixture. Any future re-implementation of either seam
+        // must keep this equality.
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().absent_layer_kinds().len(),
+                chain.as_slice().layer_kind_histogram().unobserved_cells(),
+                "absent_layer_kinds().len() must equal \
+                 layer_kind_histogram().unobserved_cells() over chain of length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn absent_layer_kinds_and_present_layer_kinds_partition_axis() {
+        // The support / coverage-gap partition on the closed axis:
+        // every cell of `ConfigSourceKind::ALL` lies in exactly one of
+        // (observed, unobserved), so the two Vec lengths sum to the
+        // axis cardinality. Chain-altitude peer of
+        // `absent_kinds_and_present_kinds_partition_axis` on the diff
+        // altitude and
+        // `absent_tiers_and_contributing_tiers_partition_axis` on the
+        // tier altitude.
+        let axis_size = crate::axis_cardinality::<ConfigSourceKind>();
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+        ];
+        for chain in &fixtures {
+            let observed = chain.as_slice().present_layer_kinds();
+            let absent = chain.as_slice().absent_layer_kinds();
+            assert_eq!(observed.len() + absent.len(), axis_size);
+            for kind in &observed {
+                assert!(
+                    !absent.contains(kind),
+                    "kind {kind:?} appears in both present and absent \
+                     over chain of length {}",
+                    chain.len(),
+                );
+            }
+            for cell in ConfigSourceKind::ALL {
+                assert!(
+                    observed.contains(cell) || absent.contains(cell),
+                    "kind {cell:?} appears in neither present nor absent \
+                     over chain of length {}",
+                    chain.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn absent_layer_kinds_is_empty_iff_is_full_cover() {
+        // The coverage-gap is empty iff every layer kind was observed
+        // at least once. Pinned across every fixture in the module
+        // against `layer_kind_histogram().is_full_cover()`, plus a
+        // direct positive pin: a chain carrying one Defaults, one
+        // Env, and one File is full-cover; the coverage-gap is empty.
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().absent_layer_kinds().is_empty(),
+                chain.as_slice().layer_kind_histogram().is_full_cover(),
+            );
+        }
+        let full_cover = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        assert!(full_cover.as_slice().layer_kind_histogram().is_full_cover());
+        assert_eq!(
+            full_cover.as_slice().absent_layer_kinds(),
+            Vec::<ConfigSourceKind>::new(),
+        );
+        assert_eq!(
+            full_cover.as_slice().present_layer_kinds(),
+            ConfigSourceKind::ALL.to_vec(),
+        );
+    }
+
+    #[test]
+    fn absent_layer_kinds_is_strictly_ascending_by_axis_ordinal() {
+        // Structural sort pin: the coverage-gap walks the closed axis
+        // in declaration order, so `absent_layer_kinds()` is strictly
+        // ascending by `crate::axis_ordinal` — the dedup + sort every
+        // hand-rolled walk would have to spell explicitly comes for
+        // free from the closed-axis discipline.
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+        ];
+        for chain in &fixtures {
+            let absent = chain.as_slice().absent_layer_kinds();
+            for pair in absent.windows(2) {
+                assert!(
+                    crate::axis_ordinal(pair[0]) < crate::axis_ordinal(pair[1]),
+                    "absent_layer_kinds must be strictly ascending: {absent:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn absent_layer_kinds_singleton_chain_yields_two_absent() {
+        // A chain of a single layer has exactly `axis_cardinality - 1`
+        // absent kinds — every axis cell except the one carried by
+        // that layer. Cross-verified against
+        // `present_layer_kinds().len() + absent_layer_kinds().len()
+        // == axis_cardinality`. Chain-altitude peer of
+        // `absent_kinds_singleton_diff_yields_two_absent` on the diff
+        // altitude.
+        let axis_size = crate::axis_cardinality::<ConfigSourceKind>();
+        for (source, present_kind) in [
+            (ConfigSource::Defaults, ConfigSourceKind::Defaults),
+            (ConfigSource::Env("APP_".to_owned()), ConfigSourceKind::Env),
+            (
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSourceKind::File,
+            ),
+        ] {
+            let chain = vec![source];
+            let absent = chain.as_slice().absent_layer_kinds();
+            assert_eq!(absent.len(), axis_size - 1);
+            assert!(
+                !absent.contains(&present_kind),
+                "the observed kind {present_kind:?} must not appear in \
+                 the coverage gap",
+            );
+            for cell in ConfigSourceKind::ALL {
+                if *cell != present_kind {
+                    assert!(
+                        absent.contains(cell),
+                        "the singleton chain's coverage gap must contain \
+                         every non-observed axis cell — missing {cell:?}",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn absent_layer_kinds_agrees_with_open_coded_coverage_gap_walk() {
+        // Parity against the exact
+        // `ConfigSourceKind::ALL.iter().filter(|k|
+        // !present_layer_kinds().contains(k))` walk this lift
+        // replaces — both the named seam and the hand-rolled
+        // coverage-gap must pointwise agree over every fixture.
+        // Chain-altitude peer of
+        // `absent_kinds_agrees_with_open_coded_coverage_gap_walk` on
+        // the diff altitude.
+        let fixtures: [Vec<ConfigSource>; 6] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+        ];
+        for chain in &fixtures {
+            let via_seam = chain.as_slice().absent_layer_kinds();
+            let present = chain.as_slice().present_layer_kinds();
+            let hand_rolled: Vec<ConfigSourceKind> = ConfigSourceKind::ALL
+                .iter()
+                .copied()
+                .filter(|k| !present.contains(k))
+                .collect();
+            assert_eq!(via_seam, hand_rolled);
         }
     }
 
