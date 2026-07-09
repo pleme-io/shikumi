@@ -1832,6 +1832,17 @@ impl ConfigDiscovery {
     /// explicit `formats(&[Format::Toml, Format::Yaml])` flips to
     /// `["toml", "yaml", "yml"]`. Empty `formats` yields zero items.
     ///
+    /// Naming the return type at the API boundary (rather than the prior
+    /// `impl Iterator<Item = &'static str> + '_`) exposes the full trait
+    /// algebra the underlying nested-slice walker structurally carries —
+    /// [`DoubleEndedIterator`], [`std::iter::FusedIterator`], [`Clone`],
+    /// and [`Debug`][std::fmt::Debug] — and lets a caller hold the
+    /// walker in a struct field or return it up through their own API
+    /// without smuggling an unnameable [`impl Trait`][impl-trait] across
+    /// every seam. Closes the last `impl Trait`-returning iter in
+    /// shikumi: every iter-returning seam in the codebase now spells its
+    /// concrete return type at the API boundary.
+    ///
     /// One typed primitive owns the (formats × extensions) shape that
     /// [`Self::standard_paths`], [`Self::collect_configs`], and
     /// [`Self::is_partial_match`] previously open-coded as a nested
@@ -1840,12 +1851,132 @@ impl ConfigDiscovery {
     /// extending [`Format::extensions`] in one place — every consumer
     /// here observes the new extension automatically, and the loop body
     /// at each consumer stays at one level of nesting.
-    fn configured_extensions(&self) -> impl Iterator<Item = &'static str> + '_ {
-        self.formats
-            .iter()
-            .flat_map(|f| f.extensions().iter().copied())
+    ///
+    /// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
+    #[must_use]
+    pub fn configured_extensions(&self) -> ConfiguredExtensions<'_> {
+        ConfiguredExtensions {
+            inner: self
+                .formats
+                .iter()
+                .copied()
+                .flat_map(format_extensions_copied),
+        }
     }
 }
+
+/// Free-function projection lifting a [`Format`] to its extension slice
+/// as an owned [`std::iter::Copied`] cursor.
+///
+/// A `fn` item (not a closure): its type is `fn(Format) ->
+/// std::iter::Copied<std::slice::Iter<'static, &'static str>>`, which
+/// coerces to a `fn` pointer at the [`std::iter::FlatMap`] third-type-
+/// parameter position inside [`ConfiguredExtensions`]. A bare
+/// closure `|f| f.extensions().iter().copied()` would be equivalent
+/// at the value level but carries an unnameable opaque type — using
+/// a named `fn` item gives the flat-map a spellable closure-position
+/// type, which is what lets [`ConfiguredExtensions`] itself spell its
+/// full internal type.
+///
+/// Takes [`Format`] by value (not `&Format`): [`Format`] is `Copy` and
+/// smaller than a pointer, so the value form is the idiomatic call
+/// shape (and the shape `clippy::trivially_copy_pass_by_ref` demands
+/// for `Copy` types). The upstream [`std::slice::Iter<'_, Format>`]
+/// is `.copied()`-lifted to `Copied<Iter<Format>>` so the flat-map's
+/// closure position accepts a `Format` value directly.
+fn format_extensions_copied(
+    f: Format,
+) -> std::iter::Copied<std::slice::Iter<'static, &'static str>> {
+    f.extensions().iter().copied()
+}
+
+/// Zero-allocation `&'static str` stream over the file extensions a
+/// [`ConfigDiscovery`] honors, in the preference order set by
+/// [`ConfigDiscovery::formats`].
+///
+/// The concrete return type of
+/// [`ConfigDiscovery::configured_extensions`]. Naming the walker at
+/// the API boundary (rather than
+/// `impl Iterator<Item = &'static str> + '_`) exposes the full trait
+/// algebra the underlying nested-slice walker structurally carries —
+/// [`DoubleEndedIterator`], [`std::iter::FusedIterator`], [`Clone`],
+/// and [`Debug`][std::fmt::Debug] — and lets a caller hold the walker
+/// in a struct field or return it up through their own API without
+/// smuggling an unnameable [`impl Trait`][impl-trait] across every
+/// seam.
+///
+/// # Trait algebra
+///
+/// Impls [`Iterator`] + [`DoubleEndedIterator`] +
+/// [`std::iter::FusedIterator`] + [`Clone`] + [`Debug`][std::fmt::Debug].
+/// The underlying [`std::iter::FlatMap`] structurally carries all five
+/// — the outer [`std::slice::Iter<'_, Format>`][slice-iter] and each
+/// inner [`std::iter::Copied<std::slice::Iter<'static, &'static str>>`]
+/// carry them, and the closure position is materialized as a `fn`
+/// pointer (which is `Copy` + `Clone` + `Debug`) via
+/// [`format_extensions_copied`].
+///
+/// [`ExactSizeIterator`] is intentionally NOT impl'd — the inner
+/// per-format extensions slice has [`Format`]-dependent variable
+/// length (`Yaml` has two, `Lisp` has three, `Toml` and `Nix` have
+/// one), so the total-length invariant can't be honored structurally
+/// through [`std::iter::FlatMap`]. This matches the trait bundle
+/// carried by the filter-based cube-slot peers
+/// [`crate::RealizableIter`] / [`crate::UnrealizableIter`] and the
+/// histogram-altitude peers [`crate::AxisHistogramNonzero`] /
+/// [`crate::AxisHistogramObserved`] /
+/// [`crate::AxisHistogramUnobserved`]; strictly weaker than the
+/// five-trait element-preserving peers [`crate::AxisIter`] /
+/// [`crate::ProvenanceMapEntries`] / [`crate::ForwardIter`], which
+/// additionally carry [`ExactSizeIterator`].
+///
+/// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
+/// [slice-iter]: std::slice::Iter
+///
+/// # Field access
+///
+/// The struct field is private — the public surface is the
+/// `Iterator` / `DoubleEndedIterator` / `FusedIterator` / `Clone` trait
+/// impls plus the [`Debug`][std::fmt::Debug] derive.
+#[derive(Clone, Debug)]
+pub struct ConfiguredExtensions<'a> {
+    inner: ConfiguredExtensionsInner<'a>,
+}
+
+/// Named alias for the [`std::iter::FlatMap`] type
+/// [`ConfiguredExtensions`] wraps.
+///
+/// The alias exists purely so [`ConfiguredExtensions`]'s single field
+/// can spell a name that stays under `clippy::type_complexity`; the
+/// concrete algebra is unchanged. Two entrance seams (the `Copied`-
+/// lifted [`Format`] slice and the per-format extensions inner slice)
+/// fold into one `&'static str` stream via [`format_extensions_copied`]
+/// as the closure position.
+type ConfiguredExtensionsInner<'a> = std::iter::FlatMap<
+    std::iter::Copied<std::slice::Iter<'a, Format>>,
+    std::iter::Copied<std::slice::Iter<'static, &'static str>>,
+    fn(Format) -> std::iter::Copied<std::slice::Iter<'static, &'static str>>,
+>;
+
+impl Iterator for ConfiguredExtensions<'_> {
+    type Item = &'static str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for ConfiguredExtensions<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl std::iter::FusedIterator for ConfiguredExtensions<'_> {}
 
 /// How config files are named within a directory.
 ///
@@ -3555,6 +3686,116 @@ mod tests {
                 expected.display()
             );
         }
+    }
+
+    #[test]
+    fn configured_extensions_return_type_is_nameable_configured_extensions() {
+        // Pin the sharpen at the type-signature level: a struct field bound
+        // on `ConfiguredExtensions<'a>` holds the handle across a return.
+        // This test compiles iff the sharpen holds; if `configured_extensions`
+        // ever regresses back to `impl Trait`, this ceases to compile
+        // because `impl Trait` return types are unnameable at struct-field
+        // bounds.
+        struct Held<'a> {
+            walker: ConfiguredExtensions<'a>,
+        }
+        fn hold(d: &ConfigDiscovery) -> Held<'_> {
+            Held {
+                walker: d.configured_extensions(),
+            }
+        }
+        let d = ConfigDiscovery::new("nameable").formats(&[Format::Yaml, Format::Toml]);
+        let mut h = hold(&d);
+        assert_eq!(h.walker.next(), Some("yaml"));
+        assert_eq!(h.walker.next(), Some("yml"));
+        assert_eq!(h.walker.next(), Some("toml"));
+        assert_eq!(h.walker.next(), None);
+    }
+
+    #[test]
+    fn configured_extensions_clone_preserves_static_traits() {
+        // A static bound accepting Iterator + DoubleEndedIterator +
+        // FusedIterator + Clone verifies the full trait algebra survives
+        // the sharpen at compile time — the discovery-altitude peer of
+        // the same four-trait pair pinned on the filter-based cube-slot
+        // siblings [`RealizableIter`] / [`UnrealizableIter`] and the
+        // histogram-altitude siblings [`AxisHistogramNonzero`] /
+        // [`AxisHistogramObserved`] / [`AxisHistogramUnobserved`].
+        // `ExactSizeIterator` is intentionally omitted — the inner
+        // per-format extensions slice has variable length, so the total-
+        // length invariant can't be honored structurally through
+        // `FlatMap`. Then a runtime cross-walk asserts the cloned walker
+        // yields the same `&'static str` stream as the original.
+        fn assert_algebra<I>(_: &I)
+        where
+            I: Iterator<Item = &'static str>
+                + DoubleEndedIterator
+                + std::iter::FusedIterator
+                + Clone,
+        {
+        }
+        let d = ConfigDiscovery::new("algebra").formats(&[
+            Format::Yaml,
+            Format::Toml,
+            Format::Lisp,
+            Format::Nix,
+        ]);
+        let it = d.configured_extensions();
+        assert_algebra(&it);
+        let cloned = it.clone();
+        let a: Vec<&'static str> = it.collect();
+        let b: Vec<&'static str> = cloned.collect();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn configured_extensions_next_back_walks_preference_in_reverse() {
+        // Pin the DoubleEndedIterator impl at the runtime level: the tail
+        // cursor walks the format-then-extension nesting in reverse — for
+        // `[Yaml, Toml]` the reverse walk yields `toml`, then `yml`, then
+        // `yaml`. Catches an accidental regression to a single-ended
+        // state machine or a wrong nesting-order reversal.
+        let d = ConfigDiscovery::new("nextback").formats(&[Format::Yaml, Format::Toml]);
+        let mut it = d.configured_extensions();
+        assert_eq!(it.next_back(), Some("toml"));
+        assert_eq!(it.next_back(), Some("yml"));
+        assert_eq!(it.next_back(), Some("yaml"));
+        assert_eq!(it.next_back(), None);
+        assert_eq!(it.next(), None);
+    }
+
+    #[test]
+    fn configured_extensions_meet_from_both_ends_covers_full_stream() {
+        // Pin the DoubleEnded correctness at the meeting seam: pulling
+        // alternately from head and tail covers exactly the full ordered
+        // stream, with head and tail cursors meeting cleanly at the
+        // interior. For `[Yaml, Toml, Nix]` the ordered stream is
+        // `[yaml, yml, toml, nix]`; the alternating walk hits `yaml`
+        // then `nix` then `yml` then `toml`, and both cursors then
+        // report `None`.
+        let d = ConfigDiscovery::new("meet").formats(&[Format::Yaml, Format::Toml, Format::Nix]);
+        let mut it = d.configured_extensions();
+        assert_eq!(it.next(), Some("yaml"));
+        assert_eq!(it.next_back(), Some("nix"));
+        assert_eq!(it.next(), Some("yml"));
+        assert_eq!(it.next_back(), Some("toml"));
+        assert_eq!(it.next(), None);
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
+    fn configured_extensions_debug_impl_names_the_struct() {
+        // Pin the derived Debug impl at the format-string level: the
+        // rendered output names the struct (`ConfiguredExtensions`).
+        // Catches an accidental regression to a manual impl that
+        // misnames the struct or a rename of the struct itself.
+        let d = ConfigDiscovery::new("dbg").formats(&[Format::Yaml]);
+        let it = d.configured_extensions();
+        let rendered = format!("{it:?}");
+        assert!(
+            rendered.contains("ConfiguredExtensions"),
+            "Debug rendering must name the struct; got {rendered:?}"
+        );
     }
 
     #[test]

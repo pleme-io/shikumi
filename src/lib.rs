@@ -94,8 +94,8 @@ pub use discovered::{
     silent_layer_count, silent_layer_names, silent_layer_names_iter,
 };
 pub use discovery::{
-    ConfigDiscovery, Format, FormatCoordinates, FormatMetadataTag, FormatProvenance,
-    ParseFormatCoordinatesError, ParseFormatMetadataTagError,
+    ConfigDiscovery, ConfiguredExtensions, Format, FormatCoordinates, FormatMetadataTag,
+    FormatProvenance, ParseFormatCoordinatesError, ParseFormatMetadataTagError,
 };
 pub use error::{
     AttributionAxis, AttributionConfidence, AttributionCoordinates, AttributionNameKindCoordinates,
