@@ -677,6 +677,117 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().unobserved().collect()
     }
 
+    /// The layer kind whose entries produced the greatest number of
+    /// contributing layers on this chain — the modal cell of
+    /// [`Self::layer_kind_histogram`] on the chain altitude. `None`
+    /// exactly when the chain is empty (no layer contributed).
+    ///
+    /// Routes through [`Self::layer_kind_histogram`]:
+    /// [`crate::AxisHistogram::dominant_cell`] picks the argmax cell in
+    /// [`crate::ClosedAxis::ALL`] declaration order, which is the
+    /// [`ConfigSourceKind`] canonical order (`Defaults → Env → File`) by
+    /// construction — the closed-axis discipline provides deterministic
+    /// tie-breaking automatically, so this method reads directly off the
+    /// shikumi cube-native primitive instead of hand-rolling
+    /// `hist.iter().filter(|&(_, c)| c > 0).max_by_key(|&(_, c)| c).map(|(v, _)| v)`
+    /// — the inline `max_by_key` form silently picks the *last* tied
+    /// cell (per [`Iterator::max_by_key`]'s contract), so two consumers
+    /// reading "the dominant layer kind" off the same chain would
+    /// disagree under ties unless every one carefully reversed the
+    /// comparison. The lift names the scalar at one site with a
+    /// documented tie-breaking rule.
+    ///
+    /// The chain-altitude scalar-mode peer of [`Self::present_layer_kinds`]
+    /// (the observed-cells vector peer) and [`Self::absent_layer_kinds`]
+    /// (the coverage-gap vector peer): the layer-kind sub-axis of the
+    /// chain-shape surface now carries the natural triple of "*which*
+    /// layer kinds surfaced" / "*which* layer kinds didn't" / "*which
+    /// single* layer kind dominated" projections at one named seam
+    /// each, over the shared [`Self::layer_kind_histogram`] primitive.
+    /// Direct sister of [`crate::ProvenanceMap::dominant_tier`] on the
+    /// tier altitude and [`crate::ConfigDiff::dominant_kind`] on the
+    /// diff altitude — every altitude of the shikumi typescape now
+    /// closes the histogram surface's scalar-mode dominance peer at
+    /// one named `Option<CellKind>` seam alongside the observed /
+    /// coverage-gap vector-mode pair.
+    ///
+    /// Operator-facing consumers answering *"which layer kind dominated
+    /// this chain?"* — the CLI `config-show` summary headlining
+    /// *"File layers dominate: 5 of 7"* to explain why the recipe is
+    /// file-heavy, the attestation manifest recording the modal layer
+    /// kind between two `ProviderChain` snapshots, the alerting policy
+    /// reading *"chain dominance: Env"* to flag a rebuild window where
+    /// env overlays swamp the discovered file set — now route through
+    /// this named seam instead of a per-consumer `max_by_key` walk.
+    ///
+    /// **Tie-breaking is deterministic by declaration order.** When
+    /// multiple layer kinds share the maximum layer count, the kind
+    /// earliest in [`ConfigSourceKind::ALL`] wins — the same
+    /// [`ConfigSourceKind`] canonical order [`Self::present_layer_kinds`]
+    /// and [`Self::absent_layer_kinds`] walk. A uniform-cover chain
+    /// (each kind producing the same nonzero layer count) therefore
+    /// reports `Some(ConfigSourceKind::Defaults)` — the first cell in
+    /// declaration order — pointwise stable regardless of the insertion
+    /// order of individual layers into the chain slice.
+    ///
+    /// Sister lifts one sub-axis over on the same chain-shape surface —
+    /// the scalar-mode dominance peers of [`Self::file_format_histogram`]
+    /// (`dominant_file_format`) and [`Self::env_prefix_kind_histogram`]
+    /// (`dominant_env_prefix_kind`) — inherit the same template. Each
+    /// carries a distinct presence bound: unlike this method, the file-
+    /// format and env-prefix-presence peers fire `None` on any chain
+    /// whose layers all project through `file_format()` /
+    /// `env_prefix_kind()` to `None`, even when the chain itself is
+    /// non-empty (the underlying histogram is empty even when the
+    /// chain is not).
+    ///
+    /// # Invariants
+    ///
+    /// - `dominant_layer_kind().is_some() == !self.as_ref().is_empty()`
+    ///   — every non-empty chain contributes at least one layer to the
+    ///   layer-kind histogram (every [`ConfigSource`] projects to
+    ///   exactly one [`ConfigSourceKind`] cell through
+    ///   [`ConfigSource::kind`]), so the modal cell is defined on every
+    ///   non-empty chain and undefined only on the empty chain — the
+    ///   presence bound is `is_empty`. Cross-axis divergence from
+    ///   `dominant_file_format()` and `dominant_env_prefix_kind()`,
+    ///   whose presence bounds are the corresponding sub-axis
+    ///   histogram's `is_empty()`.
+    /// - `dominant_layer_kind() == layer_kind_histogram().dominant_cell()`
+    ///   — both project the same modal cell off the same primitive;
+    ///   the named seam is the cube-native routing of the chain-shape
+    ///   surface.
+    /// - When `Some(k)`, `k` is a member of `present_layer_kinds()` —
+    ///   the modal cell is by definition observed.
+    /// - When `Some(k)`, `k` is **not** a member of `absent_layer_kinds()`
+    ///   — the observed / coverage-gap partition is disjoint.
+    /// - `layer_kind_histogram().count(dominant_layer_kind().unwrap()) ==
+    ///   layer_kind_histogram().peak_count()` whenever the chain is
+    ///   non-empty — the modal cell carries the peak observation count.
+    ///   Peer to the `(dominant_cell, peak_count)` modal pair invariant
+    ///   on [`crate::AxisHistogram`].
+    /// - `dominant_layer_kind()` on a uniform per-kind chain (one layer
+    ///   per kind) equals `Some(ConfigSourceKind::Defaults)` —
+    ///   declaration-order tie-breaking on the three-cell axis picks
+    ///   the first cell.
+    /// - `dominant_layer_kind()` on an empty chain equals `None` —
+    ///   the empty-chain / empty-histogram boundary.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the
+    /// argmax scan). Both are `O(n)` in practice since the layer-kind
+    /// axis carries a fixed three-cell cardinality; the returned
+    /// `Option<ConfigSourceKind>` reads one cell.
+    #[must_use]
+    fn dominant_layer_kind(&self) -> Option<ConfigSourceKind>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().dominant_cell()
+    }
+
     /// Dense per-format tally of the chain's [`ConfigSource::File`]
     /// layers over the [`crate::discovery::Format`] axis — the typed
     /// histogram every per-format dashboard, attestation manifest
@@ -4916,6 +5027,363 @@ mod tests {
                 chain.len(),
             );
         }
+    }
+
+    // ---- ConfigSourceChain::dominant_layer_kind — modal-cell scalar
+    //      peer of layer_kind_histogram on the chain-shape altitude ----
+
+    #[test]
+    fn dominant_layer_kind_matches_layer_kind_histogram_dominant_cell_pointwise() {
+        // The modal-cell pin: `dominant_layer_kind` routes through
+        // `layer_kind_histogram().dominant_cell()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Direct
+        // sister of
+        // `dominant_tier_matches_tier_histogram_dominant_cell_pointwise`
+        // and
+        // `dominant_kind_matches_kind_histogram_dominant_cell_pointwise`
+        // on the tier and diff altitudes.
+        let fixtures: [Vec<ConfigSource>; 6] = [
+            Vec::new(),
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+                ConfigSource::File(PathBuf::from("/c.yaml")),
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            let via_histogram = chain.as_slice().layer_kind_histogram().dominant_cell();
+            assert_eq!(chain.as_slice().dominant_layer_kind(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn dominant_layer_kind_sample_chain_is_file() {
+        // Direct pin against `sample_chain()`: two File layers + one
+        // Env layer (no Defaults). File is uniquely dominant with 2 of
+        // 3 layers. Peer of
+        // `dominant_tier_prog_fixture_is_default` on the tier altitude
+        // — one direct majority-cell pin against a named fixture.
+        let chain = sample_chain();
+        assert_eq!(
+            chain.as_slice().dominant_layer_kind(),
+            Some(ConfigSourceKind::File),
+        );
+    }
+
+    #[test]
+    fn dominant_layer_kind_env_majority_is_env() {
+        // Direct pin against an env-majority chain: three Env layers +
+        // one File + one Defaults. Env is uniquely dominant with 3 of
+        // 5 layers. Cross-verified against
+        // `hist.count(Env) == hist.peak_count() == 3` at the same
+        // observation site.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.dominant_layer_kind(), Some(ConfigSourceKind::Env));
+        let hist = slice.layer_kind_histogram();
+        assert_eq!(hist.count(ConfigSourceKind::Env), 3);
+        assert_eq!(hist.peak_count(), 3);
+    }
+
+    #[test]
+    fn dominant_layer_kind_empty_chain_is_none() {
+        // The empty-chain / `None` boundary — every chain-level
+        // histogram over an empty chain is the all-zero histogram, so
+        // `dominant_cell` reads `None`. Peer of
+        // `dominant_tier_empty_map_is_none` on the tier altitude and
+        // `dominant_kind_empty_diff_is_none` on the diff altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.dominant_layer_kind(), None);
+    }
+
+    #[test]
+    fn dominant_layer_kind_is_some_iff_chain_is_nonempty() {
+        // Structural completeness of the `(is_empty, dominant_layer_kind)`
+        // cross-surface pair. Every non-empty chain contributes at least
+        // one layer to the layer-kind histogram (unlike the file-format
+        // and env-prefix sub-axes, which can be empty on a non-empty
+        // chain), so the presence bound is precisely `is_empty`. Peer
+        // of `dominant_tier_is_some_iff_map_is_nonempty` on the tier
+        // altitude — same structural completeness pin.
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.toml")),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().dominant_layer_kind().is_some(),
+                !chain.is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_layer_kind_is_member_of_present_layer_kinds() {
+        // Structural pin: whenever `dominant_layer_kind()` is
+        // `Some(k)`, `k` is a member of the observed-cells vector
+        // peer. The modal cell is by definition observed. Peer of
+        // `dominant_tier_is_member_of_contributing_tiers` on the tier
+        // altitude.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            sample_chain(),
+            vec![ConfigSource::Defaults, ConfigSource::Defaults],
+            vec![
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+        ];
+        for chain in &fixtures {
+            let dominant = chain
+                .as_slice()
+                .dominant_layer_kind()
+                .expect("non-empty chain has a dominant layer kind");
+            let present = chain.as_slice().present_layer_kinds();
+            assert!(
+                present.contains(&dominant),
+                "dominant layer kind {dominant:?} must appear in \
+                 present_layer_kinds() = {present:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_layer_kind_is_not_member_of_absent_layer_kinds() {
+        // Structural pin: whenever `dominant_layer_kind()` is
+        // `Some(k)`, `k` is NOT a member of the coverage-gap vector
+        // peer — the observed / coverage-gap partition is disjoint,
+        // so the modal (observed) cell is disjoint from the coverage
+        // gap. Peer of `dominant_tier_is_not_member_of_absent_tiers`
+        // on the tier altitude.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            sample_chain(),
+            vec![ConfigSource::Defaults, ConfigSource::Defaults],
+            vec![
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+        ];
+        for chain in &fixtures {
+            let dominant = chain
+                .as_slice()
+                .dominant_layer_kind()
+                .expect("non-empty chain has a dominant layer kind");
+            let absent = chain.as_slice().absent_layer_kinds();
+            assert!(
+                !absent.contains(&dominant),
+                "dominant layer kind {dominant:?} must NOT appear in \
+                 absent_layer_kinds() = {absent:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_layer_kind_count_equals_peak_count_on_nonempty_chain() {
+        // The `(dominant_cell, peak_count)` modal-pair pin:
+        // `hist.count(dominant_layer_kind().unwrap()) ==
+        // hist.peak_count()` on every non-empty chain. Peer of
+        // `dominant_tier_count_equals_peak_count_on_nonempty_map` on
+        // the tier altitude.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            sample_chain(),
+            vec![ConfigSource::Defaults, ConfigSource::Defaults],
+            vec![
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+        ];
+        for chain in &fixtures {
+            let hist = chain.as_slice().layer_kind_histogram();
+            let dominant = chain
+                .as_slice()
+                .dominant_layer_kind()
+                .expect("non-empty chain has a dominant layer kind");
+            assert_eq!(hist.count(dominant), hist.peak_count());
+        }
+    }
+
+    #[test]
+    fn dominant_layer_kind_ties_broken_by_declaration_order() {
+        // Uniform-cover chain — one layer of each kind (all three
+        // cells tied at count 1). The declaration-order tiebreak on
+        // `ConfigSourceKind::ALL` (`Defaults → Env → File`) picks the
+        // FIRST tied cell — `Defaults` — not the LAST that
+        // `Iterator::max_by_key` would return. Peer of
+        // `dominant_tier_ties_broken_by_declaration_order` on the
+        // tier altitude and
+        // `dominant_kind_three_way_tie_picks_first_declared_cell` on
+        // the diff altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Defaults,
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.layer_kind_histogram();
+        assert_eq!(hist.count(ConfigSourceKind::Defaults), 1);
+        assert_eq!(hist.count(ConfigSourceKind::Env), 1);
+        assert_eq!(hist.count(ConfigSourceKind::File), 1);
+        assert_eq!(hist.peak_count(), 1);
+        assert_eq!(
+            slice.dominant_layer_kind(),
+            Some(ConfigSourceKind::Defaults)
+        );
+    }
+
+    #[test]
+    fn dominant_layer_kind_two_way_tie_picks_earliest_declared_observed_cell() {
+        // Two-way tie between cells that are NOT the first cell of
+        // `ConfigSourceKind::ALL`: 2 Env + 2 File, zero Defaults. Env
+        // wins because it is earlier in `ALL` than File — the tiebreak
+        // is "earliest tied observed cell", not "first cell of `ALL`
+        // regardless of observation" (Defaults appears in `ALL` before
+        // Env but has zero count, so it doesn't participate in the
+        // tie). Distinguishing pin against a mis-implementation that
+        // would return `Defaults` (the first cell of `ALL`) instead of
+        // `Env` (the first tied observed cell). Peer of
+        // `dominant_kind_two_way_tie_picks_earliest_declared_observed_cell`
+        // on the diff altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::Env("OTHER_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.layer_kind_histogram();
+        assert_eq!(hist.count(ConfigSourceKind::Defaults), 0);
+        assert_eq!(hist.count(ConfigSourceKind::Env), 2);
+        assert_eq!(hist.count(ConfigSourceKind::File), 2);
+        assert_eq!(slice.dominant_layer_kind(), Some(ConfigSourceKind::Env));
+    }
+
+    #[test]
+    fn dominant_layer_kind_agrees_with_open_coded_argmax_walk() {
+        // Parity against the exact fold-forward argmax walk this lift
+        // replaces — spelling the declaration-order tiebreak
+        // explicitly with strict `>` inequality so the FIRST tied cell
+        // wins, mirroring `AxisHistogram::dominant_cell` rather than
+        // `max_by_key`'s LAST-tied-cell semantics. Peer of
+        // `dominant_tier_agrees_with_open_coded_argmax_walk` on the
+        // tier altitude.
+        let chains = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Env("OTHER_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+                ConfigSource::Env("OTHER_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+        ];
+        for chain in &chains {
+            let hist = chain.as_slice().layer_kind_histogram();
+            let mut manual: Option<(ConfigSourceKind, usize)> = None;
+            for cell in ConfigSourceKind::ALL.iter().copied() {
+                let count = hist.count(cell);
+                if count == 0 {
+                    continue;
+                }
+                match manual {
+                    None => manual = Some((cell, count)),
+                    Some((_, best)) if count > best => manual = Some((cell, count)),
+                    _ => {}
+                }
+            }
+            let via_seam = chain.as_slice().dominant_layer_kind();
+            assert_eq!(via_seam, manual.map(|(cell, _)| cell));
+        }
+    }
+
+    #[test]
+    fn dominant_layer_kind_uniform_cover_picks_first_cell() {
+        // Trait-uniform uniform-cover invariant: a full-cover chain
+        // with uniform count 2 per kind (2 Defaults + 2 Env + 2 File)
+        // picks `Some(Defaults)` — the first cell in
+        // `ConfigSourceKind::ALL`. Peer of
+        // `dominant_tier_uniform_cover_picks_first_cell` on the tier
+        // altitude and
+        // `dominant_kind_uniform_cover_picks_first_cell` on the diff
+        // altitude.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.layer_kind_histogram();
+        assert!(hist.is_full_cover());
+        assert_eq!(hist.count(ConfigSourceKind::Defaults), 2);
+        assert_eq!(hist.count(ConfigSourceKind::Env), 2);
+        assert_eq!(hist.count(ConfigSourceKind::File), 2);
+        assert_eq!(
+            slice.dominant_layer_kind(),
+            Some(ConfigSourceKind::Defaults)
+        );
     }
 
     // ---- ConfigSource::env_prefix_kind ----
