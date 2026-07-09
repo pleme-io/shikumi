@@ -987,6 +987,123 @@ impl ProvenanceMap {
     pub fn dominant_tier(&self) -> Option<ConfigTierKind> {
         self.tier_histogram().dominant_cell()
     }
+
+    /// The tier whose overlay produced the fewest (but still ≥1) surviving
+    /// effective leaves on this resolved fold — the anti-modal (rarest
+    /// observed) cell of [`Self::tier_histogram`] on the tier altitude.
+    /// `None` exactly when the map is empty (no leaf contributed).
+    ///
+    /// Routes through [`Self::tier_histogram`]:
+    /// [`crate::AxisHistogram::recessive_cell`] picks the argmin cell over
+    /// the histogram's *support* (the nonzero cells) in
+    /// [`crate::ClosedAxis::ALL`] declaration order, which is the
+    /// [`ConfigTier`] precedence order by construction — the closed-axis
+    /// discipline provides deterministic tie-breaking automatically, so
+    /// this method reads directly off the shikumi cube-native primitive
+    /// instead of hand-rolling
+    /// `hist.iter().filter(|&(_, c)| c > 0).min_by_key(|&(_, c)| c).map(|(v, _)| v)`
+    /// — the inline `min_by_key` form silently picks the *first* tied cell
+    /// (per [`Iterator::min_by_key`]'s contract, which reverses
+    /// [`Iterator::max_by_key`]'s "last on ties" behavior), so an
+    /// open-coded argmin and the open-coded argmax on the dominant side
+    /// would disagree on which tied cell to pick. The pair of lifts
+    /// ([`Self::dominant_tier`] and [`Self::recessive_tier`]) pins one
+    /// consistent tie-breaking rule across both projections.
+    ///
+    /// **Zero-count tiers are excluded from the search.** The argmin is
+    /// taken over the histogram's support, not over the full axis. Tiers
+    /// that contributed no surviving leaf are trivially the minimum over
+    /// the full axis and would shadow the rarest *observed* tier;
+    /// excluding them surfaces the rarest tier some leaf actually
+    /// credited — the question the fleet dashboard, attestation manifest,
+    /// and diagnostic dump ask when they surface *"the runt tier this
+    /// resolved fold saw"*. This matches [`Self::dominant_tier`]'s
+    /// symmetry on the maximum side: both projections operate over the
+    /// nonzero support, so the empty-map convention is identical (both
+    /// return `None`) and the singleton-support case is identical (both
+    /// return the sole observed tier).
+    ///
+    /// The tier-altitude anti-modal peer of [`Self::dominant_tier`] (the
+    /// modal-cell scalar peer of the same [`Self::tier_histogram`]
+    /// primitive) — the histogram surface now carries the fused
+    /// (dominant, recessive) cell pair on the tier altitude, matching
+    /// the ([`crate::AxisHistogram::dominant_cell`],
+    /// [`crate::AxisHistogram::recessive_cell`]) pair on the shared
+    /// [`crate::AxisHistogram`] primitive one altitude down. Operator-facing
+    /// consumers answering *"which tier is the runt of this resolved fold?"*
+    /// — the fleet dashboard headlining *"runt tier: Custom, 1 of 47 leaves
+    /// this rebuild window"*, the attestation manifest recording the
+    /// anti-modal tier between two resolved fold snapshots, the alerting
+    /// policy reading *"runt tier: Discovered"* to flag a rebuild window
+    /// where the kanchi discovery layer contributed almost nothing — now
+    /// route through this named seam instead of a per-consumer `min_by_key`
+    /// walk.
+    ///
+    /// **Tie-breaking is deterministic by precedence order.** When
+    /// multiple observed tiers share the minimum leaf count, the tier
+    /// earliest in [`ConfigTierKind::ALL`] wins — the same
+    /// [`ConfigTier`] precedence order [`Self::contributing_tiers`],
+    /// [`Self::absent_tiers`], and [`Self::dominant_tier`] walk. A
+    /// uniform-cover fold (each tier producing the same nonzero leaf
+    /// count) therefore reports `Some(ConfigTierKind::Bare)` — the first
+    /// cell in declaration order — pointwise identical to
+    /// [`Self::dominant_tier`] on the same input (the singleton-modality
+    /// degenerate where the modal and anti-modal cells coincide).
+    ///
+    /// # Invariants
+    ///
+    /// - `recessive_tier().is_some() == !is_empty()` — the recessive tier
+    ///   is defined exactly when the fold has at least one leaf. Peer to
+    ///   the [`Self::is_empty`] boundary [`Self::dominant_tier`],
+    ///   [`Self::contributing_tiers`], and [`Self::absent_tiers`] all
+    ///   witness.
+    /// - `recessive_tier().is_some() == dominant_tier().is_some()` — both
+    ///   projections are defined on the same support (`!is_empty()`),
+    ///   lifted from the [`crate::AxisHistogram::recessive_cell`] /
+    ///   [`crate::AxisHistogram::dominant_cell`] presence-bound law.
+    /// - `recessive_tier() == tier_histogram().recessive_cell()` — both
+    ///   project the same anti-modal cell off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - When `Some(t)`, `t` is a member of `contributing_tiers()` —
+    ///   the anti-modal cell is by definition observed. Pinned by
+    ///   `recessive_tier_is_member_of_contributing_tiers`.
+    /// - When `Some(t)`, `t` is **not** a member of `absent_tiers()` —
+    ///   the observed / coverage-gap partition is disjoint, and the
+    ///   argmin over the *support* never coincides with a zero-count
+    ///   cell. Pinned by `recessive_tier_is_not_member_of_absent_tiers`.
+    /// - `tier_histogram().count(recessive_tier().unwrap()) ==
+    ///   tier_histogram().trough_count()` whenever the map is non-empty —
+    ///   the anti-modal cell carries the trough-of-support observation
+    ///   count. Peer to the (`dominant_cell`, `peak_count`) modal pair
+    ///   invariant on [`crate::AxisHistogram`].
+    /// - `tier_histogram().count(recessive_tier().unwrap()) <=
+    ///   tier_histogram().count(dominant_tier().unwrap())` whenever the
+    ///   map is non-empty — the trough-of-support count is bounded above
+    ///   by the peak count. Lifted from the trait-uniform
+    ///   `count(recessive_cell) <= count(dominant_cell)` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `recessive_tier() == dominant_tier()` whenever
+    ///   `contributing_tiers().len() == 1` — a single observed tier is
+    ///   both the modal and the anti-modal cell (the singleton-support
+    ///   degenerate).
+    /// - `recessive_tier()` on a uniform per-tier fold (one leaf per
+    ///   tier) equals `Some(ConfigTierKind::Bare)` — declaration-order
+    ///   tie-breaking on the four-cell axis picks the first cell,
+    ///   pointwise identical to `dominant_tier()` on the same input.
+    /// - `recessive_tier()` on an empty [`ProvenanceMap`] equals `None`
+    ///   — the empty-map / empty-histogram boundary.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<ConfigTierKind>()` (the argmin
+    /// scan). Both are `O(n)` in practice since the tier axis carries a
+    /// fixed four-cell cardinality; the returned `Option<ConfigTierKind>`
+    /// reads one cell.
+    #[must_use]
+    pub fn recessive_tier(&self) -> Option<ConfigTierKind> {
+        self.tier_histogram().recessive_cell()
+    }
 }
 
 /// Zero-allocation `(&[String], &Provenance)` stream over the sorted
@@ -4803,6 +4920,283 @@ mod progressive_tests {
             .collect();
         assert!(m.tier_histogram().is_full_cover());
         assert_eq!(m.dominant_tier(), Some(ConfigTierKind::Bare));
+    }
+
+    // ---- ProvenanceMap::recessive_tier — anti-modal-cell scalar peer
+    //      of ProvenanceMap::tier_histogram on the tier altitude ----
+
+    #[test]
+    fn recessive_tier_matches_tier_histogram_recessive_cell_pointwise() {
+        // The anti-modal-cell pin: `recessive_tier` routes through
+        // `tier_histogram().recessive_cell()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Peer of
+        // `dominant_tier_matches_tier_histogram_dominant_cell_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().recessive_cell();
+            assert_eq!(map.recessive_tier(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn recessive_tier_prog_fixture_is_bare() {
+        // Prog attributes 4 leaves: a→Discovered, b→Default, c→Bare,
+        // d→Default. Counts: Bare=1, Discovered=1, Default=2, Custom=0.
+        // The argmin over the support {Bare, Discovered, Default} ties
+        // at 1 between Bare and Discovered; declaration-order tiebreak
+        // picks the earlier cell → `Some(Bare)`. Direct pin — the named
+        // seam answers the operator's *"which tier is the runt of this
+        // resolved fold?"* question at one call, no `min_by_key` walk
+        // in the dashboard.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().recessive_tier(), Some(ConfigTierKind::Bare));
+    }
+
+    #[test]
+    fn recessive_tier_nested_fixture_is_discovered() {
+        // Nested attributes 3 leaves: win.w→Discovered, win.h→Default,
+        // theme→Default. Counts: Bare=0, Discovered=1, Default=2,
+        // Custom=0. The argmin over the support {Discovered, Default}
+        // is uniquely Discovered at count 1 — no tie, no declaration-
+        // order fallback needed.
+        let r = Nested::resolve_progressive();
+        assert_eq!(
+            r.provenance().recessive_tier(),
+            Some(ConfigTierKind::Discovered)
+        );
+    }
+
+    #[test]
+    fn recessive_tier_empty_map_is_none() {
+        // An empty ProvenanceMap has no leaves and therefore no
+        // anti-modal tier — the empty-map / empty-histogram boundary of
+        // the recessive-cell projection. Peer to
+        // `dominant_tier_empty_map_is_none` on the modal side.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.recessive_tier(), None);
+    }
+
+    #[test]
+    fn recessive_tier_is_some_iff_map_is_nonempty() {
+        // Cross-surface pin: the presence-of-anti-modal-cell predicate
+        // agrees with the non-emptiness of the underlying map.
+        // Structural completeness of the `(is_empty, recessive_tier)`
+        // boundary — a well-formed fold with ≥1 leaf always has an
+        // anti-modal cell, and an empty fold never does. Peer of
+        // `dominant_tier_is_some_iff_map_is_nonempty`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.recessive_tier().is_some(), !map.is_empty());
+        }
+    }
+
+    #[test]
+    fn recessive_tier_is_some_iff_dominant_tier_is_some() {
+        // Cross-projection pin lifted from the trait-uniform
+        // `recessive_cell().is_some() == dominant_cell().is_some()` law
+        // on AxisHistogram: both projections operate over the same
+        // nonzero support, so they agree on presence at every input.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.recessive_tier().is_some(),
+                map.dominant_tier().is_some(),
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_tier_is_member_of_contributing_tiers() {
+        // Structural pin: whenever `recessive_tier()` is `Some(t)`, `t`
+        // must appear in `contributing_tiers()` (the anti-modal cell is
+        // taken over the support, so it is by definition observed).
+        // The support / anti-modal-cell partition on the tier altitude
+        // reads consistently between the two named seams. Peer of
+        // `dominant_tier_is_member_of_contributing_tiers`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+        ] {
+            let recessive = map
+                .recessive_tier()
+                .expect("non-empty map has recessive tier");
+            assert!(
+                map.contributing_tiers().contains(&recessive),
+                "recessive tier {recessive:?} must appear in contributing_tiers",
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_tier_is_not_member_of_absent_tiers() {
+        // Structural pin: whenever `recessive_tier()` is `Some(t)`, `t`
+        // must NOT appear in `absent_tiers()` — the anti-modal cell lies
+        // on the observed side of the observed / coverage-gap partition
+        // by construction (argmin taken over the nonzero support).
+        // Disjointness pin between the two named seams. Peer of
+        // `dominant_tier_is_not_member_of_absent_tiers`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+        ] {
+            let recessive = map
+                .recessive_tier()
+                .expect("non-empty map has recessive tier");
+            assert!(
+                !map.absent_tiers().contains(&recessive),
+                "recessive tier {recessive:?} must not appear in absent_tiers",
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_tier_count_equals_trough_count_on_nonempty_map() {
+        // The (recessive_cell, trough_count) anti-modal-pair invariant
+        // lifted to the tier altitude: the observation count of the
+        // recessive tier equals the histogram's trough count over the
+        // support. Peer of `dominant_tier_count_equals_peak_count_on_nonempty_map`
+        // on the anti-modal side, and the trough-of-support analogue of
+        // the (dominant_cell, peak_count) modal pair.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+        ] {
+            let hist = map.tier_histogram();
+            let recessive = map
+                .recessive_tier()
+                .expect("non-empty map has recessive tier");
+            assert_eq!(hist.count(recessive), hist.trough_count());
+        }
+    }
+
+    #[test]
+    fn recessive_tier_count_bounded_by_dominant_tier_count() {
+        // Structural bound lifted from the trait-uniform
+        // `count(recessive_cell) <= count(dominant_cell)` law on
+        // AxisHistogram: the trough-of-support is bounded above by the
+        // peak-of-support at every fixture. Cross-projection pin
+        // between `recessive_tier` and `dominant_tier`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+        ] {
+            let hist = map.tier_histogram();
+            let recessive = map
+                .recessive_tier()
+                .expect("non-empty map has recessive tier");
+            let dominant = map
+                .dominant_tier()
+                .expect("non-empty map has dominant tier");
+            assert!(
+                hist.count(recessive) <= hist.count(dominant),
+                "count(recessive={recessive:?})={r} must be <= count(dominant={dominant:?})={d}",
+                r = hist.count(recessive),
+                d = hist.count(dominant),
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_tier_ties_broken_by_declaration_order() {
+        // Structural tie-breaking pin: on a uniform per-tier fold
+        // (each of the four `ConfigTierKind` cells contributing exactly
+        // one leaf), `recessive_tier` reports
+        // `Some(ConfigTierKind::Bare)` — the first cell in
+        // `ConfigTierKind::ALL` declaration order (the singleton-modality
+        // degenerate where the modal and anti-modal cells coincide).
+        // Constructed by overlaying a Custom operator layer on Prog
+        // (which spans Bare→Discovered→Default with 4 leaves distributed
+        // 1/1/2) that steals the second Default-tier leaf (b) into
+        // Custom, yielding a 1-leaf-per-tier full-cover fold. Any
+        // future switch to a nondeterministic `min_by_key` walk over
+        // the full axis (which would silently pick a zero-count cell
+        // over the closed axis) would flip this pin — the seam names
+        // the tiebreak once.
+        let mut d = Dict::new();
+        d.insert("b".to_owned(), Value::from(99_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", d)]);
+        // Sanity: this construction produces the intended tier-count
+        // distribution (each tier owns exactly one leaf).
+        let hist = r.provenance().tier_histogram();
+        assert_eq!(hist.count(ConfigTierKind::Bare), 1);
+        assert_eq!(hist.count(ConfigTierKind::Discovered), 1);
+        assert_eq!(hist.count(ConfigTierKind::Default), 1);
+        assert_eq!(hist.count(ConfigTierKind::Custom), 1);
+        assert!(hist.is_full_cover());
+        // Tiebreak lands on the first cell in declaration order —
+        // pointwise identical to `dominant_tier` on the same uniform
+        // input (the singleton-modality degenerate).
+        assert_eq!(r.provenance().recessive_tier(), Some(ConfigTierKind::Bare));
+        assert_eq!(
+            r.provenance().recessive_tier(),
+            r.provenance().dominant_tier()
+        );
+    }
+
+    #[test]
+    fn recessive_tier_singleton_support_agrees_with_dominant_tier() {
+        // Singleton-support degenerate lifted from the trait-uniform
+        // `distinct_cells() == 1 → dominant_cell() == recessive_cell()`
+        // law on AxisHistogram: when only one tier contributes, that
+        // tier is both the modal and the anti-modal cell. Direct
+        // construction: three leaves, all on `Default`.
+        let m: ProvenanceMap = ["a", "b", "c"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 1);
+        assert_eq!(m.recessive_tier(), m.dominant_tier());
+        assert_eq!(m.recessive_tier(), Some(ConfigTierKind::Default));
+    }
+
+    #[test]
+    fn recessive_tier_agrees_with_open_coded_argmin_walk() {
+        // Parity against the exact `hist.iter().filter(|&(_, c)| c > 0)
+        // .min_by(count-then-declaration-order)` walk this lift replaces
+        // — both the named seam and the hand-rolled argmin must
+        // pointwise agree over every fixture in the module. The
+        // hand-rolled form spells the declaration-order tiebreak
+        // explicitly (fold-forward with strict `<` inequality — the
+        // first tied cell wins, mirroring `AxisHistogram::recessive_cell`
+        // — rather than `min_by_key`'s FIRST-tied-cell semantics which
+        // agrees by coincidence but drifts under any reversed
+        // comparison).
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.recessive_tier();
+            let hist = map.tier_histogram();
+            let mut iter = hist.iter().filter(|&(_, c)| c > 0);
+            let hand_rolled = iter.next().map(|first| {
+                iter.fold(
+                    first,
+                    |best, current| {
+                        if current.1 < best.1 { current } else { best }
+                    },
+                )
+                .0
+            });
+            assert_eq!(via_seam, hand_rolled);
+        }
     }
 
     // ── Nested per-leaf attribution ──
