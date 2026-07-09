@@ -12226,14 +12226,190 @@ pub trait PartialInverseCube: ProductCube {
 /// Callers needing the length reach
 /// [`realizable_count::<C>()`][realizable_count] directly (a
 /// zero-cost constant folded over `C::ALL`).
+///
+/// # Type ownership at the API boundary
+///
+/// The concrete return type is [`RealizableImages<C>`] — a thin
+/// one-field newtype around
+/// [`std::iter::FilterMap`]`<`[`std::iter::Copied`]`<`[`std::slice::Iter`]`<'static,
+/// C>>, fn(C) -> Option<C::Image>>` that spells its full trait
+/// algebra ([`Iterator`] + [`DoubleEndedIterator`] +
+/// [`std::iter::FusedIterator`] + [`Clone`] +
+/// [`Debug`][std::fmt::Debug]) at the type level rather than behind
+/// an unnameable [`impl Trait`][impl-trait] combinator. Consumers
+/// holding the handle in a struct field or returning it up through
+/// their own API spell it as [`RealizableImages<C>`] instead of
+/// smuggling an unnameable combinator across every seam. The
+/// realizable-image projection on the partial-inverse cube discipline
+/// now carries the same concrete-return invariant every filter-based
+/// iter peer ([`RealizableIter`], [`UnrealizableIter`],
+/// [`AxisHistogramNonzero`], [`AxisHistogramObserved`],
+/// [`AxisHistogramUnobserved`]) already spells at its own API seam.
+///
+/// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
 #[must_use]
-pub fn realizable_images<C: PartialInverseCube>()
--> impl DoubleEndedIterator<Item = C::Image> + std::iter::FusedIterator + Clone {
-    C::ALL
-        .iter()
-        .copied()
-        .filter_map(PartialInverseCube::invert)
+pub fn realizable_images<C: PartialInverseCube>() -> RealizableImages<C> {
+    // The fn-item type of `<C as PartialInverseCube>::invert` coerces
+    // to the fn-pointer type `fn(C) -> Option<C::Image>` at the
+    // struct-literal field assignment site (a coercion site per the
+    // reference), so the resulting `FilterMap<_, fn(C) -> Option<C::Image>>`
+    // matches the newtype field type without an explicit `as` cast at
+    // the call site. Bind through a `fn`-typed local to make the
+    // coercion explicit at the point of use — same idiom
+    // [`realizable_iter`] and [`unrealizable_iter`] carry against
+    // their `fn(&C) -> bool` predicates.
+    let projection: fn(C) -> Option<C::Image> = <C as PartialInverseCube>::invert;
+    RealizableImages {
+        inner: C::ALL.iter().copied().filter_map(projection),
+    }
 }
+
+/// Zero-allocation stream of every realized image of a
+/// [`PartialInverseCube`] — the `Some` outputs of
+/// [`PartialInverseCube::invert`] over [`ClosedAxis::ALL`] on `C`, in
+/// cube-declaration order — returned by [`realizable_images`].
+///
+/// Naming the return type at the API boundary (rather than
+/// [`impl Trait`][impl-trait]) exposes the full trait algebra the
+/// underlying [`std::iter::FilterMap`]`<`[`std::iter::Copied`]`<`[`std::slice::Iter`]`<'static,
+/// C>>, fn(C) -> Option<C::Image>>` cursor structurally carries
+/// directly at the type level — the same idiom every filter-based
+/// iter peer ([`RealizableIter`], [`UnrealizableIter`],
+/// [`AxisHistogramNonzero`], [`AxisHistogramObserved`],
+/// [`AxisHistogramUnobserved`]) already spells at its own API seam.
+/// Consumers storing the handle in a struct field or returning it up
+/// through their own API no longer smuggle an unnameable
+/// [`impl Trait`][impl-trait] across every seam.
+///
+/// [impl-trait]: https://doc.rust-lang.org/reference/types/impl-trait.html
+///
+/// # Trait algebra
+///
+/// Impls [`Iterator`], [`DoubleEndedIterator`],
+/// [`std::iter::FusedIterator`], [`Clone`], and
+/// [`Debug`][std::fmt::Debug] — the same five-trait bundle carried by
+/// the filter-based realizable/unrealizable cube-slot peers
+/// [`RealizableIter`] and [`UnrealizableIter`], and by the
+/// histogram-altitude filter-based siblings
+/// ([`AxisHistogramNonzero`], [`AxisHistogramObserved`],
+/// [`AxisHistogramUnobserved`]). Minus [`ExactSizeIterator`]: the
+/// underlying [`std::iter::FilterMap`] discards `None` outputs of the
+/// [`PartialInverseCube::invert`] projection, so the exact-length
+/// contract cannot be honored at the type level (element-preserving
+/// iter peers [`AxisIter`], [`crate::ProvenanceMapEntries`], and
+/// [`ForwardIter`] carry [`ExactSizeIterator`] because their
+/// projections do not drop elements). Callers needing the
+/// realizable-image length reach
+/// [`realizable_count::<C>()`][realizable_count] directly (equal to
+/// [`axis_cardinality::<C::Image>()`][axis_cardinality] by the
+/// partial-inverse bijection invariant).
+///
+/// The trait algebra is a strict widening of the prior
+/// `impl DoubleEndedIterator<Item = C::Image> + std::iter::FusedIterator +
+/// Clone` return: the concrete return type unlocks the
+/// nameable-struct-field and nameable-return-position seams the
+/// `impl Trait` shape erased, and the [`Debug`][std::fmt::Debug]
+/// impl surfaces nameably (was erased at the `impl Trait` boundary).
+///
+/// # Field access
+///
+/// The struct field is private — the public surface is the five
+/// trait impls above. The wrapped
+/// [`std::iter::FilterMap`]`<`[`std::iter::Copied`]`<`[`std::slice::Iter`]`<'static,
+/// C>>, fn(C) -> Option<C::Image>>` cursor is a fixed-size borrowed
+/// handle that already carries every trait this iter forwards; the
+/// newtype exists to name the substrate composition at the type
+/// level rather than to add state on top.
+pub struct RealizableImages<C: PartialInverseCube> {
+    // The three-level nested generic (`FilterMap<Copied<slice::Iter>,
+    // fn>`) is deliberate — the newtype's whole purpose is to name
+    // the concrete stdlib composition at the type level so its trait
+    // algebra survives the seam. A type alias would either duplicate
+    // the parameter (`type Inner<C> = FilterMap<Copied<..>, fn(C) ->
+    // Option<C::Image>>`) with no gain, or hide the composition and
+    // defeat the point of the sharpen. Suppress `type_complexity`
+    // here rather than factor.
+    #[allow(clippy::type_complexity)]
+    inner: std::iter::FilterMap<
+        std::iter::Copied<std::slice::Iter<'static, C>>,
+        fn(C) -> Option<C::Image>,
+    >,
+}
+
+impl<C: PartialInverseCube> Clone for RealizableImages<C> {
+    fn clone(&self) -> Self {
+        // Manual (not derived) because [`PartialInverseCube`] does
+        // not require `C: Clone` (its [`ProductCube`] +
+        // [`ClosedAxis`] super-trait chain bounds `Copy + Eq + Hash +
+        // 'static` only, and `Copy` implies `Clone` at the value
+        // level, but a `#[derive(Clone)]` on this generic newtype
+        // would leak a `C: Clone` bound the trait doesn't guarantee
+        // via the derive's structural synthesizer). Delegates to the
+        // wrapped `FilterMap<Copied<slice::Iter>, fn>::clone()`; the
+        // underlying substrate is unconditionally [`Clone`] (the
+        // `Copied<slice::Iter>` cursor is [`Clone`],
+        // [`std::iter::FilterMap`] preserves [`Clone`] when both the
+        // iterator and closure are [`Clone`], and the fn-pointer
+        // projection `fn(C) -> Option<C::Image>` is trivially
+        // [`Copy`] + [`Clone`]). Same manual-Clone rationale
+        // [`RealizableIter`] and [`UnrealizableIter`] carry against
+        // their filter substrates.
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<C: PartialInverseCube> std::fmt::Debug for RealizableImages<C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Skip the `inner` field: neither [`PartialInverseCube`] nor
+        // its [`ProductCube`] / [`ClosedAxis`] super-trait chain
+        // requires `C: Debug` (the super-trait bounds are `Copy + Eq +
+        // Hash + 'static` only, so a future implementor without
+        // `Debug` can still participate in the discipline), and a
+        // `#[derive(Debug)]` on this struct would leak a `C: Debug`
+        // bound via the `slice::Iter<'static, C>` cursor in the
+        // wrapped `FilterMap<...>` field. Report the cursor's
+        // upper-bound remaining cell count (`size_hint().1`) — the
+        // cube cells still to walk before the filter-map projection
+        // reaches the tail — as a diagnostic scalar instead. Same
+        // `Debug`-with-a-field-substitution pattern
+        // [`RealizableIter`], [`UnrealizableIter`], the axis-altitude
+        // [`AxisIter`], the filter-based histogram-altitude siblings
+        // ([`AxisHistogramNonzero`], [`AxisHistogramObserved`],
+        // [`AxisHistogramUnobserved`]), and the
+        // partial-inverse-cube element-preserving [`ForwardIter`]
+        // carry against their own non-`Debug`-guaranteed cursor
+        // state.
+        f.debug_struct("RealizableImages")
+            .field("cell_remaining_upper_bound", &self.inner.size_hint().1)
+            .finish()
+    }
+}
+
+impl<C: PartialInverseCube> Iterator for RealizableImages<C> {
+    type Item = C::Image;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        // Lower bound zero (every remaining cell could still project
+        // to `None` under the partial inverse and get skipped by the
+        // filter-map); upper bound the full underlying walk (no
+        // filter-map adds elements beyond the underlying cube walk).
+        self.inner.size_hint()
+    }
+}
+
+impl<C: PartialInverseCube> DoubleEndedIterator for RealizableImages<C> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl<C: PartialInverseCube> std::iter::FusedIterator for RealizableImages<C> {}
 
 /// Iterate the forward image of every image under
 /// [`PartialInverseCube::forward`] — `C::Image::ALL.iter().copied()
@@ -14657,6 +14833,168 @@ mod tests {
         let rendered = format!("{it:?}");
         assert!(
             rendered.contains("UnrealizableIter"),
+            "Debug output must name the struct: {rendered}",
+        );
+        assert!(
+            rendered.contains("cell_remaining_upper_bound"),
+            "Debug output must name the cell_remaining_upper_bound field: {rendered}",
+        );
+    }
+
+    // ---- RealizableImages — named concrete return type at the realizable_images API boundary ----
+
+    #[test]
+    fn realizable_images_return_type_is_nameable_realizable_images() {
+        // Pins the sharpen at the type-signature level: a struct
+        // field bound on `RealizableImages<C>` holds the handle
+        // across a return, so the concrete return type of
+        // [`realizable_images`] is spellable at the API boundary.
+        // This test compiles ⇔ the sharpen holds; if the return type
+        // ever regresses back to `impl Trait`, the struct field
+        // bound ceases to name the substrate and the test fails to
+        // compile. The realizable-image-projection peer of the
+        // realizable/unrealizable cube-slot walks
+        // (`realizable_iter_return_type_is_nameable_realizable_iter`,
+        // `unrealizable_iter_return_type_is_nameable_unrealizable_iter`),
+        // the partial-inverse-cube-altitude
+        // `forward_iter_return_type_is_nameable_forward_iter`, the
+        // axis-altitude `axis_iter_return_type_is_nameable_axis_iter`,
+        // and the tier-altitude
+        // `provenance_map_entries_return_type_is_nameable_provenance_map_entries`
+        // pins. Fixture: the `FormatCoordinates` cube, whose
+        // realized image is `Format::ALL` in cube-declaration order.
+        struct Holder {
+            iter: crate::RealizableImages<FormatCoordinates>,
+        }
+        let holder = Holder {
+            iter: realizable_images::<FormatCoordinates>(),
+        };
+        let collected: Vec<Format> = holder.iter.collect();
+        let expected: Vec<Format> = FormatCoordinates::ALL
+            .iter()
+            .copied()
+            .filter_map(<FormatCoordinates as PartialInverseCube>::invert)
+            .collect();
+        assert_eq!(collected, expected);
+    }
+
+    #[test]
+    fn realizable_images_clone_preserves_four_traits() {
+        // Compile-time witness that [`crate::RealizableImages`]
+        // carries the four-trait bundle `Iterator +
+        // DoubleEndedIterator + FusedIterator + Clone` — the
+        // underlying `FilterMap<Copied<slice::Iter<'static, C>>,
+        // fn(C) -> Option<C::Image>>` cursor's trait algebra survives
+        // the newtype seam. The static bound accepts the named handle
+        // by reference (proving the trait bundle at type check), then
+        // a `.clone()` walks the same sequence as the original
+        // (runtime cross-walk proof). Matches the four-trait bundle
+        // carried by the filter-based cube-slot peers
+        // [`crate::RealizableIter`] and [`crate::UnrealizableIter`],
+        // and by the histogram-altitude filter-based siblings
+        // [`crate::AxisHistogramNonzero`],
+        // [`crate::AxisHistogramObserved`], and
+        // [`crate::AxisHistogramUnobserved`]; strictly weaker than
+        // the five-trait bundle carried by the element-preserving
+        // peers [`crate::AxisIter`], [`crate::ProvenanceMapEntries`],
+        // and [`crate::ForwardIter`] (which additionally carry
+        // [`ExactSizeIterator`], impossible here because the
+        // filter-map discards `None` projections at runtime).
+        fn accepts<I>(_iter: &I)
+        where
+            I: Iterator<Item = Format> + DoubleEndedIterator + std::iter::FusedIterator + Clone,
+        {
+        }
+        let handle: crate::RealizableImages<FormatCoordinates> =
+            realizable_images::<FormatCoordinates>();
+        accepts(&handle);
+        let clone_walk: Vec<Format> = handle.clone().collect();
+        let original_walk: Vec<Format> = handle.collect();
+        assert_eq!(clone_walk, original_walk);
+    }
+
+    #[test]
+    fn realizable_images_next_back_walks_specific_to_coarse() {
+        // The [`DoubleEndedIterator`] contract on the sharpened
+        // [`crate::RealizableImages`] surface at the runtime level.
+        // The `FormatCoordinates` fixture projects its four
+        // realizable cells to `Format::ALL == [Yaml, Toml, Lisp,
+        // Nix]` in cube-declaration order: the tail cursor yields
+        // `Nix`, then `Lisp`; the head cursor then yields `Yaml`
+        // and `Toml`; both cursors then report `None` on further
+        // pulls. Catches accidental regressions to a single-ended
+        // state machine.
+        let mut it: crate::RealizableImages<FormatCoordinates> =
+            realizable_images::<FormatCoordinates>();
+        let forward: Vec<Format> = FormatCoordinates::ALL
+            .iter()
+            .copied()
+            .filter_map(<FormatCoordinates as PartialInverseCube>::invert)
+            .collect();
+        assert_eq!(forward.len(), 4);
+        assert_eq!(it.next_back(), Some(forward[3]));
+        assert_eq!(it.next_back(), Some(forward[2]));
+        assert_eq!(it.next(), Some(forward[0]));
+        assert_eq!(it.next(), Some(forward[1]));
+        assert_eq!(it.next(), None);
+        assert_eq!(it.next_back(), None);
+    }
+
+    #[test]
+    fn realizable_images_size_hint_upper_bounds_all_cardinality() {
+        // Pins the [`Iterator::size_hint`] contract on the sharpened
+        // [`crate::RealizableImages`] surface at the runtime level.
+        // The filter-map cannot narrow the lower bound below zero
+        // (every remaining cell could still project to `None` under
+        // the partial inverse and get skipped), and cannot narrow
+        // the upper bound above the underlying `Copied<slice::Iter>`
+        // remaining length (no filter-map adds elements). Fixture:
+        // the eight-cell `FormatCoordinates` cube, initial
+        // `size_hint()` is `(0, Some(8))`; after pulling the first
+        // realized image (which advances the underlying cursor past
+        // the first realizable cell index), the upper bound
+        // decrements by the number of cells consumed from the front.
+        let mut it: crate::RealizableImages<FormatCoordinates> =
+            realizable_images::<FormatCoordinates>();
+        assert_eq!(it.size_hint(), (0, Some(FormatCoordinates::ALL.len())));
+        let first_realizable_index = FormatCoordinates::ALL
+            .iter()
+            .position(|c| ProductCube::is_realizable(*c))
+            .expect("FormatCoordinates has at least one realizable cell");
+        assert!(it.next().is_some());
+        let (lower, upper) = it.size_hint();
+        assert_eq!(lower, 0);
+        assert_eq!(
+            upper,
+            Some(FormatCoordinates::ALL.len() - first_realizable_index - 1),
+            "upper bound must equal remaining underlying-cursor length after consuming through the first realizable cell",
+        );
+    }
+
+    #[test]
+    fn realizable_images_debug_impl_names_the_struct() {
+        // Pins the manual Debug impl at the format-string level: the
+        // rendered output names the struct (`RealizableImages`) and
+        // reports the `cell_remaining_upper_bound` field rather than
+        // leaking per-cell values or requiring a `C: Debug` bound
+        // the [`PartialInverseCube`] trait doesn't guarantee (via
+        // its [`ProductCube`] / [`ClosedAxis`] super-trait chain,
+        // which bounds only `Copy + Eq + Hash + 'static`). Catches
+        // accidental regressions to `#[derive(Debug)]` (which would
+        // leak a `C: Debug` bound through the `slice::Iter<'static,
+        // C>` cursor in the wrapped `FilterMap<...>` field, breaking
+        // future PartialInverseCube implementors without Debug) or
+        // a rename of the reported field. The realizable-image
+        // projection peer of the realizable/unrealizable cube-slot
+        // `realizable_iter_debug_impl_names_the_struct` /
+        // `unrealizable_iter_debug_impl_names_the_struct` and the
+        // partial-inverse-cube-altitude
+        // `forward_iter_debug_impl_names_the_struct` fixtures.
+        let it: crate::RealizableImages<FormatCoordinates> =
+            realizable_images::<FormatCoordinates>();
+        let rendered = format!("{it:?}");
+        assert!(
+            rendered.contains("RealizableImages"),
             "Debug output must name the struct: {rendered}",
         );
         assert!(
