@@ -866,9 +866,9 @@ pub trait ConfigSourceChain {
     ///   at least one layer. Peer to the `is_empty` boundary
     ///   [`Self::dominant_layer_kind`], [`Self::present_layer_kinds`],
     ///   and [`Self::absent_layer_kinds`] all witness. Cross-axis
-    ///   divergence from `recessive_file_format` /
-    ///   `recessive_env_prefix_kind` (once landed), whose presence bounds
-    ///   are the corresponding sub-axis histogram's `is_empty()`.
+    ///   divergence from [`Self::recessive_file_format`] /
+    ///   [`Self::recessive_env_prefix_kind`], whose presence bounds are
+    ///   the corresponding sub-axis histogram's `is_empty()`.
     /// - `recessive_layer_kind().is_some() == dominant_layer_kind().is_some()`
     ///   — both projections are defined on the same support
     ///   (`!self.as_ref().is_empty()`), lifted from the
@@ -1169,9 +1169,9 @@ pub trait ConfigSourceChain {
     /// axis over — with this lift two of the three chain-shape sub-axes
     /// close the scalar-mode dominance peer at one named
     /// `Option<CellKind>` seam alongside the observed / coverage-gap
-    /// vector-mode pair; only the env-prefix-presence sub-axis
-    /// ([`Self::dominant_env_prefix_kind`]) still awaits its dominance
-    /// peer.
+    /// vector-mode pair; the env-prefix-presence sub-axis
+    /// ([`Self::dominant_env_prefix_kind`]) closes the same peer in a
+    /// sibling lift.
     ///
     /// Operator-facing consumers answering *"which file format dominated
     /// this chain?"* — the CLI `config-show` summary headlining
@@ -1736,6 +1736,155 @@ pub trait ConfigSourceChain {
         Self: AsRef<[ConfigSource]>,
     {
         self.env_prefix_kind_histogram().dominant_cell()
+    }
+
+    /// The [`EnvMetadataTagKind`] whose entries produced the smallest nonzero
+    /// number of contributing [`ConfigSource::Env`] layers on this chain — the
+    /// anti-modal cell of [`Self::env_prefix_kind_histogram`] on the chain
+    /// altitude. `None` exactly when the histogram is empty (the chain holds
+    /// no `Env` entries).
+    ///
+    /// Routes through [`Self::env_prefix_kind_histogram`]:
+    /// [`crate::AxisHistogram::recessive_cell`] picks the argmin cell over the
+    /// histogram's support (nonzero cells) in [`crate::ClosedAxis::ALL`]
+    /// declaration order — the [`EnvMetadataTagKind`] canonical order
+    /// (`Prefixed → Bare`) by construction — so the closed-axis discipline
+    /// provides deterministic tie-breaking automatically. This method reads
+    /// directly off the shikumi cube-native primitive instead of hand-rolling
+    /// `hist.iter().filter(|&(_, c)| c > 0).min_by_key(|&(_, c)| c).map(|(v, _)| v)`
+    /// — the inline `min_by_key` form silently picks the *first* tied cell
+    /// (per [`Iterator::min_by_key`]'s contract, which reverses
+    /// [`Iterator::max_by_key`]'s "last on ties" behavior), so an open-coded
+    /// argmin and the open-coded argmax on the dominant side would disagree
+    /// on which tied cell to pick. The pair of lifts
+    /// ([`Self::dominant_env_prefix_kind`] and [`Self::recessive_env_prefix_kind`])
+    /// pins one consistent tie-breaking rule across both projections on the
+    /// chain-altitude env-prefix-presence sub-axis.
+    ///
+    /// **Zero-count kinds are excluded from the search.** The argmin is taken
+    /// over the histogram's support, not over the full axis. Kinds that
+    /// contributed no env layer would trivially be the minimum over the full
+    /// axis and would shadow the rarest *observed* kind; excluding them
+    /// surfaces the rarest kind some env layer actually landed on — the
+    /// question the CLI `config-show` summary, attestation manifest, and
+    /// alerting policy ask when they surface *"the runt env-prefix kind this
+    /// recipe saw"*. This matches [`Self::dominant_env_prefix_kind`]'s
+    /// symmetry on the maximum side: both projections operate over the
+    /// nonzero support, so the empty-histogram convention is identical (both
+    /// return `None`) and the singleton-support case is identical (both
+    /// return the sole observed kind).
+    ///
+    /// The chain-altitude anti-modal peer of [`Self::dominant_env_prefix_kind`]
+    /// (the modal-cell scalar peer of the same
+    /// [`Self::env_prefix_kind_histogram`] primitive) — the env-prefix-
+    /// presence sub-axis of the chain-shape surface now carries the fused
+    /// (dominant, recessive) cell pair, matching the
+    /// ([`crate::AxisHistogram::dominant_cell`],
+    /// [`crate::AxisHistogram::recessive_cell`]) pair on the shared
+    /// [`crate::AxisHistogram`] primitive one altitude down. Direct sister of
+    /// [`Self::recessive_layer_kind`] on the layer-kind sub-axis and
+    /// [`Self::recessive_file_format`] on the file-format sub-axis of the
+    /// same chain altitude, [`crate::ProvenanceMap::recessive_tier`] on the
+    /// tier altitude, and [`crate::ConfigDiff::recessive_kind`] on the diff
+    /// altitude — all five project the anti-modal cell of their local
+    /// closed-axis histogram off the shared
+    /// [`crate::AxisHistogram::recessive_cell`] primitive, all five live as
+    /// an `Option<CellKind>` scalar alongside the modal-cell peer. With this
+    /// lift the substrate closes the (dominant, recessive) modal pair across
+    /// every `_histogram()` primitive it carries: three chain-shape sub-axes
+    /// (layer-kind, file-format, env-prefix-presence), one tier altitude,
+    /// one diff altitude.
+    ///
+    /// Operator-facing consumers answering *"which env-prefix kind is the
+    /// runt of this recipe?"* — the CLI `config-show` summary headlining
+    /// *"runt: Bare, 1 of 47 env layers"*, the attestation manifest recording
+    /// the anti-modal env-prefix kind between two `ProviderChain` snapshots,
+    /// the alerting policy reading *"env-prefix runt: Prefixed"* to flag a
+    /// rebuild window where `figment::providers::Env::raw()` layers swamped
+    /// the prefixed set to the near-total exclusion of prefixed loaders —
+    /// now route through this named seam instead of a per-consumer
+    /// `min_by_key` walk.
+    ///
+    /// **Tie-breaking is deterministic by declaration order.** When both
+    /// env-prefix kinds share the minimum env-layer count, the kind
+    /// earliest in [`EnvMetadataTagKind::ALL`] wins — the same
+    /// [`EnvMetadataTagKind`] canonical order [`Self::present_env_prefix_kinds`],
+    /// [`Self::absent_env_prefix_kinds`], and [`Self::dominant_env_prefix_kind`]
+    /// walk. A uniform full-cover chain (one `Env` layer per kind — one
+    /// bare, one prefixed) therefore reports
+    /// `Some(EnvMetadataTagKind::Prefixed)` — the first cell in declaration
+    /// order — pointwise identical to [`Self::dominant_env_prefix_kind`] on
+    /// the same input (the singleton-modality degenerate where the modal and
+    /// anti-modal cells coincide).
+    ///
+    /// # Invariants
+    ///
+    /// - `recessive_env_prefix_kind().is_some() ==
+    ///   !env_prefix_kind_histogram().is_empty()` — like
+    ///   [`Self::recessive_file_format`] and unlike
+    ///   [`Self::recessive_layer_kind`], the presence bound is *not*
+    ///   `!self.as_ref().is_empty()`: [`ConfigSource::Defaults`] /
+    ///   [`ConfigSource::File`] entries all project to [`None`] through
+    ///   [`ConfigSource::env_prefix_kind`], so the histogram is empty even on
+    ///   a non-empty chain when no `Env` entry contributes. Mirrors
+    ///   [`Self::dominant_env_prefix_kind`]'s presence bound at the same
+    ///   sub-axis one modality over.
+    /// - `recessive_env_prefix_kind().is_some() ==
+    ///   dominant_env_prefix_kind().is_some()` — both projections are defined
+    ///   on the same support (`!env_prefix_kind_histogram().is_empty()`),
+    ///   lifted from the [`crate::AxisHistogram::recessive_cell`] /
+    ///   [`crate::AxisHistogram::dominant_cell`] presence-bound law.
+    /// - `recessive_env_prefix_kind() ==
+    ///   env_prefix_kind_histogram().recessive_cell()` — both project the
+    ///   same anti-modal cell off the same primitive; the named seam is the
+    ///   cube-native routing of the chain-shape surface.
+    /// - When `Some(k)`, `k` is a member of `present_env_prefix_kinds()` —
+    ///   the anti-modal cell is by definition observed.
+    /// - When `Some(k)`, `k` is **not** a member of `absent_env_prefix_kinds()`
+    ///   — the observed / coverage-gap partition is disjoint, and the argmin
+    ///   over the *support* never coincides with a zero-count cell.
+    /// - `env_prefix_kind_histogram().count(recessive_env_prefix_kind().unwrap())
+    ///   == env_prefix_kind_histogram().trough_count()` whenever the
+    ///   histogram is non-empty — the anti-modal cell carries the
+    ///   trough-of-support observation count. Peer to the (`recessive_cell`,
+    ///   `trough_count`) anti-modal pair invariant on
+    ///   [`crate::AxisHistogram`].
+    /// - `env_prefix_kind_histogram().count(recessive_env_prefix_kind().unwrap())
+    ///   <= env_prefix_kind_histogram().count(dominant_env_prefix_kind().unwrap())`
+    ///   whenever the histogram is non-empty — the trough-of-support count is
+    ///   bounded above by the peak count. Lifted from the trait-uniform
+    ///   `count(recessive_cell) <= count(dominant_cell)` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `recessive_env_prefix_kind() == dominant_env_prefix_kind()` whenever
+    ///   `present_env_prefix_kinds().len() == 1` — a single observed kind is
+    ///   both the modal and the anti-modal cell (the singleton-support
+    ///   degenerate).
+    /// - `recessive_env_prefix_kind()` on a uniform full-cover chain (one
+    ///   `Env` layer per kind) equals `Some(EnvMetadataTagKind::Prefixed)`
+    ///   — declaration-order tie-breaking on the two-cell axis picks the
+    ///   first cell, pointwise identical to `dominant_env_prefix_kind()` on
+    ///   the same input.
+    /// - `recessive_env_prefix_kind()` on an empty chain equals `None` — the
+    ///   empty-chain / empty-histogram boundary.
+    /// - `recessive_env_prefix_kind()` on a chain of only
+    ///   [`ConfigSource::Defaults`] / [`ConfigSource::File`] layers equals
+    ///   `None` — the non-empty-chain / empty-histogram boundary the
+    ///   env-prefix-presence sub-axis pins that the layer-kind sub-axis does
+    ///   not.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<EnvMetadataTagKind>()` (the argmin
+    /// scan). Both are `O(n)` in practice since the env-prefix-presence axis
+    /// carries a fixed two-cell cardinality; the returned
+    /// `Option<EnvMetadataTagKind>` reads one cell.
+    #[must_use]
+    fn recessive_env_prefix_kind(&self) -> Option<EnvMetadataTagKind>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().recessive_cell()
     }
 }
 
@@ -6763,6 +6912,465 @@ mod tests {
                 }
             }
             let via_seam = chain.as_slice().dominant_env_prefix_kind();
+            assert_eq!(via_seam, manual.map(|(cell, _)| cell));
+        }
+    }
+
+    // ---- ConfigSourceChain::recessive_env_prefix_kind — anti-modal-cell
+    //      scalar peer of env_prefix_kind_histogram on the chain-shape
+    //      altitude ----
+
+    fn recessive_env_prefix_kind_fixtures() -> Vec<Vec<ConfigSource>> {
+        // Reused fixture set for the recessive_env_prefix_kind trait-uniform
+        // pins — mirrors the `dominant_env_prefix_kind_matches_...` fixture
+        // set at that site (seven chains covering empty, sample, empty-
+        // histogram-non-empty-chain, prefixed-majority, bare-majority, no-
+        // env-layer, and mixed shapes).
+        vec![
+            Vec::new(),
+            sample_chain(),
+            vec![ConfigSource::Defaults, ConfigSource::Env(String::new())],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env("TOBIRA_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Defaults,
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.nix")),
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env("TOBIRA_".to_owned()),
+                ConfigSource::Env(String::new()),
+            ],
+        ]
+    }
+
+    #[test]
+    fn recessive_env_prefix_kind_matches_env_prefix_kind_histogram_recessive_cell_pointwise() {
+        // The anti-modal-cell pin: `recessive_env_prefix_kind` routes
+        // through `env_prefix_kind_histogram().recessive_cell()`, so the
+        // two seams must stay pointwise equivalent under every fixture.
+        // Direct sister of
+        // `recessive_file_format_matches_file_format_histogram_recessive_cell_pointwise`
+        // and `recessive_layer_kind_matches_layer_kind_histogram_recessive_cell_pointwise`
+        // one sub-axis over on the same chain altitude, and dominant-side
+        // peer of
+        // `dominant_env_prefix_kind_matches_env_prefix_kind_histogram_dominant_cell_pointwise`.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let via_histogram = chain
+                .as_slice()
+                .env_prefix_kind_histogram()
+                .recessive_cell();
+            assert_eq!(chain.as_slice().recessive_env_prefix_kind(), via_histogram,);
+        }
+    }
+
+    #[test]
+    fn recessive_env_prefix_kind_sample_chain_is_prefixed() {
+        // Direct pin against `sample_chain()`: two file layers + one Env
+        // layer with a prefixed name (`"APP_"`). Prefixed is the sole
+        // observed env-prefix kind (Bare has count 0), so it is both the
+        // modal AND the anti-modal cell (singleton-support degenerate).
+        // Peer of `recessive_file_format_sample_chain_is_yaml` on the
+        // same named fixture.
+        let chain = sample_chain();
+        assert_eq!(
+            chain.as_slice().recessive_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+        assert_eq!(
+            chain.as_slice().recessive_env_prefix_kind(),
+            chain.as_slice().dominant_env_prefix_kind(),
+        );
+    }
+
+    #[test]
+    fn recessive_env_prefix_kind_bare_majority_is_prefixed() {
+        // Direct pin against a bare-majority chain: three bare env layers
+        // + one prefixed + one file + one Defaults. Bare is the modal cell
+        // at count 3; Prefixed is uniquely the anti-modal cell at count 1.
+        // Cross-verified against `hist.count(Prefixed) ==
+        // hist.trough_count() == 1`. Peer of
+        // `recessive_file_format_toml_majority_is_yaml` at the same
+        // fixture — the two projections partition the two-cell support.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(
+            slice.recessive_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+        let hist = slice.env_prefix_kind_histogram();
+        assert_eq!(hist.count(EnvMetadataTagKind::Prefixed), 1);
+        assert_eq!(hist.count(EnvMetadataTagKind::Bare), 3);
+        assert_eq!(hist.trough_count(), 1);
+    }
+
+    #[test]
+    fn recessive_env_prefix_kind_empty_chain_is_none() {
+        // The empty-chain / `None` boundary — every chain-level histogram
+        // over an empty chain is the all-zero histogram, so
+        // `recessive_cell` reads `None`. Peer of
+        // `dominant_env_prefix_kind_empty_chain_is_none` on the modal
+        // side, and `recessive_file_format_empty_chain_is_none` /
+        // `recessive_layer_kind_empty_chain_is_none` on the other two
+        // sub-axes.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.recessive_env_prefix_kind(), None);
+    }
+
+    #[test]
+    fn recessive_env_prefix_kind_no_env_layers_is_none() {
+        // The non-empty-chain / empty-histogram boundary the env-prefix-
+        // presence sub-axis pins that the layer-kind sub-axis does *not*.
+        // A chain of only `Defaults` / `File` layers is non-empty but has
+        // no `Some` env_prefix_kind projection, so the histogram is empty
+        // and `recessive_env_prefix_kind` reads `None`. Distinguishing pin
+        // against a mis-implementation that would confuse
+        // `!self.as_ref().is_empty()` (the layer-kind sub-axis's presence
+        // bound) with the env-prefix-presence sub-axis's
+        // (`!env_prefix_kind_histogram().is_empty()`). Peer of
+        // `dominant_env_prefix_kind_no_env_layers_is_none` on the modal
+        // side.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.lisp")),
+                ConfigSource::File(PathBuf::from("/b.nix")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            assert!(!chain.is_empty(), "fixture must be non-empty");
+            assert!(
+                chain.as_slice().env_prefix_kind_histogram().is_empty(),
+                "fixture must have empty env-prefix-kind histogram",
+            );
+            assert_eq!(chain.as_slice().recessive_env_prefix_kind(), None);
+        }
+    }
+
+    #[test]
+    fn recessive_env_prefix_kind_is_some_iff_histogram_is_nonempty() {
+        // Structural completeness of the
+        // `(env_prefix_kind_histogram().is_empty(), recessive_env_prefix_kind)`
+        // cross-surface pair. Unlike `recessive_layer_kind`, the presence
+        // bound is the sub-axis histogram's `is_empty()` — a non-empty
+        // chain can still have an empty env-prefix-kind histogram (only
+        // `Defaults` / `File` layers). Peer of
+        // `dominant_env_prefix_kind_is_some_iff_histogram_is_nonempty` on
+        // the modal side.
+        let fixtures: [Vec<ConfigSource>; 6] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![ConfigSource::Env(String::new())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.toml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().recessive_env_prefix_kind().is_some(),
+                !chain.as_slice().env_prefix_kind_histogram().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_env_prefix_kind_is_some_iff_dominant_env_prefix_kind_is_some() {
+        // Cross-projection pin lifted from the trait-uniform
+        // `recessive_cell().is_some() == dominant_cell().is_some()` law on
+        // AxisHistogram: both projections operate over the same nonzero
+        // support, so they agree on presence at every input. Peer of
+        // `recessive_file_format_is_some_iff_dominant_file_format_is_some`
+        // and `recessive_layer_kind_is_some_iff_dominant_layer_kind_is_some`
+        // on the other two sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            assert_eq!(
+                chain.as_slice().recessive_env_prefix_kind().is_some(),
+                chain.as_slice().dominant_env_prefix_kind().is_some(),
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_env_prefix_kind_is_member_of_present_env_prefix_kinds() {
+        // Structural pin: whenever `recessive_env_prefix_kind()` is
+        // `Some(k)`, `k` must appear in `present_env_prefix_kinds()` —
+        // the anti-modal cell is taken over the support, so it is by
+        // definition observed. Peer of
+        // `dominant_env_prefix_kind_is_member_of_present_env_prefix_kinds`
+        // on the modal side, and
+        // `recessive_file_format_is_member_of_present_file_formats` /
+        // `recessive_layer_kind_is_member_of_present_layer_kinds` on the
+        // other two sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let Some(recessive) = chain.as_slice().recessive_env_prefix_kind() else {
+                continue;
+            };
+            let present = chain.as_slice().present_env_prefix_kinds();
+            assert!(
+                present.contains(&recessive),
+                "recessive env-prefix kind {recessive:?} must appear in \
+                 present_env_prefix_kinds() = {present:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_env_prefix_kind_is_not_member_of_absent_env_prefix_kinds() {
+        // Structural pin: whenever `recessive_env_prefix_kind()` is
+        // `Some(k)`, `k` must NOT appear in `absent_env_prefix_kinds()` —
+        // the anti-modal cell lies on the observed side of the observed /
+        // coverage-gap partition by construction (argmin taken over the
+        // nonzero support). Disjointness pin between the two named seams.
+        // Peer of
+        // `dominant_env_prefix_kind_is_not_member_of_absent_env_prefix_kinds`
+        // on the modal side, and
+        // `recessive_file_format_is_not_member_of_absent_file_formats` /
+        // `recessive_layer_kind_is_not_member_of_absent_layer_kinds` on
+        // the other two sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let Some(recessive) = chain.as_slice().recessive_env_prefix_kind() else {
+                continue;
+            };
+            let absent = chain.as_slice().absent_env_prefix_kinds();
+            assert!(
+                !absent.contains(&recessive),
+                "recessive env-prefix kind {recessive:?} must NOT appear \
+                 in absent_env_prefix_kinds() = {absent:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_env_prefix_kind_count_equals_trough_count_on_nonempty_histogram() {
+        // The `(recessive_cell, trough_count)` anti-modal-pair invariant
+        // lifted to the chain altitude: the observation count of the
+        // recessive env-prefix kind equals the histogram's trough count
+        // over the support. Peer of
+        // `dominant_env_prefix_kind_count_equals_peak_count_on_nonempty_histogram`
+        // on the modal side, and
+        // `recessive_file_format_count_equals_trough_count_on_nonempty_histogram`
+        // / `recessive_layer_kind_count_equals_trough_count_on_nonempty_chain`
+        // on the other two sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let Some(recessive) = chain.as_slice().recessive_env_prefix_kind() else {
+                continue;
+            };
+            let hist = chain.as_slice().env_prefix_kind_histogram();
+            assert_eq!(hist.count(recessive), hist.trough_count());
+        }
+    }
+
+    #[test]
+    fn recessive_env_prefix_kind_count_bounded_by_dominant_env_prefix_kind_count() {
+        // Structural bound lifted from the trait-uniform
+        // `count(recessive_cell) <= count(dominant_cell)` law on
+        // AxisHistogram: the trough-of-support is bounded above by the
+        // peak-of-support at every fixture. Cross-projection pin between
+        // `recessive_env_prefix_kind` and `dominant_env_prefix_kind`.
+        // Peer of
+        // `recessive_file_format_count_bounded_by_dominant_file_format_count`
+        // / `recessive_layer_kind_count_bounded_by_dominant_layer_kind_count`
+        // on the other two sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let Some(recessive) = chain.as_slice().recessive_env_prefix_kind() else {
+                continue;
+            };
+            let Some(dominant) = chain.as_slice().dominant_env_prefix_kind() else {
+                unreachable!(
+                    "presence of recessive env-prefix kind implies \
+                     presence of dominant env-prefix kind"
+                );
+            };
+            let hist = chain.as_slice().env_prefix_kind_histogram();
+            assert!(
+                hist.count(recessive) <= hist.count(dominant),
+                "count(recessive={recessive:?})={r} must be <= \
+                 count(dominant={dominant:?})={d}",
+                r = hist.count(recessive),
+                d = hist.count(dominant),
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_env_prefix_kind_uniform_full_cover_picks_prefixed() {
+        // Uniform full-cover chain — one env layer of each kind (both
+        // cells tied at count 1). The declaration-order tiebreak on
+        // `EnvMetadataTagKind::ALL` (`Prefixed → Bare`) picks the FIRST
+        // tied cell — `Prefixed` — pointwise identical to
+        // `dominant_env_prefix_kind` on the same input (the
+        // singleton-modality degenerate where the modal and anti-modal
+        // cells coincide). Peer of
+        // `dominant_env_prefix_kind_uniform_full_cover_picks_prefixed` on
+        // the modal side, and
+        // `recessive_file_format_uniform_full_cover_picks_yaml` /
+        // `recessive_layer_kind_uniform_cover_picks_first_cell` on the
+        // other two sub-axes.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.env_prefix_kind_histogram();
+        assert!(hist.is_full_cover());
+        assert_eq!(hist.count(EnvMetadataTagKind::Prefixed), 1);
+        assert_eq!(hist.count(EnvMetadataTagKind::Bare), 1);
+        assert_eq!(hist.trough_count(), 1);
+        assert_eq!(
+            slice.recessive_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+        assert_eq!(
+            slice.recessive_env_prefix_kind(),
+            slice.dominant_env_prefix_kind(),
+        );
+    }
+
+    #[test]
+    fn recessive_env_prefix_kind_uniform_full_cover_is_insertion_order_stable() {
+        // Uniform full-cover chain — one env layer of each kind — but
+        // with insertion order flipped (bare first, prefixed second). The
+        // declaration-order tiebreak on `EnvMetadataTagKind::ALL`
+        // (`Prefixed → Bare`) still picks `Prefixed` because the tiebreak
+        // is off the closed-axis declaration order, NOT the chain's
+        // insertion order. Distinguishing pin against a mis-implementation
+        // that would return the cell whose most recent occurrence was
+        // latest in the chain. Peer of
+        // `dominant_env_prefix_kind_uniform_full_cover_is_insertion_order_stable`
+        // on the modal side.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.env_prefix_kind_histogram();
+        assert!(hist.is_full_cover());
+        assert_eq!(hist.count(EnvMetadataTagKind::Prefixed), 1);
+        assert_eq!(hist.count(EnvMetadataTagKind::Bare), 1);
+        assert_eq!(hist.trough_count(), 1);
+        assert_eq!(
+            slice.recessive_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+    }
+
+    #[test]
+    fn recessive_env_prefix_kind_singleton_bare_chain_is_bare() {
+        // Strict-minority pin on the `Bare` cell: a chain of only bare
+        // env layers (zero prefixed) reports `Some(Bare)` — the ONLY
+        // observed cell wins even though it is not the first cell of
+        // `EnvMetadataTagKind::ALL`. Distinguishing pin against a
+        // mis-implementation that would return `Prefixed` (the first
+        // cell of `ALL`) instead of `Bare` (the only observed cell) —
+        // the anti-mode is "earliest tied *observed* cell", not "first
+        // cell of `ALL` regardless of observation". Peer of
+        // `dominant_env_prefix_kind_singleton_bare_chain_is_bare` on the
+        // modal side. Singleton-support degenerate on the `Bare` cell.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.env_prefix_kind_histogram();
+        assert_eq!(hist.count(EnvMetadataTagKind::Prefixed), 0);
+        assert_eq!(hist.count(EnvMetadataTagKind::Bare), 2);
+        assert_eq!(
+            slice.recessive_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Bare),
+        );
+        assert_eq!(
+            slice.recessive_env_prefix_kind(),
+            slice.dominant_env_prefix_kind(),
+        );
+    }
+
+    #[test]
+    fn recessive_env_prefix_kind_singleton_support_agrees_with_dominant_env_prefix_kind() {
+        // Singleton-support degenerate lifted from the trait-uniform
+        // `distinct_cells() == 1 → dominant_cell() == recessive_cell()`
+        // law on AxisHistogram: when only one kind contributes, that kind
+        // is both the modal and the anti-modal cell. Direct construction:
+        // three prefixed env layers + Defaults + File (Prefixed is the
+        // sole observed kind). Peer of
+        // `recessive_file_format_singleton_support_agrees_with_dominant_file_format`
+        // / `recessive_layer_kind_singleton_support_agrees_with_dominant_layer_kind`
+        // on the other two sub-axes.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert_eq!(
+            slice.recessive_env_prefix_kind(),
+            slice.dominant_env_prefix_kind(),
+        );
+        assert_eq!(
+            slice.recessive_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+    }
+
+    #[test]
+    fn recessive_env_prefix_kind_agrees_with_open_coded_argmin_walk() {
+        // Parity against the exact fold-forward argmin walk this lift
+        // replaces — spelling the declaration-order tiebreak explicitly
+        // with strict `<` inequality so the FIRST tied cell wins,
+        // mirroring `AxisHistogram::recessive_cell`. Peer of
+        // `dominant_env_prefix_kind_agrees_with_open_coded_argmax_walk`
+        // on the modal side, and
+        // `recessive_file_format_agrees_with_open_coded_argmin_walk` /
+        // `recessive_layer_kind_agrees_with_open_coded_argmin_walk` on
+        // the other two sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let hist = chain.as_slice().env_prefix_kind_histogram();
+            let mut manual: Option<(EnvMetadataTagKind, usize)> = None;
+            for cell in EnvMetadataTagKind::ALL.iter().copied() {
+                let count = hist.count(cell);
+                if count == 0 {
+                    continue;
+                }
+                match manual {
+                    None => manual = Some((cell, count)),
+                    Some((_, best)) if count < best => manual = Some((cell, count)),
+                    _ => {}
+                }
+            }
+            let via_seam = chain.as_slice().recessive_env_prefix_kind();
             assert_eq!(via_seam, manual.map(|(cell, _)| cell));
         }
     }
