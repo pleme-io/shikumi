@@ -2067,6 +2067,128 @@ impl ConfigDiff {
     pub fn dominant_kind(&self) -> Option<DiffLineKind> {
         self.kind_histogram().dominant_cell()
     }
+
+    /// The [`DiffLineKind`] whose lines are rarest (but still ≥1) in this
+    /// diff — the anti-modal (rarest observed) cell of
+    /// [`Self::kind_histogram`] on the diff altitude. `None` exactly when
+    /// the diff is empty (no lines).
+    ///
+    /// Routes through [`Self::kind_histogram`]:
+    /// [`crate::AxisHistogram::recessive_cell`] picks the argmin cell over
+    /// the histogram's *support* (the nonzero cells) in
+    /// [`crate::ClosedAxis::ALL`] declaration order, which is the
+    /// [`DiffLineKind`] canonical order (`Removed → Added → Context`) by
+    /// construction — the closed-axis discipline provides deterministic
+    /// tie-breaking automatically, so this method reads directly off the
+    /// shikumi cube-native primitive instead of hand-rolling
+    /// `hist.iter().filter(|&(_, c)| c > 0).min_by_key(|&(_, c)| c).map(|(v, _)| v)`
+    /// — the inline `min_by_key` form silently picks the *first* tied
+    /// cell (per [`Iterator::min_by_key`]'s contract, which reverses
+    /// [`Iterator::max_by_key`]'s "last on ties" behavior), so an
+    /// open-coded argmin and the open-coded argmax on the dominant side
+    /// would disagree on which tied cell to pick. The pair of lifts
+    /// ([`Self::dominant_kind`] and [`Self::recessive_kind`]) pins one
+    /// consistent tie-breaking rule across both projections.
+    ///
+    /// **Zero-count kinds are excluded from the search.** The argmin is
+    /// taken over the histogram's support, not over the full axis. Kinds
+    /// that contributed no line are trivially the minimum over the full
+    /// axis and would shadow the rarest *observed* kind; excluding them
+    /// surfaces the rarest kind some line actually landed on — the
+    /// question the CLI `config-diff` summary, attestation manifest, and
+    /// alerting policy ask when they surface *"the runt cell this diff
+    /// saw"*. This matches [`Self::dominant_kind`]'s symmetry on the
+    /// maximum side: both projections operate over the nonzero support,
+    /// so the empty-diff convention is identical (both return `None`)
+    /// and the singleton-support case is identical (both return the sole
+    /// observed kind).
+    ///
+    /// The diff-altitude anti-modal peer of [`Self::dominant_kind`] (the
+    /// modal-cell scalar peer of the same [`Self::kind_histogram`]
+    /// primitive) — the histogram surface on the diff altitude now
+    /// carries the fused (dominant, recessive) cell pair, matching the
+    /// ([`crate::AxisHistogram::dominant_cell`],
+    /// [`crate::AxisHistogram::recessive_cell`]) pair on the shared
+    /// [`crate::AxisHistogram`] primitive one altitude down. The
+    /// diff-altitude dual of [`crate::ProvenanceMap::recessive_tier`] on
+    /// the tier altitude — both project the anti-modal cell of their
+    /// local closed-axis histogram off the shared
+    /// [`crate::AxisHistogram::recessive_cell`] primitive, both live as
+    /// an `Option<CellKind>` scalar alongside the modal-cell peer.
+    ///
+    /// Operator-facing consumers answering *"which diff-cell kind is the
+    /// runt of this render?"* — the CLI `config-diff` summary
+    /// headlining *"runt: Removed, 1 of 47 lines"*, the attestation
+    /// manifest recording the anti-modal diff-cell kind between two
+    /// tiers, the alerting policy reading *"diff runt: Added"* to flag a
+    /// rebuild window where net-new lines are the sparse minority — now
+    /// route through this named seam instead of a per-consumer
+    /// `min_by_key` walk.
+    ///
+    /// **Tie-breaking is deterministic by declaration order.** When
+    /// multiple observed kinds share the minimum line count, the kind
+    /// earliest in [`DiffLineKind::ALL`] wins (`Removed → Added →
+    /// Context`) — the same order [`Self::present_kinds`],
+    /// [`Self::absent_kinds`], and [`Self::dominant_kind`] walk. A
+    /// uniform-cover diff (each kind producing the same nonzero line
+    /// count) therefore reports `Some(DiffLineKind::Removed)` — the
+    /// first cell in declaration order — pointwise identical to
+    /// [`Self::dominant_kind`] on the same input (the singleton-modality
+    /// degenerate where the modal and anti-modal cells coincide).
+    ///
+    /// # Invariants
+    ///
+    /// - `recessive_kind().is_some() == !self.lines.is_empty()` — the
+    ///   recessive kind is defined exactly when the diff has at least
+    ///   one line. Peer to the `is_empty` boundary [`Self::dominant_kind`],
+    ///   [`Self::present_kinds`], and [`Self::absent_kinds`] all witness.
+    /// - `recessive_kind().is_some() == dominant_kind().is_some()` —
+    ///   both projections are defined on the same support
+    ///   (`!self.lines.is_empty()`), lifted from the
+    ///   [`crate::AxisHistogram::recessive_cell`] /
+    ///   [`crate::AxisHistogram::dominant_cell`] presence-bound law.
+    /// - `recessive_kind() == kind_histogram().recessive_cell()` — both
+    ///   project the same anti-modal cell off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - When `Some(k)`, `k` is a member of `present_kinds()` — the
+    ///   anti-modal cell is by definition observed.
+    /// - When `Some(k)`, `k` is **not** a member of `absent_kinds()` —
+    ///   the observed / coverage-gap partition is disjoint, and the
+    ///   argmin over the *support* never coincides with a zero-count
+    ///   cell.
+    /// - `kind_histogram().count(recessive_kind().unwrap()) ==
+    ///   kind_histogram().trough_count()` whenever the diff is non-empty
+    ///   — the anti-modal cell carries the trough-of-support observation
+    ///   count. Peer to the (`recessive_cell`, `trough_count`) anti-modal
+    ///   pair invariant on [`crate::AxisHistogram`].
+    /// - `kind_histogram().count(recessive_kind().unwrap()) <=
+    ///   kind_histogram().count(dominant_kind().unwrap())` whenever the
+    ///   diff is non-empty — the trough-of-support count is bounded
+    ///   above by the peak count. Lifted from the trait-uniform
+    ///   `count(recessive_cell) <= count(dominant_cell)` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `recessive_kind() == dominant_kind()` whenever
+    ///   `present_kinds().len() == 1` — a single observed kind is both
+    ///   the modal and the anti-modal cell (the singleton-support
+    ///   degenerate).
+    /// - `recessive_kind()` on a uniform per-kind diff (one line per
+    ///   kind) equals `Some(DiffLineKind::Removed)` — declaration-order
+    ///   tie-breaking on the three-cell axis picks the first cell,
+    ///   pointwise identical to `dominant_kind()` on the same input.
+    /// - `recessive_kind()` on an empty [`ConfigDiff`] equals `None` —
+    ///   the empty-diff / empty-histogram boundary.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (the argmin scan).
+    /// Both are `O(n)` in practice since the diff-cell axis carries a
+    /// fixed three-cell cardinality; the returned `Option<DiffLineKind>`
+    /// reads one cell.
+    #[must_use]
+    pub fn recessive_kind(&self) -> Option<DiffLineKind> {
+        self.kind_histogram().recessive_cell()
+    }
 }
 
 #[cfg(test)]
@@ -3617,6 +3739,320 @@ mod tests {
         };
         assert!(diff.kind_histogram().is_full_cover());
         assert_eq!(diff.dominant_kind(), Some(DiffLineKind::Removed));
+    }
+
+    // ── ConfigDiff::recessive_kind — anti-modal-cell scalar peer on the diff altitude ──
+
+    #[test]
+    fn recessive_kind_matches_kind_histogram_recessive_cell_pointwise() {
+        // The anti-modal-cell pin: `recessive_kind` routes through
+        // `kind_histogram().recessive_cell()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Diff-altitude peer
+        // of `recessive_tier_matches_tier_histogram_recessive_cell_pointwise`
+        // on the tier altitude, and dominant-side peer of
+        // `dominant_kind_matches_kind_histogram_dominant_cell_pointwise`.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().recessive_cell();
+            assert_eq!(diff.recessive_kind(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn recessive_kind_context_dominated_fixture_is_removed() {
+        // A diff of 3 Context + 1 Removed has counts Removed=1,
+        // Added=0, Context=3 over the axis. The argmin over the
+        // support {Removed, Context} is uniquely Removed at count 1 —
+        // no tie, no declaration-order fallback needed. The named seam
+        // answers the operator's *"which diff kind is the runt of this
+        // render?"* question at one call, no `min_by_key` walk in the
+        // summary.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(diff.recessive_kind(), Some(DiffLineKind::Removed));
+    }
+
+    #[test]
+    fn recessive_kind_added_dominated_fixture_is_context() {
+        // A diff of 2 Added + 1 Context has counts Removed=0, Added=2,
+        // Context=1 over the axis. The argmin over the support
+        // {Added, Context} is uniquely Context at count 1 — no tie.
+        // Cross-verified against the per-kind count directly on the
+        // underlying histogram.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.recessive_kind(), Some(DiffLineKind::Context));
+        let hist = diff.kind_histogram();
+        assert_eq!(hist.count(DiffLineKind::Context), 1);
+        assert_eq!(hist.trough_count(), 1);
+    }
+
+    #[test]
+    fn recessive_kind_empty_diff_is_none() {
+        // An empty ConfigDiff has no lines and therefore no anti-modal
+        // cell — the empty-diff / empty-histogram boundary of the
+        // recessive-cell projection. Diff-altitude peer of
+        // `recessive_tier_empty_map_is_none` on the tier altitude, and
+        // dominant-side peer of `dominant_kind_empty_diff_is_none`.
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.recessive_kind(), None);
+        assert!(empty.lines.is_empty());
+    }
+
+    #[test]
+    fn recessive_kind_is_some_iff_diff_is_nonempty() {
+        // Cross-surface pin: the presence-of-anti-modal-cell predicate
+        // agrees with the non-emptiness of `self.lines`. Structural
+        // completeness of the `(is_empty, recessive_kind)` boundary —
+        // a well-formed diff with ≥1 line always has an anti-modal
+        // cell, and an empty diff never does. Peer of
+        // `dominant_kind_is_some_iff_diff_is_nonempty`.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(diff.recessive_kind().is_some(), !diff.lines.is_empty());
+        }
+    }
+
+    #[test]
+    fn recessive_kind_is_some_iff_dominant_kind_is_some() {
+        // Cross-projection pin lifted from the trait-uniform
+        // `recessive_cell().is_some() == dominant_cell().is_some()` law
+        // on AxisHistogram: both projections operate over the same
+        // nonzero support, so they agree on presence at every input.
+        // Diff-altitude peer of
+        // `recessive_tier_is_some_iff_dominant_tier_is_some`.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.recessive_kind().is_some(),
+                diff.dominant_kind().is_some(),
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_kind_is_member_of_present_kinds() {
+        // Structural pin: whenever `recessive_kind()` is `Some(k)`, `k`
+        // must appear in `present_kinds()` (the anti-modal cell is
+        // taken over the support, so it is by definition observed).
+        // The support / anti-modal-cell partition on the diff altitude
+        // reads consistently between the two named seams. Diff-altitude
+        // peer of `recessive_tier_is_member_of_contributing_tiers`.
+        for diff in dominant_kind_fixtures() {
+            let Some(recessive) = diff.recessive_kind() else {
+                continue;
+            };
+            assert!(
+                diff.present_kinds().contains(&recessive),
+                "recessive kind {recessive:?} must appear in present_kinds",
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_kind_is_not_member_of_absent_kinds() {
+        // Structural pin: whenever `recessive_kind()` is `Some(k)`, `k`
+        // must NOT appear in `absent_kinds()` — the anti-modal cell
+        // lies on the observed side of the observed / coverage-gap
+        // partition by construction (argmin taken over the nonzero
+        // support). Disjointness pin between the two named seams.
+        // Diff-altitude peer of
+        // `recessive_tier_is_not_member_of_absent_tiers`.
+        for diff in dominant_kind_fixtures() {
+            let Some(recessive) = diff.recessive_kind() else {
+                continue;
+            };
+            assert!(
+                !diff.absent_kinds().contains(&recessive),
+                "recessive kind {recessive:?} must not appear in absent_kinds",
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_kind_count_equals_trough_count_on_nonempty_diff() {
+        // The (recessive_cell, trough_count) anti-modal-pair invariant
+        // lifted to the diff altitude: the observation count of the
+        // recessive kind equals the histogram's trough count over the
+        // support. Peer of
+        // `recessive_tier_count_equals_trough_count_on_nonempty_map` on
+        // the tier altitude, and dominant-side peer of
+        // `dominant_kind_count_equals_peak_count_on_nonempty_diff`.
+        for diff in dominant_kind_fixtures() {
+            let Some(recessive) = diff.recessive_kind() else {
+                continue;
+            };
+            let hist = diff.kind_histogram();
+            assert_eq!(hist.count(recessive), hist.trough_count());
+        }
+    }
+
+    #[test]
+    fn recessive_kind_count_bounded_by_dominant_kind_count() {
+        // Structural bound lifted from the trait-uniform
+        // `count(recessive_cell) <= count(dominant_cell)` law on
+        // AxisHistogram: the trough-of-support is bounded above by the
+        // peak-of-support at every fixture. Cross-projection pin
+        // between `recessive_kind` and `dominant_kind`. Diff-altitude
+        // peer of `recessive_tier_count_bounded_by_dominant_tier_count`.
+        for diff in dominant_kind_fixtures() {
+            let Some(recessive) = diff.recessive_kind() else {
+                continue;
+            };
+            let Some(dominant) = diff.dominant_kind() else {
+                unreachable!("presence of recessive kind implies presence of dominant kind");
+            };
+            let hist = diff.kind_histogram();
+            assert!(
+                hist.count(recessive) <= hist.count(dominant),
+                "count(recessive={recessive:?})={r} must be <= count(dominant={dominant:?})={d}",
+                r = hist.count(recessive),
+                d = hist.count(dominant),
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_kind_ties_broken_by_declaration_order() {
+        // Structural tie-breaking pin: on a uniform per-kind diff
+        // (each of the three `DiffLineKind` cells contributing exactly
+        // one line), `recessive_kind` reports
+        // `Some(DiffLineKind::Removed)` — the first cell in
+        // `DiffLineKind::ALL` declaration order (the singleton-modality
+        // degenerate where the modal and anti-modal cells coincide).
+        // Any future switch to a nondeterministic `min_by_key` walk
+        // over the full axis (which would silently pick a zero-count
+        // cell over the closed axis) would flip this pin — the seam
+        // names the tiebreak once. Peer of
+        // `recessive_tier_ties_broken_by_declaration_order`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        let hist = diff.kind_histogram();
+        assert_eq!(hist.count(DiffLineKind::Removed), 1);
+        assert_eq!(hist.count(DiffLineKind::Added), 1);
+        assert_eq!(hist.count(DiffLineKind::Context), 1);
+        assert!(hist.is_full_cover());
+        // Tiebreak lands on the first cell in declaration order —
+        // pointwise identical to `dominant_kind` on the same uniform
+        // input (the singleton-modality degenerate).
+        assert_eq!(diff.recessive_kind(), Some(DiffLineKind::Removed));
+        assert_eq!(diff.recessive_kind(), diff.dominant_kind());
+    }
+
+    #[test]
+    fn recessive_kind_two_way_tie_picks_declaration_order_first() {
+        // A two-way tie between Removed and Added (1 each) with 3
+        // Context lines must resolve to the declaration-order earliest
+        // cell — Removed (which precedes Added in ALL) — not to Added
+        // (which `min_by_key`'s FIRST-tied-cell semantics would agree
+        // with by coincidence, but which any reversed comparison would
+        // silently break). The argmin over the support {Removed,
+        // Added, Context} respects declaration order at the trough.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let hist = diff.kind_histogram();
+        assert_eq!(hist.count(DiffLineKind::Removed), 1);
+        assert_eq!(hist.count(DiffLineKind::Added), 1);
+        assert_eq!(hist.count(DiffLineKind::Context), 3);
+        assert_eq!(diff.recessive_kind(), Some(DiffLineKind::Removed));
+    }
+
+    #[test]
+    fn recessive_kind_singleton_support_agrees_with_dominant_kind() {
+        // Singleton-support degenerate lifted from the trait-uniform
+        // `distinct_cells() == 1 → dominant_cell() == recessive_cell()`
+        // law on AxisHistogram: when only one kind contributes, that
+        // kind is both the modal and the anti-modal cell. Direct
+        // construction: three lines, all Added. Peer of
+        // `recessive_tier_singleton_support_agrees_with_dominant_tier`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Added("a3".into()),
+            ],
+        };
+        assert_eq!(diff.present_kinds().len(), 1);
+        assert_eq!(diff.recessive_kind(), diff.dominant_kind());
+        assert_eq!(diff.recessive_kind(), Some(DiffLineKind::Added));
+    }
+
+    #[test]
+    fn recessive_kind_agrees_with_open_coded_argmin_walk() {
+        // Parity against the exact `hist.iter().filter(|&(_, c)| c > 0)
+        // .fold(count-then-declaration-order)` walk this lift replaces —
+        // both the named seam and the hand-rolled argmin must
+        // pointwise agree over every fixture. The hand-rolled form
+        // spells the declaration-order tiebreak explicitly (fold-
+        // forward with strict `<` inequality — the first tied cell
+        // wins, mirroring `AxisHistogram::recessive_cell`, rather than
+        // `min_by_key`'s FIRST-tied-cell semantics which agrees by
+        // coincidence but drifts under any reversed comparison).
+        // Diff-altitude peer of
+        // `recessive_tier_agrees_with_open_coded_argmin_walk`.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.recessive_kind();
+            let hist = diff.kind_histogram();
+            let mut iter = hist.iter().filter(|&(_, c)| c > 0);
+            let hand_rolled = iter.next().map(|first| {
+                iter.fold(
+                    first,
+                    |best, current| {
+                        if current.1 < best.1 { current } else { best }
+                    },
+                )
+                .0
+            });
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn recessive_kind_uniform_cover_picks_first_cell() {
+        // Trait-uniform invariant: on a full-cover diff where every
+        // kind observes the same nonzero count (2 each here), the
+        // recessive cell is the first cell of `DiffLineKind::ALL` —
+        // the declaration-order tiebreak reduces to `Some(Removed)`,
+        // pointwise identical to `dominant_kind` on the same input
+        // (the singleton-modality degenerate). Peer of the
+        // trait-uniform
+        // `axis_histogram_dominant_and_recessive_agree_on_uniform_axis_cover_for_every_implementor`
+        // law in cube tests.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+            ],
+        };
+        assert!(diff.kind_histogram().is_full_cover());
+        assert_eq!(diff.recessive_kind(), Some(DiffLineKind::Removed));
+        assert_eq!(diff.recessive_kind(), diff.dominant_kind());
     }
 
     #[test]
