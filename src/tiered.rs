@@ -727,6 +727,21 @@ impl ProvenanceMap {
         }
     }
 
+    /// Idiomatic Rust `iter()` alias for [`Self::entries`] — one seam every
+    /// std keyed collection (`BTreeMap::iter`, `HashMap::iter`,
+    /// `Vec::iter`) surfaces on its `&Self` reference. The tier-level peer
+    /// of [`crate::discovered::LayerAttribution::iter`] on the discovered
+    /// altitude: both walkers project the same `(&[String], &Attribution)`
+    /// pair shape and both name the same concrete iterator type
+    /// ([`ProvenanceMapEntries`] here, [`crate::LayerAttributionIter`]
+    /// there) at the API boundary. The seam clippy's
+    /// `into_iter_without_iter` lint expects to accompany
+    /// [`IntoIterator for &ProvenanceMap`].
+    #[must_use]
+    pub fn iter(&self) -> ProvenanceMapEntries<'_> {
+        self.entries()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -816,6 +831,242 @@ impl ExactSizeIterator for ProvenanceMapEntries<'_> {
 }
 
 impl std::iter::FusedIterator for ProvenanceMapEntries<'_> {}
+
+/// `for entry in &map` (by-reference) iterates the same borrowed
+/// `(&[String], &Provenance)` stream as [`ProvenanceMap::entries`], in
+/// the same lex order. The idiomatic dual of the inherent
+/// [`ProvenanceMap::entries`] getter — one seam every std collection
+/// with an `iter()` method surfaces on its `&Self` reference
+/// (`&Vec<T>`, `&BTreeMap<K, V>`, `&HashMap<K, V>`, `&[T]`) — closing
+/// the shared idiom on the tiered algebra so consumers reach for the
+/// `for`-loop form directly instead of the explicit `.entries()` call.
+/// Zero-allocation: forwards to [`ProvenanceMap::entries`], which is
+/// `O(1)` per element. Tier-level peer of the discovered-altitude
+/// [`IntoIterator for &crate::discovered::LayerAttribution`] impl.
+impl<'a> IntoIterator for &'a ProvenanceMap {
+    type Item = (&'a [String], &'a Provenance);
+    type IntoIter = ProvenanceMapEntries<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries()
+    }
+}
+
+/// Consuming iterator over the owned `(Vec<String>, Provenance)` pairs
+/// of a [`ProvenanceMap`], yielded in lex order on the path.
+///
+/// The concrete return type of
+/// [`<ProvenanceMap as IntoIterator>::into_iter`][IntoIterator] and the
+/// canonical Rust idiom-peer of
+/// [`std::collections::btree_map::IntoIter`] /
+/// [`std::vec::IntoIter`] — every stdlib keyed collection exposes a
+/// named consuming iterator alongside the named borrowing iterator on
+/// its `&Self` reference. The owned-ownership peer of the borrowing
+/// [`ProvenanceMapEntries`] on the ownership boundary: where the
+/// borrowing iterator yields `(&'a [String], &'a Provenance)` and lets
+/// `self` outlive the walk, this consuming iterator yields
+/// `(Vec<String>, Provenance)` and takes `self` with it — the natural
+/// choice when the caller wants to move each owned key and provenance
+/// elsewhere (e.g. `.into_iter().collect::<BTreeMap<_, _>>()`, an owned
+/// `Vec<(Vec<String>, Provenance)>` audit dump, per-leaf
+/// `FnMut(Vec<String>, Provenance)` visitor callbacks) without paying
+/// an `.entries().map(|(p, prov)| (p.to_vec(), prov.clone()))`
+/// intermediate clone per key.
+///
+/// The **consume-side dual** of the collect-side [`FromIterator`] impl:
+/// `map.into_iter().collect::<ProvenanceMap>()` roundtrips through the
+/// owned `(Vec<String>, Provenance)` shape and equals the source
+/// verbatim, closing the ownership pair every std keyed collection
+/// carries alongside its `FromIterator` (a `BTreeMap<K, V>` with
+/// `IntoIterator` yielding `(K, V)` alongside its `FromIterator<(K,
+/// V)>`, a `Vec<T>` with `IntoIterator` yielding `T` alongside its
+/// `FromIterator<T>`). The tier-level peer of the discovered-altitude
+/// [`crate::discovered::LayerAttributionIntoIter`] on the same
+/// ownership boundary.
+///
+/// # Trait algebra
+///
+/// Impls [`Iterator`] + [`DoubleEndedIterator`] +
+/// [`ExactSizeIterator`] + [`std::iter::FusedIterator`] +
+/// [`Debug`][std::fmt::Debug]. [`Clone`] is *not* carried — the
+/// underlying [`std::collections::btree_map::IntoIter`] consumes the
+/// source [`BTreeMap`] and is not [`Clone`]-able. This matches the same
+/// consuming/borrowing asymmetry
+/// [`crate::discovered::LayerAttributionIntoIter`] carries on the
+/// discovered algebra and every stdlib consuming iterator carries
+/// against its borrowing peer.
+///
+/// # Field access
+///
+/// The struct field is private — the public surface is the
+/// `Iterator` / `DoubleEndedIterator` / `ExactSizeIterator` /
+/// `FusedIterator` trait impls plus the [`Debug`][std::fmt::Debug]
+/// derive.
+#[derive(Debug)]
+pub struct ProvenanceMapIntoIter {
+    inner: std::collections::btree_map::IntoIter<Vec<String>, Provenance>,
+}
+
+impl Iterator for ProvenanceMapIntoIter {
+    type Item = (Vec<String>, Provenance);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+
+    fn count(self) -> usize {
+        self.inner.count()
+    }
+
+    fn last(mut self) -> Option<Self::Item> {
+        // Override the default forward-walking `.last()` — the
+        // DoubleEnded impl on the underlying `BTreeMap::IntoIter` finds
+        // the trailing entry in `O(log n)` instead of draining the
+        // whole iterator. Matches the same specialization
+        // `LayerAttributionIntoIter::last` carries on the discovered
+        // algebra's consuming surface.
+        self.inner.next_back()
+    }
+}
+
+impl DoubleEndedIterator for ProvenanceMapIntoIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl ExactSizeIterator for ProvenanceMapIntoIter {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl std::iter::FusedIterator for ProvenanceMapIntoIter {}
+
+/// `for entry in map` (by-value) iterates the owned
+/// `(Vec<String>, Provenance)` stream in the same lex order on the path
+/// as [`ProvenanceMap::entries`] / [`IntoIterator for
+/// &ProvenanceMap`][IntoIterator] — the consume-side dual of the
+/// borrow-side [`IntoIterator for &ProvenanceMap`] impl above. One seam
+/// every std keyed collection surfaces on its owned handle (`Vec<T>`,
+/// `BTreeMap<K, V>`, `HashMap<K, V>`, `BTreeSet<T>`), closing the
+/// ownership pair on the tiered algebra so consumers reach for the
+/// by-value `for`-loop form directly (`for (path, prov) in map { … }`)
+/// or `.into_iter().collect::<T>()` chains that move each owned path
+/// and provenance into a caller-owned collection without the
+/// `.entries().map(|(p, prov)| (p.to_vec(), prov.clone()))`
+/// intermediate clone the borrowing form requires.
+///
+/// # Roundtrip with `FromIterator`
+///
+/// The pair with [`FromIterator for ProvenanceMap`] roundtrips
+/// through the owned `(Vec<String>, Provenance)` shape:
+///
+/// ```text
+/// let map: ProvenanceMap = ...;
+/// let round: ProvenanceMap = map.clone().into_iter().collect();
+/// assert_eq!(map, round);
+/// ```
+///
+/// # Length
+///
+/// The returned [`ProvenanceMapIntoIter`] is [`ExactSizeIterator`],
+/// so `.len()` returns [`ProvenanceMap::len`] verbatim in `O(1)` —
+/// the trait-level parity of the borrowing [`ProvenanceMapEntries`] on
+/// the consume-side surface.
+impl IntoIterator for ProvenanceMap {
+    type Item = (Vec<String>, Provenance);
+    type IntoIter = ProvenanceMapIntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        ProvenanceMapIntoIter {
+            inner: self.inner.into_iter(),
+        }
+    }
+}
+
+/// Build a [`ProvenanceMap`] from a stream of `(path, provenance)`
+/// pairs — the construction-side dual of [`IntoIterator for
+/// &ProvenanceMap`] on the reading side. Every path–provenance pair
+/// emitted by the source iterator becomes one attributed leaf; the
+/// composed [`ProvenanceMap`] stores them in lex order on the owned
+/// `Vec<String>` key, the same order [`ProvenanceMap::entries`] emits.
+///
+/// One seam every std keyed collection with an [`IntoIterator for
+/// &Self`] getter surfaces on the ownership boundary
+/// ([`FromIterator`][std::iter::FromIterator] on
+/// [`BTreeMap`][std::collections::BTreeMap] /
+/// [`HashMap`][std::collections::HashMap], on [`Vec`], on
+/// [`BTreeSet`][std::collections::BTreeSet]) — closing the shared
+/// idiom on the tiered algebra so consumers reach for the `.collect()`
+/// form directly instead of naming `ProvenanceMap { inner: ... }` at
+/// every construction site. [`ProvenanceMap`]'s inner field stays
+/// private; this trait is the substrate-owned build path — the
+/// tier-level peer of
+/// [`FromIterator for crate::discovered::LayerAttribution`] on the
+/// discovered algebra.
+///
+/// # Roundtrip
+///
+/// The pair with [`IntoIterator for &ProvenanceMap`] roundtrips
+/// through the owned `(Vec<String>, Provenance)` shape:
+///
+/// ```text
+/// let map: ProvenanceMap = ...;
+/// let round: ProvenanceMap = map.entries()
+///     .map(|(p, prov)| (p.to_vec(), prov.clone()))
+///     .collect();
+/// assert_eq!(map, round);
+/// ```
+///
+/// # Duplicate paths
+///
+/// The underlying [`BTreeMap`][std::collections::BTreeMap] insertion
+/// discipline holds: repeated pairs at the same path resolve
+/// *last-write wins*. An empty source produces
+/// [`ProvenanceMap::default`][Default::default].
+impl FromIterator<(Vec<String>, Provenance)> for ProvenanceMap {
+    fn from_iter<I: IntoIterator<Item = (Vec<String>, Provenance)>>(iter: I) -> Self {
+        ProvenanceMap {
+            inner: iter.into_iter().collect(),
+        }
+    }
+}
+
+/// Extend a [`ProvenanceMap`] with additional `(path, provenance)`
+/// pairs — the grow-in-place dual of [`FromIterator for ProvenanceMap`]
+/// and the matching `Extend` impl every std keyed collection carries
+/// alongside its `FromIterator` (on
+/// [`BTreeMap`][std::collections::BTreeMap] /
+/// [`HashMap`][std::collections::HashMap], on
+/// [`BTreeSet`][std::collections::BTreeSet]). Every pair inserted keeps
+/// the same lex order on the owned `Vec<String>` key
+/// [`ProvenanceMap::entries`] emits — the tier-level peer of
+/// [`Extend for crate::discovered::LayerAttribution`] on the
+/// discovered algebra.
+///
+/// # Duplicate paths
+///
+/// Same last-write-wins discipline as [`FromIterator`][Self]: a pair at
+/// an existing path replaces the prior attribution. An empty source
+/// leaves `self` untouched.
+///
+/// # Cost
+///
+/// Forwards to [`BTreeMap::extend`][std::collections::BTreeMap], which
+/// is `O(m log(n + m))` where `n` is the current leaf count and `m`
+/// the pairs supplied — the same amortized insertion cost every
+/// consumer pays by constructing a fresh [`ProvenanceMap`] via
+/// [`FromIterator`][Self] and merging by hand.
+impl Extend<(Vec<String>, Provenance)> for ProvenanceMap {
+    fn extend<I: IntoIterator<Item = (Vec<String>, Provenance)>>(&mut self, iter: I) {
+        self.inner.extend(iter);
+    }
+}
 
 // ── ProgressiveLayer — one operator overlay in the progressive fold ──
 
@@ -2555,6 +2806,180 @@ mod progressive_tests {
             prov.provenance_of(&["a"]).unwrap().tier(),
             ConfigTierKind::Discovered
         );
+    }
+
+    // -------- IntoIterator / FromIterator / Extend on ProvenanceMap --------
+
+    #[test]
+    fn into_iter_ref_forwards_to_entries_pointwise() {
+        // `for entry in &map` yields the same pair stream as `map.entries()` —
+        // the borrow-side idiomatic dual is a name change, not a shape
+        // change. Pins the tier-level `IntoIterator for &ProvenanceMap`
+        // impl at the runtime level.
+        let r = Prog::resolve_progressive();
+        let via_entries: Vec<Vec<String>> =
+            r.provenance().entries().map(|(p, _)| p.to_vec()).collect();
+        let via_into_iter_ref: Vec<Vec<String>> = r
+            .provenance()
+            .into_iter()
+            .map(|(p, _)| p.to_vec())
+            .collect();
+        assert_eq!(via_entries, via_into_iter_ref);
+    }
+
+    #[test]
+    fn into_iter_owned_yields_same_paths_and_provenance_as_entries() {
+        // The consume-side dual of the borrow-side entries walk: owning
+        // pulls yield `(Vec<String>, Provenance)` in the same lex order,
+        // with each provenance equal to what the borrowing walk showed.
+        let r = Prog::resolve_progressive();
+        let borrowed: Vec<(Vec<String>, Provenance)> = r
+            .provenance()
+            .entries()
+            .map(|(p, prov)| (p.to_vec(), prov.clone()))
+            .collect();
+        let owned: Vec<(Vec<String>, Provenance)> = r.provenance().clone().into_iter().collect();
+        assert_eq!(borrowed, owned);
+    }
+
+    #[test]
+    fn into_iter_owned_len_matches_provenance_map_len() {
+        // ExactSizeIterator on the consuming walker reports the same
+        // leaf count as the map — the trait-level parity of
+        // `ProvenanceMapEntries::len()` on the consume-side surface.
+        let r = Prog::resolve_progressive();
+        let n = r.provenance().len();
+        let it = r.provenance().clone().into_iter();
+        assert_eq!(it.len(), n);
+    }
+
+    #[test]
+    fn into_iter_owned_next_back_walks_specific_to_coarse() {
+        // The DoubleEnded impl on the consuming walker walks the sorted
+        // BTreeMap in reverse — the tier-level peer of the same pin on
+        // the borrowing ProvenanceMapEntries.
+        let r = Prog::resolve_progressive();
+        let mut it = r.provenance().clone().into_iter();
+        let (last, _) = it.next_back().unwrap();
+        assert_eq!(last, vec!["d".to_string()]);
+        let (before_last, _) = it.next_back().unwrap();
+        assert_eq!(before_last, vec!["c".to_string()]);
+        let (head, _) = it.next().unwrap();
+        assert_eq!(head, vec!["a".to_string()]);
+        let (mid, _) = it.next_back().unwrap();
+        assert_eq!(mid, vec!["b".to_string()]);
+        assert!(it.next().is_none());
+        assert!(it.next_back().is_none());
+    }
+
+    #[test]
+    fn from_iter_collect_recovers_provenance_map() {
+        // The construction-side dual of IntoIterator for &ProvenanceMap:
+        // reading the map through `.entries()`, cloning each pair, and
+        // `.collect()`-ing back into `ProvenanceMap` recovers the original
+        // verbatim. The `FromIterator` seam lets consumers build synthetic
+        // provenance maps for tests, mocks, and diagnostics without
+        // reaching into a private inner field.
+        let r = Prog::resolve_progressive();
+        let source: ProvenanceMap = r.provenance().clone();
+        let round: ProvenanceMap = source
+            .entries()
+            .map(|(p, prov)| (p.to_vec(), prov.clone()))
+            .collect();
+        assert_eq!(source, round);
+    }
+
+    #[test]
+    fn from_iter_empty_source_is_default() {
+        // `.collect()`-ing an empty stream yields the default (empty) map —
+        // the same neutral element every keyed collection's `FromIterator`
+        // + `Default` pair honors.
+        let empty: ProvenanceMap = std::iter::empty::<(Vec<String>, Provenance)>().collect();
+        assert_eq!(empty, ProvenanceMap::default());
+        assert!(empty.is_empty());
+        assert_eq!(empty.len(), 0);
+    }
+
+    #[test]
+    fn from_iter_last_write_wins_on_duplicate_paths() {
+        // Duplicate paths in the source resolve last-write-wins — the same
+        // `BTreeMap`-insertion discipline the discovered-side
+        // `FromIterator for LayerAttribution` honors on its owned key.
+        let path = vec!["k".to_string()];
+        let first = Provenance::computed(ConfigTierKind::Bare);
+        let second = Provenance::computed(ConfigTierKind::Discovered);
+        let map: ProvenanceMap = vec![(path.clone(), first), (path.clone(), second.clone())]
+            .into_iter()
+            .collect();
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.provenance_of_owned(&path), Some(&second));
+    }
+
+    #[test]
+    fn extend_adds_new_paths_and_overwrites_at_conflicts() {
+        // `Extend` mirrors `FromIterator`'s last-write-wins semantics but
+        // grows the map in place. New paths land as fresh entries; a pair
+        // at an existing path overwrites, matching what a caller would get
+        // by rebuilding via `FromIterator`. Extending with an empty source
+        // is a no-op.
+        let a = vec!["a".to_string()];
+        let b = vec!["b".to_string()];
+        let bare = Provenance::computed(ConfigTierKind::Bare);
+        let disc = Provenance::computed(ConfigTierKind::Discovered);
+        let mut map: ProvenanceMap = vec![(a.clone(), bare.clone())].into_iter().collect();
+        assert_eq!(map.len(), 1);
+        map.extend(vec![(b.clone(), disc.clone()), (a.clone(), disc.clone())]);
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.provenance_of_owned(&a), Some(&disc));
+        assert_eq!(map.provenance_of_owned(&b), Some(&disc));
+        map.extend(std::iter::empty::<(Vec<String>, Provenance)>());
+        assert_eq!(map.len(), 2);
+    }
+
+    #[test]
+    fn into_iter_owned_debug_impl_names_the_struct() {
+        // Pin the derived Debug impl at the format-string level: the
+        // rendered output names the struct (`ProvenanceMapIntoIter`),
+        // matching the same guarantee `ProvenanceMapEntries`'s Debug
+        // carries on the borrowing surface.
+        let r = Prog::resolve_progressive();
+        let it = r.provenance().clone().into_iter();
+        let s = format!("{it:?}");
+        assert!(
+            s.contains("ProvenanceMapIntoIter"),
+            "Debug output should name the struct type, got: {s}"
+        );
+    }
+
+    #[test]
+    fn into_iter_owned_return_type_is_nameable_provenance_map_into_iter() {
+        // Pin the sharpen at the type-signature level: a struct field
+        // bound on `ProvenanceMapIntoIter` holds the handle across a
+        // return. This test compiles iff the concrete type is nameable
+        // at the API boundary — an `impl Trait` return would fail here.
+        struct Held {
+            walker: ProvenanceMapIntoIter,
+        }
+        fn hold(map: ProvenanceMap) -> Held {
+            Held {
+                walker: map.into_iter(),
+            }
+        }
+        let r = Prog::resolve_progressive();
+        let mut h = hold(r.provenance().clone());
+        assert!(h.walker.next().is_some());
+    }
+
+    #[test]
+    fn owned_into_iter_last_returns_trailing_entry() {
+        // `.last()` is overridden to route through `next_back` on the
+        // underlying `BTreeMap::IntoIter`, so the trailing entry lands
+        // in `O(log n)` instead of draining the whole stream. Pin the
+        // return value against the last lex-ordered path.
+        let r = Prog::resolve_progressive();
+        let it = r.provenance().clone().into_iter();
+        let (last_path, _) = it.last().unwrap();
+        assert_eq!(last_path, vec!["d".to_string()]);
     }
 
     // ── Nested per-leaf attribution ──
