@@ -797,6 +797,87 @@ pub trait ConfigSourceChain {
                 .filter_map(ConfigSource::env_prefix_kind),
         )
     }
+
+    /// The distinct [`EnvMetadataTagKind`]s that appear as ≥1
+    /// contributing [`ConfigSource::Env`] layer in this chain, in
+    /// [`EnvMetadataTagKind::ALL`] declaration order — the
+    /// chain-altitude dual of "which env-prefix kinds actually
+    /// surfaced in this recipe".
+    ///
+    /// Routes through [`Self::env_prefix_kind_histogram`]:
+    /// [`crate::AxisHistogram::observed`] iterates the histogram's
+    /// support (the closed-axis cells with nonzero count) in
+    /// [`crate::ClosedAxis::ALL`] declaration order, which is the
+    /// [`EnvMetadataTagKind`] canonical order (`Prefixed → Bare`) by
+    /// construction — the closed-axis discipline provides the sort +
+    /// dedup automatically, so this method reads directly off the
+    /// shikumi cube-native primitive instead of hand-rolling
+    /// `Vec::contains` (`O(n·k)` in the chain length and distinct-
+    /// prefix-kind count) + explicit `sort_by_key(axis_ordinal)` at
+    /// every attestation manifest, structured-log dashboard, or
+    /// config-show renderer summarizing which env-prefix classes
+    /// contributed to the recipe.
+    ///
+    /// The chain-altitude sister of [`Self::present_layer_kinds`] on
+    /// the [`ConfigSourceKind`] layer-kind axis and
+    /// [`Self::present_file_formats`] on the file-format axis —
+    /// same observed-cells projection template, one axis over. With
+    /// this lift the three chain-shape histograms
+    /// ([`Self::layer_kind_histogram`],
+    /// [`Self::file_format_histogram`],
+    /// [`Self::env_prefix_kind_histogram`]) all carry the observed-
+    /// cells peer alongside their respective `_histogram()`
+    /// primitive; every "which cells surfaced?" question on the
+    /// recipe reaches for the same named seam at whichever sub-axis
+    /// it lives on. Peer to [`crate::ConfigDiff::present_kinds`] on
+    /// the diff altitude and
+    /// [`crate::ProvenanceMap::contributing_tiers`] on the tier
+    /// altitude — all four project the observed-support of the
+    /// underlying [`crate::AxisHistogram`] over their local closed
+    /// axis, all four live as a `Vec<CellKind>` collect wrapper
+    /// alongside their respective `_histogram()` primitive, and all
+    /// four spell the closed-axis declaration-order cell iteration
+    /// at the API boundary.
+    ///
+    /// # Invariants
+    ///
+    /// - `present_env_prefix_kinds().len() ==
+    ///   env_prefix_kind_histogram().distinct_cells()` — both
+    ///   project the same support-cardinality off the histogram.
+    /// - `present_env_prefix_kinds().is_empty() ==
+    ///   env_prefix_kind_histogram().is_empty()` — a histogram with
+    ///   no observed env-prefix-kind cell has no present kinds, and
+    ///   vice versa. Like [`Self::present_file_formats`] and unlike
+    ///   [`Self::present_layer_kinds`], the presence bound is NOT
+    ///   tied to `self.as_ref().is_empty()`: a chain of only
+    ///   [`ConfigSource::Defaults`] / [`ConfigSource::File`] layers
+    ///   is non-empty but has no present env-prefix kinds, because
+    ///   those entries project to [`None`] through
+    ///   [`ConfigSource::env_prefix_kind`].
+    /// - `env_prefix_kind_histogram().is_full_cover() ==
+    ///   (present_env_prefix_kinds().len() ==
+    ///   crate::axis_cardinality::<EnvMetadataTagKind>())` — the
+    ///   full-cover predicate and the observed-cells cardinality
+    ///   agree by construction over the same shared histogram.
+    /// - `present_env_prefix_kinds()` is sorted strictly ascending
+    ///   by [`crate::axis_ordinal`] on [`EnvMetadataTagKind`] —
+    ///   dedup and sort for free from the closed-axis discipline;
+    ///   no hand-rolled `sort_by_key` at the consumer.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram
+    /// build) and `k = crate::axis_cardinality::<EnvMetadataTagKind>()`
+    /// (the support scan). Both are `O(n)` in practice since the
+    /// env-prefix-kind axis carries a fixed two-cell cardinality;
+    /// the returned `Vec<EnvMetadataTagKind>` is at most two elements
+    /// long regardless of chain length.
+    fn present_env_prefix_kinds(&self) -> Vec<EnvMetadataTagKind>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().observed().collect()
+    }
 }
 
 impl ConfigSourceChain for [ConfigSource] {
@@ -3147,6 +3228,330 @@ mod tests {
                 lifted,
                 manual,
                 "present_file_formats must equal the open-coded \
+                 contains+sort walk over chain of length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    // ---- ConfigSourceChain::present_env_prefix_kinds — observed-cells
+    //      peer of ConfigSourceChain::env_prefix_kind_histogram on the
+    //      chain-shape altitude ----
+
+    #[test]
+    fn present_env_prefix_kinds_matches_env_prefix_kind_histogram_observed_pointwise() {
+        // The observed-support pin: `present_env_prefix_kinds` routes
+        // through `env_prefix_kind_histogram().observed().collect()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared cube-native primitive.
+        // Sister of
+        // `present_file_formats_matches_file_format_histogram_observed_pointwise`
+        // and `present_layer_kinds_matches_layer_kind_histogram_observed_pointwise`
+        // one axis over.
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env("OTHER_".to_owned()),
+                ConfigSource::Env(String::new()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+        ];
+        for chain in &fixtures {
+            let via_direct = chain.as_slice().present_env_prefix_kinds();
+            let via_histogram: Vec<EnvMetadataTagKind> = chain
+                .as_slice()
+                .env_prefix_kind_histogram()
+                .observed()
+                .collect();
+            assert_eq!(
+                via_direct,
+                via_histogram,
+                "present_env_prefix_kinds must equal \
+                 env_prefix_kind_histogram().observed().collect() \
+                 pointwise over chain of length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn present_env_prefix_kinds_empty_chain_is_empty() {
+        // Empty-chain boundary: no entries, no observed env-prefix
+        // kinds. Sister of `present_file_formats_empty_chain_is_empty`
+        // on the env-prefix-presence axis.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(empty.present_env_prefix_kinds().is_empty());
+        assert_eq!(
+            empty.present_env_prefix_kinds(),
+            Vec::<EnvMetadataTagKind>::new(),
+        );
+    }
+
+    #[test]
+    fn present_env_prefix_kinds_no_env_layers_is_empty() {
+        // Presence-bound pin distinguishing this peer from
+        // `present_layer_kinds`: a non-empty chain of Defaults and
+        // File layers all project to None through env_prefix_kind(),
+        // so present_env_prefix_kinds() is empty even though the
+        // chain is not. Reads the histogram-empty law documented in
+        // the trait doc-string. Sister of
+        // `present_file_formats_no_recognized_files_is_empty` on the
+        // env-prefix-presence axis.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.unknown")),
+        ];
+        assert!(!chain.is_empty());
+        assert!(chain.as_slice().env_prefix_kind_histogram().is_empty());
+        assert!(chain.as_slice().present_env_prefix_kinds().is_empty());
+        assert_eq!(
+            chain.as_slice().present_env_prefix_kinds(),
+            Vec::<EnvMetadataTagKind>::new(),
+        );
+    }
+
+    #[test]
+    fn present_env_prefix_kinds_iterates_in_declaration_order() {
+        // Declaration-order pin: even when the observation order is
+        // Bare → Prefixed (the reverse of ::ALL), the returned Vec
+        // walks the closed axis in canonical (Prefixed → Bare) order
+        // — the closed-axis discipline provides the sort
+        // automatically. Sister of
+        // `present_file_formats_iterates_in_declaration_order` on the
+        // env-prefix-presence axis.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        assert_eq!(
+            chain.as_slice().present_env_prefix_kinds(),
+            vec![EnvMetadataTagKind::Prefixed, EnvMetadataTagKind::Bare],
+        );
+    }
+
+    #[test]
+    fn present_env_prefix_kinds_dedups_across_repeated_observations() {
+        // Repeated observations of the same env-prefix kind collapse
+        // to one entry in the returned Vec — the closed-axis
+        // discipline provides dedup automatically. Six Env layers
+        // split (2 Bare × 3 Prefixed × 1 Prefixed) yield two present
+        // kinds (both cells observed). A supplementary fixture drops
+        // to a single kind so the dedup covers both the axis-cover
+        // and singleton-support cases. Sister of
+        // `present_file_formats_dedups_across_repeated_observations`
+        // on the env-prefix-presence axis.
+        let both = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+        ];
+        assert_eq!(
+            both.as_slice().present_env_prefix_kinds(),
+            vec![EnvMetadataTagKind::Prefixed, EnvMetadataTagKind::Bare],
+        );
+
+        let prefixed_only = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+        ];
+        assert_eq!(
+            prefixed_only.as_slice().present_env_prefix_kinds(),
+            vec![EnvMetadataTagKind::Prefixed],
+        );
+    }
+
+    #[test]
+    fn present_env_prefix_kinds_singleton_chain_yields_singleton_support() {
+        // A chain composed only of one env-prefix kind has exactly
+        // that kind as its present-kinds set — the support is the
+        // singleton observed cell. Boundary case pinning that
+        // unobserved cells do not leak into the returned Vec (the
+        // closed-axis discipline drops zero-count cells) — one
+        // fixture per EnvMetadataTagKind::ALL cell.
+        for (kind, layer) in [
+            (
+                EnvMetadataTagKind::Prefixed,
+                ConfigSource::Env("APP_".to_owned()),
+            ),
+            (EnvMetadataTagKind::Bare, ConfigSource::Env(String::new())),
+        ] {
+            let chain = vec![layer.clone(), layer];
+            assert_eq!(
+                chain.as_slice().present_env_prefix_kinds(),
+                vec![kind],
+                "singleton-support chain over {kind:?} must yield \
+                 that single kind",
+            );
+        }
+    }
+
+    #[test]
+    fn present_env_prefix_kinds_len_matches_distinct_cells() {
+        // Support-cardinality invariant:
+        // `present_env_prefix_kinds().len()` equals
+        // `env_prefix_kind_histogram().distinct_cells()` pointwise.
+        // Both project the observed-cell count off the shared
+        // histogram over the EnvMetadataTagKind closed axis. Sister
+        // of `present_file_formats_len_matches_distinct_cells` one
+        // axis over.
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env(String::new()),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().present_env_prefix_kinds().len(),
+                chain
+                    .as_slice()
+                    .env_prefix_kind_histogram()
+                    .distinct_cells(),
+                "present_env_prefix_kinds().len() must equal \
+                 env_prefix_kind_histogram().distinct_cells() over \
+                 chain of length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn present_env_prefix_kinds_full_cover_matches_axis_cardinality() {
+        // Cross-surface pin on the full-cover predicate: a chain
+        // whose `env_prefix_kind_histogram().is_full_cover()` returns
+        // `true` has exactly
+        // `crate::axis_cardinality::<EnvMetadataTagKind>()` observed
+        // cells, and `present_env_prefix_kinds()` returns
+        // `EnvMetadataTagKind::ALL` in declaration order.
+        let axis_cover = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ];
+        assert!(
+            axis_cover
+                .as_slice()
+                .env_prefix_kind_histogram()
+                .is_full_cover()
+        );
+        assert_eq!(
+            axis_cover.as_slice().present_env_prefix_kinds().len(),
+            crate::axis_cardinality::<EnvMetadataTagKind>(),
+        );
+        assert_eq!(
+            axis_cover.as_slice().present_env_prefix_kinds(),
+            EnvMetadataTagKind::ALL.to_vec(),
+        );
+
+        // Strict-subset case: sample_chain has one Env("APP_") layer
+        // and no bare Env layer, so it is NOT a full cover, and the
+        // present-kinds cardinality is strictly less than the axis
+        // cardinality.
+        let chain = sample_chain();
+        assert!(!chain.as_slice().env_prefix_kind_histogram().is_full_cover());
+        assert!(
+            chain.as_slice().present_env_prefix_kinds().len()
+                < crate::axis_cardinality::<EnvMetadataTagKind>(),
+        );
+    }
+
+    #[test]
+    fn present_env_prefix_kinds_is_strictly_ascending_by_axis_ordinal() {
+        // Structural-sort pin: the returned Vec is strictly ascending
+        // by `crate::axis_ordinal` on EnvMetadataTagKind — dedup +
+        // sort for free from the closed-axis discipline. Every
+        // consecutive pair in the returned Vec has strictly
+        // increasing axis ordinal. Sister of
+        // `present_file_formats_is_strictly_ascending_by_axis_ordinal`
+        // one axis over.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("OTHER_".to_owned()),
+        ];
+        let present = chain.as_slice().present_env_prefix_kinds();
+        for window in present.windows(2) {
+            let a = crate::axis_ordinal(window[0]);
+            let b = crate::axis_ordinal(window[1]);
+            assert!(
+                a < b,
+                "present_env_prefix_kinds must be strictly ascending \
+                 by axis_ordinal, but ord({:?})={a} >= ord({:?})={b}",
+                window[0],
+                window[1],
+            );
+        }
+    }
+
+    #[test]
+    fn present_env_prefix_kinds_agrees_with_open_coded_dedup_walk() {
+        // Parity pin against a hand-rolled `Vec::contains` +
+        // sort_by_key consumer — the exact pattern the trait-level
+        // lift replaces. Any future divergence (e.g. `observed()`
+        // changing its iteration order, `env_prefix_kind_histogram`
+        // projecting through a different env_prefix_kind function)
+        // surfaces here as a structural mismatch between the lifted
+        // seam and the open-coded walk.
+        let chains = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Env("OTHER_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+        ];
+        for chain in &chains {
+            let lifted = chain.as_slice().present_env_prefix_kinds();
+            let mut manual: Vec<EnvMetadataTagKind> = Vec::new();
+            for source in chain {
+                if let Some(k) = source.env_prefix_kind()
+                    && !manual.contains(&k)
+                {
+                    manual.push(k);
+                }
+            }
+            manual.sort_by_key(|k| crate::axis_ordinal(*k));
+            assert_eq!(
+                lifted,
+                manual,
+                "present_env_prefix_kinds must equal the open-coded \
                  contains+sort walk over chain of length {}",
                 chain.len(),
             );
