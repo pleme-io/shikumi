@@ -1582,6 +1582,64 @@ impl ConfigDiff {
     pub fn kind_histogram(&self) -> crate::AxisHistogram<DiffLineKind> {
         crate::axis_histogram(self.lines.iter().map(DiffLine::kind))
     }
+
+    /// The distinct [`DiffLineKind`]s that appear as ≥1 line in this
+    /// diff, in [`DiffLineKind::ALL`] declaration order — the
+    /// diff-altitude dual of "which diff-cell kinds actually surfaced
+    /// in this render".
+    ///
+    /// Routes through [`Self::kind_histogram`]:
+    /// [`crate::AxisHistogram::observed`] iterates the histogram's
+    /// support (the closed-axis cells with nonzero count) in
+    /// [`crate::ClosedAxis::ALL`] declaration order, which is the
+    /// [`DiffLineKind`] canonical order (`Removed → Added → Context`)
+    /// by construction — the closed-axis discipline provides the sort
+    /// + dedup automatically, so this method reads directly off the
+    /// shikumi cube-native primitive instead of hand-rolling
+    /// `Vec::contains` (`O(n·k)` in the line count and distinct-kind
+    /// count) + explicit `sort_by_key(axis_ordinal)` at every operator-
+    /// facing consumer.
+    ///
+    /// The diff-altitude peer of
+    /// [`crate::ProvenanceMap::contributing_tiers`] on the tier
+    /// altitude — both project the observed-support of the underlying
+    /// [`crate::AxisHistogram`] over their local closed axis, both
+    /// live as a `Vec<CellKind>` collect wrapper alongside their
+    /// respective `_histogram()` primitives, and both spell the
+    /// closed-axis declaration-order cell iteration at the API
+    /// boundary.
+    ///
+    /// # Invariants
+    ///
+    /// - `present_kinds().len() ==
+    ///   kind_histogram().distinct_cells()` — both project the same
+    ///   support-cardinality off the histogram.
+    /// - `present_kinds().is_empty() == self.lines.is_empty()` — a
+    ///   diff with no lines has no present kinds; a diff with any
+    ///   line has ≥1 present kind (every line projects to exactly
+    ///   one kind, so the histogram support is nonempty iff the
+    ///   line list is).
+    /// - `!present_kinds().contains(&DiffLineKind::Added) &&
+    ///   !present_kinds().contains(&DiffLineKind::Removed)` iff
+    ///   [`Self::is_empty_diff`] returns `true` — the changed-cell
+    ///   subset of the present set agrees with the structural-change
+    ///   predicate over [`DiffLineKind::is_changed`].
+    /// - `present_kinds()` is sorted strictly ascending by
+    ///   [`crate::axis_ordinal`] on [`DiffLineKind`] — dedup + sort
+    ///   for free from the closed-axis discipline.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the
+    /// support scan). Both are `O(n)` in practice since the diff-cell
+    /// axis carries a fixed three-cell cardinality; the returned
+    /// `Vec<DiffLineKind>` is at most three elements long regardless
+    /// of line count.
+    #[must_use]
+    pub fn present_kinds(&self) -> Vec<DiffLineKind> {
+        self.kind_histogram().observed().collect()
+    }
 }
 
 #[cfg(test)]
@@ -2303,6 +2361,223 @@ mod tests {
                 (DiffLineKind::Context, 1),
             ],
         );
+    }
+
+    // ── ConfigDiff::present_kinds — observed-cells peer of
+    //    ProvenanceMap::contributing_tiers on the diff altitude ──
+
+    #[test]
+    fn present_kinds_matches_kind_histogram_observed_pointwise() {
+        // The observed-support pin: `present_kinds` routes through
+        // `kind_histogram().observed().collect()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops projecting
+        // through the shared cube-native primitive.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Added("a1".into()),
+                    DiffLine::Added("a2".into()),
+                    DiffLine::Context("c1".into()),
+                    DiffLine::Context("c2".into()),
+                    DiffLine::Context("c3".into()),
+                ],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Added("a".into()), DiffLine::Removed("r".into())],
+            },
+        ];
+        for diff in fixtures {
+            let via_direct = diff.present_kinds();
+            let via_histogram: Vec<DiffLineKind> = diff.kind_histogram().observed().collect();
+            assert_eq!(
+                via_direct, via_histogram,
+                "present_kinds must equal kind_histogram().observed().collect() pointwise",
+            );
+        }
+    }
+
+    #[test]
+    fn present_kinds_empty_diff_is_empty() {
+        // The empty-boundary invariant: a diff with no lines has no
+        // present kinds; a diff with any line has ≥1 present kind
+        // (every line projects to exactly one kind). Peer of the same
+        // empty-boundary pin on `ProvenanceMap::contributing_tiers`
+        // and on `ConfigDiff::kind_histogram`.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert!(empty.present_kinds().is_empty());
+        assert_eq!(empty.present_kinds(), Vec::<DiffLineKind>::new());
+
+        let one_line = ConfigDiff {
+            lines: vec![DiffLine::Context("x".into())],
+        };
+        assert!(!one_line.lines.is_empty());
+        assert!(!one_line.present_kinds().is_empty());
+    }
+
+    #[test]
+    fn present_kinds_iterates_in_declaration_order() {
+        // Declaration-order pin: even when the observation order is
+        // Context → Added → Removed (the reverse of ::ALL), the
+        // returned Vec walks the closed axis in canonical
+        // (Removed → Added → Context) order — the closed-axis
+        // discipline provides the sort automatically.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(
+            diff.present_kinds(),
+            vec![
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+                DiffLineKind::Context,
+            ],
+        );
+    }
+
+    #[test]
+    fn present_kinds_dedups_across_repeated_observations() {
+        // Repeated observations of the same kind collapse to one entry
+        // in the returned Vec — the closed-axis discipline provides
+        // dedup automatically. Six lines split (2 removed × 3 added ×
+        // 1 context) yield three present kinds.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Added("a3".into()),
+                DiffLine::Context("c1".into()),
+            ],
+        };
+        assert_eq!(
+            diff.present_kinds(),
+            vec![
+                DiffLineKind::Removed,
+                DiffLineKind::Added,
+                DiffLineKind::Context,
+            ],
+        );
+    }
+
+    #[test]
+    fn present_kinds_context_only_diff_yields_context() {
+        // A diff composed only of context lines has exactly Context
+        // as its present-kinds set — the changed-cell subset is
+        // empty, and `is_empty_diff` returns true concurrently.
+        let ctx_only = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("a".into()),
+                DiffLine::Context("b".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(ctx_only.present_kinds(), vec![DiffLineKind::Context]);
+        assert!(ctx_only.is_empty_diff());
+    }
+
+    #[test]
+    fn present_kinds_distinct_cells_matches_histogram() {
+        // The support-cardinality invariant: `present_kinds().len()`
+        // equals `kind_histogram().distinct_cells()` pointwise. Both
+        // project the observed-cell count off the shared histogram
+        // over the DiffLineKind closed axis. Peer of the same
+        // invariant on `ProvenanceMap::tier_histogram().distinct_cells()
+        // == contributing_tiers().len()`.
+        let fixtures: [ConfigDiff; 4] = [
+            ConfigDiff::default(),
+            ConfigDiff {
+                lines: vec![DiffLine::Context("c".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+            },
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Added("a".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ];
+        for diff in fixtures {
+            assert_eq!(
+                diff.present_kinds().len(),
+                diff.kind_histogram().distinct_cells(),
+                "present_kinds().len() must equal kind_histogram().distinct_cells()",
+            );
+        }
+    }
+
+    #[test]
+    fn present_kinds_changed_subset_agrees_with_is_empty_diff() {
+        // Cross-primitive law: the changed-cell subset of
+        // `present_kinds()` (Added ∪ Removed) is empty iff
+        // `is_empty_diff` returns true. Both surfaces project the
+        // same partition over the DiffLineKind axis (`is_changed`),
+        // so the agreement is structural.
+        let context_only = ConfigDiff {
+            lines: vec![DiffLine::Context("c".into())],
+        };
+        assert!(context_only.is_empty_diff());
+        let changed_in_ctx_only: Vec<DiffLineKind> = context_only
+            .present_kinds()
+            .into_iter()
+            .filter(|k| k.is_changed())
+            .collect();
+        assert!(changed_in_ctx_only.is_empty());
+
+        let with_change = ConfigDiff {
+            lines: vec![DiffLine::Context("c".into()), DiffLine::Added("a".into())],
+        };
+        assert!(!with_change.is_empty_diff());
+        let changed_in_mixed: Vec<DiffLineKind> = with_change
+            .present_kinds()
+            .into_iter()
+            .filter(|k| k.is_changed())
+            .collect();
+        assert!(!changed_in_mixed.is_empty());
+        assert!(changed_in_mixed.contains(&DiffLineKind::Added));
+    }
+
+    #[test]
+    fn present_kinds_is_strictly_ascending_by_axis_ordinal() {
+        // Structural-sort pin: the returned Vec is strictly ascending
+        // by `crate::axis_ordinal` on DiffLineKind — dedup + sort for
+        // free from the closed-axis discipline. Every consecutive pair
+        // in the returned Vec has strictly increasing axis ordinal.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c".into()),
+                DiffLine::Removed("r".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Removed("r2".into()),
+            ],
+        };
+        let present = diff.present_kinds();
+        for window in present.windows(2) {
+            let a = crate::axis_ordinal(window[0]);
+            let b = crate::axis_ordinal(window[1]);
+            assert!(
+                a < b,
+                "present_kinds must be strictly ascending by axis_ordinal, \
+                 but ord({:?})={a} >= ord({:?})={b}",
+                window[0],
+                window[1],
+            );
+        }
     }
 
     #[test]
