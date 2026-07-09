@@ -742,19 +742,98 @@ impl ProvenanceMap {
         self.entries()
     }
 
+    /// Per-tier leaf-count histogram — the shikumi cube-native
+    /// [`AxisHistogram<ConfigTierKind>`][crate::AxisHistogram] view over
+    /// the tier attribution of each resolved leaf. Every leaf's
+    /// [`Provenance::tier`] is one observation on the
+    /// [`ConfigTierKind`] closed axis, so the histogram bucketizes the
+    /// full [`ProvenanceMap`] over the four tier cells (`Bare |
+    /// Discovered | Default | Custom`) in one pass.
+    ///
+    /// One named site closes the "per-tier leaf shape" summary every
+    /// operator-facing consumer previously re-derived inline as
+    /// `let mut n = [0usize; 4]; for prov in map.entries() { n[prov.1
+    /// .tier_ordinal()] += 1; }` at every render/attestation/dashboard
+    /// call site. The tier-level peer of
+    /// [`crate::discovered::LayerAttribution::leaf_counts_by_layer`] on
+    /// the discovered altitude and of
+    /// [`ConfigDiff::kind_histogram`] on the diff altitude — both
+    /// project a per-cell histogram off the underlying attribution over
+    /// their local closed axis, both name the [`crate::AxisHistogram`]
+    /// return type at the API boundary.
+    ///
+    /// # Full [`crate::AxisHistogram`] surface, for free
+    ///
+    /// Because [`ConfigTierKind`] is a [`crate::ClosedAxis`], the
+    /// returned histogram carries the full per-cell / per-axis surface
+    /// [`crate::AxisHistogram`] provides at trait-uniform altitude:
+    /// [`count`][crate::AxisHistogram::count] /
+    /// [`total`][crate::AxisHistogram::total] /
+    /// [`distinct_cells`][crate::AxisHistogram::distinct_cells] /
+    /// [`is_full_cover`][crate::AxisHistogram::is_full_cover] (per-tier
+    /// shape), [`dominant_cell`][crate::AxisHistogram::dominant_cell] /
+    /// [`recessive_cell`][crate::AxisHistogram::recessive_cell] /
+    /// [`peak_count`][crate::AxisHistogram::peak_count] /
+    /// [`trough_count`][crate::AxisHistogram::trough_count]
+    /// (argmax/argmin), [`observed`][crate::AxisHistogram::observed] /
+    /// [`unobserved`][crate::AxisHistogram::unobserved] (support /
+    /// coverage-gap partition),
+    /// [`modality_class`][crate::AxisHistogram::modality_class]
+    /// (multiplicity classification). Operators asking "which tier
+    /// contributed the most surviving leaves?", "was every tier heard
+    /// from?", or "is the surviving-leaf distribution tied at the top?"
+    /// route through the shikumi-native primitive without a per-consumer
+    /// tally.
+    ///
+    /// # Invariants
+    ///
+    /// - `tier_histogram().total() == self.len()` — every leaf projects
+    ///   to exactly one tier, so summing the histogram cells recovers
+    ///   the total leaf count.
+    /// - `tier_histogram().count(t) == self.entries().filter(|(_, p)|
+    ///   p.tier() == t).count()` — the per-tier bucket equals the
+    ///   entries walk restricted to that tier.
+    /// - `tier_histogram().observed().collect::<Vec<_>>() ==
+    ///   self.contributing_tiers()` — the observed-cells iter over the
+    ///   closed axis in declaration order matches
+    ///   [`Self::contributing_tiers`] pointwise (both project the same
+    ///   distinct-tier set in `ConfigTier` precedence order). This is
+    ///   the pin that lets [`Self::contributing_tiers`] route through
+    ///   the histogram without a hand-rolled `Vec::contains` + sort.
+    /// - `tier_histogram().is_empty() == self.is_empty()` — the empty
+    ///   histogram / empty map boundary agrees at both sites.
+    ///
+    /// # Cost
+    ///
+    /// `O(n)` — one pass over `self.inner.values()`, one closed-axis
+    /// ordinal increment per leaf. The backing store is a fixed
+    /// `axis_cardinality::<ConfigTierKind>()`-sized `Vec<usize>` (four
+    /// cells today), so there is no per-leaf allocation and the
+    /// histogram size is constant in the axis cardinality regardless of
+    /// leaf count.
+    #[must_use]
+    pub fn tier_histogram(&self) -> crate::AxisHistogram<ConfigTierKind> {
+        crate::axis_histogram(self.inner.values().map(|prov| prov.tier))
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
+    ///
+    /// Routes through [`Self::tier_histogram`]:
+    /// [`crate::AxisHistogram::observed`] iterates the histogram's
+    /// support (the closed-axis cells with nonzero count) in
+    /// [`crate::ClosedAxis::ALL`] declaration order, which is the
+    /// [`ConfigTier`] precedence order by construction — the closed-
+    /// axis discipline provides the sort + dedup automatically, so this
+    /// method reads directly off the shikumi cube-native primitive
+    /// instead of hand-rolling `Vec::contains` (`O(n·k)`) + explicit
+    /// `sort_by_key(axis_ordinal)`. Pinned by
+    /// `contributing_tiers_matches_tier_histogram_observed` in this
+    /// module's test cohort.
     #[must_use]
     pub fn contributing_tiers(&self) -> Vec<ConfigTierKind> {
-        let mut seen: Vec<ConfigTierKind> = Vec::new();
-        for prov in self.inner.values() {
-            if !seen.contains(&prov.tier) {
-                seen.push(prov.tier);
-            }
-        }
-        seen.sort_by_key(|k| crate::axis_ordinal(*k));
-        seen
+        self.tier_histogram().observed().collect()
     }
 }
 
@@ -2980,6 +3059,141 @@ mod progressive_tests {
         let it = r.provenance().clone().into_iter();
         let (last_path, _) = it.last().unwrap();
         assert_eq!(last_path, vec!["d".to_string()]);
+    }
+
+    // ── ProvenanceMap::tier_histogram — cube-native per-tier
+    //    leaf-count histogram over the ConfigTierKind closed axis ──
+
+    #[test]
+    fn tier_histogram_total_matches_provenance_map_len() {
+        // Every leaf projects to exactly one tier cell, so the histogram
+        // total is the total leaf count verbatim.
+        let r = Prog::resolve_progressive();
+        let hist = r.provenance().tier_histogram();
+        assert_eq!(hist.total(), r.provenance().len());
+        assert_eq!(hist.total(), 4); // Prog has 4 leaves a,b,c,d
+    }
+
+    #[test]
+    fn tier_histogram_per_tier_count_matches_entries_walk() {
+        // Prog fixture: a → Discovered, b → Default, c → Bare, d → Default.
+        // Pin the four per-cell counts through the shikumi cube-native
+        // per-cell lookup, matching the entries-walk group-by verbatim.
+        let r = Prog::resolve_progressive();
+        let hist = r.provenance().tier_histogram();
+        assert_eq!(hist.count(ConfigTierKind::Bare), 1); // c
+        assert_eq!(hist.count(ConfigTierKind::Discovered), 1); // a
+        assert_eq!(hist.count(ConfigTierKind::Default), 2); // b, d
+        assert_eq!(hist.count(ConfigTierKind::Custom), 0); // no operator overlay
+        // The trait-uniform equality against the entries-walk group-by,
+        // as documented in the doc-comment invariant table.
+        for tier in ConfigTierKind::ALL.iter().copied() {
+            let manual = r
+                .provenance()
+                .entries()
+                .filter(|(_, p)| p.tier() == tier)
+                .count();
+            assert_eq!(
+                hist.count(tier),
+                manual,
+                "per-tier bucket must equal manual entries-walk tally on {tier:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_histogram_observed_matches_contributing_tiers_in_precedence_order() {
+        // The pin that lets `contributing_tiers` route through the
+        // histogram instead of hand-rolling `Vec::contains` + sort:
+        // `observed()` yields the histogram's support in closed-axis
+        // declaration order, which is `ConfigTier` precedence order.
+        let r = Prog::resolve_progressive();
+        let observed: Vec<ConfigTierKind> = r.provenance().tier_histogram().observed().collect();
+        assert_eq!(observed, r.provenance().contributing_tiers());
+        assert_eq!(
+            observed,
+            vec![
+                ConfigTierKind::Bare,
+                ConfigTierKind::Discovered,
+                ConfigTierKind::Default,
+            ],
+        );
+    }
+
+    #[test]
+    fn contributing_tiers_matches_tier_histogram_observed() {
+        // The reverse pin: after routing `contributing_tiers` through
+        // `tier_histogram().observed().collect()`, the two seams stay
+        // pointwise equivalent under every fixture in this module.
+        for provenance_map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram: Vec<ConfigTierKind> =
+                provenance_map.tier_histogram().observed().collect();
+            assert_eq!(provenance_map.contributing_tiers(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn tier_histogram_dominant_cell_names_widest_tier() {
+        // In the Prog fixture Default wins the most leaves (b + d = 2);
+        // the histogram's argmax picks Default without a per-consumer
+        // scan. The tier-level peer of
+        // `LayerAttribution::dominant_layer` on the discovered algebra.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().tier_histogram().dominant_cell(),
+            Some(ConfigTierKind::Default),
+        );
+    }
+
+    #[test]
+    fn tier_histogram_unobserved_names_the_absent_tiers() {
+        // Prog fixture has no operator overlay, so `Custom` is the sole
+        // unobserved tier cell. The coverage-gap partition on the
+        // shikumi cube-native primitive answers "which tier was never
+        // heard from?" at one named site.
+        let r = Prog::resolve_progressive();
+        let unobserved: Vec<ConfigTierKind> =
+            r.provenance().tier_histogram().unobserved().collect();
+        assert_eq!(unobserved, vec![ConfigTierKind::Custom]);
+    }
+
+    #[test]
+    fn tier_histogram_is_empty_iff_provenance_map_is_empty() {
+        // The empty-boundary invariant: an empty ProvenanceMap yields
+        // the monoid-identity histogram, and vice versa. Peer of the
+        // `ConfigDiff::kind_histogram` empty-boundary law on the diff
+        // altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert!(empty.tier_histogram().is_empty());
+        assert_eq!(empty.tier_histogram().total(), 0);
+        assert_eq!(empty.contributing_tiers(), Vec::<ConfigTierKind>::new());
+
+        let r = Prog::resolve_progressive();
+        assert!(!r.provenance().is_empty());
+        assert!(!r.provenance().tier_histogram().is_empty());
+    }
+
+    #[test]
+    fn tier_histogram_distinct_cells_matches_contributing_tiers_len() {
+        // The support-cardinality invariant on the histogram's
+        // support-vs-total partition: distinct_cells equals the number
+        // of contributing tiers. Any future re-implementation of either
+        // seam must keep this equality — pinned uniformly.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.tier_histogram().distinct_cells(),
+                map.contributing_tiers().len(),
+            );
+        }
     }
 
     // ── Nested per-leaf attribution ──
