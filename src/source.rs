@@ -1002,6 +1002,112 @@ pub trait ConfigSourceChain {
         self.file_format_histogram().unobserved().collect()
     }
 
+    /// The [`crate::discovery::Format`] whose entries produced the greatest
+    /// number of recognized-extension file layers on this chain — the modal
+    /// cell of [`Self::file_format_histogram`] on the chain altitude. `None`
+    /// exactly when the histogram is empty (no chain entry projects through
+    /// [`ConfigSource::file_format`] to a recognized format).
+    ///
+    /// Routes through [`Self::file_format_histogram`]:
+    /// [`crate::AxisHistogram::dominant_cell`] picks the argmax cell in
+    /// [`crate::ClosedAxis::ALL`] declaration order, which is the
+    /// [`crate::discovery::Format`] canonical order
+    /// (`Yaml → Toml → Lisp → Nix`) by construction — the closed-axis
+    /// discipline provides deterministic tie-breaking automatically, so
+    /// this method reads directly off the shikumi cube-native primitive
+    /// instead of hand-rolling
+    /// `hist.iter().filter(|&(_, c)| c > 0).max_by_key(|&(_, c)| c).map(|(v, _)| v)`
+    /// — the inline `max_by_key` form silently picks the *last* tied cell
+    /// (per [`Iterator::max_by_key`]'s contract), so two consumers reading
+    /// "the dominant file format" off the same chain would disagree under
+    /// ties unless every one carefully reversed the comparison. The lift
+    /// names the scalar at one site with a documented tie-breaking rule.
+    ///
+    /// The chain-altitude scalar-mode peer of [`Self::present_file_formats`]
+    /// (the observed-cells vector peer) and [`Self::absent_file_formats`]
+    /// (the coverage-gap vector peer): the file-format sub-axis of the
+    /// chain-shape surface now carries the natural triple of "*which*
+    /// formats surfaced" / "*which* formats didn't" / "*which single*
+    /// format dominated" projections at one named seam each, over the
+    /// shared [`Self::file_format_histogram`] primitive. Direct sister of
+    /// [`Self::dominant_layer_kind`] on the same chain altitude one sub-
+    /// axis over — with this lift two of the three chain-shape sub-axes
+    /// close the scalar-mode dominance peer at one named
+    /// `Option<CellKind>` seam alongside the observed / coverage-gap
+    /// vector-mode pair; only the env-prefix-presence sub-axis
+    /// ([`Self::dominant_env_prefix_kind`]) still awaits its dominance
+    /// peer.
+    ///
+    /// Operator-facing consumers answering *"which file format dominated
+    /// this chain?"* — the CLI `config-show` summary headlining
+    /// *"YAML loaders dominate: 3 of 4 files"* to explain why the recipe
+    /// is yaml-heavy, the attestation manifest recording the modal format
+    /// between two `ProviderChain` snapshots, the alerting policy reading
+    /// *"format dominance: Toml"* to flag a migration window where a
+    /// yaml-first recipe drifted toml-first — now route through this
+    /// named seam instead of a per-consumer `max_by_key` walk.
+    ///
+    /// **Tie-breaking is deterministic by declaration order.** When
+    /// multiple formats share the maximum file-layer count, the format
+    /// earliest in [`crate::discovery::Format::ALL`] wins — the same
+    /// [`crate::discovery::Format`] canonical order
+    /// [`Self::present_file_formats`] and [`Self::absent_file_formats`]
+    /// walk. A uniform-cover chain (each format producing the same
+    /// nonzero file-layer count) therefore reports
+    /// `Some(crate::discovery::Format::Yaml)` — the first cell in
+    /// declaration order — pointwise stable regardless of the insertion
+    /// order of individual file layers into the chain slice.
+    ///
+    /// # Invariants
+    ///
+    /// - `dominant_file_format().is_some() ==
+    ///   !file_format_histogram().is_empty()` — unlike
+    ///   [`Self::dominant_layer_kind`], the presence bound is *not*
+    ///   `!self.as_ref().is_empty()`: [`ConfigSource::Defaults`] /
+    ///   [`ConfigSource::Env`] / unrecognized-extension
+    ///   [`ConfigSource::File`] entries all project to [`None`] through
+    ///   [`ConfigSource::file_format`], so the histogram is empty even on
+    ///   a non-empty chain when no `File` entry carries a recognized
+    ///   extension.
+    /// - `dominant_file_format() == file_format_histogram().dominant_cell()`
+    ///   — both project the same modal cell off the same primitive; the
+    ///   named seam is the cube-native routing of the chain-shape surface.
+    /// - When `Some(f)`, `f` is a member of `present_file_formats()` —
+    ///   the modal cell is by definition observed.
+    /// - When `Some(f)`, `f` is **not** a member of `absent_file_formats()`
+    ///   — the observed / coverage-gap partition is disjoint.
+    /// - `file_format_histogram().count(dominant_file_format().unwrap()) ==
+    ///   file_format_histogram().peak_count()` whenever the histogram is
+    ///   non-empty — the modal cell carries the peak observation count.
+    ///   Peer to the `(dominant_cell, peak_count)` modal pair invariant
+    ///   on [`crate::AxisHistogram`].
+    /// - `dominant_file_format()` on a uniform full-cover chain (one file
+    ///   layer per format) equals
+    ///   `Some(crate::discovery::Format::Yaml)` — declaration-order
+    ///   tie-breaking on the four-cell axis picks the first cell.
+    /// - `dominant_file_format()` on an empty chain equals `None` — the
+    ///   empty-chain / empty-histogram boundary.
+    /// - `dominant_file_format()` on a chain of only
+    ///   [`ConfigSource::Defaults`] / [`ConfigSource::Env`] /
+    ///   unrecognized-extension [`ConfigSource::File`] layers equals
+    ///   `None` — the non-empty-chain / empty-histogram boundary the
+    ///   file-format sub-axis pins that the layer-kind sub-axis does not.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the argmax scan). Both are `O(n)` in practice since the
+    /// file-format axis carries a fixed four-cell cardinality; the
+    /// returned `Option<crate::discovery::Format>` reads one cell.
+    #[must_use]
+    fn dominant_file_format(&self) -> Option<crate::discovery::Format>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().dominant_cell()
+    }
+
     /// Dense per-env-prefix-presence tally of the chain's
     /// [`ConfigSource::Env`] layers over the [`EnvMetadataTagKind`] axis
     /// — the typed histogram every attestation manifest, structured-log
@@ -4323,6 +4429,396 @@ mod tests {
                  coverage-gap walk over chain of length {}",
                 chain.len(),
             );
+        }
+    }
+
+    // ---- ConfigSourceChain::dominant_file_format — modal-cell scalar
+    //      peer of file_format_histogram on the chain-shape altitude ----
+
+    #[test]
+    fn dominant_file_format_matches_file_format_histogram_dominant_cell_pointwise() {
+        // The modal-cell pin: `dominant_file_format` routes through
+        // `file_format_histogram().dominant_cell()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Sister of
+        // `dominant_layer_kind_matches_layer_kind_histogram_dominant_cell_pointwise`
+        // one sub-axis over on the same chain altitude.
+        let fixtures: [Vec<ConfigSource>; 7] = [
+            Vec::new(),
+            sample_chain(),
+            vec![ConfigSource::Defaults, ConfigSource::Env(String::new())],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.nix")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.unknown")),
+                ConfigSource::File(PathBuf::from("/b")),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.nix")),
+                ConfigSource::File(PathBuf::from("/b.lisp")),
+                ConfigSource::File(PathBuf::from("/c.nix")),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+        ];
+        for chain in &fixtures {
+            let via_histogram = chain.as_slice().file_format_histogram().dominant_cell();
+            assert_eq!(chain.as_slice().dominant_file_format(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn dominant_file_format_sample_chain_is_yaml() {
+        // Direct pin against `sample_chain()`: two `.yaml` file layers +
+        // one Env layer. Yaml is uniquely dominant with 2 of 2 recognized
+        // file layers (Env layers don't contribute to the file-format
+        // histogram). Sister of `dominant_layer_kind_sample_chain_is_file`
+        // one sub-axis over on the same named fixture.
+        use crate::discovery::Format;
+        let chain = sample_chain();
+        assert_eq!(chain.as_slice().dominant_file_format(), Some(Format::Yaml));
+    }
+
+    #[test]
+    fn dominant_file_format_toml_majority_is_toml() {
+        // Direct pin against a toml-majority chain: three `.toml` file
+        // layers + one `.yaml` + one Env + one Defaults. Toml is uniquely
+        // dominant with 3 of 4 recognized file layers. Cross-verified
+        // against `hist.count(Toml) == hist.peak_count() == 3`. Sister of
+        // `dominant_layer_kind_env_majority_is_env` one sub-axis over.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.dominant_file_format(), Some(Format::Toml));
+        let hist = slice.file_format_histogram();
+        assert_eq!(hist.count(Format::Toml), 3);
+        assert_eq!(hist.peak_count(), 3);
+    }
+
+    #[test]
+    fn dominant_file_format_empty_chain_is_none() {
+        // The empty-chain / `None` boundary — every chain-level histogram
+        // over an empty chain is the all-zero histogram, so
+        // `dominant_cell` reads `None`. Peer of
+        // `dominant_layer_kind_empty_chain_is_none` on the same chain
+        // altitude one sub-axis over.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.dominant_file_format(), None);
+    }
+
+    #[test]
+    fn dominant_file_format_no_recognized_files_is_none() {
+        // The non-empty-chain / empty-histogram boundary the file-format
+        // sub-axis pins that the layer-kind sub-axis does *not*. A chain
+        // of only `Defaults` / `Env` / unrecognized-extension `File`
+        // layers is non-empty but has no `Some` file_format projection,
+        // so the histogram is empty and `dominant_file_format` reads
+        // `None`. Distinguishing pin against a mis-implementation that
+        // would confuse `!self.as_ref().is_empty()` (the layer-kind sub-
+        // axis's presence bound) with the file-format sub-axis's
+        // (`!file_format_histogram().is_empty()`).
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            assert!(!chain.is_empty(), "fixture must be non-empty");
+            assert!(
+                chain.as_slice().file_format_histogram().is_empty(),
+                "fixture must have empty file-format histogram",
+            );
+            assert_eq!(chain.as_slice().dominant_file_format(), None);
+        }
+    }
+
+    #[test]
+    fn dominant_file_format_is_some_iff_histogram_is_nonempty() {
+        // Structural completeness of the
+        // `(file_format_histogram().is_empty(), dominant_file_format)`
+        // cross-surface pair. Unlike `dominant_layer_kind`, the presence
+        // bound is the sub-axis histogram's `is_empty()` — a non-empty
+        // chain can still have an empty file-format histogram (only
+        // `Defaults` / `Env` / unrecognized `File` layers). Sister of
+        // `dominant_layer_kind_is_some_iff_chain_is_nonempty` one sub-
+        // axis over with the correct sub-axis presence bound.
+        let fixtures: [Vec<ConfigSource>; 6] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.toml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.unknown")),
+                ConfigSource::File(PathBuf::from("/b")),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().dominant_file_format().is_some(),
+                !chain.as_slice().file_format_histogram().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_file_format_is_member_of_present_file_formats() {
+        // Structural pin: whenever `dominant_file_format()` is
+        // `Some(f)`, `f` is a member of the observed-cells vector peer.
+        // The modal cell is by definition observed. Sister of
+        // `dominant_layer_kind_is_member_of_present_layer_kinds` one
+        // sub-axis over.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            sample_chain(),
+            vec![
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.nix")),
+                ConfigSource::File(PathBuf::from("/b.nix")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+        ];
+        for chain in &fixtures {
+            let dominant = chain
+                .as_slice()
+                .dominant_file_format()
+                .expect("non-empty file-format histogram has a dominant format");
+            let present = chain.as_slice().present_file_formats();
+            assert!(
+                present.contains(&dominant),
+                "dominant file format {dominant:?} must appear in \
+                 present_file_formats() = {present:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_file_format_is_not_member_of_absent_file_formats() {
+        // Structural pin: whenever `dominant_file_format()` is
+        // `Some(f)`, `f` is NOT a member of the coverage-gap vector
+        // peer — the observed / coverage-gap partition is disjoint,
+        // so the modal (observed) cell is disjoint from the coverage
+        // gap. Sister of `dominant_layer_kind_is_not_member_of_absent_layer_kinds`
+        // one sub-axis over.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            sample_chain(),
+            vec![
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.nix")),
+                ConfigSource::File(PathBuf::from("/b.nix")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+        ];
+        for chain in &fixtures {
+            let dominant = chain
+                .as_slice()
+                .dominant_file_format()
+                .expect("non-empty file-format histogram has a dominant format");
+            let absent = chain.as_slice().absent_file_formats();
+            assert!(
+                !absent.contains(&dominant),
+                "dominant file format {dominant:?} must NOT appear in \
+                 absent_file_formats() = {absent:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_file_format_count_equals_peak_count_on_nonempty_histogram() {
+        // The `(dominant_cell, peak_count)` modal-pair pin:
+        // `hist.count(dominant_file_format().unwrap()) ==
+        // hist.peak_count()` on every chain whose file-format histogram
+        // is non-empty. Sister of
+        // `dominant_layer_kind_count_equals_peak_count_on_nonempty_chain`
+        // one sub-axis over with the sub-axis's presence bound.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            sample_chain(),
+            vec![
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.nix")),
+                ConfigSource::File(PathBuf::from("/b.nix")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+        ];
+        for chain in &fixtures {
+            let hist = chain.as_slice().file_format_histogram();
+            let dominant = chain
+                .as_slice()
+                .dominant_file_format()
+                .expect("non-empty file-format histogram has a dominant format");
+            assert_eq!(hist.count(dominant), hist.peak_count());
+        }
+    }
+
+    #[test]
+    fn dominant_file_format_uniform_full_cover_picks_yaml() {
+        // Uniform full-cover chain — one file layer of each format (all
+        // four cells tied at count 1). The declaration-order tiebreak on
+        // `Format::ALL` (`Yaml → Toml → Lisp → Nix`) picks the FIRST
+        // tied cell — `Yaml` — not the LAST that `Iterator::max_by_key`
+        // would return. Sister of
+        // `dominant_layer_kind_ties_broken_by_declaration_order` /
+        // `dominant_layer_kind_uniform_cover_picks_first_cell` one sub-
+        // axis over.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.nix")),
+            ConfigSource::File(PathBuf::from("/b.lisp")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.yaml")),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.file_format_histogram();
+        assert!(hist.is_full_cover());
+        assert_eq!(hist.count(Format::Yaml), 1);
+        assert_eq!(hist.count(Format::Toml), 1);
+        assert_eq!(hist.count(Format::Lisp), 1);
+        assert_eq!(hist.count(Format::Nix), 1);
+        assert_eq!(hist.peak_count(), 1);
+        assert_eq!(slice.dominant_file_format(), Some(Format::Yaml));
+    }
+
+    #[test]
+    fn dominant_file_format_two_way_tie_picks_earliest_declared_observed_cell() {
+        // Two-way tie between cells that are NOT the first cell of
+        // `Format::ALL`: 2 Toml + 2 Lisp, zero Yaml + zero Nix. Toml
+        // wins because it is earlier in `ALL` than Lisp — the tiebreak
+        // is "earliest tied observed cell", not "first cell of `ALL`
+        // regardless of observation" (Yaml appears in `ALL` before Toml
+        // but has zero count, so it doesn't participate in the tie).
+        // Distinguishing pin against a mis-implementation that would
+        // return `Yaml` (the first cell of `ALL`) instead of `Toml`
+        // (the first tied observed cell). Sister of
+        // `dominant_layer_kind_two_way_tie_picks_earliest_declared_observed_cell`
+        // one sub-axis over.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.lisp")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.toml")),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.file_format_histogram();
+        assert_eq!(hist.count(Format::Yaml), 0);
+        assert_eq!(hist.count(Format::Toml), 2);
+        assert_eq!(hist.count(Format::Lisp), 2);
+        assert_eq!(hist.count(Format::Nix), 0);
+        assert_eq!(slice.dominant_file_format(), Some(Format::Toml));
+    }
+
+    #[test]
+    fn dominant_file_format_agrees_with_open_coded_argmax_walk() {
+        // Parity against the exact fold-forward argmax walk this lift
+        // replaces — spelling the declaration-order tiebreak explicitly
+        // with strict `>` inequality so the FIRST tied cell wins,
+        // mirroring `AxisHistogram::dominant_cell` rather than
+        // `max_by_key`'s LAST-tied-cell semantics. Sister of
+        // `dominant_layer_kind_agrees_with_open_coded_argmax_walk` one
+        // sub-axis over.
+        use crate::discovery::Format;
+        let chains = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.toml")),
+                ConfigSource::File(PathBuf::from("/d.lisp")),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.lisp")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.toml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.nix")),
+                ConfigSource::File(PathBuf::from("/b.lisp")),
+                ConfigSource::File(PathBuf::from("/c.toml")),
+                ConfigSource::File(PathBuf::from("/d.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.unknown")),
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &chains {
+            let hist = chain.as_slice().file_format_histogram();
+            let mut manual: Option<(Format, usize)> = None;
+            for cell in Format::ALL.iter().copied() {
+                let count = hist.count(cell);
+                if count == 0 {
+                    continue;
+                }
+                match manual {
+                    None => manual = Some((cell, count)),
+                    Some((_, best)) if count > best => manual = Some((cell, count)),
+                    _ => {}
+                }
+            }
+            let via_seam = chain.as_slice().dominant_file_format();
+            assert_eq!(via_seam, manual.map(|(cell, _)| cell));
         }
     }
 
