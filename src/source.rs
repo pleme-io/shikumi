@@ -1342,6 +1342,118 @@ pub trait ConfigSourceChain {
     {
         self.env_prefix_kind_histogram().unobserved().collect()
     }
+
+    /// The [`EnvMetadataTagKind`] whose entries produced the greatest number
+    /// of contributing [`ConfigSource::Env`] layers on this chain — the modal
+    /// cell of [`Self::env_prefix_kind_histogram`] on the chain altitude.
+    /// `None` exactly when the histogram is empty (the chain holds no `Env`
+    /// entries).
+    ///
+    /// Routes through [`Self::env_prefix_kind_histogram`]:
+    /// [`crate::AxisHistogram::dominant_cell`] picks the argmax cell in
+    /// [`crate::ClosedAxis::ALL`] declaration order, which is the
+    /// [`EnvMetadataTagKind`] canonical order (`Prefixed → Bare`) by
+    /// construction — the closed-axis discipline provides deterministic
+    /// tie-breaking automatically, so this method reads directly off the
+    /// shikumi cube-native primitive instead of hand-rolling
+    /// `hist.iter().filter(|&(_, c)| c > 0).max_by_key(|&(_, c)| c).map(|(v, _)| v)`
+    /// — the inline `max_by_key` form silently picks the *last* tied cell
+    /// (per [`Iterator::max_by_key`]'s contract), so two consumers reading
+    /// "the dominant env-prefix kind" off the same chain would disagree
+    /// under ties unless every one carefully reversed the comparison. The
+    /// lift names the scalar at one site with a documented tie-breaking
+    /// rule.
+    ///
+    /// The chain-altitude scalar-mode peer of
+    /// [`Self::present_env_prefix_kinds`] (the observed-cells vector peer)
+    /// and [`Self::absent_env_prefix_kinds`] (the coverage-gap vector peer):
+    /// the env-prefix-presence sub-axis of the chain-shape surface now
+    /// carries the natural triple of "*which* prefix kinds surfaced" /
+    /// "*which* prefix kinds didn't" / "*which single* prefix kind
+    /// dominated" projections at one named seam each, over the shared
+    /// [`Self::env_prefix_kind_histogram`] primitive. Direct sister of
+    /// [`Self::dominant_layer_kind`] and [`Self::dominant_file_format`] on
+    /// the same chain altitude one sub-axis over — with this lift all
+    /// three chain-shape sub-axes close the scalar-mode dominance peer at
+    /// one named `Option<CellKind>` seam alongside the observed /
+    /// coverage-gap vector-mode pair. The three natural triples now sit
+    /// side by side at three named seams each across the three chain-shape
+    /// sub-axes (layer-kind, file-format, env-prefix-presence), matching
+    /// the closed triples on the tier altitude
+    /// (`contributing_tiers` / `absent_tiers` / `dominant_tier`) and the
+    /// diff altitude (`present_kinds` / `absent_kinds` / `dominant_kind`).
+    ///
+    /// Operator-facing consumers answering *"which env-prefix kind dominated
+    /// this chain?"* — the CLI `config-show` summary headlining *"prefixed
+    /// env layers dominate: 3 of 4"* to explain why the recipe is
+    /// prefix-scoped, the attestation manifest recording the modal
+    /// env-prefix kind between two `ProviderChain` snapshots, the alerting
+    /// policy reading *"env-prefix dominance: Bare"* to flag a rebuild
+    /// window where `figment::providers::Env::raw()` layers swamped the
+    /// prefixed set — now route through this named seam instead of a
+    /// per-consumer `max_by_key` walk.
+    ///
+    /// **Tie-breaking is deterministic by declaration order.** When both
+    /// env-prefix kinds share the maximum env-layer count, the kind
+    /// earliest in [`EnvMetadataTagKind::ALL`] wins — the same
+    /// [`EnvMetadataTagKind`] canonical order
+    /// [`Self::present_env_prefix_kinds`] and
+    /// [`Self::absent_env_prefix_kinds`] walk. A uniform full-cover chain
+    /// (one `Env` layer per kind — one bare + one prefixed) therefore
+    /// reports `Some(EnvMetadataTagKind::Prefixed)` — the first cell in
+    /// declaration order — pointwise stable regardless of the insertion
+    /// order of individual env layers into the chain slice.
+    ///
+    /// # Invariants
+    ///
+    /// - `dominant_env_prefix_kind().is_some() ==
+    ///   !env_prefix_kind_histogram().is_empty()` — like
+    ///   [`Self::dominant_file_format`] and unlike
+    ///   [`Self::dominant_layer_kind`], the presence bound is *not*
+    ///   `!self.as_ref().is_empty()`: [`ConfigSource::Defaults`] /
+    ///   [`ConfigSource::File`] entries all project to [`None`] through
+    ///   [`ConfigSource::env_prefix_kind`], so the histogram is empty even
+    ///   on a non-empty chain when no `Env` entry contributes.
+    /// - `dominant_env_prefix_kind() ==
+    ///   env_prefix_kind_histogram().dominant_cell()` — both project the
+    ///   same modal cell off the same primitive; the named seam is the
+    ///   cube-native routing of the chain-shape surface.
+    /// - When `Some(k)`, `k` is a member of `present_env_prefix_kinds()` —
+    ///   the modal cell is by definition observed.
+    /// - When `Some(k)`, `k` is **not** a member of
+    ///   `absent_env_prefix_kinds()` — the observed / coverage-gap
+    ///   partition is disjoint.
+    /// - `env_prefix_kind_histogram().count(dominant_env_prefix_kind().unwrap())
+    ///   == env_prefix_kind_histogram().peak_count()` whenever the
+    ///   histogram is non-empty — the modal cell carries the peak
+    ///   observation count. Peer to the `(dominant_cell, peak_count)`
+    ///   modal pair invariant on [`crate::AxisHistogram`].
+    /// - `dominant_env_prefix_kind()` on a uniform full-cover chain (one
+    ///   `Env` layer per kind) equals `Some(EnvMetadataTagKind::Prefixed)`
+    ///   — declaration-order tie-breaking on the two-cell axis picks the
+    ///   first cell.
+    /// - `dominant_env_prefix_kind()` on an empty chain equals `None` —
+    ///   the empty-chain / empty-histogram boundary.
+    /// - `dominant_env_prefix_kind()` on a chain of only
+    ///   [`ConfigSource::Defaults`] / [`ConfigSource::File`] layers equals
+    ///   `None` — the non-empty-chain / empty-histogram boundary the
+    ///   env-prefix-presence sub-axis pins that the layer-kind sub-axis
+    ///   does not.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<EnvMetadataTagKind>()` (the
+    /// argmax scan). Both are `O(n)` in practice since the env-prefix-
+    /// presence axis carries a fixed two-cell cardinality; the returned
+    /// `Option<EnvMetadataTagKind>` reads one cell.
+    #[must_use]
+    fn dominant_env_prefix_kind(&self) -> Option<EnvMetadataTagKind>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().dominant_cell()
+    }
 }
 
 impl ConfigSourceChain for [ConfigSource] {
@@ -5522,6 +5634,438 @@ mod tests {
                  coverage-gap walk over chain of length {}",
                 chain.len(),
             );
+        }
+    }
+
+    // ---- ConfigSourceChain::dominant_env_prefix_kind — modal-cell
+    //      scalar peer of env_prefix_kind_histogram on the chain-shape
+    //      altitude ----
+
+    #[test]
+    fn dominant_env_prefix_kind_matches_env_prefix_kind_histogram_dominant_cell_pointwise() {
+        // The modal-cell pin: `dominant_env_prefix_kind` routes through
+        // `env_prefix_kind_histogram().dominant_cell()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Sister of
+        // `dominant_file_format_matches_file_format_histogram_dominant_cell_pointwise`
+        // and `dominant_layer_kind_matches_layer_kind_histogram_dominant_cell_pointwise`
+        // one sub-axis over on the same chain altitude.
+        let fixtures: [Vec<ConfigSource>; 7] = [
+            Vec::new(),
+            sample_chain(),
+            vec![ConfigSource::Defaults, ConfigSource::Env(String::new())],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env("TOBIRA_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Defaults,
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.nix")),
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env("TOBIRA_".to_owned()),
+                ConfigSource::Env(String::new()),
+            ],
+        ];
+        for chain in &fixtures {
+            let via_histogram = chain.as_slice().env_prefix_kind_histogram().dominant_cell();
+            assert_eq!(
+                chain.as_slice().dominant_env_prefix_kind(),
+                via_histogram,
+                "dominant_env_prefix_kind must equal \
+                 env_prefix_kind_histogram().dominant_cell() over \
+                 chain of length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_env_prefix_kind_sample_chain_is_prefixed() {
+        // Direct pin against `sample_chain()`: two file layers + one Env
+        // layer with a prefixed name (`"APP_"`). Prefixed is uniquely
+        // dominant with 1 of 1 env layer (file/defaults layers don't
+        // contribute to the env-prefix-presence histogram). Sister of
+        // `dominant_file_format_sample_chain_is_yaml` and
+        // `dominant_layer_kind_sample_chain_is_file` one sub-axis over on
+        // the same named fixture.
+        let chain = sample_chain();
+        assert_eq!(
+            chain.as_slice().dominant_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+    }
+
+    #[test]
+    fn dominant_env_prefix_kind_bare_majority_is_bare() {
+        // Direct pin against a bare-majority chain: three bare env layers
+        // + one prefixed + one file + one Defaults. Bare is uniquely
+        // dominant with 3 of 4 env layers. Cross-verified against
+        // `hist.count(Bare) == hist.peak_count() == 3`. Sister of
+        // `dominant_file_format_toml_majority_is_toml` and
+        // `dominant_layer_kind_env_majority_is_env` one sub-axis over.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(
+            slice.dominant_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Bare),
+        );
+        let hist = slice.env_prefix_kind_histogram();
+        assert_eq!(hist.count(EnvMetadataTagKind::Bare), 3);
+        assert_eq!(hist.peak_count(), 3);
+    }
+
+    #[test]
+    fn dominant_env_prefix_kind_empty_chain_is_none() {
+        // The empty-chain / `None` boundary — every chain-level histogram
+        // over an empty chain is the all-zero histogram, so
+        // `dominant_cell` reads `None`. Peer of
+        // `dominant_layer_kind_empty_chain_is_none` and
+        // `dominant_file_format_empty_chain_is_none` on the same chain
+        // altitude one sub-axis over.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.dominant_env_prefix_kind(), None);
+    }
+
+    #[test]
+    fn dominant_env_prefix_kind_no_env_layers_is_none() {
+        // The non-empty-chain / empty-histogram boundary the env-prefix-
+        // presence sub-axis pins that the layer-kind sub-axis does *not*.
+        // A chain of only `Defaults` / `File` layers is non-empty but has
+        // no `Some` env_prefix_kind projection, so the histogram is empty
+        // and `dominant_env_prefix_kind` reads `None`. Distinguishing pin
+        // against a mis-implementation that would confuse
+        // `!self.as_ref().is_empty()` (the layer-kind sub-axis's presence
+        // bound) with the env-prefix-presence sub-axis's
+        // (`!env_prefix_kind_histogram().is_empty()`). Sister of
+        // `dominant_file_format_no_recognized_files_is_none` one sub-
+        // axis over with the env-prefix-presence sub-axis's precise
+        // presence bound.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.lisp")),
+                ConfigSource::File(PathBuf::from("/b.nix")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            assert!(!chain.is_empty(), "fixture must be non-empty");
+            assert!(
+                chain.as_slice().env_prefix_kind_histogram().is_empty(),
+                "fixture must have empty env-prefix-kind histogram",
+            );
+            assert_eq!(chain.as_slice().dominant_env_prefix_kind(), None);
+        }
+    }
+
+    #[test]
+    fn dominant_env_prefix_kind_is_some_iff_histogram_is_nonempty() {
+        // Structural completeness of the
+        // `(env_prefix_kind_histogram().is_empty(), dominant_env_prefix_kind)`
+        // cross-surface pair. Like `dominant_file_format` and unlike
+        // `dominant_layer_kind`, the presence bound is the sub-axis
+        // histogram's `is_empty()` — a non-empty chain can still have an
+        // empty env-prefix-kind histogram (only `Defaults` / `File`
+        // layers). Sister of
+        // `dominant_file_format_is_some_iff_histogram_is_nonempty` one
+        // sub-axis over with the env-prefix-presence sub-axis's precise
+        // presence bound.
+        let fixtures: [Vec<ConfigSource>; 6] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![ConfigSource::Env(String::new())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.toml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().dominant_env_prefix_kind().is_some(),
+                !chain.as_slice().env_prefix_kind_histogram().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_env_prefix_kind_is_member_of_present_env_prefix_kinds() {
+        // Structural pin: whenever `dominant_env_prefix_kind()` is
+        // `Some(k)`, `k` is a member of the observed-cells vector peer.
+        // The modal cell is by definition observed. Sister of
+        // `dominant_file_format_is_member_of_present_file_formats` and
+        // `dominant_layer_kind_is_member_of_present_layer_kinds` one
+        // sub-axis over.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            sample_chain(),
+            vec![
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env("TOBIRA_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env(String::new()),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+        ];
+        for chain in &fixtures {
+            let dominant = chain
+                .as_slice()
+                .dominant_env_prefix_kind()
+                .expect("non-empty env-prefix-kind histogram has a dominant kind");
+            let present = chain.as_slice().present_env_prefix_kinds();
+            assert!(
+                present.contains(&dominant),
+                "dominant env-prefix kind {dominant:?} must appear in \
+                 present_env_prefix_kinds() = {present:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_env_prefix_kind_is_not_member_of_absent_env_prefix_kinds() {
+        // Structural pin: whenever `dominant_env_prefix_kind()` is
+        // `Some(k)`, `k` is NOT a member of the coverage-gap vector peer
+        // — the observed / coverage-gap partition is disjoint, so the
+        // modal (observed) cell is disjoint from the coverage gap.
+        // Sister of `dominant_file_format_is_not_member_of_absent_file_formats`
+        // and `dominant_layer_kind_is_not_member_of_absent_layer_kinds`
+        // one sub-axis over.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            sample_chain(),
+            vec![
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env("TOBIRA_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env(String::new()),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+        ];
+        for chain in &fixtures {
+            let dominant = chain
+                .as_slice()
+                .dominant_env_prefix_kind()
+                .expect("non-empty env-prefix-kind histogram has a dominant kind");
+            let absent = chain.as_slice().absent_env_prefix_kinds();
+            assert!(
+                !absent.contains(&dominant),
+                "dominant env-prefix kind {dominant:?} must NOT appear \
+                 in absent_env_prefix_kinds() = {absent:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_env_prefix_kind_count_equals_peak_count_on_nonempty_histogram() {
+        // The `(dominant_cell, peak_count)` modal-pair pin:
+        // `hist.count(dominant_env_prefix_kind().unwrap()) ==
+        // hist.peak_count()` on every chain whose env-prefix-kind
+        // histogram is non-empty. Sister of
+        // `dominant_file_format_count_equals_peak_count_on_nonempty_histogram`
+        // one sub-axis over with the sub-axis's presence bound.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            sample_chain(),
+            vec![
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env("TOBIRA_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env(String::new()),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env("TOBIRA_".to_owned()),
+            ],
+        ];
+        for chain in &fixtures {
+            let hist = chain.as_slice().env_prefix_kind_histogram();
+            let dominant = chain
+                .as_slice()
+                .dominant_env_prefix_kind()
+                .expect("non-empty env-prefix-kind histogram has a dominant kind");
+            assert_eq!(hist.count(dominant), hist.peak_count());
+        }
+    }
+
+    #[test]
+    fn dominant_env_prefix_kind_uniform_full_cover_picks_prefixed() {
+        // Uniform full-cover chain — one env layer of each kind (both
+        // cells tied at count 1). The declaration-order tiebreak on
+        // `EnvMetadataTagKind::ALL` (`Prefixed → Bare`) picks the FIRST
+        // tied cell — `Prefixed` — not the LAST that
+        // `Iterator::max_by_key` would return. Sister of
+        // `dominant_file_format_uniform_full_cover_picks_yaml` and
+        // `dominant_layer_kind_uniform_cover_picks_first_cell` one sub-
+        // axis over.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.env_prefix_kind_histogram();
+        assert!(hist.is_full_cover());
+        assert_eq!(hist.count(EnvMetadataTagKind::Prefixed), 1);
+        assert_eq!(hist.count(EnvMetadataTagKind::Bare), 1);
+        assert_eq!(hist.peak_count(), 1);
+        assert_eq!(
+            slice.dominant_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+    }
+
+    #[test]
+    fn dominant_env_prefix_kind_uniform_full_cover_is_insertion_order_stable() {
+        // Uniform full-cover chain — one env layer of each kind — but
+        // with insertion order flipped (bare first, prefixed second).
+        // The declaration-order tiebreak on `EnvMetadataTagKind::ALL`
+        // (`Prefixed → Bare`) still picks `Prefixed` because the tiebreak
+        // is off the closed-axis declaration order, NOT the chain's
+        // insertion order. Distinguishing pin against a
+        // mis-implementation that would return the cell whose most
+        // recent occurrence was latest in the chain (which
+        // `Iterator::max_by_key` walking the histogram in some other
+        // order could produce). Sister of the modal-pair-under-insertion-
+        // reorder pin on the other two sub-axes (implicit in their
+        // uniform-full-cover picks, but pinned explicitly here because
+        // the two-cell env-prefix axis surfaces the invariant most
+        // cleanly).
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.env_prefix_kind_histogram();
+        assert!(hist.is_full_cover());
+        assert_eq!(hist.count(EnvMetadataTagKind::Prefixed), 1);
+        assert_eq!(hist.count(EnvMetadataTagKind::Bare), 1);
+        assert_eq!(hist.peak_count(), 1);
+        assert_eq!(
+            slice.dominant_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+    }
+
+    #[test]
+    fn dominant_env_prefix_kind_singleton_bare_chain_is_bare() {
+        // Strict-minority pin on the `Bare` cell: a chain of only bare
+        // env layers (zero prefixed) reports `Some(Bare)` — the ONLY
+        // observed cell wins even though it is not the first cell of
+        // `EnvMetadataTagKind::ALL`. Distinguishing pin against a
+        // mis-implementation that would return `Prefixed` (the first
+        // cell of `ALL`) instead of `Bare` (the only observed cell) —
+        // the mode is "earliest tied *observed* cell", not "first cell
+        // of `ALL` regardless of observation". Peer of the two-way-tie
+        // pins on the other two sub-axes at the single-cell-observed
+        // boundary.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.env_prefix_kind_histogram();
+        assert_eq!(hist.count(EnvMetadataTagKind::Prefixed), 0);
+        assert_eq!(hist.count(EnvMetadataTagKind::Bare), 2);
+        assert_eq!(
+            slice.dominant_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Bare),
+        );
+    }
+
+    #[test]
+    fn dominant_env_prefix_kind_agrees_with_open_coded_argmax_walk() {
+        // Parity against the exact fold-forward argmax walk this lift
+        // replaces — spelling the declaration-order tiebreak explicitly
+        // with strict `>` inequality so the FIRST tied cell wins,
+        // mirroring `AxisHistogram::dominant_cell` rather than
+        // `max_by_key`'s LAST-tied-cell semantics. Sister of
+        // `dominant_file_format_agrees_with_open_coded_argmax_walk` and
+        // `dominant_layer_kind_agrees_with_open_coded_argmax_walk` one
+        // sub-axis over.
+        let chains = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env("TOBIRA_".to_owned()),
+                ConfigSource::Env(String::new()),
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.unknown")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &chains {
+            let hist = chain.as_slice().env_prefix_kind_histogram();
+            let mut manual: Option<(EnvMetadataTagKind, usize)> = None;
+            for cell in EnvMetadataTagKind::ALL.iter().copied() {
+                let count = hist.count(cell);
+                if count == 0 {
+                    continue;
+                }
+                match manual {
+                    None => manual = Some((cell, count)),
+                    Some((_, best)) if count > best => manual = Some((cell, count)),
+                    _ => {}
+                }
+            }
+            let via_seam = chain.as_slice().dominant_env_prefix_kind();
+            assert_eq!(via_seam, manual.map(|(cell, _)| cell));
         }
     }
 
