@@ -1039,6 +1039,92 @@ pub trait ConfigSourceChain {
     {
         self.env_prefix_kind_histogram().observed().collect()
     }
+
+    /// The distinct [`EnvMetadataTagKind`]s that appear as **zero**
+    /// contributing [`ConfigSource::Env`] layers in this chain, in
+    /// [`EnvMetadataTagKind::ALL`] declaration order — the coverage-
+    /// gap peer of [`Self::present_env_prefix_kinds`] and the
+    /// env-prefix-presence-axis sister of [`Self::absent_layer_kinds`] /
+    /// [`Self::absent_file_formats`] on the same chain-shape surface.
+    ///
+    /// Routes through [`Self::env_prefix_kind_histogram`]:
+    /// [`crate::AxisHistogram::unobserved`] iterates the histogram's
+    /// **coverage gap** (the closed-axis cells with zero count) in
+    /// [`crate::ClosedAxis::ALL`] declaration order, which is the
+    /// [`EnvMetadataTagKind`] canonical order (`Prefixed → Bare`) by
+    /// construction — the closed-axis discipline provides the sort +
+    /// dedup automatically, so this method reads directly off the
+    /// shikumi cube-native primitive instead of hand-rolling
+    /// `EnvMetadataTagKind::ALL.iter().filter(|k| !self.present_env_prefix_kinds().
+    /// contains(k))` (`O(k·k)` in axis-cardinality, quadratic on the
+    /// observed side) at every operator-facing consumer asking *"which
+    /// env-prefix kinds are absent from this recipe?"* — the CLI
+    /// `config-show` summary reading *"no `Env::raw()` layer; skip the
+    /// bare-env legend"*, the attestation manifest recording the
+    /// env-prefix coverage gap of a `ProviderChain`, the alerting policy
+    /// suppressing per-env-kind bins that never fired for this rebuild
+    /// window.
+    ///
+    /// The observed-cells peer ([`Self::present_env_prefix_kinds`]) and
+    /// the coverage-gap peer ([`Self::absent_env_prefix_kinds`]) together
+    /// form the **support / coverage-gap partition** on the env-prefix-
+    /// presence sub-axis — every cell of [`EnvMetadataTagKind::ALL`]
+    /// lies in exactly one of the two, and the two
+    /// `Vec<EnvMetadataTagKind>` lengths sum to
+    /// [`crate::axis_cardinality::<EnvMetadataTagKind>()`][crate::axis_cardinality].
+    /// With this lift the chain-shape surface closes both halves of the
+    /// histogram's observed / unobserved partition at three named
+    /// `Vec<CellKind>` seams over the three chain-shape sub-axes
+    /// (layer-kind, file-format, env-prefix-presence) — the last sister
+    /// coverage-gap peer at the chain altitude. Peer to
+    /// [`crate::ConfigDiff::absent_kinds`] on the diff altitude and
+    /// [`crate::ProvenanceMap::absent_tiers`] on the tier altitude —
+    /// all five project the unobserved-support of the underlying
+    /// [`crate::AxisHistogram`] over their local closed axis at a named
+    /// `Vec<CellKind>` collect wrapper alongside their respective
+    /// `_histogram()` primitive.
+    ///
+    /// # Invariants
+    ///
+    /// - `absent_env_prefix_kinds().len() ==
+    ///   env_prefix_kind_histogram().unobserved_cells()` — both project
+    ///   the same coverage-gap cardinality off the histogram.
+    /// - `present_env_prefix_kinds().len() + absent_env_prefix_kinds().len() ==
+    ///   crate::axis_cardinality::<EnvMetadataTagKind>()` — the two
+    ///   peers partition the closed axis without remainder (every cell
+    ///   is either observed or unobserved, never both).
+    /// - `present_env_prefix_kinds()` and `absent_env_prefix_kinds()`
+    ///   are disjoint: no [`EnvMetadataTagKind`] appears in both.
+    /// - `absent_env_prefix_kinds().is_empty() ==
+    ///   env_prefix_kind_histogram().is_full_cover()` — the coverage-gap
+    ///   is empty iff every env-prefix kind was observed at least once
+    ///   (both `Prefixed` and `Bare` appear as ≥1 `Env` layer).
+    /// - `absent_env_prefix_kinds()` on an empty chain (no layers)
+    ///   equals [`EnvMetadataTagKind::ALL`] — every kind is absent when
+    ///   no layer contributed. Like [`Self::absent_file_formats`] and
+    ///   unlike [`Self::absent_layer_kinds`], the full-axis boundary
+    ///   also fires on any chain of only [`ConfigSource::Defaults`] /
+    ///   [`ConfigSource::File`] layers — those entries all project to
+    ///   [`None`] through [`ConfigSource::env_prefix_kind`], so the
+    ///   histogram is empty even when the chain is not.
+    /// - `absent_env_prefix_kinds()` is sorted strictly ascending by
+    ///   [`crate::axis_ordinal`] on [`EnvMetadataTagKind`] — dedup +
+    ///   sort for free from the closed-axis discipline.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<EnvMetadataTagKind>()` (the
+    /// coverage-gap scan). Both are `O(n)` in practice since the
+    /// env-prefix-presence axis carries a fixed two-cell cardinality;
+    /// the returned `Vec<EnvMetadataTagKind>` is at most two elements
+    /// long regardless of chain length.
+    fn absent_env_prefix_kinds(&self) -> Vec<EnvMetadataTagKind>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().unobserved().collect()
+    }
 }
 
 impl ConfigSourceChain for [ConfigSource] {
@@ -4448,6 +4534,385 @@ mod tests {
                 manual,
                 "present_env_prefix_kinds must equal the open-coded \
                  contains+sort walk over chain of length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    // ---- ConfigSourceChain::absent_env_prefix_kinds — unobserved-cells
+    //      peer of present_env_prefix_kinds on the chain-shape altitude ----
+
+    #[test]
+    fn absent_env_prefix_kinds_matches_env_prefix_kind_histogram_unobserved_pointwise() {
+        // The coverage-gap pin: `absent_env_prefix_kinds` routes through
+        // `env_prefix_kind_histogram().unobserved().collect()`, so the
+        // two seams must stay pointwise equivalent under every fixture.
+        // Sister of
+        // `absent_file_formats_matches_file_format_histogram_unobserved_pointwise`
+        // and `absent_layer_kinds_matches_layer_kind_histogram_unobserved_pointwise`
+        // one axis over on the same chain-shape surface.
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env(String::new()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+        ];
+        for chain in &fixtures {
+            let via_direct = chain.as_slice().absent_env_prefix_kinds();
+            let via_histogram: Vec<EnvMetadataTagKind> = chain
+                .as_slice()
+                .env_prefix_kind_histogram()
+                .unobserved()
+                .collect();
+            assert_eq!(
+                via_direct,
+                via_histogram,
+                "absent_env_prefix_kinds must equal \
+                 env_prefix_kind_histogram().unobserved().collect() \
+                 pointwise over chain of length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn absent_env_prefix_kinds_empty_chain_is_full_axis() {
+        // An empty chain has no observed env-prefix kinds — every cell
+        // of `EnvMetadataTagKind::ALL` lies in the coverage gap. Sister
+        // of `absent_file_formats_empty_chain_is_full_axis` and
+        // `absent_layer_kinds_empty_chain_is_full_axis` one axis over.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(
+            empty.absent_env_prefix_kinds(),
+            EnvMetadataTagKind::ALL.to_vec(),
+        );
+    }
+
+    #[test]
+    fn absent_env_prefix_kinds_no_env_layers_is_full_axis() {
+        // Presence-bound divergence from `absent_layer_kinds` — the
+        // chain is non-empty but every entry projects to None through
+        // `env_prefix_kind()`, so the histogram is empty and every axis
+        // cell is absent. Peer of
+        // `present_env_prefix_kinds_no_env_layers_is_empty` on the
+        // coverage-gap side: a non-empty chain of Defaults and File
+        // layers has the full env-prefix-presence axis as its coverage
+        // gap. Same presence-bound shape as
+        // `absent_file_formats_no_recognized_files_is_full_axis` one
+        // axis over.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.unknown")),
+        ];
+        assert!(!chain.is_empty());
+        assert!(chain.as_slice().env_prefix_kind_histogram().is_empty());
+        assert_eq!(
+            chain.as_slice().absent_env_prefix_kinds(),
+            EnvMetadataTagKind::ALL.to_vec(),
+        );
+    }
+
+    #[test]
+    fn absent_env_prefix_kinds_iterates_in_declaration_order() {
+        // The coverage-gap iter walks `EnvMetadataTagKind::ALL` in
+        // declaration order (`Prefixed → Bare`) and yields only the
+        // cells with zero count. Pinned here on the empty chain, whose
+        // gap is the entire axis — the emitted order matches
+        // `EnvMetadataTagKind::ALL` verbatim.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(
+            empty.absent_env_prefix_kinds(),
+            vec![EnvMetadataTagKind::Prefixed, EnvMetadataTagKind::Bare],
+        );
+    }
+
+    #[test]
+    fn absent_env_prefix_kinds_prefixed_only_chain_is_bare_only() {
+        // A chain composed only of prefixed Env layers has exactly
+        // `{ Bare }` as its coverage gap — the non-prefixed cell of the
+        // axis is the only unobserved cell. Operator-facing pin on the
+        // "prefixed-only recipe" — the common shikumi default where
+        // discovery injects only `figment::providers::Env::prefixed`.
+        let prefixed_only = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+        ];
+        assert_eq!(
+            prefixed_only.as_slice().absent_env_prefix_kinds(),
+            vec![EnvMetadataTagKind::Bare],
+        );
+    }
+
+    #[test]
+    fn absent_env_prefix_kinds_bare_only_chain_is_prefixed_only() {
+        // A chain composed only of bare Env layers has exactly
+        // `{ Prefixed }` as its coverage gap. Boundary pin on the
+        // "bare-only recipe" — the closed-axis discipline emits in
+        // declaration order regardless of observation order.
+        let bare_only = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+        ];
+        assert_eq!(
+            bare_only.as_slice().absent_env_prefix_kinds(),
+            vec![EnvMetadataTagKind::Prefixed],
+        );
+    }
+
+    #[test]
+    fn absent_env_prefix_kinds_len_matches_unobserved_cells() {
+        // The coverage-gap-cardinality invariant on the histogram's
+        // support / gap partition:
+        // `absent_env_prefix_kinds().len()` equals
+        // `env_prefix_kind_histogram().unobserved_cells()` pointwise
+        // across every fixture. Sister of
+        // `absent_file_formats_len_matches_unobserved_cells` one axis
+        // over.
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().absent_env_prefix_kinds().len(),
+                chain
+                    .as_slice()
+                    .env_prefix_kind_histogram()
+                    .unobserved_cells(),
+                "absent_env_prefix_kinds().len() must equal \
+                 env_prefix_kind_histogram().unobserved_cells() over \
+                 chain of length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn absent_env_prefix_kinds_and_present_env_prefix_kinds_partition_axis() {
+        // The support / coverage-gap partition on the closed axis:
+        // every cell of `EnvMetadataTagKind::ALL` lies in exactly one
+        // of (observed, unobserved), so the two Vec lengths sum to the
+        // axis cardinality. Sister of
+        // `absent_file_formats_and_present_file_formats_partition_axis`
+        // one axis over.
+        let axis_size = crate::axis_cardinality::<EnvMetadataTagKind>();
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+        ];
+        for chain in &fixtures {
+            let observed = chain.as_slice().present_env_prefix_kinds();
+            let absent = chain.as_slice().absent_env_prefix_kinds();
+            assert_eq!(observed.len() + absent.len(), axis_size);
+            for kind in &observed {
+                assert!(
+                    !absent.contains(kind),
+                    "kind {kind:?} appears in both present and absent \
+                     over chain of length {}",
+                    chain.len(),
+                );
+            }
+            for cell in EnvMetadataTagKind::ALL {
+                assert!(
+                    observed.contains(cell) || absent.contains(cell),
+                    "kind {cell:?} appears in neither present nor absent \
+                     over chain of length {}",
+                    chain.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn absent_env_prefix_kinds_is_empty_iff_is_full_cover() {
+        // The coverage-gap is empty iff every env-prefix kind was
+        // observed at least once. Pinned across every fixture in the
+        // module against `env_prefix_kind_histogram().is_full_cover()`,
+        // plus a direct positive pin: a chain carrying one prefixed +
+        // one bare Env layer is full-cover; the coverage-gap is empty.
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![ConfigSource::Env("APP_".to_owned())],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().absent_env_prefix_kinds().is_empty(),
+                chain.as_slice().env_prefix_kind_histogram().is_full_cover(),
+            );
+        }
+        let full_cover = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ];
+        assert!(
+            full_cover
+                .as_slice()
+                .env_prefix_kind_histogram()
+                .is_full_cover()
+        );
+        assert_eq!(
+            full_cover.as_slice().absent_env_prefix_kinds(),
+            Vec::<EnvMetadataTagKind>::new(),
+        );
+        assert_eq!(
+            full_cover.as_slice().present_env_prefix_kinds(),
+            EnvMetadataTagKind::ALL.to_vec(),
+        );
+    }
+
+    #[test]
+    fn absent_env_prefix_kinds_is_strictly_ascending_by_axis_ordinal() {
+        // Structural sort pin: the coverage-gap walks the closed axis
+        // in declaration order, so `absent_env_prefix_kinds()` is
+        // strictly ascending by `crate::axis_ordinal` — dedup + sort
+        // for free from the closed-axis discipline. Sister of
+        // `absent_file_formats_is_strictly_ascending_by_axis_ordinal`
+        // one axis over. On the two-cell env-prefix-presence axis every
+        // fixture's coverage gap has at most two cells, so most
+        // `windows(2)` iterations are trivial — pinned here for
+        // template parity with the layer-kind and file-format sisters.
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![ConfigSource::Env(String::new())],
+        ];
+        for chain in &fixtures {
+            let absent = chain.as_slice().absent_env_prefix_kinds();
+            for pair in absent.windows(2) {
+                assert!(
+                    crate::axis_ordinal(pair[0]) < crate::axis_ordinal(pair[1]),
+                    "absent_env_prefix_kinds must be strictly ascending: \
+                     {absent:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn absent_env_prefix_kinds_singleton_chain_yields_one_absent() {
+        // A chain of a single Env layer has exactly
+        // `axis_cardinality - 1` absent kinds — every axis cell except
+        // the one carried by that layer. Sister of
+        // `absent_file_formats_singleton_chain_yields_three_absent`
+        // (four-cell axis, three absent) and
+        // `absent_layer_kinds_singleton_chain_yields_two_absent`
+        // (three-cell axis, two absent) one axis over — the two-cell
+        // env-prefix-presence axis carries cardinality two, so the
+        // singleton coverage-gap has exactly one cell, not two or
+        // three. Distinguishing pin on the axis cardinality: the same
+        // template lands with a different arithmetic constant.
+        let axis_size = crate::axis_cardinality::<EnvMetadataTagKind>();
+        for (source, present_kind) in [
+            (
+                ConfigSource::Env("APP_".to_owned()),
+                EnvMetadataTagKind::Prefixed,
+            ),
+            (ConfigSource::Env(String::new()), EnvMetadataTagKind::Bare),
+        ] {
+            let chain = vec![source];
+            let absent = chain.as_slice().absent_env_prefix_kinds();
+            assert_eq!(absent.len(), axis_size - 1);
+            assert!(
+                !absent.contains(&present_kind),
+                "the observed kind {present_kind:?} must not appear in \
+                 the coverage gap",
+            );
+            for cell in EnvMetadataTagKind::ALL {
+                if *cell != present_kind {
+                    assert!(
+                        absent.contains(cell),
+                        "the singleton chain's coverage gap must contain \
+                         every non-observed axis cell — missing {cell:?}",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn absent_env_prefix_kinds_agrees_with_open_coded_coverage_gap_walk() {
+        // Parity against the exact `EnvMetadataTagKind::ALL.iter().
+        // filter(|k| !present_env_prefix_kinds().contains(k))` walk
+        // this lift replaces — both the named seam and the hand-rolled
+        // coverage-gap must pointwise agree over every fixture. Sister
+        // of
+        // `absent_file_formats_agrees_with_open_coded_coverage_gap_walk`
+        // one axis over.
+        let chains = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::Env("OTHER_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env(String::new()),
+            ],
+        ];
+        for chain in &chains {
+            let lifted = chain.as_slice().absent_env_prefix_kinds();
+            let present = chain.as_slice().present_env_prefix_kinds();
+            let manual: Vec<EnvMetadataTagKind> = EnvMetadataTagKind::ALL
+                .iter()
+                .copied()
+                .filter(|k| !present.contains(k))
+                .collect();
+            assert_eq!(
+                lifted,
+                manual,
+                "absent_env_prefix_kinds must equal the open-coded \
+                 coverage-gap walk over chain of length {}",
                 chain.len(),
             );
         }
