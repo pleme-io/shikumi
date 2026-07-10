@@ -1037,6 +1037,142 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().peak_count()
     }
 
+    /// The **trough layer count** — the number of layers contributed by the
+    /// recessive (rarest-observed) [`ConfigSourceKind`] on this chain.
+    /// Returns `0` exactly when the chain is empty; otherwise returns the
+    /// count carried by [`Self::recessive_layer_kind`] (pointwise equal to
+    /// it, and always `>= 1` by the histogram-support definition).
+    ///
+    /// The **scalar peer** of [`Self::recessive_layer_kind`] on the count
+    /// side — the natural typed primitive for chain-shape dashboards,
+    /// attestation manifests, and alerting policies asking *"how many
+    /// layers did the runt kind contribute?"*: the CLI `config-show`
+    /// summary line *"runt: Defaults, 1 of 5 layers"* (where 1 is this
+    /// scalar), the attestation manifest recording the trough layer-kind
+    /// observation count between two `ProviderChain` snapshots, the
+    /// alerting policy reading *"chain trough-kind count = 1"* to flag a
+    /// rebuild window where a kind barely contributed. Before this lift,
+    /// every such consumer re-derived the projection inline as
+    /// `chain.layer_kind_histogram().trough_count()` or (equivalently but
+    /// at twice the cost) `chain.recessive_layer_kind().map_or(0, |k|
+    /// chain.layer_kind_histogram().count(k))` — which walked the
+    /// histogram *twice* (once to argmin over the support, once to read
+    /// the count back through [`crate::AxisHistogram::count`] indexing)
+    /// and re-built the histogram at every site. Routes through
+    /// [`Self::layer_kind_histogram`]:
+    /// [`crate::AxisHistogram::trough_count`] reads a single pass over
+    /// the fixed-cardinality counts vector (filtering the zero-count
+    /// cells out of the argmin search).
+    ///
+    /// The chain-altitude scalar-count peer of [`Self::recessive_layer_kind`]
+    /// (the anti-modal-cell scalar peer of [`Self::layer_kind_histogram`])
+    /// — the layer-kind sub-axis of the chain-shape surface now carries
+    /// the fused `(recessive_layer_kind, trough_layer_kind_count)`
+    /// anti-modal pair, matching the ([`crate::AxisHistogram::recessive_cell`],
+    /// [`crate::AxisHistogram::trough_count`]) pair on the shared
+    /// [`crate::AxisHistogram`] primitive one altitude down, the
+    /// ([`crate::ProvenanceMap::recessive_tier`],
+    /// [`crate::ProvenanceMap::trough_tier_count`]) pair on the tier
+    /// altitude, and the ([`crate::ConfigDiff::recessive_kind`],
+    /// [`crate::ConfigDiff::trough_kind_count`]) pair on the diff altitude.
+    /// Consumers answering *"which layer kind is the runt of the chain
+    /// and by how much?"* now read a single `(recessive_layer_kind(),
+    /// trough_layer_kind_count())` pair — one method each, both routing
+    /// through the same primitive — instead of re-deriving the count off
+    /// the anti-modal cell.
+    ///
+    /// The 2×2 `(dominant, recessive) × (cell, count)` scalar grid on the
+    /// layer-kind sub-axis of the chain-shape surface closes with this
+    /// lift: the four seams ([`Self::dominant_layer_kind`],
+    /// [`Self::peak_layer_kind_count`], [`Self::recessive_layer_kind`],
+    /// [`Self::trough_layer_kind_count`]) now each route through the same
+    /// [`Self::layer_kind_histogram`] primitive at one pass per
+    /// projection, matching the `(dominant_cell, peak_count,
+    /// recessive_cell, trough_count)` quad on the shared
+    /// [`crate::AxisHistogram`] primitive one altitude down, the
+    /// `(dominant_tier, peak_tier_count, recessive_tier,
+    /// trough_tier_count)` quad on the tier altitude, and the
+    /// `(dominant_kind, peak_kind_count, recessive_kind,
+    /// trough_kind_count)` quad on the diff altitude.
+    ///
+    /// **Empty-chain convention** — returns `0` (not `Option<usize>`)
+    /// matching the [`crate::AxisHistogram::trough_count`] convention one
+    /// altitude down, the [`Self::peak_layer_kind_count`] convention on
+    /// the same sub-axis, the
+    /// [`crate::ProvenanceMap::trough_tier_count`] and
+    /// [`crate::ConfigDiff::trough_kind_count`] conventions on the peer
+    /// altitudes, and the `self.as_ref().len()` empty convention on the
+    /// same chain; the scalar `(peak_layer_kind_count,
+    /// trough_layer_kind_count)` pair reads uniformly `(0, 0)` on the
+    /// empty chain. The dual-form [`Self::recessive_layer_kind`] carries
+    /// `Option<ConfigSourceKind>` because the *kind* is undefined when no
+    /// layer contributes; the *count* is well-defined as zero. The
+    /// asymmetry is intentional: every scalar projection reads zero on
+    /// empty; every cell projection reads `None`.
+    ///
+    /// # Invariants
+    ///
+    /// - `trough_layer_kind_count() == 0` ⇔ `self.as_ref().is_empty()` —
+    ///   peer to the empty-chain boundary [`Self::dominant_layer_kind`],
+    ///   [`Self::recessive_layer_kind`], and [`Self::peak_layer_kind_count`]
+    ///   all witness on the cell / count sides. Unlike the file-format
+    ///   and env-prefix sub-axes, the presence bound coincides with
+    ///   `self.as_ref().is_empty()` (every layer projects to exactly one
+    ///   [`ConfigSourceKind`] cell through [`ConfigSource::kind`]).
+    /// - `trough_layer_kind_count() == layer_kind_histogram().trough_count()`
+    ///   — both project the same scalar off the same primitive; the
+    ///   named seam is the cube-native routing of the chain-shape
+    ///   surface.
+    /// - `trough_layer_kind_count() == recessive_layer_kind().map_or(0,
+    ///   |k| layer_kind_histogram().count(k))` — the count projection of
+    ///   the `(recessive_layer_kind, trough_layer_kind_count)` anti-modal
+    ///   pair equals [`Self::trough_layer_kind_count`] pointwise on
+    ///   every chain (empty: `None.map_or(0, …) == 0 ==
+    ///   trough_layer_kind_count`; non-empty: `Some(k).map_or(0, |k|
+    ///   count(k)) == trough_layer_kind_count`, since
+    ///   `count(recessive_layer_kind()) == trough_count()`).
+    /// - `trough_layer_kind_count() <= peak_layer_kind_count()` always:
+    ///   the trough is bounded above by the peak (lifted from the
+    ///   trait-uniform `trough_count() <= peak_count()` law on
+    ///   [`crate::AxisHistogram`]). The empty-chain case reads `0 <= 0`;
+    ///   the non-empty case reads the trough-of-support bounded above by
+    ///   the peak-of-support.
+    /// - `trough_layer_kind_count() == peak_layer_kind_count()` iff
+    ///   `present_layer_kinds().len() <= 1`: on the empty chain both are
+    ///   0; on a singleton-support chain both equal `self.as_ref().len()`;
+    ///   on two or more observed kinds with distinct counts the trough
+    ///   is strictly below the peak.
+    /// - `trough_layer_kind_count() >= 1` whenever
+    ///   `!self.as_ref().is_empty()` — the argmin is taken over the
+    ///   histogram's *support* (nonzero cells), so the trough of a
+    ///   non-empty histogram is always at least one.
+    /// - `trough_layer_kind_count()` on a uniform per-kind chain (one
+    ///   layer per kind) equals `1` — every observed kind collects one
+    ///   layer; the trough coincides with the peak on the uniform-cover
+    ///   degenerate (the singleton-modality analogue on the count side).
+    /// - `trough_layer_kind_count()` on a singleton-support chain (every
+    ///   layer on the same kind) equals `self.as_ref().len()` — the sole
+    ///   observed kind is both the modal and anti-modal cell, so
+    ///   `trough == peak == len`.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the
+    /// argmin scan over the support). Both are `O(n)` in practice since
+    /// the layer-kind axis carries a fixed three-cell cardinality; the
+    /// returned `usize` reads one scalar. Halves the cost of the previous
+    /// `recessive_layer_kind().map_or(0, |k|
+    /// layer_kind_histogram().count(k))` idiom (which walked the
+    /// histogram twice — once to argmin, once to read the count back).
+    #[must_use]
+    fn trough_layer_kind_count(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().trough_count()
+    }
+
     /// Dense per-format tally of the chain's [`ConfigSource::File`]
     /// layers over the [`crate::discovery::Format`] axis — the typed
     /// histogram every per-format dashboard, attestation manifest
@@ -8500,6 +8636,326 @@ mod tests {
                 .iter()
                 .map(|(_, c)| c)
                 .max()
+                .unwrap_or(0);
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::trough_layer_kind_count — anti-modal-cell
+    //      scalar-count peer of layer_kind_histogram on the chain
+    //      altitude, closing the (dom, rec) × (cell, count) 2×2 scalar
+    //      grid on the layer-kind sub-axis of the chain-shape surface ----
+
+    #[test]
+    fn trough_layer_kind_count_matches_layer_kind_histogram_trough_count_pointwise() {
+        // The scalar-count pin: `trough_layer_kind_count` routes through
+        // `layer_kind_histogram().trough_count()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Direct sister
+        // of `trough_tier_count_matches_tier_histogram_trough_count_pointwise`
+        // and `trough_kind_count_matches_kind_histogram_trough_count_pointwise`
+        // on the tier and diff altitudes.
+        for chain in recessive_layer_kind_fixtures() {
+            let via_histogram = chain.as_slice().layer_kind_histogram().trough_count();
+            assert_eq!(chain.as_slice().trough_layer_kind_count(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn trough_layer_kind_count_sample_chain_is_one() {
+        // Direct pin against `sample_chain()`: two File layers + one
+        // Env layer (no Defaults). Env is uniquely recessive with 1 of
+        // 3 layers, so the trough count is 1. The
+        // (recessive_layer_kind, trough_layer_kind_count) anti-modal
+        // pair reads `(Some(Env), 1)`.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.recessive_layer_kind(), Some(ConfigSourceKind::Env));
+        assert_eq!(slice.trough_layer_kind_count(), 1);
+    }
+
+    #[test]
+    fn trough_layer_kind_count_env_majority_is_one() {
+        // Env-majority fixture: three Env layers + one File + one
+        // Defaults. Defaults is (jointly) recessive with 1 of 5 layers;
+        // declaration-order tie-breaking picks Defaults over File
+        // (both count 1), so the trough count is 1. Cross-verified
+        // against `hist.trough_count() == 1` at the same observation
+        // site — the fused-pair count projection reads through the
+        // seam.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(
+            slice.recessive_layer_kind(),
+            Some(ConfigSourceKind::Defaults),
+        );
+        assert_eq!(slice.trough_layer_kind_count(), 1);
+        assert_eq!(slice.layer_kind_histogram().trough_count(), 1);
+    }
+
+    #[test]
+    fn trough_layer_kind_count_empty_chain_is_zero() {
+        // Empty-chain / zero boundary: the fused
+        // (recessive_layer_kind, trough_layer_kind_count) anti-modal
+        // scalar pair reads `(None, 0)` uniformly on the empty chain,
+        // matching the `(AxisHistogram::recessive_cell,
+        // AxisHistogram::trough_count)` pair on the shared histogram
+        // primitive one altitude down. Peer of
+        // `trough_tier_count_empty_map_is_zero` on the tier altitude
+        // and `trough_kind_count_empty_diff_is_zero` on the diff
+        // altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.recessive_layer_kind(), None);
+        assert_eq!(empty.trough_layer_kind_count(), 0);
+    }
+
+    #[test]
+    fn trough_layer_kind_count_is_zero_iff_chain_is_empty() {
+        // The `trough_layer_kind_count() == 0 ⇔ self.as_ref().is_empty()`
+        // presence-bound pin — every layer projects to exactly one
+        // `ConfigSourceKind` cell through `ConfigSource::kind`, so a
+        // non-empty chain always contributes a positive trough (argmin
+        // of a nonempty support), and an empty chain always reads
+        // zero. Cross-axis divergence from the file-format and
+        // env-prefix sub-axes, whose zero-trough boundary is the
+        // corresponding histogram's `is_empty()`. Direct sister of
+        // `trough_tier_count_is_zero_iff_map_is_empty` on the tier
+        // altitude and `trough_kind_count_is_zero_iff_diff_is_empty`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            assert_eq!(
+                chain.as_slice().trough_layer_kind_count() == 0,
+                chain.as_slice().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_layer_kind_count_equals_count_at_recessive_layer_kind_on_nonempty_chain() {
+        // The `(recessive_cell, trough_count)` anti-modal-pair
+        // invariant lifted to the chain altitude on the layer-kind
+        // sub-axis: `hist.count(recessive_layer_kind().unwrap()) ==
+        // trough_layer_kind_count()` on every non-empty chain. Peer
+        // of `trough_tier_count_equals_count_at_recessive_tier_on_nonempty_map`
+        // on the tier altitude and
+        // `trough_kind_count_equals_count_at_recessive_kind_on_nonempty_diff`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            if chain.as_slice().is_empty() {
+                continue;
+            }
+            let hist = chain.as_slice().layer_kind_histogram();
+            let recessive = chain
+                .as_slice()
+                .recessive_layer_kind()
+                .expect("non-empty chain has a recessive layer kind");
+            assert_eq!(
+                hist.count(recessive),
+                chain.as_slice().trough_layer_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_layer_kind_count_equals_recessive_layer_kind_map_or_count() {
+        // The fused-pair identity `trough_layer_kind_count() ==
+        // recessive_layer_kind().map_or(0, |k|
+        // layer_kind_histogram().count(k))` on every input — the count
+        // projection of the (recessive_layer_kind,
+        // trough_layer_kind_count) anti-modal pair reads through the
+        // seam uniformly across the empty-chain / non-empty-chain
+        // partition. Includes the empty chain (`None.map_or(0, …) == 0
+        // == trough_layer_kind_count`) — this is the pin that the
+        // fused-pair identity is boundary-complete. Peer of
+        // `trough_tier_count_equals_recessive_tier_map_or_count` on
+        // the tier altitude and
+        // `trough_kind_count_equals_recessive_kind_map_or_count` on
+        // the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let hist = chain.as_slice().layer_kind_histogram();
+            let via_fused_pair = chain
+                .as_slice()
+                .recessive_layer_kind()
+                .map_or(0, |k| hist.count(k));
+            assert_eq!(chain.as_slice().trough_layer_kind_count(), via_fused_pair,);
+        }
+    }
+
+    #[test]
+    fn trough_layer_kind_count_bounded_above_by_peak_layer_kind_count() {
+        // Structural bound `trough_layer_kind_count() <=
+        // peak_layer_kind_count()` on every input — the trough is
+        // bounded above by the peak (lifted from the trait-uniform
+        // `trough_count() <= peak_count()` law on AxisHistogram). The
+        // empty-chain case reads `0 <= 0`; the non-empty case reads
+        // the trough-of-support bounded above by the peak-of-support.
+        // Peer of `trough_tier_count_bounded_above_by_peak_tier_count`
+        // on the tier altitude and
+        // `trough_kind_count_bounded_above_by_peak_kind_count` on the
+        // diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.trough_layer_kind_count() <= slice.peak_layer_kind_count(),
+                "trough_layer_kind_count()={t} must be <= peak_layer_kind_count()={p}",
+                t = slice.trough_layer_kind_count(),
+                p = slice.peak_layer_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_layer_kind_count_equals_peak_layer_kind_count_iff_at_most_one_present_layer_kind() {
+        // Structural bound `trough_layer_kind_count() ==
+        // peak_layer_kind_count()` iff `present_layer_kinds().len() <=
+        // 1` (assuming distinct counts on multi-support chains) — the
+        // one-directional pin only. Zero: empty chain, both zero. One:
+        // singleton-support chain, every layer on the same kind, both
+        // equal `self.as_ref().len()`. Two or more with distinct
+        // counts: trough strictly below peak. The uniform-count-multi-
+        // support degenerate (e.g. `[Defaults, File]` — one layer per
+        // observed kind, so trough == peak == 1 with present == 2) is
+        // the reason the converse is not universal; this test only
+        // asserts the `support_le_one → equal` half, matching the
+        // pattern in
+        // `trough_kind_count_equals_peak_kind_count_iff_at_most_one_present_kind`
+        // on the diff altitude and
+        // `trough_tier_count_equals_peak_tier_count_iff_at_most_one_contributing_tier`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let equal = slice.trough_layer_kind_count() == slice.peak_layer_kind_count();
+            let support_le_one = slice.present_layer_kinds().len() <= 1;
+            if support_le_one {
+                assert!(
+                    equal,
+                    "at_most_one_present_layer_kind → trough == peak \
+                     (trough={t}, peak={p}, present={present:?})",
+                    t = slice.trough_layer_kind_count(),
+                    p = slice.peak_layer_kind_count(),
+                    present = slice.present_layer_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn trough_layer_kind_count_is_at_least_one_on_nonempty_chain() {
+        // Structural pin: whenever `!self.as_ref().is_empty()`,
+        // `trough_layer_kind_count() >= 1` — the argmin is taken over
+        // the histogram's *support* (nonzero cells), so the trough of
+        // a non-empty histogram is always at least one. Combined with
+        // the `<= peak_layer_kind_count()` bound above, this pins
+        // `1 <= trough_layer_kind_count() <= peak_layer_kind_count()`
+        // on every non-empty chain. Peer of
+        // `trough_tier_count_is_at_least_one_on_nonempty_map` on the
+        // tier altitude and
+        // `trough_kind_count_is_at_least_one_on_nonempty_diff` on the
+        // diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.is_empty() {
+                continue;
+            }
+            assert!(
+                slice.trough_layer_kind_count() >= 1,
+                "non-empty chain must have trough_layer_kind_count >= 1 (trough={t})",
+                t = slice.trough_layer_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_layer_kind_count_uniform_cover_is_two() {
+        // Uniform-cover chain — two layers of each kind (2 Defaults +
+        // 2 Env + 2 File). Full-cover histogram with uniform count 2
+        // per cell, so the trough count coincides with the peak count
+        // at 2 (the uniform-cover degenerate where every cell equals
+        // the modal cell). Direct sister of
+        // `peak_layer_kind_count_uniform_cover_is_two` — the same
+        // fixture read on the trough side. Combined with
+        // `recessive_layer_kind_uniform_cover_picks_first_cell` (the
+        // cell picks Defaults by declaration-order tie-breaking), the
+        // fused pair `(recessive_layer_kind, trough_layer_kind_count)`
+        // reads `(Some(Defaults), 2)` on the uniform-cover chain.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kind_histogram().is_full_cover());
+        assert_eq!(slice.trough_layer_kind_count(), 2);
+        assert_eq!(
+            slice.trough_layer_kind_count(),
+            slice.peak_layer_kind_count(),
+        );
+    }
+
+    #[test]
+    fn trough_layer_kind_count_singleton_support_equals_len() {
+        // Singleton-support degenerate: when only one kind
+        // contributes, every layer lands on that kind, so both trough
+        // and peak equal the total. Direct construction: three layers,
+        // all File. The scalar peer of the singleton-support cell
+        // degenerate `dominant_layer_kind() == recessive_layer_kind()`
+        // in
+        // `recessive_layer_kind_singleton_support_agrees_with_dominant_layer_kind`
+        // — that test pins the *cell*; this test pins the *count*
+        // through the `trough_layer_kind_count() == len()` equality on
+        // the singleton-support boundary. Peer of
+        // `trough_tier_count_singleton_support_equals_len` on the tier
+        // altitude and `trough_kind_count_singleton_support_equals_lines_len`
+        // on the diff altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 1);
+        assert_eq!(slice.trough_layer_kind_count(), slice.len());
+        assert_eq!(slice.trough_layer_kind_count(), 3);
+        assert_eq!(
+            slice.trough_layer_kind_count(),
+            slice.peak_layer_kind_count(),
+        );
+    }
+
+    #[test]
+    fn trough_layer_kind_count_agrees_with_open_coded_min_over_support_walk() {
+        // Parity against the exact
+        // `hist.iter().filter(|(_, c)| *c > 0).map(|(_, c)| c).min()`
+        // walk this lift replaces — both the named seam and the
+        // hand-rolled min-over-support must pointwise agree over every
+        // fixture. The `.min().unwrap_or(0)` idiom mirrors the empty-
+        // histogram convention on `AxisHistogram::trough_count` one
+        // altitude down (both read 0 on empty). The `filter(|(_, c)|
+        // *c > 0)` step is the load-bearing seam: the naive `.min()`
+        // over the full axis would silently pick zero-count absent
+        // cells on any non-full-cover chain, shadowing the trough-of-
+        // support the seam surfaces. Peer of
+        // `trough_tier_count_agrees_with_open_coded_min_over_support_walk`
+        // on the tier altitude and
+        // `trough_kind_count_agrees_with_open_coded_min_over_support_walk`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let via_seam = chain.as_slice().trough_layer_kind_count();
+            let hand_rolled = chain
+                .as_slice()
+                .layer_kind_histogram()
+                .iter()
+                .map(|(_, c)| c)
+                .filter(|&c| c > 0)
+                .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, hand_rolled);
         }
