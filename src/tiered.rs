@@ -2271,6 +2271,107 @@ impl ConfigDiff {
         self.kind_histogram().dominant_cell()
     }
 
+    /// The **peak line count** — the number of lines contributed by the
+    /// dominant [`DiffLineKind`] on this diff. Returns `0` exactly when the
+    /// diff is empty (no lines); otherwise returns the line count carried
+    /// by [`Self::dominant_kind`] (pointwise equal to it, and always
+    /// `>= 1` on the non-empty side).
+    ///
+    /// The **scalar peer** of [`Self::dominant_kind`] on the count side —
+    /// the natural typed primitive for CLI `config-diff` summaries,
+    /// attestation manifests, and alerting policies asking *"how many
+    /// lines did the dominant diff kind produce?"*: the summary line
+    /// *"Context lines dominate: 47 of 53"* (where 47 is this scalar), the
+    /// attestation manifest recording the peak-kind observation count
+    /// between two rendered diffs, the alerting policy reading *"peak
+    /// diff kind count = 12"* to gate a rebuild window on the modal
+    /// kind's density. Before this lift, every such consumer re-derived
+    /// the projection inline as `diff.kind_histogram().peak_count()` or
+    /// (equivalently but at twice the cost)
+    /// `diff.dominant_kind().map_or(0, |k| diff.kind_histogram().count(k))`
+    /// — which walked the histogram *twice* (once to argmax, once to read
+    /// the count back through [`crate::AxisHistogram::count`] indexing)
+    /// and re-built the histogram at every site. Routes through
+    /// [`Self::kind_histogram`]:
+    /// [`crate::AxisHistogram::peak_count`] reads a single pass over the
+    /// fixed-cardinality counts vector.
+    ///
+    /// The diff-altitude scalar-count peer of [`Self::dominant_kind`] (the
+    /// modal-cell scalar peer of [`Self::kind_histogram`]) — the histogram
+    /// surface on the diff altitude now carries the fused
+    /// `(dominant_kind, peak_kind_count)` modal pair, matching the
+    /// ([`crate::AxisHistogram::dominant_cell`],
+    /// [`crate::AxisHistogram::peak_count`]) pair on the shared
+    /// [`crate::AxisHistogram`] primitive one altitude down and the
+    /// ([`crate::ProvenanceMap::dominant_tier`],
+    /// [`crate::ProvenanceMap::peak_tier_count`]) pair on the tier
+    /// altitude. Consumers answering *"which diff kind dominated and by
+    /// how much?"* now read a single
+    /// `(dominant_kind(), peak_kind_count())` pair — one method each,
+    /// both routing through the same primitive — instead of re-deriving
+    /// the count off the modal cell.
+    ///
+    /// **Empty-diff convention** — returns `0` (not `Option<usize>`)
+    /// matching the [`crate::AxisHistogram::peak_count`] convention one
+    /// altitude down and the [`crate::ProvenanceMap::peak_tier_count`]
+    /// convention on the tier altitude; the scalar
+    /// `(lines.len(), peak_kind_count)` pair reads uniformly `(0, 0)` on
+    /// the empty diff. The dual-form [`Self::dominant_kind`] carries
+    /// `Option<DiffLineKind>` because the *kind* is undefined when no
+    /// line contributes; the *count* is well-defined as zero. The
+    /// asymmetry is intentional: every scalar projection reads zero on
+    /// empty; every cell projection reads `None`.
+    ///
+    /// # Invariants
+    ///
+    /// - `peak_kind_count() == 0` ⇔ `self.lines.is_empty()` — peer to
+    ///   the empty-diff boundary [`Self::dominant_kind`],
+    ///   [`Self::recessive_kind`], [`Self::present_kinds`], and
+    ///   [`Self::absent_kinds`] all witness on the cell / vector sides.
+    /// - `peak_kind_count() == kind_histogram().peak_count()` — both
+    ///   project the same scalar off the same primitive; the named seam
+    ///   is the cube-native routing of the histogram surface.
+    /// - `peak_kind_count() == dominant_kind().map_or(0, |k|
+    ///   kind_histogram().count(k))` — the count projection of the
+    ///   `(dominant_kind, peak_kind_count)` modal pair equals
+    ///   [`Self::peak_kind_count`] pointwise on every diff (empty:
+    ///   `None.map_or(0, …) == 0 == peak_kind_count`; non-empty:
+    ///   `Some(k).map_or(0, |k| count(k)) == peak_kind_count`, since
+    ///   `count(dominant_kind()) == peak_count()`).
+    /// - `peak_kind_count() <= self.lines.len()` always: the peak is
+    ///   bounded above by the total line count (every kind contributes
+    ///   at most every line, and the others contribute zero). Equality
+    ///   holds when `present_kinds().len() <= 1`.
+    /// - `peak_kind_count() == self.lines.len()` iff
+    ///   `present_kinds().len() <= 1`: a single observed kind carries
+    ///   every line, so the peak equals the total. Zero observed kinds
+    ///   (empty) reads 0 == 0; one observed kind reads N == N; two or
+    ///   more reads peak < total strictly.
+    /// - `peak_kind_count() >= 1` whenever `!self.lines.is_empty()` — a
+    ///   non-empty diff always has at least one line on the dominant
+    ///   kind.
+    /// - `peak_kind_count()` on a uniform per-kind diff (one line per
+    ///   kind) equals `1` — every observed kind collects one line,
+    ///   dominant included.
+    /// - `peak_kind_count()` on a singleton-support diff (every line on
+    ///   the same kind) equals `self.lines.len()` — the dominant kind
+    ///   collects every line. Singleton-support pin.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (the argmax scan).
+    /// Both are `O(n)` in practice since the diff-cell axis carries a
+    /// fixed three-cell cardinality; the returned `usize` reads one
+    /// scalar. Halves the cost of the previous
+    /// `dominant_kind().map_or(0, |k| kind_histogram().count(k))` idiom
+    /// (which walked the histogram twice — once to argmax, once to read
+    /// the count back).
+    #[must_use]
+    pub fn peak_kind_count(&self) -> usize {
+        self.kind_histogram().peak_count()
+    }
+
     /// The [`DiffLineKind`] whose lines are rarest (but still ≥1) in this
     /// diff — the anti-modal (rarest observed) cell of
     /// [`Self::kind_histogram`] on the diff altitude. `None` exactly when
@@ -3942,6 +4043,246 @@ mod tests {
         };
         assert!(diff.kind_histogram().is_full_cover());
         assert_eq!(diff.dominant_kind(), Some(DiffLineKind::Removed));
+    }
+
+    // ── ConfigDiff::peak_kind_count — modal-count scalar peer on the diff altitude ──
+
+    #[test]
+    fn peak_kind_count_matches_kind_histogram_peak_count_pointwise() {
+        // The modal-count pin: `peak_kind_count` routes through
+        // `kind_histogram().peak_count()`, so the two seams must stay
+        // pointwise equivalent under every fixture. Catches any future
+        // drift where either implementation stops projecting through the
+        // shared cube-native primitive. Diff-altitude peer of
+        // `peak_tier_count_matches_tier_histogram_peak_count_pointwise`
+        // on the tier altitude.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().peak_count();
+            assert_eq!(diff.peak_kind_count(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn peak_kind_count_context_dominated_fixture_is_three() {
+        // Direct pin: a diff of 3 Context + 1 Removed has Context
+        // uniquely dominant with 3 of 4 lines — the peak count is 3.
+        // Peer of `dominant_kind_context_dominated_fixture_is_context`
+        // reading the paired `(dominant_kind, peak_kind_count)` modal
+        // scalar as `(Some(Context), 3)`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(diff.dominant_kind(), Some(DiffLineKind::Context));
+        assert_eq!(diff.peak_kind_count(), 3);
+    }
+
+    #[test]
+    fn peak_kind_count_added_dominated_fixture_is_two() {
+        // Direct pin: a diff of 2 Added + 1 Context has Added uniquely
+        // dominant with 2 of 3 lines — the peak count is 2. Peer of
+        // `dominant_kind_added_dominated_fixture_is_added` reading the
+        // paired `(dominant_kind, peak_kind_count)` modal scalar as
+        // `(Some(Added), 2)`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.dominant_kind(), Some(DiffLineKind::Added));
+        assert_eq!(diff.peak_kind_count(), 2);
+    }
+
+    #[test]
+    fn peak_kind_count_empty_diff_is_zero() {
+        // An empty ConfigDiff has no lines and therefore no peak count —
+        // reads `0` per the [`crate::AxisHistogram::peak_count`] and
+        // [`crate::ProvenanceMap::peak_tier_count`] empty conventions
+        // (not `Option<usize>`; the scalar projection reads zero on
+        // empty, and the dual-form [`Self::dominant_kind`] on the cell
+        // side reads `None` — the asymmetry between scalar and cell
+        // projections on the empty boundary is intentional). The fused
+        // `(dominant_kind, peak_kind_count)` modal scalar pair reads
+        // `(None, 0)` uniformly on the empty diff.
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.dominant_kind(), None);
+        assert_eq!(empty.peak_kind_count(), 0);
+        assert!(empty.lines.is_empty());
+    }
+
+    #[test]
+    fn peak_kind_count_is_zero_iff_diff_is_empty() {
+        // Cross-surface pin: the zero-of-peak-count predicate agrees
+        // with the emptiness of `self.lines`. Structural completeness of
+        // the `(is_empty, peak_kind_count)` boundary — a well-formed
+        // diff with ≥1 line always has a positive peak, and an empty
+        // diff always reads zero. Peer of
+        // `peak_tier_count_is_zero_iff_map_is_empty` on the tier
+        // altitude.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(diff.peak_kind_count() == 0, diff.lines.is_empty());
+        }
+    }
+
+    #[test]
+    fn peak_kind_count_equals_count_at_dominant_kind_on_nonempty_diff() {
+        // The (dominant_cell, peak_count) modal-pair identity lifted to
+        // the diff altitude: `peak_kind_count == count(dominant_kind)`
+        // whenever the diff is non-empty. Pins the ProvenanceMap-side
+        // identity of the fused-pair seam; peer of
+        // `dominant_kind_count_equals_peak_count_on_nonempty_diff`
+        // (which pins the histogram-side identity in terms of
+        // `hist.count(dominant)` and `hist.peak_count()`).
+        for diff in dominant_kind_fixtures() {
+            let Some(dominant) = diff.dominant_kind() else {
+                continue;
+            };
+            let hist = diff.kind_histogram();
+            assert_eq!(hist.count(dominant), diff.peak_kind_count());
+        }
+    }
+
+    #[test]
+    fn peak_kind_count_equals_dominant_kind_map_or_count() {
+        // Fused-pair boundary-complete pin: `peak_kind_count() ==
+        // dominant_kind().map_or(0, |k| kind_histogram().count(k))` on
+        // every fixture — including the empty-diff convention where
+        // `None.map_or(0, …) == 0 == peak_kind_count`. The full identity
+        // of the `(dominant_kind, peak_kind_count)` modal pair across
+        // the empty / non-empty partition. Peer of
+        // `peak_tier_count_equals_dominant_tier_map_or_count` on the
+        // tier altitude.
+        for diff in dominant_kind_fixtures() {
+            let hist = diff.kind_histogram();
+            let via_pair = diff.dominant_kind().map_or(0, |k| hist.count(k));
+            assert_eq!(diff.peak_kind_count(), via_pair);
+        }
+    }
+
+    #[test]
+    fn peak_kind_count_bounded_above_by_lines_len() {
+        // The peak is bounded above by the total line count on every
+        // diff: `peak_kind_count() <= self.lines.len()`. Every kind
+        // contributes at most every line, and the others contribute
+        // zero. Peer of `peak_tier_count_bounded_above_by_len` on the
+        // tier altitude reading the same bound against `map.len()`.
+        for diff in dominant_kind_fixtures() {
+            assert!(
+                diff.peak_kind_count() <= diff.lines.len(),
+                "peak_kind_count {} must not exceed lines.len() {}",
+                diff.peak_kind_count(),
+                diff.lines.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_kind_count_equals_lines_len_iff_at_most_one_present_kind() {
+        // Equality case of the `peak_kind_count() <= lines.len()`
+        // bound: `peak == len` iff `present_kinds().len() <= 1`. Zero
+        // present kinds (empty diff) reads `0 == 0`; one present kind
+        // reads `N == N`; two or more reads `peak < total` strictly.
+        // Peer of `peak_tier_count_equals_len_iff_at_most_one_contributing_tier`
+        // on the tier altitude.
+        for diff in dominant_kind_fixtures() {
+            let peak_eq_len = diff.peak_kind_count() == diff.lines.len();
+            let support_le_one = diff.present_kinds().len() <= 1;
+            assert_eq!(
+                peak_eq_len,
+                support_le_one,
+                "peak_kind_count == lines.len() must agree with present_kinds().len() <= 1 \
+                 for diff with peak={peak_kind}, len={line_count}, present={present:?}",
+                peak_kind = diff.peak_kind_count(),
+                line_count = diff.lines.len(),
+                present = diff.present_kinds(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_kind_count_is_at_least_one_on_nonempty_diff() {
+        // The lower bound peer: a non-empty diff always has a peak
+        // count of at least one line — the dominant kind carries at
+        // least the single line witnessing non-emptiness. Together with
+        // the `<= lines.len()` upper bound: `1 <= peak_kind_count <=
+        // lines.len()` on every non-empty diff. Peer of
+        // `peak_tier_count_is_at_least_one_on_nonempty_map` on the tier
+        // altitude.
+        for diff in dominant_kind_fixtures() {
+            if diff.lines.is_empty() {
+                continue;
+            }
+            assert!(
+                diff.peak_kind_count() >= 1,
+                "non-empty diff must have peak_kind_count >= 1, got {}",
+                diff.peak_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_kind_count_uniform_cover_is_one() {
+        // Trait-uniform invariant: on a uniform per-kind diff (one line
+        // per kind, three lines total), every observed kind collects
+        // one line, dominant included — the peak count reads `1`. Peer
+        // of `peak_tier_count_uniform_cover_is_one` on the tier altitude
+        // and diff-altitude peer of the AxisHistogram trait-uniform
+        // `peak_count == 1` law on the singleton-per-cell degenerate.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kind_histogram().is_full_cover());
+        assert_eq!(diff.peak_kind_count(), 1);
+    }
+
+    #[test]
+    fn peak_kind_count_singleton_support_equals_lines_len() {
+        // Singleton-support pin: every line lands on the same kind, so
+        // the dominant kind collects every line and `peak_kind_count ==
+        // lines.len()`. Peer of
+        // `peak_tier_count_singleton_support_equals_len` on the tier
+        // altitude reading the same equality against `map.len()`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Removed("r3".into()),
+                DiffLine::Removed("r4".into()),
+            ],
+        };
+        assert_eq!(diff.present_kinds().len(), 1);
+        assert_eq!(diff.peak_kind_count(), 4);
+        assert_eq!(diff.peak_kind_count(), diff.lines.len());
+    }
+
+    #[test]
+    fn peak_kind_count_agrees_with_open_coded_max_over_axis_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0)` walk this lift replaces — the named seam and
+        // the hand-rolled argmax must pointwise agree over every
+        // fixture. The `.unwrap_or(0)` names the empty-diff convention
+        // (`max()` over an empty iterator returns `None`, but the
+        // histogram's counts vector is fixed-cardinality so the iter
+        // is always non-empty; the `unwrap_or(0)` is a safety belt for
+        // the trait-uniform empty-axis edge). Peer of
+        // `peak_tier_count_agrees_with_open_coded_max_over_axis_walk`
+        // on the tier altitude.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.peak_kind_count();
+            let hist = diff.kind_histogram();
+            let hand_rolled = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            assert_eq!(via_seam, hand_rolled);
+        }
     }
 
     // ── ConfigDiff::recessive_kind — anti-modal-cell scalar peer on the diff altitude ──
