@@ -1602,8 +1602,8 @@ pub trait ConfigSourceChain {
     ///
     /// | | cells (Vec) | count (usize) |
     /// |---|---|---|
-    /// | observed | `present_file_formats` | **`present_file_formats_count`** |
-    /// | unobserved | `absent_file_formats` | `absent_file_formats().len()` |
+    /// | observed | [`Self::present_file_formats`] | **`present_file_formats_count`** |
+    /// | unobserved | [`Self::absent_file_formats`] | [`Self::absent_file_formats_count`] |
     ///
     /// # Invariants
     ///
@@ -1770,6 +1770,149 @@ pub trait ConfigSourceChain {
         Self: AsRef<[ConfigSource]>,
     {
         self.file_format_histogram().unobserved().collect()
+    }
+
+    /// The number of distinct [`crate::discovery::Format`]s that appear as
+    /// **zero** recognized-extension file layers in this chain — the
+    /// coverage-gap-size scalar-count peer of [`Self::absent_file_formats`]
+    /// on the file-format sub-axis of the chain altitude, and the file-
+    /// format-sub-axis sister of [`Self::absent_layer_kinds_count`] on the
+    /// layer-kind sub-axis one axis over on the same chain-shape surface.
+    ///
+    /// Routes through [`Self::file_format_histogram`]:
+    /// [`crate::AxisHistogram::unobserved_cells`] is the cube-native single-
+    /// pass `.filter(|&&c| c == 0).count()` walk over the fixed-cardinality
+    /// counts vector, so this method reads the coverage-gap size in one call
+    /// instead of paying for the `Vec<Format>` allocation
+    /// [`Self::absent_file_formats`] materialises and then walking
+    /// [`Vec::len`] to read the length back — the exact idiom every
+    /// operator-facing consumer asking *"how many file formats are absent
+    /// from this recipe?"* has been open-coding at [`Vec::len`] of the
+    /// coverage-gap `Vec` peer:
+    ///
+    /// - the config-show summary line *"3 of 4 file formats absent this
+    ///   rebuild window"* reading the coverage-gap cardinality directly off
+    ///   the seam,
+    /// - the attestation manifest recording the file-format coverage-gap
+    ///   size of a `ProviderChain` between two rebuild-window snapshots,
+    /// - the alerting policy reading *"file-format coverage-gap size = 3"*
+    ///   to flag a recipe where only one format surfaced.
+    ///
+    /// The file-format sub-axis scalar-count coverage-gap peer of the chain
+    /// altitude, sister to the layer-kind sub-axis's
+    /// [`Self::absent_layer_kinds_count`], the tier altitude's
+    /// [`crate::ProvenanceMap::absent_tiers_count`], and the diff altitude's
+    /// [`crate::ConfigDiff::absent_kinds_count`]. Together with
+    /// [`Self::present_file_formats`], [`Self::absent_file_formats`], and
+    /// [`Self::present_file_formats_count`], this seam closes the
+    /// `(observed, unobserved) × (cells, count)` 2×2 support / coverage-gap
+    /// grid on the file-format sub-axis explicitly — every quadrant of the
+    /// grid is now a named seam:
+    ///
+    /// | | cells (Vec) | count (usize) |
+    /// |---|---|---|
+    /// | observed | [`Self::present_file_formats`] | [`Self::present_file_formats_count`] |
+    /// | unobserved | [`Self::absent_file_formats`] | **`absent_file_formats_count`** |
+    ///
+    /// Extends the "coverage-gap-size across altitudes" projection — seeded
+    /// on the diff altitude by [`crate::ConfigDiff::absent_kinds_count`],
+    /// lifted to the tier altitude by
+    /// [`crate::ProvenanceMap::absent_tiers_count`], and opened on the chain
+    /// altitude's layer-kind sub-axis by [`Self::absent_layer_kinds_count`]
+    /// — sideways to the chain altitude's second sub-axis. The chain-
+    /// altitude env-prefix sister lift (`absent_env_prefix_kinds_count`) on
+    /// the same chain-shape surface inherits the same template.
+    ///
+    /// **Empty-histogram convention** — returns
+    /// [`crate::axis_cardinality::<crate::discovery::Format>()`][crate::axis_cardinality]
+    /// (not `Option<usize>`) matching the [`Self::absent_file_formats`]
+    /// full-axis convention and the
+    /// [`crate::AxisHistogram::unobserved_cells`] convention one altitude
+    /// down. Unlike [`Self::absent_layer_kinds_count`], the full-axis
+    /// boundary is tied to the histogram's own emptiness, **not** the
+    /// chain's: a non-empty chain of only [`ConfigSource::Defaults`] /
+    /// [`ConfigSource::Env`] / unrecognized-extension [`ConfigSource::File`]
+    /// layers still reads `axis_cardinality::<Format>()` because every
+    /// entry projects to [`None`] through [`ConfigSource::file_format`],
+    /// leaving the histogram empty and every format in the coverage gap.
+    ///
+    /// # Invariants
+    ///
+    /// - `absent_file_formats_count() ==
+    ///   file_format_histogram().unobserved_cells()` — both project the
+    ///   same coverage-gap cardinality off the same primitive; the named
+    ///   seam is the cube-native routing of the histogram surface. Pinned
+    ///   by
+    ///   [`tests::absent_file_formats_count_matches_file_format_histogram_unobserved_cells_pointwise`].
+    /// - `absent_file_formats_count() == absent_file_formats().len()` —
+    ///   the scalar-count peer of the coverage-gap `Vec` peer; both name
+    ///   the same coverage-gap cardinality without materialising the
+    ///   vector. Pinned by
+    ///   [`tests::absent_file_formats_count_equals_absent_file_formats_len_pointwise`].
+    /// - `present_file_formats_count() + absent_file_formats_count() ==
+    ///   crate::axis_cardinality::<crate::discovery::Format>()` — the
+    ///   observed / coverage-gap partition on the file-format sub-axis
+    ///   without remainder, the fully-scalar dual of
+    ///   [`tests::absent_file_formats_and_present_file_formats_partition_axis`]
+    ///   (both sides now scalar-count, no `.len()` on either). Pinned by
+    ///   [`tests::present_file_formats_count_and_absent_file_formats_count_partition_axis_cardinality`].
+    /// - `absent_file_formats_count() ==
+    ///   crate::axis_cardinality::<crate::discovery::Format>() -
+    ///   present_file_formats_count()` — the algebraic rearrangement of
+    ///   the partition, useful for consumers that already hold the
+    ///   support-size scalar. Pinned by
+    ///   [`tests::absent_file_formats_count_equals_axis_cardinality_minus_present_file_formats_count`].
+    /// - `absent_file_formats_count() ==
+    ///   crate::axis_cardinality::<crate::discovery::Format>()` ⇔
+    ///   `file_format_histogram().is_empty()` — the empty-histogram /
+    ///   full-coverage-gap boundary equivalence, the scalar peer of
+    ///   `absent_file_formats() == Format::ALL`. Unlike
+    ///   [`Self::absent_layer_kinds_count`], the full-axis boundary fires
+    ///   on any chain whose entries all project to [`None`] through
+    ///   [`ConfigSource::file_format`] — not just on the empty chain.
+    ///   Pinned by
+    ///   [`tests::absent_file_formats_count_is_axis_cardinality_iff_file_format_histogram_is_empty`].
+    /// - `absent_file_formats_count() == 0` ⇔
+    ///   `file_format_histogram().is_full_cover()` — the full-cover
+    ///   boundary equivalence, the file-format-sub-axis scalar-count
+    ///   coverage-gap peer of the [`crate::AxisHistogram::is_full_cover`]
+    ///   boundary law and the coverage-gap dual of
+    ///   `present_file_formats_count() ==
+    ///   crate::axis_cardinality::<crate::discovery::Format>()`. Pinned by
+    ///   [`tests::absent_file_formats_count_is_zero_iff_is_full_cover`].
+    /// - `absent_file_formats_count() <=
+    ///   crate::axis_cardinality::<crate::discovery::Format>()` — the
+    ///   coverage gap of a histogram over a closed axis is bounded above
+    ///   by the axis cardinality (the unobserved-cells set is a subset of
+    ///   [`crate::discovery::Format::ALL`]). Pinned by
+    ///   [`tests::absent_file_formats_count_is_bounded_by_axis_cardinality`].
+    /// - `absent_file_formats_count() >= 1` whenever
+    ///   `!file_format_histogram().is_full_cover()` — a non-full-cover
+    ///   recipe carries at least one absent format. Pinned by
+    ///   [`tests::absent_file_formats_count_is_at_least_one_when_not_full_cover`].
+    /// - `absent_file_formats_count() ==
+    ///   crate::axis_cardinality::<crate::discovery::Format>() - 1` ⇔
+    ///   `file_format_histogram().has_singular_support()` — the
+    ///   singleton-support boundary in coverage-gap form: when exactly
+    ///   one file format is observed, exactly `axis_cardinality - 1` are
+    ///   absent. Pinned by
+    ///   [`tests::absent_file_formats_count_is_axis_cardinality_minus_one_iff_has_singular_support`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the coverage-gap scan). Both are `O(n)` in practice since the
+    /// file-format axis carries a fixed four-cell cardinality; the
+    /// returned `usize` reads one scalar. Halves the wall-cost of the
+    /// previous `absent_file_formats().len()` idiom by eliding the
+    /// `Vec<Format>` allocation the coverage-gap collect paid on every
+    /// call site.
+    fn absent_file_formats_count(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().unobserved_cells()
     }
 
     /// The [`crate::discovery::Format`] whose entries produced the greatest
@@ -7614,6 +7757,500 @@ mod tests {
                 chain.len(),
             );
         }
+    }
+
+    // ---- ConfigSourceChain::absent_file_formats_count — coverage-gap-
+    //      size scalar peer on the file-format sub-axis of the chain
+    //      altitude ----
+
+    #[test]
+    fn absent_file_formats_count_matches_file_format_histogram_unobserved_cells_pointwise() {
+        // The coverage-gap-size pin: `absent_file_formats_count` routes
+        // through `file_format_histogram().unobserved_cells()`, so the two
+        // seams must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops projecting
+        // through the shared cube-native primitive. File-format-sub-axis
+        // peer of
+        // `absent_layer_kinds_count_matches_layer_kind_histogram_unobserved_cells_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude.
+        let fixtures: [Vec<ConfigSource>; 6] = [
+            Vec::new(),
+            sample_chain(),
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Defaults, ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.nix")),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+                ConfigSource::File(PathBuf::from("/c.toml")),
+                ConfigSource::File(PathBuf::from("/d.unknown")),
+            ],
+        ];
+        for chain in &fixtures {
+            let via_histogram = chain.as_slice().file_format_histogram().unobserved_cells();
+            assert_eq!(
+                chain.as_slice().absent_file_formats_count(),
+                via_histogram,
+                "absent_file_formats_count must equal \
+                 file_format_histogram().unobserved_cells() pointwise \
+                 over chain of length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn absent_file_formats_count_equals_absent_file_formats_len_pointwise() {
+        // The Vec-peer identity: the scalar-count seam equals the length
+        // of the coverage-gap `Vec` peer. Any future re-implementation of
+        // either seam must keep this equality — pinned uniformly. File-
+        // format-sub-axis peer of
+        // `absent_layer_kinds_count_equals_absent_layer_kinds_len_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude.
+        let fixtures: [Vec<ConfigSource>; 6] = [
+            Vec::new(),
+            sample_chain(),
+            vec![ConfigSource::Defaults],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.nix")),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::File(PathBuf::from("/a.unknown")),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().absent_file_formats_count(),
+                chain.as_slice().absent_file_formats().len(),
+            );
+        }
+    }
+
+    #[test]
+    fn present_file_formats_count_and_absent_file_formats_count_partition_axis_cardinality() {
+        // The fully-scalar partition law: both sides now the scalar-count
+        // peers, no `.len()` on either. Every file-format cell lies in
+        // exactly one of (observed, unobserved). The scalar dual of
+        // `absent_file_formats_and_present_file_formats_partition_axis`
+        // closed on both sides. Sits alongside
+        // `present_file_formats_count_and_absent_file_formats_len_partition_axis_cardinality`
+        // which still uses `.len()` on the coverage-gap side. File-format-
+        // sub-axis peer of
+        // `present_layer_kinds_count_and_absent_layer_kinds_count_partition_axis_cardinality`
+        // on the layer-kind sub-axis of the same chain altitude.
+        let axis_size = crate::axis_cardinality::<crate::discovery::Format>();
+        let fixtures: [Vec<ConfigSource>; 6] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.nix")),
+            ],
+            vec![
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.unknown")),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().present_file_formats_count()
+                    + chain.as_slice().absent_file_formats_count(),
+                axis_size,
+                "fully-scalar partition must sum to axis cardinality \
+                 over chain of length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn absent_file_formats_count_equals_axis_cardinality_minus_present_file_formats_count() {
+        // The algebraic rearrangement: the coverage-gap size equals the
+        // axis cardinality minus the support size, useful for consumers
+        // that already hold the support-size scalar. File-format-sub-
+        // axis peer of
+        // `absent_layer_kinds_count_equals_axis_cardinality_minus_present_layer_kinds_count`
+        // on the layer-kind sub-axis of the same chain altitude.
+        let axis_size = crate::axis_cardinality::<crate::discovery::Format>();
+        let fixtures: [Vec<ConfigSource>; 6] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.nix")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+                ConfigSource::File(PathBuf::from("/c.yaml")),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().absent_file_formats_count(),
+                axis_size - chain.as_slice().present_file_formats_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn absent_file_formats_count_is_axis_cardinality_iff_file_format_histogram_is_empty() {
+        // The empty-histogram / full-coverage-gap boundary equivalence:
+        // the file-format-sub-axis's divergence from the layer-kind sub-
+        // axis — the full-axis boundary is tied to the histogram's own
+        // emptiness, NOT the chain's. Unlike
+        // `absent_layer_kinds_count_is_axis_cardinality_iff_chain_is_empty`,
+        // a non-empty chain of only Defaults / Env / unrecognized-extension
+        // File layers still reads the axis cardinality because every entry
+        // projects to None through `file_format()`.
+        let axis_size = crate::axis_cardinality::<crate::discovery::Format>();
+
+        // Empty chain: histogram empty, coverage-gap full.
+        let empty: Vec<ConfigSource> = Vec::new();
+        assert!(empty.as_slice().file_format_histogram().is_empty());
+        assert_eq!(empty.as_slice().absent_file_formats_count(), axis_size);
+
+        // Non-empty chain, empty histogram: coverage-gap still full —
+        // the load-bearing divergence from the layer-kind sub-axis.
+        let no_recognized = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.unknown")),
+        ];
+        assert!(!no_recognized.is_empty());
+        assert!(no_recognized.as_slice().file_format_histogram().is_empty());
+        assert_eq!(
+            no_recognized.as_slice().absent_file_formats_count(),
+            axis_size,
+        );
+
+        // Non-empty histogram: coverage-gap strictly less than full.
+        let chain = sample_chain();
+        assert!(!chain.as_slice().file_format_histogram().is_empty());
+        assert!(chain.as_slice().absent_file_formats_count() < axis_size);
+    }
+
+    #[test]
+    fn absent_file_formats_count_is_zero_iff_is_full_cover() {
+        // The full-cover boundary equivalence in coverage-gap form: the
+        // coverage gap is empty iff every file format contributed ≥1
+        // recognized file layer iff the histogram is full-cover. File-
+        // format-sub-axis scalar-count coverage-gap peer of
+        // `AxisHistogram::is_full_cover` and peer of
+        // `absent_layer_kinds_count_is_zero_iff_is_full_cover` on the
+        // layer-kind sub-axis of the same chain altitude.
+        let fixtures: [Vec<ConfigSource>; 6] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.nix")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+                ConfigSource::File(PathBuf::from("/c.yaml")),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().absent_file_formats_count() == 0,
+                chain.as_slice().file_format_histogram().is_full_cover(),
+            );
+        }
+
+        // Full-cover direct pin: one file per format is full-cover; the
+        // coverage-gap scalar reads zero.
+        let full_cover = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        assert!(
+            full_cover
+                .as_slice()
+                .file_format_histogram()
+                .is_full_cover()
+        );
+        assert_eq!(full_cover.as_slice().absent_file_formats_count(), 0);
+    }
+
+    #[test]
+    fn absent_file_formats_count_is_bounded_by_axis_cardinality() {
+        // The upper-bound invariant: the coverage gap of a closed-axis
+        // histogram is at most the axis cardinality (the unobserved-cells
+        // set is a subset of `Format::ALL`). File-format-sub-axis peer of
+        // `absent_layer_kinds_count_is_bounded_by_axis_cardinality` on
+        // the layer-kind sub-axis of the same chain altitude.
+        let axis_size = crate::axis_cardinality::<crate::discovery::Format>();
+        let fixtures: [Vec<ConfigSource>; 6] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.nix")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+                ConfigSource::File(PathBuf::from("/c.yaml")),
+            ],
+        ];
+        for chain in &fixtures {
+            assert!(chain.as_slice().absent_file_formats_count() <= axis_size);
+        }
+    }
+
+    #[test]
+    fn absent_file_formats_count_is_at_least_one_when_not_full_cover() {
+        // A non-full-cover recipe carries at least one absent format. The
+        // coverage-gap-side lower bound on non-full-cover, dual to
+        // `present_file_formats_count_is_at_least_one_on_nonempty_histogram`
+        // on the observed side, and peer of
+        // `absent_layer_kinds_count_is_at_least_one_when_not_full_cover`
+        // on the layer-kind sub-axis of the same chain altitude.
+        let fixtures: [Vec<ConfigSource>; 6] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+                ConfigSource::File(PathBuf::from("/c.yaml")),
+            ],
+        ];
+        for chain in &fixtures {
+            if chain.as_slice().file_format_histogram().is_full_cover() {
+                continue;
+            }
+            assert!(chain.as_slice().absent_file_formats_count() >= 1);
+        }
+    }
+
+    #[test]
+    fn absent_file_formats_count_is_axis_cardinality_minus_one_iff_has_singular_support() {
+        // The singleton-support boundary in coverage-gap form: when
+        // exactly one file format is observed, exactly `axis_cardinality
+        // - 1` are absent. File-format-sub-axis coverage-gap peer of
+        // `present_file_formats_count_is_one_iff_has_singular_support`
+        // and
+        // `absent_layer_kinds_count_is_axis_cardinality_minus_one_iff_has_singular_support`.
+        let axis_size = crate::axis_cardinality::<crate::discovery::Format>();
+
+        // Singleton-support: chains carrying recognized files of only one
+        // format have exactly `axis_cardinality - 1` absent.
+        for singleton in [
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+            vec![ConfigSource::File(PathBuf::from("/a.lisp"))],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.nix")),
+            ],
+        ] {
+            assert!(
+                singleton
+                    .as_slice()
+                    .file_format_histogram()
+                    .has_singular_support()
+            );
+            assert_eq!(
+                singleton.as_slice().absent_file_formats_count(),
+                axis_size - 1,
+            );
+        }
+
+        // Full-cover: zero absent (< axis_size - 1).
+        let full_cover = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        assert!(
+            !full_cover
+                .as_slice()
+                .file_format_histogram()
+                .has_singular_support()
+        );
+        assert!(full_cover.as_slice().absent_file_formats_count() < axis_size - 1);
+
+        // Empty histogram: coverage gap is the full axis (> axis_size - 1).
+        let empty: Vec<ConfigSource> = Vec::new();
+        assert!(
+            !empty
+                .as_slice()
+                .file_format_histogram()
+                .has_singular_support()
+        );
+        assert!(empty.as_slice().absent_file_formats_count() > axis_size - 1);
+    }
+
+    #[test]
+    fn absent_file_formats_count_agrees_with_open_coded_zero_walk() {
+        // Parity against the exact `Format::ALL.iter().filter(|f|
+        // file_format_histogram().count(*f) == 0).count()` walk this lift
+        // replaces on the coverage-gap side. File-format-sub-axis peer of
+        // `absent_layer_kinds_count_agrees_with_open_coded_zero_walk` on
+        // the layer-kind sub-axis of the same chain altitude.
+        use crate::discovery::Format;
+        let fixtures: [Vec<ConfigSource>; 6] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.nix")),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::File(PathBuf::from("/a.unknown")),
+            ],
+        ];
+        for chain in &fixtures {
+            let via_seam = chain.as_slice().absent_file_formats_count();
+            let hist = chain.as_slice().file_format_histogram();
+            let hand_rolled = Format::ALL.iter().filter(|f| hist.count(**f) == 0).count();
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn absent_file_formats_count_empty_chain_is_axis_cardinality() {
+        // Direct fixture pin: an empty chain has full coverage gap so
+        // `absent_file_formats_count` reads the axis cardinality
+        // (4 = |{Yaml, Toml, Lisp, Nix}|). File-format-sub-axis peer of
+        // `absent_layer_kinds_count_empty_chain_is_axis_cardinality` on
+        // the layer-kind sub-axis of the same chain altitude.
+        let empty: Vec<ConfigSource> = Vec::new();
+        assert_eq!(
+            empty.as_slice().absent_file_formats_count(),
+            crate::axis_cardinality::<crate::discovery::Format>(),
+        );
+    }
+
+    #[test]
+    fn absent_file_formats_count_full_cover_is_zero() {
+        // Direct fixture pin: a chain covering every file format has zero
+        // coverage gap. File-format-sub-axis peer of
+        // `absent_layer_kinds_count_full_cover_is_zero` on the layer-kind
+        // sub-axis of the same chain altitude.
+        let full_cover = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        assert_eq!(full_cover.as_slice().absent_file_formats_count(), 0);
+    }
+
+    #[test]
+    fn absent_file_formats_count_sample_chain_is_three() {
+        // Direct fixture pin: `sample_chain` covers one of four formats
+        // (two `.yaml` File layers, one Env), so the coverage-gap scalar
+        // reads 3 (Toml, Lisp, Nix absent). Coverage-gap peer of
+        // `present_file_formats_count_sample_chain_is_one` on the same
+        // fixture and altitude.
+        let chain = sample_chain();
+        assert_eq!(chain.as_slice().absent_file_formats_count(), 3);
+    }
+
+    #[test]
+    fn absent_file_formats_count_no_recognized_files_is_axis_cardinality() {
+        // Direct fixture pin on the file-format sub-axis's divergent
+        // boundary: a non-empty chain of only Defaults, Env, and
+        // unrecognized-extension File layers reads the full axis
+        // cardinality because every entry projects to None through
+        // `file_format()`, leaving every format in the coverage gap.
+        // Companion to
+        // `present_file_formats_count_no_recognized_files_is_zero` on
+        // the support-size scalar peer.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.unknown")),
+            ConfigSource::File(PathBuf::from("/b")),
+        ];
+        assert!(!chain.is_empty());
+        assert!(chain.as_slice().file_format_histogram().is_empty());
+        assert_eq!(
+            chain.as_slice().absent_file_formats_count(),
+            crate::axis_cardinality::<crate::discovery::Format>(),
+        );
     }
 
     // ---- ConfigSourceChain::dominant_file_format — modal-cell scalar
