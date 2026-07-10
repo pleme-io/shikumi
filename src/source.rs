@@ -1435,6 +1435,135 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().trough_count()
     }
 
+    /// The **scalar dispersion** of the layer-count distribution across the
+    /// observed [`ConfigSourceKind`]s on this chain — the layer-kind
+    /// sub-axis lift of the "spread across altitudes" projection seeded on
+    /// the diff altitude by [`crate::ConfigDiff::kind_spread`] and climbed
+    /// to the tier altitude by [`crate::ProvenanceMap::tier_spread`].
+    /// Returns `0` exactly on every empty chain, every singleton-support
+    /// chain (only one observed kind, trivially balanced), and every
+    /// uniform per-kind chain (each observed kind contributing the same
+    /// nonzero layer count, dominant included).
+    ///
+    /// The **scalar dispersion peer** of the fused
+    /// `(peak_layer_kind_count, trough_layer_kind_count)` modal-count pair
+    /// on the layer-kind sub-axis of the chain altitude — the natural typed
+    /// primitive for chain-shape dashboards, attestation manifests, and
+    /// alerting policies asking *"how unevenly distributed are the layers
+    /// across the observed kinds?"*: the CLI `config-show` summary line
+    /// *"kind skew 2: File owns 3 of 5 layers, Defaults 1 of 5"* (where 2
+    /// is this scalar), the attestation manifest recording the layer-kind
+    /// spread between two `ProviderChain` snapshots, the alerting policy
+    /// reading *"chain kind spread = 2"* to flag a rebuild window where
+    /// one layer kind dwarfed the others. Before this lift, every such
+    /// consumer re-derived the projection inline as
+    /// `chain.peak_layer_kind_count() - chain.trough_layer_kind_count()`
+    /// — two method calls plus a subtraction at every site, each site
+    /// having to reason independently about the structural non-negativity
+    /// of the difference (`peak_layer_kind_count() >=
+    /// trough_layer_kind_count()` holds on every chain by lifting the
+    /// trait-uniform `peak_count() >= trough_count()` law on
+    /// [`crate::AxisHistogram`], but not on the inline subtraction surface
+    /// — an unwitnessed refactor swapping the operands would silently
+    /// underflow). Routes through [`crate::AxisHistogram::spread`] one
+    /// altitude down — the underflow-safe named seam whose docs pin the
+    /// monotonicity invariant explicitly.
+    ///
+    /// The layer-kind sub-axis lift in the "spread across altitudes"
+    /// projection seeded on the diff altitude by
+    /// [`crate::ConfigDiff::kind_spread`] and climbed to the tier altitude
+    /// by [`crate::ProvenanceMap::tier_spread`]. The pattern is the same
+    /// at every altitude: fuse the (`peak_count`, `trough_count`) modal-
+    /// count pair into a single dispersion scalar named at the surface,
+    /// routed through the shared [`crate::AxisHistogram::spread`]
+    /// primitive one altitude down. The two remaining chain-altitude
+    /// sub-axes (`file_format_spread` over
+    /// [`Self::file_format_histogram`], `env_prefix_kind_spread` over
+    /// [`Self::env_prefix_kind_histogram`]) are the natural next sideways
+    /// lifts on the same doc-cited template.
+    ///
+    /// **Empty-chain convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::spread`] empty convention one altitude
+    /// down and the [`Self::peak_layer_kind_count`] /
+    /// [`Self::trough_layer_kind_count`] empty conventions on the same
+    /// sub-axis. The scalar-count triple
+    /// `(peak_layer_kind_count, trough_layer_kind_count,
+    /// layer_kind_spread)` reads uniformly `(0, 0, 0)` on the empty
+    /// chain — every observation scalar reads zero on empty; every cell
+    /// projection ([`Self::dominant_layer_kind`],
+    /// [`Self::recessive_layer_kind`]) reads `None`. The asymmetry is
+    /// intentional and matches the [`crate::AxisHistogram`] convention
+    /// one altitude down.
+    ///
+    /// **Structural-skew predicate.** `layer_kind_spread() == 0` is the
+    /// typed *balanced-layer-kinds* predicate at the layer-kind sub-axis
+    /// of the chain altitude — every observed [`ConfigSourceKind`]
+    /// contributed the same number of layers. Pointwise equivalent to
+    /// `peak_layer_kind_count() == trough_layer_kind_count()` on the
+    /// scalar-count pair and to `dominant_layer_kind() ==
+    /// recessive_layer_kind()` on the modal-cell pair whenever the chain
+    /// is non-empty (both branches reduce to `Some(first) == Some(first)`
+    /// on singleton-support and uniform-cover chains, and to `false` on
+    /// skewed chains). Together with `self.as_ref().is_empty()` and the
+    /// full-cover predicate on [`Self::layer_kind_histogram`], the
+    /// layer-kind sub-axis of the chain-shape surface now carries the
+    /// natural boundary triple *"did any layer contribute?"* / *"did every
+    /// kind fire?"* / *"did the kinds fire equally?"* — each a single
+    /// method call.
+    ///
+    /// # Invariants
+    ///
+    /// - `layer_kind_spread() == layer_kind_histogram().spread()` — both
+    ///   project the same scalar off the same primitive; the named seam
+    ///   is the cube-native routing of the histogram surface.
+    /// - `layer_kind_spread() == peak_layer_kind_count() -
+    ///   trough_layer_kind_count()` — the fused-pair identity of the
+    ///   scalar-dispersion peer. The subtraction is underflow-safe
+    ///   because `peak_layer_kind_count() >= trough_layer_kind_count()`
+    ///   holds structurally on every chain (lifted from the trait-
+    ///   uniform `peak_count() >= trough_count()` law on
+    ///   [`crate::AxisHistogram`]).
+    /// - `layer_kind_spread() == 0` on the empty chain — the vacuous
+    ///   uniformity boundary, matching the
+    ///   [`crate::AxisHistogram::spread`] empty convention one altitude
+    ///   down. The `(peak_layer_kind_count, trough_layer_kind_count,
+    ///   layer_kind_spread)` triple reads `(0, 0, 0)` uniformly on the
+    ///   empty chain.
+    /// - `layer_kind_spread() == 0` whenever `present_layer_kinds().len()
+    ///   <= 1` — singleton-support chains are trivially balanced (the one
+    ///   observed kind's count is both the peak and the trough). Also
+    ///   holds on every uniform per-kind chain (each observed kind
+    ///   contributing the same nonzero count, dominant included).
+    /// - `layer_kind_spread() <= peak_layer_kind_count()` always — the
+    ///   trough is non-negative, so the subtraction is bounded above by
+    ///   the minuend. Equality holds iff the trough is zero — i.e. on
+    ///   the empty chain. Lifted from the trait-uniform `spread() <=
+    ///   peak_count()` law on [`crate::AxisHistogram`].
+    /// - `layer_kind_spread() <= self.as_ref().len()` always —
+    ///   composition of `layer_kind_spread() <= peak_layer_kind_count()`
+    ///   (this method) with `peak_layer_kind_count() <= self.as_ref().len()`
+    ///   (documented on [`Self::peak_layer_kind_count`]).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the
+    /// fused peak-and-trough scan). Both are `O(n)` in practice since
+    /// the layer-kind axis carries a fixed three-cell cardinality; the
+    /// returned `usize` reads one scalar. Halves the cost of the
+    /// previous inline `chain.peak_layer_kind_count() -
+    /// chain.trough_layer_kind_count()` idiom (which walked the counts
+    /// vector twice — once for the max, once for the min-over-support —
+    /// where [`crate::AxisHistogram::spread`] can fuse both into a
+    /// single walk with a running-max/min pair).
+    #[must_use]
+    fn layer_kind_spread(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().spread()
+    }
+
     /// Dense per-format tally of the chain's [`ConfigSource::File`]
     /// layers over the [`crate::discovery::Format`] axis — the typed
     /// histogram every per-format dashboard, attestation manifest
@@ -14726,6 +14855,327 @@ mod tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::layer_kind_spread — scalar-dispersion peer
+    //      on the layer-kind sub-axis of the chain altitude, fusing
+    //      peak_layer_kind_count and trough_layer_kind_count into one
+    //      dispersion scalar and lifting the "spread across altitudes"
+    //      projection sideways to the layer-kind sub-axis ----
+
+    #[test]
+    fn layer_kind_spread_matches_layer_kind_histogram_spread_pointwise() {
+        // The scalar-dispersion pin: `layer_kind_spread` routes through
+        // `layer_kind_histogram().spread()`, so the two seams must stay
+        // pointwise equivalent under every fixture. Direct sister of
+        // `tier_spread_matches_tier_histogram_spread_pointwise` on the
+        // tier altitude and
+        // `kind_spread_matches_kind_histogram_spread_pointwise` on the
+        // diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let via_histogram = chain.as_slice().layer_kind_histogram().spread();
+            assert_eq!(chain.as_slice().layer_kind_spread(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn layer_kind_spread_equals_peak_minus_trough_pointwise() {
+        // The fused-pair pin: `layer_kind_spread == peak_layer_kind_count
+        // - trough_layer_kind_count` on every fixture. The subtraction is
+        // underflow-safe because `peak_layer_kind_count() >=
+        // trough_layer_kind_count()` holds structurally on every chain
+        // (lifted from the trait-uniform `peak_count >= trough_count` law
+        // on AxisHistogram); this pin asserts the monotonicity invariant
+        // explicitly at every fixture so any future refactor that swaps
+        // the operands fails visibly. Peer of
+        // `tier_spread_equals_peak_minus_trough_pointwise` on the tier
+        // altitude and `kind_spread_equals_peak_minus_trough_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let peak = slice.peak_layer_kind_count();
+            let trough = slice.trough_layer_kind_count();
+            assert!(
+                peak >= trough,
+                "peak={peak} must be >= trough={trough} on every chain",
+            );
+            assert_eq!(slice.layer_kind_spread(), peak - trough);
+        }
+    }
+
+    #[test]
+    fn layer_kind_spread_sample_chain_is_one() {
+        // Direct pin against `sample_chain()`: two File layers + one Env
+        // layer. File dominant at 2, Env recessive at 1 — the spread is
+        // 1. Reads the paired `(peak_layer_kind_count,
+        // trough_layer_kind_count, layer_kind_spread)` dispersion triple
+        // as `(2, 1, 1)`. Peer of `tier_spread_prog_fixture_is_one` on
+        // the tier altitude and `kind_spread_added_dominated_fixture_is_one`
+        // on the diff altitude.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_layer_kind_count(), 2);
+        assert_eq!(slice.trough_layer_kind_count(), 1);
+        assert_eq!(slice.layer_kind_spread(), 1);
+    }
+
+    #[test]
+    fn layer_kind_spread_env_majority_is_two() {
+        // Direct pin against an env-majority chain: three Env layers +
+        // one File + one Defaults. Env dominant at 3, Defaults recessive
+        // at 1 (declaration-order tie against File at 1) — the spread is
+        // 2. Reads the paired `(peak_layer_kind_count,
+        // trough_layer_kind_count, layer_kind_spread)` dispersion triple
+        // as `(3, 1, 2)`. Cross-verified against `hist.spread() == 2` at
+        // the same observation site — the fused-pair spread projection
+        // reads through the seam.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_layer_kind_count(), 3);
+        assert_eq!(slice.trough_layer_kind_count(), 1);
+        assert_eq!(slice.layer_kind_spread(), 2);
+        assert_eq!(slice.layer_kind_histogram().spread(), 2);
+    }
+
+    #[test]
+    fn layer_kind_spread_empty_chain_is_zero() {
+        // An empty chain has no layers and therefore zero spread — reads
+        // `0` per the AxisHistogram::spread empty convention one altitude
+        // down; the `(peak_layer_kind_count, trough_layer_kind_count,
+        // layer_kind_spread)` triple reads `(0, 0, 0)` uniformly on
+        // empty. Peer of `tier_spread_empty_map_is_zero` on the tier
+        // altitude and `kind_spread_empty_diff_is_zero` on the diff
+        // altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.peak_layer_kind_count(), 0);
+        assert_eq!(empty.trough_layer_kind_count(), 0);
+        assert_eq!(empty.layer_kind_spread(), 0);
+    }
+
+    #[test]
+    fn layer_kind_spread_singleton_support_is_zero() {
+        // Singleton-support pin: every layer lands on the same kind, so
+        // the dominant kind is both peak and trough of the support, and
+        // the spread is zero — the balanced-layer-kinds boundary on the
+        // singleton-support side. Direct construction: three File
+        // layers, present == {File}. Peer of
+        // `tier_spread_singleton_support_is_zero` on the tier altitude
+        // and `kind_spread_singleton_support_is_zero` on the diff
+        // altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 1);
+        assert_eq!(slice.layer_kind_spread(), 0);
+    }
+
+    #[test]
+    fn layer_kind_spread_uniform_cover_is_zero() {
+        // Uniform-cover pin: every observed kind contributes the same
+        // nonzero count (two layers each here — a full-cover chain with
+        // uniform count 2 per cell), so peak == trough == 2 and the
+        // spread is zero — the balanced-layer-kinds boundary on the
+        // uniform-cover side. Peer of `tier_spread_uniform_cover_is_zero`
+        // on the tier altitude and `kind_spread_uniform_cover_is_zero`
+        // on the diff altitude.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kind_histogram().is_full_cover());
+        assert_eq!(slice.peak_layer_kind_count(), 2);
+        assert_eq!(slice.trough_layer_kind_count(), 2);
+        assert_eq!(slice.layer_kind_spread(), 0);
+    }
+
+    #[test]
+    fn layer_kind_spread_is_zero_iff_peak_equals_trough() {
+        // Structural-skew boundary: `layer_kind_spread() == 0` iff
+        // `peak_layer_kind_count() == trough_layer_kind_count()` — the
+        // scalar-pair form of the balanced-layer-kinds predicate. On
+        // every fixture, the predicate agrees with the equality of the
+        // fused modal-count pair. Peer of
+        // `tier_spread_is_zero_iff_peak_equals_trough` on the tier
+        // altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let spread_zero = slice.layer_kind_spread() == 0;
+            let peak_eq_trough = slice.peak_layer_kind_count() == slice.trough_layer_kind_count();
+            assert_eq!(
+                spread_zero,
+                peak_eq_trough,
+                "layer_kind_spread() == 0 iff peak == trough \
+                 (spread={s}, peak={p}, trough={t})",
+                s = slice.layer_kind_spread(),
+                p = slice.peak_layer_kind_count(),
+                t = slice.trough_layer_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_spread_agrees_with_modal_pair_equality_on_nonempty_chain() {
+        // Cross-surface pin: on every non-empty chain, `layer_kind_spread()
+        // == 0` agrees with `dominant_layer_kind() ==
+        // recessive_layer_kind()` — the modal-pair equality form of the
+        // balanced-layer-kinds predicate. Both branches reduce to
+        // `Some(first) == Some(first)` on singleton-support and uniform-
+        // cover chains, and to `false` on skewed chains. Peer of
+        // `tier_spread_agrees_with_modal_pair_equality_on_nonempty_map`
+        // on the tier altitude and
+        // `kind_spread_agrees_with_modal_pair_equality_on_nonempty_diff`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.is_empty() {
+                continue;
+            }
+            let spread_zero = slice.layer_kind_spread() == 0;
+            let dom_eq_rec = slice.dominant_layer_kind() == slice.recessive_layer_kind();
+            assert_eq!(
+                spread_zero, dom_eq_rec,
+                "on non-empty chain, layer_kind_spread() == 0 iff \
+                 dominant_layer_kind() == recessive_layer_kind()",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_spread_bounded_above_by_peak_layer_kind_count() {
+        // Structural bound: `layer_kind_spread() <= peak_layer_kind_count()`
+        // on every fixture — the trough is non-negative, so the
+        // subtraction is bounded above by the minuend. Lifted from the
+        // trait-uniform `spread() <= peak_count()` law on AxisHistogram.
+        // Peer of `tier_spread_bounded_above_by_peak_tier_count` on the
+        // tier altitude and `kind_spread_bounded_above_by_peak_kind_count`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.layer_kind_spread() <= slice.peak_layer_kind_count(),
+                "layer_kind_spread()={s} must be <= peak_layer_kind_count()={p}",
+                s = slice.layer_kind_spread(),
+                p = slice.peak_layer_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_spread_equals_peak_iff_chain_is_empty() {
+        // Equality-case pin of the `layer_kind_spread <=
+        // peak_layer_kind_count` bound: equality holds iff the trough is
+        // zero, which by `trough_layer_kind_count == 0 <=>
+        // self.as_ref().is_empty()` (the layer-kind sub-axis zero-trough
+        // boundary — every layer projects to exactly one
+        // ConfigSourceKind cell) holds iff the chain is empty. Peer of
+        // `tier_spread_equals_peak_iff_map_is_empty` on the tier
+        // altitude and `kind_spread_equals_peak_iff_diff_is_empty` on
+        // the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let equal = slice.layer_kind_spread() == slice.peak_layer_kind_count();
+            assert_eq!(
+                equal,
+                slice.is_empty(),
+                "layer_kind_spread == peak_layer_kind_count iff chain \
+                 is empty (spread={s}, peak={p}, len={n})",
+                s = slice.layer_kind_spread(),
+                p = slice.peak_layer_kind_count(),
+                n = slice.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_spread_bounded_above_by_len() {
+        // Composition bound: `layer_kind_spread() <= self.as_ref().len()`
+        // on every fixture — chaining `layer_kind_spread <=
+        // peak_layer_kind_count` (previous pin) with
+        // `peak_layer_kind_count <= len()` (documented on
+        // `peak_layer_kind_count`). Peer of
+        // `tier_spread_bounded_above_by_len` on the tier altitude and
+        // `kind_spread_bounded_above_by_lines_len` on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.layer_kind_spread() <= slice.len(),
+                "layer_kind_spread()={s} must be <= len()={n}",
+                s = slice.layer_kind_spread(),
+                n = slice.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_spread_singleton_support_multi_layer_is_zero() {
+        // Direct pin at a 4-layer singleton-support File-only chain —
+        // present == {File}, peak == trough == 4, spread == 0. The
+        // scalar peer of the singleton-support cell degenerate
+        // `dominant_layer_kind() == recessive_layer_kind()` — the
+        // dispersion triple reads `(4, 4, 0)`, distinct from the 3-layer
+        // fixture in `layer_kind_spread_singleton_support_is_zero` so
+        // any misread that reintroduces the `peak - trough` inline idiom
+        // as `peak` alone silently underflows on a fixture at a
+        // different peak. Peer of
+        // `tier_spread_singleton_support_multi_leaf_is_zero` on the tier
+        // altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+            ConfigSource::File(PathBuf::from("/d.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 1);
+        assert_eq!(slice.peak_layer_kind_count(), 4);
+        assert_eq!(slice.trough_layer_kind_count(), 4);
+        assert_eq!(slice.layer_kind_spread(), 0);
+    }
+
+    #[test]
+    fn layer_kind_spread_agrees_with_open_coded_max_minus_min_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0) - hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0)` walk this lift replaces
+        // — both the named seam and the hand-rolled max-minus-min-over-
+        // support must pointwise agree over every fixture. The
+        // `filter(|(_, c)| c > 0)` step on the min side is the load-
+        // bearing seam: the naive `.min()` over the full axis would
+        // silently pick zero-count absent cells on any non-full-cover
+        // chain, shadowing the trough-of-support the seam surfaces —
+        // and once the trough shadows to zero, the spread coincides
+        // with the peak alone, silently overreporting the dispersion.
+        // Peer of `tier_spread_agrees_with_open_coded_max_minus_min_walk`
+        // on the tier altitude and
+        // `kind_spread_agrees_with_open_coded_max_minus_min_walk` on
+        // the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kind_spread();
+            let hist = slice.layer_kind_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .map(|(_, c)| c)
+                .filter(|&c| c > 0)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(via_seam, peak - trough);
         }
     }
 
