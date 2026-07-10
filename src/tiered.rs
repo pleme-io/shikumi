@@ -1046,6 +1046,146 @@ impl ProvenanceMap {
         self.tier_histogram().distinct_cells()
     }
 
+    /// The **coverage-gap size** — the number of distinct tiers that
+    /// produced **zero** surviving effective leaves on this resolved
+    /// fold. Returns
+    /// [`crate::axis_cardinality::<ConfigTierKind>()`][crate::axis_cardinality]
+    /// exactly when the map is empty (every tier absent),
+    /// [`crate::axis_cardinality::<ConfigTierKind>()`][crate::axis_cardinality]
+    /// `- 1` on a singleton-support fold (every leaf attributed to one
+    /// tier, three tiers absent), and `0` on a full-cover fold (every
+    /// tier heard from at least once, no coverage gap).
+    ///
+    /// The **scalar-count peer** of [`Self::absent_tiers`] on the
+    /// coverage-gap projection: [`Self::absent_tiers`] materializes the
+    /// unobserved-cells `Vec<ConfigTierKind>`, this method returns its
+    /// cardinality as a `usize` scalar, and both project the same axis
+    /// coverage-gap off the shared [`Self::tier_histogram`] primitive.
+    /// Every operator-facing consumer answering *"how many tiers were
+    /// never heard from on this resolved fold?"* — the fleet dashboard
+    /// summary line *"1 of 4 tiers absent this rebuild window"* (where 1
+    /// is this scalar and 4 is the axis cardinality), the attestation
+    /// manifest recording the tier coverage-gap size between two
+    /// resolved-fold snapshots, the alerting policy reading *"coverage-
+    /// gap size = 3"* to flag a rebuild window where only one tier
+    /// surfaced — now route through this named seam instead of the
+    /// previous `absent_tiers().len()` idiom, which paid for a
+    /// `Vec<ConfigTierKind>` allocation of length ≤
+    /// [`crate::axis_cardinality::<ConfigTierKind>()`][crate::axis_cardinality]
+    /// on every call site and walked the histogram's coverage gap twice
+    /// (once through [`crate::AxisHistogram::unobserved`] to build the
+    /// vector, once through [`Vec::len`] to read its length back).
+    /// Routes through [`Self::tier_histogram`]:
+    /// [`crate::AxisHistogram::unobserved_cells`] reads the zero-cell
+    /// count in a single pass over the fixed-cardinality counts vector,
+    /// so this method returns the size of the coverage gap without
+    /// materializing the unobserved-cells `Vec` — one histogram build
+    /// followed by one zero-count walk instead of the full
+    /// `.unobserved().collect::<Vec<_>>().len()` chain the prior idiom
+    /// paid.
+    ///
+    /// The tier-altitude scalar-count coverage-gap peer. Together with
+    /// [`Self::contributing_tiers`], [`Self::absent_tiers`], and
+    /// [`Self::contributing_tiers_count`], this seam closes the
+    /// `(observed, unobserved) × (cells, count)` 2×2 support / coverage-
+    /// gap grid on the tier altitude explicitly — every quadrant of the
+    /// grid is now a named seam on the tier altitude:
+    ///
+    /// | | cells (Vec) | count (usize) |
+    /// |---|---|---|
+    /// | observed | [`Self::contributing_tiers`] | [`Self::contributing_tiers_count`] |
+    /// | unobserved | [`Self::absent_tiers`] | **`absent_tiers_count`** |
+    ///
+    /// Peer of the diff-altitude [`ConfigDiff::absent_kinds_count`]
+    /// scalar-count coverage-gap seam, extending the "coverage-gap-size
+    /// across altitudes" projection sideways to the tier altitude. The
+    /// natural next lift is the chain altitude's per-sub-axis scalar-
+    /// count coverage-gap trio: `ConfigSourceChain::absent_layer_kinds_count`,
+    /// `absent_file_formats_count`, `absent_env_prefix_kinds_count`.
+    ///
+    /// **Empty-map convention** — returns
+    /// [`crate::axis_cardinality::<ConfigTierKind>()`][crate::axis_cardinality]
+    /// (not `Option<usize>`) matching the [`Self::absent_tiers`]
+    /// full-axis convention and the
+    /// [`crate::AxisHistogram::unobserved_cells`] convention one altitude
+    /// down. The coverage-gap-size scalar is well-defined as the axis
+    /// cardinality on the empty map: the unobserved-cells set is the
+    /// entire axis, its cardinality is
+    /// [`crate::axis_cardinality::<ConfigTierKind>()`][crate::axis_cardinality],
+    /// and the coverage-partition sum
+    /// [`Self::contributing_tiers_count`] + `absent_tiers_count()` still
+    /// balances the axis cardinality (`0 +
+    /// axis_cardinality::<ConfigTierKind>() ==
+    /// axis_cardinality::<ConfigTierKind>()`).
+    ///
+    /// # Invariants
+    ///
+    /// - `absent_tiers_count() == tier_histogram().unobserved_cells()` —
+    ///   both project the same coverage-gap cardinality off the same
+    ///   primitive; the named seam is the cube-native routing of the
+    ///   histogram surface. Pinned by
+    ///   [`tests::absent_tiers_count_matches_tier_histogram_unobserved_cells_pointwise`].
+    /// - `absent_tiers_count() == absent_tiers().len()` — the scalar-
+    ///   count peer of the coverage-gap `Vec` peer; both name the same
+    ///   coverage-gap cardinality without materialising the vector.
+    ///   Pinned by
+    ///   [`tests::absent_tiers_count_equals_absent_tiers_len_pointwise`].
+    /// - `contributing_tiers_count() + absent_tiers_count() ==
+    ///   crate::axis_cardinality::<ConfigTierKind>()` — the observed /
+    ///   coverage-gap partition on the tier axis without remainder, the
+    ///   fully-scalar dual of
+    ///   [`tests::absent_tiers_and_contributing_tiers_partition_axis`]
+    ///   (both sides now scalar, no `.len()` on either). Pinned by
+    ///   [`tests::contributing_tiers_count_and_absent_tiers_count_partition_axis_cardinality`].
+    /// - `absent_tiers_count() ==
+    ///   crate::axis_cardinality::<ConfigTierKind>() -
+    ///   contributing_tiers_count()` — the algebraic rearrangement of the
+    ///   partition, useful for consumers that already hold the support-
+    ///   size scalar. Pinned by
+    ///   [`tests::absent_tiers_count_equals_axis_cardinality_minus_contributing_tiers_count`].
+    /// - `absent_tiers_count() ==
+    ///   crate::axis_cardinality::<ConfigTierKind>()` ⇔ [`Self::is_empty`]
+    ///   is `true` — the empty-map / full-coverage-gap boundary, the
+    ///   scalar peer of `absent_tiers() == ConfigTierKind::ALL`. Pinned
+    ///   by [`tests::absent_tiers_count_is_axis_cardinality_iff_map_is_empty`].
+    /// - `absent_tiers_count() == 0` ⇔
+    ///   `tier_histogram().is_full_cover()` — the full-cover boundary
+    ///   equivalence, the tier-altitude scalar-count coverage-gap peer of
+    ///   the [`crate::AxisHistogram::is_full_cover`] boundary law and the
+    ///   coverage-gap dual of `contributing_tiers_count() ==
+    ///   crate::axis_cardinality::<ConfigTierKind>()`. Pinned by
+    ///   [`tests::absent_tiers_count_is_zero_iff_is_full_cover`].
+    /// - `absent_tiers_count() <=
+    ///   crate::axis_cardinality::<ConfigTierKind>()` — the coverage gap
+    ///   of a histogram over a closed axis is bounded above by the axis
+    ///   cardinality (the unobserved-cells set is a subset of
+    ///   [`ConfigTierKind::ALL`]). Pinned by
+    ///   [`tests::absent_tiers_count_is_bounded_by_axis_cardinality`].
+    /// - `absent_tiers_count() >= 1` whenever
+    ///   `!tier_histogram().is_full_cover()` — a non-full-cover fold
+    ///   carries at least one absent tier. Pinned by
+    ///   [`tests::absent_tiers_count_is_at_least_one_when_not_full_cover`].
+    /// - `absent_tiers_count() ==
+    ///   crate::axis_cardinality::<ConfigTierKind>() - 1` ⇔
+    ///   `tier_histogram().has_singular_support()` — the singleton-
+    ///   support boundary in coverage-gap form: when exactly one tier is
+    ///   observed, exactly `axis_cardinality - 1` are absent. Pinned by
+    ///   [`tests::absent_tiers_count_is_axis_cardinality_minus_one_iff_has_singular_support`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<ConfigTierKind>()` (the coverage-
+    /// gap scan). Both are `O(n)` in practice since the tier axis carries
+    /// a fixed four-cell cardinality; the returned `usize` reads one
+    /// scalar. Halves the wall-cost of the previous `absent_tiers().len()`
+    /// idiom by eliding the `Vec<ConfigTierKind>` allocation the
+    /// coverage-gap collect paid on every call site.
+    #[must_use]
+    pub fn absent_tiers_count(&self) -> usize {
+        self.tier_histogram().unobserved_cells()
+    }
+
     /// The tier whose overlay produced the greatest number of surviving
     /// effective leaves on this resolved fold — the modal cell of
     /// [`Self::tier_histogram`] on the tier altitude. `None` exactly
@@ -2455,13 +2595,13 @@ impl ConfigDiff {
     /// | observed | [`Self::present_kinds`] | [`Self::present_kinds_count`] |
     /// | unobserved | [`Self::absent_kinds`] | **`absent_kinds_count`** |
     ///
-    /// The diff-altitude peer of the (still-unlifted) tier-altitude
-    /// `ProvenanceMap::absent_tiers_count` — the "coverage-gap-size across
-    /// altitudes" projection now carries its first named scalar seam on the
-    /// diff altitude, ready to be climbed sideways across the chain-altitude
-    /// sub-axes (`absent_layer_kinds_count`, `absent_file_formats_count`,
-    /// `absent_env_prefix_kinds_count`) and up to the tier altitude
-    /// (`absent_tiers_count`).
+    /// The diff-altitude peer of the tier-altitude
+    /// [`crate::ProvenanceMap::absent_tiers_count`] scalar-count coverage-
+    /// gap seam — the "coverage-gap-size across altitudes" projection now
+    /// carries a named scalar seam at both the tier and diff altitudes,
+    /// ready to be climbed sideways across the chain-altitude sub-axes
+    /// (`absent_layer_kinds_count`, `absent_file_formats_count`,
+    /// `absent_env_prefix_kinds_count`).
     ///
     /// # Invariants
     ///
@@ -7239,6 +7379,293 @@ mod progressive_tests {
         // and altitude.
         let r = Nested::resolve_progressive();
         assert_eq!(r.provenance().contributing_tiers_count(), 2);
+    }
+
+    // ── ProvenanceMap::absent_tiers_count — coverage-gap-size scalar
+    //    peer on the tier altitude ──
+
+    #[test]
+    fn absent_tiers_count_matches_tier_histogram_unobserved_cells_pointwise() {
+        // The coverage-gap-size pin: `absent_tiers_count` routes through
+        // `tier_histogram().unobserved_cells()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Tier-altitude
+        // coverage-gap peer of
+        // `absent_kinds_count_matches_kind_histogram_unobserved_cells_pointwise`
+        // on the diff altitude, and support-side peer of
+        // `contributing_tiers_count_matches_tier_histogram_distinct_cells_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().unobserved_cells();
+            assert_eq!(
+                map.absent_tiers_count(),
+                via_histogram,
+                "absent_tiers_count must equal tier_histogram().unobserved_cells() pointwise",
+            );
+        }
+    }
+
+    #[test]
+    fn absent_tiers_count_equals_absent_tiers_len_pointwise() {
+        // The Vec-peer identity: the scalar-count seam equals the length
+        // of the coverage-gap `Vec` peer. Any future re-implementation of
+        // either seam must keep this equality — pinned uniformly.
+        // Tier-altitude coverage-gap peer of
+        // `absent_kinds_count_equals_absent_kinds_len_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.absent_tiers_count(), map.absent_tiers().len());
+        }
+    }
+
+    #[test]
+    fn contributing_tiers_count_and_absent_tiers_count_partition_axis_cardinality() {
+        // The fully-scalar partition law: both sides now the scalar-count
+        // peers, no `.len()` on either. Every tier cell lies in exactly
+        // one of (observed, unobserved). The scalar dual of
+        // `absent_tiers_and_contributing_tiers_partition_axis` closed on
+        // both sides. Sits alongside
+        // `contributing_tiers_count_and_absent_tiers_len_partition_axis_cardinality`
+        // which still uses `.len()` on the coverage-gap side.
+        use crate::cube::axis_cardinality;
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.contributing_tiers_count() + map.absent_tiers_count(),
+                axis_cardinality::<ConfigTierKind>(),
+            );
+        }
+    }
+
+    #[test]
+    fn absent_tiers_count_equals_axis_cardinality_minus_contributing_tiers_count() {
+        // The algebraic rearrangement: the coverage-gap size equals the
+        // axis cardinality minus the support size, useful for consumers
+        // that already hold the support-size scalar. Tier-altitude peer
+        // of `absent_kinds_count_equals_axis_cardinality_minus_present_kinds_count`.
+        use crate::cube::axis_cardinality;
+        let axis_size = axis_cardinality::<ConfigTierKind>();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.absent_tiers_count(),
+                axis_size - map.contributing_tiers_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn absent_tiers_count_is_axis_cardinality_iff_map_is_empty() {
+        // The empty-map / full-coverage-gap boundary equivalence: an
+        // empty map has every tier absent (the coverage gap is the whole
+        // axis), and a non-empty map has at least one tier observed so
+        // the coverage-gap is strictly smaller. The scalar peer of
+        // `absent_tiers_empty_map_is_full_axis` and the tier-altitude peer
+        // of `absent_kinds_count_is_axis_cardinality_iff_diff_is_empty`.
+        use crate::cube::axis_cardinality;
+        let axis_size = axis_cardinality::<ConfigTierKind>();
+
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert_eq!(empty.absent_tiers_count(), axis_size);
+
+        // Non-empty fixtures: at least one tier surfaces, so the
+        // coverage-gap is strictly less than the axis cardinality.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+        ] {
+            assert!(!map.is_empty());
+            assert!(map.absent_tiers_count() < axis_size);
+        }
+    }
+
+    #[test]
+    fn absent_tiers_count_is_zero_iff_is_full_cover() {
+        // The full-cover boundary equivalence in coverage-gap form: the
+        // coverage gap is empty iff every tier contributed ≥1 leaf iff
+        // the histogram is full-cover. The tier-altitude scalar-count
+        // coverage-gap peer of `AxisHistogram::is_full_cover` and peer of
+        // `absent_kinds_count_is_zero_iff_is_full_cover` on the diff
+        // altitude.
+
+        // Full-cover: a Custom overlay on Prog (Bare + Discovered + Default
+        // already contribute) touches ONLY `b` so the other leaves keep
+        // their prior attribution — every tier now contributes at least
+        // one leaf, so `tier_histogram()` reaches full cover.
+        let mut d = Dict::new();
+        d.insert("b".to_owned(), Value::from(99_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", d)]);
+        assert!(r.provenance().tier_histogram().is_full_cover());
+        assert_eq!(r.provenance().absent_tiers_count(), 0);
+
+        // Non-full-cover: Prog fixture has no operator overlay, so
+        // Custom is absent — coverage gap is nonempty.
+        let r = Prog::resolve_progressive();
+        assert!(!r.provenance().tier_histogram().is_full_cover());
+        assert!(r.provenance().absent_tiers_count() > 0);
+
+        // Empty map: coverage gap is the entire axis, so it's strictly
+        // greater than 0.
+        let empty = ProvenanceMap::default();
+        assert!(!empty.tier_histogram().is_full_cover());
+        assert!(empty.absent_tiers_count() > 0);
+    }
+
+    #[test]
+    fn absent_tiers_count_is_bounded_by_axis_cardinality() {
+        // The upper-bound invariant: the coverage gap of a closed-axis
+        // histogram is at most the axis cardinality (the unobserved-cells
+        // set is a subset of `ConfigTierKind::ALL`). Tier-altitude peer of
+        // the trait-uniform `unobserved_cells() <= axis_cardinality()` law
+        // on `AxisHistogram` one altitude down.
+        use crate::cube::axis_cardinality;
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.absent_tiers_count() <= axis_cardinality::<ConfigTierKind>());
+        }
+    }
+
+    #[test]
+    fn absent_tiers_count_is_at_least_one_when_not_full_cover() {
+        // A non-full-cover fold carries at least one absent tier. The
+        // coverage-gap-side lower bound on non-full-cover, dual to
+        // `contributing_tiers_count_is_at_least_one_on_nonempty_map` on
+        // the observed side, and peer of
+        // `absent_kinds_count_is_at_least_one_when_not_full_cover` on
+        // the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tier_histogram().is_full_cover() {
+                continue;
+            }
+            assert!(map.absent_tiers_count() >= 1);
+        }
+    }
+
+    #[test]
+    fn absent_tiers_count_is_axis_cardinality_minus_one_iff_has_singular_support() {
+        // The singleton-support boundary in coverage-gap form: when
+        // exactly one tier is observed, exactly `axis_cardinality - 1`
+        // are absent. Tier-altitude coverage-gap peer of
+        // `contributing_tiers_count_is_one_iff_has_singular_support` and
+        // `absent_kinds_count_is_axis_cardinality_minus_one_iff_has_singular_support`.
+        use crate::cube::axis_cardinality;
+        let axis_size = axis_cardinality::<ConfigTierKind>();
+
+        // Singleton-support: a single Default layer overrides every leaf
+        // so only Default contributes — three tiers absent.
+        let mut d = Dict::new();
+        d.insert("a".to_owned(), Value::from(11_u32));
+        d.insert("b".to_owned(), Value::from(22_u32));
+        d.insert("c".to_owned(), Value::from(33_u32));
+        d.insert("d".to_owned(), Value::from(44_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::new(
+            Provenance::computed(ConfigTierKind::Default),
+            d,
+        )]);
+        assert!(r.provenance().tier_histogram().has_singular_support());
+        assert_eq!(r.provenance().absent_tiers_count(), axis_size - 1);
+
+        // Non-singleton-support: Prog spans three tiers so coverage-gap
+        // is strictly less than `axis_cardinality - 1`.
+        let r = Prog::resolve_progressive();
+        assert!(!r.provenance().tier_histogram().has_singular_support());
+        assert!(r.provenance().absent_tiers_count() < axis_size - 1);
+
+        // Empty map: no support at all, coverage gap is the full axis
+        // (strictly greater than `axis_cardinality - 1`).
+        let empty = ProvenanceMap::default();
+        assert!(!empty.tier_histogram().has_singular_support());
+        assert!(empty.absent_tiers_count() > axis_size - 1);
+    }
+
+    #[test]
+    fn absent_tiers_count_agrees_with_open_coded_zero_walk() {
+        // Parity against the exact `ConfigTierKind::ALL.iter().filter(|t|
+        // tier_histogram().count(*t) == 0).count()` walk this lift
+        // replaces on the coverage-gap side. Tier-altitude peer of
+        // `absent_kinds_count_agrees_with_open_coded_zero_walk`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.absent_tiers_count();
+            let hist = map.tier_histogram();
+            let hand_rolled = ConfigTierKind::ALL
+                .iter()
+                .copied()
+                .filter(|t| hist.count(*t) == 0)
+                .count();
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn absent_tiers_count_empty_map_is_axis_cardinality() {
+        // Direct fixture pin: an empty ProvenanceMap has full coverage
+        // gap so `absent_tiers_count` reads the axis cardinality
+        // (4 = |{Bare, Discovered, Default, Custom}|).
+        use crate::cube::axis_cardinality;
+        let empty = ProvenanceMap::default();
+        assert_eq!(
+            empty.absent_tiers_count(),
+            axis_cardinality::<ConfigTierKind>(),
+        );
+    }
+
+    #[test]
+    fn absent_tiers_count_full_cover_is_zero() {
+        // Direct fixture pin: a ProvenanceMap containing ≥1 leaf on every
+        // tier has an empty coverage gap so `absent_tiers_count` reads 0.
+        // Peer of `absent_kinds_count_full_cover_is_zero` on the diff
+        // altitude.
+        let mut d = Dict::new();
+        d.insert("b".to_owned(), Value::from(99_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", d)]);
+        assert_eq!(r.provenance().absent_tiers_count(), 0);
+    }
+
+    #[test]
+    fn absent_tiers_count_prog_fixture_is_one() {
+        // Direct fixture pin: Prog attributes 4 leaves across 3 tiers
+        // (Bare, Discovered, Default), so Custom is the sole coverage-gap
+        // cell and `absent_tiers_count` reads 1. Coverage-gap peer of
+        // `contributing_tiers_count_prog_fixture_is_three` on the same
+        // fixture and altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().absent_tiers_count(), 1);
+    }
+
+    #[test]
+    fn absent_tiers_count_nested_fixture_is_two() {
+        // Direct fixture pin: Nested attributes 3 leaves across 2 tiers
+        // (Discovered, Default), so Bare and Custom are the coverage-gap
+        // cells and `absent_tiers_count` reads 2. Coverage-gap peer of
+        // `contributing_tiers_count_nested_fixture_is_two` on the same
+        // fixture and altitude.
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.provenance().absent_tiers_count(), 2);
     }
 
     #[test]
