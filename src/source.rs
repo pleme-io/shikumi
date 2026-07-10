@@ -600,6 +600,126 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().observed().collect()
     }
 
+    /// The number of distinct [`ConfigSourceKind`]s that appear as ≥1
+    /// layer in this chain — the support-size scalar-count peer of
+    /// [`Self::present_layer_kinds`] on the layer-kind sub-axis of the
+    /// chain altitude, and the chain-altitude sister of
+    /// [`crate::ProvenanceMap::contributing_tiers_count`] on the tier
+    /// altitude.
+    ///
+    /// Routes through [`Self::layer_kind_histogram`]:
+    /// [`crate::AxisHistogram::distinct_cells`] is the cube-native
+    /// single-pass `.filter(|&&c| c > 0).count()` walk over the
+    /// fixed-cardinality counts vector, so this method reads the
+    /// support size in one call instead of paying for the
+    /// `Vec<ConfigSourceKind>` allocation
+    /// [`Self::present_layer_kinds`] materialises and then walking
+    /// [`Vec::len`] to read the length back — the exact idiom every
+    /// operator-facing consumer asking *"how many layer kinds
+    /// contributed to this recipe?"* has been open-coding at
+    /// [`Vec::len`] of the observed-cells `Vec` peer:
+    ///
+    /// - the config-show summary line *"2 of 3 layer kinds contributed
+    ///   to this recipe"* reading the support cardinality directly off
+    ///   the seam,
+    /// - the attestation manifest recording the layer-kind support size
+    ///   of a `ProviderChain` between two rebuild-window snapshots,
+    /// - the alerting policy reading *"support size = 1"* to flag a
+    ///   recipe where only one layer kind surfaced.
+    ///
+    /// The layer-kind sub-axis scalar-count peer of the chain altitude,
+    /// sister to the tier altitude's
+    /// [`crate::ProvenanceMap::contributing_tiers_count`] and the diff
+    /// altitude's [`crate::ConfigDiff::present_kinds`] length peer.
+    /// Together with [`Self::present_layer_kinds`] and
+    /// [`Self::absent_layer_kinds`], this seam closes the
+    /// `(observed, unobserved) × (cells, count)` 2×2 support / coverage-
+    /// gap grid on the layer-kind sub-axis:
+    ///
+    /// | | cells (Vec) | count (usize) |
+    /// |---|---|---|
+    /// | observed | `present_layer_kinds` | **`present_layer_kinds_count`** |
+    /// | unobserved | `absent_layer_kinds` | `absent_layer_kinds().len()` |
+    ///
+    /// # Invariants
+    ///
+    /// - `present_layer_kinds_count() ==
+    ///   layer_kind_histogram().distinct_cells()` — both project
+    ///   the same nonzero-cell count off the same primitive; the named
+    ///   seam is the cube-native routing of the histogram surface.
+    ///   Pinned by
+    ///   [`tests::present_layer_kinds_count_matches_layer_kind_histogram_distinct_cells_pointwise`].
+    /// - `present_layer_kinds_count() == present_layer_kinds().len()`
+    ///   — the scalar-count peer of the observed-cells `Vec` peer;
+    ///   both name the same support cardinality without materialising
+    ///   the vector. Pinned by
+    ///   [`tests::present_layer_kinds_count_equals_present_layer_kinds_len_pointwise`].
+    /// - `present_layer_kinds_count() + absent_layer_kinds().len() ==
+    ///   crate::axis_cardinality::<ConfigSourceKind>()` — the observed
+    ///   / coverage-gap partition on the layer-kind axis without
+    ///   remainder, the scalar dual of the
+    ///   [`tests::absent_layer_kinds_and_present_layer_kinds_partition_axis`]
+    ///   set-level partition law. Pinned by
+    ///   [`tests::present_layer_kinds_count_and_absent_layer_kinds_len_partition_axis_cardinality`].
+    /// - `present_layer_kinds_count() == 0` ⇔
+    ///   `self.as_ref().is_empty()` — the empty-chain / empty-support
+    ///   boundary equivalence (every entry projects to one kind, so a
+    ///   zero-support recipe has zero entries and vice versa). Pinned
+    ///   by
+    ///   [`tests::present_layer_kinds_count_is_zero_iff_chain_is_empty`].
+    /// - `present_layer_kinds_count() >= 1` whenever the chain is
+    ///   non-empty — the support of a non-empty recipe is at least the
+    ///   singleton of the first-layer kind. Pinned by
+    ///   [`tests::present_layer_kinds_count_is_at_least_one_on_nonempty_chain`].
+    /// - `present_layer_kinds_count() <=
+    ///   crate::axis_cardinality::<ConfigSourceKind>()` — the support
+    ///   of a histogram over a closed axis is bounded above by the axis
+    ///   cardinality (the observed-cells set is a subset of
+    ///   [`ConfigSourceKind::ALL`]). Pinned by
+    ///   [`tests::present_layer_kinds_count_is_bounded_by_axis_cardinality`].
+    /// - `present_layer_kinds_count() <=
+    ///   layer_kind_histogram().total()` — the support of a histogram
+    ///   is bounded above by the total observation count (every
+    ///   distinct cell contributes at least one observation to the
+    ///   total). Pinned by
+    ///   [`tests::present_layer_kinds_count_is_bounded_by_layer_kind_histogram_total`].
+    /// - `present_layer_kinds_count() ==
+    ///   crate::axis_cardinality::<ConfigSourceKind>()` ⇔
+    ///   `absent_layer_kinds().is_empty()` ⇔
+    ///   `layer_kind_histogram().is_full_cover()` — the full-cover
+    ///   boundary equivalence, the layer-kind-sub-axis scalar-count
+    ///   peer of the [`crate::AxisHistogram::is_full_cover`] boundary
+    ///   law. Pinned by
+    ///   [`tests::present_layer_kinds_count_equals_axis_cardinality_iff_is_full_cover`].
+    /// - `present_layer_kinds_count() == 1` ⇔
+    ///   `layer_kind_histogram().has_singular_support()` — the
+    ///   singleton-support boundary equivalence, the layer-kind-sub-
+    ///   axis peer of the [`crate::AxisHistogram::has_singular_support`]
+    ///   boundary law. Pinned by
+    ///   [`tests::present_layer_kinds_count_is_one_iff_has_singular_support`].
+    /// - `present_layer_kinds_count() == 1` ⇒ `dominant_layer_kind() ==
+    ///   recessive_layer_kind()` — a singleton-support recipe has the
+    ///   modal and anti-modal cells coincide on the sole observed kind
+    ///   (the support-size scalar witnesses the
+    ///   [`crate::AxisHistogram`] support-collapse degenerate). Pinned
+    ///   by
+    ///   [`tests::present_layer_kinds_count_of_one_implies_dominant_equals_recessive`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the
+    /// support scan). Both are `O(n)` in practice since the layer-kind
+    /// axis carries a fixed three-cell cardinality; unlike
+    /// [`Self::present_layer_kinds`], no `Vec<ConfigSourceKind>`
+    /// allocation is paid on every call site.
+    fn present_layer_kinds_count(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().distinct_cells()
+    }
+
     /// The distinct [`ConfigSourceKind`]s that appear as **zero** layers in
     /// this chain, in [`ConfigSourceKind::ALL`] declaration order — the
     /// coverage-gap peer of [`Self::present_layer_kinds`] and the chain-
@@ -4507,6 +4627,370 @@ mod tests {
                 chain.len(),
             );
         }
+    }
+
+    // ---- ConfigSourceChain::present_layer_kinds_count — support-size
+    //      scalar peer of present_layer_kinds on the layer-kind sub-axis
+    //      of the chain altitude ----
+
+    #[test]
+    fn present_layer_kinds_count_matches_layer_kind_histogram_distinct_cells_pointwise() {
+        // The support-size pin: `present_layer_kinds_count` routes
+        // through `layer_kind_histogram().distinct_cells()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Chain-
+        // altitude peer of
+        // `contributing_tiers_count_matches_tier_histogram_distinct_cells_pointwise`
+        // on the tier altitude.
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            sample_chain(),
+            vec![ConfigSource::Defaults],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+        ];
+        for chain in &fixtures {
+            let via_histogram = chain.as_slice().layer_kind_histogram().distinct_cells();
+            assert_eq!(
+                chain.as_slice().present_layer_kinds_count(),
+                via_histogram,
+                "present_layer_kinds_count must equal \
+                 layer_kind_histogram().distinct_cells() over chain of \
+                 length {}",
+                chain.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn present_layer_kinds_count_equals_present_layer_kinds_len_pointwise() {
+        // The Vec-peer identity: the scalar-count seam equals the length
+        // of the observed-cells `Vec` peer. Any future re-implementation
+        // of either seam must keep this equality — pinned uniformly.
+        // Chain-altitude peer of
+        // `contributing_tiers_count_equals_contributing_tiers_len_pointwise`
+        // on the tier altitude.
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            sample_chain(),
+            vec![ConfigSource::Defaults],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().present_layer_kinds_count(),
+                chain.as_slice().present_layer_kinds().len(),
+            );
+        }
+    }
+
+    #[test]
+    fn present_layer_kinds_count_and_absent_layer_kinds_len_partition_axis_cardinality() {
+        // The partition law: the scalar dual of
+        // `absent_layer_kinds_and_present_layer_kinds_partition_axis`.
+        // Every layer-kind cell lies in exactly one of (observed,
+        // unobserved), so the scalar-count peers of the two Vec peers
+        // sum to the axis cardinality. Chain-altitude peer of
+        // `contributing_tiers_count_and_absent_tiers_len_partition_axis_cardinality`
+        // on the tier altitude.
+        let axis_size = crate::axis_cardinality::<ConfigSourceKind>();
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+        ];
+        for chain in &fixtures {
+            assert_eq!(
+                chain.as_slice().present_layer_kinds_count()
+                    + chain.as_slice().absent_layer_kinds().len(),
+                axis_size,
+            );
+        }
+    }
+
+    #[test]
+    fn present_layer_kinds_count_is_zero_iff_chain_is_empty() {
+        // The empty-boundary equivalence: a zero-support recipe has
+        // zero entries and vice versa. Chain-altitude peer of
+        // `contributing_tiers_count_is_zero_iff_map_is_empty` on the
+        // tier altitude.
+        let empty: Vec<ConfigSource> = Vec::new();
+        assert!(empty.is_empty());
+        assert_eq!(empty.as_slice().present_layer_kinds_count(), 0);
+
+        let one_layer = vec![ConfigSource::Defaults];
+        assert!(!one_layer.is_empty());
+        assert!(one_layer.as_slice().present_layer_kinds_count() > 0);
+
+        let chain = sample_chain();
+        assert!(!chain.is_empty());
+        assert!(chain.as_slice().present_layer_kinds_count() > 0);
+    }
+
+    #[test]
+    fn present_layer_kinds_count_is_at_least_one_on_nonempty_chain() {
+        // The lower-bound invariant: the support of a non-empty recipe
+        // carries at least the singleton of the first-layer kind.
+        // Chain-altitude peer of
+        // `contributing_tiers_count_is_at_least_one_on_nonempty_map` on
+        // the tier altitude.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            sample_chain(),
+            vec![ConfigSource::Defaults],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+        ];
+        for chain in &fixtures {
+            assert!(!chain.is_empty());
+            assert!(chain.as_slice().present_layer_kinds_count() >= 1);
+        }
+    }
+
+    #[test]
+    fn present_layer_kinds_count_is_bounded_by_axis_cardinality() {
+        // The upper-bound invariant: the support of a closed-axis
+        // histogram is at most the axis cardinality (the observed-cells
+        // set is a subset of `ConfigSourceKind::ALL`). Chain-altitude
+        // peer of `contributing_tiers_count_is_bounded_by_axis_cardinality`
+        // on the tier altitude.
+        let axis_size = crate::axis_cardinality::<ConfigSourceKind>();
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+        ];
+        for chain in &fixtures {
+            assert!(chain.as_slice().present_layer_kinds_count() <= axis_size);
+        }
+    }
+
+    #[test]
+    fn present_layer_kinds_count_is_bounded_by_layer_kind_histogram_total() {
+        // The support ≤ total invariant: every distinct cell contributes
+        // at least one observation to the total, so the support size is
+        // bounded above by the total observation count. Chain-altitude
+        // peer of
+        // `contributing_tiers_count_is_bounded_by_tier_histogram_total`
+        // on the tier altitude.
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+        ];
+        for chain in &fixtures {
+            assert!(
+                chain.as_slice().present_layer_kinds_count()
+                    <= chain.as_slice().layer_kind_histogram().total(),
+            );
+        }
+    }
+
+    #[test]
+    fn present_layer_kinds_count_equals_axis_cardinality_iff_is_full_cover() {
+        // The full-cover boundary equivalence: the support size equals
+        // the axis cardinality iff every layer kind contributed ≥1
+        // entry iff the coverage gap is empty. Chain-altitude peer of
+        // `contributing_tiers_count_equals_axis_cardinality_iff_is_full_cover`
+        // on the tier altitude.
+        let axis_size = crate::axis_cardinality::<ConfigSourceKind>();
+
+        // Full-cover: one entry per layer kind.
+        let axis_cover = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        assert!(axis_cover.as_slice().layer_kind_histogram().is_full_cover());
+        assert!(axis_cover.as_slice().absent_layer_kinds().is_empty());
+        assert_eq!(axis_cover.as_slice().present_layer_kinds_count(), axis_size,);
+
+        // Strict-subset: sample_chain omits Defaults, so full-cover is
+        // false and the support size is strictly less than axis size.
+        let chain = sample_chain();
+        assert!(!chain.as_slice().layer_kind_histogram().is_full_cover());
+        assert!(chain.as_slice().present_layer_kinds_count() < axis_size);
+    }
+
+    #[test]
+    fn present_layer_kinds_count_is_one_iff_has_singular_support() {
+        // The singleton-support boundary equivalence: the support size
+        // equals 1 iff exactly one layer kind contributed iff the
+        // histogram has singular support. Chain-altitude peer of
+        // `contributing_tiers_count_is_one_iff_has_singular_support` on
+        // the tier altitude.
+        let defaults_only = vec![ConfigSource::Defaults, ConfigSource::Defaults];
+        assert!(
+            defaults_only
+                .as_slice()
+                .layer_kind_histogram()
+                .has_singular_support()
+        );
+        assert_eq!(defaults_only.as_slice().present_layer_kinds_count(), 1);
+
+        let env_only = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        assert!(
+            env_only
+                .as_slice()
+                .layer_kind_histogram()
+                .has_singular_support()
+        );
+        assert_eq!(env_only.as_slice().present_layer_kinds_count(), 1);
+
+        // Sample chain spans two kinds, so singular-support reads false
+        // and the support size is > 1.
+        let chain = sample_chain();
+        assert!(
+            !chain
+                .as_slice()
+                .layer_kind_histogram()
+                .has_singular_support()
+        );
+        assert!(chain.as_slice().present_layer_kinds_count() > 1);
+    }
+
+    #[test]
+    fn present_layer_kinds_count_of_one_implies_dominant_equals_recessive() {
+        // The support-collapse degenerate: a singleton-support recipe
+        // has the modal and anti-modal cells coincide on the sole
+        // observed kind. Chain-altitude peer of
+        // `contributing_tiers_count_of_one_implies_dominant_equals_recessive`
+        // on the tier altitude.
+        let defaults_only = vec![ConfigSource::Defaults, ConfigSource::Defaults];
+        assert_eq!(defaults_only.as_slice().present_layer_kinds_count(), 1);
+        assert_eq!(
+            defaults_only.as_slice().dominant_layer_kind(),
+            defaults_only.as_slice().recessive_layer_kind(),
+        );
+
+        let env_only = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        assert_eq!(env_only.as_slice().present_layer_kinds_count(), 1);
+        assert_eq!(
+            env_only.as_slice().dominant_layer_kind(),
+            env_only.as_slice().recessive_layer_kind(),
+        );
+
+        let files_only = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+        ];
+        assert_eq!(files_only.as_slice().present_layer_kinds_count(), 1);
+        assert_eq!(
+            files_only.as_slice().dominant_layer_kind(),
+            files_only.as_slice().recessive_layer_kind(),
+        );
+    }
+
+    #[test]
+    fn present_layer_kinds_count_agrees_with_open_coded_nonzero_walk() {
+        // Parity against the exact
+        // `ConfigSourceKind::ALL.iter().filter(|k|
+        // layer_kind_histogram().count(*k) > 0).count()` walk this lift
+        // replaces. Chain-altitude peer of
+        // `contributing_tiers_count_agrees_with_open_coded_nonzero_walk`
+        // on the tier altitude.
+        let fixtures: [Vec<ConfigSource>; 5] = [
+            Vec::new(),
+            vec![ConfigSource::Defaults],
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+        ];
+        for chain in &fixtures {
+            let via_seam = chain.as_slice().present_layer_kinds_count();
+            let hist = chain.as_slice().layer_kind_histogram();
+            let hand_rolled = ConfigSourceKind::ALL
+                .iter()
+                .filter(|k| hist.count(**k) > 0)
+                .count();
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn present_layer_kinds_count_sample_chain_is_two() {
+        // Direct fixture pin: sample_chain has two Files and one Env,
+        // so present_layer_kinds_count reads 2 (File, Env observed;
+        // Defaults absent).
+        let chain = sample_chain();
+        assert_eq!(chain.as_slice().present_layer_kinds_count(), 2);
+    }
+
+    #[test]
+    fn present_layer_kinds_count_full_cover_is_axis_cardinality() {
+        // Direct fixture pin: a chain covering every layer kind reads
+        // the axis cardinality (3 = |{Defaults, Env, File}|).
+        let axis_cover = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        assert_eq!(
+            axis_cover.as_slice().present_layer_kinds_count(),
+            crate::axis_cardinality::<ConfigSourceKind>(),
+        );
     }
 
     // ---- ConfigSourceChain::absent_layer_kinds — unobserved-cells
