@@ -2206,9 +2206,9 @@ rec {
       };
       "bytemuck" = rec {
         crateName = "bytemuck";
-        version = "1.25.0";
+        version = "1.25.1";
         edition = "2018";
-        sha256 = "1v1z32igg9zq49phb3fra0ax5r2inf3aw473vldnm886sx5vdvy8";
+        sha256 = "094lrzwibbmazpqr1vlbs8vwrsgm3ksb8g6g09sk8ri7wy5dzbnn";
         authors = [
           "Lokathor <zefria@gmail.com>"
         ];
@@ -7615,7 +7615,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.213";
+        version = "0.1.214";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -8002,8 +8002,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "274597699d1d1a58fb80822f3569245e4f5c5000";
-          sha256 = "0wsg9bgck0pa19zfbapy5chncanx6h8sabj2jizbhk0w1gn9bn0d";
+          rev = "f4cb2613dd92f9c8752e03980ab52657a09e39a9";
+          sha256 = "1v4fn8spyczijksaz40751vbcsq9gvzyklma1d0p2jylwdh2x7sl";
         };
         libName = "tatara_lisp";
         authors = [
@@ -8044,8 +8044,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "274597699d1d1a58fb80822f3569245e4f5c5000";
-          sha256 = "0wsg9bgck0pa19zfbapy5chncanx6h8sabj2jizbhk0w1gn9bn0d";
+          rev = "f4cb2613dd92f9c8752e03980ab52657a09e39a9";
+          sha256 = "1v4fn8spyczijksaz40751vbcsq9gvzyklma1d0p2jylwdh2x7sl";
         };
         procMacro = true;
         libName = "tatara_lisp_derive";
@@ -8302,9 +8302,9 @@ rec {
       };
       "tinyvec" = rec {
         crateName = "tinyvec";
-        version = "1.11.0";
+        version = "1.12.0";
         edition = "2018";
-        sha256 = "1wvycrghzmaysnw34kzwnf0mfx6r75045s24r214wnnjadqfcq9y";
+        sha256 = "0zxaid976y60f4722vjhfnwcbydmzpwva7p03aqzl15gl3dblkmv";
         authors = [
           "Lokathor <zefria@gmail.com>"
         ];
@@ -8318,12 +8318,14 @@ rec {
         features = {
           "alloc" = [ "tinyvec_macros" ];
           "arbitrary" = [ "dep:arbitrary" ];
+          "bin-proto" = [ "dep:bin-proto" ];
           "borsh" = [ "dep:borsh" ];
           "defmt" = [ "dep:defmt" ];
           "generic-array" = [ "dep:generic-array" ];
           "latest_stable_rust" = [ "rustc_1_61" ];
           "real_blackbox" = [ "criterion/real_blackbox" ];
           "rustc_1_61" = [ "rustc_1_57" ];
+          "schemars" = [ "dep:schemars" "alloc" ];
           "serde" = [ "dep:serde_core" ];
           "std" = [ "alloc" ];
           "tinyvec_macros" = [ "dep:tinyvec_macros" ];
