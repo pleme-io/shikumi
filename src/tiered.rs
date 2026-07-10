@@ -2426,6 +2426,98 @@ impl ConfigDiff {
         self.kind_histogram().distinct_cells()
     }
 
+    /// The number of distinct [`DiffLineKind`]s that appear as **zero** lines
+    /// in this diff — the coverage-gap scalar peer of [`Self::absent_kinds`]
+    /// and the diff-altitude scalar-count sister of [`Self::present_kinds_count`].
+    ///
+    /// Routes through [`Self::kind_histogram`]:
+    /// [`crate::AxisHistogram::unobserved_cells`] walks the fixed-cardinality
+    /// counts vector in a single pass counting the zero cells, so this method
+    /// reads directly off the shikumi cube-native primitive instead of
+    /// allocating a `Vec<DiffLineKind>` via `absent_kinds().len()` and paying
+    /// twice over the histogram's coverage gap (once through
+    /// [`crate::AxisHistogram::unobserved`] to build the vector, once through
+    /// [`Vec::len`] to read its length back) at every operator-facing consumer
+    /// asking *"how many diff-cell kinds are absent from this render?"* —
+    /// the CLI `config-diff` summary line *"0 of 3 diff kinds are absent"*,
+    /// the attestation manifest recording the diff-cell coverage-gap size
+    /// between two tiers, the alerting policy reading *"diff coverage-gap
+    /// size = 3"* to flag a rebuild window where the diff was empty.
+    ///
+    /// The diff-altitude scalar-count coverage-gap peer. Together with
+    /// [`Self::present_kinds`], [`Self::absent_kinds`], and
+    /// [`Self::present_kinds_count`], this seam closes the
+    /// `(observed, unobserved) × (cells, count)` 2×2 support / coverage-gap
+    /// grid on the diff altitude explicitly:
+    ///
+    /// | | cells (Vec) | count (usize) |
+    /// |---|---|---|
+    /// | observed | [`Self::present_kinds`] | [`Self::present_kinds_count`] |
+    /// | unobserved | [`Self::absent_kinds`] | **`absent_kinds_count`** |
+    ///
+    /// The diff-altitude peer of the (still-unlifted) tier-altitude
+    /// `ProvenanceMap::absent_tiers_count` — the "coverage-gap-size across
+    /// altitudes" projection now carries its first named scalar seam on the
+    /// diff altitude, ready to be climbed sideways across the chain-altitude
+    /// sub-axes (`absent_layer_kinds_count`, `absent_file_formats_count`,
+    /// `absent_env_prefix_kinds_count`) and up to the tier altitude
+    /// (`absent_tiers_count`).
+    ///
+    /// # Invariants
+    ///
+    /// - `absent_kinds_count() == kind_histogram().unobserved_cells()` —
+    ///   both project the same coverage-gap cardinality off the same
+    ///   primitive; the named seam is the cube-native routing of the
+    ///   histogram surface.
+    /// - `absent_kinds_count() == absent_kinds().len()` — the scalar-count
+    ///   peer of the coverage-gap `Vec` peer; both name the same coverage-
+    ///   gap cardinality without materialising the vector.
+    /// - `present_kinds_count() + absent_kinds_count() ==
+    ///   crate::axis_cardinality::<DiffLineKind>()` — the observed /
+    ///   coverage-gap partition on the diff-cell axis without remainder,
+    ///   the fully-scalar dual of the
+    ///   [`tests::absent_kinds_and_present_kinds_partition_axis`] set-
+    ///   level partition law (both sides now scalar, no `.len()` on either).
+    /// - `absent_kinds_count() ==
+    ///   crate::axis_cardinality::<DiffLineKind>() - present_kinds_count()`
+    ///   — the algebraic rearrangement of the partition, useful for
+    ///   consumers that already hold the support-size scalar.
+    /// - `absent_kinds_count() ==
+    ///   crate::axis_cardinality::<DiffLineKind>()` ⇔ `self.lines.is_empty()`
+    ///   — the empty-diff / full-coverage-gap boundary, the scalar peer of
+    ///   `absent_kinds() == DiffLineKind::ALL`.
+    /// - `absent_kinds_count() == 0` ⇔
+    ///   `kind_histogram().is_full_cover()` — the full-cover boundary
+    ///   equivalence, the diff-altitude scalar-count peer of the
+    ///   [`crate::AxisHistogram::is_full_cover`] boundary law and the
+    ///   coverage-gap dual of `present_kinds_count() ==
+    ///   crate::axis_cardinality::<DiffLineKind>()`.
+    /// - `absent_kinds_count() <=
+    ///   crate::axis_cardinality::<DiffLineKind>()` — the coverage gap of a
+    ///   histogram over a closed axis is bounded above by the axis
+    ///   cardinality (the unobserved-cells set is a subset of
+    ///   [`DiffLineKind::ALL`]).
+    /// - `absent_kinds_count() >= 1` whenever
+    ///   `!kind_histogram().is_full_cover()` — a non-full-cover diff carries
+    ///   at least one absent kind.
+    /// - `absent_kinds_count() ==
+    ///   crate::axis_cardinality::<DiffLineKind>() - 1` ⇔
+    ///   `kind_histogram().has_singular_support()` — the singleton-support
+    ///   boundary in coverage-gap form: when exactly one kind is observed,
+    ///   exactly `axis_cardinality - 1` are absent.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (the coverage-gap
+    /// scan). Both are `O(n)` in practice since the diff-cell axis carries
+    /// a fixed three-cell cardinality; unlike [`Self::absent_kinds`], no
+    /// `Vec<DiffLineKind>` allocation is paid on every call site.
+    #[must_use]
+    pub fn absent_kinds_count(&self) -> usize {
+        self.kind_histogram().unobserved_cells()
+    }
+
     /// The [`DiffLineKind`] whose lines dominate this diff by count —
     /// the modal cell of [`Self::kind_histogram`] on the diff altitude.
     /// `None` exactly when the diff is empty (no lines).
@@ -4444,6 +4536,254 @@ mod tests {
             ],
         };
         assert_eq!(two_kind.present_kinds_count(), 2);
+    }
+
+    // ── ConfigDiff::absent_kinds_count — coverage-gap-size scalar peer on the diff altitude ──
+
+    #[test]
+    fn absent_kinds_count_matches_kind_histogram_unobserved_cells_pointwise() {
+        // The coverage-gap-size pin: `absent_kinds_count` routes through
+        // `kind_histogram().unobserved_cells()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Diff-altitude
+        // coverage-gap peer of
+        // `present_kinds_count_matches_kind_histogram_distinct_cells_pointwise`.
+        for diff in present_kinds_count_fixtures() {
+            let via_histogram = diff.kind_histogram().unobserved_cells();
+            assert_eq!(
+                diff.absent_kinds_count(),
+                via_histogram,
+                "absent_kinds_count must equal kind_histogram().unobserved_cells() pointwise",
+            );
+        }
+    }
+
+    #[test]
+    fn absent_kinds_count_equals_absent_kinds_len_pointwise() {
+        // The Vec-peer identity: the scalar-count seam equals the length
+        // of the coverage-gap `Vec` peer. Any future re-implementation of
+        // either seam must keep this equality — pinned uniformly.
+        // Diff-altitude coverage-gap peer of
+        // `present_kinds_count_equals_present_kinds_len_pointwise`.
+        for diff in present_kinds_count_fixtures() {
+            assert_eq!(diff.absent_kinds_count(), diff.absent_kinds().len());
+        }
+    }
+
+    #[test]
+    fn present_kinds_count_and_absent_kinds_count_partition_axis_cardinality() {
+        // The fully-scalar partition law: both sides now the scalar-count
+        // peers, no `.len()` on either. Every diff-cell kind lies in
+        // exactly one of (observed, unobserved). The scalar dual of
+        // `absent_kinds_and_present_kinds_partition_axis` closed on both
+        // sides. Sits alongside
+        // `present_kinds_count_and_absent_kinds_len_partition_axis_cardinality`
+        // which still uses `.len()` on the coverage-gap side.
+        let axis_size = crate::axis_cardinality::<DiffLineKind>();
+        for diff in present_kinds_count_fixtures() {
+            assert_eq!(
+                diff.present_kinds_count() + diff.absent_kinds_count(),
+                axis_size,
+            );
+        }
+    }
+
+    #[test]
+    fn absent_kinds_count_equals_axis_cardinality_minus_present_kinds_count() {
+        // The algebraic rearrangement: the coverage-gap size equals the
+        // axis cardinality minus the support size, useful for consumers
+        // that already hold the support-size scalar.
+        let axis_size = crate::axis_cardinality::<DiffLineKind>();
+        for diff in present_kinds_count_fixtures() {
+            assert_eq!(
+                diff.absent_kinds_count(),
+                axis_size - diff.present_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn absent_kinds_count_is_axis_cardinality_iff_diff_is_empty() {
+        // The empty-diff / full-coverage-gap boundary equivalence: an
+        // empty diff has every kind absent (the coverage gap is the
+        // whole axis), and vice versa (every line projects to exactly
+        // one kind, so any observed line pulls at least one kind out
+        // of the gap). The scalar peer of `absent_kinds() ==
+        // DiffLineKind::ALL`.
+        let axis_size = crate::axis_cardinality::<DiffLineKind>();
+
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert_eq!(empty.absent_kinds_count(), axis_size);
+
+        let one_line = ConfigDiff {
+            lines: vec![DiffLine::Context("x".into())],
+        };
+        assert!(!one_line.lines.is_empty());
+        assert!(one_line.absent_kinds_count() < axis_size);
+
+        let with_change = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert!(!with_change.lines.is_empty());
+        assert!(with_change.absent_kinds_count() < axis_size);
+    }
+
+    #[test]
+    fn absent_kinds_count_is_zero_iff_is_full_cover() {
+        // The full-cover boundary equivalence in coverage-gap form: the
+        // coverage gap is empty iff every diff-cell kind contributed ≥1
+        // line iff the histogram is full-cover. The diff-altitude
+        // scalar-count coverage-gap peer of the
+        // `AxisHistogram::is_full_cover` boundary law.
+
+        // Full-cover: one line per diff-cell kind.
+        let axis_cover = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(axis_cover.kind_histogram().is_full_cover());
+        assert_eq!(axis_cover.absent_kinds_count(), 0);
+
+        // Strict-subset: an Added-only diff omits Removed and Context,
+        // so full-cover is false and the coverage gap is nonempty.
+        let added_only = ConfigDiff {
+            lines: vec![DiffLine::Added("a".into())],
+        };
+        assert!(!added_only.kind_histogram().is_full_cover());
+        assert!(added_only.absent_kinds_count() > 0);
+
+        // Empty diff: coverage gap is the entire axis, so the
+        // coverage-gap size is strictly greater than 0.
+        let empty = ConfigDiff::default();
+        assert!(!empty.kind_histogram().is_full_cover());
+        assert!(empty.absent_kinds_count() > 0);
+    }
+
+    #[test]
+    fn absent_kinds_count_is_bounded_by_axis_cardinality() {
+        // The upper-bound invariant: the coverage gap of a closed-axis
+        // histogram is at most the axis cardinality (the unobserved-
+        // cells set is a subset of `DiffLineKind::ALL`).
+        let axis_size = crate::axis_cardinality::<DiffLineKind>();
+        for diff in present_kinds_count_fixtures() {
+            assert!(diff.absent_kinds_count() <= axis_size);
+        }
+    }
+
+    #[test]
+    fn absent_kinds_count_is_at_least_one_when_not_full_cover() {
+        // A non-full-cover diff carries at least one absent kind. The
+        // coverage-gap-side lower bound on non-full-cover, dual to
+        // `present_kinds_count_is_at_least_one_on_nonempty_diff` on the
+        // observed side.
+        for diff in present_kinds_count_fixtures() {
+            if diff.kind_histogram().is_full_cover() {
+                continue;
+            }
+            assert!(diff.absent_kinds_count() >= 1);
+        }
+    }
+
+    #[test]
+    fn absent_kinds_count_is_axis_cardinality_minus_one_iff_has_singular_support() {
+        // The singleton-support boundary in coverage-gap form: when
+        // exactly one diff-cell kind is observed, exactly
+        // `axis_cardinality - 1` are absent. Diff-altitude coverage-gap
+        // peer of `present_kinds_count_is_one_iff_has_singular_support`.
+        let axis_size = crate::axis_cardinality::<DiffLineKind>();
+
+        let context_only = ConfigDiff {
+            lines: vec![DiffLine::Context("a".into()), DiffLine::Context("b".into())],
+        };
+        assert!(context_only.kind_histogram().has_singular_support());
+        assert_eq!(context_only.absent_kinds_count(), axis_size - 1);
+
+        let added_only = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Added("a3".into()),
+            ],
+        };
+        assert!(added_only.kind_histogram().has_singular_support());
+        assert_eq!(added_only.absent_kinds_count(), axis_size - 1);
+
+        // Two-kind diff has non-singular support and coverage gap size
+        // strictly less than `axis_cardinality - 1`.
+        let two_kind = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert!(!two_kind.kind_histogram().has_singular_support());
+        assert!(two_kind.absent_kinds_count() < axis_size - 1);
+
+        // Empty diff has no support at all: the coverage gap is the
+        // full axis (strictly greater than `axis_cardinality - 1`).
+        let empty = ConfigDiff::default();
+        assert!(!empty.kind_histogram().has_singular_support());
+        assert!(empty.absent_kinds_count() > axis_size - 1);
+    }
+
+    #[test]
+    fn absent_kinds_count_agrees_with_open_coded_zero_walk() {
+        // Parity against the exact `DiffLineKind::ALL.iter().filter(|k|
+        // kind_histogram().count(*k) == 0).count()` walk this lift
+        // replaces on the coverage-gap side. Diff-altitude coverage-gap
+        // peer of `present_kinds_count_agrees_with_open_coded_nonzero_walk`.
+        for diff in present_kinds_count_fixtures() {
+            let via_seam = diff.absent_kinds_count();
+            let hist = diff.kind_histogram();
+            let hand_rolled = DiffLineKind::ALL
+                .iter()
+                .filter(|k| hist.count(**k) == 0)
+                .count();
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn absent_kinds_count_empty_diff_is_axis_cardinality() {
+        // Direct fixture pin: an empty diff has full coverage gap so
+        // `absent_kinds_count` reads the axis cardinality
+        // (3 = |{Removed, Added, Context}|).
+        let empty = ConfigDiff::default();
+        assert_eq!(
+            empty.absent_kinds_count(),
+            crate::axis_cardinality::<DiffLineKind>(),
+        );
+    }
+
+    #[test]
+    fn absent_kinds_count_full_cover_is_zero() {
+        // Direct fixture pin: a diff covering every diff-cell kind has
+        // an empty coverage gap so `absent_kinds_count` reads 0.
+        let full_cover = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(full_cover.absent_kinds_count(), 0);
+    }
+
+    #[test]
+    fn absent_kinds_count_two_kind_diff_is_one() {
+        // Direct fixture pin: a diff with two distinct kinds leaves
+        // exactly one kind absent — the coverage-gap complement of the
+        // two-kind support-size witness.
+        let two_kind = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+            ],
+        };
+        assert_eq!(two_kind.absent_kinds_count(), 1);
     }
 
     // ── ConfigDiff::dominant_kind — modal-cell scalar peer on the diff altitude ──
