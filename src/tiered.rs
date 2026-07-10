@@ -905,6 +905,147 @@ impl ProvenanceMap {
         self.tier_histogram().unobserved().collect()
     }
 
+    /// The **support size** — the number of distinct tiers that produced
+    /// ≥1 surviving effective leaf on this resolved fold. Returns `0`
+    /// exactly when the map is empty, `1` on a singleton-support fold
+    /// (every leaf attributed to one tier), and
+    /// [`crate::axis_cardinality::<ConfigTierKind>()`][crate::axis_cardinality]
+    /// on a full-cover fold (every tier heard from at least once).
+    ///
+    /// The **scalar-count peer** of [`Self::contributing_tiers`] on the
+    /// support-size projection: [`Self::contributing_tiers`] materializes
+    /// the observed-cells `Vec<ConfigTierKind>`, this method returns its
+    /// cardinality as a `usize` scalar, and both project the same axis
+    /// support off the shared [`Self::tier_histogram`] primitive. Every
+    /// operator-facing consumer answering *"how many tiers contributed to
+    /// this resolved fold?"* — the fleet dashboard summary line *"3 of 4
+    /// tiers contributed this rebuild window"* (where 3 is this scalar
+    /// and 4 is the axis cardinality), the attestation manifest
+    /// recording the tier-support cardinality between two resolved-fold
+    /// snapshots, the alerting policy reading *"support size = 1"* to
+    /// flag a rebuild window where only one tier surfaced — now route
+    /// through this named seam instead of the previous
+    /// `contributing_tiers().len()` idiom, which paid for a
+    /// `Vec<ConfigTierKind>` allocation of length ≤
+    /// [`crate::axis_cardinality::<ConfigTierKind>()`][crate::axis_cardinality]
+    /// on every call site and walked the histogram's support twice (once
+    /// through [`crate::AxisHistogram::observed`] to build the vector,
+    /// once through [`Vec::len`] to read its length back). Routes through
+    /// [`Self::tier_histogram`]:
+    /// [`crate::AxisHistogram::distinct_cells`] reads the nonzero-cell
+    /// count in a single pass over the fixed-cardinality counts vector,
+    /// so this method returns the size of the support without
+    /// materializing the observed-cells `Vec` — one histogram build
+    /// followed by one nonzero-count walk instead of the full
+    /// `.observed().collect::<Vec<_>>().len()` chain the prior idiom
+    /// paid.
+    ///
+    /// The tier-altitude **support-size** scalar projection — the first
+    /// histogram-shape scalar orthogonal to the [`crate::AxisHistogram`]
+    /// modal / anti-modal `(dominant, recessive) × (cell, count)` 2×2
+    /// grid closed on this altitude by [`Self::dominant_tier`],
+    /// [`Self::peak_tier_count`], [`Self::recessive_tier`], and
+    /// [`Self::trough_tier_count`]. The support-size scalar is
+    /// **orthogonal** to that grid: it references *how many* tiers
+    /// contributed, without naming *which* tier is modal or anti-modal
+    /// or *how many leaves* landed on either — a shape scalar that
+    /// closes over the coverage partition
+    /// ([`Self::contributing_tiers`] together with
+    /// [`Self::absent_tiers`]) instead of the observation-count
+    /// distribution the modal / anti-modal quad projects. Peer to the
+    /// [`crate::AxisHistogram::distinct_cells`] primitive one altitude
+    /// down, whose per-altitude scalar-count peer at each of the chain
+    /// altitude's three sub-axes (layer-kind, file-format,
+    /// env-prefix-kind) and at the diff altitude's diff-line kind
+    /// altitude is the natural next lift the closed 2×2 grid on those
+    /// altitudes compounds against.
+    ///
+    /// **Empty-map convention** — returns `0` (not `Option<usize>`)
+    /// matching the [`Self::len`], [`Self::peak_tier_count`], and
+    /// [`Self::trough_tier_count`] empty conventions on the same
+    /// altitude, and the [`crate::AxisHistogram::distinct_cells`]
+    /// convention one altitude down. The support-size scalar is
+    /// well-defined as zero on the empty map: the observed-cells set is
+    /// empty, its cardinality is zero, and the coverage-gap sum
+    /// [`Self::contributing_tiers_count`] + `absent_tiers().len()` still
+    /// balances the axis cardinality (`0 + axis_cardinality::<ConfigTierKind>()
+    /// == axis_cardinality::<ConfigTierKind>()`).
+    ///
+    /// # Invariants
+    ///
+    /// - `contributing_tiers_count() == tier_histogram().distinct_cells()`
+    ///   — both project the same nonzero-cell count off the same
+    ///   primitive; the named seam is the cube-native routing of the
+    ///   histogram surface. Pinned by
+    ///   [`tests::contributing_tiers_count_matches_tier_histogram_distinct_cells_pointwise`].
+    /// - `contributing_tiers_count() == contributing_tiers().len()` —
+    ///   the scalar-count peer of the observed-cells `Vec` peer; both
+    ///   name the same support cardinality without materializing the
+    ///   vector. Pinned by
+    ///   [`tests::contributing_tiers_count_equals_contributing_tiers_len_pointwise`].
+    /// - `contributing_tiers_count() + absent_tiers().len() ==
+    ///   crate::axis_cardinality::<ConfigTierKind>()` — the observed /
+    ///   coverage-gap partition on the tier axis without remainder, the
+    ///   scalar dual of the
+    ///   [`tests::absent_tiers_and_contributing_tiers_partition_axis`]
+    ///   set-level partition law. Pinned by
+    ///   [`tests::contributing_tiers_count_and_absent_tiers_len_partition_axis_cardinality`].
+    /// - `contributing_tiers_count() == 0` ⇔ [`Self::is_empty`] is
+    ///   `true` — the empty-map / empty-support boundary equivalence
+    ///   (every leaf projects to one tier, so a zero-support fold has
+    ///   zero leaves and vice versa). Pinned by
+    ///   [`tests::contributing_tiers_count_is_zero_iff_map_is_empty`].
+    /// - `contributing_tiers_count() >= 1` whenever `!is_empty()` — the
+    ///   support of a non-empty map is at least the singleton of the
+    ///   first-leaf tier. Pinned by
+    ///   [`tests::contributing_tiers_count_is_at_least_one_on_nonempty_map`].
+    /// - `contributing_tiers_count() <=
+    ///   crate::axis_cardinality::<ConfigTierKind>()` — the support of a
+    ///   histogram over a closed axis is bounded above by the axis
+    ///   cardinality (the observed-cells set is a subset of
+    ///   [`ConfigTierKind::ALL`]). Pinned by
+    ///   [`tests::contributing_tiers_count_is_bounded_by_axis_cardinality`].
+    /// - `contributing_tiers_count() <= tier_histogram().total()` — the
+    ///   support of a histogram is bounded above by the total
+    ///   observation count (every distinct cell contributes at least one
+    ///   observation to the total). Pinned by
+    ///   [`tests::contributing_tiers_count_is_bounded_by_tier_histogram_total`].
+    /// - `contributing_tiers_count() ==
+    ///   crate::axis_cardinality::<ConfigTierKind>()` ⇔
+    ///   `absent_tiers().is_empty()` ⇔
+    ///   `tier_histogram().is_full_cover()` — the full-cover boundary
+    ///   equivalence on the support-size scalar, the tier-altitude peer
+    ///   of the [`crate::AxisHistogram::is_full_cover`] boundary law.
+    ///   Pinned by
+    ///   [`tests::contributing_tiers_count_equals_axis_cardinality_iff_is_full_cover`].
+    /// - `contributing_tiers_count() == 1` ⇔
+    ///   `tier_histogram().has_singular_support()` — the singleton-
+    ///   support boundary equivalence, the tier-altitude peer of the
+    ///   [`crate::AxisHistogram::has_singular_support`] boundary law.
+    ///   Pinned by
+    ///   [`tests::contributing_tiers_count_is_one_iff_has_singular_support`].
+    /// - `contributing_tiers_count() == 1` ⇒ `dominant_tier() ==
+    ///   recessive_tier()` — a singleton-support fold has the modal and
+    ///   anti-modal cells coincide on the sole observed tier (the
+    ///   support-size scalar witnesses the [`crate::AxisHistogram`]
+    ///   support-collapse degenerate). Pinned by
+    ///   [`tests::contributing_tiers_count_of_one_implies_dominant_equals_recessive`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<ConfigTierKind>()` (the
+    /// nonzero-cell scan). Both are `O(n)` in practice since the tier
+    /// axis carries a fixed four-cell cardinality; the returned `usize`
+    /// reads one scalar. Halves the wall-cost of the previous
+    /// `contributing_tiers().len()` idiom by eliding the
+    /// `Vec<ConfigTierKind>` allocation the observed-cells collect paid
+    /// on every call site.
+    #[must_use]
+    pub fn contributing_tiers_count(&self) -> usize {
+        self.tier_histogram().distinct_cells()
+    }
+
     /// The tier whose overlay produced the greatest number of surviving
     /// effective leaves on this resolved fold — the modal cell of
     /// [`Self::tier_histogram`] on the tier altitude. `None` exactly
@@ -6089,6 +6230,266 @@ mod progressive_tests {
                 .collect();
             assert_eq!(via_seam, hand_rolled);
         }
+    }
+
+    // ── ProvenanceMap::contributing_tiers_count — support-size scalar
+    //    peer of contributing_tiers on the tier altitude ──
+
+    #[test]
+    fn contributing_tiers_count_matches_tier_histogram_distinct_cells_pointwise() {
+        // The support-size pin: `contributing_tiers_count` routes through
+        // `tier_histogram().distinct_cells()`, so the two seams must stay
+        // pointwise equivalent under every fixture. Catches any future
+        // drift where either implementation stops projecting through the
+        // shared cube-native primitive. Peer of
+        // `contributing_tiers_matches_tier_histogram_observed` on the
+        // observed-cells-vector side of the same primitive.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().distinct_cells();
+            assert_eq!(map.contributing_tiers_count(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn contributing_tiers_count_equals_contributing_tiers_len_pointwise() {
+        // The Vec-peer identity: the scalar-count seam equals the length
+        // of the observed-cells `Vec` peer. Any future re-implementation
+        // of either seam must keep this equality — pinned uniformly. Peer
+        // to `tier_histogram_distinct_cells_matches_contributing_tiers_len`
+        // on the histogram side.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.contributing_tiers_count(),
+                map.contributing_tiers().len(),
+            );
+        }
+    }
+
+    #[test]
+    fn contributing_tiers_count_and_absent_tiers_len_partition_axis_cardinality() {
+        // The partition law: the scalar dual of
+        // `absent_tiers_and_contributing_tiers_partition_axis`. Every
+        // tier cell lies in exactly one of {contributing, absent}, so the
+        // two scalars sum to the axis cardinality without remainder on
+        // every fixture — including the empty map (`0 + 4 == 4`) and any
+        // full-cover map (`4 + 0 == 4`).
+        use crate::cube::axis_cardinality;
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.contributing_tiers_count() + map.absent_tiers().len(),
+                axis_cardinality::<ConfigTierKind>(),
+            );
+        }
+    }
+
+    #[test]
+    fn contributing_tiers_count_is_zero_iff_map_is_empty() {
+        // The empty-boundary equivalence: a zero-support fold has zero
+        // leaves and vice versa. Peer to `dominant_tier_empty_map_is_none`
+        // / `absent_tiers_empty_map_is_full_axis` on the empty-boundary
+        // side of the tier altitude, and the tier-altitude peer of the
+        // `AxisHistogram::is_empty` primitive one altitude down.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.contributing_tiers_count(), 0);
+        assert!(empty.is_empty());
+
+        // The Prog fixture is non-empty: three of the four tiers
+        // (Bare, Discovered, Default) contribute, so the support-size
+        // scalar reads a non-zero value.
+        let r = Prog::resolve_progressive();
+        assert!(!r.provenance().is_empty());
+        assert!(r.provenance().contributing_tiers_count() > 0);
+    }
+
+    #[test]
+    fn contributing_tiers_count_is_at_least_one_on_nonempty_map() {
+        // The lower-bound invariant: the support of a non-empty map
+        // carries at least the singleton of the first-leaf tier. Peer to
+        // `peak_tier_count_is_at_least_one_on_nonempty_map` and
+        // `trough_tier_count_is_at_least_one_on_nonempty_map` on the
+        // modal-count side of the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+        ] {
+            assert!(!map.is_empty());
+            assert!(map.contributing_tiers_count() >= 1);
+        }
+    }
+
+    #[test]
+    fn contributing_tiers_count_is_bounded_by_axis_cardinality() {
+        // The upper-bound invariant: the support of a closed-axis
+        // histogram is at most the axis cardinality (the observed-cells
+        // set is a subset of `ConfigTierKind::ALL`). Peer to the
+        // trait-uniform `distinct_cells() <= axis_cardinality()` law on
+        // `AxisHistogram` one altitude down.
+        use crate::cube::axis_cardinality;
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.contributing_tiers_count() <= axis_cardinality::<ConfigTierKind>());
+        }
+    }
+
+    #[test]
+    fn contributing_tiers_count_is_bounded_by_tier_histogram_total() {
+        // The support ≤ total invariant: every distinct cell contributes
+        // at least one observation to the total, so the support size is
+        // bounded above by the total observation count. Peer to the
+        // trait-uniform `distinct_cells() <= total()` law on
+        // `AxisHistogram` one altitude down.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.contributing_tiers_count() <= map.tier_histogram().total());
+        }
+    }
+
+    #[test]
+    fn contributing_tiers_count_equals_axis_cardinality_iff_is_full_cover() {
+        // The full-cover boundary equivalence: the support size equals
+        // the axis cardinality iff every tier contributed ≥1 leaf iff
+        // the coverage gap is empty. Peer to
+        // `absent_tiers_is_empty_iff_is_full_cover` on the coverage-gap
+        // side and the tier-altitude lift of the trait-uniform
+        // `is_full_cover() ⇔ distinct_cells() == axis_cardinality()`
+        // law on `AxisHistogram`.
+        use crate::cube::axis_cardinality;
+        // Full-cover fixture: a Custom overlay on Prog (Bare + Discovered
+        // + Default already contribute) touches ONLY `b` so the other
+        // leaves keep their prior attribution — every tier now contributes
+        // at least one leaf, so `tier_histogram()` reaches full cover.
+        let mut d = Dict::new();
+        d.insert("b".to_owned(), Value::from(99_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::file("/etc/prog.yaml", d)]);
+        assert!(r.provenance().tier_histogram().is_full_cover());
+        assert_eq!(
+            r.provenance().contributing_tiers_count(),
+            axis_cardinality::<ConfigTierKind>(),
+        );
+
+        // Non-full-cover: Prog fixture has no operator overlay, so
+        // Custom is absent — support strictly less than axis cardinality.
+        let r = Prog::resolve_progressive();
+        assert!(!r.provenance().tier_histogram().is_full_cover());
+        assert!(r.provenance().contributing_tiers_count() < axis_cardinality::<ConfigTierKind>(),);
+    }
+
+    #[test]
+    fn contributing_tiers_count_is_one_iff_has_singular_support() {
+        // The singleton-support boundary equivalence: the support size
+        // equals 1 iff exactly one tier contributes iff the histogram
+        // has singular support. Peer to
+        // `AxisHistogram::has_singular_support` one altitude down.
+        //
+        // Singleton-support fixture: a single Default layer overrides
+        // every leaf so only Default contributes.
+        let mut d = Dict::new();
+        d.insert("a".to_owned(), Value::from(11_u32));
+        d.insert("b".to_owned(), Value::from(22_u32));
+        d.insert("c".to_owned(), Value::from(33_u32));
+        d.insert("d".to_owned(), Value::from(44_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::new(
+            Provenance::computed(ConfigTierKind::Default),
+            d,
+        )]);
+        assert!(r.provenance().tier_histogram().has_singular_support());
+        assert_eq!(r.provenance().contributing_tiers_count(), 1);
+
+        // Non-singleton-support: Prog fixture spans three tiers, so the
+        // support size is > 1 and singular_support reads false.
+        let r = Prog::resolve_progressive();
+        assert!(!r.provenance().tier_histogram().has_singular_support());
+        assert!(r.provenance().contributing_tiers_count() > 1);
+    }
+
+    #[test]
+    fn contributing_tiers_count_of_one_implies_dominant_equals_recessive() {
+        // The support-collapse degenerate: a singleton-support fold has
+        // the modal and anti-modal cells coincide on the sole observed
+        // tier. The scalar-count peer witnesses the collapse without
+        // needing to name which cell survives. Peer to
+        // `recessive_tier_singleton_support_agrees_with_dominant_tier`
+        // on the cell side of the same collapse.
+        let mut d = Dict::new();
+        d.insert("a".to_owned(), Value::from(11_u32));
+        d.insert("b".to_owned(), Value::from(22_u32));
+        d.insert("c".to_owned(), Value::from(33_u32));
+        d.insert("d".to_owned(), Value::from(44_u32));
+        let r = Prog::resolve_progressive_with(&[ProgressiveLayer::new(
+            Provenance::computed(ConfigTierKind::Default),
+            d,
+        )]);
+        assert_eq!(r.provenance().contributing_tiers_count(), 1);
+        assert_eq!(
+            r.provenance().dominant_tier(),
+            r.provenance().recessive_tier()
+        );
+    }
+
+    #[test]
+    fn contributing_tiers_count_agrees_with_open_coded_nonzero_walk() {
+        // Parity against the exact
+        // `ConfigTierKind::ALL.iter().filter(|t|
+        // tier_histogram().count(*t) > 0).count()` walk this lift
+        // replaces — both the named seam and the hand-rolled
+        // nonzero-cell scan must pointwise agree over every fixture in
+        // the module. Pins the load-bearing `>0` filter that keeps the
+        // naive `.iter().count()` from silently counting zero-count
+        // absent cells on any non-full-cover histogram.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.contributing_tiers_count();
+            let hist = map.tier_histogram();
+            let hand_rolled = ConfigTierKind::ALL
+                .iter()
+                .copied()
+                .filter(|t| hist.count(*t) > 0)
+                .count();
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn contributing_tiers_count_prog_fixture_is_three() {
+        // Direct fixture pin: Prog attributes 4 leaves across 3 tiers
+        // (Discovered, Default×2, Bare), so the support size reads 3.
+        // Peer to `dominant_tier_prog_fixture_is_default` on the same
+        // fixture and altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().contributing_tiers_count(), 3);
+    }
+
+    #[test]
+    fn contributing_tiers_count_nested_fixture_is_two() {
+        // Direct fixture pin: Nested attributes 3 leaves across 2 tiers
+        // (Discovered, Default×2), so the support size reads 2 — one
+        // tier fewer than Prog because Nested's third leaf shares
+        // Default with its second. Peer to
+        // `dominant_tier_nested_fixture_is_default` on the same fixture
+        // and altitude.
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.provenance().contributing_tiers_count(), 2);
     }
 
     #[test]
