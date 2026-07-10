@@ -923,6 +923,120 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().recessive_cell()
     }
 
+    /// The **peak layer count** — the number of layers contributed by the
+    /// dominant (majority-observed) [`ConfigSourceKind`] on this chain.
+    /// Returns `0` exactly when the chain is empty; otherwise returns the
+    /// count carried by [`Self::dominant_layer_kind`] (pointwise equal to
+    /// it, and always `>= 1` by the histogram-support definition).
+    ///
+    /// The **scalar peer** of [`Self::dominant_layer_kind`] on the count
+    /// side — the natural typed primitive for chain-shape dashboards,
+    /// attestation manifests, and alerting policies asking *"how many
+    /// layers did the majority kind contribute?"*: the CLI `config-show`
+    /// summary headline *"majority kind: File, 3 of 5 layers"* (where 3
+    /// is this scalar), the attestation manifest recording the peak
+    /// layer-kind observation count between two `ProviderChain`
+    /// snapshots, the alerting policy reading *"chain peak-kind count =
+    /// 12"* to gate a rebuild window on the modal kind's density. Before
+    /// this lift, every such consumer re-derived the projection inline
+    /// as `chain.layer_kind_histogram().peak_count()` or (equivalently
+    /// but at twice the cost) `chain.dominant_layer_kind().map_or(0, |k|
+    /// chain.layer_kind_histogram().count(k))` — which walked the
+    /// histogram *twice* (once to argmax, once to read the count back
+    /// through [`crate::AxisHistogram::count`] indexing) and re-built
+    /// the histogram at every site. Routes through
+    /// [`Self::layer_kind_histogram`]:
+    /// [`crate::AxisHistogram::peak_count`] reads a single pass over the
+    /// fixed-cardinality counts vector.
+    ///
+    /// The chain-altitude scalar-count peer of [`Self::dominant_layer_kind`]
+    /// (the modal-cell scalar peer of [`Self::layer_kind_histogram`]) —
+    /// the layer-kind sub-axis of the chain-shape surface now carries
+    /// the fused `(dominant_layer_kind, peak_layer_kind_count)` modal
+    /// pair, matching the ([`crate::AxisHistogram::dominant_cell`],
+    /// [`crate::AxisHistogram::peak_count`]) pair on the shared
+    /// [`crate::AxisHistogram`] primitive one altitude down, the
+    /// ([`crate::ProvenanceMap::dominant_tier`],
+    /// [`crate::ProvenanceMap::peak_tier_count`]) pair on the tier
+    /// altitude, and the ([`crate::ConfigDiff::dominant_kind`],
+    /// [`crate::ConfigDiff::peak_kind_count`]) pair on the diff altitude.
+    /// Consumers answering *"which layer kind dominated the chain and by
+    /// how much?"* now read a single `(dominant_layer_kind(),
+    /// peak_layer_kind_count())` pair — one method each, both routing
+    /// through the same primitive — instead of re-deriving the count off
+    /// the modal cell.
+    ///
+    /// **Empty-chain convention** — returns `0` (not `Option<usize>`)
+    /// matching the [`crate::AxisHistogram::peak_count`] convention one
+    /// altitude down, the [`crate::ProvenanceMap::peak_tier_count`] and
+    /// [`crate::ConfigDiff::peak_kind_count`] conventions on the peer
+    /// altitudes, and the `self.as_ref().len()` empty convention on the
+    /// same chain; the scalar `(self.as_ref().len(),
+    /// peak_layer_kind_count)` pair reads uniformly `(0, 0)` on the
+    /// empty chain. The dual-form [`Self::dominant_layer_kind`] carries
+    /// `Option<ConfigSourceKind>` because the *kind* is undefined when
+    /// no layer contributes; the *count* is well-defined as zero. The
+    /// asymmetry is intentional: every scalar projection reads zero on
+    /// empty; every cell projection reads `None`.
+    ///
+    /// # Invariants
+    ///
+    /// - `peak_layer_kind_count() == 0` ⇔ `self.as_ref().is_empty()` —
+    ///   peer to the empty-chain boundary [`Self::dominant_layer_kind`]
+    ///   and [`Self::recessive_layer_kind`] both witness on the cell
+    ///   side. Unlike the file-format and env-prefix sub-axes, the
+    ///   presence bound coincides with `self.as_ref().is_empty()` (every
+    ///   layer projects to exactly one [`ConfigSourceKind`] cell through
+    ///   [`ConfigSource::kind`]).
+    /// - `peak_layer_kind_count() == layer_kind_histogram().peak_count()`
+    ///   — both project the same scalar off the same primitive; the
+    ///   named seam is the cube-native routing of the chain-shape
+    ///   surface.
+    /// - `peak_layer_kind_count() == dominant_layer_kind().map_or(0, |k|
+    ///   layer_kind_histogram().count(k))` — the count projection of the
+    ///   `(dominant_layer_kind, peak_layer_kind_count)` modal pair
+    ///   equals [`Self::peak_layer_kind_count`] pointwise on every chain
+    ///   (empty: `None.map_or(0, …) == 0 == peak_layer_kind_count`;
+    ///   non-empty: `Some(k).map_or(0, |k| count(k)) ==
+    ///   peak_layer_kind_count`, since `count(dominant_layer_kind()) ==
+    ///   peak_count()`).
+    /// - `peak_layer_kind_count() <= self.as_ref().len()` always: the
+    ///   peak is bounded above by the total layer count (every kind
+    ///   contributes at most every layer, and the others contribute
+    ///   zero). Equality holds iff `present_layer_kinds().len() <= 1`.
+    /// - `peak_layer_kind_count() == self.as_ref().len()` iff
+    ///   `present_layer_kinds().len() <= 1`: a single observed kind
+    ///   carries every layer, so the peak equals the total. Zero
+    ///   observed kinds (empty) reads `0 == 0`; one observed kind reads
+    ///   `N == N`; two or more reads `peak < total` strictly.
+    /// - `peak_layer_kind_count() >= 1` whenever
+    ///   `!self.as_ref().is_empty()` — a non-empty chain always has at
+    ///   least one layer on the dominant kind.
+    /// - `peak_layer_kind_count()` on a uniform per-kind chain (one
+    ///   layer per kind) equals `1` — every observed kind collects one
+    ///   layer, dominant included.
+    /// - `peak_layer_kind_count()` on a singleton-support chain (every
+    ///   layer on the same kind) equals `self.as_ref().len()` — the
+    ///   dominant kind collects every layer.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the
+    /// argmax scan). Both are `O(n)` in practice since the layer-kind
+    /// axis carries a fixed three-cell cardinality; the returned
+    /// `usize` reads one scalar. Halves the cost of the previous
+    /// `dominant_layer_kind().map_or(0, |k|
+    /// layer_kind_histogram().count(k))` idiom (which walked the
+    /// histogram twice — once to argmax, once to read the count back).
+    #[must_use]
+    fn peak_layer_kind_count(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().peak_count()
+    }
+
     /// Dense per-format tally of the chain's [`ConfigSource::File`]
     /// layers over the [`crate::discovery::Format`] axis — the typed
     /// histogram every per-format dashboard, attestation manifest
@@ -8119,6 +8233,276 @@ mod tests {
             Some(ConfigSourceKind::Defaults),
         );
         assert_eq!(slice.recessive_layer_kind(), slice.dominant_layer_kind());
+    }
+
+    // ---- ConfigSourceChain::peak_layer_kind_count — modal-cell scalar-
+    //      count peer of layer_kind_histogram on the chain altitude,
+    //      fusing with dominant_layer_kind into the (cell, count) modal
+    //      pair on the layer-kind sub-axis of the chain-shape surface ----
+
+    #[test]
+    fn peak_layer_kind_count_matches_layer_kind_histogram_peak_count_pointwise() {
+        // The scalar-count pin: `peak_layer_kind_count` routes through
+        // `layer_kind_histogram().peak_count()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Direct sister
+        // of `peak_tier_count_matches_tier_histogram_peak_count_pointwise`
+        // and `peak_kind_count_matches_kind_histogram_peak_count_pointwise`
+        // on the tier and diff altitudes.
+        for chain in recessive_layer_kind_fixtures() {
+            let via_histogram = chain.as_slice().layer_kind_histogram().peak_count();
+            assert_eq!(chain.as_slice().peak_layer_kind_count(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn peak_layer_kind_count_sample_chain_is_two() {
+        // Direct pin against `sample_chain()`: two File layers + one Env
+        // layer (no Defaults). File is uniquely dominant with 2 of 3
+        // layers, so the peak count is 2. The (dominant_layer_kind,
+        // peak_layer_kind_count) modal pair reads `(Some(File), 2)`.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.dominant_layer_kind(), Some(ConfigSourceKind::File));
+        assert_eq!(slice.peak_layer_kind_count(), 2);
+    }
+
+    #[test]
+    fn peak_layer_kind_count_env_majority_is_three() {
+        // Env-majority fixture: three Env layers + one File + one
+        // Defaults. Env is uniquely dominant with 3 of 5 layers, so the
+        // peak count is 3. Cross-verified against `hist.peak_count() ==
+        // 3` at the same observation site — the fused-pair count
+        // projection reads through the seam.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.dominant_layer_kind(), Some(ConfigSourceKind::Env));
+        assert_eq!(slice.peak_layer_kind_count(), 3);
+        assert_eq!(slice.layer_kind_histogram().peak_count(), 3);
+    }
+
+    #[test]
+    fn peak_layer_kind_count_empty_chain_is_zero() {
+        // Empty-chain / zero boundary: the fused
+        // (dominant_layer_kind, peak_layer_kind_count) modal scalar pair
+        // reads `(None, 0)` uniformly on the empty chain, matching the
+        // `(AxisHistogram::dominant_cell, AxisHistogram::peak_count)`
+        // pair on the shared histogram primitive one altitude down.
+        // Peer of `peak_tier_count_empty_map_is_zero` on the tier
+        // altitude and `peak_kind_count_empty_diff_is_zero` on the diff
+        // altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.dominant_layer_kind(), None);
+        assert_eq!(empty.peak_layer_kind_count(), 0);
+    }
+
+    #[test]
+    fn peak_layer_kind_count_is_zero_iff_chain_is_empty() {
+        // The `peak_layer_kind_count() == 0 ⇔ self.as_ref().is_empty()`
+        // presence-bound pin — every layer projects to exactly one
+        // `ConfigSourceKind` cell through `ConfigSource::kind`, so a
+        // non-empty chain always contributes a positive peak, and an
+        // empty chain always reads zero. Cross-axis divergence from the
+        // file-format and env-prefix sub-axes, whose zero-peak boundary
+        // is the corresponding histogram's `is_empty()`. Direct sister
+        // of `peak_tier_count_is_zero_iff_map_is_empty` on the tier
+        // altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            assert_eq!(
+                chain.as_slice().peak_layer_kind_count() == 0,
+                chain.as_slice().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_layer_kind_count_equals_count_at_dominant_layer_kind_on_nonempty_chain() {
+        // The `(dominant_cell, peak_count)` modal-pair invariant lifted
+        // to the chain altitude on the layer-kind sub-axis:
+        // `hist.count(dominant_layer_kind().unwrap()) ==
+        // peak_layer_kind_count()` on every non-empty chain. Peer of
+        // `peak_tier_count_equals_count_at_dominant_tier_on_nonempty_map`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            if chain.as_slice().is_empty() {
+                continue;
+            }
+            let hist = chain.as_slice().layer_kind_histogram();
+            let dominant = chain
+                .as_slice()
+                .dominant_layer_kind()
+                .expect("non-empty chain has a dominant layer kind");
+            assert_eq!(
+                hist.count(dominant),
+                chain.as_slice().peak_layer_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_layer_kind_count_equals_dominant_layer_kind_map_or_count() {
+        // The fused-pair identity `peak_layer_kind_count() ==
+        // dominant_layer_kind().map_or(0, |k|
+        // layer_kind_histogram().count(k))` on every input — the count
+        // projection of the (dominant_layer_kind, peak_layer_kind_count)
+        // modal pair reads through the seam uniformly across the empty-
+        // chain / non-empty-chain partition. Includes the empty chain
+        // (`None.map_or(0, …) == 0 == peak_layer_kind_count`) — this is
+        // the pin that the fused-pair identity is boundary-complete.
+        // Peer of `peak_tier_count_equals_dominant_tier_map_or_count`
+        // on the tier altitude and
+        // `peak_kind_count_equals_dominant_kind_map_or_count` on the
+        // diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let hist = chain.as_slice().layer_kind_histogram();
+            let via_fused_pair = chain
+                .as_slice()
+                .dominant_layer_kind()
+                .map_or(0, |k| hist.count(k));
+            assert_eq!(chain.as_slice().peak_layer_kind_count(), via_fused_pair,);
+        }
+    }
+
+    #[test]
+    fn peak_layer_kind_count_is_bounded_by_len() {
+        // Structural bound `peak_layer_kind_count() <=
+        // self.as_ref().len()` on every input — the peak is bounded
+        // above by the total layer count (every kind contributes at
+        // most every layer, the others contribute zero). Lifted from
+        // the trait-uniform `peak_count() <= total()` law on
+        // AxisHistogram. Peer of `peak_tier_count_is_bounded_by_len`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.peak_layer_kind_count() <= slice.len(),
+                "peak_layer_kind_count()={p} must be <= len()={n}",
+                p = slice.peak_layer_kind_count(),
+                n = slice.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_layer_kind_count_equals_len_iff_at_most_one_present_layer_kind() {
+        // Structural bound `peak_layer_kind_count() ==
+        // self.as_ref().len()` iff `present_layer_kinds().len() <= 1`
+        // — the peak equals the total exactly when zero or one kind is
+        // observed. Zero: empty chain, both zero. One: singleton-support
+        // chain, every layer on the same kind. Two or more: peak
+        // strictly below total. Lifted from the trait-uniform
+        // `peak_count() == total()` law on AxisHistogram. Peer of
+        // `peak_tier_count_equals_len_iff_at_most_one_contributing_tier`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.peak_layer_kind_count() == slice.len(),
+                slice.present_layer_kinds().len() <= 1,
+                "peak == len iff present_layer_kinds.len() <= 1 (peak={p}, len={n}, present={c})",
+                p = slice.peak_layer_kind_count(),
+                n = slice.len(),
+                c = slice.present_layer_kinds().len(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_layer_kind_count_is_at_least_one_on_nonempty_chain() {
+        // Structural pin: whenever `!self.as_ref().is_empty()`,
+        // `peak_layer_kind_count() >= 1` — a non-empty chain always has
+        // at least one layer on the dominant kind. Combined with the
+        // `<= len()` bound above, this pins `1 <= peak_layer_kind_count()
+        // <= len()` on every non-empty chain. Peer of
+        // `peak_tier_count_is_at_least_one_on_nonempty_map` on the tier
+        // altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.is_empty() {
+                continue;
+            }
+            assert!(
+                slice.peak_layer_kind_count() >= 1,
+                "non-empty chain must have peak_layer_kind_count >= 1 (peak={p})",
+                p = slice.peak_layer_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_layer_kind_count_uniform_cover_is_two() {
+        // Uniform-cover chain — two layers of each kind (2 Defaults +
+        // 2 Env + 2 File). Full-cover histogram with uniform count 2
+        // per cell, so the peak count is 2. Direct sister of
+        // `peak_tier_count_uniform_cover_is_one` on the tier altitude
+        // (that fixture uses one leaf per tier so the peak is 1; here
+        // we use two layers per kind so the peak is 2). Combined with
+        // `dominant_layer_kind_uniform_cover_picks_first_cell`, the
+        // fused pair `(dominant_layer_kind, peak_layer_kind_count)`
+        // reads `(Some(Defaults), 2)` on the uniform-cover chain.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kind_histogram().is_full_cover());
+        assert_eq!(slice.peak_layer_kind_count(), 2);
+    }
+
+    #[test]
+    fn peak_layer_kind_count_singleton_support_equals_len() {
+        // Singleton-support degenerate: when only one kind contributes,
+        // every layer lands on that kind, so the peak equals the total.
+        // Direct construction: three layers, all File. The scalar peer
+        // of the singleton-support cell degenerate
+        // `dominant_layer_kind() == recessive_layer_kind()` in
+        // `recessive_layer_kind_singleton_support_agrees_with_dominant_layer_kind`
+        // — that test pins the *cell*; this test pins the *count*
+        // through the `peak_layer_kind_count() == len()` equality on
+        // the singleton-support boundary. Peer of
+        // `peak_tier_count_singleton_support_equals_len` on the tier
+        // altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 1);
+        assert_eq!(slice.peak_layer_kind_count(), slice.len());
+        assert_eq!(slice.peak_layer_kind_count(), 3);
+    }
+
+    #[test]
+    fn peak_layer_kind_count_agrees_with_open_coded_max_over_axis_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()`
+        // walk this lift replaces — both the named seam and the hand-
+        // rolled max must pointwise agree over every fixture. The
+        // `.max().unwrap_or(0)` idiom mirrors the empty-histogram
+        // convention on `AxisHistogram::peak_count` one altitude down
+        // (both read 0 on empty). Peer of
+        // `peak_tier_count_agrees_with_open_coded_max_over_axis_walk`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let via_seam = chain.as_slice().peak_layer_kind_count();
+            let hand_rolled = chain
+                .as_slice()
+                .layer_kind_histogram()
+                .iter()
+                .map(|(_, c)| c)
+                .max()
+                .unwrap_or(0);
+            assert_eq!(via_seam, hand_rolled);
+        }
     }
 
     // ---- ConfigSource::env_prefix_kind ----
