@@ -1588,6 +1588,121 @@ impl ProvenanceMap {
     pub fn recessive_tier(&self) -> Option<ConfigTierKind> {
         self.tier_histogram().recessive_cell()
     }
+
+    /// The **scalar dispersion** of the leaf-count distribution across the
+    /// observed tiers on this resolved fold — the tier-altitude peer of
+    /// [`ConfigDiff::kind_spread`] on the diff altitude. Returns `0`
+    /// exactly on every empty map, every singleton-support fold (only one
+    /// observed tier, trivially balanced), and every uniform per-tier
+    /// fold (each observed tier contributing the same nonzero leaf count,
+    /// dominant included).
+    ///
+    /// The **scalar dispersion peer** of the fused
+    /// `(peak_tier_count, trough_tier_count)` modal-count pair on the
+    /// tier altitude — the natural typed primitive for fleet dashboards,
+    /// attestation manifests, and alerting policies asking *"how
+    /// unevenly distributed are the leaves across the observed
+    /// tiers?"*: the fleet dashboard headline *"tier skew 46: Default
+    /// owns 47 of 53 leaves, Custom 1 of 53"* (where 46 is this
+    /// scalar), the attestation manifest recording the tier spread
+    /// between two resolved-fold snapshots, the alerting policy reading
+    /// *"tier spread = 46"* to flag a rebuild window where one tier
+    /// dwarfed the others. Before this lift, every such consumer
+    /// re-derived the projection inline as `map.peak_tier_count() -
+    /// map.trough_tier_count()` — two method calls plus a subtraction
+    /// at every site, each site having to reason independently about
+    /// the structural non-negativity of the difference (`peak_count >=
+    /// trough_count` holds on every histogram but not on the inline
+    /// subtraction surface, so an unwitnessed refactor swapping the
+    /// operands would silently underflow). Routes through
+    /// [`crate::AxisHistogram::spread`] one altitude down — the
+    /// underflow-safe named seam whose docs pin the monotonicity
+    /// invariant explicitly.
+    ///
+    /// The tier-altitude scalar-dispersion peer in the "spread across
+    /// altitudes" projection seeded on the diff altitude by
+    /// [`ConfigDiff::kind_spread`]. The pattern is the same at every
+    /// altitude: fuse the (`peak_count`, `trough_count`) modal-count
+    /// pair into a single dispersion scalar named at the surface,
+    /// routed through the shared [`crate::AxisHistogram::spread`]
+    /// primitive one altitude down. The chain altitude's three
+    /// sub-axes (`layer_kind_spread`, `file_format_spread`,
+    /// `env_prefix_kind_spread` over the corresponding chain
+    /// histograms) are the natural next sideways lifts.
+    ///
+    /// **Empty-map convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::spread`] empty convention one altitude
+    /// down and the [`Self::peak_tier_count`] / [`Self::trough_tier_count`]
+    /// empty conventions on the same altitude. The scalar-count triple
+    /// `(peak_tier_count, trough_tier_count, tier_spread)` reads
+    /// uniformly `(0, 0, 0)` on the empty map — every observation
+    /// scalar reads zero on empty; every cell projection
+    /// ([`Self::dominant_tier`], [`Self::recessive_tier`]) reads
+    /// `None`. The asymmetry is intentional and matches the
+    /// [`crate::AxisHistogram`] convention one altitude down.
+    ///
+    /// **Structural-skew predicate.** `tier_spread() == 0` is the
+    /// typed *balanced-tier-counts* predicate at the tier altitude —
+    /// every observed [`ConfigTierKind`] contributed the same number of
+    /// leaves. Pointwise equivalent to `peak_tier_count() ==
+    /// trough_tier_count()` on the scalar-count pair and to
+    /// `dominant_tier() == recessive_tier()` on the modal-cell pair
+    /// whenever the map is non-empty (both branches reduce to
+    /// `Some(first) == Some(first)` on singleton-support and uniform
+    /// folds, and to `false` on skewed folds). Together with
+    /// [`Self::is_empty`] and the full-cover predicate on
+    /// [`Self::tier_histogram`], the tier-altitude scalar surface now
+    /// carries the natural boundary triple *"did any tier contribute?"* /
+    /// *"did every tier fire?"* / *"did the tiers fire equally?"* — each
+    /// a single method call.
+    ///
+    /// # Invariants
+    ///
+    /// - `tier_spread() == tier_histogram().spread()` — both project the
+    ///   same scalar off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `tier_spread() == peak_tier_count() - trough_tier_count()` —
+    ///   the fused-pair identity of the scalar-dispersion peer. The
+    ///   subtraction is underflow-safe because `peak_tier_count() >=
+    ///   trough_tier_count()` holds structurally on every map (lifted
+    ///   from the trait-uniform `peak_count() >= trough_count()` law
+    ///   on [`crate::AxisHistogram`]).
+    /// - `tier_spread() == 0` on the empty map — the vacuous
+    ///   uniformity boundary, matching the
+    ///   [`crate::AxisHistogram::spread`] empty convention one altitude
+    ///   down. The `(peak_tier_count, trough_tier_count, tier_spread)`
+    ///   triple reads `(0, 0, 0)` uniformly on the empty map.
+    /// - `tier_spread() == 0` whenever `contributing_tiers().len() <= 1`
+    ///   — singleton-support folds are trivially balanced (the one
+    ///   observed tier's count is both the peak and the trough). Also
+    ///   holds on every uniform per-tier fold (each observed tier
+    ///   contributing the same nonzero count).
+    /// - `tier_spread() <= peak_tier_count()` always — the trough is
+    ///   non-negative, so the subtraction is bounded above by the
+    ///   minuend. Equality holds iff the trough is zero — i.e. on the
+    ///   empty map. Lifted from the trait-uniform
+    ///   `spread() <= peak_count()` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `tier_spread() <= self.len()` always — composition of
+    ///   `tier_spread() <= peak_tier_count()` (this method) with
+    ///   `peak_tier_count() <= self.len()` (documented on
+    ///   [`Self::peak_tier_count`]).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<ConfigTierKind>()` (the peak + trough
+    /// scan). Both are `O(n)` in practice since the tier axis carries a
+    /// fixed four-cell cardinality; the returned `usize` reads one scalar.
+    /// Halves the cost of the previous inline `map.peak_tier_count() -
+    /// map.trough_tier_count()` idiom (which walked the counts vector
+    /// twice — once for the max, once for the min-over-support — where
+    /// [`crate::AxisHistogram::spread`] can fuse both into a single walk
+    /// with a running-max/min pair).
+    #[must_use]
+    pub fn tier_spread(&self) -> usize {
+        self.tier_histogram().spread()
+    }
 }
 
 /// Zero-allocation `(&[String], &Provenance)` stream over the sorted
@@ -9122,6 +9237,325 @@ mod progressive_tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::tier_spread — scalar-dispersion peer on the tier
+    //    altitude, fusing peak_tier_count and trough_tier_count into one
+    //    dispersion scalar and climbing the "spread across altitudes"
+    //    projection from the diff altitude to the tier altitude ──
+
+    #[test]
+    fn tier_spread_matches_tier_histogram_spread_pointwise() {
+        // The scalar-dispersion pin: `tier_spread` routes through
+        // `tier_histogram().spread()`, so the two seams must stay
+        // pointwise equivalent under every fixture. Catches any future
+        // drift where either implementation stops projecting through
+        // the shared cube-native primitive. Tier-altitude peer of
+        // `kind_spread_matches_kind_histogram_spread_pointwise` on the
+        // diff altitude in the "spread across altitudes" projection.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().spread();
+            assert_eq!(map.tier_spread(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn tier_spread_equals_peak_minus_trough_pointwise() {
+        // The fused-pair pin: `tier_spread == peak_tier_count -
+        // trough_tier_count` on every fixture. The subtraction is
+        // underflow-safe because `peak_tier_count >= trough_tier_count`
+        // holds structurally on every map (lifted from the trait-
+        // uniform `peak_count >= trough_count` law on AxisHistogram).
+        // Closes the identity of the scalar-dispersion peer against
+        // the two count seams it fuses. Tier-altitude peer of
+        // `kind_spread_equals_peak_minus_trough_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let peak = map.peak_tier_count();
+            let trough = map.trough_tier_count();
+            assert!(
+                peak >= trough,
+                "peak_tier_count ({peak}) must be >= trough_tier_count ({trough}) \
+                 for tier_spread to be underflow-safe",
+            );
+            assert_eq!(map.tier_spread(), peak - trough);
+        }
+    }
+
+    #[test]
+    fn tier_spread_prog_fixture_is_one() {
+        // Prog attributes 4 leaves: a→Discovered, b→Default, c→Bare,
+        // d→Default. Counts: Bare=1, Discovered=1, Default=2, Custom=0.
+        // Peak lands on Default at 2; trough over support {Bare,
+        // Discovered, Default} lands at 1. Spread = 2 - 1 = 1. Direct
+        // pin — the paired `(peak_tier_count, trough_tier_count,
+        // tier_spread)` dispersion triple reads `(2, 1, 1)`. Peer of
+        // `peak_tier_count_prog_fixture_is_two` and
+        // `trough_tier_count_prog_fixture_is_one` on the same fixture.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().peak_tier_count(), 2);
+        assert_eq!(r.provenance().trough_tier_count(), 1);
+        assert_eq!(r.provenance().tier_spread(), 1);
+    }
+
+    #[test]
+    fn tier_spread_nested_fixture_is_one() {
+        // Nested attributes 3 leaves: win.w→Discovered, win.h→Default,
+        // theme→Default. Counts: Bare=0, Discovered=1, Default=2,
+        // Custom=0. Peak lands on Default at 2; trough over support
+        // {Discovered, Default} lands at 1. Spread = 2 - 1 = 1. Direct
+        // pin — the scalar reads through the seam whether the fixture
+        // is flat or nested.
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.provenance().peak_tier_count(), 2);
+        assert_eq!(r.provenance().trough_tier_count(), 1);
+        assert_eq!(r.provenance().tier_spread(), 1);
+    }
+
+    #[test]
+    fn tier_spread_empty_map_is_zero() {
+        // An empty ProvenanceMap has no leaves and therefore zero spread
+        // — reads `0` per the AxisHistogram::spread empty convention one
+        // altitude down; the `(peak_tier_count, trough_tier_count,
+        // tier_spread)` triple reads `(0, 0, 0)` uniformly on the empty
+        // map. Peer of `peak_tier_count_empty_map_is_zero` and
+        // `trough_tier_count_empty_map_is_zero`.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.peak_tier_count(), 0);
+        assert_eq!(empty.trough_tier_count(), 0);
+        assert_eq!(empty.tier_spread(), 0);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn tier_spread_singleton_support_is_zero() {
+        // Singleton-support pin: every leaf lands on the same tier, so
+        // the dominant tier is both peak and trough of the support, and
+        // the spread is zero — the balanced-tier-counts boundary on the
+        // singleton-support side. Tier-altitude peer of the trait-
+        // uniform `spread() == 0 on singleton support` law on
+        // AxisHistogram, and diff-altitude peer of
+        // `kind_spread_singleton_support_is_zero`.
+        let m: ProvenanceMap = ["a", "b", "c"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 1);
+        assert_eq!(m.tier_spread(), 0);
+    }
+
+    #[test]
+    fn tier_spread_uniform_cover_is_zero() {
+        // Uniform-cover pin: every observed tier contributes the same
+        // nonzero count (one leaf each here), so peak == trough == 1
+        // and the spread is zero — the balanced-tier-counts boundary
+        // on the uniform-cover side. Peer of
+        // `peak_tier_count_uniform_cover_is_one` and
+        // `trough_tier_count_uniform_cover_is_one` on the count sides,
+        // and diff-altitude peer of `kind_spread_uniform_cover_is_zero`.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(m.tier_histogram().is_full_cover());
+        assert_eq!(m.peak_tier_count(), 1);
+        assert_eq!(m.trough_tier_count(), 1);
+        assert_eq!(m.tier_spread(), 0);
+    }
+
+    #[test]
+    fn tier_spread_is_zero_iff_peak_equals_trough() {
+        // Structural-skew boundary: `tier_spread() == 0` iff every
+        // observed tier carries the same count — the balanced-tier-
+        // counts shape. On every fixture, the predicate agrees with
+        // the scalar-pair form `peak_tier_count == trough_tier_count`
+        // pointwise. The empty map, the singleton-support fold, and
+        // every uniform-cover fold all read `true`; every skewed fold
+        // reads `false`. Peer of
+        // `kind_spread_is_zero_iff_at_most_one_present_kind_or_uniform_cover`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let spread_zero = map.tier_spread() == 0;
+            let counts_equal = map.peak_tier_count() == map.trough_tier_count();
+            assert_eq!(
+                spread_zero,
+                counts_equal,
+                "tier_spread == 0 must agree with peak_tier_count == trough_tier_count \
+                 for map with peak={p}, trough={t}, spread={s}",
+                p = map.peak_tier_count(),
+                t = map.trough_tier_count(),
+                s = map.tier_spread(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_spread_agrees_with_modal_pair_equality_on_nonempty_map() {
+        // Cross-surface pin: on every non-empty map, `tier_spread() ==
+        // 0` agrees with `dominant_tier() == recessive_tier()` — the
+        // modal-pair equality form of the balanced-tier-counts
+        // predicate. Lifted from the trait-uniform
+        // `spread() == 0 <=> dominant_cell() == recessive_cell()` law
+        // on AxisHistogram (non-empty case). The empty-map case is
+        // separately pinned on both surfaces. Tier-altitude peer of
+        // `kind_spread_agrees_with_modal_pair_equality_on_nonempty_diff`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+        ] {
+            let spread_zero = map.tier_spread() == 0;
+            let modal_pair_equal = map.dominant_tier() == map.recessive_tier();
+            assert_eq!(
+                spread_zero, modal_pair_equal,
+                "tier_spread == 0 must agree with dominant_tier == recessive_tier \
+                 on non-empty map",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_spread_bounded_above_by_peak_tier_count() {
+        // Structural bound: `tier_spread() <= peak_tier_count()` on
+        // every fixture — the trough is non-negative, so the
+        // subtraction is bounded above by the minuend. Lifted from the
+        // trait-uniform `spread() <= peak_count()` law on
+        // AxisHistogram. Equality holds exactly when the trough is
+        // zero — i.e. on the empty map (both sides read 0). Peer of
+        // `kind_spread_bounded_above_by_peak_kind_count`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(
+                map.tier_spread() <= map.peak_tier_count(),
+                "tier_spread ({s}) must not exceed peak_tier_count ({p})",
+                s = map.tier_spread(),
+                p = map.peak_tier_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_spread_equals_peak_iff_map_is_empty() {
+        // Equality-case pin of the `tier_spread <= peak_tier_count`
+        // bound: equality holds iff the trough is zero, which by
+        // `trough_tier_count == 0 <=> is_empty()` holds iff the map is
+        // empty. The two projections agree on the (0, 0) empty corner
+        // and disagree strictly on every non-empty map (where the
+        // trough is >= 1, so `spread < peak`). Peer of
+        // `kind_spread_equals_peak_iff_diff_is_empty`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let equality = map.tier_spread() == map.peak_tier_count();
+            let is_empty = map.is_empty();
+            assert_eq!(
+                equality,
+                is_empty,
+                "tier_spread == peak_tier_count must agree with is_empty() \
+                 for map with peak={p}, trough={t}, spread={s}",
+                p = map.peak_tier_count(),
+                t = map.trough_tier_count(),
+                s = map.tier_spread(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_spread_bounded_above_by_len() {
+        // Composition bound: `tier_spread() <= self.len()` on every
+        // fixture — chaining `tier_spread <= peak_tier_count` (previous
+        // pin) with `peak_tier_count <= len()` (documented on
+        // `peak_tier_count_is_bounded_by_len`). The scalar dispersion
+        // of a resolved fold is bounded above by the total leaf count.
+        // Peer of `kind_spread_bounded_above_by_lines_len`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(
+                map.tier_spread() <= map.len(),
+                "tier_spread ({s}) must not exceed len ({n})",
+                s = map.tier_spread(),
+                n = map.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_spread_singleton_support_multi_leaf_is_zero() {
+        // Direct pin at a singleton-support fold with three leaves all
+        // on `Default`. Peak == trough == 3 == len; spread == 0. The
+        // dispersion scalar reads zero on every singleton-support fold
+        // regardless of the leaf count — the "one tier owns everything"
+        // shape is trivially balanced by construction. Peer of
+        // `peak_tier_count_singleton_support_equals_len` and
+        // `trough_tier_count_singleton_support_equals_len`.
+        let m: ProvenanceMap = ["a", "b", "c"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.peak_tier_count(), 3);
+        assert_eq!(m.trough_tier_count(), 3);
+        assert_eq!(m.tier_spread(), 0);
+    }
+
+    #[test]
+    fn tier_spread_agrees_with_open_coded_max_minus_min_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0) - hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0)` walk this lift replaces
+        // — both the named seam and the hand-rolled dispersion must
+        // pointwise agree over every fixture. The `.filter(c > 0)` on
+        // the min side is essential (mirroring `trough_count`'s support
+        // discipline); the `.max()` on the peak side operates over the
+        // full axis (mirroring `peak_count`). The subtraction is
+        // underflow-safe on the histogram because `peak >= trough`
+        // holds structurally. Peer of
+        // `kind_spread_agrees_with_open_coded_max_minus_min_walk`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tier_spread();
+            let hist = map.tier_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .filter(|&(_, c)| c > 0)
+                .map(|(_, c)| c)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(via_seam, peak - trough);
         }
     }
 
