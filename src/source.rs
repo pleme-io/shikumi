@@ -2428,6 +2428,148 @@ pub trait ConfigSourceChain {
     {
         self.env_prefix_kind_histogram().recessive_cell()
     }
+
+    /// The **peak env-prefix-kind layer count** — the number of
+    /// [`ConfigSource::Env`] layers contributed by the dominant
+    /// [`EnvMetadataTagKind`] on this chain. Returns `0` when the
+    /// [`Self::env_prefix_kind_histogram`] is empty (no chain entry
+    /// projects through [`ConfigSource::env_prefix_kind`] — i.e. an
+    /// empty chain, OR a non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::File`] entries);
+    /// otherwise returns the env-layer count carried by
+    /// [`Self::dominant_env_prefix_kind`] (pointwise equal to it, and
+    /// always `>= 1` by the histogram-support definition).
+    ///
+    /// The **scalar peer** of [`Self::dominant_env_prefix_kind`] on the
+    /// count side — the natural typed primitive for chain-shape
+    /// dashboards, attestation manifests, and alerting policies asking
+    /// *"how many env layers did the dominant prefix kind
+    /// contribute?"*: the CLI `config-show` summary line *"prefixed env
+    /// layers dominate: 3 of 4"* (where 3 is this scalar), the
+    /// attestation manifest recording the peak env-prefix-kind
+    /// observation count between two `ProviderChain` snapshots, the
+    /// alerting policy reading *"env-prefix peak count = 3"* to flag a
+    /// rebuild window where a prefix kind dominated the env recipe.
+    /// Before this lift, every such consumer re-derived the projection
+    /// inline as `chain.env_prefix_kind_histogram().peak_count()` or
+    /// (equivalently but at twice the cost)
+    /// `chain.dominant_env_prefix_kind().map_or(0, |k|
+    /// chain.env_prefix_kind_histogram().count(k))` — which walked the
+    /// histogram *twice* (once to argmax over the support, once to read
+    /// the count back through [`crate::AxisHistogram::count`] indexing)
+    /// and re-built the histogram at every site. Routes through
+    /// [`Self::env_prefix_kind_histogram`]:
+    /// [`crate::AxisHistogram::peak_count`] reads a single pass over the
+    /// fixed-cardinality counts vector.
+    ///
+    /// The chain-altitude scalar-count peer of
+    /// [`Self::dominant_env_prefix_kind`] (the modal-cell scalar peer of
+    /// [`Self::env_prefix_kind_histogram`]) — the env-prefix-presence
+    /// sub-axis of the chain-shape surface now carries the fused
+    /// `(dominant_env_prefix_kind, peak_env_prefix_kind_count)` modal
+    /// pair, matching the ([`crate::AxisHistogram::dominant_cell`],
+    /// [`crate::AxisHistogram::peak_count`]) pair on the shared
+    /// [`crate::AxisHistogram`] primitive one altitude down, the
+    /// ([`Self::dominant_layer_kind`], [`Self::peak_layer_kind_count`])
+    /// pair on the layer-kind sub-axis of the same chain altitude, the
+    /// ([`Self::dominant_file_format`], [`Self::peak_file_format_count`])
+    /// pair on the file-format sub-axis of the same chain altitude, the
+    /// ([`crate::ProvenanceMap::dominant_tier`],
+    /// [`crate::ProvenanceMap::peak_tier_count`]) pair on the tier
+    /// altitude, and the ([`crate::ConfigDiff::dominant_kind`],
+    /// [`crate::ConfigDiff::peak_kind_count`]) pair on the diff altitude.
+    /// Consumers answering *"which env-prefix kind dominated the chain
+    /// and by how many layers?"* now read a single
+    /// `(dominant_env_prefix_kind(), peak_env_prefix_kind_count())` pair
+    /// — one method each, both routing through the same primitive —
+    /// instead of re-deriving the count off the modal cell.
+    ///
+    /// **Empty-histogram convention** — returns `0` (not
+    /// `Option<usize>`) matching the [`crate::AxisHistogram::peak_count`]
+    /// convention one altitude down, the [`Self::peak_layer_kind_count`]
+    /// convention on the layer-kind sub-axis, the
+    /// [`Self::peak_file_format_count`] convention on the file-format
+    /// sub-axis, and the [`crate::ProvenanceMap::peak_tier_count`] /
+    /// [`crate::ConfigDiff::peak_kind_count`] conventions on the peer
+    /// altitudes; the scalar reads `0` uniformly on the empty-histogram
+    /// boundary. Unlike [`Self::peak_layer_kind_count`], the zero
+    /// boundary is NOT `!self.as_ref().is_empty()`:
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::File`] entries all
+    /// project to [`None`] through [`ConfigSource::env_prefix_kind`], so
+    /// the histogram is empty (and this scalar reads zero) even on a
+    /// non-empty chain when no `Env` entry contributes. The dual-form
+    /// [`Self::dominant_env_prefix_kind`] carries
+    /// `Option<EnvMetadataTagKind>` because the *kind* is undefined when
+    /// no env layer contributes; the *count* is well-defined as zero.
+    ///
+    /// # Invariants
+    ///
+    /// - `peak_env_prefix_kind_count() == 0 ⇔
+    ///   env_prefix_kind_histogram().is_empty()` — peer to the
+    ///   empty-histogram boundary [`Self::dominant_env_prefix_kind`] /
+    ///   [`Self::recessive_env_prefix_kind`] both witness on the cell
+    ///   side. Unlike [`Self::peak_layer_kind_count`], the zero boundary
+    ///   is NOT `self.as_ref().is_empty()`: a non-empty chain of only
+    ///   [`ConfigSource::Defaults`] / [`ConfigSource::File`] layers
+    ///   reads zero as well.
+    /// - `peak_env_prefix_kind_count() ==
+    ///   env_prefix_kind_histogram().peak_count()` — both project the
+    ///   same scalar off the same primitive; the named seam is the
+    ///   cube-native routing of the chain-shape surface.
+    /// - `peak_env_prefix_kind_count() ==
+    ///   dominant_env_prefix_kind().map_or(0, |k|
+    ///   env_prefix_kind_histogram().count(k))` — the count projection
+    ///   of the `(dominant_env_prefix_kind, peak_env_prefix_kind_count)`
+    ///   modal pair equals [`Self::peak_env_prefix_kind_count`]
+    ///   pointwise on every chain (empty-histogram: `None.map_or(0, …)
+    ///   == 0 == peak_env_prefix_kind_count`; non-empty-histogram:
+    ///   `Some(k).map_or(0, |k| count(k)) == peak_env_prefix_kind_count`,
+    ///   since `count(dominant_env_prefix_kind()) == peak_count()`).
+    /// - `peak_env_prefix_kind_count() ==
+    ///   env_prefix_kind_histogram().total()` iff
+    ///   `present_env_prefix_kinds().len() <= 1` — the peak equals the
+    ///   histogram total exactly when zero or one kind is observed.
+    ///   Lifted from the trait-uniform `peak_count() == total()` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `peak_env_prefix_kind_count() <=
+    ///   layer_kind_histogram().count(ConfigSourceKind::Env)` always:
+    ///   the peak on the env-prefix-presence sub-axis is bounded above
+    ///   by the count of `Env` layers on the layer-kind sub-axis (every
+    ///   env-prefix-kind projection comes from an `Env` layer; the
+    ///   histogram total equals the `Env` layer count). Equality holds
+    ///   whenever the histogram is non-empty and there are no non-`Env`
+    ///   projections — always true on this axis since only `Env` layers
+    ///   contribute.
+    /// - `peak_env_prefix_kind_count() >= 1` whenever
+    ///   `!env_prefix_kind_histogram().is_empty()` — a non-empty
+    ///   histogram always has at least one env layer on the dominant
+    ///   kind.
+    /// - `peak_env_prefix_kind_count()` on a uniform full-cover chain
+    ///   (one env layer per kind — one bare + one prefixed) equals `1`
+    ///   — every observed kind collects one env layer, dominant
+    ///   included.
+    /// - `peak_env_prefix_kind_count()` on a singleton-support chain
+    ///   (every env layer on the same kind) equals
+    ///   `env_prefix_kind_histogram().total()` — the dominant kind
+    ///   collects every env layer.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<EnvMetadataTagKind>()` (the
+    /// argmax scan). Both are `O(n)` in practice since the env-prefix-
+    /// presence axis carries a fixed two-cell cardinality; the returned
+    /// `usize` reads one scalar. Halves the cost of the previous
+    /// `dominant_env_prefix_kind().map_or(0, |k|
+    /// env_prefix_kind_histogram().count(k))` idiom (which walked the
+    /// histogram twice — once to argmax, once to read the count back).
+    #[must_use]
+    fn peak_env_prefix_kind_count(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().peak_count()
+    }
 }
 
 impl ConfigSourceChain for [ConfigSource] {
@@ -8682,6 +8824,416 @@ mod tests {
             }
             let via_seam = chain.as_slice().recessive_env_prefix_kind();
             assert_eq!(via_seam, manual.map(|(cell, _)| cell));
+        }
+    }
+
+    // ---- ConfigSourceChain::peak_env_prefix_kind_count — modal-cell
+    //      scalar-count peer of env_prefix_kind_histogram on the chain
+    //      altitude, fusing with dominant_env_prefix_kind into the
+    //      (cell, count) modal pair on the env-prefix-presence sub-axis
+    //      of the chain-shape surface ----
+
+    #[test]
+    fn peak_env_prefix_kind_count_matches_env_prefix_kind_histogram_peak_count_pointwise() {
+        // The scalar-count pin: `peak_env_prefix_kind_count` routes
+        // through `env_prefix_kind_histogram().peak_count()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Direct sister of
+        // `peak_layer_kind_count_matches_layer_kind_histogram_peak_count_pointwise`
+        // and
+        // `peak_file_format_count_matches_file_format_histogram_peak_count_pointwise`
+        // on the layer-kind and file-format sub-axes of the same chain
+        // altitude, and
+        // `peak_tier_count_matches_tier_histogram_peak_count_pointwise` /
+        // `peak_kind_count_matches_kind_histogram_peak_count_pointwise`
+        // on the tier and diff altitudes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let via_histogram = chain.as_slice().env_prefix_kind_histogram().peak_count();
+            assert_eq!(chain.as_slice().peak_env_prefix_kind_count(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn peak_env_prefix_kind_count_sample_chain_is_one() {
+        // Direct pin against `sample_chain()`: two `.yaml` file layers +
+        // one Env layer with a prefixed name (`"APP_"`). Prefixed is the
+        // sole observed env-prefix kind with 1 of 1 env layer, so the
+        // peak count is 1. The (dominant_env_prefix_kind,
+        // peak_env_prefix_kind_count) modal pair reads `(Some(Prefixed),
+        // 1)`.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(
+            slice.dominant_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+        assert_eq!(slice.peak_env_prefix_kind_count(), 1);
+    }
+
+    #[test]
+    fn peak_env_prefix_kind_count_bare_majority_is_three() {
+        // Bare-majority fixture: three bare env layers + one prefixed +
+        // one file + one Defaults. Bare is uniquely dominant with 3 of 4
+        // env layers, so the peak count is 3. Cross-verified against
+        // `hist.peak_count() == 3` at the same observation site — the
+        // fused-pair count projection reads through the seam.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(
+            slice.dominant_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Bare),
+        );
+        assert_eq!(slice.peak_env_prefix_kind_count(), 3);
+        assert_eq!(slice.env_prefix_kind_histogram().peak_count(), 3);
+    }
+
+    #[test]
+    fn peak_env_prefix_kind_count_empty_chain_is_zero() {
+        // Empty-chain / zero boundary: the fused
+        // (dominant_env_prefix_kind, peak_env_prefix_kind_count) modal
+        // scalar pair reads `(None, 0)` uniformly on the empty chain,
+        // matching the `(AxisHistogram::dominant_cell,
+        // AxisHistogram::peak_count)` pair on the shared histogram
+        // primitive one altitude down. Peer of
+        // `peak_layer_kind_count_empty_chain_is_zero` on the layer-kind
+        // sub-axis, `peak_file_format_count_empty_chain_is_zero` on the
+        // file-format sub-axis, `peak_tier_count_empty_map_is_zero` on
+        // the tier altitude, and `peak_kind_count_empty_diff_is_zero` on
+        // the diff altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.dominant_env_prefix_kind(), None);
+        assert_eq!(empty.peak_env_prefix_kind_count(), 0);
+    }
+
+    #[test]
+    fn peak_env_prefix_kind_count_no_env_layers_is_zero() {
+        // The non-empty-chain / empty-histogram boundary the env-prefix-
+        // presence sub-axis pins that the layer-kind sub-axis does *not*.
+        // A chain of only `Defaults` / `File` layers is non-empty but
+        // has no `Some` env_prefix_kind projection, so the histogram is
+        // empty and `peak_env_prefix_kind_count` reads zero.
+        // Distinguishing pin against a mis-implementation that would
+        // confuse `!self.as_ref().is_empty()` (the layer-kind sub-axis's
+        // zero boundary) with the env-prefix-presence sub-axis's
+        // (`env_prefix_kind_histogram().is_empty()`). Peer of
+        // `dominant_env_prefix_kind_no_env_layers_is_none` and
+        // `recessive_env_prefix_kind_no_env_layers_is_none` on the cell
+        // sides.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.lisp")),
+                ConfigSource::File(PathBuf::from("/b.nix")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            assert!(!chain.is_empty(), "fixture must be non-empty");
+            assert!(
+                chain.as_slice().env_prefix_kind_histogram().is_empty(),
+                "fixture must have empty env-prefix-kind histogram",
+            );
+            assert_eq!(chain.as_slice().peak_env_prefix_kind_count(), 0);
+        }
+    }
+
+    #[test]
+    fn peak_env_prefix_kind_count_is_zero_iff_histogram_is_empty() {
+        // The `peak_env_prefix_kind_count() == 0 ⇔
+        // env_prefix_kind_histogram().is_empty()` presence-bound pin —
+        // unlike the layer-kind sub-axis (where the zero boundary is the
+        // chain's `is_empty()`), the env-prefix-presence sub-axis's zero
+        // boundary is the sub-axis histogram's `is_empty()`. Cross-axis
+        // divergence from `peak_layer_kind_count_is_zero_iff_chain_is_empty`.
+        // Direct sister of the (`dominant_env_prefix_kind().is_some() ==
+        // !histogram.is_empty()`) invariant on the cell side.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            assert_eq!(
+                chain.as_slice().peak_env_prefix_kind_count() == 0,
+                chain.as_slice().env_prefix_kind_histogram().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_env_prefix_kind_count_equals_count_at_dominant_env_prefix_kind_on_nonempty_histogram() {
+        // The `(dominant_cell, peak_count)` modal-pair invariant lifted
+        // to the chain altitude on the env-prefix-presence sub-axis:
+        // `hist.count(dominant_env_prefix_kind().unwrap()) ==
+        // peak_env_prefix_kind_count()` on every chain with a non-empty
+        // histogram. Peer of
+        // `peak_layer_kind_count_equals_count_at_dominant_layer_kind_on_nonempty_chain`
+        // on the layer-kind sub-axis and
+        // `peak_file_format_count_equals_count_at_dominant_file_format_on_nonempty_histogram`
+        // on the file-format sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let hist = chain.as_slice().env_prefix_kind_histogram();
+            if hist.is_empty() {
+                continue;
+            }
+            let dominant = chain
+                .as_slice()
+                .dominant_env_prefix_kind()
+                .expect("non-empty histogram has a dominant env-prefix kind");
+            assert_eq!(
+                hist.count(dominant),
+                chain.as_slice().peak_env_prefix_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_env_prefix_kind_count_equals_dominant_env_prefix_kind_map_or_count() {
+        // The fused-pair identity `peak_env_prefix_kind_count() ==
+        // dominant_env_prefix_kind().map_or(0, |k|
+        // env_prefix_kind_histogram().count(k))` on every input — the
+        // count projection of the (dominant_env_prefix_kind,
+        // peak_env_prefix_kind_count) modal pair reads through the seam
+        // uniformly across the empty-histogram / non-empty-histogram
+        // partition. Includes the empty-histogram boundary (`None
+        // .map_or(0, …) == 0 == peak_env_prefix_kind_count`) — this is
+        // the pin that the fused-pair identity is boundary-complete.
+        // Peer of
+        // `peak_layer_kind_count_equals_dominant_layer_kind_map_or_count`
+        // on the layer-kind sub-axis,
+        // `peak_file_format_count_equals_dominant_file_format_map_or_count`
+        // on the file-format sub-axis,
+        // `peak_tier_count_equals_dominant_tier_map_or_count` on the
+        // tier altitude, and
+        // `peak_kind_count_equals_dominant_kind_map_or_count` on the
+        // diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let hist = chain.as_slice().env_prefix_kind_histogram();
+            let via_fused_pair = chain
+                .as_slice()
+                .dominant_env_prefix_kind()
+                .map_or(0, |k| hist.count(k));
+            assert_eq!(
+                chain.as_slice().peak_env_prefix_kind_count(),
+                via_fused_pair,
+            );
+        }
+    }
+
+    #[test]
+    fn peak_env_prefix_kind_count_is_bounded_by_histogram_total() {
+        // Structural bound `peak_env_prefix_kind_count() <=
+        // env_prefix_kind_histogram().total()` on every input — the peak
+        // is bounded above by the total env-layer count (every kind
+        // contributes at most every env layer, the others contribute
+        // zero). Lifted from the trait-uniform `peak_count() <= total()`
+        // law on AxisHistogram. Peer of
+        // `peak_layer_kind_count_is_bounded_by_len` on the layer-kind
+        // sub-axis (where the total equals `self.as_ref().len()`) and
+        // `peak_file_format_count_is_bounded_by_histogram_total` on the
+        // file-format sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let hist = slice.env_prefix_kind_histogram();
+            assert!(
+                slice.peak_env_prefix_kind_count() <= hist.total(),
+                "peak_env_prefix_kind_count()={p} must be <= histogram.total()={t}",
+                p = slice.peak_env_prefix_kind_count(),
+                t = hist.total(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_env_prefix_kind_count_is_bounded_by_env_layer_count() {
+        // Cross-sub-axis structural bound: the env-prefix-presence
+        // sub-axis's peak is bounded above by the layer-kind sub-axis's
+        // count of `Env` layers — every env-prefix-kind projection comes
+        // from an `Env` layer. Unlike the file-format sub-axis
+        // (`ConfigSource::file_format` is partial over `File` layers),
+        // this bound is an equality-at-total on the env-prefix-presence
+        // sub-axis: the histogram total equals the `Env` layer count
+        // exactly, since `ConfigSource::env_prefix_kind` is total over
+        // `Env` layers. Cross-sub-axis equality between
+        // `env_prefix_kind_histogram().total()` and
+        // `layer_kind_histogram().count(ConfigSourceKind::Env)`
+        // that the file-format sub-axis does not carry. Peer of
+        // `peak_file_format_count_is_bounded_by_file_layer_count` on the
+        // file-format sub-axis (bound only, no equality).
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let env_layer_count = slice.layer_kind_histogram().count(ConfigSourceKind::Env);
+            assert!(
+                slice.peak_env_prefix_kind_count() <= env_layer_count,
+                "peak_env_prefix_kind_count()={p} must be <= Env layer count={e}",
+                p = slice.peak_env_prefix_kind_count(),
+                e = env_layer_count,
+            );
+            // Total equality (env-prefix-kind projection is total over
+            // `Env` layers, so the histogram total equals the env layer
+            // count exactly on every chain).
+            assert_eq!(
+                slice.env_prefix_kind_histogram().total(),
+                env_layer_count,
+                "env_prefix_kind_histogram.total() must equal Env layer count",
+            );
+        }
+    }
+
+    #[test]
+    fn peak_env_prefix_kind_count_equals_total_iff_at_most_one_present_env_prefix_kind() {
+        // Structural bound `peak_env_prefix_kind_count() ==
+        // env_prefix_kind_histogram().total()` iff
+        // `present_env_prefix_kinds().len() <= 1` — the peak equals the
+        // histogram total exactly when zero or one kind is observed.
+        // Zero: empty-histogram, both zero. One: singleton-support,
+        // every env layer on the same kind. Two: with two distinct
+        // counts, peak strictly below total (on a two-cell axis this is
+        // the only nontrivial case). Lifted from the trait-uniform
+        // `peak_count() == total()` law on AxisHistogram. Peer of
+        // `peak_layer_kind_count_equals_len_iff_at_most_one_present_layer_kind`
+        // on the layer-kind sub-axis (where the total is the chain
+        // length) and
+        // `peak_file_format_count_equals_total_iff_at_most_one_present_file_format`
+        // on the file-format sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let hist = slice.env_prefix_kind_histogram();
+            assert_eq!(
+                slice.peak_env_prefix_kind_count() == hist.total(),
+                slice.present_env_prefix_kinds().len() <= 1,
+                "peak == total iff present_env_prefix_kinds.len() <= 1 \
+                 (peak={p}, total={t}, present={c})",
+                p = slice.peak_env_prefix_kind_count(),
+                t = hist.total(),
+                c = slice.present_env_prefix_kinds().len(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_env_prefix_kind_count_is_at_least_one_on_nonempty_histogram() {
+        // Structural pin: whenever
+        // `!env_prefix_kind_histogram().is_empty()`,
+        // `peak_env_prefix_kind_count() >= 1` — a non-empty histogram
+        // always has at least one env layer on the dominant kind.
+        // Combined with the `<= total()` bound above, this pins `1 <=
+        // peak_env_prefix_kind_count() <= total()` on every non-empty
+        // histogram. Peer of
+        // `peak_layer_kind_count_is_at_least_one_on_nonempty_chain` on
+        // the layer-kind sub-axis (where the boundary is the chain's
+        // `is_empty()` rather than the histogram's) and
+        // `peak_file_format_count_is_at_least_one_on_nonempty_histogram`
+        // on the file-format sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let hist = slice.env_prefix_kind_histogram();
+            if hist.is_empty() {
+                continue;
+            }
+            assert!(
+                slice.peak_env_prefix_kind_count() >= 1,
+                "non-empty histogram must have peak_env_prefix_kind_count >= 1 (peak={p})",
+                p = slice.peak_env_prefix_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_env_prefix_kind_count_uniform_full_cover_is_one() {
+        // Uniform full-cover chain — one env layer of each kind (both
+        // cells tied at count 1). Full-cover histogram with uniform
+        // count 1 per cell, so the peak count is 1. Combined with
+        // `dominant_env_prefix_kind_uniform_full_cover_picks_prefixed`
+        // (the cell picks `Prefixed` by declaration-order tie-breaking),
+        // the fused pair `(dominant_env_prefix_kind,
+        // peak_env_prefix_kind_count)` reads `(Some(Prefixed), 1)` on
+        // the uniform full-cover chain. Peer of
+        // `peak_layer_kind_count_uniform_cover_is_two` on the layer-kind
+        // sub-axis (that fixture uses two layers per kind so the peak is
+        // 2; here we use one layer per kind so the peak is 1) and
+        // `peak_file_format_count_uniform_full_cover_is_one` on the
+        // file-format sub-axis.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.env_prefix_kind_histogram();
+        assert!(hist.is_full_cover());
+        assert_eq!(slice.peak_env_prefix_kind_count(), 1);
+        assert_eq!(
+            slice.dominant_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+    }
+
+    #[test]
+    fn peak_env_prefix_kind_count_singleton_support_equals_histogram_total() {
+        // Singleton-support degenerate: when only one kind contributes,
+        // every env layer lands on that kind, so the peak equals the
+        // histogram total. Direct construction: three prefixed env
+        // layers + Defaults + File (Prefixed is the sole observed
+        // kind). The scalar peer of the singleton-support cell
+        // degenerate `dominant_env_prefix_kind() ==
+        // recessive_env_prefix_kind()` in
+        // `recessive_env_prefix_kind_singleton_support_agrees_with_dominant_env_prefix_kind`
+        // — that test pins the *cell*; this test pins the *count*
+        // through the `peak_env_prefix_kind_count() == total()` equality
+        // on the singleton-support boundary. Peer of
+        // `peak_layer_kind_count_singleton_support_equals_len` on the
+        // layer-kind sub-axis (where the equality is against
+        // `self.as_ref().len()`, not the histogram total) and
+        // `peak_file_format_count_singleton_support_equals_histogram_total`
+        // on the file-format sub-axis.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.env_prefix_kind_histogram();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert_eq!(slice.peak_env_prefix_kind_count(), hist.total());
+        assert_eq!(slice.peak_env_prefix_kind_count(), 3);
+    }
+
+    #[test]
+    fn peak_env_prefix_kind_count_agrees_with_open_coded_max_over_axis_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()`
+        // walk this lift replaces — both the named seam and the
+        // hand-rolled max must pointwise agree over every fixture. The
+        // `.max().unwrap_or(0)` idiom mirrors the empty-histogram
+        // convention on `AxisHistogram::peak_count` one altitude down
+        // (both read 0 on empty). Peer of
+        // `peak_layer_kind_count_agrees_with_open_coded_max_over_axis_walk`
+        // on the layer-kind sub-axis,
+        // `peak_file_format_count_agrees_with_open_coded_max_over_axis_walk`
+        // on the file-format sub-axis,
+        // `peak_tier_count_agrees_with_open_coded_max_over_axis_walk`
+        // on the tier altitude, and
+        // `peak_kind_count_agrees_with_open_coded_max_over_axis_walk`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let via_seam = chain.as_slice().peak_env_prefix_kind_count();
+            let hand_rolled = chain
+                .as_slice()
+                .env_prefix_kind_histogram()
+                .iter()
+                .map(|(_, c)| c)
+                .max()
+                .unwrap_or(0);
+            assert_eq!(via_seam, hand_rolled);
         }
     }
 
