@@ -1773,6 +1773,166 @@ pub trait ConfigSourceChain {
         self.file_format_histogram().peak_count()
     }
 
+    /// The **trough file-layer count** — the number of recognized-extension
+    /// file layers contributed by the recessive (rarest-observed)
+    /// [`crate::discovery::Format`] on this chain. Returns `0` when the
+    /// [`Self::file_format_histogram`] is empty (no chain entry projects
+    /// through [`ConfigSource::file_format`] to a recognized format — i.e.
+    /// an empty chain, OR a non-empty chain of only [`ConfigSource::Defaults`]
+    /// / [`ConfigSource::Env`] / unrecognized-extension [`ConfigSource::File`]
+    /// entries); otherwise returns the count carried by
+    /// [`Self::recessive_file_format`] (pointwise equal to it, and always
+    /// `>= 1` by the histogram-support definition).
+    ///
+    /// The **scalar peer** of [`Self::recessive_file_format`] on the count
+    /// side — the natural typed primitive for chain-shape dashboards,
+    /// attestation manifests, and alerting policies asking *"how many file
+    /// layers did the runt format contribute?"*: the CLI `config-show`
+    /// summary line *"runt format: lisp, 1 of 4 file layers"* (where 1 is
+    /// this scalar), the attestation manifest recording the trough
+    /// file-format observation count between two `ProviderChain` snapshots,
+    /// the alerting policy reading *"format trough count = 1"* to flag a
+    /// rebuild window where a recognized format barely contributed. Before
+    /// this lift, every such consumer re-derived the projection inline as
+    /// `chain.file_format_histogram().trough_count()` or (equivalently but
+    /// at twice the cost) `chain.recessive_file_format().map_or(0, |f|
+    /// chain.file_format_histogram().count(f))` — which walked the
+    /// histogram *twice* (once to argmin over the support, once to read the
+    /// count back through [`crate::AxisHistogram::count`] indexing) and
+    /// re-built the histogram at every site. Routes through
+    /// [`Self::file_format_histogram`]:
+    /// [`crate::AxisHistogram::trough_count`] reads a single pass over the
+    /// fixed-cardinality counts vector (filtering the zero-count cells out
+    /// of the argmin search).
+    ///
+    /// The chain-altitude scalar-count peer of [`Self::recessive_file_format`]
+    /// (the anti-modal-cell scalar peer of [`Self::file_format_histogram`])
+    /// — the file-format sub-axis of the chain-shape surface now carries
+    /// the fused `(recessive_file_format, trough_file_format_count)`
+    /// anti-modal pair, matching the ([`crate::AxisHistogram::recessive_cell`],
+    /// [`crate::AxisHistogram::trough_count`]) pair on the shared
+    /// [`crate::AxisHistogram`] primitive one altitude down, the
+    /// ([`Self::recessive_layer_kind`], [`Self::trough_layer_kind_count`])
+    /// pair on the layer-kind sub-axis of the same chain altitude, the
+    /// ([`crate::ProvenanceMap::recessive_tier`],
+    /// [`crate::ProvenanceMap::trough_tier_count`]) pair on the tier
+    /// altitude, and the ([`crate::ConfigDiff::recessive_kind`],
+    /// [`crate::ConfigDiff::trough_kind_count`]) pair on the diff altitude.
+    /// Consumers answering *"which file format is the runt of the chain and
+    /// by how few layers?"* now read a single `(recessive_file_format(),
+    /// trough_file_format_count())` pair — one method each, both routing
+    /// through the same primitive — instead of re-deriving the count off
+    /// the anti-modal cell.
+    ///
+    /// The 2×2 `(dominant, recessive) × (cell, count)` scalar grid on the
+    /// file-format sub-axis of the chain-shape surface closes with this
+    /// lift: the four seams ([`Self::dominant_file_format`],
+    /// [`Self::peak_file_format_count`], [`Self::recessive_file_format`],
+    /// [`Self::trough_file_format_count`]) now each route through the same
+    /// [`Self::file_format_histogram`] primitive at one pass per
+    /// projection, matching the closed `(dominant, peak, recessive,
+    /// trough)` quad on the layer-kind sub-axis of the same chain altitude,
+    /// the shared [`crate::AxisHistogram`] primitive one altitude down, the
+    /// tier altitude, and the diff altitude.
+    ///
+    /// **Empty-histogram convention** — returns `0` (not `Option<usize>`)
+    /// matching the [`crate::AxisHistogram::trough_count`] convention one
+    /// altitude down, the [`Self::peak_file_format_count`] convention on
+    /// the same sub-axis, the [`Self::trough_layer_kind_count`] convention
+    /// on the layer-kind sub-axis, and the
+    /// [`crate::ProvenanceMap::trough_tier_count`] /
+    /// [`crate::ConfigDiff::trough_kind_count`] conventions on the peer
+    /// altitudes; the scalar `(peak_file_format_count,
+    /// trough_file_format_count)` pair reads uniformly `(0, 0)` on the
+    /// empty-histogram boundary. Unlike [`Self::trough_layer_kind_count`],
+    /// the zero boundary is NOT `self.as_ref().is_empty()`:
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::Env`] / unrecognized-
+    /// extension [`ConfigSource::File`] entries all project to [`None`]
+    /// through [`ConfigSource::file_format`], so the histogram is empty
+    /// (and this scalar reads zero) even on a non-empty chain when no
+    /// `File` entry carries a recognized extension. The dual-form
+    /// [`Self::recessive_file_format`] carries
+    /// `Option<crate::discovery::Format>` because the *format* is undefined
+    /// when no recognized-extension file layer contributes; the *count* is
+    /// well-defined as zero.
+    ///
+    /// # Invariants
+    ///
+    /// - `trough_file_format_count() == 0 ⇔
+    ///   file_format_histogram().is_empty()` — peer to the empty-histogram
+    ///   boundary [`Self::dominant_file_format`] /
+    ///   [`Self::recessive_file_format`] both witness on the cell side, and
+    ///   [`Self::peak_file_format_count`] witnesses on the modal count side.
+    ///   Unlike [`Self::trough_layer_kind_count`], the zero boundary is NOT
+    ///   `self.as_ref().is_empty()`: a non-empty chain of only
+    ///   [`ConfigSource::Defaults`] / [`ConfigSource::Env`] /
+    ///   unrecognized-extension [`ConfigSource::File`] layers reads zero as
+    ///   well.
+    /// - `trough_file_format_count() == file_format_histogram().trough_count()`
+    ///   — both project the same scalar off the same primitive; the named
+    ///   seam is the cube-native routing of the chain-shape surface.
+    /// - `trough_file_format_count() == recessive_file_format().map_or(0,
+    ///   |f| file_format_histogram().count(f))` — the count projection of
+    ///   the `(recessive_file_format, trough_file_format_count)` anti-modal
+    ///   pair equals [`Self::trough_file_format_count`] pointwise on every
+    ///   chain (empty-histogram: `None.map_or(0, …) == 0 ==
+    ///   trough_file_format_count`; non-empty-histogram: `Some(f).map_or(0,
+    ///   |f| count(f)) == trough_file_format_count`, since
+    ///   `count(recessive_file_format()) == trough_count()`).
+    /// - `trough_file_format_count() <= peak_file_format_count()` always:
+    ///   the trough is bounded above by the peak (lifted from the
+    ///   trait-uniform `trough_count() <= peak_count()` law on
+    ///   [`crate::AxisHistogram`]). The empty-histogram case reads `0 <=
+    ///   0`; the non-empty-histogram case reads the trough-of-support
+    ///   bounded above by the peak-of-support.
+    /// - `trough_file_format_count() <=
+    ///   layer_kind_histogram().count(ConfigSourceKind::File)` always: the
+    ///   trough on the file-format sub-axis is bounded above by the count
+    ///   of `File` layers on the layer-kind sub-axis (every recognized-
+    ///   extension file layer is a `File` layer, and some `File` layers
+    ///   may have unrecognized extensions and contribute to no format
+    ///   cell). Cross-sub-axis slack the file-format sub-axis carries
+    ///   against the layer-kind sub-axis, absent from
+    ///   [`Self::trough_layer_kind_count`].
+    /// - `trough_file_format_count() == peak_file_format_count()` iff
+    ///   `present_file_formats().len() <= 1` (assuming distinct counts on
+    ///   multi-support histograms) — the one-directional pin only. Zero:
+    ///   empty histogram, both zero. One: singleton-support histogram,
+    ///   every recognized file layer on the same format, both equal
+    ///   `file_format_histogram().total()`. Two or more with distinct
+    ///   counts: trough strictly below peak.
+    /// - `trough_file_format_count() >= 1` whenever
+    ///   `!file_format_histogram().is_empty()` — the argmin is taken over
+    ///   the histogram's *support* (nonzero cells), so the trough of a
+    ///   non-empty histogram is always at least one.
+    /// - `trough_file_format_count()` on a uniform full-cover chain (one
+    ///   file layer per format) equals `1` — every observed format
+    ///   collects one file layer; the trough coincides with the peak on
+    ///   the uniform-cover degenerate (the singleton-modality analogue on
+    ///   the count side).
+    /// - `trough_file_format_count()` on a singleton-support chain (every
+    ///   recognized-extension file layer on the same format) equals
+    ///   `file_format_histogram().total()` — the sole observed format is
+    ///   both the modal and anti-modal cell, so `trough == peak == total`.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<crate::discovery::Format>()` (the
+    /// argmin scan over the support). Both are `O(n)` in practice since the
+    /// file-format axis carries a fixed four-cell cardinality; the returned
+    /// `usize` reads one scalar. Halves the cost of the previous
+    /// `recessive_file_format().map_or(0, |f|
+    /// file_format_histogram().count(f))` idiom (which walked the histogram
+    /// twice — once to argmin, once to read the count back).
+    #[must_use]
+    fn trough_file_format_count(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().trough_count()
+    }
+
     /// Dense per-env-prefix-presence tally of the chain's
     /// [`ConfigSource::Env`] layers over the [`EnvMetadataTagKind`] axis
     /// — the typed histogram every attestation manifest, structured-log
@@ -6523,6 +6683,409 @@ mod tests {
                 .iter()
                 .map(|(_, c)| c)
                 .max()
+                .unwrap_or(0);
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::trough_file_format_count — anti-modal-cell
+    //      scalar-count peer of file_format_histogram on the chain
+    //      altitude, closing the (dom, rec) × (cell, count) 2×2 scalar
+    //      grid on the file-format sub-axis of the chain-shape surface ----
+
+    #[test]
+    fn trough_file_format_count_matches_file_format_histogram_trough_count_pointwise() {
+        // The scalar-count pin: `trough_file_format_count` routes through
+        // `file_format_histogram().trough_count()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Direct sister of
+        // `trough_layer_kind_count_matches_layer_kind_histogram_trough_count_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude, and
+        // `trough_tier_count_matches_tier_histogram_trough_count_pointwise` /
+        // `trough_kind_count_matches_kind_histogram_trough_count_pointwise`
+        // on the tier and diff altitudes.
+        for chain in recessive_file_format_fixtures() {
+            let via_histogram = chain.as_slice().file_format_histogram().trough_count();
+            assert_eq!(chain.as_slice().trough_file_format_count(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn trough_file_format_count_sample_chain_is_two() {
+        // Direct pin against `sample_chain()`: two `.yaml` file layers +
+        // one Env layer. Yaml is the sole observed format (singleton-
+        // support degenerate), so it is both the modal AND the anti-modal
+        // cell and the trough count coincides with the peak at 2. The
+        // (recessive_file_format, trough_file_format_count) anti-modal
+        // pair reads `(Some(Yaml), 2)`.
+        use crate::discovery::Format;
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.recessive_file_format(), Some(Format::Yaml));
+        assert_eq!(slice.trough_file_format_count(), 2);
+        assert_eq!(
+            slice.trough_file_format_count(),
+            slice.peak_file_format_count(),
+        );
+    }
+
+    #[test]
+    fn trough_file_format_count_toml_majority_is_one() {
+        // Toml-majority fixture: three `.toml` file layers + one `.yaml`
+        // + one Env + one Defaults. Yaml is uniquely anti-modal with 1
+        // of 4 recognized-extension file layers, so the trough count is
+        // 1. Cross-verified against `hist.trough_count() == 1` at the
+        // same observation site — the fused-pair count projection reads
+        // through the seam.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.recessive_file_format(), Some(Format::Yaml));
+        assert_eq!(slice.trough_file_format_count(), 1);
+        assert_eq!(slice.file_format_histogram().trough_count(), 1);
+    }
+
+    #[test]
+    fn trough_file_format_count_empty_chain_is_zero() {
+        // Empty-chain / zero boundary: the fused
+        // (recessive_file_format, trough_file_format_count) anti-modal
+        // scalar pair reads `(None, 0)` uniformly on the empty chain,
+        // matching the `(AxisHistogram::recessive_cell,
+        // AxisHistogram::trough_count)` pair on the shared histogram
+        // primitive one altitude down. Peer of
+        // `trough_layer_kind_count_empty_chain_is_zero` on the layer-
+        // kind sub-axis, `trough_tier_count_empty_map_is_zero` on the
+        // tier altitude, and `trough_kind_count_empty_diff_is_zero` on
+        // the diff altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.recessive_file_format(), None);
+        assert_eq!(empty.trough_file_format_count(), 0);
+    }
+
+    #[test]
+    fn trough_file_format_count_no_recognized_files_is_zero() {
+        // The non-empty-chain / empty-histogram boundary the file-format
+        // sub-axis pins that the layer-kind sub-axis does *not*. A chain
+        // of only `Defaults` / `Env` / unrecognized-extension `File`
+        // layers is non-empty but has no `Some` file_format projection,
+        // so the histogram is empty and `trough_file_format_count` reads
+        // zero. Distinguishing pin against a mis-implementation that
+        // would confuse `!self.as_ref().is_empty()` (the layer-kind sub-
+        // axis's zero boundary) with the file-format sub-axis's
+        // (`file_format_histogram().is_empty()`). Peer of
+        // `peak_file_format_count_no_recognized_files_is_zero` on the
+        // modal side, and `recessive_file_format_no_recognized_files_is_none`
+        // / `dominant_file_format_no_recognized_files_is_none` on the
+        // cell sides.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            assert!(!chain.is_empty(), "fixture must be non-empty");
+            assert!(
+                chain.as_slice().file_format_histogram().is_empty(),
+                "fixture must have empty file-format histogram",
+            );
+            assert_eq!(chain.as_slice().trough_file_format_count(), 0);
+        }
+    }
+
+    #[test]
+    fn trough_file_format_count_is_zero_iff_histogram_is_empty() {
+        // The `trough_file_format_count() == 0 ⇔
+        // file_format_histogram().is_empty()` presence-bound pin —
+        // unlike the layer-kind sub-axis (where the zero boundary is
+        // the chain's `is_empty()`), the file-format sub-axis's zero
+        // boundary is the sub-axis histogram's `is_empty()`. Cross-axis
+        // divergence from `trough_layer_kind_count_is_zero_iff_chain_is_empty`.
+        // Direct sister of the (`recessive_file_format().is_some() ==
+        // !histogram.is_empty()`) invariant on the cell side.
+        for chain in recessive_file_format_fixtures() {
+            assert_eq!(
+                chain.as_slice().trough_file_format_count() == 0,
+                chain.as_slice().file_format_histogram().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_file_format_count_equals_count_at_recessive_file_format_on_nonempty_histogram() {
+        // The `(recessive_cell, trough_count)` anti-modal-pair invariant
+        // lifted to the chain altitude on the file-format sub-axis:
+        // `hist.count(recessive_file_format().unwrap()) ==
+        // trough_file_format_count()` on every chain with a non-empty
+        // histogram. Peer of
+        // `trough_layer_kind_count_equals_count_at_recessive_layer_kind_on_nonempty_chain`
+        // on the layer-kind sub-axis (whose non-empty boundary coincides
+        // with `!chain.is_empty()` — the file-format sub-axis's
+        // non-empty boundary is `!file_format_histogram().is_empty()`).
+        for chain in recessive_file_format_fixtures() {
+            let hist = chain.as_slice().file_format_histogram();
+            if hist.is_empty() {
+                continue;
+            }
+            let recessive = chain
+                .as_slice()
+                .recessive_file_format()
+                .expect("non-empty histogram has a recessive file format");
+            assert_eq!(
+                hist.count(recessive),
+                chain.as_slice().trough_file_format_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_file_format_count_equals_recessive_file_format_map_or_count() {
+        // The fused-pair identity `trough_file_format_count() ==
+        // recessive_file_format().map_or(0, |f|
+        // file_format_histogram().count(f))` on every input — the count
+        // projection of the (recessive_file_format,
+        // trough_file_format_count) anti-modal pair reads through the
+        // seam uniformly across the empty-histogram / non-empty-histogram
+        // partition. Includes the empty-histogram boundary (`None
+        // .map_or(0, …) == 0 == trough_file_format_count`) — this is the
+        // pin that the fused-pair identity is boundary-complete. Peer of
+        // `trough_layer_kind_count_equals_recessive_layer_kind_map_or_count`
+        // on the layer-kind sub-axis,
+        // `trough_tier_count_equals_recessive_tier_map_or_count` on the
+        // tier altitude, and `trough_kind_count_equals_recessive_kind_map_or_count`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let hist = chain.as_slice().file_format_histogram();
+            let via_fused_pair = chain
+                .as_slice()
+                .recessive_file_format()
+                .map_or(0, |f| hist.count(f));
+            assert_eq!(chain.as_slice().trough_file_format_count(), via_fused_pair,);
+        }
+    }
+
+    #[test]
+    fn trough_file_format_count_bounded_above_by_peak_file_format_count() {
+        // Structural bound `trough_file_format_count() <=
+        // peak_file_format_count()` on every input — the trough is
+        // bounded above by the peak (lifted from the trait-uniform
+        // `trough_count() <= peak_count()` law on AxisHistogram). The
+        // empty-histogram case reads `0 <= 0`; the non-empty case reads
+        // the trough-of-support bounded above by the peak-of-support.
+        // Peer of `trough_layer_kind_count_bounded_above_by_peak_layer_kind_count`
+        // on the layer-kind sub-axis,
+        // `trough_tier_count_bounded_above_by_peak_tier_count` on the
+        // tier altitude, and
+        // `trough_kind_count_bounded_above_by_peak_kind_count` on the
+        // diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.trough_file_format_count() <= slice.peak_file_format_count(),
+                "trough_file_format_count()={t} must be <= peak_file_format_count()={p}",
+                t = slice.trough_file_format_count(),
+                p = slice.peak_file_format_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_file_format_count_is_bounded_by_file_layer_count() {
+        // Cross-sub-axis structural bound: the file-format sub-axis's
+        // trough is bounded above by the layer-kind sub-axis's count of
+        // `File` layers — every recognized-extension file layer is a
+        // `File` layer, and some `File` layers may have unrecognized
+        // extensions and contribute to no format cell. Distinguishes the
+        // file-format sub-axis's slack against the layer-kind sub-axis
+        // from the total-equality bound on the layer-kind sub-axis. No
+        // direct peer on the layer-kind sub-axis — this invariant is
+        // specific to the file-format sub-axis's optional-projection
+        // discipline. Peer of `peak_file_format_count_is_bounded_by_file_layer_count`
+        // on the modal side, closing the `(peak, trough) <= File-count`
+        // pair on the file-format sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let file_layer_count = slice.layer_kind_histogram().count(ConfigSourceKind::File);
+            assert!(
+                slice.trough_file_format_count() <= file_layer_count,
+                "trough_file_format_count()={t} must be <= File layer count={f}",
+                t = slice.trough_file_format_count(),
+                f = file_layer_count,
+            );
+        }
+    }
+
+    #[test]
+    fn trough_file_format_count_equals_peak_file_format_count_iff_at_most_one_present_file_format()
+    {
+        // Structural bound `trough_file_format_count() ==
+        // peak_file_format_count()` iff `present_file_formats().len() <=
+        // 1` (assuming distinct counts on multi-support histograms) —
+        // the one-directional pin only. Zero: empty histogram, both
+        // zero. One: singleton-support histogram, every recognized file
+        // layer on the same format, both equal
+        // `file_format_histogram().total()`. Two or more with distinct
+        // counts: trough strictly below peak. The uniform-count-multi-
+        // support degenerate (uniform full cover — four `.yaml`,
+        // `.toml`, `.lisp`, `.nix` layers at count 1 each) is the reason
+        // the converse is not universal; this test only asserts the
+        // `support_le_one → equal` half, matching the pattern in
+        // `trough_layer_kind_count_equals_peak_layer_kind_count_iff_at_most_one_present_layer_kind`
+        // on the layer-kind sub-axis and the tier / diff altitude peers.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let equal = slice.trough_file_format_count() == slice.peak_file_format_count();
+            let support_le_one = slice.present_file_formats().len() <= 1;
+            if support_le_one {
+                assert!(
+                    equal,
+                    "at_most_one_present_file_format → trough == peak \
+                     (trough={t}, peak={p}, present={present:?})",
+                    t = slice.trough_file_format_count(),
+                    p = slice.peak_file_format_count(),
+                    present = slice.present_file_formats(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn trough_file_format_count_is_at_least_one_on_nonempty_histogram() {
+        // Structural pin: whenever `!file_format_histogram().is_empty()`,
+        // `trough_file_format_count() >= 1` — the argmin is taken over
+        // the histogram's *support* (nonzero cells), so the trough of a
+        // non-empty histogram is always at least one. Combined with the
+        // `<= peak_file_format_count()` bound above, this pins `1 <=
+        // trough_file_format_count() <= peak_file_format_count()` on
+        // every non-empty histogram. Peer of
+        // `trough_layer_kind_count_is_at_least_one_on_nonempty_chain` on
+        // the layer-kind sub-axis (where the boundary is the chain's
+        // `is_empty()` rather than the histogram's).
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let hist = slice.file_format_histogram();
+            if hist.is_empty() {
+                continue;
+            }
+            assert!(
+                slice.trough_file_format_count() >= 1,
+                "non-empty histogram must have trough_file_format_count >= 1 (trough={t})",
+                t = slice.trough_file_format_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_file_format_count_uniform_full_cover_is_one() {
+        // Uniform full-cover chain — one file layer of each format (all
+        // four cells tied at count 1). Full-cover histogram with uniform
+        // count 1 per cell, so the trough count coincides with the peak
+        // count at 1 (the uniform-cover degenerate where every cell
+        // equals the modal cell). Direct sister of
+        // `peak_file_format_count_uniform_full_cover_is_one` — the same
+        // fixture read on the trough side. Combined with
+        // `recessive_file_format_uniform_full_cover_picks_yaml` (the
+        // cell picks Yaml by declaration-order tie-breaking), the fused
+        // pair `(recessive_file_format, trough_file_format_count)`
+        // reads `(Some(Yaml), 1)` on the uniform full-cover chain.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.nix")),
+            ConfigSource::File(PathBuf::from("/b.lisp")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.yaml")),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.file_format_histogram();
+        assert!(hist.is_full_cover());
+        assert_eq!(slice.trough_file_format_count(), 1);
+        assert_eq!(
+            slice.trough_file_format_count(),
+            slice.peak_file_format_count(),
+        );
+        assert_eq!(slice.recessive_file_format(), Some(Format::Yaml));
+    }
+
+    #[test]
+    fn trough_file_format_count_singleton_support_equals_histogram_total() {
+        // Singleton-support degenerate: when only one format contributes,
+        // every recognized file layer lands on that format, so both
+        // trough and peak equal the histogram total. Direct construction:
+        // three `.toml` files + Env + Defaults (Toml is the sole
+        // observed format). The scalar peer of the singleton-support
+        // cell degenerate `dominant_file_format() ==
+        // recessive_file_format()` in
+        // `recessive_file_format_singleton_support_agrees_with_dominant_file_format`
+        // — that test pins the *cell*; this test pins the *count*
+        // through the `trough_file_format_count() == total()` equality
+        // on the singleton-support boundary. Peer of
+        // `peak_file_format_count_singleton_support_equals_histogram_total`
+        // on the modal side and
+        // `trough_layer_kind_count_singleton_support_equals_len` on the
+        // layer-kind sub-axis (where the equality is against
+        // `self.as_ref().len()`, not the histogram total — the file-
+        // format sub-axis's optional-projection discipline diverges the
+        // total from the chain length).
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.file_format_histogram();
+        assert_eq!(slice.present_file_formats().len(), 1);
+        assert_eq!(slice.trough_file_format_count(), hist.total());
+        assert_eq!(slice.trough_file_format_count(), 3);
+        assert_eq!(
+            slice.trough_file_format_count(),
+            slice.peak_file_format_count(),
+        );
+    }
+
+    #[test]
+    fn trough_file_format_count_agrees_with_open_coded_min_over_support_walk() {
+        // Parity against the exact
+        // `hist.iter().filter(|(_, c)| *c > 0).map(|(_, c)| c).min()`
+        // walk this lift replaces — both the named seam and the
+        // hand-rolled min-over-support must pointwise agree over every
+        // fixture. The `.min().unwrap_or(0)` idiom mirrors the empty-
+        // histogram convention on `AxisHistogram::trough_count` one
+        // altitude down (both read 0 on empty). The `filter(|(_, c)|
+        // *c > 0)` step is the load-bearing seam: the naive `.min()`
+        // over the full axis would silently pick zero-count absent
+        // cells on any non-full-cover histogram, shadowing the trough-
+        // of-support the seam surfaces. Peer of
+        // `trough_layer_kind_count_agrees_with_open_coded_min_over_support_walk`
+        // on the layer-kind sub-axis,
+        // `trough_tier_count_agrees_with_open_coded_min_over_support_walk`
+        // on the tier altitude, and
+        // `trough_kind_count_agrees_with_open_coded_min_over_support_walk`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let via_seam = chain.as_slice().trough_file_format_count();
+            let hand_rolled = chain
+                .as_slice()
+                .file_format_histogram()
+                .iter()
+                .map(|(_, c)| c)
+                .filter(|&c| c > 0)
+                .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, hand_rolled);
         }
