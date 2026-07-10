@@ -1641,6 +1641,138 @@ pub trait ConfigSourceChain {
         self.file_format_histogram().recessive_cell()
     }
 
+    /// The **peak file-layer count** — the number of recognized-extension
+    /// file layers contributed by the dominant [`crate::discovery::Format`]
+    /// on this chain. Returns `0` when the [`Self::file_format_histogram`]
+    /// is empty (no chain entry projects through
+    /// [`ConfigSource::file_format`] to a recognized format — i.e. an empty
+    /// chain, OR a non-empty chain of only [`ConfigSource::Defaults`] /
+    /// [`ConfigSource::Env`] / unrecognized-extension [`ConfigSource::File`]
+    /// entries); otherwise returns the count carried by
+    /// [`Self::dominant_file_format`] (pointwise equal to it, and always
+    /// `>= 1` by the histogram-support definition).
+    ///
+    /// The **scalar peer** of [`Self::dominant_file_format`] on the count
+    /// side — the natural typed primitive for chain-shape dashboards,
+    /// attestation manifests, and alerting policies asking *"how many
+    /// file layers did the majority format contribute?"*: the CLI
+    /// `config-show` summary headline *"YAML dominant: 3 of 4 files"*
+    /// (where 3 is this scalar), the attestation manifest recording the
+    /// peak file-format observation count between two `ProviderChain`
+    /// snapshots, the alerting policy reading *"format peak count = 7"*
+    /// to gate a rebuild window on the modal format's density. Before
+    /// this lift, every such consumer re-derived the projection inline as
+    /// `chain.file_format_histogram().peak_count()` or (equivalently but
+    /// at twice the cost) `chain.dominant_file_format().map_or(0, |f|
+    /// chain.file_format_histogram().count(f))` — which walked the
+    /// histogram *twice* (once to argmax, once to read the count back
+    /// through [`crate::AxisHistogram::count`] indexing) and re-built
+    /// the histogram at every site. Routes through
+    /// [`Self::file_format_histogram`]:
+    /// [`crate::AxisHistogram::peak_count`] reads a single pass over the
+    /// fixed-cardinality counts vector.
+    ///
+    /// The chain-altitude scalar-count peer of [`Self::dominant_file_format`]
+    /// (the modal-cell scalar peer of [`Self::file_format_histogram`]) —
+    /// the file-format sub-axis of the chain-shape surface now carries
+    /// the fused `(dominant_file_format, peak_file_format_count)` modal
+    /// pair, matching the ([`crate::AxisHistogram::dominant_cell`],
+    /// [`crate::AxisHistogram::peak_count`]) pair on the shared
+    /// [`crate::AxisHistogram`] primitive one altitude down, the
+    /// ([`Self::dominant_layer_kind`], [`Self::peak_layer_kind_count`])
+    /// pair on the layer-kind sub-axis of the same chain altitude, the
+    /// ([`crate::ProvenanceMap::dominant_tier`],
+    /// [`crate::ProvenanceMap::peak_tier_count`]) pair on the tier
+    /// altitude, and the ([`crate::ConfigDiff::dominant_kind`],
+    /// [`crate::ConfigDiff::peak_kind_count`]) pair on the diff altitude.
+    /// Consumers answering *"which file format dominated the chain and by
+    /// how many layers?"* now read a single `(dominant_file_format(),
+    /// peak_file_format_count())` pair — one method each, both routing
+    /// through the same primitive — instead of re-deriving the count off
+    /// the modal cell.
+    ///
+    /// **Empty-histogram convention** — returns `0` (not `Option<usize>`)
+    /// matching the [`crate::AxisHistogram::peak_count`] convention one
+    /// altitude down, the [`Self::peak_layer_kind_count`] convention on
+    /// the layer-kind sub-axis, and the
+    /// [`crate::ProvenanceMap::peak_tier_count`] /
+    /// [`crate::ConfigDiff::peak_kind_count`] conventions on the peer
+    /// altitudes; the scalar reads `0` uniformly on the empty-histogram
+    /// boundary. Unlike [`Self::peak_layer_kind_count`], the zero boundary
+    /// is NOT `!self.as_ref().is_empty()`:
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::Env`] / unrecognized-
+    /// extension [`ConfigSource::File`] entries all project to [`None`]
+    /// through [`ConfigSource::file_format`], so the histogram is empty
+    /// (and this scalar reads zero) even on a non-empty chain when no
+    /// `File` entry carries a recognized extension. The dual-form
+    /// [`Self::dominant_file_format`] carries
+    /// `Option<crate::discovery::Format>` because the *format* is
+    /// undefined when no recognized-extension file layer contributes;
+    /// the *count* is well-defined as zero.
+    ///
+    /// # Invariants
+    ///
+    /// - `peak_file_format_count() == 0 ⇔
+    ///   file_format_histogram().is_empty()` — peer to the empty-histogram
+    ///   boundary [`Self::dominant_file_format`] /
+    ///   [`Self::recessive_file_format`] both witness on the cell side.
+    ///   Unlike [`Self::peak_layer_kind_count`], the zero boundary is
+    ///   NOT `self.as_ref().is_empty()`: a non-empty chain of only
+    ///   [`ConfigSource::Defaults`] / [`ConfigSource::Env`] /
+    ///   unrecognized-extension [`ConfigSource::File`] layers reads
+    ///   zero as well.
+    /// - `peak_file_format_count() == file_format_histogram().peak_count()`
+    ///   — both project the same scalar off the same primitive; the named
+    ///   seam is the cube-native routing of the chain-shape surface.
+    /// - `peak_file_format_count() == dominant_file_format().map_or(0, |f|
+    ///   file_format_histogram().count(f))` — the count projection of the
+    ///   `(dominant_file_format, peak_file_format_count)` modal pair
+    ///   equals [`Self::peak_file_format_count`] pointwise on every chain
+    ///   (empty-histogram: `None.map_or(0, …) == 0 ==
+    ///   peak_file_format_count`; non-empty-histogram: `Some(f).map_or(0,
+    ///   |f| count(f)) == peak_file_format_count`, since
+    ///   `count(dominant_file_format()) == peak_count()`).
+    /// - `peak_file_format_count() <= file_format_histogram().total()`
+    ///   always: the peak is bounded above by the total recognized-
+    ///   extension file-layer count (every format contributes at most
+    ///   every recognized file layer, and the others contribute zero).
+    ///   Equality holds iff `present_file_formats().len() <= 1`.
+    /// - `peak_file_format_count() <=
+    ///   layer_kind_histogram().count(ConfigSourceKind::File)` always:
+    ///   the peak on the file-format sub-axis is bounded above by the
+    ///   count of `File` layers on the layer-kind sub-axis (every
+    ///   recognized-extension file layer is a `File` layer, and some
+    ///   `File` layers may have unrecognized extensions and contribute
+    ///   to no format cell).
+    /// - `peak_file_format_count() >= 1` whenever
+    ///   `!file_format_histogram().is_empty()` — a non-empty histogram
+    ///   always has at least one layer on the dominant format.
+    /// - `peak_file_format_count()` on a uniform full-cover chain (one
+    ///   file layer per format) equals `1` — every observed format
+    ///   collects one file layer, dominant included.
+    /// - `peak_file_format_count()` on a singleton-support chain (every
+    ///   recognized-extension file layer on the same format) equals
+    ///   `file_format_histogram().total()` — the dominant format collects
+    ///   every recognized file layer.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the argmax scan). Both are `O(n)` in practice since the file-
+    /// format axis carries a fixed four-cell cardinality; the returned
+    /// `usize` reads one scalar. Halves the cost of the previous
+    /// `dominant_file_format().map_or(0, |f|
+    /// file_format_histogram().count(f))` idiom (which walked the
+    /// histogram twice — once to argmax, once to read the count back).
+    #[must_use]
+    fn peak_file_format_count(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().peak_count()
+    }
+
     /// Dense per-env-prefix-presence tally of the chain's
     /// [`ConfigSource::Env`] layers over the [`EnvMetadataTagKind`] axis
     /// — the typed histogram every attestation manifest, structured-log
@@ -6028,6 +6160,371 @@ mod tests {
             }
             let via_seam = chain.as_slice().recessive_file_format();
             assert_eq!(via_seam, manual.map(|(cell, _)| cell));
+        }
+    }
+
+    // ---- ConfigSourceChain::peak_file_format_count — modal-cell scalar-
+    //      count peer of file_format_histogram on the chain altitude,
+    //      fusing with dominant_file_format into the (cell, count) modal
+    //      pair on the file-format sub-axis of the chain-shape surface ----
+
+    #[test]
+    fn peak_file_format_count_matches_file_format_histogram_peak_count_pointwise() {
+        // The scalar-count pin: `peak_file_format_count` routes through
+        // `file_format_histogram().peak_count()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Direct sister
+        // of `peak_layer_kind_count_matches_layer_kind_histogram_peak_count_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude, and
+        // `peak_tier_count_matches_tier_histogram_peak_count_pointwise` /
+        // `peak_kind_count_matches_kind_histogram_peak_count_pointwise`
+        // on the tier and diff altitudes.
+        for chain in recessive_file_format_fixtures() {
+            let via_histogram = chain.as_slice().file_format_histogram().peak_count();
+            assert_eq!(chain.as_slice().peak_file_format_count(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn peak_file_format_count_sample_chain_is_two() {
+        // Direct pin against `sample_chain()`: two `.yaml` file layers +
+        // one Env layer. Yaml is the sole observed format with 2 of 2
+        // recognized-extension file layers, so the peak count is 2. The
+        // (dominant_file_format, peak_file_format_count) modal pair reads
+        // `(Some(Yaml), 2)`.
+        use crate::discovery::Format;
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.dominant_file_format(), Some(Format::Yaml));
+        assert_eq!(slice.peak_file_format_count(), 2);
+    }
+
+    #[test]
+    fn peak_file_format_count_toml_majority_is_three() {
+        // Toml-majority fixture: three `.toml` file layers + one `.yaml`
+        // + one Env + one Defaults. Toml is uniquely dominant with 3 of
+        // 4 recognized-extension file layers, so the peak count is 3.
+        // Cross-verified against `hist.peak_count() == 3` at the same
+        // observation site — the fused-pair count projection reads
+        // through the seam.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.dominant_file_format(), Some(Format::Toml));
+        assert_eq!(slice.peak_file_format_count(), 3);
+        assert_eq!(slice.file_format_histogram().peak_count(), 3);
+    }
+
+    #[test]
+    fn peak_file_format_count_empty_chain_is_zero() {
+        // Empty-chain / zero boundary: the fused
+        // (dominant_file_format, peak_file_format_count) modal scalar
+        // pair reads `(None, 0)` uniformly on the empty chain, matching
+        // the `(AxisHistogram::dominant_cell, AxisHistogram::peak_count)`
+        // pair on the shared histogram primitive one altitude down. Peer
+        // of `peak_layer_kind_count_empty_chain_is_zero` on the layer-
+        // kind sub-axis, `peak_tier_count_empty_map_is_zero` on the tier
+        // altitude, and `peak_kind_count_empty_diff_is_zero` on the diff
+        // altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.dominant_file_format(), None);
+        assert_eq!(empty.peak_file_format_count(), 0);
+    }
+
+    #[test]
+    fn peak_file_format_count_no_recognized_files_is_zero() {
+        // The non-empty-chain / empty-histogram boundary the file-format
+        // sub-axis pins that the layer-kind sub-axis does *not*. A chain
+        // of only `Defaults` / `Env` / unrecognized-extension `File`
+        // layers is non-empty but has no `Some` file_format projection,
+        // so the histogram is empty and `peak_file_format_count` reads
+        // zero. Distinguishing pin against a mis-implementation that
+        // would confuse `!self.as_ref().is_empty()` (the layer-kind sub-
+        // axis's zero boundary) with the file-format sub-axis's
+        // (`file_format_histogram().is_empty()`). Peer of
+        // `dominant_file_format_no_recognized_files_is_none` and
+        // `recessive_file_format_no_recognized_files_is_none` on the cell
+        // sides.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            assert!(!chain.is_empty(), "fixture must be non-empty");
+            assert!(
+                chain.as_slice().file_format_histogram().is_empty(),
+                "fixture must have empty file-format histogram",
+            );
+            assert_eq!(chain.as_slice().peak_file_format_count(), 0);
+        }
+    }
+
+    #[test]
+    fn peak_file_format_count_is_zero_iff_histogram_is_empty() {
+        // The `peak_file_format_count() == 0 ⇔
+        // file_format_histogram().is_empty()` presence-bound pin — unlike
+        // the layer-kind sub-axis (where the zero boundary is the chain's
+        // `is_empty()`), the file-format sub-axis's zero boundary is the
+        // sub-axis histogram's `is_empty()`. Cross-axis divergence from
+        // `peak_layer_kind_count_is_zero_iff_chain_is_empty`. Direct
+        // sister of the (`dominant_file_format().is_some() ==
+        // !histogram.is_empty()`) invariant on the cell side.
+        for chain in recessive_file_format_fixtures() {
+            assert_eq!(
+                chain.as_slice().peak_file_format_count() == 0,
+                chain.as_slice().file_format_histogram().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_file_format_count_equals_count_at_dominant_file_format_on_nonempty_histogram() {
+        // The `(dominant_cell, peak_count)` modal-pair invariant lifted
+        // to the chain altitude on the file-format sub-axis:
+        // `hist.count(dominant_file_format().unwrap()) ==
+        // peak_file_format_count()` on every chain with a non-empty
+        // histogram. Peer of
+        // `peak_layer_kind_count_equals_count_at_dominant_layer_kind_on_nonempty_chain`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let hist = chain.as_slice().file_format_histogram();
+            if hist.is_empty() {
+                continue;
+            }
+            let dominant = chain
+                .as_slice()
+                .dominant_file_format()
+                .expect("non-empty histogram has a dominant file format");
+            assert_eq!(
+                hist.count(dominant),
+                chain.as_slice().peak_file_format_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_file_format_count_equals_dominant_file_format_map_or_count() {
+        // The fused-pair identity `peak_file_format_count() ==
+        // dominant_file_format().map_or(0, |f|
+        // file_format_histogram().count(f))` on every input — the count
+        // projection of the (dominant_file_format,
+        // peak_file_format_count) modal pair reads through the seam
+        // uniformly across the empty-histogram / non-empty-histogram
+        // partition. Includes the empty-histogram boundary (`None
+        // .map_or(0, …) == 0 == peak_file_format_count`) — this is the
+        // pin that the fused-pair identity is boundary-complete. Peer of
+        // `peak_layer_kind_count_equals_dominant_layer_kind_map_or_count`
+        // on the layer-kind sub-axis,
+        // `peak_tier_count_equals_dominant_tier_map_or_count` on the
+        // tier altitude, and `peak_kind_count_equals_dominant_kind_map_or_count`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let hist = chain.as_slice().file_format_histogram();
+            let via_fused_pair = chain
+                .as_slice()
+                .dominant_file_format()
+                .map_or(0, |f| hist.count(f));
+            assert_eq!(chain.as_slice().peak_file_format_count(), via_fused_pair);
+        }
+    }
+
+    #[test]
+    fn peak_file_format_count_is_bounded_by_histogram_total() {
+        // Structural bound `peak_file_format_count() <=
+        // file_format_histogram().total()` on every input — the peak is
+        // bounded above by the total recognized-extension file-layer
+        // count (every format contributes at most every recognized file
+        // layer, the others contribute zero). Lifted from the trait-
+        // uniform `peak_count() <= total()` law on AxisHistogram. Peer
+        // of `peak_layer_kind_count_is_bounded_by_len` on the layer-kind
+        // sub-axis (where the total equals `self.as_ref().len()`);
+        // here the total equals the recognized-extension file-layer
+        // count, not the chain length.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let hist = slice.file_format_histogram();
+            assert!(
+                slice.peak_file_format_count() <= hist.total(),
+                "peak_file_format_count()={p} must be <= histogram.total()={t}",
+                p = slice.peak_file_format_count(),
+                t = hist.total(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_file_format_count_is_bounded_by_file_layer_count() {
+        // Cross-sub-axis structural bound: the file-format sub-axis's
+        // peak is bounded above by the layer-kind sub-axis's count of
+        // `File` layers — every recognized-extension file layer is a
+        // `File` layer, and some `File` layers may have unrecognized
+        // extensions and contribute to no format cell. Distinguishes the
+        // file-format sub-axis's slack against the layer-kind sub-axis
+        // from the total-equality bound on the layer-kind sub-axis. No
+        // direct peer on the layer-kind sub-axis — this invariant is
+        // specific to the file-format sub-axis's optional-projection
+        // discipline.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let file_layer_count = slice.layer_kind_histogram().count(ConfigSourceKind::File);
+            assert!(
+                slice.peak_file_format_count() <= file_layer_count,
+                "peak_file_format_count()={p} must be <= File layer count={f}",
+                p = slice.peak_file_format_count(),
+                f = file_layer_count,
+            );
+        }
+    }
+
+    #[test]
+    fn peak_file_format_count_equals_total_iff_at_most_one_present_file_format() {
+        // Structural bound `peak_file_format_count() ==
+        // file_format_histogram().total()` iff `present_file_formats()
+        // .len() <= 1` — the peak equals the histogram total exactly
+        // when zero or one format is observed. Zero: empty-histogram,
+        // both zero. One: singleton-support, every recognized file layer
+        // on the same format. Two or more: peak strictly below total.
+        // Lifted from the trait-uniform `peak_count() == total()` law
+        // on AxisHistogram. Peer of
+        // `peak_layer_kind_count_equals_len_iff_at_most_one_present_layer_kind`
+        // on the layer-kind sub-axis (where the total is the chain
+        // length).
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let hist = slice.file_format_histogram();
+            assert_eq!(
+                slice.peak_file_format_count() == hist.total(),
+                slice.present_file_formats().len() <= 1,
+                "peak == total iff present_file_formats.len() <= 1 \
+                 (peak={p}, total={t}, present={c})",
+                p = slice.peak_file_format_count(),
+                t = hist.total(),
+                c = slice.present_file_formats().len(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_file_format_count_is_at_least_one_on_nonempty_histogram() {
+        // Structural pin: whenever
+        // `!file_format_histogram().is_empty()`,
+        // `peak_file_format_count() >= 1` — a non-empty histogram always
+        // has at least one layer on the dominant format. Combined with
+        // the `<= total()` bound above, this pins `1 <=
+        // peak_file_format_count() <= total()` on every non-empty
+        // histogram. Peer of
+        // `peak_layer_kind_count_is_at_least_one_on_nonempty_chain` on
+        // the layer-kind sub-axis (where the boundary is the chain's
+        // `is_empty()` rather than the histogram's).
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let hist = slice.file_format_histogram();
+            if hist.is_empty() {
+                continue;
+            }
+            assert!(
+                slice.peak_file_format_count() >= 1,
+                "non-empty histogram must have peak_file_format_count >= 1 (peak={p})",
+                p = slice.peak_file_format_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_file_format_count_uniform_full_cover_is_one() {
+        // Uniform full-cover chain — one file layer of each format (all
+        // four cells tied at count 1). Full-cover histogram with uniform
+        // count 1 per cell, so the peak count is 1. Combined with
+        // `dominant_file_format_uniform_full_cover_picks_yaml` (the cell
+        // picks Yaml by declaration-order tie-breaking), the fused pair
+        // `(dominant_file_format, peak_file_format_count)` reads
+        // `(Some(Yaml), 1)` on the uniform full-cover chain. Peer of
+        // `peak_layer_kind_count_uniform_cover_is_two` on the layer-kind
+        // sub-axis (that fixture uses two layers per kind so the peak is
+        // 2; here we use one layer per format so the peak is 1).
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.nix")),
+            ConfigSource::File(PathBuf::from("/b.lisp")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.yaml")),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.file_format_histogram();
+        assert!(hist.is_full_cover());
+        assert_eq!(slice.peak_file_format_count(), 1);
+        assert_eq!(slice.dominant_file_format(), Some(Format::Yaml));
+    }
+
+    #[test]
+    fn peak_file_format_count_singleton_support_equals_histogram_total() {
+        // Singleton-support degenerate: when only one format contributes,
+        // every recognized file layer lands on that format, so the peak
+        // equals the histogram total. Direct construction: three `.toml`
+        // files + Env + Defaults (Toml is the sole observed format). The
+        // scalar peer of the singleton-support cell degenerate
+        // `dominant_file_format() == recessive_file_format()` in
+        // `recessive_file_format_singleton_support_agrees_with_dominant_file_format`
+        // — that test pins the *cell*; this test pins the *count*
+        // through the `peak_file_format_count() == total()` equality on
+        // the singleton-support boundary. Peer of
+        // `peak_layer_kind_count_singleton_support_equals_len` on the
+        // layer-kind sub-axis (where the equality is against
+        // `self.as_ref().len()`, not the histogram total).
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.file_format_histogram();
+        assert_eq!(slice.present_file_formats().len(), 1);
+        assert_eq!(slice.peak_file_format_count(), hist.total());
+        assert_eq!(slice.peak_file_format_count(), 3);
+    }
+
+    #[test]
+    fn peak_file_format_count_agrees_with_open_coded_max_over_axis_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()`
+        // walk this lift replaces — both the named seam and the hand-
+        // rolled max must pointwise agree over every fixture. The
+        // `.max().unwrap_or(0)` idiom mirrors the empty-histogram
+        // convention on `AxisHistogram::peak_count` one altitude down
+        // (both read 0 on empty). Peer of
+        // `peak_layer_kind_count_agrees_with_open_coded_max_over_axis_walk`
+        // on the layer-kind sub-axis,
+        // `peak_tier_count_agrees_with_open_coded_max_over_axis_walk`
+        // on the tier altitude, and
+        // `peak_kind_count_agrees_with_open_coded_max_over_axis_walk`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let via_seam = chain.as_slice().peak_file_format_count();
+            let hand_rolled = chain
+                .as_slice()
+                .file_format_histogram()
+                .iter()
+                .map(|(_, c)| c)
+                .max()
+                .unwrap_or(0);
+            assert_eq!(via_seam, hand_rolled);
         }
     }
 
