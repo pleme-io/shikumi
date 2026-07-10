@@ -2593,6 +2593,175 @@ pub trait ConfigSourceChain {
         self.file_format_histogram().trough_count()
     }
 
+    /// The **file-format spread** — the difference between the peak and
+    /// trough recognized-extension file-layer counts across the observed
+    /// [`crate::discovery::Format`]s on this chain. Equal to
+    /// `self.peak_file_format_count() - self.trough_file_format_count()`
+    /// by construction. Routes through
+    /// [`Self::file_format_histogram`]: [`crate::AxisHistogram::spread`]
+    /// reads a single pass over the fixed-cardinality counts vector
+    /// (fusing the max-over-axis / min-over-support pair into one
+    /// running scan). The file-format sub-axis lift of the "spread across
+    /// altitudes" projection seeded on the diff altitude by
+    /// [`crate::ConfigDiff::kind_spread`], climbed to the tier altitude
+    /// by [`crate::ProvenanceMap::tier_spread`], and lifted sideways to
+    /// the layer-kind sub-axis by [`Self::layer_kind_spread`]. Returns
+    /// `0` exactly on every chain whose file-format histogram is empty
+    /// (an empty chain, OR a non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::Env`] / unrecognized-
+    /// extension [`ConfigSource::File`] entries), every singleton-support
+    /// chain (only one observed format, trivially balanced), and every
+    /// uniform per-format chain (each observed format contributing the
+    /// same nonzero file-layer count, dominant included).
+    ///
+    /// The **scalar dispersion peer** of the fused
+    /// `(peak_file_format_count, trough_file_format_count)` modal-count
+    /// pair on the file-format sub-axis of the chain altitude — the
+    /// natural typed primitive for chain-shape dashboards, attestation
+    /// manifests, and alerting policies asking *"how unevenly distributed
+    /// are the file layers across the observed formats?"*: the CLI
+    /// `config-show` summary line *"format skew 2: Toml owns 3 of 4 file
+    /// layers, Yaml 1 of 4"* (where 2 is this scalar), the attestation
+    /// manifest recording the file-format spread between two
+    /// `ProviderChain` snapshots, the alerting policy reading *"chain
+    /// format spread = 2"* to flag a rebuild window where one file
+    /// format dwarfed the others. Before this lift, every such consumer
+    /// re-derived the projection inline as
+    /// `chain.peak_file_format_count() -
+    /// chain.trough_file_format_count()` — two method calls plus a
+    /// subtraction at every site, each site having to reason
+    /// independently about the structural non-negativity of the
+    /// difference (`peak_file_format_count() >=
+    /// trough_file_format_count()` holds on every chain by lifting the
+    /// trait-uniform `peak_count() >= trough_count()` law on
+    /// [`crate::AxisHistogram`], but not on the inline subtraction
+    /// surface — an unwitnessed refactor swapping the operands would
+    /// silently underflow). Routes through
+    /// [`crate::AxisHistogram::spread`] one altitude down — the
+    /// underflow-safe named seam whose docs pin the monotonicity
+    /// invariant explicitly.
+    ///
+    /// The file-format sub-axis lift in the "spread across altitudes"
+    /// projection seeded on the diff altitude by
+    /// [`crate::ConfigDiff::kind_spread`], climbed to the tier altitude
+    /// by [`crate::ProvenanceMap::tier_spread`], and lifted sideways to
+    /// the layer-kind sub-axis of the same chain altitude by
+    /// [`Self::layer_kind_spread`]. The pattern is the same at every
+    /// altitude: fuse the (`peak_count`, `trough_count`) modal-count
+    /// pair into a single dispersion scalar named at the surface,
+    /// routed through the shared [`crate::AxisHistogram::spread`]
+    /// primitive one altitude down. The one remaining chain-altitude
+    /// sub-axis (`env_prefix_kind_spread` over
+    /// [`Self::env_prefix_kind_histogram`]) is the natural next sideways
+    /// lift on the same doc-cited template.
+    ///
+    /// **Empty-histogram convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::spread`] empty convention one altitude
+    /// down and the [`Self::peak_file_format_count`] /
+    /// [`Self::trough_file_format_count`] empty conventions on the same
+    /// sub-axis. The scalar-count triple
+    /// `(peak_file_format_count, trough_file_format_count,
+    /// file_format_spread)` reads uniformly `(0, 0, 0)` on the empty
+    /// histogram. Unlike [`Self::layer_kind_spread`], the zero-boundary
+    /// is NOT `self.as_ref().is_empty()`: a non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::Env`] /
+    /// unrecognized-extension [`ConfigSource::File`] layers reads
+    /// `(0, 0, 0)` as well, because those entries project to [`None`]
+    /// through [`ConfigSource::file_format`]. Cross-sub-axis divergence
+    /// from [`Self::layer_kind_spread`] — the file-format sub-axis's
+    /// empty-boundary is the sub-axis histogram's `is_empty()`, not the
+    /// chain's.
+    ///
+    /// **Structural-skew predicate.** `file_format_spread() == 0` is the
+    /// typed *balanced-file-formats* predicate at the file-format
+    /// sub-axis of the chain altitude — every observed
+    /// [`crate::discovery::Format`] contributed the same number of file
+    /// layers. Pointwise equivalent to `peak_file_format_count() ==
+    /// trough_file_format_count()` on the scalar-count pair and to
+    /// `dominant_file_format() == recessive_file_format()` on the
+    /// modal-cell pair whenever the file-format histogram is non-empty
+    /// (both branches reduce to `Some(first) == Some(first)` on
+    /// singleton-support and uniform-cover chains, and to `false` on
+    /// skewed chains). Together with `file_format_histogram().is_empty()`
+    /// and the full-cover predicate on [`Self::file_format_histogram`],
+    /// the file-format sub-axis of the chain-shape surface now carries
+    /// the natural boundary triple *"did any file layer contribute?"* /
+    /// *"did every format fire?"* / *"did the formats fire equally?"* —
+    /// each a single method call.
+    ///
+    /// # Invariants
+    ///
+    /// - `file_format_spread() == file_format_histogram().spread()` —
+    ///   both project the same scalar off the same primitive; the named
+    ///   seam is the cube-native routing of the histogram surface.
+    /// - `file_format_spread() == peak_file_format_count() -
+    ///   trough_file_format_count()` — the fused-pair identity of the
+    ///   scalar-dispersion peer. The subtraction is underflow-safe
+    ///   because `peak_file_format_count() >= trough_file_format_count()`
+    ///   holds structurally on every chain (lifted from the trait-
+    ///   uniform `peak_count() >= trough_count()` law on
+    ///   [`crate::AxisHistogram`]).
+    /// - `file_format_spread() == 0` on every chain whose file-format
+    ///   histogram is empty — the vacuous uniformity boundary, matching
+    ///   the [`crate::AxisHistogram::spread`] empty convention one
+    ///   altitude down. The `(peak_file_format_count,
+    ///   trough_file_format_count, file_format_spread)` triple reads
+    ///   `(0, 0, 0)` uniformly. Unlike [`Self::layer_kind_spread`], the
+    ///   zero boundary is NOT `self.as_ref().is_empty()`: a non-empty
+    ///   chain of only [`ConfigSource::Defaults`] /
+    ///   [`ConfigSource::Env`] / unrecognized-extension
+    ///   [`ConfigSource::File`] layers reads zero as well.
+    /// - `file_format_spread() == 0` whenever
+    ///   `present_file_formats().len() <= 1` — the empty-histogram case
+    ///   (no observed format, trivially balanced) and the
+    ///   singleton-support case (the one observed format's count is both
+    ///   the peak and the trough). Also holds on every uniform per-
+    ///   format chain (each observed format contributing the same
+    ///   nonzero count, dominant included).
+    /// - `file_format_spread() <= peak_file_format_count()` always —
+    ///   the trough is non-negative, so the subtraction is bounded
+    ///   above by the minuend. Equality holds iff the trough is zero —
+    ///   i.e. iff `file_format_histogram().is_empty()`. Lifted from the
+    ///   trait-uniform `spread() <= peak_count()` law on
+    ///   [`crate::AxisHistogram`]. Cross-sub-axis divergence from
+    ///   [`Self::layer_kind_spread`], where the equality-case coincides
+    ///   with `self.as_ref().is_empty()` (the layer-kind sub-axis
+    ///   zero-trough boundary).
+    /// - `file_format_spread() <= file_format_histogram().total()`
+    ///   always — composition of `file_format_spread() <=
+    ///   peak_file_format_count()` (this method) with
+    ///   `peak_file_format_count() <= file_format_histogram().total()`
+    ///   (documented on [`Self::peak_file_format_count`]). The histogram
+    ///   total equals the count of `File` entries with recognized
+    ///   extensions, at most
+    ///   `layer_kind_histogram().count(ConfigSourceKind::File)`.
+    /// - `file_format_spread() <= self.as_ref().len()` always —
+    ///   composition of the above with `file_format_histogram().total()
+    ///   <= self.as_ref().len()` (every recognized-extension file layer
+    ///   is a chain entry). The chain-length bound the layer-kind
+    ///   sub-axis carries at cell-count tightness; the file-format
+    ///   sub-axis carries it with the histogram-total slack.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the fused peak-and-trough scan). Both are `O(n)` in practice
+    /// since the file-format axis carries a fixed four-cell cardinality;
+    /// the returned `usize` reads one scalar. Halves the cost of the
+    /// previous inline `chain.peak_file_format_count() -
+    /// chain.trough_file_format_count()` idiom (which walked the counts
+    /// vector twice — once for the max, once for the min-over-support —
+    /// where [`crate::AxisHistogram::spread`] can fuse both into a
+    /// single walk with a running-max/min pair).
+    #[must_use]
+    fn file_format_spread(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().spread()
+    }
+
     /// Dense per-env-prefix-presence tally of the chain's
     /// [`ConfigSource::Env`] layers over the [`EnvMetadataTagKind`] axis
     /// — the typed histogram every attestation manifest, structured-log
@@ -15168,6 +15337,411 @@ mod tests {
             let slice = chain.as_slice();
             let via_seam = slice.layer_kind_spread();
             let hist = slice.layer_kind_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .map(|(_, c)| c)
+                .filter(|&c| c > 0)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(via_seam, peak - trough);
+        }
+    }
+
+    // ---- ConfigSourceChain::file_format_spread — scalar-dispersion peer
+    //      on the file-format sub-axis of the chain altitude, fusing
+    //      peak_file_format_count and trough_file_format_count into one
+    //      dispersion scalar and lifting the "spread across altitudes"
+    //      projection sideways to the second chain-altitude sub-axis ----
+
+    #[test]
+    fn file_format_spread_matches_file_format_histogram_spread_pointwise() {
+        // The scalar-dispersion pin: `file_format_spread` routes through
+        // `file_format_histogram().spread()`, so the two seams must stay
+        // pointwise equivalent under every fixture. Direct sister of
+        // `layer_kind_spread_matches_layer_kind_histogram_spread_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tier_spread_matches_tier_histogram_spread_pointwise` on the
+        // tier altitude, and
+        // `kind_spread_matches_kind_histogram_spread_pointwise` on the
+        // diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let via_histogram = chain.as_slice().file_format_histogram().spread();
+            assert_eq!(chain.as_slice().file_format_spread(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn file_format_spread_equals_peak_minus_trough_pointwise() {
+        // The fused-pair pin: `file_format_spread == peak_file_format_count
+        // - trough_file_format_count` on every fixture. The subtraction is
+        // underflow-safe because `peak_file_format_count() >=
+        // trough_file_format_count()` holds structurally on every chain
+        // (lifted from the trait-uniform `peak_count >= trough_count` law
+        // on AxisHistogram); this pin asserts the monotonicity invariant
+        // explicitly at every fixture so any future refactor that swaps
+        // the operands fails visibly. Peer of
+        // `layer_kind_spread_equals_peak_minus_trough_pointwise` on the
+        // layer-kind sub-axis of the same chain altitude,
+        // `tier_spread_equals_peak_minus_trough_pointwise` on the tier
+        // altitude, and `kind_spread_equals_peak_minus_trough_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let peak = slice.peak_file_format_count();
+            let trough = slice.trough_file_format_count();
+            assert!(
+                peak >= trough,
+                "peak={peak} must be >= trough={trough} on every chain",
+            );
+            assert_eq!(slice.file_format_spread(), peak - trough);
+        }
+    }
+
+    #[test]
+    fn file_format_spread_sample_chain_is_zero() {
+        // Direct pin against `sample_chain()`: two `.yaml` file layers +
+        // one Env layer. Yaml is the sole observed format (present ==
+        // {Yaml}), so peak == trough == 2 and the spread is 0 — the
+        // singleton-support balanced-boundary through the seam. Reads
+        // the paired `(peak_file_format_count, trough_file_format_count,
+        // file_format_spread)` dispersion triple as `(2, 2, 0)`. Cross-
+        // sub-axis divergence pin against
+        // `layer_kind_spread_sample_chain_is_one`: on the same
+        // `sample_chain()` fixture, the layer-kind sub-axis reads spread
+        // 1 (File dominant, Env recessive) while the file-format sub-
+        // axis reads spread 0 (only Yaml observed).
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_file_format_count(), 2);
+        assert_eq!(slice.trough_file_format_count(), 2);
+        assert_eq!(slice.file_format_spread(), 0);
+    }
+
+    #[test]
+    fn file_format_spread_toml_majority_is_two() {
+        // Direct pin against a toml-majority chain: three `.toml` file
+        // layers + one `.yaml` + one Env + one Defaults. Toml dominant
+        // at 3, Yaml recessive at 1 — the spread is 2. Reads the paired
+        // `(peak_file_format_count, trough_file_format_count,
+        // file_format_spread)` dispersion triple as `(3, 1, 2)`. Cross-
+        // verified against `hist.spread() == 2` at the same observation
+        // site — the fused-pair spread projection reads through the
+        // seam.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_file_format_count(), 3);
+        assert_eq!(slice.trough_file_format_count(), 1);
+        assert_eq!(slice.file_format_spread(), 2);
+        assert_eq!(slice.file_format_histogram().spread(), 2);
+    }
+
+    #[test]
+    fn file_format_spread_empty_chain_is_zero() {
+        // An empty chain has no file layers and therefore zero spread —
+        // reads `0` per the AxisHistogram::spread empty convention one
+        // altitude down; the `(peak_file_format_count,
+        // trough_file_format_count, file_format_spread)` triple reads
+        // `(0, 0, 0)` uniformly on empty. Peer of
+        // `layer_kind_spread_empty_chain_is_zero` on the layer-kind
+        // sub-axis, `tier_spread_empty_map_is_zero` on the tier
+        // altitude, and `kind_spread_empty_diff_is_zero` on the diff
+        // altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.peak_file_format_count(), 0);
+        assert_eq!(empty.trough_file_format_count(), 0);
+        assert_eq!(empty.file_format_spread(), 0);
+    }
+
+    #[test]
+    fn file_format_spread_no_recognized_files_is_zero() {
+        // The non-empty-chain / empty-histogram boundary the file-format
+        // sub-axis pins that the layer-kind sub-axis does *not*. A chain
+        // of only `Defaults` / `Env` / unrecognized-extension `File`
+        // layers is non-empty but has no `Some` file_format projection,
+        // so the histogram is empty and `file_format_spread` reads zero
+        // — the vacuous-uniformity boundary reads through the seam.
+        // Distinguishing pin against the layer-kind sub-axis
+        // `layer_kind_spread` idiom: on those same chains,
+        // `layer_kind_spread` reads a nonzero dispersion (Defaults / Env
+        // / File layers still contribute to the layer-kind histogram)
+        // while `file_format_spread` reads zero. Cross-sub-axis
+        // divergence at the empty-boundary.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            assert!(!chain.is_empty(), "fixture must be non-empty");
+            assert!(
+                chain.as_slice().file_format_histogram().is_empty(),
+                "fixture must have empty file-format histogram",
+            );
+            assert_eq!(chain.as_slice().file_format_spread(), 0);
+        }
+    }
+
+    #[test]
+    fn file_format_spread_singleton_support_is_zero() {
+        // Singleton-support pin: every recognized-extension file layer
+        // lands on the same format, so the dominant format is both peak
+        // and trough of the support, and the spread is zero — the
+        // balanced-file-formats boundary on the singleton-support side.
+        // Direct construction: three `.toml` file layers, present ==
+        // {Toml}. Peer of
+        // `layer_kind_spread_singleton_support_is_zero` on the layer-
+        // kind sub-axis and `tier_spread_singleton_support_is_zero` on
+        // the tier altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 1);
+        assert_eq!(slice.file_format_spread(), 0);
+    }
+
+    #[test]
+    fn file_format_spread_uniform_cover_is_zero() {
+        // Uniform-cover pin: every observed format contributes the same
+        // nonzero count (one file layer per format here — a full-cover
+        // chain with uniform count 1 per cell), so peak == trough == 1
+        // and the spread is zero — the balanced-file-formats boundary
+        // on the uniform-cover side. Peer of
+        // `layer_kind_spread_uniform_cover_is_zero` on the layer-kind
+        // sub-axis and `tier_spread_uniform_cover_is_zero` on the tier
+        // altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.file_format_histogram().is_full_cover());
+        assert_eq!(slice.peak_file_format_count(), 1);
+        assert_eq!(slice.trough_file_format_count(), 1);
+        assert_eq!(slice.file_format_spread(), 0);
+    }
+
+    #[test]
+    fn file_format_spread_is_zero_iff_peak_equals_trough() {
+        // Structural-skew boundary: `file_format_spread() == 0` iff
+        // `peak_file_format_count() == trough_file_format_count()` —
+        // the scalar-pair form of the balanced-file-formats predicate.
+        // On every fixture, the predicate agrees with the equality of
+        // the fused modal-count pair. Peer of
+        // `layer_kind_spread_is_zero_iff_peak_equals_trough` on the
+        // layer-kind sub-axis and
+        // `tier_spread_is_zero_iff_peak_equals_trough` on the tier
+        // altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let spread_zero = slice.file_format_spread() == 0;
+            let peak_eq_trough = slice.peak_file_format_count() == slice.trough_file_format_count();
+            assert_eq!(
+                spread_zero,
+                peak_eq_trough,
+                "file_format_spread() == 0 iff peak == trough \
+                 (spread={s}, peak={p}, trough={t})",
+                s = slice.file_format_spread(),
+                p = slice.peak_file_format_count(),
+                t = slice.trough_file_format_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_spread_agrees_with_modal_pair_equality_on_nonempty_histogram() {
+        // Cross-surface pin: on every chain with a non-empty file-
+        // format histogram, `file_format_spread() == 0` agrees with
+        // `dominant_file_format() == recessive_file_format()` — the
+        // modal-pair equality form of the balanced-file-formats
+        // predicate. Both branches reduce to `Some(first) ==
+        // Some(first)` on singleton-support and uniform-cover chains,
+        // and to `false` on skewed chains. Cross-sub-axis divergence
+        // from `layer_kind_spread_agrees_with_modal_pair_equality_on_nonempty_chain`:
+        // the layer-kind sub-axis quantifies over non-empty chains, but
+        // the file-format sub-axis must quantify over chains with a
+        // non-empty histogram — a non-empty chain with only Defaults /
+        // Env / unrecognized-extension File entries has both
+        // `dominant_file_format() == None == recessive_file_format()`
+        // (trivial-equal side) and `file_format_spread() == 0` (empty-
+        // histogram side), so the non-empty-chain quantifier would
+        // include the empty-histogram case as a trivial-equal
+        // agreement; the non-empty-histogram quantifier excludes it as
+        // a distinct boundary.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_format_histogram().is_empty() {
+                continue;
+            }
+            let spread_zero = slice.file_format_spread() == 0;
+            let dom_eq_rec = slice.dominant_file_format() == slice.recessive_file_format();
+            assert_eq!(
+                spread_zero, dom_eq_rec,
+                "on non-empty-histogram chain, file_format_spread() == 0 iff \
+                 dominant_file_format() == recessive_file_format()",
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_spread_bounded_above_by_peak_file_format_count() {
+        // Structural bound: `file_format_spread() <=
+        // peak_file_format_count()` on every fixture — the trough is
+        // non-negative, so the subtraction is bounded above by the
+        // minuend. Lifted from the trait-uniform `spread() <=
+        // peak_count()` law on AxisHistogram. Peer of
+        // `layer_kind_spread_bounded_above_by_peak_layer_kind_count`
+        // on the layer-kind sub-axis,
+        // `tier_spread_bounded_above_by_peak_tier_count` on the tier
+        // altitude, and `kind_spread_bounded_above_by_peak_kind_count`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.file_format_spread() <= slice.peak_file_format_count(),
+                "file_format_spread()={s} must be <= peak_file_format_count()={p}",
+                s = slice.file_format_spread(),
+                p = slice.peak_file_format_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_spread_equals_peak_iff_histogram_is_empty() {
+        // Equality-case pin of the `file_format_spread <=
+        // peak_file_format_count` bound: equality holds iff the trough
+        // is zero, which by `trough_file_format_count == 0 <=>
+        // file_format_histogram().is_empty()` (the file-format sub-
+        // axis's zero-trough boundary — the file-format histogram is
+        // empty exactly when no recognized-extension file layer
+        // contributes) holds iff the histogram is empty. Cross-sub-
+        // axis divergence pin against
+        // `layer_kind_spread_equals_peak_iff_chain_is_empty`: on the
+        // layer-kind sub-axis, the equality-case coincides with
+        // `self.as_ref().is_empty()`; on the file-format sub-axis, it
+        // coincides with `file_format_histogram().is_empty()` — the
+        // stricter boundary. Peer of
+        // `tier_spread_equals_peak_iff_map_is_empty` on the tier
+        // altitude and `kind_spread_equals_peak_iff_diff_is_empty` on
+        // the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let equal = slice.file_format_spread() == slice.peak_file_format_count();
+            assert_eq!(
+                equal,
+                slice.file_format_histogram().is_empty(),
+                "file_format_spread == peak_file_format_count iff \
+                 file_format_histogram is empty (spread={s}, peak={p}, \
+                 hist_empty={e})",
+                s = slice.file_format_spread(),
+                p = slice.peak_file_format_count(),
+                e = slice.file_format_histogram().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_spread_bounded_above_by_histogram_total() {
+        // Composition bound: `file_format_spread() <=
+        // file_format_histogram().total()` on every fixture — chaining
+        // `file_format_spread <= peak_file_format_count` (previous pin)
+        // with `peak_file_format_count <= file_format_histogram().total()`
+        // (documented on `peak_file_format_count`). Cross-sub-axis
+        // divergence from `layer_kind_spread_bounded_above_by_len`:
+        // the layer-kind sub-axis's histogram total equals the chain
+        // length (every entry projects to one cell), so the layer-kind
+        // sub-axis composes to `self.as_ref().len()`; the file-format
+        // sub-axis's histogram total is at most the count of `File`
+        // layers with recognized extensions (bounded by the chain
+        // length but not equal to it), so the file-format sub-axis
+        // composes to `file_format_histogram().total()` — the tighter
+        // bound.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let hist_total = slice.file_format_histogram().total();
+            assert!(
+                slice.file_format_spread() <= hist_total,
+                "file_format_spread()={s} must be <= \
+                 file_format_histogram().total()={t}",
+                s = slice.file_format_spread(),
+                t = hist_total,
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_spread_singleton_support_multi_layer_is_zero() {
+        // Direct pin at a 5-layer singleton-support Toml-only chain —
+        // present == {Toml}, peak == trough == 5, spread == 0. The
+        // scalar peer of the singleton-support cell degenerate
+        // `dominant_file_format() == recessive_file_format()` — the
+        // dispersion triple reads `(5, 5, 0)`, distinct from the
+        // 3-layer fixture in
+        // `file_format_spread_singleton_support_is_zero` so any misread
+        // that reintroduces the `peak - trough` inline idiom as `peak`
+        // alone silently underflows on a fixture at a different peak.
+        // Peer of `layer_kind_spread_singleton_support_multi_layer_is_zero`
+        // on the layer-kind sub-axis and
+        // `tier_spread_singleton_support_multi_leaf_is_zero` on the
+        // tier altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.toml")),
+            ConfigSource::File(PathBuf::from("/e.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 1);
+        assert_eq!(slice.peak_file_format_count(), 5);
+        assert_eq!(slice.trough_file_format_count(), 5);
+        assert_eq!(slice.file_format_spread(), 0);
+    }
+
+    #[test]
+    fn file_format_spread_agrees_with_open_coded_max_minus_min_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0) - hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0)` walk this lift replaces
+        // — both the named seam and the hand-rolled max-minus-min-over-
+        // support must pointwise agree over every fixture. The
+        // `filter(|(_, c)| c > 0)` step on the min side is the load-
+        // bearing seam: the naive `.min()` over the full axis would
+        // silently pick zero-count absent cells on any non-full-cover
+        // chain, shadowing the trough-of-support the seam surfaces —
+        // and once the trough shadows to zero, the spread coincides
+        // with the peak alone, silently overreporting the dispersion.
+        // Peer of `layer_kind_spread_agrees_with_open_coded_max_minus_min_walk`
+        // on the layer-kind sub-axis,
+        // `tier_spread_agrees_with_open_coded_max_minus_min_walk` on
+        // the tier altitude, and
+        // `kind_spread_agrees_with_open_coded_max_minus_min_walk` on
+        // the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_format_spread();
+            let hist = slice.file_format_histogram();
             let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
             let trough = hist
                 .iter()
