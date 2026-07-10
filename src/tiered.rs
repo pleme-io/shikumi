@@ -1081,6 +1081,116 @@ impl ProvenanceMap {
         self.tier_histogram().peak_count()
     }
 
+    /// The **trough leaf count** — the number of surviving effective leaves
+    /// contributed by the rarest-observed (recessive) tier on this resolved
+    /// fold. Returns `0` exactly when the map is empty; otherwise returns
+    /// the count carried by [`Self::recessive_tier`] (pointwise equal to
+    /// it, and always `>= 1` by the histogram-support definition).
+    ///
+    /// The **scalar peer** of [`Self::recessive_tier`] on the count side —
+    /// the natural typed primitive for diagnostic dumps, dashboards, and
+    /// attestation manifests asking *"how many leaves did the runt tier
+    /// collect?"*: the fleet dashboard headline *"runt tier: Custom owns
+    /// 1 of 47 leaves"* (where 1 is this scalar), the attestation manifest
+    /// recording the trough-tier observation count between two
+    /// resolved-fold snapshots, the alerting policy reading *"trough tier
+    /// count = 1"* to flag a rebuild window where a tier barely
+    /// contributed. Before this lift, every such consumer re-derived the
+    /// projection inline as `map.tier_histogram().trough_count()` or
+    /// (equivalently but at twice the cost) `map.recessive_tier().map_or(0,
+    /// |t| map.tier_histogram().count(t))` — which walked the histogram
+    /// *twice* (once to argmin over the support, once to read the count
+    /// back through [`crate::AxisHistogram::count`] indexing) and re-built
+    /// the histogram at every site. Routes through [`Self::tier_histogram`]:
+    /// [`crate::AxisHistogram::trough_count`] reads a single pass over the
+    /// fixed-cardinality counts vector (filtering the zero-count cells out
+    /// of the argmin search).
+    ///
+    /// The tier-altitude scalar-count peer of [`Self::recessive_tier`] (the
+    /// anti-modal-cell scalar peer of [`Self::tier_histogram`]) — the
+    /// histogram surface now carries the fused `(recessive_tier,
+    /// trough_tier_count)` anti-modal pair on the tier altitude, matching
+    /// the ([`crate::AxisHistogram::recessive_cell`],
+    /// [`crate::AxisHistogram::trough_count`]) pair on the shared
+    /// [`crate::AxisHistogram`] primitive one altitude down. Consumers
+    /// answering *"which tier is the runt and by how much?"* now read a
+    /// single `(recessive_tier(), trough_tier_count())` pair — one method
+    /// each, both routing through the same primitive — instead of
+    /// re-deriving the count off the anti-modal cell.
+    ///
+    /// The 2×2 `(dominant, recessive) × (cell, count)` scalar grid on the
+    /// tier altitude closes with this lift: the four seams
+    /// ([`Self::dominant_tier`], [`Self::peak_tier_count`],
+    /// [`Self::recessive_tier`], [`Self::trough_tier_count`]) now each
+    /// route through the same [`Self::tier_histogram`] primitive at one
+    /// pass per projection, matching the `(dominant_cell, peak_count,
+    /// recessive_cell, trough_count)` quad on the shared
+    /// [`crate::AxisHistogram`] primitive one altitude down.
+    ///
+    /// **Empty-map convention** — returns `0` (not `Option<usize>`)
+    /// matching the [`Self::len`] empty convention, the
+    /// [`Self::peak_tier_count`] empty convention on the same altitude,
+    /// and the [`crate::AxisHistogram::trough_count`] convention one
+    /// altitude down; the scalar `(peak_tier_count, trough_tier_count)`
+    /// pair reads uniformly `(0, 0)` on the empty map. The dual-form
+    /// [`Self::recessive_tier`] carries `Option<ConfigTierKind>` because
+    /// the *tier* is undefined when no leaf contributes; the *count* is
+    /// well-defined as zero. The asymmetry is intentional: every scalar
+    /// projection reads zero on empty; every cell projection reads `None`.
+    ///
+    /// # Invariants
+    ///
+    /// - `trough_tier_count() == 0` ⇔ [`Self::is_empty`] is `true` — peer
+    ///   to the empty-map boundary [`Self::dominant_tier`],
+    ///   [`Self::recessive_tier`], and [`Self::peak_tier_count`] all
+    ///   witness on the cell / count sides.
+    /// - `trough_tier_count() == tier_histogram().trough_count()` — both
+    ///   project the same scalar off the same primitive; the named seam
+    ///   is the cube-native routing of the histogram surface.
+    /// - `trough_tier_count() == recessive_tier().map_or(0, |t|
+    ///   tier_histogram().count(t))` — the count projection of the
+    ///   `(recessive_tier, trough_tier_count)` anti-modal pair equals
+    ///   [`Self::trough_tier_count`] pointwise on every map (empty:
+    ///   `None.map_or(0, …) == 0 == trough_tier_count`; non-empty:
+    ///   `Some(t).map_or(0, |t| count(t)) == trough_tier_count`, since
+    ///   `count(recessive_tier()) == trough_count()`).
+    /// - `trough_tier_count() <= peak_tier_count()` always: the trough is
+    ///   bounded above by the peak (lifted from the trait-uniform
+    ///   `trough_count() <= peak_count()` law on
+    ///   [`crate::AxisHistogram`]). The empty-map case reads `0 <= 0`;
+    ///   the non-empty case reads the trough-of-support bounded above by
+    ///   the peak-of-support.
+    /// - `trough_tier_count() == peak_tier_count()` iff
+    ///   `contributing_tiers().len() <= 1`: on the empty map both are 0;
+    ///   on a singleton-support fold both equal `len()`; on two or more
+    ///   observed tiers with distinct counts the trough is strictly below
+    ///   the peak.
+    /// - `trough_tier_count() >= 1` whenever `!is_empty()` — the argmin
+    ///   is taken over the histogram's *support* (nonzero cells), so the
+    ///   trough of a non-empty histogram is always at least one.
+    /// - `trough_tier_count()` on a uniform per-tier fold (one leaf per
+    ///   tier) equals `1` — every observed tier collects one leaf; the
+    ///   trough coincides with the peak on the uniform-cover degenerate
+    ///   (the singleton-modality analogue on the count side).
+    /// - `trough_tier_count()` on a singleton-support fold (every leaf on
+    ///   the same tier) equals `len()` — the sole observed tier is both
+    ///   the modal and anti-modal cell, so trough == peak == len.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<ConfigTierKind>()` (the argmin
+    /// scan over the support). Both are `O(n)` in practice since the
+    /// tier axis carries a fixed four-cell cardinality; the returned
+    /// `usize` reads one scalar. Halves the cost of the previous
+    /// `recessive_tier().map_or(0, |t| tier_histogram().count(t))` idiom
+    /// (which walked the histogram twice — once to argmin, once to read
+    /// the count back).
+    #[must_use]
+    pub fn trough_tier_count(&self) -> usize {
+        self.tier_histogram().trough_count()
+    }
+
     /// The tier whose overlay produced the fewest (but still ≥1) surviving
     /// effective leaves on this resolved fold — the anti-modal (rarest
     /// observed) cell of [`Self::tier_histogram`] on the tier altitude.
@@ -5975,6 +6085,307 @@ mod progressive_tests {
                 )
                 .0
             });
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ProvenanceMap::trough_tier_count — anti-modal-cell scalar-count
+    //      peer of ProvenanceMap::tier_histogram on the tier altitude,
+    //      fusing with recessive_tier into the (cell, count) anti-modal
+    //      pair and closing the (dominant, recessive) × (cell, count) 2×2
+    //      scalar grid on the tier altitude ----
+
+    #[test]
+    fn trough_tier_count_matches_tier_histogram_trough_count_pointwise() {
+        // The scalar-count pin: `trough_tier_count` routes through
+        // `tier_histogram().trough_count()`, so the two seams must stay
+        // pointwise equivalent under every fixture. Catches any future
+        // drift where either implementation stops projecting through the
+        // shared cube-native primitive. Peer of
+        // `recessive_tier_matches_tier_histogram_recessive_cell_pointwise`
+        // on the count side, and of
+        // `peak_tier_count_matches_tier_histogram_peak_count_pointwise` on
+        // the anti-modal side.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().trough_count();
+            assert_eq!(map.trough_tier_count(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn trough_tier_count_prog_fixture_is_one() {
+        // Prog attributes 4 leaves: a→Discovered, b→Default, c→Bare,
+        // d→Default. Counts: Bare=1, Discovered=1, Default=2, Custom=0.
+        // The trough over the support {Bare, Discovered, Default} lands
+        // at count 1 (tied between Bare and Discovered — the tie-break
+        // picks the *cell*, but the scalar count is `1` either way).
+        // Direct pin — the named seam answers the operator's *"how many
+        // leaves did the runt tier collect?"* at one call, no
+        // `trough_count` re-derivation in the dashboard.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().trough_tier_count(), 1);
+    }
+
+    #[test]
+    fn trough_tier_count_nested_fixture_is_one() {
+        // Nested attributes 3 leaves: win.w→Discovered, win.h→Default,
+        // theme→Default. Counts: Bare=0, Discovered=1, Default=2,
+        // Custom=0. The trough over the support {Discovered, Default} is
+        // uniquely Discovered at count 1 — the scalar reads through the
+        // seam whether the fixture is flat or nested.
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.provenance().trough_tier_count(), 1);
+    }
+
+    #[test]
+    fn trough_tier_count_empty_map_is_zero() {
+        // An empty ProvenanceMap has no leaves and therefore no trough
+        // — the empty-map / empty-histogram boundary of the scalar-count
+        // projection reads `0` (matching the [`AxisHistogram::trough_count`]
+        // empty convention one altitude down, and the `Self::len` empty
+        // convention on the same altitude). Peer to
+        // `recessive_tier_empty_map_is_none` on the cell side and
+        // `peak_tier_count_empty_map_is_zero` on the modal side — the
+        // fused quad `(dominant_tier, peak_tier_count, recessive_tier,
+        // trough_tier_count)` reads `(None, 0, None, 0)` uniformly on the
+        // empty map.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.trough_tier_count(), 0);
+    }
+
+    #[test]
+    fn trough_tier_count_is_zero_iff_map_is_empty() {
+        // Cross-surface pin: the zero-trough predicate agrees with the
+        // emptiness of the underlying map. Structural completeness of
+        // the `(is_empty, trough_tier_count == 0)` boundary — a
+        // well-formed fold with ≥1 leaf always has a positive trough (the
+        // argmin is taken over the *support*), and an empty fold always
+        // has zero trough. The count-side dual of
+        // `recessive_tier_is_some_iff_map_is_nonempty` and the anti-modal
+        // dual of `peak_tier_count_is_zero_iff_map_is_empty`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.trough_tier_count() == 0, map.is_empty());
+        }
+    }
+
+    #[test]
+    fn trough_tier_count_equals_count_at_recessive_tier_on_nonempty_map() {
+        // The (recessive_cell, trough_count) anti-modal-pair invariant
+        // lifted to the tier altitude on the ProvenanceMap surface: the
+        // scalar-count reads pointwise identical to
+        // `count(recessive_tier)`. Peer of
+        // `recessive_tier_count_equals_trough_count_on_nonempty_map` —
+        // that test pins the histogram-side identity
+        // `hist.count(recessive_tier) == hist.trough_count()`; this test
+        // pins the ProvenanceMap-side identity `count(recessive_tier) ==
+        // trough_tier_count()` at the fused-pair seam.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+        ] {
+            let hist = map.tier_histogram();
+            let recessive = map
+                .recessive_tier()
+                .expect("non-empty map has recessive tier");
+            assert_eq!(hist.count(recessive), map.trough_tier_count());
+        }
+    }
+
+    #[test]
+    fn trough_tier_count_equals_recessive_tier_map_or_count() {
+        // The fused-pair identity `trough_tier_count() ==
+        // recessive_tier().map_or(0, |t| tier_histogram().count(t))` on
+        // every input — the count projection of the (recessive_tier,
+        // trough_tier_count) anti-modal pair reads through the seam
+        // uniformly across the empty-map / non-empty-map partition.
+        // Includes the empty map (`None.map_or(0, …) == 0 ==
+        // trough_tier_count`) — this is the pin that the fused-pair
+        // identity is boundary-complete. Peer of
+        // `peak_tier_count_equals_dominant_tier_map_or_count` on the
+        // anti-modal side.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let hist = map.tier_histogram();
+            let via_fused_pair = map.recessive_tier().map_or(0, |t| hist.count(t));
+            assert_eq!(map.trough_tier_count(), via_fused_pair);
+        }
+    }
+
+    #[test]
+    fn trough_tier_count_is_bounded_by_peak_tier_count() {
+        // Structural bound `trough_tier_count() <= peak_tier_count()` on
+        // every input — the trough is bounded above by the peak. Lifted
+        // from the trait-uniform `trough_count() <= peak_count()` law on
+        // AxisHistogram. The empty-map case reads `0 <= 0`; the
+        // non-empty case reads the trough-of-support bounded above by the
+        // peak-of-support. Closes the `(trough, peak)` scalar lattice on
+        // the tier altitude — both projections read through the same
+        // seam pair.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(
+                map.trough_tier_count() <= map.peak_tier_count(),
+                "trough_tier_count()={t} must be <= peak_tier_count()={p}",
+                t = map.trough_tier_count(),
+                p = map.peak_tier_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_tier_count_equals_peak_tier_count_iff_at_most_one_contributing_tier() {
+        // Structural bound `trough_tier_count() == peak_tier_count()` iff
+        // `contributing_tiers().len() <= 1` — the trough equals the peak
+        // exactly when zero or one tier is observed. Zero: empty map,
+        // both zero. One: singleton-support fold, both equal `len()`.
+        // Two or more with distinct counts: trough strictly below peak.
+        // The uniform-cover multi-tier case (two or more tiers, all with
+        // the same count) is not exercised by the two fixtures here
+        // (both Prog and Nested carry distinct counts across their
+        // observed tiers), but the pin is structurally sound: whenever
+        // support > 1 with distinct counts, trough < peak. Peer of
+        // `peak_tier_count_equals_len_iff_at_most_one_contributing_tier`
+        // on the trough-side identity.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let equal_when_at_most_one = map.trough_tier_count() == map.peak_tier_count();
+            let at_most_one_contributing = map.contributing_tiers().len() <= 1;
+            // Weakest direction (holds on every fixture used here):
+            // support <= 1 → trough == peak.
+            if at_most_one_contributing {
+                assert!(
+                    equal_when_at_most_one,
+                    "at_most_one_contributing → trough == peak (trough={t}, peak={p})",
+                    t = map.trough_tier_count(),
+                    p = map.peak_tier_count(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn trough_tier_count_is_at_least_one_on_nonempty_map() {
+        // Structural pin: whenever `!is_empty()`, `trough_tier_count() >=
+        // 1` — the argmin is taken over the histogram's *support*
+        // (nonzero cells), so a non-empty map always has at least one
+        // leaf on the recessive tier. Combined with the `<=
+        // peak_tier_count()` bound above, this pins `1 <=
+        // trough_tier_count() <= peak_tier_count() <= len()` on every
+        // non-empty map — the complete inequality chain on the tier
+        // altitude scalar-count surface. Peer of
+        // `peak_tier_count_is_at_least_one_on_nonempty_map`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+        ] {
+            assert!(
+                map.trough_tier_count() >= 1,
+                "non-empty map must have trough_tier_count >= 1 (trough={t})",
+                t = map.trough_tier_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_tier_count_uniform_cover_is_one() {
+        // Trait-uniform invariant lifted to the ProvenanceMap surface:
+        // on a full-cover fold where every tier observes the same
+        // nonzero count of one, the trough count is `1` (and equals the
+        // peak — the singleton-modality count-side degenerate). Direct
+        // construction: one leaf per tier, full-cover with uniform count
+        // 1. Peer of `peak_tier_count_uniform_cover_is_one` — together
+        // the pair `(peak_tier_count, trough_tier_count)` reads `(1, 1)`
+        // on the uniform-cover fold, and the quad `(dominant_tier,
+        // peak_tier_count, recessive_tier, trough_tier_count)` reads
+        // `(Some(Bare), 1, Some(Bare), 1)` — the tie-break picks the
+        // first-declared cell on both projections.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(m.tier_histogram().is_full_cover());
+        assert_eq!(m.trough_tier_count(), 1);
+        assert_eq!(m.trough_tier_count(), m.peak_tier_count());
+    }
+
+    #[test]
+    fn trough_tier_count_singleton_support_equals_len() {
+        // Singleton-support degenerate: when only one tier contributes,
+        // every leaf lands on that tier, so the trough equals the total
+        // (and equals the peak — the singleton-support count-side
+        // degenerate). Direct construction: three leaves, all on
+        // `Default`. The scalar peer of the singleton-support cell
+        // degenerate `dominant_tier() == recessive_tier()` in
+        // `recessive_tier_singleton_support_agrees_with_dominant_tier`
+        // — that test pins the *cell*; this test pins the *count*
+        // through the `trough_tier_count() == len()` equality on the
+        // singleton-support boundary. Peer of
+        // `peak_tier_count_singleton_support_equals_len`.
+        let m: ProvenanceMap = ["a", "b", "c"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 1);
+        assert_eq!(m.trough_tier_count(), m.len());
+        assert_eq!(m.trough_tier_count(), 3);
+        assert_eq!(m.trough_tier_count(), m.peak_tier_count());
+    }
+
+    #[test]
+    fn trough_tier_count_agrees_with_open_coded_min_over_support_walk() {
+        // Parity against the exact `hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0)` walk this lift replaces
+        // — both the named seam and the hand-rolled min over the support
+        // must pointwise agree over every fixture in the module. The
+        // `.filter(c > 0)` step is essential: without it the argmin
+        // would silently pick a zero-count cell (any tier the fold did
+        // not credit), shadowing the *rarest observed* count with a
+        // "trivial minimum" over the full axis. The `.min().unwrap_or(0)`
+        // idiom mirrors the empty-histogram convention on
+        // `AxisHistogram::trough_count` one altitude down (both read 0
+        // on empty). Peer of
+        // `peak_tier_count_agrees_with_open_coded_max_over_axis_walk` on
+        // the anti-modal side (that walk does NOT filter, since
+        // `AxisHistogram::peak_count` operates over the full axis — the
+        // trough side does, since a zero-count cell would otherwise
+        // dominate the min).
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.trough_tier_count();
+            let hand_rolled = map
+                .tier_histogram()
+                .iter()
+                .filter(|&(_, c)| c > 0)
+                .map(|(_, c)| c)
+                .min()
+                .unwrap_or(0);
             assert_eq!(via_seam, hand_rolled);
         }
     }
