@@ -988,6 +988,99 @@ impl ProvenanceMap {
         self.tier_histogram().dominant_cell()
     }
 
+    /// The **peak leaf count** — the number of surviving effective leaves
+    /// contributed by the dominant tier on this resolved fold. Returns `0`
+    /// exactly when the map is empty; otherwise returns the count carried
+    /// by [`Self::dominant_tier`] (pointwise equal to it).
+    ///
+    /// The **scalar peer** of [`Self::dominant_tier`] on the count side —
+    /// the natural typed primitive for diagnostic dumps, dashboards, and
+    /// attestation manifests asking *"how many leaves did the dominant
+    /// tier collect?"*: the fleet dashboard headline *"Default owns 47 of
+    /// 53 leaves"* (where 47 is this scalar), the attestation manifest
+    /// recording the peak-tier observation count between two resolved-fold
+    /// snapshots, the alerting policy reading *"peak tier count = 12"* to
+    /// gate a rebuild window on the modal tier's density. Before this
+    /// lift, every such consumer re-derived the projection inline as
+    /// `map.tier_histogram().peak_count()` or (equivalently but at twice
+    /// the cost) `map.dominant_tier().map_or(0, |t| map.tier_histogram()
+    /// .count(t))` — which walked the histogram *twice* (once to argmax,
+    /// once to read the count back through
+    /// [`crate::AxisHistogram::count`] indexing) and re-built the
+    /// histogram at every site. Routes through
+    /// [`Self::tier_histogram`]: [`crate::AxisHistogram::peak_count`]
+    /// reads a single pass over the fixed-cardinality counts vector.
+    ///
+    /// The tier-altitude scalar-count peer of [`Self::dominant_tier`] (the
+    /// modal-cell scalar peer of [`Self::tier_histogram`]) — the histogram
+    /// surface now carries the fused `(dominant_tier, peak_tier_count)`
+    /// modal pair on the tier altitude, matching the
+    /// ([`crate::AxisHistogram::dominant_cell`],
+    /// [`crate::AxisHistogram::peak_count`]) pair on the shared
+    /// [`crate::AxisHistogram`] primitive one altitude down. Consumers
+    /// answering *"which tier dominated and by how much?"* now read a
+    /// single `(dominant_tier(), peak_tier_count())` pair — one method
+    /// each, both routing through the same primitive — instead of
+    /// re-deriving the count off the modal cell.
+    ///
+    /// **Empty-map convention** — returns `0` (not `Option<usize>`)
+    /// matching the [`Self::len`] empty convention and the
+    /// [`crate::AxisHistogram::peak_count`] convention one altitude down;
+    /// the scalar `(len, peak_tier_count)` pair reads uniformly `(0, 0)`
+    /// on the empty map. The dual-form [`Self::dominant_tier`] carries
+    /// `Option<ConfigTierKind>` because the *tier* is undefined when no
+    /// leaf contributes; the *count* is well-defined as zero. The
+    /// asymmetry is intentional: every scalar projection reads zero on
+    /// empty; every cell projection reads `None`.
+    ///
+    /// # Invariants
+    ///
+    /// - `peak_tier_count() == 0` ⇔ [`Self::is_empty`] is `true` — peer
+    ///   to the empty-map boundary [`Self::dominant_tier`] and
+    ///   [`Self::recessive_tier`] both witness on the cell side.
+    /// - `peak_tier_count() == tier_histogram().peak_count()` — both
+    ///   project the same scalar off the same primitive; the named seam
+    ///   is the cube-native routing of the histogram surface.
+    /// - `peak_tier_count() == dominant_tier().map_or(0, |t|
+    ///   tier_histogram().count(t))` — the count projection of the
+    ///   `(dominant_tier, peak_tier_count)` modal pair equals
+    ///   [`Self::peak_tier_count`] pointwise on every map (empty:
+    ///   `None.map_or(0, …) == 0 == peak_tier_count`; non-empty:
+    ///   `Some(t).map_or(0, |t| count(t)) == peak_tier_count`, since
+    ///   `count(dominant_tier()) == peak_count()`).
+    /// - `peak_tier_count() <= len()` always: the peak is bounded above
+    ///   by the total leaf count (every tier contributes at most every
+    ///   leaf, and the others contribute zero). Equality holds when
+    ///   `contributing_tiers().len() <= 1`.
+    /// - `peak_tier_count() == len()` iff `contributing_tiers().len()
+    ///   <= 1`: a single observed tier carries every leaf, so the peak
+    ///   equals the total. Zero observed tiers (empty) reads 0 == 0;
+    ///   one observed tier reads N == N; two or more reads peak < total
+    ///   strictly.
+    /// - `peak_tier_count() >= 1` whenever `!is_empty()` — a non-empty
+    ///   map always has at least one leaf on the dominant tier.
+    /// - `peak_tier_count()` on a uniform per-tier fold (one leaf per
+    ///   tier) equals `1` — every observed tier collects one leaf,
+    ///   dominant included.
+    /// - `peak_tier_count()` on a singleton-support fold (every leaf on
+    ///   the same tier) equals `len()` — the dominant tier collects
+    ///   every leaf. Singleton-support pin.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<ConfigTierKind>()` (the argmax
+    /// scan). Both are `O(n)` in practice since the tier axis carries a
+    /// fixed four-cell cardinality; the returned `usize` reads one
+    /// scalar. Halves the cost of the previous
+    /// `dominant_tier().map_or(0, |t| tier_histogram().count(t))` idiom
+    /// (which walked the histogram twice — once to argmax, once to read
+    /// the count back).
+    #[must_use]
+    pub fn peak_tier_count(&self) -> usize {
+        self.tier_histogram().peak_count()
+    }
+
     /// The tier whose overlay produced the fewest (but still ≥1) surviving
     /// effective leaves on this resolved fold — the anti-modal (rarest
     /// observed) cell of [`Self::tier_histogram`] on the tier altitude.
@@ -5356,6 +5449,257 @@ mod progressive_tests {
             .collect();
         assert!(m.tier_histogram().is_full_cover());
         assert_eq!(m.dominant_tier(), Some(ConfigTierKind::Bare));
+    }
+
+    // ---- ProvenanceMap::peak_tier_count — modal-cell scalar-count peer
+    //      of ProvenanceMap::tier_histogram on the tier altitude, fusing
+    //      with dominant_tier into the (cell, count) modal pair ----
+
+    #[test]
+    fn peak_tier_count_matches_tier_histogram_peak_count_pointwise() {
+        // The scalar-count pin: `peak_tier_count` routes through
+        // `tier_histogram().peak_count()`, so the two seams must stay
+        // pointwise equivalent under every fixture. Catches any future
+        // drift where either implementation stops projecting through the
+        // shared cube-native primitive. Peer of
+        // `dominant_tier_matches_tier_histogram_dominant_cell_pointwise`
+        // on the count side.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().peak_count();
+            assert_eq!(map.peak_tier_count(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn peak_tier_count_prog_fixture_is_two() {
+        // Prog attributes 4 leaves: a→Discovered, b→Default, c→Bare,
+        // d→Default. Counts: Bare=1, Discovered=1, Default=2, Custom=0.
+        // The peak lands on Default at count 2. Direct pin — the named
+        // seam answers the operator's *"how many leaves did the dominant
+        // tier collect?"* at one call, no `peak_count` re-derivation in
+        // the dashboard.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().peak_tier_count(), 2);
+    }
+
+    #[test]
+    fn peak_tier_count_nested_fixture_is_two() {
+        // Nested attributes 3 leaves: win.w→Discovered, win.h→Default,
+        // theme→Default. Counts: Bare=0, Discovered=1, Default=2,
+        // Custom=0. The peak lands on Default at count 2 — the scalar
+        // reads through the seam whether the fixture is flat or nested.
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.provenance().peak_tier_count(), 2);
+    }
+
+    #[test]
+    fn peak_tier_count_empty_map_is_zero() {
+        // An empty ProvenanceMap has no leaves and therefore no peak —
+        // the empty-map / empty-histogram boundary of the scalar-count
+        // projection reads `0` (matching the [`AxisHistogram::peak_count`]
+        // empty convention one altitude down, and the `Self::len` empty
+        // convention on the same altitude). Peer to
+        // `dominant_tier_empty_map_is_none` on the cell side — the fused
+        // pair `(dominant_tier(), peak_tier_count())` reads `(None, 0)`
+        // uniformly on the empty map.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.peak_tier_count(), 0);
+    }
+
+    #[test]
+    fn peak_tier_count_is_zero_iff_map_is_empty() {
+        // Cross-surface pin: the zero-peak predicate agrees with the
+        // emptiness of the underlying map. Structural completeness of
+        // the `(is_empty, peak_tier_count == 0)` boundary — a well-formed
+        // fold with ≥1 leaf always has a positive peak, and an empty
+        // fold always has zero peak. The count-side dual of
+        // `dominant_tier_is_some_iff_map_is_nonempty`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.peak_tier_count() == 0, map.is_empty());
+        }
+    }
+
+    #[test]
+    fn peak_tier_count_equals_count_at_dominant_tier_on_nonempty_map() {
+        // The (dominant_cell, peak_count) modal-pair invariant lifted to
+        // the tier altitude on the ProvenanceMap surface: the scalar-
+        // count reads pointwise identical to `count(dominant_tier)`.
+        // Peer of `dominant_tier_count_equals_peak_count_on_nonempty_map`
+        // — that test pins the histogram-side identity
+        // `hist.count(dominant_tier) == hist.peak_count()`; this test
+        // pins the ProvenanceMap-side identity `count(dominant_tier) ==
+        // peak_tier_count()` at the fused-pair seam.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+        ] {
+            let hist = map.tier_histogram();
+            let dominant = map
+                .dominant_tier()
+                .expect("non-empty map has dominant tier");
+            assert_eq!(hist.count(dominant), map.peak_tier_count());
+        }
+    }
+
+    #[test]
+    fn peak_tier_count_equals_dominant_tier_map_or_count() {
+        // The fused-pair identity `peak_tier_count() ==
+        // dominant_tier().map_or(0, |t| tier_histogram().count(t))` on
+        // every input — the count projection of the (dominant_tier,
+        // peak_tier_count) modal pair reads through the seam uniformly
+        // across the empty-map / non-empty-map partition. Includes the
+        // empty map (`None.map_or(0, …) == 0 == peak_tier_count`) —
+        // this is the pin that the fused-pair identity is boundary-
+        // complete.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let hist = map.tier_histogram();
+            let via_fused_pair = map.dominant_tier().map_or(0, |t| hist.count(t));
+            assert_eq!(map.peak_tier_count(), via_fused_pair);
+        }
+    }
+
+    #[test]
+    fn peak_tier_count_is_bounded_by_len() {
+        // Structural bound `peak_tier_count() <= len()` on every input —
+        // the peak is bounded above by the total leaf count (every tier
+        // contributes at most every leaf, the others contribute zero).
+        // Lifted from the trait-uniform `peak_count() <= total()` law on
+        // AxisHistogram.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(
+                map.peak_tier_count() <= map.len(),
+                "peak_tier_count()={p} must be <= len()={n}",
+                p = map.peak_tier_count(),
+                n = map.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_tier_count_equals_len_iff_at_most_one_contributing_tier() {
+        // Structural bound `peak_tier_count() == len()` iff
+        // `contributing_tiers().len() <= 1` — the peak equals the total
+        // exactly when zero or one tier is observed. Zero: empty map,
+        // both zero. One: singleton-support fold, every leaf on the same
+        // tier. Two or more: peak strictly below total. Lifted from the
+        // trait-uniform `peak_count() == total()` law on AxisHistogram.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.peak_tier_count() == map.len(),
+                map.contributing_tiers().len() <= 1,
+                "peak_tier_count == len iff contributing_tiers.len() <= 1 (peak={p}, len={n}, contribs={c})",
+                p = map.peak_tier_count(),
+                n = map.len(),
+                c = map.contributing_tiers().len(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_tier_count_is_at_least_one_on_nonempty_map() {
+        // Structural pin: whenever `!is_empty()`, `peak_tier_count() >=
+        // 1` — a non-empty map always has at least one leaf on the
+        // dominant tier. Combined with the `<= len()` bound above, this
+        // pins `1 <= peak_tier_count() <= len()` on every non-empty map.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+        ] {
+            assert!(
+                map.peak_tier_count() >= 1,
+                "non-empty map must have peak_tier_count >= 1 (peak={p})",
+                p = map.peak_tier_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_tier_count_uniform_cover_is_one() {
+        // Trait-uniform invariant lifted to the ProvenanceMap surface:
+        // on a full-cover fold where every tier observes the same
+        // nonzero count of one, the peak count is `1`. Direct
+        // construction: one leaf per tier, full-cover with uniform count
+        // 1. Peer of `dominant_tier_uniform_cover_picks_first_cell` on
+        // the count side (that test pins the *cell*; this test pins the
+        // *count*). Together the pair `(dominant_tier, peak_tier_count)`
+        // reads `(Some(Bare), 1)` on the uniform-cover fold.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(m.tier_histogram().is_full_cover());
+        assert_eq!(m.peak_tier_count(), 1);
+    }
+
+    #[test]
+    fn peak_tier_count_singleton_support_equals_len() {
+        // Singleton-support degenerate: when only one tier contributes,
+        // every leaf lands on that tier, so the peak equals the total.
+        // Direct construction: three leaves, all on `Default`. The
+        // scalar peer of the singleton-support cell degenerate
+        // `dominant_tier() == recessive_tier()` in
+        // `recessive_tier_singleton_support_agrees_with_dominant_tier`
+        // — that test pins the *cell*; this test pins the *count*
+        // through the `peak_tier_count() == len()` equality on the
+        // singleton-support boundary.
+        let m: ProvenanceMap = ["a", "b", "c"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 1);
+        assert_eq!(m.peak_tier_count(), m.len());
+        assert_eq!(m.peak_tier_count(), 3);
+    }
+
+    #[test]
+    fn peak_tier_count_agrees_with_open_coded_max_over_axis_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()`
+        // walk this lift replaces — both the named seam and the hand-
+        // rolled max must pointwise agree over every fixture in the
+        // module. The `.max().unwrap_or(0)` idiom mirrors the empty-
+        // histogram convention on `AxisHistogram::peak_count` one
+        // altitude down (both read 0 on empty).
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.peak_tier_count();
+            let hand_rolled = map
+                .tier_histogram()
+                .iter()
+                .map(|(_, c)| c)
+                .max()
+                .unwrap_or(0);
+            assert_eq!(via_seam, hand_rolled);
+        }
     }
 
     // ---- ProvenanceMap::recessive_tier — anti-modal-cell scalar peer
