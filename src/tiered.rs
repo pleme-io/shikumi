@@ -3088,6 +3088,127 @@ impl ConfigDiff {
     pub fn trough_kind_count(&self) -> usize {
         self.kind_histogram().trough_count()
     }
+
+    /// The **observed-distribution spread of diff kinds** — the
+    /// difference between the peak and trough line counts on this diff.
+    /// Equal to `self.peak_kind_count() - self.trough_kind_count()` by
+    /// construction, routed through [`Self::kind_histogram`]:
+    /// [`crate::AxisHistogram::spread`] reads the same difference off
+    /// the fixed-cardinality counts vector in one pass. Returns `0`
+    /// exactly when every observed [`DiffLineKind`] contributed the
+    /// same number of lines — including the empty diff (vacuous
+    /// uniformity, no observed kinds), every singleton-support diff
+    /// (only one observed kind, trivially balanced), and every uniform
+    /// per-kind diff (each observed kind contributing the same nonzero
+    /// count, dominant included).
+    ///
+    /// The **scalar dispersion peer** of the fused
+    /// `(peak_kind_count, trough_kind_count)` modal-count pair — the
+    /// natural typed primitive for CLI `config-diff` summaries,
+    /// attestation manifests, and alerting policies asking *"how
+    /// unevenly distributed are the lines across the observed
+    /// diff kinds?"*: the summary line *"skew 2: dominant Context 3,
+    /// runt Removed 1"* (where 2 is this scalar), the attestation
+    /// manifest recording the diff-kind spread between two rebuild
+    /// windows, the alerting policy reading *"diff spread = 11"* to
+    /// flag a rebuild window where one kind dwarfed the others. Before
+    /// this lift, every such consumer re-derived the projection inline
+    /// as `diff.peak_kind_count() - diff.trough_kind_count()` — two
+    /// method calls plus a subtraction at every site, each site having
+    /// to reason independently about the structural non-negativity of
+    /// the difference (`peak_count >= trough_count` holds on every
+    /// histogram but not on the inline subtraction surface, so an
+    /// unwitnessed refactor swapping the operands would silently
+    /// underflow). Routes through [`crate::AxisHistogram::spread`] one
+    /// altitude down — the underflow-safe named seam whose docs pin the
+    /// monotonicity invariant explicitly.
+    ///
+    /// The diff-altitude scalar-dispersion peer that seeds the
+    /// "spread across altitudes" projection — the next natural lift
+    /// climbs to the tier altitude
+    /// (`ProvenanceMap::tier_spread` over [`Self::tier_histogram`] on
+    /// the tier altitude) and sideways along the chain altitude's
+    /// three sub-axes (`layer_kind_spread`, `file_format_spread`,
+    /// `env_prefix_kind_spread` over the corresponding chain
+    /// histograms). The pattern is the same at every altitude: fuse
+    /// the (`peak_count`, `trough_count`) modal-count pair into a single
+    /// dispersion scalar named at the surface, routed through the
+    /// shared [`crate::AxisHistogram::spread`] primitive one altitude
+    /// down.
+    ///
+    /// **Empty-diff convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::spread`] empty convention one altitude
+    /// down and the [`Self::peak_kind_count`] / [`Self::trough_kind_count`]
+    /// empty conventions on the same altitude. The scalar-count triple
+    /// `(peak_kind_count, trough_kind_count, kind_spread)` reads
+    /// uniformly `(0, 0, 0)` on the empty diff — every observation
+    /// scalar reads zero on empty; every cell projection
+    /// ([`Self::dominant_kind`], [`Self::recessive_kind`]) reads
+    /// `None`. The asymmetry is intentional and matches the
+    /// [`crate::AxisHistogram`] convention one altitude down.
+    ///
+    /// **Structural-skew predicate.** `kind_spread() == 0` is the
+    /// typed *balanced-diff-kinds* predicate at the diff altitude —
+    /// every observed [`DiffLineKind`] contributed the same number of
+    /// lines. Pointwise equivalent to `peak_kind_count() ==
+    /// trough_kind_count()` on the scalar-count pair and to
+    /// `dominant_kind() == recessive_kind()` on the modal-cell pair
+    /// whenever the diff is non-empty (both branches reduce to
+    /// `Some(first) == Some(first)` on singleton-support and uniform
+    /// diffs, and to `false` on skewed diffs). Together with
+    /// [`Self::is_empty_diff`] and the full-cover predicate on
+    /// [`Self::kind_histogram`], the diff-altitude scalar surface now
+    /// carries the natural boundary triple *"did this diff change
+    /// anything?"* / *"did it exercise every kind?"* / *"did the
+    /// kinds fire equally?"* — each a single method call.
+    ///
+    /// # Invariants
+    ///
+    /// - `kind_spread() == kind_histogram().spread()` — both project
+    ///   the same scalar off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `kind_spread() == peak_kind_count() - trough_kind_count()` —
+    ///   the fused-pair identity of the scalar-dispersion peer. The
+    ///   subtraction is underflow-safe because `peak_kind_count() >=
+    ///   trough_kind_count()` holds structurally on every diff (lifted
+    ///   from the trait-uniform `peak_count() >= trough_count()` law
+    ///   on [`crate::AxisHistogram`]).
+    /// - `kind_spread() == 0` on the empty diff — the vacuous
+    ///   uniformity boundary, matching the
+    ///   [`crate::AxisHistogram::spread`] empty convention one altitude
+    ///   down. The `(peak_kind_count, trough_kind_count, kind_spread)`
+    ///   triple reads `(0, 0, 0)` uniformly on the empty diff.
+    /// - `kind_spread() == 0` whenever `present_kinds().len() <= 1` —
+    ///   singleton-support diffs are trivially balanced (the one
+    ///   observed kind's count is both the peak and the trough). Also
+    ///   holds on every uniform per-kind diff (each observed kind
+    ///   contributing the same nonzero count).
+    /// - `kind_spread() <= peak_kind_count()` always — the trough is
+    ///   non-negative, so the subtraction is bounded above by the
+    ///   minuend. Equality holds iff the trough is zero — i.e. on the
+    ///   empty diff. Lifted from the trait-uniform
+    ///   `spread() <= peak_count()` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `kind_spread() <= self.lines.len()` always — composition of
+    ///   `kind_spread() <= peak_kind_count()` (this method) with
+    ///   `peak_kind_count() <= self.lines.len()` (documented on
+    ///   [`Self::peak_kind_count`]).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (the peak + trough
+    /// scan). Both are `O(n)` in practice since the diff-cell axis
+    /// carries a fixed three-cell cardinality; the returned `usize`
+    /// reads one scalar. Halves the cost of the previous inline
+    /// `diff.peak_kind_count() - diff.trough_kind_count()` idiom (which
+    /// walked the counts vector twice — once for the max, once for the
+    /// min-over-support — where [`crate::AxisHistogram::spread`] can
+    /// fuse both into a single walk with a running-max/min pair).
+    #[must_use]
+    pub fn kind_spread(&self) -> usize {
+        self.kind_histogram().spread()
+    }
 }
 
 #[cfg(test)]
@@ -6028,6 +6149,300 @@ mod tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ConfigDiff::kind_spread — scalar-dispersion peer on the diff altitude,
+    //    fusing peak_kind_count and trough_kind_count into one dispersion
+    //    scalar and seeding the "spread across altitudes" projection ──
+
+    #[test]
+    fn kind_spread_matches_kind_histogram_spread_pointwise() {
+        // The scalar-dispersion pin: `kind_spread` routes through
+        // `kind_histogram().spread()`, so the two seams must stay
+        // pointwise equivalent under every fixture. Catches any future
+        // drift where either implementation stops projecting through
+        // the shared cube-native primitive. Diff-altitude scalar-
+        // dispersion seed of the "spread across altitudes" projection.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().spread();
+            assert_eq!(diff.kind_spread(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kind_spread_equals_peak_minus_trough_pointwise() {
+        // The fused-pair pin: `kind_spread == peak_kind_count -
+        // trough_kind_count` on every fixture. The subtraction is
+        // underflow-safe because `peak_kind_count >= trough_kind_count`
+        // holds structurally on every diff (lifted from the trait-
+        // uniform `peak_count >= trough_count` law on AxisHistogram).
+        // Closes the identity of the scalar-dispersion peer against
+        // the two count seams it fuses.
+        for diff in dominant_kind_fixtures() {
+            let peak = diff.peak_kind_count();
+            let trough = diff.trough_kind_count();
+            assert!(
+                peak >= trough,
+                "peak_kind_count ({peak}) must be >= trough_kind_count ({trough}) \
+                 for kind_spread to be underflow-safe",
+            );
+            assert_eq!(diff.kind_spread(), peak - trough);
+        }
+    }
+
+    #[test]
+    fn kind_spread_context_dominated_fixture_is_two() {
+        // Direct pin: a diff of 3 Context + 1 Removed has Context
+        // dominant at 3, Removed rarest at 1 — the spread is 2. Reads
+        // the paired `(peak_kind_count, trough_kind_count, kind_spread)`
+        // dispersion triple as `(3, 1, 2)`. Peer of
+        // `peak_kind_count_context_dominated_fixture_is_three` and
+        // `trough_kind_count_context_dominated_fixture_is_one`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_count(), 3);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_spread(), 2);
+    }
+
+    #[test]
+    fn kind_spread_added_dominated_fixture_is_one() {
+        // Direct pin: a diff of 2 Added + 1 Context has Added dominant
+        // at 2, Context rarest at 1 — the spread is 1. Reads the paired
+        // dispersion triple as `(2, 1, 1)`. Peer of
+        // `peak_kind_count_added_dominated_fixture_is_two` and
+        // `trough_kind_count_added_dominated_fixture_is_one`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_count(), 2);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_spread(), 1);
+    }
+
+    #[test]
+    fn kind_spread_empty_diff_is_zero() {
+        // An empty ConfigDiff has no lines and therefore zero spread —
+        // reads `0` per the AxisHistogram::spread empty convention one
+        // altitude down; the `(peak_kind_count, trough_kind_count,
+        // kind_spread)` triple reads `(0, 0, 0)` uniformly on the
+        // empty diff. Peer of `peak_kind_count_empty_diff_is_zero` and
+        // `trough_kind_count_empty_diff_is_zero`.
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.peak_kind_count(), 0);
+        assert_eq!(empty.trough_kind_count(), 0);
+        assert_eq!(empty.kind_spread(), 0);
+        assert!(empty.lines.is_empty());
+    }
+
+    #[test]
+    fn kind_spread_singleton_support_is_zero() {
+        // Singleton-support pin: every line lands on the same kind, so
+        // the dominant kind is both peak and trough of the support, and
+        // the spread is zero — the balanced-diff-kinds boundary on the
+        // singleton-support side. Diff-altitude peer of the trait-
+        // uniform `spread() == 0 on singleton support` law on
+        // AxisHistogram.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Removed("r3".into()),
+                DiffLine::Removed("r4".into()),
+            ],
+        };
+        assert_eq!(diff.present_kinds().len(), 1);
+        assert_eq!(diff.kind_spread(), 0);
+    }
+
+    #[test]
+    fn kind_spread_uniform_cover_is_zero() {
+        // Uniform-cover pin: every observed kind contributes the same
+        // nonzero count (one line each here), so peak == trough == 1
+        // and the spread is zero — the balanced-diff-kinds boundary on
+        // the uniform-cover side. Peer of `peak_kind_count_uniform_cover_is_one`
+        // and `trough_kind_count_uniform_cover_is_one` on the count sides.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kind_histogram().is_full_cover());
+        assert_eq!(diff.peak_kind_count(), 1);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_spread(), 0);
+    }
+
+    #[test]
+    fn kind_spread_is_zero_iff_at_most_one_present_kind_or_uniform_cover() {
+        // Structural-skew boundary: `kind_spread() == 0` iff every
+        // observed kind carries the same count — the balanced-diff-kinds
+        // shape. On every fixture, the predicate agrees with the
+        // scalar-pair form `peak_kind_count == trough_kind_count`
+        // pointwise. The full-cover-with-equal-counts case, the
+        // singleton-support case, and the empty diff all read `true`;
+        // every skewed diff reads `false`.
+        for diff in dominant_kind_fixtures() {
+            let spread_zero = diff.kind_spread() == 0;
+            let counts_equal = diff.peak_kind_count() == diff.trough_kind_count();
+            assert_eq!(
+                spread_zero,
+                counts_equal,
+                "kind_spread == 0 must agree with peak_kind_count == trough_kind_count \
+                 for diff with peak={p}, trough={t}, spread={s}",
+                p = diff.peak_kind_count(),
+                t = diff.trough_kind_count(),
+                s = diff.kind_spread(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_spread_agrees_with_modal_pair_equality_on_nonempty_diff() {
+        // Cross-surface pin: on every non-empty diff, `kind_spread() ==
+        // 0` agrees with `dominant_kind() == recessive_kind()` — the
+        // modal-pair equality form of the balanced-diff-kinds predicate.
+        // Lifted from the trait-uniform
+        // `spread() == 0 <=> dominant_cell() == recessive_cell()` law
+        // on AxisHistogram (non-empty case). The empty-diff case is
+        // separately pinned on both surfaces.
+        for diff in dominant_kind_fixtures() {
+            if diff.lines.is_empty() {
+                continue;
+            }
+            let spread_zero = diff.kind_spread() == 0;
+            let modal_pair_equal = diff.dominant_kind() == diff.recessive_kind();
+            assert_eq!(
+                spread_zero, modal_pair_equal,
+                "kind_spread == 0 must agree with dominant_kind == recessive_kind \
+                 on non-empty diff",
+            );
+        }
+    }
+
+    #[test]
+    fn kind_spread_bounded_above_by_peak_kind_count() {
+        // Structural bound: `kind_spread() <= peak_kind_count()` on every
+        // fixture — the trough is non-negative, so the subtraction is
+        // bounded above by the minuend. Lifted from the trait-uniform
+        // `spread() <= peak_count()` law on AxisHistogram. Equality
+        // holds exactly when the trough is zero — i.e. on the empty
+        // diff (both sides read 0).
+        for diff in dominant_kind_fixtures() {
+            assert!(
+                diff.kind_spread() <= diff.peak_kind_count(),
+                "kind_spread ({s}) must not exceed peak_kind_count ({p})",
+                s = diff.kind_spread(),
+                p = diff.peak_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_spread_equals_peak_iff_diff_is_empty() {
+        // Equality-case pin of the `kind_spread <= peak_kind_count`
+        // bound: equality holds iff the trough is zero, which by
+        // `trough_kind_count == 0 <=> lines.is_empty()` holds iff the
+        // diff is empty. The two projections agree on the (0, 0) empty
+        // corner and disagree strictly on every non-empty diff (where
+        // the trough is >= 1, so `spread < peak`).
+        for diff in dominant_kind_fixtures() {
+            let equality = diff.kind_spread() == diff.peak_kind_count();
+            let is_empty = diff.lines.is_empty();
+            assert_eq!(
+                equality,
+                is_empty,
+                "kind_spread == peak_kind_count must agree with lines.is_empty() \
+                 for diff with peak={p}, trough={t}, spread={s}",
+                p = diff.peak_kind_count(),
+                t = diff.trough_kind_count(),
+                s = diff.kind_spread(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_spread_bounded_above_by_lines_len() {
+        // Composition bound: `kind_spread() <= self.lines.len()` on every
+        // fixture — chaining `kind_spread <= peak_kind_count` (previous
+        // pin) with `peak_kind_count <= lines.len()` (documented on
+        // `peak_kind_count_bounded_above_by_lines_len`). The scalar
+        // dispersion of a diff is bounded above by the total line count
+        // of the diff.
+        for diff in dominant_kind_fixtures() {
+            assert!(
+                diff.kind_spread() <= diff.lines.len(),
+                "kind_spread ({s}) must not exceed lines.len() ({n})",
+                s = diff.kind_spread(),
+                n = diff.lines.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_spread_skewed_fixture_matches_peak_minus_trough_direct() {
+        // Direct pin: a skewed fixture with Context=3, Added=2,
+        // Removed=1 has peak 3, trough 1, spread 2 — the strictly-
+        // ordered three-cell case where every count is distinct. Pins
+        // the fused-pair identity at a concrete position where no
+        // tie-breaking is needed on either side of the modal-count
+        // pair.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let hist = diff.kind_histogram();
+        assert_eq!(hist.count(DiffLineKind::Removed), 1);
+        assert_eq!(hist.count(DiffLineKind::Added), 2);
+        assert_eq!(hist.count(DiffLineKind::Context), 3);
+        assert_eq!(diff.peak_kind_count(), 3);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_spread(), 2);
+    }
+
+    #[test]
+    fn kind_spread_agrees_with_open_coded_max_minus_min_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0) - hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0)` walk this lift replaces
+        // — both the named seam and the hand-rolled dispersion must
+        // pointwise agree over every fixture. The `.filter(c > 0)` on
+        // the min side is essential (mirroring `trough_count`'s support
+        // discipline); the `.max()` on the peak side operates over the
+        // full axis (mirroring `peak_count`). The subtraction is
+        // underflow-safe on the histogram because `peak >= trough`
+        // holds structurally, but the hand-rolled form must be careful
+        // about the empty-histogram case where both sides read 0.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kind_spread();
+            let hist = diff.kind_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .filter(|&(_, c)| c > 0)
+                .map(|(_, c)| c)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(via_seam, peak - trough);
         }
     }
 
