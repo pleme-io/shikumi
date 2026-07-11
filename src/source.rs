@@ -3763,6 +3763,191 @@ pub trait ConfigSourceChain {
         !self.file_format_histogram().is_empty()
     }
 
+    /// Named typed boolean predicate — `true` exactly when this chain's
+    /// [`ConfigSource::File`] layers with recognized extensions observe
+    /// exactly one [`crate::discovery::Format`] cell (exactly one cell
+    /// of the closed [`crate::discovery::Format`] axis has a nonzero
+    /// count on the recipe's file-format histogram — the singleton-
+    /// support boundary of the coverage-support partition). Routes
+    /// through [`Self::file_format_histogram`]'s
+    /// [`crate::AxisHistogram::has_singular_support`]: the cube-native
+    /// single-pass short-circuiting scan over the fixed-cardinality
+    /// counts vector one altitude down that finds the first nonzero
+    /// cell and confirms no second nonzero cell follows.
+    ///
+    /// Operator-facing consumers answering *"did the recipe land on
+    /// exactly one file format?"* — the CLI `config-show` headline
+    /// *"singleton-format recipe: exactly one file format fired"*, the
+    /// attestation manifest gate *"rebuild window observes exactly
+    /// one file format"*, the alerting policy predicate *"recipe
+    /// collapsed to a single file format"* — now route through this
+    /// named seam instead of four previously drifting inline forms:
+    /// `chain.present_file_formats_count() == 1` (the support-scalar
+    /// form, which pays for a full-axis scan and compares a `usize`
+    /// to one without naming the coverage-support boundary),
+    /// `chain.present_file_formats().len() == 1` (the support-`Vec`
+    /// form, which allocates a `Vec<crate::discovery::Format>` and
+    /// reads its length back), `chain.absent_file_formats_count() ==
+    /// crate::axis_cardinality::<crate::discovery::Format>() - 1`
+    /// (the coverage-gap-scalar form, which pays for the coverage-
+    /// gap scan and pulls in the `axis_cardinality` turbofish at
+    /// every call site), and `chain.absent_file_formats().len() ==
+    /// crate::axis_cardinality::<crate::discovery::Format>() - 1`
+    /// (the coverage-gap-`Vec` form, which allocates the coverage-
+    /// gap vector and reads its length back).
+    ///
+    /// **Lifts sideways to the file-format sub-axis of the chain
+    /// altitude** the "singleton-support across altitudes"
+    /// projection seeded on the diff altitude by
+    /// [`crate::ConfigDiff::kinds_singular_support`], climbed to the
+    /// tier altitude by
+    /// [`crate::ProvenanceMap::tiers_singular_support`], and lifted
+    /// sideways to the layer-kind sub-axis by
+    /// [`Self::layer_kinds_singular_support`]. Parallels the
+    /// "balanced across altitudes" projection at this sub-axis by
+    /// [`Self::file_formats_balanced`], the "full-cover across
+    /// altitudes" projection at this sub-axis by
+    /// [`Self::file_formats_full_cover`], and the "any-observed
+    /// across altitudes" projection at this sub-axis by
+    /// [`Self::file_formats_any_observed`]. The file-format-sub-axis
+    /// quadruple (`file_formats_balanced`, `file_formats_full_cover`,
+    /// `file_formats_any_observed`, `file_formats_singular_support`)
+    /// now spans all four coverage-support boundaries at this sub-
+    /// axis, mirroring the layer-kind-sub-axis quadruple
+    /// (`layer_kinds_balanced`, `layer_kinds_full_cover`,
+    /// `layer_kinds_any_observed`, `layer_kinds_singular_support`)
+    /// and the tier-altitude / diff-altitude peer quadruples on the
+    /// same grid. The last remaining chain-altitude sub-axis is the
+    /// natural next sideways lift: `env_prefix_kinds_singular_support`
+    /// over [`Self::env_prefix_kind_histogram`], closing the
+    /// "singleton-support across altitudes" projection across every
+    /// altitude / sub-axis alongside the balanced / full-cover / any-
+    /// observed projections that already closed the same grid.
+    ///
+    /// **Empty-histogram convention** — returns `false` on every
+    /// chain whose file-format histogram is empty: no observed cells
+    /// means the singleton-support predicate fails (support
+    /// cardinality is 0, not 1). Matches
+    /// [`crate::AxisHistogram::has_singular_support`]'s empty-
+    /// histogram `false` convention one altitude down. Cross-sub-
+    /// axis divergence from [`Self::layer_kinds_singular_support`]:
+    /// the `false` side of the boundary is wider on the file-format
+    /// sub-axis — a non-empty chain of only [`ConfigSource::Defaults`]
+    /// / [`ConfigSource::Env`] / unrecognized-extension
+    /// [`ConfigSource::File`] layers ALSO reads `false` (the
+    /// histogram is empty even though the chain is not). Matches
+    /// [`Self::file_formats_any_observed`]'s and
+    /// [`Self::file_formats_full_cover`]'s same-sided convention at
+    /// the empty-histogram boundary and dual of
+    /// [`Self::file_formats_balanced`]'s vacuous-uniformity witness
+    /// (which reads `true` on every empty-histogram chain): the four
+    /// boundaries partition the empty-histogram chain into the
+    /// polarity quadruple (`any_observed`=false,
+    /// `singular_support`=false, `balanced`=true, `full_cover`=false).
+    ///
+    /// **Singleton-support convention** — returns `true` on every
+    /// chain whose observed support is a single
+    /// [`crate::discovery::Format`]: one observed cell is exactly
+    /// the singleton-support boundary. Every chain in which one
+    /// format owns every recognized-extension file layer is a witness
+    /// (`sample_chain` — two `.yaml` file layers plus one env layer —
+    /// is one such witness on the file-format sub-axis, though not on
+    /// the layer-kind sub-axis where support is 2). Matches
+    /// [`Self::file_formats_any_observed`]'s and
+    /// [`Self::file_formats_balanced`]'s `true` side on the singleton
+    /// and orthogonal to [`Self::file_formats_full_cover`]'s `false`
+    /// side on the same singleton — the four boundaries partition
+    /// the singleton-support fixture into the polarity quadruple
+    /// (`any_observed`=true, `singular_support`=true, `balanced`=true,
+    /// `full_cover`=false).
+    ///
+    /// **Uniform four-format cover convention** — returns `false` on
+    /// every chain where each of the four
+    /// [`crate::discovery::Format`] cells was observed at least once:
+    /// the support is the full four-cell axis (not one), so the
+    /// singleton-support predicate fails. The uniform four-format
+    /// cover is on the `false` side of the singular-support boundary
+    /// and on the `true` side of the other three coverage-support
+    /// boundaries — the four boundaries partition the uniform-cover
+    /// fixture with (`any_observed`=true, `singular_support`=false,
+    /// `balanced`=true, `full_cover`=true).
+    ///
+    /// # Invariants
+    ///
+    /// - `file_formats_singular_support() ==
+    ///   file_format_histogram().has_singular_support()` — both
+    ///   project the same predicate off the same primitive; the named
+    ///   seam is the cube-native routing of the histogram surface.
+    /// - `file_formats_singular_support() ==
+    ///   (present_file_formats_count() == 1)` always — the support-
+    ///   scalar surface, without allocating the
+    ///   `Vec<crate::discovery::Format>`.
+    /// - `file_formats_singular_support() ==
+    ///   (present_file_formats().len() == 1)` always — the support-
+    ///   `Vec` surface.
+    /// - `file_formats_singular_support() == (absent_file_formats_count()
+    ///   == crate::axis_cardinality::<crate::discovery::Format>() - 1)`
+    ///   always — the coverage-gap-scalar surface, the dual-side
+    ///   surfacing of the same boolean across the (observed,
+    ///   unobserved) partition.
+    /// - `file_formats_singular_support() ⇒
+    ///   file_formats_any_observed()` — a chain with exactly one
+    ///   observed cell has at least one observed cell.
+    ///   Contrapositively, `!file_formats_any_observed() ⇒
+    ///   !file_formats_singular_support()`.
+    /// - `file_formats_singular_support() ⇒
+    ///   file_formats_balanced()` — a chain with exactly one observed
+    ///   count has a trivially uniform support (one count is vacuously
+    ///   equal to itself), so the balanced predicate holds.
+    /// - `file_formats_singular_support() ⇒
+    ///   !file_formats_full_cover()` on every axis with cardinality
+    ///   `>= 2` (every implementor today —
+    ///   [`crate::discovery::Format`] carries four cells): a singleton
+    ///   support has size 1, a full cover has size
+    ///   `axis_cardinality::<A>()` `>= 2`, so the two boundaries are
+    ///   disjoint.
+    /// - `file_formats_singular_support() ⇒
+    ///   layer_kind_histogram().count(ConfigSourceKind::File) >= 1` —
+    ///   a chain with a singleton file-format support has at least
+    ///   one recognized-extension file layer, and every such layer is
+    ///   a [`ConfigSource::File`]. Cross-sub-axis lower-bound
+    ///   implication linking the file-format sub-axis singleton-
+    ///   support boundary to the layer-kind sub-axis File cell count.
+    ///   Cross-sub-axis divergence from
+    ///   [`Self::layer_kinds_singular_support`]'s
+    ///   `self.as_ref().len() >= 1` implication, which reads on the
+    ///   chain-length rather than the File-layer count — matching the
+    ///   same divergence pattern between
+    ///   [`Self::file_formats_any_observed`] and
+    ///   [`Self::layer_kinds_any_observed`] on the strictly-looser
+    ///   cardinality slice.
+    /// - `file_formats_singular_support() ⇒ dominant_file_format() ==
+    ///   recessive_file_format() && dominant_file_format().is_some()`
+    ///   — when support is singular, the modal pair collapses to the
+    ///   one observed cell on both sides.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram
+    /// build) and `k =
+    /// crate::axis_cardinality::<crate::discovery::Format>()` (the
+    /// singular-support scan). Both are `O(n)` in practice since the
+    /// file-format axis carries a fixed four-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan short-circuits
+    /// on the second nonzero cell (bounded at two nonzero cells
+    /// visited on any two-or-more-cell-support chain), strictly
+    /// tighter than the four support / coverage-gap equality forms —
+    /// no `Vec<crate::discovery::Format>` allocation, no
+    /// [`crate::axis_cardinality`] turbofish, no scalar equality
+    /// against a magic axis-cardinality-minus-one constant.
+    #[must_use]
+    fn file_formats_singular_support(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().has_singular_support()
+    }
+
     /// Dense per-env-prefix-presence tally of the chain's
     /// [`ConfigSource::Env`] layers over the [`EnvMetadataTagKind`] axis
     /// — the typed histogram every attestation manifest, structured-log
@@ -19897,6 +20082,435 @@ mod tests {
             let via_seam = slice.file_formats_any_observed();
             let hist = slice.file_format_histogram();
             let hand_rolled = hist.iter().any(|(_, c)| c > 0);
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::file_formats_singular_support —
+    //      singleton-support-file-formats boolean predicate on the
+    //      file-format sub-axis of the chain altitude, lifting the
+    //      "singleton-support across altitudes" projection sideways
+    //      from the layer-kind sub-axis
+    //      (`ConfigSourceChain::layer_kinds_singular_support`) into the
+    //      second chain-altitude sub-axis. Routed through the shared
+    //      `AxisHistogram::has_singular_support` primitive one altitude
+    //      down. ----
+
+    #[test]
+    fn file_formats_singular_support_matches_file_format_histogram_has_singular_support_pointwise()
+    {
+        // Routing pin: `file_formats_singular_support` routes through
+        // `file_format_histogram().has_singular_support()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. File-
+        // format sub-axis peer of
+        // `layer_kinds_singular_support_matches_layer_kind_histogram_has_singular_support_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_support_matches_tier_histogram_has_singular_support_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_support_matches_kind_histogram_has_singular_support_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.file_format_histogram().has_singular_support();
+            assert_eq!(slice.file_formats_singular_support(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_support_agrees_with_present_file_formats_count_equals_one_pointwise() {
+        // Support-scalar surface: `file_formats_singular_support() ==
+        // (present_file_formats_count() == 1)` on every fixture. The
+        // support-side surfacing of the same boolean, without
+        // allocating the `Vec<crate::discovery::Format>`. Lifted from
+        // the trait-uniform `has_singular_support() ⇔ distinct_cells()
+        // == 1` law on AxisHistogram. Peer of
+        // `layer_kinds_singular_support_agrees_with_present_layer_kinds_count_equals_one_pointwise`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_singular_support();
+            let via_scalar = slice.present_file_formats_count() == 1;
+            assert_eq!(
+                via_seam,
+                via_scalar,
+                "file_formats_singular_support ({via_seam}) must agree with \
+                 present_file_formats_count == 1 (count={c}) for chain",
+                c = slice.present_file_formats_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_support_agrees_with_present_file_formats_len_equals_one_pointwise() {
+        // Support-`Vec` form: `file_formats_singular_support() ==
+        // (present_file_formats().len() == 1)` on every fixture. Pins
+        // the predicate against the `Vec<crate::discovery::Format>`
+        // length form consumers reach for when they already hold the
+        // support vector. Peer of
+        // `layer_kinds_singular_support_agrees_with_present_layer_kinds_len_equals_one_pointwise`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_singular_support();
+            let via_vec = slice.present_file_formats().len() == 1;
+            assert_eq!(
+                via_seam, via_vec,
+                "file_formats_singular_support ({via_seam}) must agree with \
+                 present_file_formats().len() == 1 ({via_vec}) for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_support_agrees_with_absent_file_formats_count_equals_axis_cardinality_minus_one_pointwise()
+     {
+        // Coverage-gap-scalar form: `file_formats_singular_support() ==
+        // (absent_file_formats_count() ==
+        // axis_cardinality::<crate::discovery::Format>() - 1)` on every
+        // fixture. The coverage-gap-side surfacing of the same boolean
+        // — a singleton-support chain observes one cell and misses the
+        // remaining `axis_cardinality - 1` cells. Peer of
+        // `layer_kinds_singular_support_agrees_with_absent_layer_kinds_count_equals_axis_cardinality_minus_one_pointwise`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_singular_support();
+            let via_gap = slice.absent_file_formats_count()
+                == crate::axis_cardinality::<crate::discovery::Format>() - 1;
+            assert_eq!(
+                via_seam,
+                via_gap,
+                "file_formats_singular_support ({via_seam}) must agree with \
+                 absent_file_formats_count == axis_cardinality - 1 (gap={g}) for chain",
+                g = slice.absent_file_formats_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_support_empty_chain_is_false() {
+        // Empty-chain boundary: the empty chain has no observed cells,
+        // so the singular-support predicate reads `false` (support
+        // cardinality is 0, not 1). Matches `has_singular_support`
+        // reading `false` on the empty histogram one altitude down.
+        // Peer of `file_formats_any_observed_empty_chain_is_false` and
+        // `file_formats_full_cover_empty_chain_is_false` on the same
+        // polarity of the coverage-support partition, and orthogonal
+        // to `file_formats_balanced_empty_chain_is_true` on the
+        // opposite polarity — the four boundaries partition the empty
+        // chain into the polarity quadruple (`any_observed`=false,
+        // `singular_support`=false, `balanced`=true, `full_cover`=false).
+        // Peer of `layer_kinds_singular_support_empty_chain_is_false`
+        // on the layer-kind sub-axis.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(!empty.file_formats_singular_support());
+        assert!(!empty.file_formats_any_observed());
+        assert!(empty.file_formats_balanced());
+        assert!(!empty.file_formats_full_cover());
+    }
+
+    #[test]
+    fn file_formats_singular_support_no_recognized_files_is_false() {
+        // Cross-sub-axis divergence pin against
+        // `layer_kinds_singular_support_empty_chain_is_false`: on the
+        // file-format sub-axis the *non-empty-chain / empty-histogram*
+        // boundary ALSO reads `false`. A chain of only Defaults / Env
+        // / unrecognized-extension File layers is non-empty but has an
+        // empty file-format histogram, so no observed cell fires and
+        // support cardinality is 0 — `file_formats_singular_support`
+        // reads `false`. Matches
+        // `file_formats_any_observed_no_recognized_files_is_false` and
+        // `file_formats_full_cover_no_recognized_files_is_false` on
+        // the same-shape fixtures (all three read `false` on empty-
+        // histogram non-empty chains). Distinguishing pin against
+        // `file_formats_balanced` on the exact same fixtures (where
+        // the vacuous-uniformity boundary reads `true`).
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(!slice.is_empty(), "fixture must be non-empty");
+            assert!(
+                slice.file_format_histogram().is_empty(),
+                "fixture must have empty file-format histogram",
+            );
+            assert!(!slice.file_formats_singular_support());
+            assert!(!slice.file_formats_any_observed());
+            assert!(slice.file_formats_balanced());
+            assert!(!slice.file_formats_full_cover());
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_support_singleton_support_is_true() {
+        // Singleton-support pin: every recognized-extension file
+        // layer lands on the same format, so the support is exactly
+        // one cell — `file_formats_singular_support` reads `true`.
+        // Peer of `file_formats_any_observed_singleton_support_is_true`
+        // and `file_formats_balanced_singleton_support_is_true` on the
+        // same polarity and orthogonal to
+        // `file_formats_full_cover_singleton_support_is_false` on the
+        // opposite polarity. The singleton-support fixture partitions
+        // the four boundaries with (`any_observed`=true,
+        // `singular_support`=true, `balanced`=true,
+        // `full_cover`=false). Peer of
+        // `layer_kinds_singular_support_singleton_support_is_true` on
+        // the layer-kind sub-axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 1);
+        assert!(slice.file_formats_singular_support());
+        assert!(slice.file_formats_any_observed());
+        assert!(slice.file_formats_balanced());
+        assert!(!slice.file_formats_full_cover());
+    }
+
+    #[test]
+    fn file_formats_singular_support_sample_chain_is_true() {
+        // Cross-sub-axis divergence witness: `sample_chain()` observes
+        // {Yaml} on the file-format sub-axis (only its two `.yaml`
+        // file layers project to a `Some(Format)`; the Env layer
+        // projects to `None`), so `file_formats_singular_support`
+        // reads `true` — even though on the layer-kind sub-axis
+        // `layer_kinds_singular_support` reads `false` (support size
+        // is 2 = {Env, File}). Direct fixture witness of the file-
+        // format sub-axis's strictly-wider singleton-support boundary
+        // (the file-format sub-axis routes only through
+        // `ConfigSource::File` entries with recognized extensions),
+        // matching the cross-sub-axis divergence documented on the
+        // impl.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 1);
+        assert!(slice.file_formats_singular_support());
+        assert!(!slice.layer_kinds_singular_support());
+    }
+
+    #[test]
+    fn file_formats_singular_support_uniform_cover_is_false() {
+        // Uniform-cover pin: every format contributes one file layer,
+        // so the support is the full four-cell axis —
+        // `file_formats_singular_support` reads `false` (four, not
+        // one). The uniform four-format cover is on the `false` side
+        // of the singular-support boundary and on the `true` side of
+        // the other three coverage-support boundaries. Peer of
+        // `layer_kinds_singular_support_uniform_cover_is_false` on the
+        // layer-kind sub-axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        let slice = chain.as_slice();
+        assert!(!slice.file_formats_singular_support());
+        assert!(slice.file_formats_any_observed());
+        assert!(slice.file_formats_balanced());
+        assert!(slice.file_formats_full_cover());
+    }
+
+    #[test]
+    fn file_formats_singular_support_two_format_partial_cover_is_false() {
+        // Two-format-cover pin: a chain observing Toml + Yaml but
+        // never Lisp / Nix (support size 2 out of 4) —
+        // `file_formats_singular_support` reads `false` (two, not
+        // one) even though `file_formats_any_observed` reads `true`.
+        // Direct witness of the strict subsumption
+        // `file_formats_singular_support ⇒
+        // file_formats_any_observed` on a fixture where the two
+        // boundaries split. Peer of
+        // `layer_kinds_singular_support_two_kind_partial_cover_is_false`
+        // on the layer-kind sub-axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 2);
+        assert!(!slice.file_formats_singular_support());
+        assert!(slice.file_formats_any_observed());
+    }
+
+    #[test]
+    fn file_formats_singular_support_implies_file_formats_any_observed_pointwise() {
+        // Subsumption pin: `file_formats_singular_support() ⇒
+        // file_formats_any_observed()` on every fixture — a chain with
+        // exactly one observed cell has at least one observed cell.
+        // The strict subsumption relates the singleton-support
+        // boundary and the any-observed boundary as strictly-tighter
+        // cardinality slices of the coverage-support partition (=1 ⇒
+        // ≥1). Peer of
+        // `layer_kinds_singular_support_implies_layer_kinds_any_observed_pointwise`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_singular_support() {
+                assert!(
+                    slice.file_formats_any_observed(),
+                    "singular-support chain must be any-observed",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_support_implies_file_formats_balanced_pointwise() {
+        // Subsumption pin: `file_formats_singular_support() ⇒
+        // file_formats_balanced()` on every fixture — a chain with
+        // exactly one observed count has a trivially uniform support
+        // (a single value is vacuously equal to itself), so the
+        // balanced predicate holds. Pins the interaction between the
+        // singular-support boundary and the uniformity boundary. Peer
+        // of `layer_kinds_singular_support_implies_layer_kinds_balanced_pointwise`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_singular_support() {
+                assert!(
+                    slice.file_formats_balanced(),
+                    "singular-support chain must be balanced",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_support_implies_not_file_formats_full_cover_pointwise() {
+        // Disjointness pin: `file_formats_singular_support() ⇒
+        // !file_formats_full_cover()` on every fixture. A singleton
+        // support has cardinality 1; a full cover has cardinality
+        // `axis_cardinality::<crate::discovery::Format>()` (four).
+        // The two are disjoint on every axis with cardinality `>= 2`,
+        // which includes `crate::discovery::Format` (four cells).
+        // Direct witness that the two coverage-support boundaries are
+        // pairwise disjoint on the implementor set today. Peer of
+        // `layer_kinds_singular_support_implies_not_layer_kinds_full_cover_pointwise`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_singular_support() {
+                assert!(
+                    !slice.file_formats_full_cover(),
+                    "singular-support chain cannot be full-cover on \
+                     a cardinality >= 2 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_support_implies_layer_kind_file_count_positive_pointwise() {
+        // Cross-sub-axis lower-bound implication:
+        // `file_formats_singular_support() ⇒
+        // layer_kind_histogram().count(ConfigSourceKind::File) >= 1`.
+        // A chain with a singleton file-format support has at least
+        // one recognized-extension file layer, and every such layer is
+        // a `ConfigSource::File`. Cross-sub-axis divergence from
+        // `layer_kinds_singular_support_implies_chain_length_positive_pointwise`,
+        // which reads on the chain-length rather than the File-layer
+        // count — the file-format sub-axis carries the stronger
+        // implication because Defaults / Env / unrecognized-extension
+        // File layers don't contribute to the file-format histogram.
+        // Matches
+        // `file_formats_any_observed_implies_layer_kind_file_count_positive_pointwise`
+        // on the strictly-looser cardinality slice of the same
+        // coverage-support partition.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_singular_support() {
+                assert!(
+                    slice.layer_kind_histogram().count(ConfigSourceKind::File) >= 1,
+                    "singular-support chain must have >= 1 File layer (was {})",
+                    slice.layer_kind_histogram().count(ConfigSourceKind::File),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_support_implies_dominant_equals_recessive_pointwise() {
+        // Modal-collapse pin: `file_formats_singular_support() ⇒
+        // dominant_file_format() == recessive_file_format() &&
+        // dominant_file_format().is_some()`. When support is singular,
+        // the modal pair collapses to the one observed cell on both
+        // sides. Direct witness of the trait-uniform
+        // `has_singular_support() ⇒ dominant_cell() == recessive_cell()`
+        // law on AxisHistogram, lifted to the file-format sub-axis of
+        // the chain altitude. Peer of
+        // `layer_kinds_singular_support_implies_dominant_equals_recessive_pointwise`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_singular_support() {
+                let dom = slice.dominant_file_format();
+                let rec = slice.recessive_file_format();
+                assert!(
+                    dom.is_some(),
+                    "singular-support chain must have Some dominant file format",
+                );
+                assert_eq!(
+                    dom, rec,
+                    "singular-support chain must have dominant == recessive",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_any_observed_negation_implies_not_file_formats_singular_support_pointwise() {
+        // Contrapositive: `!file_formats_any_observed() ⇒
+        // !file_formats_singular_support()`. If no cell was observed,
+        // the support is empty (cardinality 0), which is strictly less
+        // than 1 — the singleton-support predicate fails. Pins the
+        // strictly-tighter cardinality relation between the two
+        // coverage-support boundaries. Peer of
+        // `layer_kinds_any_observed_negation_implies_not_layer_kinds_singular_support_pointwise`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.file_formats_any_observed() {
+                assert!(
+                    !slice.file_formats_singular_support(),
+                    "empty-support chain cannot be singular-support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_support_agrees_with_open_coded_exactly_one_positive_walk() {
+        // Parity against the exact hand-rolled singular-support walk
+        // this lift replaces: walk every cell of the histogram and
+        // count how many carry a positive count; the singleton-
+        // support predicate reads `true` iff exactly one cell is
+        // positive. Mirrors the parity pin
+        // `layer_kinds_singular_support_agrees_with_open_coded_exactly_one_positive_walk`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_singular_support();
+            let hist = slice.file_format_histogram();
+            let hand_rolled = hist.iter().filter(|(_, c)| *c > 0).count() == 1;
             assert_eq!(via_seam, hand_rolled);
         }
     }
