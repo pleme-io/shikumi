@@ -2229,6 +2229,175 @@ impl ProvenanceMap {
     pub fn tiers_singular_support(&self) -> bool {
         self.tier_histogram().has_singular_support()
     }
+
+    /// `true` exactly when this fold observes every [`ConfigTierKind`]
+    /// cell *except one* — the **singleton-gap-tier-counts boolean
+    /// predicate** on the tier altitude, the strictly-tighter
+    /// cardinality-`(axis_cardinality - 1)` boundary of the coverage-
+    /// support partition. Routes through
+    /// [`crate::AxisHistogram::has_singular_gap`] one altitude down: the
+    /// single-pass short-circuiting scan over the fixed-cardinality
+    /// counts vector that finds the first *zero* cell and confirms no
+    /// second zero cell follows, tighter than any of the four support /
+    /// coverage-gap equality forms one seam over.
+    ///
+    /// The **singleton-gap-tier-counts peer** of the fused
+    /// `(contributing_tiers, absent_tiers, contributing_tiers_count,
+    /// absent_tiers_count)` support / coverage-gap 2×2 grid on the tier
+    /// altitude — the natural typed boolean primitive for fleet
+    /// dashboards, attestation manifests, and alerting policies asking
+    /// *"did the fold miss only one tier?"*: the fleet dashboard
+    /// headline *"singleton-gap fold: one tier silent"*, the attestation
+    /// manifest gate *"rebuild window carries all but one tier's
+    /// observations"*, the alerting policy predicate *"tier gap
+    /// singular"*. Before this lift, every such consumer re-derived the
+    /// predicate inline as one of four pointwise-equivalent forms:
+    /// `map.absent_tiers_count() == 1` (the coverage-gap-scalar form,
+    /// which pays for a full-axis scan and equates a `usize` to one
+    /// without saying structurally *what* is being asked at the tier-
+    /// cell axis), `map.absent_tiers().len() == 1` (the coverage-gap-
+    /// `Vec` form, which allocates a `Vec<ConfigTierKind>` and reads
+    /// its length back), `map.contributing_tiers_count() ==
+    /// crate::axis_cardinality::<ConfigTierKind>() - 1` (the support-
+    /// scalar form, which pays for a full-axis scan and pulls in the
+    /// [`crate::axis_cardinality`] turbofish at every call site), and
+    /// `map.contributing_tiers().len() ==
+    /// crate::axis_cardinality::<ConfigTierKind>() - 1` (the support-
+    /// `Vec` form, which allocates a `Vec<ConfigTierKind>` and reads
+    /// its length back). The four forms drifted in subtle ways at every
+    /// consumer site (allocation vs. scalar, turbofish vs. name-only,
+    /// coverage-gap side vs. support side). This lift names the
+    /// singleton-gap-tier-counts predicate directly at the tier-altitude
+    /// surface with a single-pass short-circuiting scan — the typed
+    /// boolean every operator-facing "did the fold miss exactly one
+    /// tier?" check reads off as a single method call.
+    ///
+    /// The tier-altitude singleton-gap-predicate peer that **climbs the
+    /// "singleton-gap across altitudes" projection** from the diff
+    /// altitude seeded by [`ConfigDiff::kinds_singular_gap`]. The
+    /// pattern is the same at every altitude: fuse the (`present_cells`,
+    /// `absent_cells`, `present_cells_count`, `absent_cells_count`)
+    /// support / coverage-gap 2×2 grid's exactly-one-*unobserved*-cell
+    /// boundary into a single boolean predicate named at the surface,
+    /// routed through the shared
+    /// [`crate::AxisHistogram::has_singular_gap`] primitive one altitude
+    /// down. Dual of the just-closed "singleton-support across
+    /// altitudes" projection ([`ConfigDiff::kinds_singular_support`]
+    /// seed → [`Self::tiers_singular_support`] climb →
+    /// [`crate::ConfigSourceChain::layer_kinds_singular_support`] /
+    /// [`crate::ConfigSourceChain::file_formats_singular_support`] /
+    /// [`crate::ConfigSourceChain::env_prefix_kinds_singular_support`]
+    /// chain-sub-axis lifts) on the *complementary* cardinality slice of
+    /// the same coverage-support partition (`singular_support` =
+    /// *exactly-one* observed cell; `singular_gap` = *exactly-one*
+    /// unobserved cell). The chain altitude's three sub-axes
+    /// (`layer_kinds_singular_gap`, `file_formats_singular_gap`,
+    /// `env_prefix_kinds_singular_gap` over the corresponding chain
+    /// histograms) are the natural next sideways lifts.
+    ///
+    /// **Empty-map convention** — returns `false` on the empty map (on
+    /// every axis with cardinality `>= 2`, i.e. every implementor
+    /// today): the empty map has every cell unobserved (four, not one,
+    /// on [`ConfigTierKind`]), so the singleton-gap predicate fails.
+    /// Matches [`crate::AxisHistogram::has_singular_gap`]'s empty-
+    /// histogram `false` convention one altitude down. The empty map is
+    /// therefore on the `false` side of the singular-gap boundary —
+    /// matching [`Self::tiers_any_observed`]'s empty-map `false`
+    /// polarity, [`Self::tiers_full_cover`]'s empty-map `false`
+    /// polarity, and [`Self::tiers_singular_support`]'s empty-map
+    /// `false` polarity.
+    ///
+    /// **Singleton-support convention** — returns `false` on every fold
+    /// whose observed support is a single [`ConfigTierKind`]: three
+    /// cells are unobserved on the four-cell [`ConfigTierKind`] axis
+    /// (not one), so the singleton-gap predicate fails. Every fold with
+    /// all leaves attributed to only-`Bare`, only-`Discovered`, only-
+    /// `Default`, or only-`Custom` is a witness on the `false` side.
+    /// The singleton-support fixture partitions the five coverage-
+    /// support boundaries with (`any_observed`=true,
+    /// `singular_support`=true, `singular_gap`=false, `balanced`=true,
+    /// `full_cover`=false) — orthogonal to `singular_gap` on the
+    /// [`ConfigTierKind`] axis.
+    ///
+    /// **Three-tier partial cover convention** — returns `true` on
+    /// every fold whose observed support is exactly three
+    /// [`ConfigTierKind`] cells: one cell is unobserved (four total
+    /// minus three observed equals one unobserved), exactly the
+    /// singleton-gap boundary. A fold observing only the `Bare`,
+    /// `Default`, and `Custom` tiers is a witness: `Discovered` is
+    /// silent, satisfying the singular-gap. The three-tier partial
+    /// cover fixture partitions the five coverage-support boundaries
+    /// with (`any_observed`=true, `singular_support`=false,
+    /// `singular_gap`=true, `balanced`=either polarity depending on
+    /// per-tier counts, `full_cover`=false) — the row this predicate
+    /// isolates from the surrounding boundaries.
+    ///
+    /// **Uniform four-tier cover convention** — returns `false` on
+    /// every fold where each [`ConfigTierKind`] cell was observed at
+    /// least once: zero cells are unobserved (not one), so the
+    /// singleton-gap predicate fails. Matches
+    /// [`Self::tiers_full_cover`]'s `true` side on the same fixture —
+    /// the two boundaries `singular_gap` and `full_cover` are disjoint
+    /// at the top of the coverage-support partition (adjacent support
+    /// cardinalities `axis_cardinality - 1` and `axis_cardinality`).
+    /// The uniform four-tier cover partitions the five coverage-support
+    /// boundaries with (`any_observed`=true, `singular_support`=false,
+    /// `singular_gap`=false, `balanced`=true, `full_cover`=true).
+    ///
+    /// # Invariants
+    ///
+    /// - `tiers_singular_gap() == tier_histogram().has_singular_gap()`
+    ///   — both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `tiers_singular_gap() == (absent_tiers_count() == 1)` always —
+    ///   the coverage-gap-scalar surface, without allocating the
+    ///   `Vec<ConfigTierKind>`.
+    /// - `tiers_singular_gap() == (absent_tiers().len() == 1)` always —
+    ///   the coverage-gap-`Vec` surface.
+    /// - `tiers_singular_gap() == (contributing_tiers_count() ==
+    ///   crate::axis_cardinality::<ConfigTierKind>() - 1)` always — the
+    ///   support-scalar surface, the dual-side surfacing of the same
+    ///   boolean across the (observed, unobserved) partition.
+    /// - `tiers_singular_gap() == (contributing_tiers().len() ==
+    ///   crate::axis_cardinality::<ConfigTierKind>() - 1)` always — the
+    ///   support-`Vec` surface.
+    /// - `tiers_singular_gap() ⇒ tiers_any_observed()` on every axis
+    ///   with cardinality `>= 2` (every implementor today —
+    ///   [`ConfigTierKind`] carries four cells): a fold missing exactly
+    ///   one cell observes at least `axis_cardinality - 1 >= 1` cells.
+    ///   Contrapositively, `!tiers_any_observed() ⇒
+    ///   !tiers_singular_gap()`.
+    /// - `tiers_singular_gap() ⇒ !tiers_full_cover()` always: full
+    ///   cover has zero unobserved cells, singular gap has exactly one,
+    ///   so the two boundaries are disjoint on every axis.
+    /// - `tiers_singular_gap() ⇒ !tiers_singular_support()` on every
+    ///   axis with cardinality `>= 3` (every implementor today —
+    ///   [`ConfigTierKind`] carries four cells): singleton-support has
+    ///   support cardinality `1`, singleton-gap has support cardinality
+    ///   `axis_cardinality - 1 >= 2`, so the two are disjoint. On the
+    ///   cardinality-`2` corner (no tier-altitude axis today) the two
+    ///   coincide pointwise.
+    /// - `tiers_singular_gap() ⇒ self.len() >=
+    ///   crate::axis_cardinality::<ConfigTierKind>() - 1` — a fold
+    ///   missing exactly one cell has at least one leaf for each of the
+    ///   `axis_cardinality - 1` observed cells.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<ConfigTierKind>()` (the singular-
+    /// gap scan). Both are `O(n)` in practice since the tier axis
+    /// carries a fixed four-cell cardinality; the returned `bool` reads
+    /// one predicate. The scan short-circuits on the second zero cell
+    /// (bounded at two zero cells visited on any two-or-more-cell-gap
+    /// fold), strictly tighter than the four support / coverage-gap
+    /// equality forms — no `Vec<ConfigTierKind>` allocation, no
+    /// [`crate::axis_cardinality`] turbofish, no scalar equality against
+    /// a magic axis-cardinality-minus-one constant.
+    #[must_use]
+    pub fn tiers_singular_gap(&self) -> bool {
+        self.tier_histogram().has_singular_gap()
+    }
 }
 
 /// Zero-allocation `(&[String], &Provenance)` stream over the sorted
@@ -13579,6 +13748,350 @@ mod progressive_tests {
             let via_seam = map.tiers_singular_support();
             let hist = map.tier_histogram();
             let hand_rolled = hist.iter().filter(|(_, c)| *c > 0).count() == 1;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::tiers_singular_gap — singleton-gap-tier-counts
+    //    boolean predicate on the tier altitude, lifting has_singular_gap
+    //    from the histogram surface and climbing the "singleton-gap
+    //    across altitudes" projection from the diff altitude ──
+
+    #[test]
+    fn tiers_singular_gap_matches_tier_histogram_has_singular_gap_pointwise() {
+        // Routing pin: `tiers_singular_gap` routes through
+        // `tier_histogram().has_singular_gap()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Tier-altitude peer
+        // of `kinds_singular_gap_matches_kind_histogram_has_singular_gap_pointwise`
+        // on the diff altitude in the "singleton-gap across altitudes"
+        // projection.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().has_singular_gap();
+            assert_eq!(map.tiers_singular_gap(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn tiers_singular_gap_agrees_with_absent_tiers_count_equals_one_pointwise() {
+        // Coverage-gap-scalar surface: `tiers_singular_gap() ==
+        // (absent_tiers_count() == 1)` on every fixture. The coverage-
+        // gap-scalar surfacing of the same boolean — a singleton-gap
+        // fold has exactly one unobserved cell. Lifted from the trait-
+        // uniform `has_singular_gap() ⇔ unobserved_cells() == 1` law on
+        // AxisHistogram. Peer of
+        // `kinds_singular_gap_agrees_with_absent_kinds_count_equals_one_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_singular_gap();
+            let via_scalar = map.absent_tiers_count() == 1;
+            assert_eq!(
+                via_seam,
+                via_scalar,
+                "tiers_singular_gap ({via_seam}) must agree with \
+                 absent_tiers_count == 1 (gap={g}) for map",
+                g = map.absent_tiers_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_singular_gap_agrees_with_absent_tiers_len_equals_one_pointwise() {
+        // Coverage-gap-`Vec` form: `tiers_singular_gap() ==
+        // (absent_tiers().len() == 1)` on every fixture. Pins the
+        // predicate against the `Vec<ConfigTierKind>` length form
+        // consumers reach for when they already hold the absent vector.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_singular_gap();
+            let via_vec = map.absent_tiers().len() == 1;
+            assert_eq!(
+                via_seam, via_vec,
+                "tiers_singular_gap ({via_seam}) must agree with \
+                 absent_tiers().len() == 1 ({via_vec}) for map",
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_singular_gap_agrees_with_contributing_tiers_count_equals_axis_cardinality_minus_one_pointwise()
+     {
+        // Support-scalar form: `tiers_singular_gap() ==
+        // (contributing_tiers_count() ==
+        // axis_cardinality::<ConfigTierKind>() - 1)` on every fixture.
+        // The support-side surfacing of the same boolean — a singleton-
+        // gap fold observes `axis_cardinality - 1` cells and misses
+        // exactly one.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_singular_gap();
+            let via_support =
+                map.contributing_tiers_count() == crate::axis_cardinality::<ConfigTierKind>() - 1;
+            assert_eq!(
+                via_seam,
+                via_support,
+                "tiers_singular_gap ({via_seam}) must agree with \
+                 contributing_tiers_count == axis_cardinality - 1 \
+                 (support={s}) for map",
+                s = map.contributing_tiers_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_singular_gap_empty_map_is_false() {
+        // Empty-map boundary: the empty map has every cell unobserved
+        // (four, not one, on `ConfigTierKind`), so the singular-gap
+        // predicate reads `false`. Matches `has_singular_gap` reading
+        // `false` on the empty histogram one altitude down. Peer of
+        // `tiers_any_observed_empty_map_is_false`,
+        // `tiers_full_cover_empty_map_is_false`, and
+        // `tiers_singular_support_empty_map_is_false` on the same
+        // polarity of the coverage-support partition. Peer of
+        // `kinds_singular_gap_empty_diff_is_false` on the diff altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert!(!empty.tiers_singular_gap());
+        assert_eq!(empty.absent_tiers_count(), 4);
+    }
+
+    #[test]
+    fn tiers_singular_gap_singleton_support_is_false() {
+        // Singleton-support pin: every leaf lands on the same tier, so
+        // three cells (out of four) are unobserved — `tiers_singular_gap`
+        // reads `false` (three, not one). Direct witness of the
+        // strict-subsumption disjointness `tiers_singular_gap ⇒
+        // !tiers_singular_support` on a fixture where the two
+        // boundaries split (`ConfigTierKind` cardinality is 4, so the
+        // two support-cardinality classes 1 and 3 are disjoint). Peer
+        // of `kinds_singular_gap_singleton_support_is_false` on the
+        // diff altitude.
+        let m: ProvenanceMap = ["a", "b", "c", "d"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 1);
+        assert!(!m.tiers_singular_gap());
+        assert!(m.tiers_singular_support());
+        assert!(m.tiers_any_observed());
+        assert!(m.tiers_balanced());
+        assert!(!m.tiers_full_cover());
+    }
+
+    #[test]
+    fn tiers_singular_gap_uniform_cover_is_false() {
+        // Uniform-cover pin: every tier contributes one leaf, so zero
+        // cells are unobserved — `tiers_singular_gap` reads `false`
+        // (zero, not one). The uniform four-tier cover is on the
+        // `false` side of the singular-gap boundary and on the `true`
+        // side of the full-cover boundary — the two are disjoint at
+        // the top of the coverage-support partition (adjacent support
+        // cardinalities `axis_cardinality - 1` and `axis_cardinality`).
+        // Peer of `kinds_singular_gap_uniform_cover_is_false` on the
+        // diff altitude.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(!m.tiers_singular_gap());
+        assert!(m.tiers_any_observed());
+        assert!(m.tiers_balanced());
+        assert!(m.tiers_full_cover());
+        assert!(!m.tiers_singular_support());
+    }
+
+    #[test]
+    fn tiers_singular_gap_three_tier_partial_cover_is_true() {
+        // Three-tier cover pin: a fold observing exactly three tiers
+        // (say `Bare` + `Default` + `Custom`) has one silent tier
+        // (`Discovered`) — `tiers_singular_gap` reads `true` (one, the
+        // singleton-gap boundary). Direct witness of the
+        // singleton-gap-tier-counts predicate's `true` side, exactly
+        // the fixture that isolates it from the surrounding four
+        // coverage-support boundaries. Peer of
+        // `kinds_singular_gap_two_kind_partial_cover_is_true` on the
+        // diff altitude (adjusting for `ConfigTierKind` carrying four
+        // cells rather than `DiffLineKind`'s three).
+        let m: ProvenanceMap = [
+            ("b", ConfigTierKind::Bare),
+            ("d", ConfigTierKind::Default),
+            ("c", ConfigTierKind::Custom),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        assert_eq!(m.contributing_tiers().len(), 3);
+        assert!(m.tiers_singular_gap());
+        assert!(m.tiers_any_observed());
+        assert!(!m.tiers_full_cover());
+        assert!(!m.tiers_singular_support());
+        assert_eq!(m.absent_tiers_count(), 1);
+    }
+
+    #[test]
+    fn tiers_singular_gap_implies_tiers_any_observed_pointwise() {
+        // Subsumption pin: `tiers_singular_gap() ⇒ tiers_any_observed()`
+        // on every fixture. A fold missing exactly one cell observes
+        // at least `axis_cardinality - 1 >= 1` cells on every axis
+        // with cardinality `>= 2` — the any-observed predicate holds.
+        // Peer of `tiers_singular_support_implies_tiers_any_observed_pointwise`
+        // on the complementary cardinality slice of the same
+        // coverage-support partition. Peer of
+        // `kinds_singular_gap_implies_kinds_any_observed_pointwise` on
+        // the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_singular_gap() {
+                assert!(
+                    map.tiers_any_observed(),
+                    "singular-gap map must be any-observed",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_singular_gap_implies_not_tiers_full_cover_pointwise() {
+        // Disjointness pin: `tiers_singular_gap() ⇒ !tiers_full_cover()`
+        // on every fixture. Full cover has zero unobserved cells;
+        // singular gap has exactly one. The two boundaries are
+        // disjoint on every axis. Peer of
+        // `kinds_singular_gap_implies_not_kinds_full_cover_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_singular_gap() {
+                assert!(
+                    !map.tiers_full_cover(),
+                    "singular-gap map cannot be full-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_singular_gap_implies_not_tiers_singular_support_pointwise() {
+        // Disjointness pin: `tiers_singular_gap() ⇒
+        // !tiers_singular_support()` on every axis with cardinality
+        // `>= 3`. Singleton-support has support cardinality 1;
+        // singleton-gap has support cardinality `axis_cardinality - 1
+        // >= 2` on axes with cardinality `>= 3`. `ConfigTierKind`
+        // carries four cells so this holds — the two coverage-support
+        // corners are disjoint on the tier altitude. Peer of
+        // `kinds_singular_gap_implies_not_kinds_singular_support_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_singular_gap() {
+                assert!(
+                    !map.tiers_singular_support(),
+                    "singular-gap map cannot be singular-support on a \
+                     cardinality >= 3 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_singular_gap_implies_leaf_count_lower_bound_pointwise() {
+        // Leaf-count lower-bound pin: `tiers_singular_gap() ⇒
+        // self.len() >= axis_cardinality::<ConfigTierKind>() - 1`. A
+        // fold missing exactly one cell has at least one leaf for each
+        // of the `axis_cardinality - 1` observed cells. Tightened from
+        // the `>= 1` bound `tiers_singular_support` carries. Peer of
+        // `kinds_singular_gap_implies_line_count_lower_bound_pointwise`
+        // on the diff altitude.
+        let min = crate::axis_cardinality::<ConfigTierKind>() - 1;
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_singular_gap() {
+                assert!(
+                    map.len() >= min,
+                    "singular-gap map must have at least {min} leaves \
+                     (got {n})",
+                    n = map.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_any_observed_negation_implies_not_tiers_singular_gap_pointwise() {
+        // Contrapositive: `!tiers_any_observed() ⇒
+        // !tiers_singular_gap()` on every axis with cardinality `>= 2`.
+        // If no cell was observed, every cell is unobserved
+        // (`axis_cardinality`, not 1) — the singleton-gap predicate
+        // fails. Pins the empty-histogram interaction between the two
+        // coverage-support boundaries on the strictly-tighter
+        // cardinality slice.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if !map.tiers_any_observed() {
+                assert!(
+                    !map.tiers_singular_gap(),
+                    "empty-support map cannot be singular-gap on a \
+                     cardinality >= 2 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_singular_gap_agrees_with_open_coded_exactly_one_zero_walk() {
+        // Parity against the exact hand-rolled singular-gap walk this
+        // lift replaces: walk every cell of the histogram and count
+        // how many carry a zero count; the singleton-gap predicate
+        // reads `true` iff exactly one cell is zero. Mirrors the
+        // parity pin
+        // `tiers_singular_support_agrees_with_open_coded_exactly_one_positive_walk`
+        // on the complementary cardinality slice. Peer of
+        // `kinds_singular_gap_agrees_with_open_coded_exactly_one_zero_walk`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_singular_gap();
+            let hist = map.tier_histogram();
+            let hand_rolled = hist.iter().filter(|(_, c)| *c == 0).count() == 1;
             assert_eq!(via_seam, hand_rolled);
         }
     }
