@@ -3324,6 +3324,122 @@ impl ConfigDiff {
     pub fn kind_spread(&self) -> usize {
         self.kind_histogram().spread()
     }
+
+    /// The **balanced-diff-kinds boolean predicate** at the diff altitude —
+    /// `true` exactly when every observed [`DiffLineKind`] contributed the
+    /// same number of lines. The typed boolean peer of `kind_spread() == 0`
+    /// on the scalar-dispersion surface, lifting the same structural-skew
+    /// boundary from the scalar surface to a named predicate at the diff
+    /// altitude. Routes through
+    /// [`crate::AxisHistogram::is_uniform_count`] one altitude down: the
+    /// single-pass scan over the fixed-cardinality counts vector that
+    /// short-circuits on the first pair of distinct nonzero cells, tighter
+    /// than the two-scan `peak_count()` / `trough_count()` fusion the
+    /// scalar-spread form pays for.
+    ///
+    /// The **balanced-diff-kinds peer** of the fused
+    /// `(peak_kind_count, trough_kind_count, kind_spread)` dispersion
+    /// triple on the diff altitude — the natural typed boolean primitive
+    /// for CLI `config-diff` summaries, attestation manifests, and
+    /// alerting policies asking *"did every observed diff kind fire
+    /// equally?"*: the summary line *"balanced diff: every observed kind
+    /// contributed equally"*, the attestation manifest gate *"rebuild
+    /// window balanced across diff kinds"*, the alerting policy predicate
+    /// *"diff balanced"*. Before this lift, every such consumer
+    /// re-derived the predicate inline as `diff.kind_spread() == 0` (the
+    /// scalar-spread form, which routes through a subtraction whose
+    /// underflow safety relies on the structural `peak >= trough`
+    /// invariant on [`Self::kind_spread`]), or as
+    /// `diff.peak_kind_count() == diff.trough_kind_count()` (the
+    /// scalar-pair form, which pays for two count walks and equates two
+    /// `usize`s without saying structurally *what* is being equated),
+    /// or as `diff.dominant_kind() == diff.recessive_kind()` (the modal-
+    /// pair form, which peers through `Option<DiffLineKind>` equality
+    /// across two argmax/argmin walks). The three forms drifted in subtle
+    /// ways at every consumer site. This lift names the balanced-diff-
+    /// kinds predicate directly at the diff-altitude surface with a
+    /// single-pass short-circuiting scan — the typed boolean every
+    /// operator-facing "is this diff balanced?" check reads off as a
+    /// single method call.
+    ///
+    /// The diff-altitude balanced-predicate peer that seeds the "balanced
+    /// across altitudes" projection — the next natural lift climbs to the
+    /// tier altitude (`ProvenanceMap::tiers_balanced` over
+    /// [`Self::tier_histogram`] on the tier altitude) and sideways along
+    /// the chain altitude's three sub-axes (`layer_kinds_balanced`,
+    /// `file_formats_balanced`, `env_prefix_kinds_balanced` over the
+    /// corresponding chain histograms). The pattern is the same at every
+    /// altitude: fuse the (`peak_count`, `trough_count`, `spread`) scalar
+    /// triple's balanced-boundary into a single boolean predicate named
+    /// at the surface, routed through the shared
+    /// [`crate::AxisHistogram::is_uniform_count`] primitive one altitude
+    /// down. Parallels the "spread across altitudes" projection seeded on
+    /// the same altitude by [`Self::kind_spread`], climbed to the tier
+    /// altitude by [`crate::ProvenanceMap::tier_spread`], and lifted
+    /// sideways along the chain altitude's three sub-axes
+    /// ([`crate::ConfigSourceChain::layer_kind_spread`],
+    /// [`crate::ConfigSourceChain::file_format_spread`],
+    /// [`crate::ConfigSourceChain::env_prefix_kind_spread`]).
+    ///
+    /// **Empty-diff convention** — returns `true` vacuously: the empty
+    /// diff has no observed cells, so the universal "every observed cell
+    /// carries the same count" reads `true` over the empty support.
+    /// Matches [`crate::AxisHistogram::is_uniform_count`]'s empty
+    /// convention one altitude down and `kind_spread() == 0` on the empty
+    /// case (peak == trough == 0). The empty diff is therefore on the
+    /// `true` side of the balanced-diff-kinds boundary — the vacuous-
+    /// uniformity witness.
+    ///
+    /// **Singleton-support convention** — returns `true` on every diff
+    /// whose observed support is a single [`DiffLineKind`] (trivially
+    /// balanced: the one observed kind's count is both the peak and the
+    /// trough). Includes every diff of only-`Removed`, only-`Added`, or
+    /// only-`Context` lines.
+    ///
+    /// **Uniform per-kind convention** — returns `true` on every uniform
+    /// per-kind diff (each observed kind contributing the same nonzero
+    /// count), including the k-kind-observed-once-each shape and the
+    /// uniform three-kind cover.
+    ///
+    /// # Invariants
+    ///
+    /// - `kinds_balanced() == kind_histogram().is_uniform_count()` — both
+    ///   project the same predicate off the same primitive; the named
+    ///   seam is the cube-native routing of the histogram surface.
+    /// - `kinds_balanced() == (kind_spread() == 0)` always — the defining
+    ///   equivalence on the scalar-spread surface at the diff altitude.
+    /// - `kinds_balanced() == (peak_kind_count() == trough_kind_count())`
+    ///   always — the structural form on the underlying scalar pair.
+    /// - `kinds_balanced() == (dominant_kind() == recessive_kind())`
+    ///   always — the modal-pair form; both branches agree on the empty
+    ///   diff (`None == None`), on every singleton-support diff
+    ///   (`Some(k) == Some(k)`), on every uniform per-kind diff
+    ///   (`Some(first_kind) == Some(first_kind)` after declaration-order
+    ///   tie-break), and on every skewed diff (both sides read `false`).
+    /// - `self.lines.is_empty() ⇒ kinds_balanced()` — vacuous uniformity
+    ///   on the empty diff. Contrapositively, `!kinds_balanced() ⇒
+    ///   !self.lines.is_empty()` (a skewed diff has at least two
+    ///   distinct positive counts, so the diff is non-empty).
+    /// - `present_kinds().len() <= 1 ⇒ kinds_balanced()` — every diff
+    ///   with support size 0 or 1 is trivially balanced. Contrapositively,
+    ///   `!kinds_balanced() ⇒ present_kinds().len() >= 2` (a skewed diff
+    ///   observes at least two distinct kinds with differing counts).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (the uniform-count
+    /// scan). Both are `O(n)` in practice since the diff-cell axis
+    /// carries a fixed three-cell cardinality; the returned `bool` reads
+    /// one predicate. The scan short-circuits on the first pair of
+    /// distinct nonzero cells (bounded at two nonzero cells visited),
+    /// strictly tighter than the two-full-scan `peak_count()` /
+    /// `trough_count()` fusion the scalar-spread form pays for on skewed
+    /// inputs.
+    #[must_use]
+    pub fn kinds_balanced(&self) -> bool {
+        self.kind_histogram().is_uniform_count()
+    }
 }
 
 #[cfg(test)]
@@ -6558,6 +6674,290 @@ mod tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak - trough);
+        }
+    }
+
+    // ── ConfigDiff::kinds_balanced — balanced-diff-kinds boolean predicate on
+    //    the diff altitude, lifting is_uniform_count from the histogram surface
+    //    and seeding the "balanced across altitudes" projection ──
+
+    #[test]
+    fn kinds_balanced_matches_kind_histogram_is_uniform_count_pointwise() {
+        // The routing pin: `kinds_balanced` routes through
+        // `kind_histogram().is_uniform_count()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Diff-altitude
+        // balanced-predicate seed of the "balanced across altitudes"
+        // projection — peer of `kind_spread_matches_kind_histogram_spread_pointwise`.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().is_uniform_count();
+            assert_eq!(diff.kinds_balanced(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kinds_balanced_agrees_with_kind_spread_zero_pointwise() {
+        // The defining equivalence on the scalar-spread surface at the
+        // diff altitude: `kinds_balanced() == (kind_spread() == 0)` on
+        // every fixture. The balanced-boundary of the fused
+        // `(peak_kind_count, trough_kind_count, kind_spread)` dispersion
+        // triple as a named boolean predicate. Lifted from the trait-
+        // uniform `is_uniform_count() == (spread() == 0)` law on
+        // AxisHistogram.
+        for diff in dominant_kind_fixtures() {
+            let balanced = diff.kinds_balanced();
+            let spread_zero = diff.kind_spread() == 0;
+            assert_eq!(
+                balanced,
+                spread_zero,
+                "kinds_balanced ({balanced}) must agree with kind_spread == 0 \
+                 (spread={s}) for diff",
+                s = diff.kind_spread(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_balanced_agrees_with_peak_equals_trough_pointwise() {
+        // The structural form on the underlying scalar pair:
+        // `kinds_balanced() == (peak_kind_count() == trough_kind_count())`
+        // on every fixture. Pins the balanced-diff-kinds predicate against
+        // the direct scalar-pair equality form.
+        for diff in dominant_kind_fixtures() {
+            let balanced = diff.kinds_balanced();
+            let peak = diff.peak_kind_count();
+            let trough = diff.trough_kind_count();
+            assert_eq!(
+                balanced,
+                peak == trough,
+                "kinds_balanced ({balanced}) must agree with peak_kind_count == \
+                 trough_kind_count ({peak} == {trough}) for diff",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_balanced_agrees_with_modal_pair_equality_pointwise() {
+        // The modal-pair form: `kinds_balanced() == (dominant_kind() ==
+        // recessive_kind())` on every fixture — including the empty diff
+        // where both branches reduce to `None == None`, every singleton-
+        // support diff where both reduce to `Some(k) == Some(k)`, every
+        // uniform per-kind diff where both reduce to `Some(first) ==
+        // Some(first)` (after declaration-order tie-break on both sides),
+        // and every skewed diff where both read `false`. Lifted from the
+        // trait-uniform `is_uniform_count() == (dominant_cell() ==
+        // recessive_cell())` law on AxisHistogram.
+        for diff in dominant_kind_fixtures() {
+            let balanced = diff.kinds_balanced();
+            let modal_pair_equal = diff.dominant_kind() == diff.recessive_kind();
+            assert_eq!(
+                balanced, modal_pair_equal,
+                "kinds_balanced ({balanced}) must agree with \
+                 dominant_kind == recessive_kind for diff",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_balanced_empty_diff_is_true() {
+        // Vacuous-uniformity boundary: the empty diff has no observed
+        // cells, so the universal "every observed cell carries the same
+        // count" reads `true` over the empty support — matching
+        // AxisHistogram::is_uniform_count's empty convention one altitude
+        // down and `kind_spread == 0` on the empty case. Peer of
+        // `kind_spread_empty_diff_is_zero`.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert!(empty.kinds_balanced());
+        assert_eq!(empty.kind_spread(), 0);
+    }
+
+    #[test]
+    fn kinds_balanced_singleton_support_is_true() {
+        // Singleton-support pin: every line lands on the same kind, so
+        // the one observed kind's count is both peak and trough of the
+        // support — trivially balanced. Peer of
+        // `kind_spread_singleton_support_is_zero`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Removed("r3".into()),
+                DiffLine::Removed("r4".into()),
+            ],
+        };
+        assert_eq!(diff.present_kinds().len(), 1);
+        assert!(diff.kinds_balanced());
+    }
+
+    #[test]
+    fn kinds_balanced_uniform_cover_is_true() {
+        // Uniform-cover pin: every observed kind contributes the same
+        // nonzero count (one line each here), so peak == trough == 1
+        // and the balanced-diff-kinds predicate reads `true`. Peer of
+        // `kind_spread_uniform_cover_is_zero`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kind_histogram().is_full_cover());
+        assert!(diff.kinds_balanced());
+    }
+
+    #[test]
+    fn kinds_balanced_context_dominated_fixture_is_false() {
+        // Direct pin: a diff of 3 Context + 1 Removed has Context
+        // dominant at 3, Removed rarest at 1 — the balanced-diff-kinds
+        // predicate reads `false`. Peer of
+        // `kind_spread_context_dominated_fixture_is_two` on the boolean
+        // side.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(diff.kind_spread(), 2);
+        assert!(!diff.kinds_balanced());
+    }
+
+    #[test]
+    fn kinds_balanced_added_dominated_fixture_is_false() {
+        // Direct pin: a diff of 2 Added + 1 Context has Added dominant
+        // at 2, Context rarest at 1 — the balanced-diff-kinds predicate
+        // reads `false`. Peer of `kind_spread_added_dominated_fixture_is_one`
+        // on the boolean side.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.kind_spread(), 1);
+        assert!(!diff.kinds_balanced());
+    }
+
+    #[test]
+    fn kinds_balanced_singleton_multi_line_is_true() {
+        // Singleton-support multi-line pin: 5 Added lines, one observed
+        // kind at count 5 — peak == trough == 5, balanced reads `true`.
+        // Distinct peak from the 4-line singleton fixture above so any
+        // misread that reintroduces a `kind_spread == 0` inline idiom
+        // silently underflows on a fixture at a different peak.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Added("a3".into()),
+                DiffLine::Added("a4".into()),
+                DiffLine::Added("a5".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_count(), 5);
+        assert_eq!(diff.trough_kind_count(), 5);
+        assert!(diff.kinds_balanced());
+    }
+
+    #[test]
+    fn kinds_balanced_implies_at_most_one_present_kind_or_uniform_cover() {
+        // Structural characterization: on every fixture, `kinds_balanced`
+        // holds exactly when the diff has support size 0 or 1, or every
+        // observed kind carries the same nonzero count. The contrapositive
+        // reads: `!kinds_balanced() ⇒ present_kinds().len() >= 2` with
+        // at least two distinct counts. Direct witness of the trait-
+        // uniform `distinct_cells() <= 1 ⇒ is_uniform_count()` law on
+        // AxisHistogram, lifted to the diff altitude.
+        for diff in dominant_kind_fixtures() {
+            if diff.present_kinds().len() <= 1 {
+                assert!(
+                    diff.kinds_balanced(),
+                    "diff with present_kinds.len() = {} must be kinds_balanced",
+                    diff.present_kinds().len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_balanced_false_implies_diff_is_nonempty() {
+        // Contrapositive of the vacuous-uniformity implication:
+        // `!kinds_balanced() ⇒ !self.lines.is_empty()`. A skewed diff has
+        // at least two distinct positive counts, so the diff is non-
+        // empty. Directly witnessed on the fixture set.
+        for diff in dominant_kind_fixtures() {
+            if !diff.kinds_balanced() {
+                assert!(
+                    !diff.lines.is_empty(),
+                    "non-balanced diff must be non-empty (lines={})",
+                    diff.lines.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_balanced_false_implies_at_least_two_present_kinds() {
+        // Contrapositive of the singleton-support implication:
+        // `!kinds_balanced() ⇒ present_kinds().len() >= 2`. A skewed diff
+        // observes at least two distinct kinds with differing counts.
+        // Lifted from the trait-uniform `!is_uniform_count() ⇒
+        // distinct_cells() >= 2` law on AxisHistogram.
+        for diff in dominant_kind_fixtures() {
+            if !diff.kinds_balanced() {
+                assert!(
+                    diff.present_kinds().len() >= 2,
+                    "non-balanced diff must observe >= 2 present kinds (was {})",
+                    diff.present_kinds().len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_balanced_skewed_three_cell_fixture_is_false() {
+        // Direct pin: a strictly-ordered three-cell case with
+        // Removed=1, Added=2, Context=3 — peak 3, trough 1, spread 2 —
+        // reads `false`. Every count distinct, no tie-breaking on
+        // either side of the modal-count pair. Peer of
+        // `kind_spread_skewed_fixture_matches_peak_minus_trough_direct`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_count(), 3);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert!(!diff.kinds_balanced());
+    }
+
+    #[test]
+    fn kinds_balanced_agrees_with_open_coded_uniform_walk() {
+        // Parity against the exact hand-rolled uniform-count walk this
+        // lift replaces: pull the nonzero counts and check they all
+        // agree. Empty support reads `true` vacuously. Mirrors the
+        // parity pin `kind_spread_agrees_with_open_coded_max_minus_min_walk`
+        // on the scalar-spread surface.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_balanced();
+            let hist = diff.kind_histogram();
+            let mut nonzero = hist.iter().map(|(_, c)| c).filter(|&c| c > 0);
+            let hand_rolled = match nonzero.next() {
+                None => true,
+                Some(first) => nonzero.all(|c| c == first),
+            };
+            assert_eq!(via_seam, hand_rolled);
         }
     }
 
