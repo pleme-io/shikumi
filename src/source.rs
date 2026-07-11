@@ -1619,10 +1619,12 @@ pub trait ConfigSourceChain {
     /// [`crate::AxisHistogram::is_uniform_count`] primitive one altitude
     /// down. Parallels the "spread across altitudes" projection climbed
     /// to the same sub-axis by [`Self::layer_kind_spread`]. The two
-    /// remaining chain-altitude sub-axes (`file_formats_balanced` over
-    /// [`Self::file_format_histogram`], `env_prefix_kinds_balanced` over
-    /// [`Self::env_prefix_kind_histogram`]) are the natural next
-    /// sideways lifts.
+    /// remaining chain-altitude sub-axes are lifted sideways to the same
+    /// projection: [`Self::file_formats_balanced`] over
+    /// [`Self::file_format_histogram`] and
+    /// [`Self::env_prefix_kinds_balanced`] over
+    /// [`Self::env_prefix_kind_histogram`], closing the "balanced across
+    /// altitudes" projection across every altitude / sub-axis.
     ///
     /// **Empty-chain convention** — returns `true` vacuously: the empty
     /// chain has no observed cells, so the universal "every observed
@@ -2948,11 +2950,11 @@ pub trait ConfigSourceChain {
     /// routed through the shared
     /// [`crate::AxisHistogram::is_uniform_count`] primitive one altitude
     /// down. Parallels the "spread across altitudes" projection lifted to
-    /// the same sub-axis by [`Self::file_format_spread`]. The one
-    /// remaining chain-altitude sub-axis (`env_prefix_kinds_balanced`
-    /// over [`Self::env_prefix_kind_histogram`]) is the natural next
-    /// sideways lift that closes the projection across every altitude /
-    /// sub-axis.
+    /// the same sub-axis by [`Self::file_format_spread`]. The last
+    /// remaining chain-altitude sub-axis is lifted sideways to the same
+    /// projection by [`Self::env_prefix_kinds_balanced`] over
+    /// [`Self::env_prefix_kind_histogram`], closing the "balanced across
+    /// altitudes" projection across every altitude / sub-axis.
     ///
     /// **Empty-histogram convention** — returns `true` vacuously on every
     /// chain whose file-format histogram is empty: no observed cells, so
@@ -4339,6 +4341,155 @@ pub trait ConfigSourceChain {
         Self: AsRef<[ConfigSource]>,
     {
         self.env_prefix_kind_histogram().spread()
+    }
+
+    /// The **balanced-env-prefix-kinds boolean predicate** on the env-
+    /// prefix-presence sub-axis of the chain altitude — `true` exactly when
+    /// every observed [`EnvMetadataTagKind`] contributed the same number of
+    /// [`ConfigSource::Env`] layers (bare and prefixed env layers fired at
+    /// equal counts, or the chain observed at most one kind). The typed
+    /// boolean peer of `env_prefix_kind_spread() == 0` on the scalar-
+    /// dispersion surface, lifting the same structural-skew boundary from
+    /// the scalar surface to a named predicate at the env-prefix sub-axis
+    /// of the chain altitude. Routes through
+    /// [`crate::AxisHistogram::is_uniform_count`] one altitude down: the
+    /// single-pass scan over the fixed-cardinality counts vector that
+    /// short-circuits on the first pair of distinct nonzero cells, tighter
+    /// than the two-scan [`Self::peak_env_prefix_kind_count`] /
+    /// [`Self::trough_env_prefix_kind_count`] fusion the scalar-spread form
+    /// pays for.
+    ///
+    /// The **balanced-env-prefix-kinds peer** of the fused
+    /// `(peak_env_prefix_kind_count, trough_env_prefix_kind_count,
+    /// env_prefix_kind_spread)` dispersion triple on the env-prefix sub-
+    /// axis of the chain altitude — the natural typed boolean primitive
+    /// for per-env-prefix dashboards, attestation manifests, and alerting
+    /// policies asking *"did every observed env-prefix kind fire
+    /// equally?"*: the CLI `config-show` headline *"balanced recipe: bare
+    /// and prefixed env layers fired at equal counts"*, the attestation
+    /// manifest gate *"rebuild window balanced across env-prefix kinds"*,
+    /// the alerting policy predicate *"chain balanced by env-prefix"*.
+    /// Before this lift, every such consumer re-derived the predicate
+    /// inline as `chain.env_prefix_kind_spread() == 0` (the scalar-spread
+    /// form, which routes through a subtraction whose underflow safety
+    /// relies on the structural `peak >= trough` invariant on
+    /// [`Self::env_prefix_kind_spread`]), or as
+    /// `chain.peak_env_prefix_kind_count() ==
+    /// chain.trough_env_prefix_kind_count()` (the scalar-pair form, which
+    /// pays for two count walks and equates two `usize`s without saying
+    /// structurally *what* is being equated), or as
+    /// `chain.dominant_env_prefix_kind() ==
+    /// chain.recessive_env_prefix_kind()` (the modal-pair form, which
+    /// peers through `Option<EnvMetadataTagKind>` equality across two
+    /// argmax/argmin walks). The three forms drifted in subtle ways at
+    /// every consumer site. This lift names the balanced-env-prefix-kinds
+    /// predicate directly at the env-prefix sub-axis with a single-pass
+    /// short-circuiting scan — the typed boolean every operator-facing
+    /// "is this recipe balanced by env-prefix?" check reads off as a
+    /// single method call.
+    ///
+    /// The env-prefix sub-axis lift in the "balanced across altitudes"
+    /// projection seeded on the diff altitude by
+    /// [`crate::ConfigDiff::kinds_balanced`], climbed to the tier altitude
+    /// by [`crate::ProvenanceMap::tiers_balanced`], and lifted sideways to
+    /// the first chain sub-axis by [`Self::layer_kinds_balanced`] and to
+    /// the file-format sub-axis by [`Self::file_formats_balanced`]. The
+    /// pattern is the same at every altitude / sub-axis: fuse the
+    /// (`peak_count`, `trough_count`, `spread`) scalar triple's balanced-
+    /// boundary into a single boolean predicate named at the surface,
+    /// routed through the shared
+    /// [`crate::AxisHistogram::is_uniform_count`] primitive one altitude
+    /// down. Parallels the "spread across altitudes" projection lifted to
+    /// the same sub-axis by [`Self::env_prefix_kind_spread`]. This closes
+    /// the chain-altitude sub-axis balanced family — the chain-shape
+    /// "balanced across altitudes" triple `(layer_kinds_balanced,
+    /// file_formats_balanced, env_prefix_kinds_balanced)` now spans every
+    /// sub-axis of the chain surface, matching the fully-covered scalar-
+    /// spread triple `(layer_kind_spread, file_format_spread,
+    /// env_prefix_kind_spread)` one dispersion surface over.
+    ///
+    /// **Empty-histogram convention** — returns `true` vacuously on every
+    /// chain whose env-prefix histogram is empty: no observed cells, so
+    /// the universal "every observed cell carries the same count" reads
+    /// `true` over the empty support. Matches
+    /// [`crate::AxisHistogram::is_uniform_count`]'s empty convention one
+    /// altitude down and `env_prefix_kind_spread() == 0` on the empty case
+    /// (peak == trough == 0). Like [`Self::file_formats_balanced`] and
+    /// unlike [`Self::layer_kinds_balanced`], the `true` boundary is NOT
+    /// `self.as_ref().is_empty()`: a non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::File`] layers is
+    /// trivially balanced under this predicate as well (empty histogram).
+    /// Unlike [`Self::file_formats_balanced`], the empty-histogram / no-
+    /// `Env`-layers condition is exactly the layer-kind
+    /// `count(ConfigSourceKind::Env) == 0` condition: every `Env` entry
+    /// projects to a `Some` cell regardless of prefix value, so no `Env`
+    /// entry is silently dropped by the projection the way an
+    /// unrecognized-extension `File` entry is on the file-format sub-axis.
+    ///
+    /// **Singleton-support convention** — returns `true` on every chain
+    /// whose observed support is a single [`EnvMetadataTagKind`] (trivially
+    /// balanced: the one observed kind's count is both the peak and the
+    /// trough). Includes every prefixed-only chain (all env layers carry
+    /// non-empty prefixes) and every bare-only chain (all env layers carry
+    /// the empty prefix).
+    ///
+    /// **Uniform per-kind convention** — returns `true` on every uniform
+    /// per-kind chain (each observed kind contributing the same nonzero
+    /// count), including the k-kind-observed-once-each shape and the
+    /// uniform full-cover shape over both [`EnvMetadataTagKind`] cells.
+    ///
+    /// # Invariants
+    ///
+    /// - `env_prefix_kinds_balanced() == env_prefix_kind_histogram().is_uniform_count()` —
+    ///   both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `env_prefix_kinds_balanced() == (env_prefix_kind_spread() == 0)` always —
+    ///   the defining equivalence on the scalar-spread surface at the
+    ///   env-prefix sub-axis.
+    /// - `env_prefix_kinds_balanced() == (peak_env_prefix_kind_count() ==
+    ///   trough_env_prefix_kind_count())` always — the structural form on
+    ///   the underlying scalar pair.
+    /// - `env_prefix_kinds_balanced() == (dominant_env_prefix_kind() ==
+    ///   recessive_env_prefix_kind())` always — the modal-pair form; both
+    ///   branches agree on the empty-histogram chain (`None == None`), on
+    ///   every singleton-support chain (`Some(k) == Some(k)`), on every
+    ///   uniform per-kind chain (`Some(first_kind) == Some(first_kind)`
+    ///   after declaration-order tie-break), and on every skewed chain
+    ///   (both sides read `false`).
+    /// - `env_prefix_kind_histogram().is_empty() ⇒ env_prefix_kinds_balanced()` —
+    ///   vacuous uniformity on every chain whose env-prefix histogram is
+    ///   empty (empty chain, or non-empty chain of only Defaults / File
+    ///   layers). Contrapositively, `!env_prefix_kinds_balanced() ⇒
+    ///   !env_prefix_kind_histogram().is_empty()` (a skewed chain has at
+    ///   least two distinct positive counts, so the histogram is non-
+    ///   empty). Agreement with [`Self::file_formats_balanced`], where the
+    ///   vacuous-uniformity implication reads on the histogram-empty
+    ///   predicate too; cross-sub-axis divergence from
+    ///   [`Self::layer_kinds_balanced`], where the vacuous-uniformity
+    ///   implication reads on `self.as_ref().is_empty()` instead.
+    /// - `present_env_prefix_kinds().len() <= 1 ⇒ env_prefix_kinds_balanced()` —
+    ///   every chain with env-prefix support size 0 or 1 is trivially
+    ///   balanced. Contrapositively, `!env_prefix_kinds_balanced() ⇒
+    ///   present_env_prefix_kinds().len() >= 2` (a skewed chain observes
+    ///   both bare and prefixed env kinds with differing counts).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<EnvMetadataTagKind>()` (the
+    /// uniform-count scan). Both are `O(n)` in practice since the env-
+    /// prefix-presence axis carries a fixed two-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan short-circuits on
+    /// the first pair of distinct nonzero cells (bounded at two nonzero
+    /// cells visited), strictly tighter than the two-full-scan
+    /// `peak_env_prefix_kind_count()` / `trough_env_prefix_kind_count()`
+    /// fusion the scalar-spread form pays for on skewed chains.
+    #[must_use]
+    fn env_prefix_kinds_balanced(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().is_uniform_count()
     }
 }
 
@@ -17344,6 +17495,396 @@ mod tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak - trough);
+        }
+    }
+
+    // ---- ConfigSourceChain::env_prefix_kinds_balanced — balanced-
+    //      boolean predicate on the env-prefix-presence sub-axis of the
+    //      chain altitude, fusing the (peak, trough, spread) scalar
+    //      dispersion triple's balanced boundary into one named boolean
+    //      predicate and closing the "balanced across altitudes"
+    //      projection across every sub-axis of the chain surface ----
+
+    #[test]
+    fn env_prefix_kinds_balanced_matches_env_prefix_kind_histogram_is_uniform_count_pointwise() {
+        // The routing pin: `env_prefix_kinds_balanced` routes through
+        // `env_prefix_kind_histogram().is_uniform_count()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Env-prefix
+        // sub-axis peer of
+        // `file_formats_balanced_matches_file_format_histogram_is_uniform_count_pointwise`
+        // and
+        // `layer_kinds_balanced_matches_layer_kind_histogram_is_uniform_count_pointwise`
+        // on the sister sub-axes,
+        // `tiers_balanced_matches_tier_histogram_is_uniform_count_pointwise`
+        // on the tier altitude, and
+        // `kinds_balanced_matches_kind_histogram_is_uniform_count_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.env_prefix_kind_histogram().is_uniform_count();
+            assert_eq!(slice.env_prefix_kinds_balanced(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_balanced_agrees_with_env_prefix_kind_spread_zero_pointwise() {
+        // The defining equivalence on the scalar-spread surface at the
+        // env-prefix sub-axis: `env_prefix_kinds_balanced() ==
+        // (env_prefix_kind_spread() == 0)` on every fixture. The
+        // balanced-boundary of the fused `(peak_env_prefix_kind_count,
+        // trough_env_prefix_kind_count, env_prefix_kind_spread)`
+        // dispersion triple as a named boolean predicate. Lifted from the
+        // trait-uniform `is_uniform_count() == (spread() == 0)` law on
+        // AxisHistogram. Peer of
+        // `file_formats_balanced_agrees_with_file_format_spread_zero_pointwise`
+        // and `layer_kinds_balanced_agrees_with_layer_kind_spread_zero_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let balanced = slice.env_prefix_kinds_balanced();
+            let spread_zero = slice.env_prefix_kind_spread() == 0;
+            assert_eq!(
+                balanced,
+                spread_zero,
+                "env_prefix_kinds_balanced ({balanced}) must agree with \
+                 env_prefix_kind_spread == 0 (spread={s}) for chain",
+                s = slice.env_prefix_kind_spread(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_balanced_agrees_with_peak_equals_trough_pointwise() {
+        // The structural form on the underlying scalar pair:
+        // `env_prefix_kinds_balanced() == (peak_env_prefix_kind_count()
+        // == trough_env_prefix_kind_count())` on every fixture. Pins the
+        // balanced-env-prefix-kinds predicate against the direct scalar-
+        // pair equality form. Peer of
+        // `file_formats_balanced_agrees_with_peak_equals_trough_pointwise`
+        // and `layer_kinds_balanced_agrees_with_peak_equals_trough_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let balanced = slice.env_prefix_kinds_balanced();
+            let peak = slice.peak_env_prefix_kind_count();
+            let trough = slice.trough_env_prefix_kind_count();
+            assert_eq!(
+                balanced,
+                peak == trough,
+                "env_prefix_kinds_balanced ({balanced}) must agree with \
+                 peak_env_prefix_kind_count == trough_env_prefix_kind_count \
+                 ({peak} == {trough}) for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_balanced_agrees_with_modal_pair_equality_pointwise() {
+        // The modal-pair form: `env_prefix_kinds_balanced() ==
+        // (dominant_env_prefix_kind() == recessive_env_prefix_kind())` on
+        // every fixture — including the empty-histogram chain where both
+        // branches reduce to `None == None`, every singleton-support
+        // chain where both reduce to `Some(k) == Some(k)`, every uniform
+        // per-kind chain where both reduce to `Some(first) == Some(first)`
+        // (after declaration-order tie-break on both sides), and every
+        // skewed chain where both read `false`. Cross-sub-axis divergence
+        // pin against
+        // `env_prefix_kind_spread_agrees_with_modal_pair_equality_on_nonempty_histogram`:
+        // the balanced predicate agrees with the modal-pair equality
+        // universally over the fixture set (both branches read `true` on
+        // the empty-histogram trivial-equal case), while the scalar-
+        // spread agreement pin quantifies over non-empty-histogram chains
+        // only. Peer of
+        // `file_formats_balanced_agrees_with_modal_pair_equality_pointwise`
+        // and `layer_kinds_balanced_agrees_with_modal_pair_equality_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let balanced = slice.env_prefix_kinds_balanced();
+            let modal_pair_equal =
+                slice.dominant_env_prefix_kind() == slice.recessive_env_prefix_kind();
+            assert_eq!(
+                balanced, modal_pair_equal,
+                "env_prefix_kinds_balanced ({balanced}) must agree with \
+                 dominant_env_prefix_kind == recessive_env_prefix_kind for \
+                 chain",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_balanced_empty_chain_is_true() {
+        // Vacuous-uniformity boundary: the empty chain has no observed
+        // cells, so the universal "every observed cell carries the same
+        // count" reads `true` over the empty support — matching
+        // AxisHistogram::is_uniform_count's empty convention one altitude
+        // down and `env_prefix_kind_spread == 0` on the empty case. Peer
+        // of `file_formats_balanced_empty_chain_is_true` and
+        // `layer_kinds_balanced_empty_chain_is_true` on the sister sub-
+        // axes and `env_prefix_kind_spread_empty_chain_is_zero` on the
+        // scalar-spread surface at the same sub-axis.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(empty.env_prefix_kinds_balanced());
+        assert_eq!(empty.env_prefix_kind_spread(), 0);
+    }
+
+    #[test]
+    fn env_prefix_kinds_balanced_no_env_layers_is_true() {
+        // The non-empty-chain / empty-histogram vacuous-uniformity
+        // boundary the env-prefix sub-axis pins that the layer-kind sub-
+        // axis does *not*, and that agrees with the file-format sub-axis.
+        // A chain of only `Defaults` / `File` layers is non-empty but has
+        // no `Some` env_prefix_kind projection, so the histogram is empty
+        // and `env_prefix_kinds_balanced` reads `true` — the vacuous-
+        // uniformity boundary reads through the seam. Distinguishing pin
+        // against `layer_kinds_balanced`: on those same chains,
+        // `layer_kinds_balanced` reads `false` when the layer-kind
+        // histogram is skewed (Defaults / File layers still contribute to
+        // the layer-kind histogram at differing counts) while
+        // `env_prefix_kinds_balanced` reads `true`. Unlike the file-
+        // format sub-axis's no-recognized-files boundary, the env-prefix
+        // sub-axis's no-env-layers boundary is exactly
+        // `layer_kind_histogram().count(ConfigSourceKind::Env) == 0`:
+        // every `Env` entry projects to a `Some` cell regardless of
+        // prefix value, so no `Env` entry is silently dropped by the
+        // projection.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.unknown")),
+                ConfigSource::File(PathBuf::from("/b.nix")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(!slice.is_empty(), "fixture must be non-empty");
+            assert!(
+                slice.env_prefix_kind_histogram().is_empty(),
+                "fixture must have empty env-prefix histogram",
+            );
+            assert!(slice.env_prefix_kinds_balanced());
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_balanced_singleton_support_is_true() {
+        // Singleton-support pin: every env layer lands on the same env-
+        // prefix kind, so the one observed kind's count is both the peak
+        // and the trough — trivially balanced. Peer of
+        // `file_formats_balanced_singleton_support_is_true` and
+        // `layer_kinds_balanced_singleton_support_is_true` on the sister
+        // sub-axes and `env_prefix_kind_spread_singleton_support_is_zero`
+        // on the scalar-spread surface at the same sub-axis.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_balanced());
+    }
+
+    #[test]
+    fn env_prefix_kinds_balanced_uniform_cover_is_true() {
+        // Uniform-cover pin: every observed kind contributes the same
+        // nonzero count (one env layer per kind here — a full-cover chain
+        // with uniform count 1 per cell), so peak == trough == 1 and the
+        // balanced-env-prefix-kinds predicate reads `true`. Peer of
+        // `file_formats_balanced_uniform_cover_is_true` and
+        // `layer_kinds_balanced_uniform_cover_is_true` on the sister sub-
+        // axes and `env_prefix_kind_spread_uniform_cover_is_zero` on the
+        // scalar-spread surface at the same sub-axis.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.env_prefix_kind_histogram().is_full_cover());
+        assert!(slice.env_prefix_kinds_balanced());
+    }
+
+    #[test]
+    fn env_prefix_kinds_balanced_bare_majority_is_false() {
+        // Direct pin against a bare-majority chain: three bare Env layers
+        // + one prefixed Env + one File + one Defaults. Bare dominant at
+        // 3, Prefixed recessive at 1 — spread == 2, so
+        // `env_prefix_kinds_balanced` reads `false`. Peer of
+        // `file_formats_balanced_toml_majority_is_false` and
+        // `layer_kinds_balanced_env_majority_is_false` on the sister
+        // sub-axes on the boolean side and
+        // `env_prefix_kind_spread_bare_majority_is_two` on the scalar-
+        // spread surface at the same sub-axis.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.env_prefix_kind_spread(), 2);
+        assert!(!slice.env_prefix_kinds_balanced());
+    }
+
+    #[test]
+    fn env_prefix_kinds_balanced_sample_chain_is_true() {
+        // Direct pin against `sample_chain()`: two `.yaml` file layers +
+        // one prefixed Env layer. Prefixed is the sole observed env-
+        // prefix kind (only one Env layer contributes), so peak ==
+        // trough == 1 and `env_prefix_kinds_balanced` reads `true` — the
+        // singleton-support degenerate. Cross-sub-axis divergence pin
+        // against `layer_kinds_balanced_sample_chain_is_false`: on the
+        // same fixture, the layer-kind sub-axis reads `false` (File
+        // dominant at 2, Env recessive at 1) while the env-prefix sub-
+        // axis reads `true` (only Prefixed observed). Agreement with
+        // `file_formats_balanced_sample_chain_is_true` on the file-
+        // format sub-axis (only Yaml observed).
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.env_prefix_kind_spread(), 0);
+        assert!(slice.env_prefix_kinds_balanced());
+    }
+
+    #[test]
+    fn env_prefix_kinds_balanced_singleton_support_multi_layer_is_true() {
+        // Singleton-support multi-layer pin: 5 Env layers all on the same
+        // env-prefix kind — peak == trough == 5, balanced reads `true`.
+        // Distinct peak from the 3-layer singleton fixture above so any
+        // misread that reintroduces an `env_prefix_kind_spread == 0`
+        // inline idiom silently underflows on a fixture at a different
+        // peak. Peer of
+        // `file_formats_balanced_singleton_support_multi_layer_is_true`
+        // and `layer_kinds_balanced_singleton_support_multi_layer_is_true`
+        // on the sister sub-axes and
+        // `env_prefix_kind_spread_singleton_support_multi_layer_is_zero`
+        // on the scalar-spread surface at the same sub-axis.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::Env("EXTRA_".to_owned()),
+            ConfigSource::Env("MORE_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_env_prefix_kind_count(), 5);
+        assert_eq!(slice.trough_env_prefix_kind_count(), 5);
+        assert!(slice.env_prefix_kinds_balanced());
+    }
+
+    #[test]
+    fn env_prefix_kinds_balanced_implies_at_most_one_present_kind_or_uniform_cover() {
+        // Structural characterization: on every fixture,
+        // `env_prefix_kinds_balanced` holds when the chain's env-prefix
+        // support size is 0 or 1, or every observed kind carries the same
+        // nonzero count. Direct witness of the trait-uniform
+        // `distinct_cells() <= 1 ⇒ is_uniform_count()` law on
+        // AxisHistogram, lifted to the env-prefix sub-axis of the chain
+        // altitude. Peer of
+        // `file_formats_balanced_implies_at_most_one_present_format_or_uniform_cover`
+        // and `layer_kinds_balanced_implies_at_most_one_present_kind_or_uniform_cover`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.present_env_prefix_kinds().len() <= 1 {
+                assert!(
+                    slice.env_prefix_kinds_balanced(),
+                    "chain with present_env_prefix_kinds.len() = {} must be \
+                     env_prefix_kinds_balanced",
+                    slice.present_env_prefix_kinds().len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_balanced_false_implies_env_prefix_kind_histogram_is_nonempty() {
+        // Contrapositive of the vacuous-uniformity implication:
+        // `!env_prefix_kinds_balanced() ⇒
+        // !env_prefix_kind_histogram().is_empty()`. A skewed chain has
+        // at least two distinct positive counts on the env-prefix
+        // histogram, so the histogram is non-empty. Cross-sub-axis
+        // divergence pin against
+        // `layer_kinds_balanced_false_implies_chain_is_nonempty`: on the
+        // layer-kind sub-axis, the contrapositive falls on
+        // `!self.as_ref().is_empty()`; on the env-prefix sub-axis, it
+        // falls on the stricter `!env_prefix_kind_histogram().is_empty()`
+        // — a non-empty chain of only Defaults / File layers has an
+        // empty env-prefix histogram and is `env_prefix_kinds_balanced`,
+        // so the chain-non-empty implication would fail on those
+        // fixtures. Agreement with
+        // `file_formats_balanced_false_implies_file_format_histogram_is_nonempty`
+        // on the sister sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.env_prefix_kinds_balanced() {
+                assert!(
+                    !slice.env_prefix_kind_histogram().is_empty(),
+                    "non-balanced chain must have non-empty env-prefix \
+                     histogram",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_balanced_false_implies_at_least_two_present_env_prefix_kinds() {
+        // Contrapositive of the singleton-support implication:
+        // `!env_prefix_kinds_balanced() ⇒
+        // present_env_prefix_kinds().len() >= 2`. A skewed chain
+        // observes at least two distinct kinds with differing counts.
+        // Lifted from the trait-uniform `!is_uniform_count() ⇒
+        // distinct_cells() >= 2` law on AxisHistogram. On the two-cell
+        // env-prefix axis this is tight: `!env_prefix_kinds_balanced` ⇒
+        // `present_env_prefix_kinds().len() == 2` (both cells nonzero,
+        // and any skew implies the two cells fired at different counts).
+        // Peer of
+        // `file_formats_balanced_false_implies_at_least_two_present_file_formats`
+        // and `layer_kinds_balanced_false_implies_at_least_two_present_layer_kinds`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.env_prefix_kinds_balanced() {
+                assert!(
+                    slice.present_env_prefix_kinds().len() >= 2,
+                    "non-balanced chain must observe >= 2 present env \
+                     prefix kinds (was {})",
+                    slice.present_env_prefix_kinds().len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_balanced_agrees_with_open_coded_uniform_walk() {
+        // Parity against the exact hand-rolled uniform-count walk this
+        // lift replaces: pull the nonzero counts and check they all
+        // agree. Empty support reads `true` vacuously. Mirrors the
+        // parity pins
+        // `file_formats_balanced_agrees_with_open_coded_uniform_walk`
+        // and `layer_kinds_balanced_agrees_with_open_coded_uniform_walk`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_balanced();
+            let hist = slice.env_prefix_kind_histogram();
+            let mut nonzero = hist.iter().map(|(_, c)| c).filter(|&c| c > 0);
+            let hand_rolled = match nonzero.next() {
+                None => true,
+                Some(first) => nonzero.all(|c| c == first),
+            };
+            assert_eq!(via_seam, hand_rolled);
         }
     }
 
