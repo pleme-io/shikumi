@@ -1567,6 +1567,131 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().spread()
     }
 
+    /// The **balanced-layer-kinds boolean predicate** on the layer-kind
+    /// sub-axis of the chain altitude — `true` exactly when every observed
+    /// [`ConfigSourceKind`] contributed the same number of layers. The
+    /// typed boolean peer of `layer_kind_spread() == 0` on the scalar-
+    /// dispersion surface, lifting the same structural-skew boundary from
+    /// the scalar surface to a named predicate at the layer-kind sub-axis
+    /// of the chain altitude. Routes through
+    /// [`crate::AxisHistogram::is_uniform_count`] one altitude down: the
+    /// single-pass scan over the fixed-cardinality counts vector that
+    /// short-circuits on the first pair of distinct nonzero cells, tighter
+    /// than the two-scan [`Self::peak_layer_kind_count`] /
+    /// [`Self::trough_layer_kind_count`] fusion the scalar-spread form
+    /// pays for.
+    ///
+    /// The **balanced-layer-kinds peer** of the fused
+    /// `(peak_layer_kind_count, trough_layer_kind_count,
+    /// layer_kind_spread)` dispersion triple on the layer-kind sub-axis of
+    /// the chain altitude — the natural typed boolean primitive for chain-
+    /// shape dashboards, attestation manifests, and alerting policies
+    /// asking *"did every observed layer kind fire equally?"*: the CLI
+    /// `config-show` headline *"balanced recipe: every observed kind owns
+    /// the same number of layers"*, the attestation manifest gate
+    /// *"rebuild window balanced across layer kinds"*, the alerting
+    /// policy predicate *"chain balanced"*. Before this lift, every such
+    /// consumer re-derived the predicate inline as
+    /// `chain.layer_kind_spread() == 0` (the scalar-spread form, which
+    /// routes through a subtraction whose underflow safety relies on the
+    /// structural `peak >= trough` invariant on
+    /// [`Self::layer_kind_spread`]), or as
+    /// `chain.peak_layer_kind_count() == chain.trough_layer_kind_count()`
+    /// (the scalar-pair form, which pays for two count walks and equates
+    /// two `usize`s without saying structurally *what* is being equated),
+    /// or as `chain.dominant_layer_kind() == chain.recessive_layer_kind()`
+    /// (the modal-pair form, which peers through
+    /// `Option<ConfigSourceKind>` equality across two argmax/argmin
+    /// walks). The three forms drifted in subtle ways at every consumer
+    /// site. This lift names the balanced-layer-kinds predicate directly
+    /// at the layer-kind sub-axis with a single-pass short-circuiting
+    /// scan — the typed boolean every operator-facing "is this recipe
+    /// balanced?" check reads off as a single method call.
+    ///
+    /// The layer-kind sub-axis lift in the "balanced across altitudes"
+    /// projection seeded on the diff altitude by
+    /// [`crate::ConfigDiff::kinds_balanced`] and climbed to the tier
+    /// altitude by [`crate::ProvenanceMap::tiers_balanced`]. The pattern
+    /// is the same at every altitude / sub-axis: fuse the
+    /// (`peak_count`, `trough_count`, `spread`) scalar triple's balanced-
+    /// boundary into a single boolean predicate named at the surface,
+    /// routed through the shared
+    /// [`crate::AxisHistogram::is_uniform_count`] primitive one altitude
+    /// down. Parallels the "spread across altitudes" projection climbed
+    /// to the same sub-axis by [`Self::layer_kind_spread`]. The two
+    /// remaining chain-altitude sub-axes (`file_formats_balanced` over
+    /// [`Self::file_format_histogram`], `env_prefix_kinds_balanced` over
+    /// [`Self::env_prefix_kind_histogram`]) are the natural next
+    /// sideways lifts.
+    ///
+    /// **Empty-chain convention** — returns `true` vacuously: the empty
+    /// chain has no observed cells, so the universal "every observed
+    /// cell carries the same count" reads `true` over the empty support.
+    /// Matches [`crate::AxisHistogram::is_uniform_count`]'s empty
+    /// convention one altitude down and `layer_kind_spread() == 0` on
+    /// the empty case (peak == trough == 0). The empty chain is
+    /// therefore on the `true` side of the balanced-layer-kinds
+    /// boundary — the vacuous-uniformity witness.
+    ///
+    /// **Singleton-support convention** — returns `true` on every chain
+    /// whose observed support is a single [`ConfigSourceKind`] (trivially
+    /// balanced: the one observed kind's count is both the peak and the
+    /// trough). Includes every chain in which one kind owns every layer.
+    ///
+    /// **Uniform per-kind convention** — returns `true` on every uniform
+    /// per-kind chain (each observed kind contributing the same nonzero
+    /// count), including the k-kind-observed-once-each shape and the
+    /// uniform full-cover shape over all three [`ConfigSourceKind`]
+    /// cells.
+    ///
+    /// # Invariants
+    ///
+    /// - `layer_kinds_balanced() == layer_kind_histogram().is_uniform_count()` —
+    ///   both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `layer_kinds_balanced() == (layer_kind_spread() == 0)` always —
+    ///   the defining equivalence on the scalar-spread surface at the
+    ///   layer-kind sub-axis.
+    /// - `layer_kinds_balanced() == (peak_layer_kind_count() ==
+    ///   trough_layer_kind_count())` always — the structural form on the
+    ///   underlying scalar pair.
+    /// - `layer_kinds_balanced() == (dominant_layer_kind() ==
+    ///   recessive_layer_kind())` always — the modal-pair form; both
+    ///   branches agree on the empty chain (`None == None`), on every
+    ///   singleton-support chain (`Some(k) == Some(k)`), on every uniform
+    ///   per-kind chain (`Some(first_kind) == Some(first_kind)` after
+    ///   declaration-order tie-break), and on every skewed chain (both
+    ///   sides read `false`).
+    /// - `self.as_ref().is_empty() ⇒ layer_kinds_balanced()` — vacuous
+    ///   uniformity on the empty chain. Contrapositively,
+    ///   `!layer_kinds_balanced() ⇒ !self.as_ref().is_empty()` (a skewed
+    ///   chain has at least two distinct positive counts, so the chain
+    ///   is non-empty).
+    /// - `present_layer_kinds().len() <= 1 ⇒ layer_kinds_balanced()` —
+    ///   every chain with support size 0 or 1 is trivially balanced.
+    ///   Contrapositively, `!layer_kinds_balanced() ⇒
+    ///   present_layer_kinds().len() >= 2` (a skewed chain observes at
+    ///   least two distinct kinds with differing counts).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the
+    /// uniform-count scan). Both are `O(n)` in practice since the layer-
+    /// kind axis carries a fixed three-cell cardinality; the returned
+    /// `bool` reads one predicate. The scan short-circuits on the first
+    /// pair of distinct nonzero cells (bounded at two nonzero cells
+    /// visited), strictly tighter than the two-full-scan
+    /// `peak_layer_kind_count()` / `trough_layer_kind_count()` fusion the
+    /// scalar-spread form pays for on skewed chains.
+    #[must_use]
+    fn layer_kinds_balanced(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().is_uniform_count()
+    }
+
     /// Dense per-format tally of the chain's [`ConfigSource::File`]
     /// layers over the [`crate::discovery::Format`] axis — the typed
     /// histogram every per-format dashboard, attestation manifest
@@ -15536,6 +15661,326 @@ mod tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak - trough);
+        }
+    }
+
+    // ---- ConfigSourceChain::layer_kinds_balanced — balanced-layer-kinds
+    //      boolean predicate on the layer-kind sub-axis of the chain
+    //      altitude, lifting is_uniform_count from the histogram surface
+    //      and climbing the "balanced across altitudes" projection
+    //      sideways from the tier altitude to the first chain sub-axis ----
+
+    #[test]
+    fn layer_kinds_balanced_matches_layer_kind_histogram_is_uniform_count_pointwise() {
+        // The routing pin: `layer_kinds_balanced` routes through
+        // `layer_kind_histogram().is_uniform_count()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Layer-kind sub-axis
+        // peer of `tiers_balanced_matches_tier_histogram_is_uniform_count_pointwise`
+        // on the tier altitude and
+        // `kinds_balanced_matches_kind_histogram_is_uniform_count_pointwise`
+        // on the diff altitude, in the "balanced across altitudes"
+        // projection.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.layer_kind_histogram().is_uniform_count();
+            assert_eq!(slice.layer_kinds_balanced(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn layer_kinds_balanced_agrees_with_layer_kind_spread_zero_pointwise() {
+        // The defining equivalence on the scalar-spread surface at the
+        // layer-kind sub-axis: `layer_kinds_balanced() ==
+        // (layer_kind_spread() == 0)` on every fixture. The balanced-
+        // boundary of the fused `(peak_layer_kind_count,
+        // trough_layer_kind_count, layer_kind_spread)` dispersion triple
+        // as a named boolean predicate. Lifted from the trait-uniform
+        // `is_uniform_count() == (spread() == 0)` law on AxisHistogram.
+        // Peer of `tiers_balanced_agrees_with_tier_spread_zero_pointwise`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let balanced = slice.layer_kinds_balanced();
+            let spread_zero = slice.layer_kind_spread() == 0;
+            assert_eq!(
+                balanced,
+                spread_zero,
+                "layer_kinds_balanced ({balanced}) must agree with \
+                 layer_kind_spread == 0 (spread={s}) for chain",
+                s = slice.layer_kind_spread(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_balanced_agrees_with_peak_equals_trough_pointwise() {
+        // The structural form on the underlying scalar pair:
+        // `layer_kinds_balanced() == (peak_layer_kind_count() ==
+        // trough_layer_kind_count())` on every fixture. Pins the
+        // balanced-layer-kinds predicate against the direct scalar-pair
+        // equality form. Peer of
+        // `tiers_balanced_agrees_with_peak_equals_trough_pointwise` on
+        // the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let balanced = slice.layer_kinds_balanced();
+            let peak = slice.peak_layer_kind_count();
+            let trough = slice.trough_layer_kind_count();
+            assert_eq!(
+                balanced,
+                peak == trough,
+                "layer_kinds_balanced ({balanced}) must agree with \
+                 peak_layer_kind_count == trough_layer_kind_count \
+                 ({peak} == {trough}) for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_balanced_agrees_with_modal_pair_equality_pointwise() {
+        // The modal-pair form: `layer_kinds_balanced() ==
+        // (dominant_layer_kind() == recessive_layer_kind())` on every
+        // fixture — including the empty chain where both branches reduce
+        // to `None == None`, every singleton-support chain where both
+        // reduce to `Some(k) == Some(k)`, every uniform per-kind chain
+        // where both reduce to `Some(first) == Some(first)` (after
+        // declaration-order tie-break on both sides), and every skewed
+        // chain where both read `false`. Lifted from the trait-uniform
+        // `is_uniform_count() == (dominant_cell() == recessive_cell())`
+        // law on AxisHistogram. Peer of
+        // `tiers_balanced_agrees_with_modal_pair_equality_pointwise` on
+        // the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let balanced = slice.layer_kinds_balanced();
+            let modal_pair_equal = slice.dominant_layer_kind() == slice.recessive_layer_kind();
+            assert_eq!(
+                balanced, modal_pair_equal,
+                "layer_kinds_balanced ({balanced}) must agree with \
+                 dominant_layer_kind == recessive_layer_kind for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_balanced_empty_chain_is_true() {
+        // Vacuous-uniformity boundary: the empty chain has no observed
+        // cells, so the universal "every observed cell carries the same
+        // count" reads `true` over the empty support — matching
+        // AxisHistogram::is_uniform_count's empty convention one altitude
+        // down and `layer_kind_spread == 0` on the empty case. Peer of
+        // `tiers_balanced_empty_map_is_true` on the tier altitude and
+        // `layer_kind_spread_empty_chain_is_zero` on the scalar-spread
+        // surface at the same sub-axis.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(empty.layer_kinds_balanced());
+        assert_eq!(empty.layer_kind_spread(), 0);
+    }
+
+    #[test]
+    fn layer_kinds_balanced_singleton_support_is_true() {
+        // Singleton-support pin: every layer lands on the same kind, so
+        // the one observed kind's count is both peak and trough of the
+        // support — trivially balanced. Peer of
+        // `tiers_balanced_singleton_support_is_true` on the tier altitude
+        // and `layer_kind_spread_singleton_support_is_zero` on the
+        // scalar-spread surface at the same sub-axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 1);
+        assert!(slice.layer_kinds_balanced());
+    }
+
+    #[test]
+    fn layer_kinds_balanced_uniform_cover_is_true() {
+        // Uniform-cover pin: every observed kind contributes the same
+        // nonzero count (two layers each here — a full-cover chain with
+        // uniform count 2 per cell), so peak == trough == 2 and the
+        // balanced-layer-kinds predicate reads `true`. Peer of
+        // `tiers_balanced_uniform_cover_is_true` on the tier altitude
+        // and `layer_kind_spread_uniform_cover_is_zero` on the scalar-
+        // spread surface at the same sub-axis.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kind_histogram().is_full_cover());
+        assert!(slice.layer_kinds_balanced());
+    }
+
+    #[test]
+    fn layer_kinds_balanced_sample_chain_is_false() {
+        // Direct pin against `sample_chain()`: two File layers + one Env
+        // layer. File dominant at 2, Env recessive at 1 — spread == 1,
+        // so `layer_kinds_balanced` reads `false`. Peer of
+        // `tiers_balanced_prog_fixture_is_false` on the tier altitude on
+        // the boolean side and `layer_kind_spread_sample_chain_is_one` on
+        // the scalar-spread surface.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.layer_kind_spread(), 1);
+        assert!(!slice.layer_kinds_balanced());
+    }
+
+    #[test]
+    fn layer_kinds_balanced_env_majority_is_false() {
+        // Direct pin against an env-majority chain: three Env layers +
+        // one File + one Defaults. Env dominant at 3, both other cells
+        // recessive at 1 — spread == 2, so `layer_kinds_balanced` reads
+        // `false`. Peer of `tiers_balanced_nested_fixture_is_false` on
+        // the tier altitude on the boolean side and
+        // `layer_kind_spread_env_majority_is_two` on the scalar-spread
+        // surface.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.layer_kind_spread(), 2);
+        assert!(!slice.layer_kinds_balanced());
+    }
+
+    #[test]
+    fn layer_kinds_balanced_singleton_support_multi_layer_is_true() {
+        // Singleton-support multi-layer pin: 4 File layers all on one
+        // kind — peak == trough == 4, balanced reads `true`. Distinct
+        // peak from the 3-layer singleton fixture above so any misread
+        // that reintroduces a `layer_kind_spread == 0` inline idiom
+        // silently underflows on a fixture at a different peak. Peer of
+        // `tiers_balanced_singleton_support_multi_leaf_is_true` on the
+        // tier altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+            ConfigSource::File(PathBuf::from("/d.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_layer_kind_count(), 4);
+        assert_eq!(slice.trough_layer_kind_count(), 4);
+        assert!(slice.layer_kinds_balanced());
+    }
+
+    #[test]
+    fn layer_kinds_balanced_implies_at_most_one_present_kind_or_uniform_cover() {
+        // Structural characterization: on every fixture,
+        // `layer_kinds_balanced` holds when the chain has support size 0
+        // or 1, or every observed kind carries the same nonzero count.
+        // Direct witness of the trait-uniform `distinct_cells() <= 1 ⇒
+        // is_uniform_count()` law on AxisHistogram, lifted to the layer-
+        // kind sub-axis of the chain altitude. Peer of
+        // `tiers_balanced_implies_at_most_one_contributing_tier_or_uniform_cover`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.present_layer_kinds().len() <= 1 {
+                assert!(
+                    slice.layer_kinds_balanced(),
+                    "chain with present_layer_kinds.len() = {} must be \
+                     layer_kinds_balanced",
+                    slice.present_layer_kinds().len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_balanced_false_implies_chain_is_nonempty() {
+        // Contrapositive of the vacuous-uniformity implication:
+        // `!layer_kinds_balanced() ⇒ !self.as_ref().is_empty()`. A
+        // skewed chain has at least two distinct positive counts, so
+        // the chain is non-empty. Directly witnessed on the fixture set.
+        // Peer of `tiers_balanced_false_implies_map_is_nonempty` on the
+        // tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.layer_kinds_balanced() {
+                assert!(
+                    !slice.is_empty(),
+                    "non-balanced chain must be non-empty (len={})",
+                    slice.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_balanced_false_implies_at_least_two_present_layer_kinds() {
+        // Contrapositive of the singleton-support implication:
+        // `!layer_kinds_balanced() ⇒ present_layer_kinds().len() >= 2`.
+        // A skewed chain observes at least two distinct kinds with
+        // differing counts. Lifted from the trait-uniform
+        // `!is_uniform_count() ⇒ distinct_cells() >= 2` law on
+        // AxisHistogram. Peer of
+        // `tiers_balanced_false_implies_at_least_two_contributing_tiers`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.layer_kinds_balanced() {
+                assert!(
+                    slice.present_layer_kinds().len() >= 2,
+                    "non-balanced chain must observe >= 2 present layer \
+                     kinds (was {})",
+                    slice.present_layer_kinds().len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_balanced_skewed_three_cell_fixture_is_false() {
+        // Direct pin: a strictly-ordered three-cell chain with
+        // Defaults=1, Env=2, File=3 — peak 3, trough 1, spread 2 — reads
+        // `false`. Every count distinct, no tie-breaking on either side
+        // of the modal-count pair. Peer of
+        // `tiers_balanced_skewed_three_cell_fixture_is_false` on the
+        // tier altitude.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_layer_kind_count(), 3);
+        assert_eq!(slice.trough_layer_kind_count(), 1);
+        assert!(!slice.layer_kinds_balanced());
+    }
+
+    #[test]
+    fn layer_kinds_balanced_agrees_with_open_coded_uniform_walk() {
+        // Parity against the exact hand-rolled uniform-count walk this
+        // lift replaces: pull the nonzero counts and check they all
+        // agree. Empty support reads `true` vacuously. Mirrors the
+        // parity pin `tiers_balanced_agrees_with_open_coded_uniform_walk`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_balanced();
+            let hist = slice.layer_kind_histogram();
+            let mut nonzero = hist.iter().map(|(_, c)| c).filter(|&c| c > 0);
+            let hand_rolled = match nonzero.next() {
+                None => true,
+                Some(first) => nonzero.all(|c| c == first),
+            };
+            assert_eq!(via_seam, hand_rolled);
         }
     }
 
