@@ -2893,6 +2893,146 @@ pub trait ConfigSourceChain {
         self.file_format_histogram().spread()
     }
 
+    /// The **balanced-file-formats boolean predicate** on the file-format
+    /// sub-axis of the chain altitude — `true` exactly when every observed
+    /// [`crate::discovery::Format`] contributed the same number of
+    /// recognized-extension file layers. The typed boolean peer of
+    /// `file_format_spread() == 0` on the scalar-dispersion surface,
+    /// lifting the same structural-skew boundary from the scalar surface
+    /// to a named predicate at the file-format sub-axis of the chain
+    /// altitude. Routes through
+    /// [`crate::AxisHistogram::is_uniform_count`] one altitude down: the
+    /// single-pass scan over the fixed-cardinality counts vector that
+    /// short-circuits on the first pair of distinct nonzero cells, tighter
+    /// than the two-scan [`Self::peak_file_format_count`] /
+    /// [`Self::trough_file_format_count`] fusion the scalar-spread form
+    /// pays for.
+    ///
+    /// The **balanced-file-formats peer** of the fused
+    /// `(peak_file_format_count, trough_file_format_count,
+    /// file_format_spread)` dispersion triple on the file-format sub-axis
+    /// of the chain altitude — the natural typed boolean primitive for
+    /// per-format dashboards, attestation manifests, and alerting policies
+    /// asking *"did every observed file format fire equally?"*: the CLI
+    /// `config-show` headline *"balanced recipe: every observed file
+    /// format owns the same number of layers"*, the attestation manifest
+    /// gate *"rebuild window balanced across file formats"*, the alerting
+    /// policy predicate *"chain balanced by format"*. Before this lift,
+    /// every such consumer re-derived the predicate inline as
+    /// `chain.file_format_spread() == 0` (the scalar-spread form, which
+    /// routes through a subtraction whose underflow safety relies on the
+    /// structural `peak >= trough` invariant on
+    /// [`Self::file_format_spread`]), or as
+    /// `chain.peak_file_format_count() ==
+    /// chain.trough_file_format_count()` (the scalar-pair form, which
+    /// pays for two count walks and equates two `usize`s without saying
+    /// structurally *what* is being equated), or as
+    /// `chain.dominant_file_format() == chain.recessive_file_format()`
+    /// (the modal-pair form, which peers through
+    /// `Option<crate::discovery::Format>` equality across two
+    /// argmax/argmin walks). The three forms drifted in subtle ways at
+    /// every consumer site. This lift names the balanced-file-formats
+    /// predicate directly at the file-format sub-axis with a single-pass
+    /// short-circuiting scan — the typed boolean every operator-facing
+    /// "is this recipe balanced by format?" check reads off as a single
+    /// method call.
+    ///
+    /// The file-format sub-axis lift in the "balanced across altitudes"
+    /// projection seeded on the diff altitude by
+    /// [`crate::ConfigDiff::kinds_balanced`], climbed to the tier altitude
+    /// by [`crate::ProvenanceMap::tiers_balanced`], and lifted sideways to
+    /// the first chain sub-axis by [`Self::layer_kinds_balanced`]. The
+    /// pattern is the same at every altitude / sub-axis: fuse the
+    /// (`peak_count`, `trough_count`, `spread`) scalar triple's balanced-
+    /// boundary into a single boolean predicate named at the surface,
+    /// routed through the shared
+    /// [`crate::AxisHistogram::is_uniform_count`] primitive one altitude
+    /// down. Parallels the "spread across altitudes" projection lifted to
+    /// the same sub-axis by [`Self::file_format_spread`]. The one
+    /// remaining chain-altitude sub-axis (`env_prefix_kinds_balanced`
+    /// over [`Self::env_prefix_kind_histogram`]) is the natural next
+    /// sideways lift that closes the projection across every altitude /
+    /// sub-axis.
+    ///
+    /// **Empty-histogram convention** — returns `true` vacuously on every
+    /// chain whose file-format histogram is empty: no observed cells, so
+    /// the universal "every observed cell carries the same count" reads
+    /// `true` over the empty support. Matches
+    /// [`crate::AxisHistogram::is_uniform_count`]'s empty convention one
+    /// altitude down and `file_format_spread() == 0` on the empty case
+    /// (peak == trough == 0). Unlike [`Self::layer_kinds_balanced`], the
+    /// `true` boundary is NOT `self.as_ref().is_empty()`: a non-empty
+    /// chain of only [`ConfigSource::Defaults`] / [`ConfigSource::Env`] /
+    /// unrecognized-extension [`ConfigSource::File`] layers is trivially
+    /// balanced under this predicate as well (empty histogram). Cross-
+    /// sub-axis divergence from the layer-kind sub-axis, where the
+    /// vacuous-uniformity boundary coincides with the empty chain.
+    ///
+    /// **Singleton-support convention** — returns `true` on every chain
+    /// whose observed support is a single [`crate::discovery::Format`]
+    /// (trivially balanced: the one observed format's count is both the
+    /// peak and the trough). Includes every chain in which one format
+    /// owns every recognized-extension file layer.
+    ///
+    /// **Uniform per-format convention** — returns `true` on every uniform
+    /// per-format chain (each observed format contributing the same
+    /// nonzero count), including the k-format-observed-once-each shape
+    /// and the uniform full-cover shape over all four
+    /// [`crate::discovery::Format`] cells.
+    ///
+    /// # Invariants
+    ///
+    /// - `file_formats_balanced() == file_format_histogram().is_uniform_count()` —
+    ///   both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `file_formats_balanced() == (file_format_spread() == 0)` always —
+    ///   the defining equivalence on the scalar-spread surface at the
+    ///   file-format sub-axis.
+    /// - `file_formats_balanced() == (peak_file_format_count() ==
+    ///   trough_file_format_count())` always — the structural form on
+    ///   the underlying scalar pair.
+    /// - `file_formats_balanced() == (dominant_file_format() ==
+    ///   recessive_file_format())` always — the modal-pair form; both
+    ///   branches agree on the empty-histogram chain (`None == None`), on
+    ///   every singleton-support chain (`Some(f) == Some(f)`), on every
+    ///   uniform per-format chain (`Some(first_format) ==
+    ///   Some(first_format)` after declaration-order tie-break), and on
+    ///   every skewed chain (both sides read `false`).
+    /// - `file_format_histogram().is_empty() ⇒ file_formats_balanced()` —
+    ///   vacuous uniformity on every chain whose file-format histogram
+    ///   is empty (empty chain, or non-empty chain of only Defaults /
+    ///   Env / unrecognized-extension File layers). Contrapositively,
+    ///   `!file_formats_balanced() ⇒ !file_format_histogram().is_empty()`
+    ///   (a skewed chain has at least two distinct positive counts, so
+    ///   the histogram is non-empty). Cross-sub-axis divergence from
+    ///   [`Self::layer_kinds_balanced`], where the vacuous-uniformity
+    ///   implication reads on `self.as_ref().is_empty()` instead of the
+    ///   histogram-empty predicate.
+    /// - `present_file_formats().len() <= 1 ⇒ file_formats_balanced()` —
+    ///   every chain with file-format support size 0 or 1 is trivially
+    ///   balanced. Contrapositively, `!file_formats_balanced() ⇒
+    ///   present_file_formats().len() >= 2` (a skewed chain observes at
+    ///   least two distinct formats with differing counts).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the uniform-count scan). Both are `O(n)` in practice since the
+    /// file-format axis carries a fixed four-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan short-circuits on
+    /// the first pair of distinct nonzero cells (bounded at two nonzero
+    /// cells visited), strictly tighter than the two-full-scan
+    /// `peak_file_format_count()` / `trough_file_format_count()` fusion
+    /// the scalar-spread form pays for on skewed chains.
+    #[must_use]
+    fn file_formats_balanced(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().is_uniform_count()
+    }
+
     /// Dense per-env-prefix-presence tally of the chain's
     /// [`ConfigSource::Env`] layers over the [`EnvMetadataTagKind`] axis
     /// — the typed histogram every attestation manifest, structured-log
@@ -16386,6 +16526,393 @@ mod tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak - trough);
+        }
+    }
+
+    // ---- ConfigSourceChain::file_formats_balanced — balanced-file-formats
+    //      boolean predicate on the file-format sub-axis of the chain
+    //      altitude, lifting is_uniform_count from the histogram surface
+    //      and continuing the "balanced across altitudes" projection
+    //      sideways from the layer-kind sub-axis to the second chain
+    //      sub-axis ----
+
+    #[test]
+    fn file_formats_balanced_matches_file_format_histogram_is_uniform_count_pointwise() {
+        // The routing pin: `file_formats_balanced` routes through
+        // `file_format_histogram().is_uniform_count()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. File-format sub-axis
+        // peer of
+        // `layer_kinds_balanced_matches_layer_kind_histogram_is_uniform_count_pointwise`
+        // on the layer-kind sub-axis,
+        // `tiers_balanced_matches_tier_histogram_is_uniform_count_pointwise`
+        // on the tier altitude, and
+        // `kinds_balanced_matches_kind_histogram_is_uniform_count_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.file_format_histogram().is_uniform_count();
+            assert_eq!(slice.file_formats_balanced(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn file_formats_balanced_agrees_with_file_format_spread_zero_pointwise() {
+        // The defining equivalence on the scalar-spread surface at the
+        // file-format sub-axis: `file_formats_balanced() ==
+        // (file_format_spread() == 0)` on every fixture. The balanced-
+        // boundary of the fused `(peak_file_format_count,
+        // trough_file_format_count, file_format_spread)` dispersion
+        // triple as a named boolean predicate. Lifted from the trait-
+        // uniform `is_uniform_count() == (spread() == 0)` law on
+        // AxisHistogram. Peer of
+        // `layer_kinds_balanced_agrees_with_layer_kind_spread_zero_pointwise`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let balanced = slice.file_formats_balanced();
+            let spread_zero = slice.file_format_spread() == 0;
+            assert_eq!(
+                balanced,
+                spread_zero,
+                "file_formats_balanced ({balanced}) must agree with \
+                 file_format_spread == 0 (spread={s}) for chain",
+                s = slice.file_format_spread(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_balanced_agrees_with_peak_equals_trough_pointwise() {
+        // The structural form on the underlying scalar pair:
+        // `file_formats_balanced() == (peak_file_format_count() ==
+        // trough_file_format_count())` on every fixture. Pins the
+        // balanced-file-formats predicate against the direct scalar-pair
+        // equality form. Peer of
+        // `layer_kinds_balanced_agrees_with_peak_equals_trough_pointwise`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let balanced = slice.file_formats_balanced();
+            let peak = slice.peak_file_format_count();
+            let trough = slice.trough_file_format_count();
+            assert_eq!(
+                balanced,
+                peak == trough,
+                "file_formats_balanced ({balanced}) must agree with \
+                 peak_file_format_count == trough_file_format_count \
+                 ({peak} == {trough}) for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_balanced_agrees_with_modal_pair_equality_pointwise() {
+        // The modal-pair form: `file_formats_balanced() ==
+        // (dominant_file_format() == recessive_file_format())` on every
+        // fixture — including the empty-histogram chain where both
+        // branches reduce to `None == None`, every singleton-support
+        // chain where both reduce to `Some(f) == Some(f)`, every uniform
+        // per-format chain where both reduce to `Some(first) ==
+        // Some(first)` (after declaration-order tie-break on both sides),
+        // and every skewed chain where both read `false`. Cross-sub-axis
+        // divergence pin against
+        // `file_format_spread_agrees_with_modal_pair_equality_on_nonempty_histogram`:
+        // the balanced predicate agrees with the modal-pair equality
+        // universally over the fixture set (both branches read `true` on
+        // the empty-histogram trivial-equal case), while the scalar-
+        // spread agreement pin quantifies over non-empty-histogram
+        // chains only. Peer of
+        // `layer_kinds_balanced_agrees_with_modal_pair_equality_pointwise`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let balanced = slice.file_formats_balanced();
+            let modal_pair_equal = slice.dominant_file_format() == slice.recessive_file_format();
+            assert_eq!(
+                balanced, modal_pair_equal,
+                "file_formats_balanced ({balanced}) must agree with \
+                 dominant_file_format == recessive_file_format for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_balanced_empty_chain_is_true() {
+        // Vacuous-uniformity boundary: the empty chain has no observed
+        // cells, so the universal "every observed cell carries the same
+        // count" reads `true` over the empty support — matching
+        // AxisHistogram::is_uniform_count's empty convention one altitude
+        // down and `file_format_spread == 0` on the empty case. Peer of
+        // `layer_kinds_balanced_empty_chain_is_true` on the layer-kind
+        // sub-axis and `file_format_spread_empty_chain_is_zero` on the
+        // scalar-spread surface at the same sub-axis.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(empty.file_formats_balanced());
+        assert_eq!(empty.file_format_spread(), 0);
+    }
+
+    #[test]
+    fn file_formats_balanced_no_recognized_files_is_true() {
+        // The non-empty-chain / empty-histogram vacuous-uniformity
+        // boundary the file-format sub-axis pins that the layer-kind
+        // sub-axis does *not*. A chain of only Defaults / Env /
+        // unrecognized-extension File layers is non-empty but has no
+        // recognized file_format projection, so the histogram is empty
+        // and `file_formats_balanced` reads `true` — the vacuous-
+        // uniformity boundary reads through the seam. Distinguishing
+        // pin against `layer_kinds_balanced`: on those same chains,
+        // `layer_kinds_balanced` reads `false` when the layer-kind
+        // histogram is skewed (Defaults / Env / File layers still
+        // contribute to the layer-kind histogram at differing counts)
+        // while `file_formats_balanced` reads `true`. Cross-sub-axis
+        // divergence at the empty-histogram-boundary.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(!slice.is_empty(), "fixture must be non-empty");
+            assert!(
+                slice.file_format_histogram().is_empty(),
+                "fixture must have empty file-format histogram",
+            );
+            assert!(slice.file_formats_balanced());
+        }
+    }
+
+    #[test]
+    fn file_formats_balanced_singleton_support_is_true() {
+        // Singleton-support pin: every recognized-extension file layer
+        // lands on the same format, so the one observed format's count
+        // is both peak and trough of the support — trivially balanced.
+        // Peer of `layer_kinds_balanced_singleton_support_is_true` on
+        // the layer-kind sub-axis and
+        // `file_format_spread_singleton_support_is_zero` on the scalar-
+        // spread surface at the same sub-axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 1);
+        assert!(slice.file_formats_balanced());
+    }
+
+    #[test]
+    fn file_formats_balanced_uniform_cover_is_true() {
+        // Uniform-cover pin: every observed format contributes the same
+        // nonzero count (one file layer per format here — a full-cover
+        // chain with uniform count 1 per cell), so peak == trough == 1
+        // and the balanced-file-formats predicate reads `true`. Peer of
+        // `layer_kinds_balanced_uniform_cover_is_true` on the layer-kind
+        // sub-axis and `file_format_spread_uniform_cover_is_zero` on the
+        // scalar-spread surface at the same sub-axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.file_format_histogram().is_full_cover());
+        assert!(slice.file_formats_balanced());
+    }
+
+    #[test]
+    fn file_formats_balanced_toml_majority_is_false() {
+        // Direct pin against a toml-majority chain: three `.toml` file
+        // layers + one `.yaml` + one Env + one Defaults. Toml dominant
+        // at 3, Yaml recessive at 1 — spread == 2, so
+        // `file_formats_balanced` reads `false`. Peer of
+        // `layer_kinds_balanced_sample_chain_is_false` and
+        // `layer_kinds_balanced_env_majority_is_false` on the layer-kind
+        // sub-axis on the boolean side and
+        // `file_format_spread_toml_majority_is_two` on the scalar-spread
+        // surface.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.file_format_spread(), 2);
+        assert!(!slice.file_formats_balanced());
+    }
+
+    #[test]
+    fn file_formats_balanced_sample_chain_is_true() {
+        // Direct pin against `sample_chain()`: two `.yaml` file layers +
+        // one Env layer. Yaml is the sole observed format (Env layers
+        // don't contribute to the file-format histogram), so peak ==
+        // trough == 2 and `file_formats_balanced` reads `true` — the
+        // singleton-support degenerate. Cross-sub-axis divergence pin
+        // against `layer_kinds_balanced_sample_chain_is_false`: on the
+        // same fixture, the layer-kind sub-axis reads `false` (File
+        // dominant at 2, Env recessive at 1) while the file-format sub-
+        // axis reads `true` (only Yaml observed).
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.file_format_spread(), 0);
+        assert!(slice.file_formats_balanced());
+    }
+
+    #[test]
+    fn file_formats_balanced_singleton_support_multi_layer_is_true() {
+        // Singleton-support multi-layer pin: 5 File layers all on the
+        // same format — peak == trough == 5, balanced reads `true`.
+        // Distinct peak from the 3-layer singleton fixture above so any
+        // misread that reintroduces a `file_format_spread == 0` inline
+        // idiom silently underflows on a fixture at a different peak.
+        // Peer of
+        // `layer_kinds_balanced_singleton_support_multi_layer_is_true`
+        // on the layer-kind sub-axis and
+        // `file_format_spread_singleton_support_multi_layer_is_zero` on
+        // the scalar-spread surface at the same sub-axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.toml")),
+            ConfigSource::File(PathBuf::from("/e.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_file_format_count(), 5);
+        assert_eq!(slice.trough_file_format_count(), 5);
+        assert!(slice.file_formats_balanced());
+    }
+
+    #[test]
+    fn file_formats_balanced_implies_at_most_one_present_format_or_uniform_cover() {
+        // Structural characterization: on every fixture,
+        // `file_formats_balanced` holds when the chain's file-format
+        // support size is 0 or 1, or every observed format carries the
+        // same nonzero count. Direct witness of the trait-uniform
+        // `distinct_cells() <= 1 ⇒ is_uniform_count()` law on
+        // AxisHistogram, lifted to the file-format sub-axis of the
+        // chain altitude. Peer of
+        // `layer_kinds_balanced_implies_at_most_one_present_kind_or_uniform_cover`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.present_file_formats().len() <= 1 {
+                assert!(
+                    slice.file_formats_balanced(),
+                    "chain with present_file_formats.len() = {} must be \
+                     file_formats_balanced",
+                    slice.present_file_formats().len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_balanced_false_implies_file_format_histogram_is_nonempty() {
+        // Contrapositive of the vacuous-uniformity implication:
+        // `!file_formats_balanced() ⇒ !file_format_histogram().is_empty()`.
+        // A skewed chain has at least two distinct positive counts on
+        // the file-format histogram, so the histogram is non-empty.
+        // Cross-sub-axis divergence pin against
+        // `layer_kinds_balanced_false_implies_chain_is_nonempty`: on the
+        // layer-kind sub-axis, the contrapositive falls on
+        // `!self.as_ref().is_empty()`; on the file-format sub-axis, it
+        // falls on the stricter `!file_format_histogram().is_empty()` —
+        // a non-empty chain of only Defaults / Env / unrecognized-
+        // extension File layers has an empty file-format histogram and
+        // is `file_formats_balanced`, so the chain-non-empty
+        // implication would fail on those fixtures.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.file_formats_balanced() {
+                assert!(
+                    !slice.file_format_histogram().is_empty(),
+                    "non-balanced chain must have non-empty file-format \
+                     histogram",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_balanced_false_implies_at_least_two_present_file_formats() {
+        // Contrapositive of the singleton-support implication:
+        // `!file_formats_balanced() ⇒ present_file_formats().len() >= 2`.
+        // A skewed chain observes at least two distinct formats with
+        // differing counts. Lifted from the trait-uniform
+        // `!is_uniform_count() ⇒ distinct_cells() >= 2` law on
+        // AxisHistogram. Peer of
+        // `layer_kinds_balanced_false_implies_at_least_two_present_layer_kinds`
+        // on the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.file_formats_balanced() {
+                assert!(
+                    slice.present_file_formats().len() >= 2,
+                    "non-balanced chain must observe >= 2 present file \
+                     formats (was {})",
+                    slice.present_file_formats().len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_balanced_skewed_three_cell_fixture_is_false() {
+        // Direct pin: a strictly-ordered three-cell chain with
+        // Yaml=1, Toml=2, Lisp=3 — peak 3, trough 1, spread 2 — reads
+        // `false`. Every count distinct, no tie-breaking on either side
+        // of the modal-count pair. Peer of
+        // `layer_kinds_balanced_skewed_three_cell_fixture_is_false` on
+        // the layer-kind sub-axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.lisp")),
+            ConfigSource::File(PathBuf::from("/e.lisp")),
+            ConfigSource::File(PathBuf::from("/f.lisp")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_file_format_count(), 3);
+        assert_eq!(slice.trough_file_format_count(), 1);
+        assert!(!slice.file_formats_balanced());
+    }
+
+    #[test]
+    fn file_formats_balanced_agrees_with_open_coded_uniform_walk() {
+        // Parity against the exact hand-rolled uniform-count walk this
+        // lift replaces: pull the nonzero counts and check they all
+        // agree. Empty support reads `true` vacuously. Mirrors the
+        // parity pin
+        // `layer_kinds_balanced_agrees_with_open_coded_uniform_walk` on
+        // the layer-kind sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_balanced();
+            let hist = slice.file_format_histogram();
+            let mut nonzero = hist.iter().map(|(_, c)| c).filter(|&c| c > 0);
+            let hand_rolled = match nonzero.next() {
+                None => true,
+                Some(first) => nonzero.all(|c| c == first),
+            };
+            assert_eq!(via_seam, hand_rolled);
         }
     }
 
