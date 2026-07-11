@@ -5767,6 +5767,214 @@ pub trait ConfigSourceChain {
     {
         !self.env_prefix_kind_histogram().is_empty()
     }
+
+    /// Named typed boolean predicate — `true` exactly when this chain's
+    /// [`ConfigSource::Env`] layers observe exactly one
+    /// [`EnvMetadataTagKind`] cell (exactly one cell of the closed
+    /// [`EnvMetadataTagKind`] axis has a nonzero count on the recipe's
+    /// env-prefix histogram — the singleton-support boundary of the
+    /// coverage-support partition). Routes through
+    /// [`Self::env_prefix_kind_histogram`]'s
+    /// [`crate::AxisHistogram::has_singular_support`]: the cube-native
+    /// single-pass short-circuiting scan over the fixed-cardinality
+    /// counts vector one altitude down that finds the first nonzero
+    /// cell and confirms no second nonzero cell follows.
+    ///
+    /// Operator-facing consumers answering *"did the recipe land on
+    /// exactly one env-prefix kind?"* — the CLI `config-show` headline
+    /// *"singleton-prefix recipe: every env layer carries the same
+    /// prefix polarity"*, the attestation manifest gate *"rebuild
+    /// window observes exactly one env-prefix kind"*, the alerting
+    /// policy predicate *"recipe collapsed to a single env-prefix
+    /// kind"* — now route through this named seam instead of four
+    /// previously drifting inline forms:
+    /// `chain.present_env_prefix_kinds_count() == 1` (the support-scalar
+    /// form, which pays for a full-axis scan and compares a `usize`
+    /// to one without naming the coverage-support boundary),
+    /// `chain.present_env_prefix_kinds().len() == 1` (the support-`Vec`
+    /// form, which allocates a `Vec<EnvMetadataTagKind>` and reads its
+    /// length back), `chain.absent_env_prefix_kinds_count() ==
+    /// crate::axis_cardinality::<EnvMetadataTagKind>() - 1` (the
+    /// coverage-gap-scalar form, which pays for the coverage-gap
+    /// scan and pulls in the [`crate::axis_cardinality`] turbofish at
+    /// every call site), and `chain.absent_env_prefix_kinds().len() ==
+    /// crate::axis_cardinality::<EnvMetadataTagKind>() - 1` (the
+    /// coverage-gap-`Vec` form, which allocates the coverage-gap
+    /// vector and reads its length back).
+    ///
+    /// **Closes the "singleton-support across altitudes" projection**
+    /// across every altitude / sub-axis. Seeded on the diff altitude
+    /// by [`crate::ConfigDiff::kinds_singular_support`], climbed to
+    /// the tier altitude by
+    /// [`crate::ProvenanceMap::tiers_singular_support`], and lifted
+    /// sideways to the chain-altitude sister sub-axes by
+    /// [`Self::layer_kinds_singular_support`] over
+    /// [`Self::layer_kind_histogram`] and
+    /// [`Self::file_formats_singular_support`] over
+    /// [`Self::file_format_histogram`]; this lift closes the third and
+    /// final chain-altitude sub-axis, matching the fully-covered
+    /// chain-shape triples `(layer_kinds_balanced, file_formats_balanced,
+    /// env_prefix_kinds_balanced)`, `(layer_kinds_full_cover,
+    /// file_formats_full_cover, env_prefix_kinds_full_cover)`, and
+    /// `(layer_kinds_any_observed, file_formats_any_observed,
+    /// env_prefix_kinds_any_observed)` one boundary surface over. The
+    /// 4-boundary × 5-altitude/sub-axis (`kinds`, `tiers`, `layer_kinds`,
+    /// `file_formats`, `env_prefix_kinds`) coverage-support predicate
+    /// cube — `(balanced, full_cover, any_observed, singular_support)`
+    /// × (diff, tier, chain-layer-kind, chain-file-format, chain-env-
+    /// prefix) — now spans every corner at every altitude / sub-axis,
+    /// each corner routed through the same
+    /// [`crate::AxisHistogram`] primitive one altitude down at a single
+    /// named seam.
+    ///
+    /// **Empty-histogram convention** — returns `false` on every chain
+    /// whose env-prefix histogram is empty: no observed cells means
+    /// the singleton-support predicate fails (support cardinality is
+    /// 0, not 1). Matches
+    /// [`crate::AxisHistogram::has_singular_support`]'s empty-histogram
+    /// `false` convention one altitude down. Agreement with
+    /// [`Self::file_formats_singular_support`]'s and
+    /// [`Self::env_prefix_kinds_any_observed`]'s same-sided convention
+    /// at the empty-histogram / non-empty-chain boundary: a non-empty
+    /// chain of only [`ConfigSource::Defaults`] / [`ConfigSource::File`]
+    /// layers ALSO reads `false` (the histogram is empty even though
+    /// the chain is not). Cross-sub-axis divergence from
+    /// [`Self::layer_kinds_singular_support`], where the empty-chain
+    /// boundary reads on `self.as_ref().is_empty()` instead of the
+    /// histogram-empty predicate. Unlike
+    /// [`Self::file_formats_singular_support`], the empty-histogram /
+    /// no-`Env`-layers condition is exactly the layer-kind
+    /// `count(ConfigSourceKind::Env) == 0` condition: every `Env`
+    /// entry projects to a `Some` cell regardless of prefix value, so
+    /// no `Env` entry is silently dropped by the projection the way
+    /// an unrecognized-extension `File` entry is on the file-format
+    /// sub-axis. Dual of the vacuous-uniformity witness on
+    /// [`Self::env_prefix_kinds_balanced`], which reads `true` on
+    /// every empty-histogram chain: the four boundaries partition the
+    /// empty-histogram chain into the polarity quadruple
+    /// (`any_observed`=false, `singular_support`=false,
+    /// `balanced`=true, `full_cover`=false).
+    ///
+    /// **Singleton-support convention** — returns `true` on every
+    /// chain whose observed support is a single
+    /// [`EnvMetadataTagKind`]: one observed cell is exactly the
+    /// singleton-support boundary. Every prefixed-only chain (all env
+    /// layers carry non-empty prefixes) and every bare-only chain
+    /// (all env layers carry the empty prefix) is a witness — as is
+    /// `sample_chain` (two `.yaml` file layers + one prefixed env
+    /// layer: `Prefixed` is the sole observed cell). Matches
+    /// [`Self::env_prefix_kinds_any_observed`]'s and
+    /// [`Self::env_prefix_kinds_balanced`]'s `true` side on the
+    /// singleton and orthogonal to
+    /// [`Self::env_prefix_kinds_full_cover`]'s `false` side on the
+    /// same singleton — the four boundaries partition the singleton-
+    /// support fixture into the polarity quadruple
+    /// (`any_observed`=true, `singular_support`=true, `balanced`=true,
+    /// `full_cover`=false).
+    ///
+    /// **Uniform two-kind cover convention** — returns `false` on
+    /// every chain where each of the two [`EnvMetadataTagKind`] cells
+    /// was observed at least once: the support is the full two-cell
+    /// axis (not one), so the singleton-support predicate fails. The
+    /// uniform two-kind cover is on the `false` side of the singular-
+    /// support boundary and on the `true` side of the other three
+    /// coverage-support boundaries — the four boundaries partition
+    /// the uniform-cover fixture with (`any_observed`=true,
+    /// `singular_support`=false, `balanced`=true, `full_cover`=true).
+    ///
+    /// **Two-cell-axis boundary tightening — `singular_support ⇔
+    /// any_observed ∧ !full_cover`** — unique tightening on the two-
+    /// cell env-prefix axis: because the two-cell-axis polarity space
+    /// realizes only four of the eight triples
+    /// (`(any_observed, balanced, full_cover)` ∈ {(F,T,F), (T,T,F),
+    /// (T,F,T), (T,T,T)}), the `true` side of `singular_support` is
+    /// exactly the (T,T,F) triple — every chain observing at least
+    /// one cell but not both — and the `false` side is the union of
+    /// the other three triples. Equivalently on the two-cell axis:
+    /// `singular_support ⇔ balanced ∧ any_observed ∧ !full_cover ⇔
+    /// !balanced ∨ !any_observed ⇒ !singular_support`. This
+    /// tightening does NOT lift to the three-cell layer-kind or four-
+    /// cell file-format sub-axes, where two-cell partial covers can
+    /// carry (T,F,F) polarity (any observed, not balanced, not full
+    /// cover) and singular-support is a strict subset of that side.
+    ///
+    /// # Invariants
+    ///
+    /// - `env_prefix_kinds_singular_support() ==
+    ///   env_prefix_kind_histogram().has_singular_support()` — both
+    ///   project the same predicate off the same primitive; the named
+    ///   seam is the cube-native routing of the histogram surface.
+    /// - `env_prefix_kinds_singular_support() ==
+    ///   (present_env_prefix_kinds_count() == 1)` always — the
+    ///   support-scalar surface, without allocating the
+    ///   `Vec<EnvMetadataTagKind>`.
+    /// - `env_prefix_kinds_singular_support() ==
+    ///   (present_env_prefix_kinds().len() == 1)` always — the
+    ///   support-`Vec` surface.
+    /// - `env_prefix_kinds_singular_support() ==
+    ///   (absent_env_prefix_kinds_count() ==
+    ///   crate::axis_cardinality::<EnvMetadataTagKind>() - 1)` always
+    ///   — the coverage-gap-scalar surface, the dual-side surfacing
+    ///   of the same boolean across the (observed, unobserved)
+    ///   partition.
+    /// - `env_prefix_kinds_singular_support() ⇒
+    ///   env_prefix_kinds_any_observed()` — a chain with exactly one
+    ///   observed cell has at least one observed cell.
+    ///   Contrapositively, `!env_prefix_kinds_any_observed() ⇒
+    ///   !env_prefix_kinds_singular_support()`.
+    /// - `env_prefix_kinds_singular_support() ⇒
+    ///   env_prefix_kinds_balanced()` — a chain with exactly one
+    ///   observed count has a trivially uniform support (one count
+    ///   is vacuously equal to itself), so the balanced predicate
+    ///   holds.
+    /// - `env_prefix_kinds_singular_support() ⇒
+    ///   !env_prefix_kinds_full_cover()` on every axis with
+    ///   cardinality `>= 2` (every implementor today —
+    ///   [`EnvMetadataTagKind`] carries two cells): a singleton
+    ///   support has size 1, a full cover has size
+    ///   `axis_cardinality::<A>()` `>= 2`, so the two boundaries are
+    ///   disjoint.
+    /// - `env_prefix_kinds_singular_support() ⇒
+    ///   layer_kind_histogram().count(ConfigSourceKind::Env) >= 1` —
+    ///   a chain with a singleton env-prefix support has at least
+    ///   one env layer, and every such layer is a
+    ///   [`ConfigSource::Env`]. Cross-sub-axis lower-bound
+    ///   implication linking the env-prefix sub-axis singleton-
+    ///   support boundary to the layer-kind sub-axis Env cell count.
+    ///   Cross-sub-axis divergence from
+    ///   [`Self::layer_kinds_singular_support`]'s
+    ///   `self.as_ref().len() >= 1` implication, which reads on the
+    ///   chain-length rather than the Env-layer count. Sister of the
+    ///   file-format sub-axis's `file_formats_singular_support() ⇒
+    ///   layer_kind_histogram().count(ConfigSourceKind::File) >= 1`
+    ///   lower-bound.
+    /// - `env_prefix_kinds_singular_support() ⇒
+    ///   dominant_env_prefix_kind() == recessive_env_prefix_kind()
+    ///   && dominant_env_prefix_kind().is_some()` — when support is
+    ///   singular, the modal pair collapses to the one observed cell
+    ///   on both sides.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram
+    /// build) and `k =
+    /// crate::axis_cardinality::<EnvMetadataTagKind>()` (the
+    /// singular-support scan). Both are `O(n)` in practice since the
+    /// env-prefix axis carries a fixed two-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan short-circuits
+    /// on the second nonzero cell (bounded at two nonzero cells
+    /// visited on any two-or-more-cell-support chain), strictly
+    /// tighter than the four support / coverage-gap equality forms
+    /// — no `Vec<EnvMetadataTagKind>` allocation, no
+    /// [`crate::axis_cardinality`] turbofish, no scalar equality
+    /// against a magic axis-cardinality-minus-one constant.
+    #[must_use]
+    fn env_prefix_kinds_singular_support(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().has_singular_support()
+    }
 }
 
 impl ConfigSourceChain for [ConfigSource] {
@@ -21442,6 +21650,498 @@ mod tests {
             let via_seam = slice.env_prefix_kinds_any_observed();
             let hist = slice.env_prefix_kind_histogram();
             let hand_rolled = hist.iter().any(|(_, c)| c > 0);
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::env_prefix_kinds_singular_support —
+    //      singleton-support-env-prefix-kinds boolean predicate on the
+    //      env-prefix sub-axis of the chain altitude, lifting
+    //      has_singular_support from the histogram surface and closing
+    //      the "singleton-support across altitudes" projection sideways
+    //      to the third and final chain-altitude sub-axis — the last
+    //      remaining corner of the 4-boundary × 5-altitude/sub-axis
+    //      coverage-support predicate cube ----
+
+    #[test]
+    fn env_prefix_kinds_singular_support_matches_env_prefix_kind_histogram_has_singular_support_pointwise()
+     {
+        // Routing pin: `env_prefix_kinds_singular_support` routes
+        // through `env_prefix_kind_histogram().has_singular_support()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared cube-native primitive.
+        // Env-prefix sub-axis peer of
+        // `file_formats_singular_support_matches_file_format_histogram_has_singular_support_pointwise`
+        // and
+        // `layer_kinds_singular_support_matches_layer_kind_histogram_has_singular_support_pointwise`
+        // on the sister sub-axes of the chain altitude,
+        // `tiers_singular_support_matches_tier_histogram_has_singular_support_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_support_matches_kind_histogram_has_singular_support_pointwise`
+        // on the diff altitude — closing the "singleton-support across
+        // altitudes" projection across every altitude / sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.env_prefix_kind_histogram().has_singular_support();
+            assert_eq!(slice.env_prefix_kinds_singular_support(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_agrees_with_present_env_prefix_kinds_count_equals_one_pointwise()
+     {
+        // Support-scalar surface: `env_prefix_kinds_singular_support()
+        // == (present_env_prefix_kinds_count() == 1)` on every fixture
+        // — the same boolean without allocating the
+        // `Vec<EnvMetadataTagKind>`. Peer of
+        // `file_formats_singular_support_agrees_with_present_file_formats_count_equals_one_pointwise`
+        // and
+        // `layer_kinds_singular_support_agrees_with_present_layer_kinds_count_equals_one_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_singular_support();
+            let via_support = slice.present_env_prefix_kinds_count() == 1;
+            assert_eq!(
+                via_seam, via_support,
+                "env_prefix_kinds_singular_support ({via_seam}) must agree with \
+                 present_env_prefix_kinds_count == 1 ({via_support}) for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_agrees_with_present_env_prefix_kinds_len_equals_one_pointwise()
+     {
+        // Support-`Vec` surface: `env_prefix_kinds_singular_support() ==
+        // (present_env_prefix_kinds().len() == 1)` on every fixture —
+        // the same boolean via the allocating support form the seam
+        // replaces. Peer of
+        // `file_formats_singular_support_agrees_with_present_file_formats_len_equals_one_pointwise`
+        // and
+        // `layer_kinds_singular_support_agrees_with_present_layer_kinds_len_equals_one_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_singular_support();
+            let via_len = slice.present_env_prefix_kinds().len() == 1;
+            assert_eq!(
+                via_seam, via_len,
+                "env_prefix_kinds_singular_support ({via_seam}) must agree with \
+                 present_env_prefix_kinds().len() == 1 ({via_len}) for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_agrees_with_absent_env_prefix_kinds_count_equals_axis_cardinality_minus_one_pointwise()
+     {
+        // Coverage-gap-scalar surface:
+        // `env_prefix_kinds_singular_support() ==
+        // (absent_env_prefix_kinds_count() ==
+        // axis_cardinality::<EnvMetadataTagKind>() - 1)` on every
+        // fixture — the dual-side surfacing of the same boolean across
+        // the (observed, unobserved) partition. Peer of
+        // `file_formats_singular_support_agrees_with_absent_file_formats_count_equals_axis_cardinality_minus_one_pointwise`
+        // and
+        // `layer_kinds_singular_support_agrees_with_absent_layer_kinds_count_equals_axis_cardinality_minus_one_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_singular_support();
+            let via_gap = slice.absent_env_prefix_kinds_count()
+                == crate::axis_cardinality::<EnvMetadataTagKind>() - 1;
+            assert_eq!(
+                via_seam, via_gap,
+                "env_prefix_kinds_singular_support ({via_seam}) must agree with \
+                 absent_env_prefix_kinds_count == axis_cardinality - 1 ({via_gap}) for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_empty_chain_is_false() {
+        // Empty-chain boundary: the empty chain has no observed cells,
+        // so the singular-support predicate fails —
+        // `env_prefix_kinds_singular_support` reads `false`. Matches
+        // `has_singular_support` reading `false` on the empty histogram
+        // over the `EnvMetadataTagKind` axis one altitude down. Empty-
+        // chain polarity quadruple: (`any_observed`=false,
+        // `singular_support`=false, `balanced`=true, `full_cover`=false).
+        // Peer of `file_formats_singular_support_empty_chain_is_false`
+        // and `layer_kinds_singular_support_empty_chain_is_false` on the
+        // sister sub-axes of the same chain altitude,
+        // `tiers_singular_support_empty_map_is_false` on the tier
+        // altitude, and `kinds_singular_support_empty_diff_is_false` on
+        // the diff altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(!empty.env_prefix_kinds_singular_support());
+        assert!(!empty.env_prefix_kinds_any_observed());
+        assert!(empty.env_prefix_kinds_balanced());
+        assert!(!empty.env_prefix_kinds_full_cover());
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_no_env_layers_is_false() {
+        // Cross-sub-axis divergence pin against
+        // `layer_kinds_singular_support_empty_chain_is_false`: on the
+        // env-prefix sub-axis the *non-empty-chain / empty-histogram*
+        // boundary ALSO reads `false`. A chain of only Defaults / File
+        // layers is non-empty but has an empty env-prefix histogram, so
+        // no observed cell fires — `env_prefix_kinds_singular_support`
+        // reads `false`. Matches
+        // `env_prefix_kinds_any_observed_no_env_layers_is_false` and
+        // `env_prefix_kinds_full_cover_no_env_layers_is_false` on the
+        // same-shape fixtures (both any-observed and full-cover read
+        // `false` on empty-histogram non-empty chains); distinguishing
+        // pin against `env_prefix_kinds_balanced` on the exact same
+        // fixtures (where the vacuous-uniformity boundary reads `true`).
+        // Unlike the file-format sub-axis, the empty-histogram / non-
+        // empty-chain condition is exactly
+        // `layer_kind_histogram().count(Env) == 0` — every Env layer
+        // projects to a Some cell regardless of prefix value.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.nix")),
+                ConfigSource::File(PathBuf::from("/b.lisp")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(!slice.is_empty(), "fixture must be non-empty");
+            assert!(
+                slice.env_prefix_kind_histogram().is_empty(),
+                "fixture must have empty env-prefix histogram",
+            );
+            assert_eq!(
+                slice.layer_kind_histogram().count(ConfigSourceKind::Env),
+                0,
+                "fixture must have zero Env layers",
+            );
+            assert!(!slice.env_prefix_kinds_singular_support());
+            assert!(!slice.env_prefix_kinds_any_observed());
+            assert!(slice.env_prefix_kinds_balanced());
+            assert!(!slice.env_prefix_kinds_full_cover());
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_prefixed_only_is_true() {
+        // Singleton-support pin on the prefixed side: every env layer
+        // carries a non-empty prefix, so `Prefixed` is the sole
+        // observed cell out of two — exactly one observed cell, so
+        // `env_prefix_kinds_singular_support` reads `true`. Peer of
+        // `env_prefix_kinds_any_observed_prefixed_only_is_true` and
+        // `env_prefix_kinds_balanced_singleton_support_is_true` on the
+        // same side of their boundaries and orthogonal to
+        // `env_prefix_kinds_full_cover_prefixed_only_is_false` on the
+        // opposite side: prefixed-only support is trivially singular
+        // and trivially balanced but never full-cover on the two-cell
+        // env-prefix axis. Peer of
+        // `file_formats_singular_support_singleton_support_is_true` and
+        // `layer_kinds_singular_support_singleton_support_is_true` on
+        // the sister sub-axes — same (`any_observed`=true,
+        // `singular_support`=true, `balanced`=true, `full_cover`=false)
+        // polarity quadruple on the singleton-support fixture.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert!(slice.env_prefix_kinds_any_observed());
+        assert!(slice.env_prefix_kinds_balanced());
+        assert!(!slice.env_prefix_kinds_full_cover());
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_bare_only_is_true() {
+        // Singleton-support pin on the bare side: every env layer
+        // carries the empty prefix, so `Bare` is the sole observed
+        // cell — `env_prefix_kinds_singular_support` reads `true`.
+        // Symmetric sister of
+        // `env_prefix_kinds_singular_support_prefixed_only_is_true` on
+        // the two-cell env-prefix axis: both singletons sit on the
+        // (`any_observed`=true, `singular_support`=true, `balanced`=true,
+        // `full_cover`=false) polarity quadruple. Peer of
+        // `env_prefix_kinds_any_observed_bare_only_is_true` and
+        // `env_prefix_kinds_full_cover_bare_only_is_false` on the
+        // sister boundaries.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert!(slice.env_prefix_kinds_any_observed());
+        assert!(slice.env_prefix_kinds_balanced());
+        assert!(!slice.env_prefix_kinds_full_cover());
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_sample_chain_is_true() {
+        // Direct pin against `sample_chain()`: two `.yaml` file layers
+        // + one prefixed env layer (`"APP_"`). `Prefixed` is the sole
+        // observed env-prefix cell (Bare has count 0) — the env-prefix
+        // sub-axis reads support cardinality 1, so
+        // `env_prefix_kinds_singular_support` reads `true`. Peer of
+        // `file_formats_singular_support_sample_chain_is_true` on the
+        // file-format sub-axis (Yaml the sole observed file-format
+        // cell); cross-sub-axis divergence from
+        // `layer_kinds_singular_support` on the same fixture, where
+        // support is 2 (File + Env) — the sample chain sits on the
+        // singular-support boundary on both projection-limited sub-axes
+        // and off it on the total layer-kind sub-axis.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert!(slice.env_prefix_kinds_any_observed());
+        assert!(slice.env_prefix_kinds_balanced());
+        assert!(!slice.env_prefix_kinds_full_cover());
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_uniform_cover_is_false() {
+        // Uniform-cover pin: one Prefixed env + one Bare env layer, so
+        // both cells of `EnvMetadataTagKind::ALL` receive equal counts
+        // — support cardinality is 2, so
+        // `env_prefix_kinds_singular_support` reads `false` (two, not
+        // one). Peer of
+        // `env_prefix_kinds_any_observed_uniform_cover_is_true`,
+        // `env_prefix_kinds_balanced_uniform_cover_is_true`, and
+        // `env_prefix_kinds_full_cover_uniform_cover_is_true`: the
+        // uniform two-kind cover is on the `false` side of ONLY the
+        // singular-support boundary at this sub-axis. Peer of
+        // `file_formats_singular_support_uniform_cover_is_false` and
+        // `layer_kinds_singular_support_uniform_cover_is_false` on the
+        // sister sub-axes.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 2);
+        assert!(!slice.env_prefix_kinds_singular_support());
+        assert!(slice.env_prefix_kinds_any_observed());
+        assert!(slice.env_prefix_kinds_balanced());
+        assert!(slice.env_prefix_kinds_full_cover());
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_skewed_two_cell_fixture_is_false() {
+        // Skewed two-cell cover pin: a chain observing Prefixed twice
+        // and Bare once — both cells nonzero (support cardinality 2),
+        // so `env_prefix_kinds_singular_support` reads `false`. Direct
+        // witness of the two-cell-axis boundary tightening
+        // `singular_support ⇔ any_observed ∧ !full_cover` from the
+        // false side: this fixture reads `full_cover`=true, so
+        // singular-support must read false. Peer of
+        // `env_prefix_kinds_any_observed_skewed_two_cell_fixture_is_true`
+        // on the same fixture where any-observed reads `true` but
+        // singular-support reads `false` — the (`any_observed`=true,
+        // `singular_support`=false, `balanced`=false, `full_cover`=true)
+        // polarity quadruple that only lifts to the two-cell axis
+        // (imbalance forces full-cover on 2 cells, and full-cover
+        // forces !singular-support). Peer of
+        // `file_formats_singular_support_two_format_partial_cover_is_false`
+        // and `layer_kinds_singular_support_two_kind_partial_cover_is_false`
+        // on the sister sub-axes (same "support cardinality 2"
+        // fixture-shape); cross-sub-axis divergence from those two —
+        // where a two-cell partial cover reads `full_cover`=false (the
+        // support is a strict subset of the axis) — because on the
+        // two-cell axis every two-cell support IS a full cover.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 2);
+        assert!(!slice.env_prefix_kinds_singular_support());
+        assert!(slice.env_prefix_kinds_any_observed());
+        assert!(!slice.env_prefix_kinds_balanced());
+        assert!(slice.env_prefix_kinds_full_cover());
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_implies_env_prefix_kinds_any_observed_pointwise() {
+        // Subsumption pin: `env_prefix_kinds_singular_support() ⇒
+        // env_prefix_kinds_any_observed()` on every fixture — exactly
+        // one observed cell has at least one observed cell. Peer of
+        // `file_formats_singular_support_implies_file_formats_any_observed_pointwise`
+        // and
+        // `layer_kinds_singular_support_implies_layer_kinds_any_observed_pointwise`
+        // on the sister sub-axes,
+        // `tiers_singular_support_implies_tiers_any_observed_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_support_implies_kinds_any_observed_pointwise`
+        // on the diff altitude. Names the ordering `singular_support ≤
+        // any_observed` on the coverage-support partition at the env-
+        // prefix sub-axis, closing the subsumption implication across
+        // every altitude / sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular_support() {
+                assert!(
+                    slice.env_prefix_kinds_any_observed(),
+                    "singular-support chain must be any-observed (fixture len={})",
+                    slice.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_implies_env_prefix_kinds_balanced_pointwise() {
+        // Subsumption pin: `env_prefix_kinds_singular_support() ⇒
+        // env_prefix_kinds_balanced()` on every fixture — a chain with
+        // exactly one observed count has a trivially uniform support
+        // (one count is vacuously equal to itself). Peer of
+        // `file_formats_singular_support_implies_file_formats_balanced_pointwise`
+        // and
+        // `layer_kinds_singular_support_implies_layer_kinds_balanced_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular_support() {
+                assert!(
+                    slice.env_prefix_kinds_balanced(),
+                    "singular-support chain must be vacuously balanced (fixture len={})",
+                    slice.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_implies_not_env_prefix_kinds_full_cover_pointwise() {
+        // Disjointness pin: `env_prefix_kinds_singular_support() ⇒
+        // !env_prefix_kinds_full_cover()` on every fixture — cardinality
+        // 1 vs cardinality 2 disjoint on `EnvMetadataTagKind`. Peer of
+        // `file_formats_singular_support_implies_not_file_formats_full_cover_pointwise`
+        // (four-cell) and
+        // `layer_kinds_singular_support_implies_not_layer_kinds_full_cover_pointwise`
+        // (three-cell) on the sister sub-axes — the same disjointness
+        // reads on every axis with cardinality `>= 2`.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular_support() {
+                assert!(
+                    !slice.env_prefix_kinds_full_cover(),
+                    "singular-support chain must not be full-cover (fixture len={})",
+                    slice.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_implies_layer_kind_env_count_positive_pointwise() {
+        // Cross-sub-axis lower-bound implication:
+        // `env_prefix_kinds_singular_support() ⇒
+        // layer_kind_histogram().count(ConfigSourceKind::Env) >= 1`. A
+        // chain with a singleton env-prefix support has at least one
+        // env layer, and every such layer is a `ConfigSource::Env`.
+        // Sister of
+        // `file_formats_singular_support_implies_layer_kind_file_count_positive_pointwise`
+        // on the file-format sub-axis (same shape, Env cell instead of
+        // File cell). Cross-sub-axis divergence from
+        // `layer_kinds_singular_support_implies_chain_length_positive_pointwise`
+        // on the layer-kind sub-axis, which reads on the chain-length
+        // rather than the Env-layer count — the env-prefix sub-axis
+        // carries the stronger implication because Defaults / File
+        // layers don't contribute to the env-prefix histogram.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular_support() {
+                assert!(
+                    slice.layer_kind_histogram().count(ConfigSourceKind::Env) >= 1,
+                    "singular-support chain must have >= 1 Env layer (was {})",
+                    slice.layer_kind_histogram().count(ConfigSourceKind::Env),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_implies_dominant_equals_recessive_pointwise() {
+        // Modal-collapse pin: `env_prefix_kinds_singular_support() ⇒
+        // dominant_env_prefix_kind() == recessive_env_prefix_kind() &&
+        // dominant_env_prefix_kind().is_some()` on every fixture — when
+        // support is singular, the modal pair collapses to the one
+        // observed cell on both sides. Peer of
+        // `file_formats_singular_support_implies_dominant_equals_recessive_pointwise`
+        // and
+        // `layer_kinds_singular_support_implies_dominant_equals_recessive_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular_support() {
+                let dom = slice.dominant_env_prefix_kind();
+                let rec = slice.recessive_env_prefix_kind();
+                assert!(
+                    dom.is_some(),
+                    "singular-support chain must have a dominant cell",
+                );
+                assert_eq!(
+                    dom, rec,
+                    "singular-support chain must have dominant == recessive (dom={dom:?}, rec={rec:?})",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_any_observed_negation_implies_not_env_prefix_kinds_singular_support_pointwise()
+     {
+        // Contrapositive of `singular_support ⇒ any_observed`: if no
+        // cell was observed, the singular-support predicate fails.
+        // Peer of
+        // `file_formats_any_observed_negation_implies_not_file_formats_singular_support_pointwise`
+        // and
+        // `layer_kinds_any_observed_negation_implies_not_layer_kinds_singular_support_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.env_prefix_kinds_any_observed() {
+                assert!(
+                    !slice.env_prefix_kinds_singular_support(),
+                    "non-any-observed chain must not be singular-support (fixture len={})",
+                    slice.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_agrees_with_open_coded_exactly_one_positive_walk() {
+        // Parity against the exact hand-rolled singular-support walk
+        // this lift replaces: walk every cell of the histogram and
+        // count how many carry a positive count; the singleton-
+        // support predicate reads `true` iff exactly one cell is
+        // positive. Mirrors the parity pins
+        // `file_formats_singular_support_agrees_with_open_coded_exactly_one_positive_walk`
+        // and
+        // `layer_kinds_singular_support_agrees_with_open_coded_exactly_one_positive_walk`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_singular_support();
+            let hist = slice.env_prefix_kind_histogram();
+            let hand_rolled = hist.iter().filter(|(_, c)| *c > 0).count() == 1;
             assert_eq!(via_seam, hand_rolled);
         }
     }
