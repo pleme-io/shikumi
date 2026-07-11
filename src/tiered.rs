@@ -1944,6 +1944,134 @@ impl ProvenanceMap {
     pub fn tiers_full_cover(&self) -> bool {
         self.tier_histogram().is_full_cover()
     }
+
+    /// `true` exactly when at least one [`ConfigTierKind`] cell was
+    /// observed on this resolved fold — the **any-observed-tier-counts
+    /// boolean predicate** on the tier altitude. Routes through
+    /// `!self.tier_histogram().is_empty()` one altitude down: the
+    /// single-pass scan over the fixed-cardinality counts vector that
+    /// short-circuits on the first nonzero cell, tighter than any of
+    /// the four support / coverage-gap equality forms one seam over.
+    ///
+    /// The **any-observed-tier-counts peer** of the fused
+    /// `(contributing_tiers, absent_tiers, contributing_tiers_count,
+    /// absent_tiers_count)` support / coverage-gap 2×2 grid on the
+    /// tier altitude — the natural typed boolean primitive for fleet
+    /// dashboards, attestation manifests, and alerting policies asking
+    /// *"did any tier fire at least once on this resolved fold?"*: the
+    /// fleet dashboard headline *"non-empty fold: at least one tier
+    /// fired"*, the attestation manifest gate *"rebuild window carries
+    /// at least one tier observation"*, the alerting policy predicate
+    /// *"fold non-empty"*. Before this lift, every such consumer re-
+    /// derived the predicate inline as one of four pointwise-equivalent
+    /// forms: `!map.is_empty()` (the map-nonempty form, which projects
+    /// the boolean off the raw leaf `BTreeMap` without saying
+    /// structurally *what* is being asked at the tier-cell axis),
+    /// `map.contributing_tiers_count() > 0` (the support-scalar form,
+    /// which pays for a full-axis scan and compares a `usize` to zero
+    /// without naming the coverage-support boundary),
+    /// `!map.contributing_tiers().is_empty()` (the support-`Vec` form,
+    /// which allocates a `Vec<ConfigTierKind>` and reads its emptiness
+    /// back), and `map.absent_tiers_count() <
+    /// crate::axis_cardinality::<ConfigTierKind>()` (the coverage-gap
+    /// scalar form, which pays for the coverage-gap scan and pulls
+    /// in the [`crate::axis_cardinality`] turbofish at every call
+    /// site). The four forms drifted in subtle ways at every consumer
+    /// site (map-`BTreeMap` vs. histogram surface, scalar vs. `Vec`,
+    /// support side vs. coverage-gap side, turbofish vs. name-only).
+    /// This lift names the any-observed-tier-counts predicate directly
+    /// at the tier-altitude surface with a single-pass short-
+    /// circuiting scan — the typed boolean every operator-facing
+    /// "did the fold observe anything at all?" check reads off as a
+    /// single method call.
+    ///
+    /// The tier-altitude any-observed-predicate peer that **climbs the
+    /// "any-observed across altitudes" projection** from the diff
+    /// altitude seeded by [`ConfigDiff::kinds_any_observed`]. The
+    /// pattern is the same at every altitude: fuse the
+    /// (`present_cells`, `absent_cells`, `present_cells_count`,
+    /// `absent_cells_count`) support / coverage-gap 2×2 grid's non-
+    /// empty-boundary into a single boolean predicate named at the
+    /// surface, routed through the shared `!AxisHistogram::is_empty`
+    /// primitive one altitude down. Parallels the "full-cover across
+    /// altitudes" projection climbed to the same altitude by
+    /// [`Self::tiers_full_cover`] and seeded on the diff altitude by
+    /// [`ConfigDiff::kinds_full_cover`], on the opposite boundary of
+    /// the coverage-support partition. The chain altitude's three
+    /// sub-axes (`layer_kinds_any_observed`, `file_formats_any_observed`,
+    /// `env_prefix_kinds_any_observed` over the corresponding chain
+    /// histograms) are the natural next sideways lifts.
+    ///
+    /// **Empty-map convention** — returns `false` on the empty map:
+    /// the empty map has no observed cells, so the "any observed"
+    /// predicate fails. Matches [`crate::AxisHistogram::is_empty`]'s
+    /// empty-histogram convention negated one altitude down. The
+    /// empty map is therefore on the `false` side of the any-observed
+    /// boundary — matching [`Self::tiers_full_cover`]'s empty-map
+    /// `false` polarity and orthogonal to [`Self::tiers_balanced`]'s
+    /// empty-map `true` polarity.
+    ///
+    /// **Singleton-support convention** — returns `true` on every
+    /// fold whose observed support is a single [`ConfigTierKind`]:
+    /// one observed cell suffices for the any-observed predicate.
+    /// Every fold with all leaves attributed to only-`Bare`, only-
+    /// `Discovered`, only-`Default`, or only-`Custom` is a witness.
+    /// Matches [`Self::tiers_balanced`]'s `true` side on the singleton
+    /// and orthogonal to [`Self::tiers_full_cover`]'s `false` side on
+    /// the same singleton — the three boundaries partition the
+    /// singleton-support fixture with (`any_observed`=true,
+    /// `balanced`=true, `full_cover`=false).
+    ///
+    /// **Uniform four-tier cover convention** — returns `true` on
+    /// every fold where each of the four [`ConfigTierKind`] cells was
+    /// observed at least once. The uniform four-tier cover is on the
+    /// `true` side of all three coverage-support boundaries
+    /// (`any_observed`, `balanced`, `full_cover`).
+    ///
+    /// # Invariants
+    ///
+    /// - `tiers_any_observed() == !tier_histogram().is_empty()` —
+    ///   both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram
+    ///   surface.
+    /// - `tiers_any_observed() == !self.is_empty()` always — every
+    ///   leaf contributes to a [`ConfigTierKind`] cell, so the
+    ///   histogram is empty iff the leaf map is empty.
+    /// - `tiers_any_observed() == (contributing_tiers_count() > 0)`
+    ///   always — the support-scalar surface, without allocating the
+    ///   `Vec<ConfigTierKind>`.
+    /// - `tiers_any_observed() == !contributing_tiers().is_empty()`
+    ///   always — the support-`Vec` surface.
+    /// - `tiers_any_observed() == (absent_tiers_count() <
+    ///   crate::axis_cardinality::<ConfigTierKind>())` always — the
+    ///   coverage-gap-scalar surface, the dual-side surfacing of the
+    ///   same boolean across the (observed, unobserved) partition.
+    /// - `tiers_full_cover() ⇒ tiers_any_observed()` — every full-
+    ///   cover fold observes at least one cell (in fact every cell),
+    ///   so the any-observed predicate holds. Contrapositively,
+    ///   `!tiers_any_observed() ⇒ !tiers_full_cover()`.
+    /// - `tiers_any_observed() ⇒ self.len() >= 1` — a fold with any
+    ///   observed tier carries at least one leaf.
+    /// - `!tiers_any_observed() ⇒ tiers_balanced()` — the empty map
+    ///   is vacuously balanced (the only fold on the `false` side of
+    ///   `tiers_any_observed`).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigTierKind>()` (the
+    /// any-observed scan). Both are `O(n)` in practice since the tier
+    /// axis carries a fixed four-cell cardinality; the returned
+    /// `bool` reads one predicate. The scan short-circuits on the
+    /// first nonzero cell (bounded at one nonzero cell visited on any
+    /// non-empty fold), strictly tighter than the four support /
+    /// coverage-gap equality forms — no `Vec<ConfigTierKind>`
+    /// allocation, no [`crate::axis_cardinality`] turbofish, no
+    /// scalar equality against a magic axis-cardinality constant.
+    #[must_use]
+    pub fn tiers_any_observed(&self) -> bool {
+        !self.tier_histogram().is_empty()
+    }
 }
 
 /// Zero-allocation `(&[String], &Provenance)` stream over the sorted
@@ -11686,6 +11814,304 @@ mod progressive_tests {
             let via_seam = map.tiers_full_cover();
             let hist = map.tier_histogram();
             let hand_rolled = hist.iter().all(|(_, c)| c > 0);
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── tiers_any_observed — any-observed-tier-counts boolean
+    //    predicate on the tier altitude, lifting !is_empty from the
+    //    histogram surface and climbing the "any-observed across
+    //    altitudes" projection from the diff altitude ──
+
+    #[test]
+    fn tiers_any_observed_matches_tier_histogram_is_empty_negation_pointwise() {
+        // Routing pin: `tiers_any_observed` routes through
+        // `!tier_histogram().is_empty()`, so the two seams must stay
+        // pointwise equivalent under every fixture. Catches any future
+        // drift where either implementation stops projecting through the
+        // shared cube-native primitive. Tier-altitude peer of
+        // `kinds_any_observed_matches_kind_histogram_is_empty_negation_pointwise`
+        // on the diff altitude in the "any-observed across altitudes"
+        // projection.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = !map.tier_histogram().is_empty();
+            assert_eq!(map.tiers_any_observed(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn tiers_any_observed_agrees_with_map_nonempty_pointwise() {
+        // Defining equivalence on the leaf-map surface: every leaf
+        // contributes to a `ConfigTierKind` cell, so the histogram is
+        // empty iff the leaf map is empty. Pins the O(n) histogram
+        // routing against the O(1) `BTreeMap::is_empty` projection.
+        // Peer of `kinds_any_observed_agrees_with_lines_nonempty_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_any_observed();
+            let via_map = !map.is_empty();
+            assert_eq!(
+                via_seam, via_map,
+                "tiers_any_observed ({via_seam}) must agree with \
+                 !map.is_empty() ({via_map}) for map",
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_any_observed_agrees_with_contributing_tiers_count_positive_pointwise() {
+        // Support-scalar surface: `tiers_any_observed() ==
+        // (contributing_tiers_count() > 0)` on every fixture. The dual-
+        // side surfacing of the same boolean across the (observed,
+        // unobserved) partition. Lifted from the trait-uniform
+        // `!is_empty() == (distinct_cells() > 0)` law on AxisHistogram.
+        // Peer of `kinds_any_observed_agrees_with_present_kinds_count_positive_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_any_observed();
+            let via_scalar = map.contributing_tiers_count() > 0;
+            assert_eq!(
+                via_seam,
+                via_scalar,
+                "tiers_any_observed ({via_seam}) must agree with \
+                 contributing_tiers_count > 0 (count={c}) for map",
+                c = map.contributing_tiers_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_any_observed_agrees_with_contributing_tiers_nonempty_pointwise() {
+        // Support-`Vec` form: `tiers_any_observed() ==
+        // !contributing_tiers().is_empty()` on every fixture. Pins the
+        // predicate against the `Vec<ConfigTierKind>` emptiness form
+        // consumers reach for when they already hold the support
+        // vector. Peer of `kinds_any_observed_agrees_with_present_kinds_nonempty_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_any_observed();
+            let via_vec = !map.contributing_tiers().is_empty();
+            assert_eq!(
+                via_seam, via_vec,
+                "tiers_any_observed ({via_seam}) must agree with \
+                 !contributing_tiers().is_empty() ({via_vec}) for map",
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_any_observed_agrees_with_absent_tiers_count_below_axis_cardinality_pointwise() {
+        // Coverage-gap-scalar form: `tiers_any_observed() ==
+        // (absent_tiers_count() < axis_cardinality::<ConfigTierKind>())`
+        // on every fixture. The coverage-gap-side surfacing of the
+        // same boolean — an empty fold has the full coverage gap
+        // (equal to the axis cardinality); any non-empty fold has a
+        // strictly-smaller coverage gap. Peer of
+        // `kinds_any_observed_agrees_with_absent_kinds_count_below_axis_cardinality_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_any_observed();
+            let via_gap = map.absent_tiers_count() < crate::axis_cardinality::<ConfigTierKind>();
+            assert_eq!(
+                via_seam,
+                via_gap,
+                "tiers_any_observed ({via_seam}) must agree with \
+                 absent_tiers_count < axis_cardinality (gap={g}) for map",
+                g = map.absent_tiers_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_any_observed_empty_map_is_false() {
+        // Empty-map boundary: the empty map has no observed cells, so
+        // the any-observed predicate reads `false`. Matches `is_empty`
+        // reading `true` on the empty histogram one altitude down —
+        // negated at the tier-altitude surface. Peer of
+        // `tiers_full_cover_empty_map_is_false` on the same polarity
+        // of the coverage-support partition, and orthogonal to
+        // `tiers_balanced_empty_map_is_true` on the opposite polarity.
+        // Peer of `kinds_any_observed_empty_diff_is_false` on the diff
+        // altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert!(!empty.tiers_any_observed());
+        assert_eq!(empty.contributing_tiers_count(), 0);
+    }
+
+    #[test]
+    fn tiers_any_observed_singleton_support_is_true() {
+        // Singleton-support pin: every leaf lands on the same tier, so
+        // one observed cell out of four suffices — `tiers_any_observed`
+        // reads `true`. Peer of `tiers_balanced_singleton_support_is_true`
+        // on the same polarity and orthogonal to
+        // `tiers_full_cover_singleton_support_is_false` on the opposite
+        // polarity. The singleton-support fixture partitions the three
+        // boundaries with (`any_observed`=true, `balanced`=true,
+        // `full_cover`=false). Peer of
+        // `kinds_any_observed_singleton_support_is_true` on the diff
+        // altitude.
+        let m: ProvenanceMap = ["a", "b", "c", "d"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 1);
+        assert!(m.tiers_any_observed());
+        assert!(m.tiers_balanced());
+        assert!(!m.tiers_full_cover());
+    }
+
+    #[test]
+    fn tiers_any_observed_uniform_cover_is_true() {
+        // Uniform-cover pin: every tier contributes one leaf, so every
+        // cell of `ConfigTierKind::ALL` receives at least one
+        // observation — `tiers_any_observed` reads `true`. The uniform
+        // four-tier cover is on the `true` side of ALL three coverage-
+        // support boundaries: `any_observed`, `balanced`, and
+        // `full_cover`. Peer of `kinds_any_observed_uniform_cover_is_true`
+        // on the diff altitude.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(m.tiers_any_observed());
+        assert!(m.tiers_balanced());
+        assert!(m.tiers_full_cover());
+    }
+
+    #[test]
+    fn tiers_any_observed_three_tier_partial_cover_is_true() {
+        // Three-tier cover pin: a fold observing Bare + Discovered +
+        // Default but never Custom has three observed cells out of
+        // four — `tiers_any_observed` reads `true` even though
+        // `tiers_full_cover` reads `false`. Direct witness of the
+        // strict subsumption `tiers_full_cover ⇒ tiers_any_observed`
+        // on a fixture where the two boundaries split. Peer of
+        // `kinds_any_observed_two_kind_partial_cover_is_true` at the
+        // tier altitude on a three-of-four cover.
+        let m: ProvenanceMap = [
+            ("b", ConfigTierKind::Bare),
+            ("d", ConfigTierKind::Discovered),
+            ("e", ConfigTierKind::Default),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        assert_eq!(m.contributing_tiers().len(), 3);
+        assert!(m.tiers_any_observed());
+        assert!(!m.tiers_full_cover());
+    }
+
+    #[test]
+    fn tiers_full_cover_implies_tiers_any_observed_pointwise() {
+        // Subsumption pin: `tiers_full_cover() ⇒ tiers_any_observed()`
+        // on every fixture. A full-cover fold observes every cell,
+        // so it observes at least one cell — the any-observed
+        // predicate holds. The strict subsumption relates the two
+        // ends of the coverage-support partition:
+        // `any_observed ⇔ !is_empty` and
+        // `full_cover ⇔ every_cell_positive`, with
+        // `full_cover ⇒ any_observed` structurally. Peer of
+        // `kinds_full_cover_implies_kinds_any_observed_pointwise` on
+        // the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_full_cover() {
+                assert!(
+                    map.tiers_any_observed(),
+                    "full-cover map must be any-observed",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_any_observed_implies_leaf_count_positive_pointwise() {
+        // Leaf-count lower-bound pin: `tiers_any_observed() ⇒
+        // self.len() >= 1`. Any fold with a nonzero histogram cell has
+        // at least one leaf contributing to that cell. Direct witness
+        // of the trait-uniform `!is_empty() ⇒ total() >= 1` law on
+        // AxisHistogram, lifted to the tier altitude. Peer of
+        // `kinds_any_observed_implies_line_count_positive_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_any_observed() {
+                assert!(
+                    !map.is_empty(),
+                    "any-observed map must have at least one leaf",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_any_observed_negation_implies_tiers_balanced_pointwise() {
+        // The empty map is the only fixture on the `false` side of
+        // `tiers_any_observed`, and it is vacuously balanced. So
+        // `!tiers_any_observed() ⇒ tiers_balanced()` holds
+        // structurally. Pins the interaction between the coverage-
+        // support boundary and the uniformity boundary at the empty-
+        // map corner. Peer of
+        // `kinds_any_observed_negation_implies_kinds_balanced_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if !map.tiers_any_observed() {
+                assert!(map.tiers_balanced(), "empty map must be vacuously balanced",);
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_any_observed_agrees_with_open_coded_any_positive_walk() {
+        // Parity against the exact hand-rolled any-observed walk this
+        // lift replaces: walk every cell of the histogram and check
+        // any count is positive. Mirrors the parity pin
+        // `tiers_full_cover_agrees_with_open_coded_all_positive_walk`
+        // on the coverage-support partition's opposite boundary. Peer
+        // of `kinds_any_observed_agrees_with_open_coded_any_positive_walk`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_any_observed();
+            let hist = map.tier_histogram();
+            let hand_rolled = hist.iter().any(|(_, c)| c > 0);
             assert_eq!(via_seam, hand_rolled);
         }
     }
