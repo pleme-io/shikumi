@@ -1476,11 +1476,14 @@ pub trait ConfigSourceChain {
     /// at every altitude: fuse the (`peak_count`, `trough_count`) modal-
     /// count pair into a single dispersion scalar named at the surface,
     /// routed through the shared [`crate::AxisHistogram::spread`]
-    /// primitive one altitude down. The two remaining chain-altitude
-    /// sub-axes (`file_format_spread` over
-    /// [`Self::file_format_histogram`], `env_prefix_kind_spread` over
-    /// [`Self::env_prefix_kind_histogram`]) are the natural next sideways
-    /// lifts on the same doc-cited template.
+    /// primitive one altitude down. The two chain-altitude sub-axis
+    /// peers [`Self::file_format_spread`] over
+    /// [`Self::file_format_histogram`] and [`Self::env_prefix_kind_spread`]
+    /// over [`Self::env_prefix_kind_histogram`] close the projection
+    /// sideways on the same doc-cited template — the chain-altitude
+    /// "spread across altitudes" triple
+    /// `(layer_kind_spread, file_format_spread, env_prefix_kind_spread)`
+    /// now spans every sub-axis of the chain surface.
     ///
     /// **Empty-chain convention** — returns `0`, matching the
     /// [`crate::AxisHistogram::spread`] empty convention one altitude
@@ -2650,10 +2653,13 @@ pub trait ConfigSourceChain {
     /// altitude: fuse the (`peak_count`, `trough_count`) modal-count
     /// pair into a single dispersion scalar named at the surface,
     /// routed through the shared [`crate::AxisHistogram::spread`]
-    /// primitive one altitude down. The one remaining chain-altitude
-    /// sub-axis (`env_prefix_kind_spread` over
-    /// [`Self::env_prefix_kind_histogram`]) is the natural next sideways
-    /// lift on the same doc-cited template.
+    /// primitive one altitude down. The env-prefix-presence sub-axis
+    /// peer [`Self::env_prefix_kind_spread`] over
+    /// [`Self::env_prefix_kind_histogram`] closes the projection
+    /// sideways on the same doc-cited template — the chain-altitude
+    /// "spread across altitudes" triple
+    /// `(layer_kind_spread, file_format_spread, env_prefix_kind_spread)`
+    /// now spans every sub-axis of the chain surface.
     ///
     /// **Empty-histogram convention** — returns `0`, matching the
     /// [`crate::AxisHistogram::spread`] empty convention one altitude
@@ -3883,6 +3889,191 @@ pub trait ConfigSourceChain {
         Self: AsRef<[ConfigSource]>,
     {
         self.env_prefix_kind_histogram().trough_count()
+    }
+
+    /// The **env-prefix-presence spread** — the difference between the
+    /// peak and trough env-layer counts across the observed
+    /// [`EnvMetadataTagKind`] cells on this chain. Equal to
+    /// `self.peak_env_prefix_kind_count() -
+    /// self.trough_env_prefix_kind_count()` by construction. Routes
+    /// through [`Self::env_prefix_kind_histogram`]:
+    /// [`crate::AxisHistogram::spread`] reads a single pass over the
+    /// fixed-cardinality counts vector (fusing the max-over-axis /
+    /// min-over-support pair into one running scan). The env-prefix-
+    /// presence sub-axis lift of the "spread across altitudes" projection
+    /// seeded on the diff altitude by [`crate::ConfigDiff::kind_spread`],
+    /// climbed to the tier altitude by
+    /// [`crate::ProvenanceMap::tier_spread`], and lifted sideways to the
+    /// layer-kind sub-axis by [`Self::layer_kind_spread`] and to the file-
+    /// format sub-axis by [`Self::file_format_spread`]. Returns `0`
+    /// exactly on every chain whose env-prefix histogram is empty (an
+    /// empty chain, OR a non-empty chain of only [`ConfigSource::Defaults`]
+    /// / [`ConfigSource::File`] entries — no [`ConfigSource::Env`] layer
+    /// contributes), every singleton-support chain (only one observed
+    /// env-prefix kind — every `Env` layer bare, or every `Env` layer
+    /// prefixed; trivially balanced), and every uniform per-kind chain
+    /// (the same nonzero env-layer count on both cells).
+    ///
+    /// The **scalar dispersion peer** of the fused
+    /// `(peak_env_prefix_kind_count, trough_env_prefix_kind_count)`
+    /// modal-count pair on the env-prefix-presence sub-axis of the chain
+    /// altitude — the natural typed primitive for chain-shape dashboards,
+    /// attestation manifests, and alerting policies asking *"how unevenly
+    /// distributed are the env layers across bare vs prefixed?"*: the CLI
+    /// `config-show` summary line *"env prefix skew 2: Prefixed owns 3 of
+    /// 4 env layers, Bare 1 of 4"* (where 2 is this scalar), the
+    /// attestation manifest recording the env-prefix spread between two
+    /// `ProviderChain` snapshots, the alerting policy reading *"chain env
+    /// prefix spread = 2"* to flag a rebuild window where one env-prefix
+    /// kind dwarfed the other. Before this lift, every such consumer
+    /// re-derived the projection inline as
+    /// `chain.peak_env_prefix_kind_count() -
+    /// chain.trough_env_prefix_kind_count()` — two method calls plus a
+    /// subtraction at every site, each site having to reason
+    /// independently about the structural non-negativity of the
+    /// difference (`peak_env_prefix_kind_count() >=
+    /// trough_env_prefix_kind_count()` holds on every chain by lifting
+    /// the trait-uniform `peak_count() >= trough_count()` law on
+    /// [`crate::AxisHistogram`], but not on the inline subtraction
+    /// surface — an unwitnessed refactor swapping the operands would
+    /// silently underflow). Routes through
+    /// [`crate::AxisHistogram::spread`] one altitude down — the
+    /// underflow-safe named seam whose docs pin the monotonicity
+    /// invariant explicitly.
+    ///
+    /// The env-prefix-presence sub-axis lift in the "spread across
+    /// altitudes" projection seeded on the diff altitude by
+    /// [`crate::ConfigDiff::kind_spread`], climbed to the tier altitude
+    /// by [`crate::ProvenanceMap::tier_spread`], and lifted sideways to
+    /// the layer-kind sub-axis of the same chain altitude by
+    /// [`Self::layer_kind_spread`] and to the file-format sub-axis by
+    /// [`Self::file_format_spread`]. The pattern is the same at every
+    /// altitude: fuse the (`peak_count`, `trough_count`) modal-count
+    /// pair into a single dispersion scalar named at the surface, routed
+    /// through the shared [`crate::AxisHistogram::spread`] primitive one
+    /// altitude down. This closes the chain-altitude sub-axis spread
+    /// family — the chain-shape "spread across altitudes" triple
+    /// `(layer_kind_spread, file_format_spread, env_prefix_kind_spread)`
+    /// now spans every sub-axis of the chain surface.
+    ///
+    /// **Empty-histogram convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::spread`] empty convention one altitude
+    /// down and the [`Self::peak_env_prefix_kind_count`] /
+    /// [`Self::trough_env_prefix_kind_count`] empty conventions on the
+    /// same sub-axis. The scalar-count triple
+    /// `(peak_env_prefix_kind_count, trough_env_prefix_kind_count,
+    /// env_prefix_kind_spread)` reads uniformly `(0, 0, 0)` on the empty
+    /// histogram. Like [`Self::file_format_spread`] and unlike
+    /// [`Self::layer_kind_spread`], the zero-boundary is NOT
+    /// `self.as_ref().is_empty()`: a non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::File`] layers is
+    /// non-empty but has an empty env-prefix histogram (those entries
+    /// project to [`None`] through [`ConfigSource::env_prefix_kind`]) —
+    /// the empty-boundary is the sub-axis histogram's `is_empty()`, not
+    /// the chain's. Unlike [`Self::file_format_spread`], the empty-
+    /// histogram / no-`Env`-layers condition is exactly the layer-kind
+    /// `count(ConfigSourceKind::Env) == 0` condition: every `Env` entry
+    /// projects to a `Some` cell regardless of prefix value (the empty-
+    /// prefix case maps to [`EnvMetadataTagKind::Bare`], every non-empty
+    /// prefix maps to [`EnvMetadataTagKind::Prefixed`]), so no `Env`
+    /// entry is silently dropped by the projection the way an
+    /// unrecognized-extension `File` entry is on the file-format sub-
+    /// axis.
+    ///
+    /// **Structural-skew predicate.** `env_prefix_kind_spread() == 0` is
+    /// the typed *balanced-env-prefixes* predicate at the env-prefix-
+    /// presence sub-axis of the chain altitude — bare and prefixed env
+    /// layers contributed the same count. Pointwise equivalent to
+    /// `peak_env_prefix_kind_count() == trough_env_prefix_kind_count()`
+    /// on the scalar-count pair and to `dominant_env_prefix_kind() ==
+    /// recessive_env_prefix_kind()` on the modal-cell pair whenever the
+    /// env-prefix histogram is non-empty (both branches reduce to
+    /// `Some(first) == Some(first)` on singleton-support and uniform-
+    /// cover chains, and to `false` on skewed chains). Together with
+    /// `env_prefix_kind_histogram().is_empty()` and the full-cover
+    /// predicate on [`Self::env_prefix_kind_histogram`], the env-prefix
+    /// sub-axis of the chain-shape surface now carries the natural
+    /// boundary triple *"did any env layer contribute?"* / *"did both
+    /// kinds fire?"* / *"did the kinds fire equally?"* — each a single
+    /// method call.
+    ///
+    /// # Invariants
+    ///
+    /// - `env_prefix_kind_spread() == env_prefix_kind_histogram().spread()`
+    ///   — both project the same scalar off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `env_prefix_kind_spread() == peak_env_prefix_kind_count() -
+    ///   trough_env_prefix_kind_count()` — the fused-pair identity of
+    ///   the scalar-dispersion peer. The subtraction is underflow-safe
+    ///   because `peak_env_prefix_kind_count() >=
+    ///   trough_env_prefix_kind_count()` holds structurally on every
+    ///   chain (lifted from the trait-uniform `peak_count() >=
+    ///   trough_count()` law on [`crate::AxisHistogram`]).
+    /// - `env_prefix_kind_spread() == 0` on every chain whose env-prefix
+    ///   histogram is empty — the vacuous uniformity boundary, matching
+    ///   the [`crate::AxisHistogram::spread`] empty convention one
+    ///   altitude down. The `(peak_env_prefix_kind_count,
+    ///   trough_env_prefix_kind_count, env_prefix_kind_spread)` triple
+    ///   reads `(0, 0, 0)` uniformly. Like
+    ///   [`Self::file_format_spread`] and unlike
+    ///   [`Self::layer_kind_spread`], the zero boundary is NOT
+    ///   `self.as_ref().is_empty()`: a non-empty chain of only
+    ///   [`ConfigSource::Defaults`] / [`ConfigSource::File`] layers
+    ///   reads zero as well.
+    /// - `env_prefix_kind_spread() == 0` whenever
+    ///   `present_env_prefix_kinds().len() <= 1` — the empty-histogram
+    ///   case (no observed kind, trivially balanced) and the singleton-
+    ///   support case (the one observed kind's count is both the peak
+    ///   and the trough). Also holds on every uniform per-kind chain
+    ///   (each observed kind contributing the same nonzero count,
+    ///   dominant included).
+    /// - `env_prefix_kind_spread() <= peak_env_prefix_kind_count()`
+    ///   always — the trough is non-negative, so the subtraction is
+    ///   bounded above by the minuend. Equality holds iff the trough is
+    ///   zero — i.e. iff `env_prefix_kind_histogram().is_empty()`.
+    ///   Lifted from the trait-uniform `spread() <= peak_count()` law
+    ///   on [`crate::AxisHistogram`]. Cross-sub-axis divergence from
+    ///   [`Self::layer_kind_spread`], where the equality-case coincides
+    ///   with `self.as_ref().is_empty()`; agreement with
+    ///   [`Self::file_format_spread`], where the equality-case coincides
+    ///   with `file_format_histogram().is_empty()` on the sister sub-
+    ///   axis.
+    /// - `env_prefix_kind_spread() <= env_prefix_kind_histogram().total()`
+    ///   always — composition of `env_prefix_kind_spread() <=
+    ///   peak_env_prefix_kind_count()` (this method) with
+    ///   `peak_env_prefix_kind_count() <=
+    ///   env_prefix_kind_histogram().total()` (documented on
+    ///   [`Self::peak_env_prefix_kind_count`]). The histogram total
+    ///   equals `layer_kind_histogram().count(ConfigSourceKind::Env)`
+    ///   pointwise — strict equality, not the inequality bound the
+    ///   file-format histogram carries; every `Env` layer contributes
+    ///   to the env-prefix histogram, while only recognized-extension
+    ///   `File` layers contribute to the file-format histogram.
+    /// - `env_prefix_kind_spread() <= self.as_ref().len()` always —
+    ///   composition of the above with
+    ///   `env_prefix_kind_histogram().total() <= self.as_ref().len()`
+    ///   (every env layer is a chain entry). The chain-length bound the
+    ///   layer-kind sub-axis carries at cell-count tightness; the env-
+    ///   prefix sub-axis carries it with the env-layer-count slack.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<EnvMetadataTagKind>()` (the
+    /// fused peak-and-trough scan). Both are `O(n)` in practice since
+    /// the env-prefix-presence axis carries a fixed two-cell
+    /// cardinality; the returned `usize` reads one scalar. Halves the
+    /// cost of the previous inline `chain.peak_env_prefix_kind_count() -
+    /// chain.trough_env_prefix_kind_count()` idiom (which walked the
+    /// counts vector twice — once for the max, once for the min-over-
+    /// support — where [`crate::AxisHistogram::spread`] can fuse both
+    /// into a single walk with a running-max/min pair).
+    #[must_use]
+    fn env_prefix_kind_spread(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().spread()
     }
 }
 
@@ -15742,6 +15933,437 @@ mod tests {
             let slice = chain.as_slice();
             let via_seam = slice.file_format_spread();
             let hist = slice.file_format_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .map(|(_, c)| c)
+                .filter(|&c| c > 0)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(via_seam, peak - trough);
+        }
+    }
+
+    // ---- ConfigSourceChain::env_prefix_kind_spread — scalar-dispersion
+    //      peer on the env-prefix-presence sub-axis of the chain
+    //      altitude, fusing peak_env_prefix_kind_count and
+    //      trough_env_prefix_kind_count into one dispersion scalar and
+    //      closing the "spread across altitudes" projection sideways to
+    //      the third chain-altitude sub-axis ----
+
+    #[test]
+    fn env_prefix_kind_spread_matches_env_prefix_kind_histogram_spread_pointwise() {
+        // The scalar-dispersion pin: `env_prefix_kind_spread` routes
+        // through `env_prefix_kind_histogram().spread()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Direct sister of
+        // `file_format_spread_matches_file_format_histogram_spread_pointwise`
+        // and `layer_kind_spread_matches_layer_kind_histogram_spread_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tier_spread_matches_tier_histogram_spread_pointwise` on the
+        // tier altitude, and
+        // `kind_spread_matches_kind_histogram_spread_pointwise` on the
+        // diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let via_histogram = chain.as_slice().env_prefix_kind_histogram().spread();
+            assert_eq!(chain.as_slice().env_prefix_kind_spread(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_spread_equals_peak_minus_trough_pointwise() {
+        // The fused-pair pin: `env_prefix_kind_spread ==
+        // peak_env_prefix_kind_count - trough_env_prefix_kind_count` on
+        // every fixture. The subtraction is underflow-safe because
+        // `peak_env_prefix_kind_count() >=
+        // trough_env_prefix_kind_count()` holds structurally on every
+        // chain (lifted from the trait-uniform `peak_count >=
+        // trough_count` law on AxisHistogram); this pin asserts the
+        // monotonicity invariant explicitly at every fixture so any
+        // future refactor that swaps the operands fails visibly. Peer
+        // of `file_format_spread_equals_peak_minus_trough_pointwise`
+        // and `layer_kind_spread_equals_peak_minus_trough_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tier_spread_equals_peak_minus_trough_pointwise` on the tier
+        // altitude, and `kind_spread_equals_peak_minus_trough_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let peak = slice.peak_env_prefix_kind_count();
+            let trough = slice.trough_env_prefix_kind_count();
+            assert!(
+                peak >= trough,
+                "peak={peak} must be >= trough={trough} on every chain",
+            );
+            assert_eq!(slice.env_prefix_kind_spread(), peak - trough);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_spread_sample_chain_is_zero() {
+        // Direct pin against `sample_chain()`: two `.yaml` file layers +
+        // one Env layer with prefix `"APP_"`. Prefixed is the sole
+        // observed env-prefix kind (present == {Prefixed}), so peak ==
+        // trough == 1 and the spread is 0 — the singleton-support
+        // balanced-boundary through the seam. Reads the paired
+        // `(peak_env_prefix_kind_count, trough_env_prefix_kind_count,
+        // env_prefix_kind_spread)` dispersion triple as `(1, 1, 0)`.
+        // Cross-sub-axis divergence pin against
+        // `layer_kind_spread_sample_chain_is_one`: on the same
+        // `sample_chain()` fixture, the layer-kind sub-axis reads spread
+        // 1 (File dominant at 2, Env recessive at 1) while the env-
+        // prefix sub-axis reads spread 0 (only Prefixed observed).
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_env_prefix_kind_count(), 1);
+        assert_eq!(slice.trough_env_prefix_kind_count(), 1);
+        assert_eq!(slice.env_prefix_kind_spread(), 0);
+    }
+
+    #[test]
+    fn env_prefix_kind_spread_bare_majority_is_two() {
+        // Direct pin against a bare-majority chain: three empty-prefix
+        // Env layers + one prefixed Env layer + one Defaults + one
+        // File. Bare dominant at 3, Prefixed recessive at 1 — the
+        // spread is 2. Reads the paired `(peak_env_prefix_kind_count,
+        // trough_env_prefix_kind_count, env_prefix_kind_spread)`
+        // dispersion triple as `(3, 1, 2)`. Cross-verified against
+        // `hist.spread() == 2` at the same observation site — the
+        // fused-pair spread projection reads through the seam.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_env_prefix_kind_count(), 3);
+        assert_eq!(slice.trough_env_prefix_kind_count(), 1);
+        assert_eq!(slice.env_prefix_kind_spread(), 2);
+        assert_eq!(slice.env_prefix_kind_histogram().spread(), 2);
+    }
+
+    #[test]
+    fn env_prefix_kind_spread_empty_chain_is_zero() {
+        // An empty chain has no env layers and therefore zero spread —
+        // reads `0` per the AxisHistogram::spread empty convention one
+        // altitude down; the `(peak_env_prefix_kind_count,
+        // trough_env_prefix_kind_count, env_prefix_kind_spread)` triple
+        // reads `(0, 0, 0)` uniformly on empty. Peer of
+        // `file_format_spread_empty_chain_is_zero` and
+        // `layer_kind_spread_empty_chain_is_zero` on the sister sub-
+        // axes, `tier_spread_empty_map_is_zero` on the tier altitude,
+        // and `kind_spread_empty_diff_is_zero` on the diff altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.peak_env_prefix_kind_count(), 0);
+        assert_eq!(empty.trough_env_prefix_kind_count(), 0);
+        assert_eq!(empty.env_prefix_kind_spread(), 0);
+    }
+
+    #[test]
+    fn env_prefix_kind_spread_no_env_layers_is_zero() {
+        // The non-empty-chain / empty-histogram boundary the env-prefix
+        // sub-axis pins that the layer-kind sub-axis does *not*, and
+        // that agrees with the file-format sub-axis. A chain of only
+        // `Defaults` / `File` layers is non-empty but has no `Some`
+        // env_prefix_kind projection, so the histogram is empty and
+        // `env_prefix_kind_spread` reads zero — the vacuous-uniformity
+        // boundary reads through the seam. Distinguishing pin against
+        // the layer-kind sub-axis `layer_kind_spread` idiom: on those
+        // same chains, `layer_kind_spread` reads a nonzero dispersion
+        // (Defaults / File layers still contribute to the layer-kind
+        // histogram) while `env_prefix_kind_spread` reads zero. Unlike
+        // the file-format sub-axis's no-recognized-files boundary, the
+        // env-prefix sub-axis's no-env-layers boundary is exactly
+        // `layer_kind_histogram().count(ConfigSourceKind::Env) == 0`:
+        // every `Env` entry projects to a `Some` cell regardless of
+        // prefix value, so no `Env` entry is silently dropped by the
+        // projection.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.unknown")),
+                ConfigSource::File(PathBuf::from("/b.nix")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            assert!(!chain.is_empty(), "fixture must be non-empty");
+            assert!(
+                chain.as_slice().env_prefix_kind_histogram().is_empty(),
+                "fixture must have empty env-prefix histogram",
+            );
+            assert_eq!(chain.as_slice().env_prefix_kind_spread(), 0);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_spread_singleton_support_is_zero() {
+        // Singleton-support pin: every env layer lands on the same
+        // env-prefix kind, so the dominant kind is both peak and trough
+        // of the support, and the spread is zero — the balanced-env-
+        // prefixes boundary on the singleton-support side. Direct
+        // construction: three prefixed Env layers, present ==
+        // {Prefixed}. Peer of
+        // `file_format_spread_singleton_support_is_zero` and
+        // `layer_kind_spread_singleton_support_is_zero` on the sister
+        // sub-axes and `tier_spread_singleton_support_is_zero` on the
+        // tier altitude.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert_eq!(slice.env_prefix_kind_spread(), 0);
+    }
+
+    #[test]
+    fn env_prefix_kind_spread_uniform_cover_is_zero() {
+        // Uniform-cover pin: every observed kind contributes the same
+        // nonzero count (one env layer per kind here — a full-cover
+        // chain with uniform count 1 per cell), so peak == trough == 1
+        // and the spread is zero — the balanced-env-prefixes boundary
+        // on the uniform-cover side. Peer of
+        // `file_format_spread_uniform_cover_is_zero` and
+        // `layer_kind_spread_uniform_cover_is_zero` on the sister sub-
+        // axes and `tier_spread_uniform_cover_is_zero` on the tier
+        // altitude.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.env_prefix_kind_histogram().is_full_cover());
+        assert_eq!(slice.peak_env_prefix_kind_count(), 1);
+        assert_eq!(slice.trough_env_prefix_kind_count(), 1);
+        assert_eq!(slice.env_prefix_kind_spread(), 0);
+    }
+
+    #[test]
+    fn env_prefix_kind_spread_is_zero_iff_peak_equals_trough() {
+        // Structural-skew boundary: `env_prefix_kind_spread() == 0` iff
+        // `peak_env_prefix_kind_count() == trough_env_prefix_kind_count()`
+        // — the scalar-pair form of the balanced-env-prefixes
+        // predicate. On every fixture, the predicate agrees with the
+        // equality of the fused modal-count pair. Peer of
+        // `file_format_spread_is_zero_iff_peak_equals_trough` and
+        // `layer_kind_spread_is_zero_iff_peak_equals_trough` on the
+        // sister sub-axes and
+        // `tier_spread_is_zero_iff_peak_equals_trough` on the tier
+        // altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let spread_zero = slice.env_prefix_kind_spread() == 0;
+            let peak_eq_trough =
+                slice.peak_env_prefix_kind_count() == slice.trough_env_prefix_kind_count();
+            assert_eq!(
+                spread_zero,
+                peak_eq_trough,
+                "env_prefix_kind_spread() == 0 iff peak == trough \
+                 (spread={s}, peak={p}, trough={t})",
+                s = slice.env_prefix_kind_spread(),
+                p = slice.peak_env_prefix_kind_count(),
+                t = slice.trough_env_prefix_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_spread_agrees_with_modal_pair_equality_on_nonempty_histogram() {
+        // Cross-surface pin: on every chain with a non-empty env-
+        // prefix histogram, `env_prefix_kind_spread() == 0` agrees
+        // with `dominant_env_prefix_kind() ==
+        // recessive_env_prefix_kind()` — the modal-pair equality form
+        // of the balanced-env-prefixes predicate. Both branches reduce
+        // to `Some(first) == Some(first)` on singleton-support and
+        // uniform-cover chains, and to `false` on skewed chains. Peer
+        // of `file_format_spread_agrees_with_modal_pair_equality_on_nonempty_histogram`
+        // on the file-format sub-axis. Cross-sub-axis divergence from
+        // `layer_kind_spread_agrees_with_modal_pair_equality_on_nonempty_chain`:
+        // the layer-kind sub-axis quantifies over non-empty chains,
+        // but the env-prefix sub-axis must quantify over chains with a
+        // non-empty histogram — a non-empty chain of only Defaults /
+        // File entries has both `dominant_env_prefix_kind() == None ==
+        // recessive_env_prefix_kind()` (trivial-equal side) and
+        // `env_prefix_kind_spread() == 0` (empty-histogram side), so
+        // the non-empty-chain quantifier would include the empty-
+        // histogram case as a trivial-equal agreement; the non-empty-
+        // histogram quantifier excludes it as a distinct boundary.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kind_histogram().is_empty() {
+                continue;
+            }
+            let spread_zero = slice.env_prefix_kind_spread() == 0;
+            let dom_eq_rec = slice.dominant_env_prefix_kind() == slice.recessive_env_prefix_kind();
+            assert_eq!(
+                spread_zero, dom_eq_rec,
+                "on non-empty-histogram chain, env_prefix_kind_spread() == 0 iff \
+                 dominant_env_prefix_kind() == recessive_env_prefix_kind()",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_spread_bounded_above_by_peak_env_prefix_kind_count() {
+        // Structural bound: `env_prefix_kind_spread() <=
+        // peak_env_prefix_kind_count()` on every fixture — the trough
+        // is non-negative, so the subtraction is bounded above by the
+        // minuend. Lifted from the trait-uniform `spread() <=
+        // peak_count()` law on AxisHistogram. Peer of
+        // `file_format_spread_bounded_above_by_peak_file_format_count`
+        // and `layer_kind_spread_bounded_above_by_peak_layer_kind_count`
+        // on the sister sub-axes,
+        // `tier_spread_bounded_above_by_peak_tier_count` on the tier
+        // altitude, and `kind_spread_bounded_above_by_peak_kind_count`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.env_prefix_kind_spread() <= slice.peak_env_prefix_kind_count(),
+                "env_prefix_kind_spread()={s} must be <= \
+                 peak_env_prefix_kind_count()={p}",
+                s = slice.env_prefix_kind_spread(),
+                p = slice.peak_env_prefix_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_spread_equals_peak_iff_histogram_is_empty() {
+        // Equality-case pin of the `env_prefix_kind_spread <=
+        // peak_env_prefix_kind_count` bound: equality holds iff the
+        // trough is zero, which by `trough_env_prefix_kind_count == 0
+        // <=> env_prefix_kind_histogram().is_empty()` (the env-prefix
+        // sub-axis's zero-trough boundary — the env-prefix histogram
+        // is empty exactly when no `Env` layer contributes) holds iff
+        // the histogram is empty. Cross-sub-axis divergence pin
+        // against `layer_kind_spread_equals_peak_iff_chain_is_empty`:
+        // on the layer-kind sub-axis, the equality-case coincides with
+        // `self.as_ref().is_empty()`; on the env-prefix sub-axis, it
+        // coincides with `env_prefix_kind_histogram().is_empty()` —
+        // the stricter boundary. Agreement with
+        // `file_format_spread_equals_peak_iff_histogram_is_empty` on
+        // the file-format sub-axis. Peer of
+        // `tier_spread_equals_peak_iff_map_is_empty` on the tier
+        // altitude and `kind_spread_equals_peak_iff_diff_is_empty` on
+        // the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let equal = slice.env_prefix_kind_spread() == slice.peak_env_prefix_kind_count();
+            assert_eq!(
+                equal,
+                slice.env_prefix_kind_histogram().is_empty(),
+                "env_prefix_kind_spread == peak_env_prefix_kind_count iff \
+                 env_prefix_kind_histogram is empty (spread={s}, peak={p}, \
+                 hist_empty={e})",
+                s = slice.env_prefix_kind_spread(),
+                p = slice.peak_env_prefix_kind_count(),
+                e = slice.env_prefix_kind_histogram().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_spread_bounded_above_by_histogram_total() {
+        // Composition bound: `env_prefix_kind_spread() <=
+        // env_prefix_kind_histogram().total()` on every fixture —
+        // chaining `env_prefix_kind_spread <= peak_env_prefix_kind_count`
+        // (previous pin) with `peak_env_prefix_kind_count <=
+        // env_prefix_kind_histogram().total()` (documented on
+        // `peak_env_prefix_kind_count`). Cross-sub-axis divergence
+        // from `layer_kind_spread_bounded_above_by_len`: the layer-
+        // kind sub-axis's histogram total equals the chain length
+        // (every entry projects to one cell), so the layer-kind sub-
+        // axis composes to `self.as_ref().len()`; the env-prefix sub-
+        // axis's histogram total equals the env-layer count (strictly
+        // ≤ chain length), so the env-prefix sub-axis composes to
+        // `env_prefix_kind_histogram().total()` — the tighter bound.
+        // Agreement with
+        // `file_format_spread_bounded_above_by_histogram_total` on the
+        // file-format sub-axis, but with the strict-equality identity
+        // `env_prefix_kind_histogram().total() ==
+        // layer_kind_histogram().count(ConfigSourceKind::Env)` (every
+        // Env layer contributes) rather than the inequality bound the
+        // file-format histogram carries.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let hist_total = slice.env_prefix_kind_histogram().total();
+            assert!(
+                slice.env_prefix_kind_spread() <= hist_total,
+                "env_prefix_kind_spread()={s} must be <= \
+                 env_prefix_kind_histogram().total()={t}",
+                s = slice.env_prefix_kind_spread(),
+                t = hist_total,
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_spread_singleton_support_multi_layer_is_zero() {
+        // Direct pin at a 5-layer singleton-support Prefixed-only
+        // chain — present == {Prefixed}, peak == trough == 5, spread
+        // == 0. The scalar peer of the singleton-support cell
+        // degenerate `dominant_env_prefix_kind() ==
+        // recessive_env_prefix_kind()` — the dispersion triple reads
+        // `(5, 5, 0)`, distinct from the 3-layer fixture in
+        // `env_prefix_kind_spread_singleton_support_is_zero` so any
+        // misread that reintroduces the `peak - trough` inline idiom
+        // as `peak` alone silently underflows on a fixture at a
+        // different peak. Peer of
+        // `file_format_spread_singleton_support_multi_layer_is_zero`
+        // and `layer_kind_spread_singleton_support_multi_layer_is_zero`
+        // on the sister sub-axes and
+        // `tier_spread_singleton_support_multi_leaf_is_zero` on the
+        // tier altitude.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::Env("EXTRA_".to_owned()),
+            ConfigSource::Env("MORE_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert_eq!(slice.peak_env_prefix_kind_count(), 5);
+        assert_eq!(slice.trough_env_prefix_kind_count(), 5);
+        assert_eq!(slice.env_prefix_kind_spread(), 0);
+    }
+
+    #[test]
+    fn env_prefix_kind_spread_agrees_with_open_coded_max_minus_min_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0) - hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0)` walk this lift replaces
+        // — both the named seam and the hand-rolled max-minus-min-
+        // over-support must pointwise agree over every fixture. The
+        // `filter(|(_, c)| c > 0)` step on the min side is the load-
+        // bearing seam: the naive `.min()` over the full axis would
+        // silently pick zero-count absent cells on any non-full-cover
+        // chain, shadowing the trough-of-support the seam surfaces —
+        // and once the trough shadows to zero, the spread coincides
+        // with the peak alone, silently overreporting the dispersion.
+        // Peer of `file_format_spread_agrees_with_open_coded_max_minus_min_walk`
+        // and `layer_kind_spread_agrees_with_open_coded_max_minus_min_walk`
+        // on the sister sub-axes,
+        // `tier_spread_agrees_with_open_coded_max_minus_min_walk` on
+        // the tier altitude, and
+        // `kind_spread_agrees_with_open_coded_max_minus_min_walk` on
+        // the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kind_spread();
+            let hist = slice.env_prefix_kind_histogram();
             let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
             let trough = hist
                 .iter()
