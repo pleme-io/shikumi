@@ -4796,6 +4796,195 @@ pub trait ConfigSourceChain {
     {
         self.env_prefix_kind_histogram().is_uniform_count()
     }
+
+    /// Named typed boolean predicate — `true` exactly when every
+    /// [`EnvMetadataTagKind`] cell was observed at least once on this
+    /// chain's [`ConfigSource::Env`] layers (every cell of the closed
+    /// [`EnvMetadataTagKind`] axis has a nonzero count on the recipe's
+    /// env-prefix histogram). Routes through
+    /// [`Self::env_prefix_kind_histogram`]'s
+    /// [`crate::AxisHistogram::is_full_cover`], the cube-native single-
+    /// pass short-circuiting scan over the fixed-cardinality counts
+    /// vector one altitude down.
+    ///
+    /// Operator-facing consumers answering *"did every env-prefix kind
+    /// fire on this recipe?"* — the CLI `config-show` headline *"full-
+    /// cover recipe: every env-prefix kind fired at least once"*, the
+    /// attestation manifest gate *"rebuild window full-cover across env
+    /// prefixes"*, the alerting policy predicate *"recipe full-cover by
+    /// env-prefix"* — now route through this named seam instead of four
+    /// previously drifting inline forms:
+    /// `chain.absent_env_prefix_kinds().is_empty()` (the coverage-gap-
+    /// `Vec` form, which allocates a `Vec<EnvMetadataTagKind>` and reads
+    /// its emptiness), `chain.absent_env_prefix_kinds_count() == 0` (the
+    /// coverage-gap-scalar form, which pays for a full-axis scan and
+    /// equates a `usize` to zero without saying structurally *what* is
+    /// being equated), `chain.present_env_prefix_kinds_count() ==
+    /// crate::axis_cardinality::<EnvMetadataTagKind>()` (the support-
+    /// scalar form, which pays for the support scan and pulls in the
+    /// `axis_cardinality` turbofish at every call site), and
+    /// `chain.present_env_prefix_kinds().len() ==
+    /// crate::axis_cardinality::<EnvMetadataTagKind>()` (the support-
+    /// `Vec` form, which allocates a `Vec<EnvMetadataTagKind>` and reads
+    /// its length back). Pointwise-equivalent with
+    /// `env_prefix_kind_histogram().unobserved_cells() == 0`,
+    /// `env_prefix_kind_histogram().distinct_cells() ==
+    /// crate::axis_cardinality::<EnvMetadataTagKind>()`, and
+    /// `env_prefix_kind_histogram().unobserved().next().is_none()` one
+    /// altitude down.
+    ///
+    /// **Closes the "full-cover across altitudes" projection** across
+    /// every altitude / sub-axis. Seeded on the diff altitude by
+    /// [`crate::ConfigDiff::kinds_full_cover`], climbed to the tier
+    /// altitude by [`crate::ProvenanceMap::tiers_full_cover`], and lifted
+    /// sideways to the chain altitude's sister sub-axes by
+    /// [`Self::layer_kinds_full_cover`] over
+    /// [`Self::layer_kind_histogram`] and
+    /// [`Self::file_formats_full_cover`] over
+    /// [`Self::file_format_histogram`]; this lift closes the third and
+    /// final chain-altitude sub-axis, matching the fully-covered chain-
+    /// shape triples `(layer_kinds_balanced, file_formats_balanced,
+    /// env_prefix_kinds_balanced)` and `(layer_kind_spread,
+    /// file_format_spread, env_prefix_kind_spread)` one boundary /
+    /// dispersion surface over. The chain-shape "full-cover across
+    /// altitudes" triple `(layer_kinds_full_cover, file_formats_full_cover,
+    /// env_prefix_kinds_full_cover)` now spans every sub-axis of the
+    /// chain surface.
+    ///
+    /// **Empty-histogram convention** — returns `false` on every chain
+    /// whose env-prefix histogram is empty (no [`ConfigSource::Env`]
+    /// layers): no observed cells means the coverage gap equals every
+    /// cell of [`EnvMetadataTagKind::ALL`] — the full-cover predicate
+    /// fails. Matches [`crate::AxisHistogram::is_full_cover`]'s empty-
+    /// histogram convention one altitude down on the non-zero-cardinality
+    /// [`EnvMetadataTagKind`] axis (two cells: `Prefixed`, `Bare`).
+    /// Agreement with [`Self::file_formats_full_cover`]'s empty-histogram
+    /// / non-empty-chain divergence: a non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::File`] layers ALSO
+    /// reads `false` (the histogram is empty even though the chain is
+    /// not). Cross-sub-axis divergence from
+    /// [`Self::layer_kinds_full_cover`], where the empty-chain boundary
+    /// reads on `self.as_ref().is_empty()` instead of the histogram-empty
+    /// predicate. Unlike [`Self::file_formats_full_cover`], the empty-
+    /// histogram / no-`Env`-layers condition is exactly the layer-kind
+    /// `count(ConfigSourceKind::Env) == 0` condition: every `Env` entry
+    /// projects to a `Some` cell regardless of prefix value, so no `Env`
+    /// entry is silently dropped by the projection the way an
+    /// unrecognized-extension `File` entry is on the file-format sub-
+    /// axis. Dual of the vacuous-uniformity witness on
+    /// [`Self::env_prefix_kinds_balanced`], which reads `true` on every
+    /// empty-histogram chain: full-cover and balanced fall on opposite
+    /// sides of the empty-histogram boundary at the env-prefix sub-axis,
+    /// matching the diff-altitude / tier-altitude / layer-kind / file-
+    /// format sub-axis empty-vs-empty orthogonality.
+    ///
+    /// **Singleton-support convention** — returns `false` on every chain
+    /// whose observed support is a single [`EnvMetadataTagKind`]: one
+    /// observed cell out of two leaves one cell in the coverage gap, so
+    /// the full-cover predicate fails. Every prefixed-only chain (all env
+    /// layers carry non-empty prefixes) and every bare-only chain (all
+    /// env layers carry the empty prefix) is a witness.
+    ///
+    /// **Uniform two-kind cover convention** — returns `true` on every
+    /// chain where each of the two [`EnvMetadataTagKind`] cells was
+    /// observed at least once (regardless of per-kind count). Includes
+    /// the k-kind-observed-once-each shape (one env layer per kind) and
+    /// every skewed two-kind cover.
+    ///
+    /// **Two-cell-axis boundary — `!balanced ⇒ full_cover`** — unique
+    /// tightening on the two-cell env-prefix axis: any imbalance
+    /// necessarily observes both cells at differing nonzero counts, so
+    /// the imbalanced chain is automatically full-cover. Equivalently,
+    /// every chain is `env_prefix_kinds_balanced() ||
+    /// env_prefix_kinds_full_cover()` — the union covers the total. This
+    /// tightening does NOT lift to the three-cell layer-kind or four-cell
+    /// file-format sub-axes (where imbalance is compatible with partial
+    /// cover). Peer characterization of the two-cell axis carrying no
+    /// "imbalanced-and-not-full-cover" region.
+    ///
+    /// # Invariants
+    ///
+    /// - `env_prefix_kinds_full_cover() ==
+    ///   env_prefix_kind_histogram().is_full_cover()` — both project the
+    ///   same predicate off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `env_prefix_kinds_full_cover() == absent_env_prefix_kinds().is_empty()`
+    ///   always — the defining equivalence on the coverage-gap-`Vec`
+    ///   surface at the env-prefix sub-axis.
+    /// - `env_prefix_kinds_full_cover() == (absent_env_prefix_kinds_count() ==
+    ///   0)` always — the defining equivalence on the coverage-gap-
+    ///   scalar surface, without allocating the
+    ///   `Vec<EnvMetadataTagKind>`.
+    /// - `env_prefix_kinds_full_cover() == (present_env_prefix_kinds_count() ==
+    ///   crate::axis_cardinality::<EnvMetadataTagKind>())` always — the
+    ///   support-scalar form, the dual-side surfacing of the same
+    ///   boolean across the (observed, unobserved) partition.
+    /// - `env_prefix_kinds_full_cover() == (present_env_prefix_kinds().len() ==
+    ///   crate::axis_cardinality::<EnvMetadataTagKind>())` always — the
+    ///   support-`Vec` form, without allocating twice through
+    ///   [`Vec::len`].
+    /// - `env_prefix_kinds_full_cover() ⇒
+    ///   !env_prefix_kind_histogram().is_empty()` — a full-cover chain
+    ///   observes at least one env layer per [`EnvMetadataTagKind`], so
+    ///   the histogram is non-empty. Contrapositively,
+    ///   `env_prefix_kind_histogram().is_empty() ⇒
+    ///   !env_prefix_kinds_full_cover()` (the empty-histogram / full-
+    ///   coverage-gap boundary). Agreement with
+    ///   [`Self::file_formats_full_cover`], whose contrapositive also
+    ///   reads on the *histogram-empty* condition; cross-sub-axis
+    ///   divergence from [`Self::layer_kinds_full_cover`], where the
+    ///   contrapositive reads on the *chain-empty* condition.
+    /// - `env_prefix_kinds_full_cover() ⇒ present_env_prefix_kinds().len() ==
+    ///   crate::axis_cardinality::<EnvMetadataTagKind>()` — a full-cover
+    ///   chain observes every kind, so the support size equals the axis
+    ///   cardinality. Contrapositively,
+    ///   `present_env_prefix_kinds().len() <
+    ///   crate::axis_cardinality::<EnvMetadataTagKind>() ⇒
+    ///   !env_prefix_kinds_full_cover()`.
+    /// - `env_prefix_kinds_full_cover() ⇒
+    ///   env_prefix_kind_histogram().total() >=
+    ///   crate::axis_cardinality::<EnvMetadataTagKind>()` — a full-cover
+    ///   chain observes at least one env layer per kind, so the
+    ///   histogram total is bounded below by the axis cardinality.
+    /// - `env_prefix_kinds_full_cover() ⇒
+    ///   layer_kind_histogram().count(ConfigSourceKind::Env) >=
+    ///   crate::axis_cardinality::<EnvMetadataTagKind>()` — a full-cover
+    ///   chain observes at least one env layer per kind; every such
+    ///   layer is a [`ConfigSource::Env`], so the layer-kind Env count
+    ///   is bounded below by the env-prefix axis cardinality. Cross-
+    ///   sub-axis lower-bound implication linking the env-prefix sub-
+    ///   axis's full-cover boundary to the layer-kind sub-axis Env cell
+    ///   count. Sister of the file-format sub-axis's
+    ///   `file_formats_full_cover() ⇒
+    ///   layer_kind_histogram().count(ConfigSourceKind::File) >=
+    ///   axis_cardinality::<Format>()` lower-bound.
+    /// - `!env_prefix_kinds_balanced() ⇒ env_prefix_kinds_full_cover()` —
+    ///   two-cell-axis tightening: on the two-cell env-prefix axis, any
+    ///   imbalance observes both cells at differing nonzero counts, so
+    ///   the imbalanced chain is automatically full-cover. Equivalently,
+    ///   `env_prefix_kinds_balanced() || env_prefix_kinds_full_cover()`
+    ///   on every chain. This tightening does NOT lift to the three-cell
+    ///   layer-kind or four-cell file-format sub-axes.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<EnvMetadataTagKind>()` (the
+    /// full-cover scan). Both are `O(n)` in practice since the env-prefix
+    /// axis carries a fixed two-cell cardinality; the returned `bool`
+    /// reads one predicate. The scan short-circuits on the first zero
+    /// cell (bounded at one zero cell visited on a non-full-cover chain),
+    /// strictly tighter than the four coverage-gap equality forms — no
+    /// `Vec<EnvMetadataTagKind>` allocation, no [`crate::axis_cardinality`]
+    /// turbofish, no scalar equality against a magic axis-cardinality
+    /// constant.
+    #[must_use]
+    fn env_prefix_kinds_full_cover(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().is_full_cover()
+    }
 }
 
 impl ConfigSourceChain for [ConfigSource] {
@@ -18148,6 +18337,491 @@ mod tests {
             let slice = chain.as_slice();
             let via_seam = slice.file_formats_full_cover();
             let hist = slice.file_format_histogram();
+            let hand_rolled = hist.iter().all(|(_, c)| c > 0);
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::env_prefix_kinds_full_cover — full-cover-
+    //      env-prefix-kinds boolean predicate on the env-prefix sub-axis
+    //      of the chain altitude, lifting is_full_cover from the histogram
+    //      surface and closing the "full-cover across altitudes"
+    //      projection sideways to the third and final chain-altitude
+    //      sub-axis ----
+
+    #[test]
+    fn env_prefix_kinds_full_cover_matches_env_prefix_kind_histogram_is_full_cover_pointwise() {
+        // The routing pin: `env_prefix_kinds_full_cover` routes through
+        // `env_prefix_kind_histogram().is_full_cover()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Env-prefix sub-axis
+        // peer of
+        // `file_formats_full_cover_matches_file_format_histogram_is_full_cover_pointwise`
+        // and
+        // `layer_kinds_full_cover_matches_layer_kind_histogram_is_full_cover_pointwise`
+        // on the sister sub-axes of the chain altitude,
+        // `tiers_full_cover_matches_tier_histogram_is_full_cover_pointwise`
+        // on the tier altitude, and
+        // `kinds_full_cover_matches_kind_histogram_is_full_cover_pointwise`
+        // on the diff altitude — closing the "full-cover across
+        // altitudes" projection across every altitude / sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.env_prefix_kind_histogram().is_full_cover();
+            assert_eq!(slice.env_prefix_kinds_full_cover(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_agrees_with_absent_env_prefix_kinds_empty_pointwise() {
+        // The defining equivalence on the coverage-gap-Vec surface at
+        // the env-prefix sub-axis: `env_prefix_kinds_full_cover() ==
+        // absent_env_prefix_kinds().is_empty()` on every fixture. The
+        // full-cover-boundary of the fused `(absent_env_prefix_kinds,
+        // absent_env_prefix_kinds_count)` coverage-gap peers as a named
+        // boolean predicate. Lifted from the trait-uniform
+        // `is_full_cover() == unobserved().next().is_none()` law on
+        // AxisHistogram. Peer of
+        // `file_formats_full_cover_agrees_with_absent_file_formats_empty_pointwise`
+        // and
+        // `layer_kinds_full_cover_agrees_with_absent_layer_kinds_empty_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let full_cover = slice.env_prefix_kinds_full_cover();
+            let gap_empty = slice.absent_env_prefix_kinds().is_empty();
+            assert_eq!(
+                full_cover, gap_empty,
+                "env_prefix_kinds_full_cover ({full_cover}) must agree with \
+                 absent_env_prefix_kinds().is_empty() ({gap_empty}) for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_agrees_with_absent_env_prefix_kinds_count_zero_pointwise() {
+        // The coverage-gap-scalar form: `env_prefix_kinds_full_cover() ==
+        // (absent_env_prefix_kinds_count() == 0)` on every fixture. Pins
+        // the full-cover-env-prefix-kinds predicate against the scalar-
+        // zero equality form on the coverage-gap side. Peer of
+        // `file_formats_full_cover_agrees_with_absent_file_formats_count_zero_pointwise`
+        // and
+        // `layer_kinds_full_cover_agrees_with_absent_layer_kinds_count_zero_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let full_cover = slice.env_prefix_kinds_full_cover();
+            let count_zero = slice.absent_env_prefix_kinds_count() == 0;
+            assert_eq!(
+                full_cover,
+                count_zero,
+                "env_prefix_kinds_full_cover ({full_cover}) must agree with \
+                 absent_env_prefix_kinds_count == 0 (count={c}) for chain",
+                c = slice.absent_env_prefix_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_agrees_with_present_env_prefix_kinds_count_equals_axis_cardinality_pointwise()
+     {
+        // The support-scalar form: `env_prefix_kinds_full_cover() ==
+        // (present_env_prefix_kinds_count() ==
+        // axis_cardinality::<EnvMetadataTagKind>())` on every fixture —
+        // the dual-side surfacing of the same boolean across the
+        // (observed, unobserved) partition. Lifted from the trait-
+        // uniform `is_full_cover() == (distinct_cells() ==
+        // axis_cardinality::<A>())` law on AxisHistogram. Peer of
+        // `file_formats_full_cover_agrees_with_present_file_formats_count_equals_axis_cardinality_pointwise`
+        // and
+        // `layer_kinds_full_cover_agrees_with_present_layer_kinds_count_equals_axis_cardinality_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let full_cover = slice.env_prefix_kinds_full_cover();
+            let support_full = slice.present_env_prefix_kinds_count()
+                == crate::axis_cardinality::<EnvMetadataTagKind>();
+            assert_eq!(
+                full_cover, support_full,
+                "env_prefix_kinds_full_cover ({full_cover}) must agree with \
+                 present_env_prefix_kinds_count == axis_cardinality for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_agrees_with_present_env_prefix_kinds_len_equals_axis_cardinality_pointwise()
+     {
+        // The support-Vec form: `env_prefix_kinds_full_cover() ==
+        // (present_env_prefix_kinds().len() ==
+        // axis_cardinality::<EnvMetadataTagKind>())` on every fixture.
+        // Pins the predicate against the `Vec<EnvMetadataTagKind>` length
+        // form consumers reach for when they already hold the support
+        // vector. Peer of
+        // `file_formats_full_cover_agrees_with_present_file_formats_len_equals_axis_cardinality_pointwise`
+        // and
+        // `layer_kinds_full_cover_agrees_with_present_layer_kinds_len_equals_axis_cardinality_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let full_cover = slice.env_prefix_kinds_full_cover();
+            let support_len_full = slice.present_env_prefix_kinds().len()
+                == crate::axis_cardinality::<EnvMetadataTagKind>();
+            assert_eq!(
+                full_cover, support_len_full,
+                "env_prefix_kinds_full_cover ({full_cover}) must agree with \
+                 present_env_prefix_kinds().len() == axis_cardinality for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_empty_chain_is_false() {
+        // Empty-chain boundary: the empty chain has no observed cells,
+        // so the coverage gap equals every cell of
+        // `EnvMetadataTagKind::ALL` (two-cell axis, no zero-cardinality
+        // degenerate case) — `env_prefix_kinds_full_cover` reads `false`.
+        // Dual of `env_prefix_kinds_balanced_empty_chain_is_true`: the
+        // empty chain is on the opposite side of the full-cover boundary
+        // from the balanced boundary at the env-prefix sub-axis, matching
+        // the diff-altitude / tier-altitude / layer-kind / file-format
+        // sub-axis empty-vs-empty orthogonality. Matches `is_full_cover`
+        // reading `false` on the empty histogram over a non-zero-
+        // cardinality axis one altitude down. Peer of
+        // `file_formats_full_cover_empty_chain_is_false` and
+        // `layer_kinds_full_cover_empty_chain_is_false` on the sister
+        // sub-axes.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(!empty.env_prefix_kinds_full_cover());
+        assert_eq!(
+            empty.absent_env_prefix_kinds_count(),
+            crate::axis_cardinality::<EnvMetadataTagKind>()
+        );
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_no_env_layers_is_false() {
+        // Cross-sub-axis divergence pin against
+        // `layer_kinds_full_cover_empty_chain_is_false`: on the env-
+        // prefix sub-axis the *non-empty-chain / empty-histogram*
+        // boundary ALSO reads `false`. A chain of only Defaults / File
+        // layers is non-empty but has an empty env-prefix histogram
+        // (every `Env` entry would project to a `Some` cell, but there
+        // are no `Env` entries), so the coverage gap equals every cell
+        // — `env_prefix_kinds_full_cover` reads `false`. Distinguishing
+        // pin against `env_prefix_kinds_balanced` on the exact same
+        // fixtures (where the vacuous-uniformity boundary reads `true`):
+        // full-cover and balanced fall on opposite sides of the empty-
+        // histogram boundary at the env-prefix sub-axis. Agreement with
+        // `file_formats_full_cover_no_recognized_files_is_false` on the
+        // sister sub-axis's non-empty-chain / empty-histogram boundary.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.unknown")),
+                ConfigSource::File(PathBuf::from("/b.nix")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(!slice.is_empty(), "fixture must be non-empty");
+            assert!(
+                slice.env_prefix_kind_histogram().is_empty(),
+                "fixture must have empty env-prefix histogram",
+            );
+            assert!(!slice.env_prefix_kinds_full_cover());
+            assert!(slice.env_prefix_kinds_balanced());
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_prefixed_only_is_false() {
+        // Singleton-support pin (prefixed side): every env layer carries
+        // a non-empty prefix, so only the Prefixed cell is observed —
+        // one observed cell out of two leaves Bare in the coverage gap
+        // — `env_prefix_kinds_full_cover` reads `false`. Peer of
+        // `env_prefix_kinds_balanced_singleton_support_is_true` on the
+        // opposite side of the boundary: singleton-support is trivially
+        // balanced but never full-cover on a two-cell axis. Peer of
+        // `file_formats_full_cover_singleton_support_is_false` and
+        // `layer_kinds_full_cover_singleton_support_is_false` on the
+        // sister sub-axes.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(!slice.env_prefix_kinds_full_cover());
+        assert!(
+            slice
+                .absent_env_prefix_kinds()
+                .contains(&EnvMetadataTagKind::Bare)
+        );
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_bare_only_is_false() {
+        // Singleton-support pin (bare side): every env layer carries the
+        // empty prefix, so only the Bare cell is observed — one observed
+        // cell out of two leaves Prefixed in the coverage gap —
+        // `env_prefix_kinds_full_cover` reads `false`. Symmetric witness
+        // to `env_prefix_kinds_full_cover_prefixed_only_is_false` on the
+        // opposite side of the two-cell axis: both singleton-support
+        // shapes read `false` on the full-cover boundary, and both read
+        // `true` on the balanced boundary.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(!slice.env_prefix_kinds_full_cover());
+        assert!(
+            slice
+                .absent_env_prefix_kinds()
+                .contains(&EnvMetadataTagKind::Prefixed)
+        );
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_uniform_cover_is_true() {
+        // Uniform-cover pin: every env-prefix kind contributes one env
+        // layer, so both cells of `EnvMetadataTagKind::ALL` receive at
+        // least one observation — `env_prefix_kinds_full_cover` reads
+        // `true`. Peer of `env_prefix_kinds_balanced_uniform_cover_is_true`
+        // on the same fixture shape (uniform two-kind cover): uniform
+        // full-cover is on the `true` side of BOTH the balanced-env-
+        // prefix-kinds and full-cover-env-prefix-kinds boundaries. Peer
+        // of `file_formats_full_cover_uniform_cover_is_true` and
+        // `layer_kinds_full_cover_uniform_cover_is_true` on the sister
+        // sub-axes.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.env_prefix_kinds_full_cover());
+        assert!(slice.env_prefix_kinds_balanced());
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_skewed_two_cell_fixture_is_true() {
+        // Direct pin: a strictly-skewed two-cell chain with Bare=3,
+        // Prefixed=1 has both cells observed — `env_prefix_kinds_full_cover`
+        // reads `true`, orthogonal to `env_prefix_kinds_balanced` which
+        // reads `false` on the identical fixture (peak 3, trough 1,
+        // spread 2). Both cells observed but at distinct counts: full-
+        // cover is the coverage boundary, not the uniformity boundary.
+        // Peer of `file_formats_full_cover_skewed_four_cell_fixture_is_true`
+        // and `layer_kinds_full_cover_skewed_three_cell_fixture_is_true`
+        // on the sister sub-axes and
+        // `tiers_full_cover_skewed_four_cell_fixture_is_true` on the
+        // tier altitude.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.env_prefix_kinds_full_cover());
+        assert!(!slice.env_prefix_kinds_balanced());
+        assert_eq!(slice.env_prefix_kind_spread(), 2);
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_sample_chain_is_false() {
+        // Direct pin against `sample_chain()`: two `.yaml` file layers
+        // + one Env layer with a prefixed name. The support is {Prefixed}
+        // — size 1 out of 2 — so `env_prefix_kinds_full_cover` reads
+        // `false`. Peer of `env_prefix_kinds_balanced_sample_chain_is_true`
+        // on the same fixture on the sister boundary: balanced reads
+        // `true` (singleton support is trivially balanced) while full-
+        // cover reads `false` — orthogonal boundary witnesses at the
+        // same fixture. Agreement with
+        // `file_formats_full_cover_sample_chain_is_false` on the sister
+        // sub-axis.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert!(!slice.env_prefix_kinds_full_cover());
+        assert!(
+            slice
+                .absent_env_prefix_kinds()
+                .contains(&EnvMetadataTagKind::Bare)
+        );
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_implies_env_prefix_kind_histogram_is_nonempty() {
+        // Contrapositive of the empty-histogram boundary:
+        // `env_prefix_kinds_full_cover() ⇒
+        // !env_prefix_kind_histogram().is_empty()`. A full-cover chain
+        // observes at least one env layer per kind, so the histogram is
+        // non-empty. Directly witnessed on the fixture set. Cross-sub-
+        // axis divergence from the layer-kind sub-axis's
+        // `layer_kinds_full_cover_implies_chain_is_nonempty` pin: the
+        // env-prefix sub-axis's contrapositive reads on the *histogram-
+        // empty* condition rather than the *chain-empty* condition,
+        // matching the file-format sub-axis's contrapositive. The empty-
+        // histogram / non-empty-chain distinction separates the env-
+        // prefix / file-format sub-axes' vacuous-uniformity boundaries
+        // from the layer-kind sub-axis's.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_full_cover() {
+                assert!(
+                    !slice.env_prefix_kind_histogram().is_empty(),
+                    "full-cover chain must have non-empty env-prefix histogram",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_implies_present_env_prefix_kinds_equals_axis_cardinality() {
+        // Structural characterization: `env_prefix_kinds_full_cover() ⇒
+        // present_env_prefix_kinds().len() ==
+        // axis_cardinality::<EnvMetadataTagKind>()`. A full-cover chain
+        // observes every kind, so the support size equals the axis
+        // cardinality. Direct witness of the trait-uniform
+        // `is_full_cover() ⇒ distinct_cells() == axis_cardinality::<A>()`
+        // law on AxisHistogram, lifted to the env-prefix sub-axis of the
+        // chain altitude. Peer of
+        // `file_formats_full_cover_implies_present_file_formats_equals_axis_cardinality`
+        // and
+        // `layer_kinds_full_cover_implies_present_layer_kinds_equals_axis_cardinality`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_full_cover() {
+                assert_eq!(
+                    slice.present_env_prefix_kinds().len(),
+                    crate::axis_cardinality::<EnvMetadataTagKind>(),
+                    "full-cover chain must observe every EnvMetadataTagKind",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_implies_env_prefix_kind_histogram_total_bounded_below_by_axis_cardinality()
+     {
+        // Histogram-total lower-bound characterization:
+        // `env_prefix_kinds_full_cover() ⇒
+        // env_prefix_kind_histogram().total() >=
+        // axis_cardinality::<EnvMetadataTagKind>()`. A full-cover chain
+        // observes at least one env layer per kind, so the histogram
+        // total is bounded below by the axis cardinality. Directly
+        // witnessed on the fixture set. Cross-sub-axis divergence from
+        // the layer-kind sub-axis's
+        // `layer_kinds_full_cover_implies_chain_length_bounded_below_by_axis_cardinality`
+        // pin: on the env-prefix sub-axis the lower bound reads on the
+        // *histogram total* rather than the chain length — the chain
+        // may include unrelated Defaults / File layers that don't
+        // contribute to the histogram but grow the chain length.
+        // Agreement with the file-format sub-axis's histogram-total
+        // lower-bound.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_full_cover() {
+                assert!(
+                    slice.env_prefix_kind_histogram().total()
+                        >= crate::axis_cardinality::<EnvMetadataTagKind>(),
+                    "full-cover chain must have histogram total >= axis_cardinality (was {})",
+                    slice.env_prefix_kind_histogram().total(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_implies_layer_kind_env_count_bounded_below_by_axis_cardinality()
+    {
+        // Cross-sub-axis lower-bound implication: a full-cover chain on
+        // the env-prefix sub-axis observes at least one env layer per
+        // kind; every such layer is a `ConfigSource::Env`, so the
+        // layer-kind-sub-axis Env cell count is bounded below by the
+        // env-prefix axis cardinality. Directly witnesses the cross-
+        // sub-axis link between the env-prefix sub-axis's full-cover
+        // boundary and the layer-kind sub-axis's Env cell count. Sister
+        // of the file-format sub-axis's
+        // `file_formats_full_cover_implies_layer_kind_file_count_bounded_below_by_axis_cardinality`
+        // lower-bound linking that sub-axis's full-cover boundary to the
+        // layer-kind File cell count.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_full_cover() {
+                assert!(
+                    slice.layer_kind_histogram().count(ConfigSourceKind::Env)
+                        >= crate::axis_cardinality::<EnvMetadataTagKind>(),
+                    "full-cover chain must have >= axis_cardinality Env layers (was {})",
+                    slice.layer_kind_histogram().count(ConfigSourceKind::Env),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_balanced_or_full_cover_covers_every_chain() {
+        // Two-cell-axis tightening unique to the env-prefix sub-axis:
+        // `!env_prefix_kinds_balanced() ⇒ env_prefix_kinds_full_cover()`,
+        // equivalently `env_prefix_kinds_balanced() ||
+        // env_prefix_kinds_full_cover()` on every chain. Any imbalance on
+        // the two-cell axis observes both cells at differing nonzero
+        // counts, so the imbalanced chain is automatically full-cover.
+        // Direct witness that the two-cell axis carries no "imbalanced-
+        // and-not-full-cover" region — distinguishing pin against the
+        // three-cell layer-kind sub-axis and the four-cell file-format
+        // sub-axis, where imbalance is compatible with partial cover
+        // (e.g. the layer-kind sub-axis reads `!balanced && !full_cover`
+        // on `sample_chain()` where File=2, Defaults=0, Env=1). Also
+        // verifies the intersection: uniform full-cover reads `true` on
+        // both boundaries at once (witnessed by
+        // `env_prefix_kinds_full_cover_uniform_cover_is_true`).
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let balanced = slice.env_prefix_kinds_balanced();
+            let full_cover = slice.env_prefix_kinds_full_cover();
+            assert!(
+                balanced || full_cover,
+                "every chain must be env_prefix_kinds_balanced ({balanced}) or \
+                 env_prefix_kinds_full_cover ({full_cover}) on the two-cell axis",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_agrees_with_open_coded_all_positive_walk() {
+        // Parity against the exact hand-rolled full-cover walk this
+        // lift replaces: walk every cell of the histogram and check
+        // every count is positive. Mirrors the parity pins
+        // `file_formats_full_cover_agrees_with_open_coded_all_positive_walk`
+        // and
+        // `layer_kinds_full_cover_agrees_with_open_coded_all_positive_walk`
+        // on the sister sub-axes,
+        // `tiers_full_cover_agrees_with_open_coded_all_positive_walk`
+        // on the tier altitude, and
+        // `kinds_full_cover_agrees_with_open_coded_all_positive_walk`
+        // on the diff altitude. Note the walk uses `hist.iter()` which
+        // iterates over the closed axis's ALL cells in declaration
+        // order — a full-cover chain has every cell nonzero regardless
+        // of order.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_full_cover();
+            let hist = slice.env_prefix_kind_histogram();
             let hand_rolled = hist.iter().all(|(_, c)| c > 0);
             assert_eq!(via_seam, hand_rolled);
         }
