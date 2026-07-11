@@ -1834,6 +1834,131 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().is_full_cover()
     }
 
+    /// The **any-observed-layer-kinds boolean predicate** on the
+    /// layer-kind sub-axis of the chain altitude — `true` exactly when
+    /// at least one [`ConfigSourceKind`] cell was observed on this
+    /// chain. Routes through [`crate::AxisHistogram::is_empty`] negated
+    /// one altitude down: the single-pass short-circuiting scan over the
+    /// fixed-cardinality counts vector that stops on the first nonzero
+    /// cell, strictly tighter than every allocation-or-turbofish form
+    /// one seam over. Operator-facing consumers answering *"did any
+    /// layer kind fire on this recipe at all?"* — the CLI `config-show`
+    /// headline *"non-empty recipe: at least one layer kind fired"*,
+    /// the attestation manifest gate *"rebuild window carries at least
+    /// one layer observation"*, the alerting policy predicate *"recipe
+    /// non-empty"* — now route through this named seam instead of four
+    /// previously drifting inline forms: `!chain.as_ref().is_empty()`
+    /// (the slice-nonempty form, which projects the boolean off the raw
+    /// chain slice without saying structurally *what* is being asked at
+    /// the layer-kind sub-axis), `chain.present_layer_kinds_count() >
+    /// 0` (the support-scalar form, which pays for a full-axis scan and
+    /// compares a `usize` to zero without naming the coverage-support
+    /// boundary), `!chain.present_layer_kinds().is_empty()` (the
+    /// support-`Vec` form, which allocates a `Vec<ConfigSourceKind>`
+    /// and reads its emptiness back), and `chain.absent_layer_kinds_count()
+    /// < crate::axis_cardinality::<ConfigSourceKind>()` (the coverage-
+    /// gap-scalar form, which pays for the coverage-gap scan and pulls
+    /// in the `axis_cardinality` turbofish at every call site). Routes
+    /// through `!AxisHistogram::is_empty` one altitude down.
+    ///
+    /// **Lifts sideways to the layer-kind sub-axis of the chain
+    /// altitude** in the "any-observed across altitudes" projection
+    /// seeded on the diff altitude by
+    /// [`crate::ConfigDiff::kinds_any_observed`] and climbed to the tier
+    /// altitude by [`crate::ProvenanceMap::tiers_any_observed`]. The
+    /// pattern is the same at every altitude / sub-axis: fuse the
+    /// (`present_cells`, `absent_cells`, `present_cells_count`,
+    /// `absent_cells_count`) support / coverage-gap 2×2 grid's non-
+    /// empty-boundary into a single boolean predicate named at the
+    /// surface, routed through the shared
+    /// [`crate::AxisHistogram::is_empty`] primitive one altitude down.
+    /// Parallels the "full-cover across altitudes" projection lifted to
+    /// the same sub-axis by [`Self::layer_kinds_full_cover`] and the
+    /// "balanced across altitudes" projection lifted to the same sub-
+    /// axis by [`Self::layer_kinds_balanced`]. The two remaining chain-
+    /// altitude sub-axes are the natural next sideways lifts:
+    /// `file_formats_any_observed` over
+    /// [`Self::file_format_histogram`] and `env_prefix_kinds_any_observed`
+    /// over [`Self::env_prefix_kind_histogram`], closing the "any-
+    /// observed across altitudes" projection across every altitude /
+    /// sub-axis alongside the balanced / full-cover projections that
+    /// already closed the same grid.
+    ///
+    /// **Empty-chain convention** — returns `false` on the empty chain:
+    /// no observed cells means the "any observed" predicate fails.
+    /// Matches [`crate::AxisHistogram::is_empty`]'s empty-histogram
+    /// convention negated one altitude down. The empty chain is
+    /// therefore on the `false` side of the any-observed boundary —
+    /// matching [`Self::layer_kinds_full_cover`]'s empty-chain `false`
+    /// polarity and orthogonal to [`Self::layer_kinds_balanced`]'s
+    /// empty-chain `true` polarity. The three predicates partition the
+    /// empty chain into the polarity triple (`any_observed`=false,
+    /// `balanced`=true, `full_cover`=false).
+    ///
+    /// **Singleton-support convention** — returns `true` on every chain
+    /// whose observed support is a single [`ConfigSourceKind`]: one
+    /// observed cell suffices for the any-observed predicate. Every
+    /// chain in which one kind owns every layer is a witness. Matches
+    /// [`Self::layer_kinds_balanced`]'s `true` side on the singleton
+    /// and orthogonal to [`Self::layer_kinds_full_cover`]'s `false`
+    /// side on the same singleton — the three boundaries partition the
+    /// singleton-support fixture into the polarity triple
+    /// (`any_observed`=true, `balanced`=true, `full_cover`=false).
+    ///
+    /// **Uniform three-kind cover convention** — returns `true` on
+    /// every chain where each of the three [`ConfigSourceKind`] cells
+    /// was observed at least once. The uniform three-kind cover is on
+    /// the `true` side of all three coverage-support boundaries
+    /// (`any_observed`, `balanced`, `full_cover`).
+    ///
+    /// # Invariants
+    ///
+    /// - `layer_kinds_any_observed() == !layer_kind_histogram().is_empty()`
+    ///   — both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram
+    ///   surface.
+    /// - `layer_kinds_any_observed() == !self.as_ref().is_empty()`
+    ///   always — every chain layer contributes to a [`ConfigSourceKind`]
+    ///   cell, so the histogram is empty iff the chain slice is empty.
+    /// - `layer_kinds_any_observed() == (present_layer_kinds_count() >
+    ///   0)` always — the support-scalar surface, without allocating
+    ///   the `Vec<ConfigSourceKind>`.
+    /// - `layer_kinds_any_observed() == !present_layer_kinds().is_empty()`
+    ///   always — the support-`Vec` surface.
+    /// - `layer_kinds_any_observed() == (absent_layer_kinds_count() <
+    ///   crate::axis_cardinality::<ConfigSourceKind>())` always — the
+    ///   coverage-gap-scalar surface, the dual-side surfacing of the
+    ///   same boolean across the (observed, unobserved) partition.
+    /// - `layer_kinds_full_cover() ⇒ layer_kinds_any_observed()` — a
+    ///   full-cover chain observes every cell, so it observes at least
+    ///   one cell. Contrapositively, `!layer_kinds_any_observed() ⇒
+    ///   !layer_kinds_full_cover()`.
+    /// - `layer_kinds_any_observed() ⇒ self.as_ref().len() >= 1` — a
+    ///   chain with any observed layer kind carries at least one layer.
+    /// - `!layer_kinds_any_observed() ⇒ layer_kinds_balanced()` — the
+    ///   empty chain is the only chain on the `false` side of
+    ///   `layer_kinds_any_observed` and it is vacuously balanced.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the
+    /// any-observed scan). Both are `O(n)` in practice since the layer-
+    /// kind axis carries a fixed three-cell cardinality; the returned
+    /// `bool` reads one predicate. The scan short-circuits on the first
+    /// nonzero cell (bounded at one nonzero cell visited on any non-
+    /// empty chain), strictly tighter than the four support /
+    /// coverage-gap equality forms — no `Vec<ConfigSourceKind>`
+    /// allocation, no [`crate::axis_cardinality`] turbofish, no scalar
+    /// equality against a magic axis-cardinality constant.
+    #[must_use]
+    fn layer_kinds_any_observed(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        !self.layer_kind_histogram().is_empty()
+    }
+
     /// Dense per-format tally of the chain's [`ConfigSource::File`]
     /// layers over the [`crate::discovery::Format`] axis — the typed
     /// histogram every per-format dashboard, attestation manifest
@@ -17118,6 +17243,285 @@ mod tests {
             let via_seam = slice.layer_kinds_full_cover();
             let hist = slice.layer_kind_histogram();
             let hand_rolled = hist.iter().all(|(_, c)| c > 0);
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::layer_kinds_any_observed — any-observed-
+    //      layer-kinds boolean predicate on the layer-kind sub-axis of
+    //      the chain altitude, lifting the "any-observed across
+    //      altitudes" projection sideways from the tier altitude
+    //      (`ProvenanceMap::tiers_any_observed`) into the first chain
+    //      sub-axis. Routed through the shared
+    //      `!AxisHistogram::is_empty` primitive one altitude down. ----
+
+    #[test]
+    fn layer_kinds_any_observed_matches_layer_kind_histogram_is_empty_negation_pointwise() {
+        // The routing pin: `layer_kinds_any_observed` routes through
+        // `!layer_kind_histogram().is_empty()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Layer-kind sub-
+        // axis peer of
+        // `tiers_any_observed_matches_tier_histogram_is_empty_negation_pointwise`
+        // on the tier altitude and
+        // `kinds_any_observed_matches_kind_histogram_is_empty_negation_pointwise`
+        // on the diff altitude, in the "any-observed across altitudes"
+        // projection.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = !slice.layer_kind_histogram().is_empty();
+            assert_eq!(slice.layer_kinds_any_observed(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn layer_kinds_any_observed_agrees_with_chain_nonempty_pointwise() {
+        // Slice-nonempty surface: `layer_kinds_any_observed() ==
+        // !self.as_ref().is_empty()`. Every chain layer contributes to
+        // a ConfigSourceKind cell, so the histogram is empty iff the
+        // chain slice is empty. Peer of
+        // `tiers_any_observed_agrees_with_map_nonempty_pointwise` on
+        // the tier altitude and
+        // `kinds_any_observed_agrees_with_lines_nonempty_pointwise` on
+        // the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_any_observed();
+            let via_len = !slice.is_empty();
+            assert_eq!(
+                via_seam, via_len,
+                "layer_kinds_any_observed ({via_seam}) must agree with \
+                 !slice.is_empty() ({via_len}) for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_any_observed_agrees_with_present_layer_kinds_count_positive_pointwise() {
+        // Support-scalar surface: `layer_kinds_any_observed() ==
+        // (present_layer_kinds_count() > 0)`, without allocating the
+        // `Vec<ConfigSourceKind>`. Peer of
+        // `tiers_any_observed_agrees_with_contributing_tiers_count_positive_pointwise`
+        // on the tier altitude and
+        // `kinds_any_observed_agrees_with_present_kinds_count_positive_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_any_observed();
+            let via_scalar = slice.present_layer_kinds_count() > 0;
+            assert_eq!(
+                via_seam,
+                via_scalar,
+                "layer_kinds_any_observed ({via_seam}) must agree with \
+                 present_layer_kinds_count > 0 (count={c}) for chain",
+                c = slice.present_layer_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_any_observed_agrees_with_present_layer_kinds_nonempty_pointwise() {
+        // Support-`Vec` surface: `layer_kinds_any_observed() ==
+        // !present_layer_kinds().is_empty()`. Pins the predicate
+        // against the `Vec<ConfigSourceKind>` non-empty form consumers
+        // reach for when they already hold the support vector. Peer of
+        // `tiers_any_observed_agrees_with_contributing_tiers_nonempty_pointwise`.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_any_observed();
+            let via_vec = !slice.present_layer_kinds().is_empty();
+            assert_eq!(
+                via_seam, via_vec,
+                "layer_kinds_any_observed ({via_seam}) must agree with \
+                 !present_layer_kinds().is_empty() ({via_vec}) for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_any_observed_agrees_with_absent_layer_kinds_count_below_axis_cardinality_pointwise()
+     {
+        // Coverage-gap-scalar surface: `layer_kinds_any_observed() ==
+        // (absent_layer_kinds_count() <
+        // crate::axis_cardinality::<ConfigSourceKind>())`. The dual-
+        // side surfacing of the same boolean across the (observed,
+        // unobserved) partition. Peer of
+        // `tiers_any_observed_agrees_with_absent_tiers_count_below_axis_cardinality_pointwise`.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_any_observed();
+            let via_gap =
+                slice.absent_layer_kinds_count() < crate::axis_cardinality::<ConfigSourceKind>();
+            assert_eq!(
+                via_seam, via_gap,
+                "layer_kinds_any_observed ({via_seam}) must agree with \
+                 absent_layer_kinds_count < axis_cardinality ({via_gap}) for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_any_observed_empty_chain_is_false() {
+        // Empty-chain boundary: the empty chain has no observed cells,
+        // so the "any observed" predicate fails —
+        // `layer_kinds_any_observed` reads `false`. Matches
+        // `is_empty` reading `true` on the empty histogram over the
+        // ConfigSourceKind axis one altitude down. Dual of
+        // `layer_kinds_balanced_empty_chain_is_true`: the empty chain
+        // is on the opposite side of the any-observed boundary from
+        // the balanced boundary and on the same side as the full-cover
+        // boundary — the (`any_observed`=false, `balanced`=true,
+        // `full_cover`=false) polarity triple. Peer of
+        // `tiers_any_observed_empty_map_is_false` on the tier altitude
+        // and `kinds_any_observed_empty_diff_is_false` on the diff
+        // altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(!empty.layer_kinds_any_observed());
+        assert!(empty.layer_kinds_balanced());
+        assert!(!empty.layer_kinds_full_cover());
+    }
+
+    #[test]
+    fn layer_kinds_any_observed_singleton_support_is_true() {
+        // Singleton-support pin: every layer lands on the same kind,
+        // so one observed cell out of three suffices for the any-
+        // observed predicate — `layer_kinds_any_observed` reads
+        // `true`. Peer of `layer_kinds_balanced_singleton_support_is_true`
+        // on the same side of the boundary and orthogonal to
+        // `layer_kinds_full_cover_singleton_support_is_false` on the
+        // opposite side: singleton-support is trivially observed and
+        // trivially balanced but never full-cover on a three-cell
+        // axis. Peer of `tiers_any_observed_singleton_support_is_true`
+        // on the tier altitude — same
+        // (`any_observed`=true, `balanced`=true, `full_cover`=false)
+        // polarity triple on the singleton-support fixture.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 1);
+        assert!(slice.layer_kinds_any_observed());
+        assert!(slice.layer_kinds_balanced());
+        assert!(!slice.layer_kinds_full_cover());
+    }
+
+    #[test]
+    fn layer_kinds_any_observed_uniform_cover_is_true() {
+        // Uniform-cover pin: every kind contributes one layer, so
+        // every cell of `ConfigSourceKind::ALL` receives at least one
+        // observation — `layer_kinds_any_observed` reads `true`. Peer
+        // of `layer_kinds_balanced_uniform_cover_is_true` and
+        // `layer_kinds_full_cover_uniform_cover_is_true`: uniform
+        // three-kind cover is on the `true` side of ALL THREE
+        // coverage-support boundaries at this sub-axis. Peer of
+        // `tiers_any_observed_uniform_cover_is_true` on the tier
+        // altitude.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kinds_any_observed());
+        assert!(slice.layer_kinds_balanced());
+        assert!(slice.layer_kinds_full_cover());
+    }
+
+    #[test]
+    fn layer_kinds_any_observed_two_kind_partial_cover_is_true() {
+        // Two-kind-cover pin: `sample_chain()` observes {Env, File}
+        // (support size 2 out of 3), so at least one cell is observed
+        // — `layer_kinds_any_observed` reads `true`. Direct witness of
+        // `layer_kinds_full_cover ⇒ layer_kinds_any_observed` on a
+        // fixture where full-cover reads `false` but any-observed
+        // still holds. Peer of
+        // `tiers_any_observed_three_tier_partial_cover_is_true` on the
+        // tier altitude at the sister partial-cover fixture.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 2);
+        assert!(slice.layer_kinds_any_observed());
+        assert!(!slice.layer_kinds_full_cover());
+    }
+
+    #[test]
+    fn layer_kinds_full_cover_implies_layer_kinds_any_observed_pointwise() {
+        // Subsumption pin: `layer_kinds_full_cover() ⇒
+        // layer_kinds_any_observed()` on every fixture — a full-cover
+        // chain observes every cell, so it observes at least one cell.
+        // Peer of `tiers_full_cover_implies_tiers_any_observed_pointwise`
+        // on the tier altitude and
+        // `kinds_full_cover_implies_kinds_any_observed_pointwise` on
+        // the diff altitude. Names the ordering `full_cover ≤
+        // any_observed` on the coverage-support partition at the
+        // layer-kind sub-axis.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_full_cover() {
+                assert!(
+                    slice.layer_kinds_any_observed(),
+                    "full-cover chain must be any-observed (fixture len={})",
+                    slice.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_any_observed_implies_chain_length_positive_pointwise() {
+        // Chain-length lower-bound pin: `layer_kinds_any_observed() ⇒
+        // self.as_ref().len() >= 1`. A chain observing any layer kind
+        // carries at least one layer. Peer of
+        // `tiers_any_observed_implies_leaf_count_positive_pointwise`.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_any_observed() {
+                assert!(
+                    !slice.is_empty(),
+                    "any-observed chain must be non-empty (len={})",
+                    slice.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_any_observed_negation_implies_layer_kinds_balanced_pointwise() {
+        // Empty-chain / vacuous-balanced interaction pin: the empty
+        // chain is the only chain on the `false` side of
+        // `layer_kinds_any_observed`, and it is vacuously balanced. So
+        // `!layer_kinds_any_observed() ⇒ layer_kinds_balanced()`
+        // holds pointwise. Peer of
+        // `tiers_any_observed_negation_implies_tiers_balanced_pointwise`.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.layer_kinds_any_observed() {
+                assert!(
+                    slice.layer_kinds_balanced(),
+                    "non-any-observed chain must be vacuously balanced",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_any_observed_agrees_with_open_coded_any_positive_walk() {
+        // Parity against the exact hand-rolled any-observed walk this
+        // lift replaces: walk every cell of the histogram and check
+        // any count is positive. Mirrors the parity pin
+        // `tiers_any_observed_agrees_with_open_coded_any_positive_walk`
+        // on the tier altitude and
+        // `kinds_any_observed_agrees_with_open_coded_any_positive_walk`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_any_observed();
+            let hist = slice.layer_kind_histogram();
+            let hand_rolled = hist.iter().any(|(_, c)| c > 0);
             assert_eq!(via_seam, hand_rolled);
         }
     }
