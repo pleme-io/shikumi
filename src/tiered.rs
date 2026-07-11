@@ -4403,6 +4403,179 @@ impl ConfigDiff {
     pub fn kinds_singular_support(&self) -> bool {
         self.kind_histogram().has_singular_support()
     }
+
+    /// `true` exactly when this diff observes every [`DiffLineKind`]
+    /// cell *except one* — the **singleton-gap-diff-kinds boolean
+    /// predicate** on the diff altitude, the strictly-tighter
+    /// cardinality-`(axis_cardinality - 1)` boundary of the
+    /// coverage-support partition. Routes through
+    /// [`crate::AxisHistogram::has_singular_gap`] one altitude down:
+    /// the single-pass short-circuiting scan over the fixed-cardinality
+    /// counts vector that finds the first *zero* cell and confirms no
+    /// second zero cell follows, tighter than any of the four
+    /// support / coverage-gap equality forms one seam over.
+    ///
+    /// The **singleton-gap-diff-kinds peer** of the fused
+    /// `(present_kinds, absent_kinds, present_kinds_count,
+    /// absent_kinds_count)` support / coverage-gap 2×2 grid on the
+    /// diff altitude — the natural typed boolean primitive for CLI
+    /// `config-diff` summaries, attestation manifests, and alerting
+    /// policies asking *"did the rebuild miss only one kind of diff
+    /// line?"*: the summary line *"singleton-gap diff: one diff kind
+    /// silent"*, the attestation manifest gate *"rebuild window
+    /// carries all but one diff-kind's observations"*, the alerting
+    /// policy predicate *"diff-kind gap singular"*. Before this lift,
+    /// every such consumer re-derived the predicate inline as one of
+    /// four pointwise-equivalent forms: `diff.absent_kinds_count() == 1`
+    /// (the coverage-gap-scalar form, which pays for a full-axis scan
+    /// and equates a `usize` to one without saying structurally *what*
+    /// is being asked at the diff-cell-kind axis),
+    /// `diff.absent_kinds().len() == 1` (the coverage-gap-`Vec` form,
+    /// which allocates a `Vec<DiffLineKind>` and reads its length
+    /// back), `diff.present_kinds_count() ==
+    /// crate::axis_cardinality::<DiffLineKind>() - 1` (the support-
+    /// scalar form, which pays for a full-axis scan and pulls in the
+    /// [`crate::axis_cardinality`] turbofish at every call site), and
+    /// `diff.present_kinds().len() ==
+    /// crate::axis_cardinality::<DiffLineKind>() - 1` (the support-
+    /// `Vec` form, which allocates a `Vec<DiffLineKind>` and reads
+    /// its length back). The four forms drifted in subtle ways at
+    /// every consumer site (allocation vs. scalar, turbofish vs.
+    /// name-only, coverage-gap side vs. support side). This lift
+    /// names the singleton-gap-diff-kinds predicate directly at the
+    /// diff-altitude surface with a single-pass short-circuiting scan
+    /// — the typed boolean every operator-facing "did the diff miss
+    /// exactly one kind?" check reads off as a single method call.
+    ///
+    /// The diff-altitude singleton-gap-predicate peer that **seeds
+    /// the "singleton-gap across altitudes" projection** — the
+    /// coverage-support cardinality boolean *dual* of the just-closed
+    /// "singleton-support across altitudes" projection seeded by
+    /// [`Self::kinds_singular_support`]. The natural next lifts climb
+    /// to the tier altitude (`ProvenanceMap::tiers_singular_gap` over
+    /// [`Self::tier_histogram`]) and sideways along the chain
+    /// altitude's three sub-axes (`layer_kinds_singular_gap`,
+    /// `file_formats_singular_gap`, `env_prefix_kinds_singular_gap`
+    /// over the corresponding chain histograms). The pattern is the
+    /// same at every altitude / sub-axis: fuse the (`present_cells`,
+    /// `absent_cells`, `present_cells_count`, `absent_cells_count`)
+    /// support / coverage-gap 2×2 grid's exactly-one-*unobserved*-cell
+    /// boundary into a single boolean predicate named at the surface,
+    /// routed through the shared [`crate::AxisHistogram::has_singular_gap`]
+    /// primitive one altitude down. Dual of the just-closed
+    /// "singleton-support across altitudes" projection
+    /// ([`Self::kinds_singular_support`] seed →
+    /// [`crate::ProvenanceMap::tiers_singular_support`] climb →
+    /// [`crate::ConfigSourceChain::layer_kinds_singular_support`] /
+    /// [`crate::ConfigSourceChain::file_formats_singular_support`] /
+    /// [`crate::ConfigSourceChain::env_prefix_kinds_singular_support`]
+    /// chain-sub-axis lifts) on the *complementary* cardinality slice
+    /// of the same coverage-support partition (`singular_support` =
+    /// *exactly-one* observed cell; `singular_gap` = *exactly-one*
+    /// unobserved cell).
+    ///
+    /// **Empty-diff convention** — returns `false` on the empty
+    /// diff (except on `axis_cardinality == 1` axes, none in the
+    /// implementor set today): the empty diff has every cell
+    /// unobserved (three, not one, on [`DiffLineKind`]), so the
+    /// singleton-gap predicate fails. Matches
+    /// [`crate::AxisHistogram::has_singular_gap`]'s empty-histogram
+    /// `false` convention one altitude down. The empty diff is
+    /// therefore on the `false` side of the singular-gap boundary —
+    /// matching [`Self::kinds_any_observed`]'s empty-diff `false`
+    /// polarity, [`Self::kinds_full_cover`]'s empty-diff `false`
+    /// polarity, and [`Self::kinds_singular_support`]'s empty-diff
+    /// `false` polarity.
+    ///
+    /// **Singleton-support convention** — returns `false` on every
+    /// diff whose observed support is a single [`DiffLineKind`]: two
+    /// cells are unobserved on the three-cell [`DiffLineKind`] axis
+    /// (not one), so the singleton-gap predicate fails. Every diff of
+    /// only-`Removed`, only-`Added`, or only-`Context` lines is a
+    /// witness on the `false` side. The singleton-support fixture
+    /// partitions the five coverage-support boundaries with
+    /// (`any_observed`=true, `singular_support`=true, `singular_gap`=false,
+    /// `balanced`=true, `full_cover`=false) — orthogonal to
+    /// `singular_gap` on the [`DiffLineKind`] axis.
+    ///
+    /// **Two-kind partial cover convention** — returns `true` on
+    /// every diff whose observed support is exactly two
+    /// [`DiffLineKind`] cells: one cell is unobserved (three total
+    /// minus two observed equals one unobserved), exactly the
+    /// singleton-gap boundary. A diff of only-`Removed`+`Added`
+    /// lines is a witness: `Context` is silent, satisfying the
+    /// singular-gap. The two-kind partial cover fixture partitions
+    /// the five coverage-support boundaries with (`any_observed`=true,
+    /// `singular_support`=false, `singular_gap`=true, `balanced`=?,
+    /// `full_cover`=false) — the row this predicate isolates from
+    /// the surrounding boundaries.
+    ///
+    /// **Uniform three-kind cover convention** — returns `false` on
+    /// every diff where each [`DiffLineKind`] cell was observed at
+    /// least once: zero cells are unobserved (not one), so the
+    /// singleton-gap predicate fails. Matches
+    /// [`Self::kinds_full_cover`]'s `true` side on the same fixture —
+    /// the two boundaries `singular_gap` and `full_cover` are
+    /// disjoint at the top of the coverage-support partition
+    /// (adjacent support cardinalities `axis_cardinality - 1` and
+    /// `axis_cardinality`). The uniform three-kind cover partitions
+    /// the five coverage-support boundaries with (`any_observed`=true,
+    /// `singular_support`=false, `singular_gap`=false, `balanced`=true,
+    /// `full_cover`=true).
+    ///
+    /// # Invariants
+    ///
+    /// - `kinds_singular_gap() == kind_histogram().has_singular_gap()`
+    ///   — both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram
+    ///   surface.
+    /// - `kinds_singular_gap() == (absent_kinds_count() == 1)` always
+    ///   — the coverage-gap-scalar surface, without allocating the
+    ///   `Vec<DiffLineKind>`.
+    /// - `kinds_singular_gap() == (absent_kinds().len() == 1)` always
+    ///   — the coverage-gap-`Vec` surface.
+    /// - `kinds_singular_gap() == (present_kinds_count() ==
+    ///   crate::axis_cardinality::<DiffLineKind>() - 1)` always — the
+    ///   support-scalar surface, the dual-side surfacing of the same
+    ///   boolean across the (observed, unobserved) partition.
+    /// - `kinds_singular_gap() ⇒ kinds_any_observed()` on every axis
+    ///   with cardinality `>= 2` (every implementor today —
+    ///   [`DiffLineKind`] carries three cells): a diff missing exactly
+    ///   one cell observes at least
+    ///   `axis_cardinality - 1 >= 1` cells. Contrapositively,
+    ///   `!kinds_any_observed() ⇒ !kinds_singular_gap()`.
+    /// - `kinds_singular_gap() ⇒ !kinds_full_cover()` always: full
+    ///   cover has zero unobserved cells, singular gap has exactly
+    ///   one, so the two boundaries are disjoint on every axis.
+    /// - `kinds_singular_gap() ⇒ !kinds_singular_support()` on every
+    ///   axis with cardinality `>= 3` (every implementor today —
+    ///   [`DiffLineKind`] carries three cells): singleton-support has
+    ///   support cardinality `1`, singleton-gap has support
+    ///   cardinality `axis_cardinality - 1 >= 2`, so the two are
+    ///   disjoint. On the cardinality-`2` corner (no diff-altitude
+    ///   axis today) the two coincide pointwise.
+    /// - `kinds_singular_gap() ⇒ self.lines.len() >=
+    ///   crate::axis_cardinality::<DiffLineKind>() - 1` — a diff
+    ///   missing exactly one cell has at least one line for each of
+    ///   the `axis_cardinality - 1` observed cells.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the
+    /// singular-gap scan). Both are `O(n)` in practice since the
+    /// diff-cell axis carries a fixed three-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan short-circuits
+    /// on the second zero cell (bounded at two zero cells visited on
+    /// any two-or-more-cell-gap diff), strictly tighter than the four
+    /// support / coverage-gap equality forms — no `Vec<DiffLineKind>`
+    /// allocation, no [`crate::axis_cardinality`] turbofish, no
+    /// scalar equality against a magic axis-cardinality-minus-one
+    /// constant.
+    #[must_use]
+    pub fn kinds_singular_gap(&self) -> bool {
+        self.kind_histogram().has_singular_gap()
+    }
 }
 
 #[cfg(test)]
@@ -8752,6 +8925,304 @@ mod tests {
             let via_seam = diff.kinds_singular_support();
             let hist = diff.kind_histogram();
             let hand_rolled = hist.iter().filter(|(_, c)| *c > 0).count() == 1;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ConfigDiff::kinds_singular_gap — singleton-gap-diff-kinds
+    //    boolean predicate on the diff altitude, lifting has_singular_gap
+    //    from the histogram surface and seeding the "singleton-gap
+    //    across altitudes" projection — dual of the just-closed
+    //    "singleton-support across altitudes" projection ──
+
+    #[test]
+    fn kinds_singular_gap_matches_kind_histogram_has_singular_gap_pointwise() {
+        // Routing pin: `kinds_singular_gap` routes through
+        // `kind_histogram().has_singular_gap()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Diff-
+        // altitude singleton-gap-predicate seed of the new
+        // "singleton-gap across altitudes" projection — dual of
+        // `kinds_singular_support_matches_kind_histogram_has_singular_support_pointwise`
+        // on the complementary cardinality slice of the same
+        // coverage-support partition.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().has_singular_gap();
+            assert_eq!(diff.kinds_singular_gap(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kinds_singular_gap_agrees_with_absent_kinds_count_equals_one_pointwise() {
+        // Coverage-gap-scalar surface: `kinds_singular_gap() ==
+        // (absent_kinds_count() == 1)` on every fixture. The
+        // coverage-gap-side surfacing of the same boolean, without
+        // allocating the `Vec<DiffLineKind>`. Lifted from the trait-
+        // uniform `has_singular_gap() ⇔ unobserved_cells() == 1` law
+        // on AxisHistogram.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_singular_gap();
+            let via_scalar = diff.absent_kinds_count() == 1;
+            assert_eq!(
+                via_seam,
+                via_scalar,
+                "kinds_singular_gap ({via_seam}) must agree with \
+                 absent_kinds_count == 1 (gap={g}) for diff",
+                g = diff.absent_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_singular_gap_agrees_with_absent_kinds_len_equals_one_pointwise() {
+        // Coverage-gap-`Vec` form: `kinds_singular_gap() ==
+        // (absent_kinds().len() == 1)` on every fixture. Pins the
+        // predicate against the `Vec<DiffLineKind>` length form
+        // consumers reach for when they already hold the coverage-
+        // gap vector.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_singular_gap();
+            let via_vec = diff.absent_kinds().len() == 1;
+            assert_eq!(
+                via_seam, via_vec,
+                "kinds_singular_gap ({via_seam}) must agree with \
+                 absent_kinds().len() == 1 ({via_vec}) for diff",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_singular_gap_agrees_with_present_kinds_count_equals_axis_cardinality_minus_one_pointwise()
+     {
+        // Support-scalar form: `kinds_singular_gap() ==
+        // (present_kinds_count() == axis_cardinality::<DiffLineKind>() - 1)`
+        // on every fixture. The support-side surfacing of the same
+        // boolean — a singleton-gap diff observes all but one cell
+        // and lands the support cardinality at `axis_cardinality - 1`.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_singular_gap();
+            let via_support =
+                diff.present_kinds_count() == crate::axis_cardinality::<DiffLineKind>() - 1;
+            assert_eq!(
+                via_seam,
+                via_support,
+                "kinds_singular_gap ({via_seam}) must agree with \
+                 present_kinds_count == axis_cardinality - 1 (count={c}) for diff",
+                c = diff.present_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_singular_gap_empty_diff_is_false() {
+        // Empty-diff boundary: the empty diff has every cell
+        // unobserved (three, not one, on DiffLineKind), so the
+        // singular-gap predicate reads `false`. Matches
+        // `has_singular_gap` reading `false` on the empty histogram
+        // one altitude down (except on cardinality-`1` axes, none in
+        // the implementor set today). Peer of
+        // `kinds_singular_support_empty_diff_is_false`,
+        // `kinds_any_observed_empty_diff_is_false`, and
+        // `kinds_full_cover_empty_diff_is_false` on the same polarity
+        // of the coverage-support partition, and orthogonal to
+        // `kinds_balanced_empty_diff_is_true` on the opposite
+        // polarity.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert!(!empty.kinds_singular_gap());
+        assert_eq!(
+            empty.absent_kinds_count(),
+            crate::axis_cardinality::<DiffLineKind>(),
+        );
+    }
+
+    #[test]
+    fn kinds_singular_gap_singleton_support_is_false() {
+        // Singleton-support boundary: every line lands on the same
+        // kind, so two cells are unobserved on the three-cell
+        // DiffLineKind axis (not one) — `kinds_singular_gap` reads
+        // `false`. Direct witness of the strict disjointness
+        // `kinds_singular_support ⇒ !kinds_singular_gap` on every
+        // cardinality-`>= 3` axis. The singleton-support fixture
+        // partitions the five coverage-support boundaries with
+        // (`any_observed`=true, `singular_support`=true,
+        // `singular_gap`=false, `balanced`=true, `full_cover`=false).
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Added("a1".into()), DiffLine::Added("a2".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 1);
+        assert_eq!(diff.absent_kinds().len(), 2);
+        assert!(!diff.kinds_singular_gap());
+        assert!(diff.kinds_singular_support());
+        assert!(diff.kinds_any_observed());
+    }
+
+    #[test]
+    fn kinds_singular_gap_two_kind_partial_cover_is_true() {
+        // Two-kind cover pin: a diff of only Added + Removed lines
+        // has two observed cells on the three-cell DiffLineKind axis,
+        // so exactly one cell (Context) is unobserved —
+        // `kinds_singular_gap` reads `true`. The row this predicate
+        // isolates from the surrounding boundaries. Direct witness of
+        // the strict subsumption `kinds_singular_gap ⇒
+        // kinds_any_observed` and the disjointness
+        // `kinds_singular_gap ⇒ !kinds_full_cover` on the same
+        // fixture.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert_eq!(diff.absent_kinds().len(), 1);
+        assert!(diff.kinds_singular_gap());
+        assert!(diff.kinds_any_observed());
+        assert!(!diff.kinds_full_cover());
+        assert!(!diff.kinds_singular_support());
+    }
+
+    #[test]
+    fn kinds_singular_gap_uniform_cover_is_false() {
+        // Uniform-cover pin: every kind receives at least one
+        // observation, so zero cells are unobserved (not one) —
+        // `kinds_singular_gap` reads `false`. The uniform three-kind
+        // cover is on the `false` side of the singular-gap boundary
+        // and on the `true` side of the other three coverage-support
+        // boundaries: `any_observed`, `balanced`, and `full_cover`.
+        // Direct witness of the disjointness `kinds_full_cover ⇒
+        // !kinds_singular_gap` (adjacent support cardinalities
+        // `axis_cardinality - 1` and `axis_cardinality`).
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.absent_kinds().len(), 0);
+        assert!(!diff.kinds_singular_gap());
+        assert!(diff.kinds_any_observed());
+        assert!(diff.kinds_balanced());
+        assert!(diff.kinds_full_cover());
+    }
+
+    #[test]
+    fn kinds_singular_gap_implies_kinds_any_observed_pointwise() {
+        // Subsumption pin: `kinds_singular_gap() ⇒
+        // kinds_any_observed()` on every fixture (on every axis with
+        // cardinality `>= 2`, which includes DiffLineKind). A
+        // singleton-gap diff observes `axis_cardinality - 1` cells,
+        // which is at least one on every cardinality-`>= 2` axis, so
+        // the any-observed predicate holds. The strict subsumption
+        // relates the singleton-gap boundary and the any-observed
+        // boundary as strictly-tighter cardinality slices of the
+        // coverage-support partition (=`axis_cardinality - 1` ⇒ ≥1).
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular_gap() {
+                assert!(
+                    diff.kinds_any_observed(),
+                    "singular-gap diff must be any-observed",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_gap_implies_not_kinds_full_cover_pointwise() {
+        // Disjointness pin: `kinds_singular_gap() ⇒
+        // !kinds_full_cover()` on every fixture. A singleton gap has
+        // exactly one unobserved cell; a full cover has zero
+        // unobserved cells. The two are disjoint on every axis
+        // regardless of cardinality (the two support cardinalities
+        // `axis_cardinality - 1` and `axis_cardinality` are strictly
+        // distinct on every implementor). Direct witness that the
+        // two coverage-support boundaries are pairwise disjoint at the
+        // top of the coverage-support partition.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular_gap() {
+                assert!(
+                    !diff.kinds_full_cover(),
+                    "singular-gap diff cannot be full-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_gap_implies_not_kinds_singular_support_pointwise() {
+        // Disjointness pin: `kinds_singular_gap() ⇒
+        // !kinds_singular_support()` on every fixture (on every axis
+        // with cardinality `>= 3`, which includes DiffLineKind). A
+        // singleton support has support cardinality 1; a singleton
+        // gap has support cardinality `axis_cardinality - 1 >= 2` on
+        // every cardinality-`>= 3` axis. The two are disjoint on
+        // DiffLineKind (three cells: `1` vs. `2`). Direct witness of
+        // the pairwise-disjoint dual-singular pair on the support-
+        // cardinality interval.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular_gap() {
+                assert!(
+                    !diff.kinds_singular_support(),
+                    "singular-gap diff cannot be singular-support on \
+                     a cardinality >= 3 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_gap_implies_line_count_at_least_axis_cardinality_minus_one_pointwise() {
+        // Line-count lower-bound pin: `kinds_singular_gap() ⇒
+        // self.lines.len() >= axis_cardinality::<DiffLineKind>() - 1`.
+        // A diff missing exactly one cell has at least one line for
+        // each of the `axis_cardinality - 1` observed cells. Peer of
+        // `kinds_singular_support_implies_line_count_positive_pointwise`
+        // on the complementary cardinality slice of the same
+        // coverage-support partition, tightened from `>= 1` to
+        // `>= axis_cardinality - 1`.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular_gap() {
+                assert!(
+                    diff.lines.len() >= crate::axis_cardinality::<DiffLineKind>() - 1,
+                    "singular-gap diff must have at least axis_cardinality - 1 lines",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_any_observed_negation_implies_not_kinds_singular_gap_pointwise() {
+        // Contrapositive: `!kinds_any_observed() ⇒
+        // !kinds_singular_gap()` on every axis with cardinality
+        // `>= 2` (every implementor today). If no cell was observed,
+        // the coverage gap is the full axis cardinality (three, not
+        // one, on DiffLineKind) — the singleton-gap predicate fails.
+        // Pins the strictly-tighter cardinality relation between the
+        // two coverage-support boundaries at the top of the
+        // partition.
+        for diff in dominant_kind_fixtures() {
+            if !diff.kinds_any_observed() {
+                assert!(
+                    !diff.kinds_singular_gap(),
+                    "empty-support diff cannot be singular-gap on \
+                     a cardinality >= 2 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_gap_agrees_with_open_coded_exactly_one_zero_walk() {
+        // Parity against the exact hand-rolled singular-gap walk
+        // this lift replaces: walk every cell of the histogram and
+        // count how many carry a zero count; the singleton-gap
+        // predicate reads `true` iff exactly one cell is zero.
+        // Mirrors the parity pin
+        // `kinds_singular_support_agrees_with_open_coded_exactly_one_positive_walk`
+        // on the complementary cardinality slice of the same
+        // coverage-support partition.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_singular_gap();
+            let hist = diff.kind_histogram();
+            let hand_rolled = hist.iter().filter(|(_, c)| *c == 0).count() == 1;
             assert_eq!(via_seam, hand_rolled);
         }
     }
