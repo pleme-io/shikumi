@@ -2072,6 +2072,163 @@ impl ProvenanceMap {
     pub fn tiers_any_observed(&self) -> bool {
         !self.tier_histogram().is_empty()
     }
+
+    /// `true` exactly when exactly one [`ConfigTierKind`] cell was
+    /// observed on this resolved fold — the **singleton-support-tier-
+    /// counts boolean predicate** on the tier altitude. Routes through
+    /// [`crate::AxisHistogram::has_singular_support`] one altitude
+    /// down: the single-pass short-circuiting scan over the fixed-
+    /// cardinality counts vector that finds the first nonzero cell
+    /// and confirms no second nonzero cell follows, tighter than any
+    /// of the four support / coverage-gap equality forms one seam
+    /// over.
+    ///
+    /// The **singleton-support-tier-counts peer** of the fused
+    /// `(contributing_tiers, absent_tiers, contributing_tiers_count,
+    /// absent_tiers_count)` support / coverage-gap 2×2 grid on the
+    /// tier altitude — the natural typed boolean primitive for fleet
+    /// dashboards, attestation manifests, and alerting policies
+    /// asking *"did the resolved fold land on exactly one tier?"*:
+    /// the fleet dashboard headline *"singleton-support fold: only
+    /// one tier fired"*, the attestation manifest gate *"rebuild
+    /// window carries exactly one tier observation"*, the alerting
+    /// policy predicate *"fold tier-support singular"*. Before this
+    /// lift, every such consumer re-derived the predicate inline as
+    /// one of four pointwise-equivalent forms:
+    /// `map.contributing_tiers_count() == 1` (the support-scalar
+    /// form, which pays for a full-axis scan and equates a `usize`
+    /// to one without saying structurally *what* is being asked at
+    /// the tier-cell axis), `map.contributing_tiers().len() == 1`
+    /// (the support-`Vec` form, which allocates a
+    /// `Vec<ConfigTierKind>` and reads its length back),
+    /// `map.absent_tiers_count() ==
+    /// crate::axis_cardinality::<ConfigTierKind>() - 1` (the
+    /// coverage-gap-scalar form, which pays for a full-axis scan and
+    /// pulls in the [`crate::axis_cardinality`] turbofish at every
+    /// call site), and `map.absent_tiers().len() ==
+    /// crate::axis_cardinality::<ConfigTierKind>() - 1` (the
+    /// coverage-gap-`Vec` form, which allocates a
+    /// `Vec<ConfigTierKind>` and reads its length back). The four
+    /// forms drifted in subtle ways at every consumer site
+    /// (allocation vs. scalar, turbofish vs. name-only, coverage-gap
+    /// side vs. support side). This lift names the singleton-
+    /// support-tier-counts predicate directly at the tier-altitude
+    /// surface with a single-pass short-circuiting scan — the typed
+    /// boolean every operator-facing "did the fold land on exactly
+    /// one tier?" check reads off as a single method call.
+    ///
+    /// The tier-altitude singleton-support-predicate peer that
+    /// **climbs the "singleton-support across altitudes" projection**
+    /// from the diff altitude seeded by
+    /// [`ConfigDiff::kinds_singular_support`]. The pattern is the
+    /// same at every altitude: fuse the (`present_cells`,
+    /// `absent_cells`, `present_cells_count`, `absent_cells_count`)
+    /// support / coverage-gap 2×2 grid's exactly-one-cell boundary
+    /// into a single boolean predicate named at the surface, routed
+    /// through the shared
+    /// [`crate::AxisHistogram::has_singular_support`] primitive one
+    /// altitude down. Parallels the "any-observed across altitudes"
+    /// projection climbed to the same altitude by
+    /// [`Self::tiers_any_observed`] and seeded on the diff altitude
+    /// by [`ConfigDiff::kinds_any_observed`], on the strictly-
+    /// tighter cardinality slice of the same coverage-support
+    /// partition (`any_observed` = *at-least-one* cell;
+    /// `singular_support` = *exactly-one* cell). The chain
+    /// altitude's three sub-axes
+    /// (`layer_kinds_singular_support`,
+    /// `file_formats_singular_support`,
+    /// `env_prefix_kinds_singular_support` over the corresponding
+    /// chain histograms) are the natural next sideways lifts.
+    ///
+    /// **Empty-map convention** — returns `false` on the empty map:
+    /// the empty map has no observed cells (not one), so the
+    /// singleton-support predicate fails. Matches
+    /// [`crate::AxisHistogram::has_singular_support`]'s empty-
+    /// histogram `false` convention one altitude down. The empty
+    /// map is therefore on the `false` side of the singular-support
+    /// boundary — matching [`Self::tiers_any_observed`]'s empty-map
+    /// `false` polarity and [`Self::tiers_full_cover`]'s empty-map
+    /// `false` polarity, and orthogonal to [`Self::tiers_balanced`]'s
+    /// empty-map `true` polarity.
+    ///
+    /// **Singleton-support convention** — returns `true` on every
+    /// fold whose observed support is a single [`ConfigTierKind`]:
+    /// one observed cell is exactly the singleton support boundary.
+    /// Every fold with all leaves attributed to only-`Bare`, only-
+    /// `Discovered`, only-`Default`, or only-`Custom` is a witness.
+    /// Matches [`Self::tiers_any_observed`]'s `true` side and
+    /// [`Self::tiers_balanced`]'s `true` side on the singleton, and
+    /// orthogonal to [`Self::tiers_full_cover`]'s `false` side on
+    /// the same singleton — the four boundaries partition the
+    /// singleton-support fixture with (`any_observed`=true,
+    /// `singular_support`=true, `balanced`=true, `full_cover`=false).
+    ///
+    /// **Uniform four-tier cover convention** — returns `false` on
+    /// every fold where each of the four [`ConfigTierKind`] cells
+    /// was observed at least once: the support is the full four-cell
+    /// axis (not one), so the singleton-support predicate fails. The
+    /// uniform cover is on the `false` side of the singular-support
+    /// boundary and on the `true` side of the other three coverage-
+    /// support boundaries — the four boundaries partition the
+    /// uniform-cover fixture with (`any_observed`=true,
+    /// `singular_support`=false, `balanced`=true, `full_cover`=true).
+    ///
+    /// # Invariants
+    ///
+    /// - `tiers_singular_support() ==
+    ///   tier_histogram().has_singular_support()` — both project the
+    ///   same predicate off the same primitive; the named seam is
+    ///   the cube-native routing of the histogram surface.
+    /// - `tiers_singular_support() == (contributing_tiers_count() == 1)`
+    ///   always — the support-scalar surface, without allocating the
+    ///   `Vec<ConfigTierKind>`.
+    /// - `tiers_singular_support() == (contributing_tiers().len() == 1)`
+    ///   always — the support-`Vec` surface.
+    /// - `tiers_singular_support() == (absent_tiers_count() ==
+    ///   crate::axis_cardinality::<ConfigTierKind>() - 1)` always —
+    ///   the coverage-gap-scalar surface, the dual-side surfacing of
+    ///   the same boolean across the (observed, unobserved)
+    ///   partition.
+    /// - `tiers_singular_support() ⇒ tiers_any_observed()` — a fold
+    ///   with exactly one observed cell has at least one observed
+    ///   cell. Contrapositively,
+    ///   `!tiers_any_observed() ⇒ !tiers_singular_support()`.
+    /// - `tiers_singular_support() ⇒ tiers_balanced()` — a fold with
+    ///   exactly one observed count has a trivially uniform support
+    ///   (one count is vacuously equal to itself), so the balanced
+    ///   predicate holds.
+    /// - `tiers_singular_support() ⇒ !tiers_full_cover()` on every
+    ///   axis with cardinality `>= 2` (every implementor today —
+    ///   [`ConfigTierKind`] carries four cells): a singleton support
+    ///   has size 1, a full cover has size `axis_cardinality::<A>()`
+    ///   `>= 2`, so the two boundaries are disjoint.
+    /// - `tiers_singular_support() ⇒ self.len() >= 1` — a fold with
+    ///   a singleton support has at least one leaf contributing to
+    ///   that one observed cell.
+    /// - `tiers_singular_support() ⇒ dominant_tier() ==
+    ///   recessive_tier() && dominant_tier().is_some()` — when
+    ///   support is singular, the modal pair collapses to the one
+    ///   observed cell on both sides (the converse fails on uniform
+    ///   axis-cover, where both sides pick the first cell by
+    ///   tie-break but support is not singular).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigTierKind>()` (the
+    /// singular-support scan). Both are `O(n)` in practice since the
+    /// tier axis carries a fixed four-cell cardinality; the returned
+    /// `bool` reads one predicate. The scan short-circuits on the
+    /// second nonzero cell (bounded at two nonzero cells visited on
+    /// any two-or-more-cell-support fold), strictly tighter than the
+    /// four support / coverage-gap equality forms — no
+    /// `Vec<ConfigTierKind>` allocation, no
+    /// [`crate::axis_cardinality`] turbofish, no scalar equality
+    /// against a magic axis-cardinality-minus-one constant.
+    #[must_use]
+    pub fn tiers_singular_support(&self) -> bool {
+        self.tier_histogram().has_singular_support()
+    }
 }
 
 /// Zero-allocation `(&[String], &Provenance)` stream over the sorted
@@ -12577,6 +12734,380 @@ mod progressive_tests {
             let via_seam = map.tiers_any_observed();
             let hist = map.tier_histogram();
             let hand_rolled = hist.iter().any(|(_, c)| c > 0);
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::tiers_singular_support — singleton-support-
+    //    tier-counts boolean predicate on the tier altitude, lifting
+    //    has_singular_support from the histogram surface and climbing
+    //    the "singleton-support across altitudes" projection from the
+    //    diff altitude ──
+
+    #[test]
+    fn tiers_singular_support_matches_tier_histogram_has_singular_support_pointwise() {
+        // Routing pin: `tiers_singular_support` routes through
+        // `tier_histogram().has_singular_support()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Tier-
+        // altitude peer of
+        // `kinds_singular_support_matches_kind_histogram_has_singular_support_pointwise`
+        // on the diff altitude in the "singleton-support across
+        // altitudes" projection.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().has_singular_support();
+            assert_eq!(map.tiers_singular_support(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn tiers_singular_support_agrees_with_contributing_tiers_count_equals_one_pointwise() {
+        // Support-scalar surface: `tiers_singular_support() ==
+        // (contributing_tiers_count() == 1)` on every fixture. The
+        // support-side surfacing of the same boolean, without
+        // allocating the `Vec<ConfigTierKind>`. Lifted from the
+        // trait-uniform `has_singular_support() ⇔ distinct_cells() == 1`
+        // law on AxisHistogram. Peer of
+        // `kinds_singular_support_agrees_with_present_kinds_count_equals_one_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_singular_support();
+            let via_scalar = map.contributing_tiers_count() == 1;
+            assert_eq!(
+                via_seam,
+                via_scalar,
+                "tiers_singular_support ({via_seam}) must agree with \
+                 contributing_tiers_count == 1 (count={c}) for map",
+                c = map.contributing_tiers_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_singular_support_agrees_with_contributing_tiers_len_equals_one_pointwise() {
+        // Support-`Vec` form: `tiers_singular_support() ==
+        // (contributing_tiers().len() == 1)` on every fixture. Pins
+        // the predicate against the `Vec<ConfigTierKind>` length form
+        // consumers reach for when they already hold the support
+        // vector. Peer of
+        // `kinds_singular_support_agrees_with_present_kinds_len_equals_one_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_singular_support();
+            let via_vec = map.contributing_tiers().len() == 1;
+            assert_eq!(
+                via_seam, via_vec,
+                "tiers_singular_support ({via_seam}) must agree with \
+                 contributing_tiers().len() == 1 ({via_vec}) for map",
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_singular_support_agrees_with_absent_tiers_count_equals_axis_cardinality_minus_one_pointwise()
+     {
+        // Coverage-gap-scalar form: `tiers_singular_support() ==
+        // (absent_tiers_count() ==
+        // axis_cardinality::<ConfigTierKind>() - 1)` on every
+        // fixture. The coverage-gap-side surfacing of the same
+        // boolean — a singleton-support fold observes one cell and
+        // misses the remaining `axis_cardinality - 1` cells. Peer of
+        // `kinds_singular_support_agrees_with_absent_kinds_count_equals_axis_cardinality_minus_one_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_singular_support();
+            let via_gap =
+                map.absent_tiers_count() == crate::axis_cardinality::<ConfigTierKind>() - 1;
+            assert_eq!(
+                via_seam,
+                via_gap,
+                "tiers_singular_support ({via_seam}) must agree with \
+                 absent_tiers_count == axis_cardinality - 1 (gap={g}) for map",
+                g = map.absent_tiers_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_singular_support_empty_map_is_false() {
+        // Empty-map boundary: the empty map has no observed cells,
+        // so the singular-support predicate reads `false`. Matches
+        // `has_singular_support` reading `false` on the empty
+        // histogram one altitude down. Peer of
+        // `tiers_any_observed_empty_map_is_false` and
+        // `tiers_full_cover_empty_map_is_false` on the same polarity
+        // of the coverage-support partition, and orthogonal to
+        // `tiers_balanced_empty_map_is_true` on the opposite
+        // polarity. Peer of `kinds_singular_support_empty_diff_is_false`
+        // on the diff altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert!(!empty.tiers_singular_support());
+        assert_eq!(empty.contributing_tiers_count(), 0);
+    }
+
+    #[test]
+    fn tiers_singular_support_singleton_support_is_true() {
+        // Singleton-support pin: every leaf lands on the same tier,
+        // so the support is exactly one cell — `tiers_singular_support`
+        // reads `true`. Peer of
+        // `tiers_any_observed_singleton_support_is_true` and
+        // `tiers_balanced_singleton_support_is_true` on the same
+        // polarity and orthogonal to
+        // `tiers_full_cover_singleton_support_is_false` on the
+        // opposite polarity. The singleton-support fixture
+        // partitions the four boundaries with (`any_observed`=true,
+        // `singular_support`=true, `balanced`=true, `full_cover`=false).
+        // Peer of `kinds_singular_support_singleton_support_is_true`
+        // on the diff altitude.
+        let m: ProvenanceMap = ["a", "b", "c", "d"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 1);
+        assert!(m.tiers_singular_support());
+        assert!(m.tiers_any_observed());
+        assert!(m.tiers_balanced());
+        assert!(!m.tiers_full_cover());
+    }
+
+    #[test]
+    fn tiers_singular_support_uniform_cover_is_false() {
+        // Uniform-cover pin: every tier contributes one leaf, so the
+        // support is the full four-cell axis — `tiers_singular_support`
+        // reads `false` (four, not one). The uniform four-tier cover
+        // is on the `false` side of the singular-support boundary
+        // and on the `true` side of the other three coverage-support
+        // boundaries: `any_observed`, `balanced`, and `full_cover`.
+        // Peer of `kinds_singular_support_uniform_cover_is_false` on
+        // the diff altitude.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(!m.tiers_singular_support());
+        assert!(m.tiers_any_observed());
+        assert!(m.tiers_balanced());
+        assert!(m.tiers_full_cover());
+    }
+
+    #[test]
+    fn tiers_singular_support_two_tier_partial_cover_is_false() {
+        // Two-tier cover pin: a fold observing only Bare + Default
+        // has two observed cells out of four — `tiers_singular_support`
+        // reads `false` (two, not one) even though `tiers_any_observed`
+        // reads `true`. Direct witness of the strict subsumption
+        // `tiers_singular_support ⇒ tiers_any_observed` on a fixture
+        // where the two boundaries split. Peer of
+        // `kinds_singular_support_two_kind_partial_cover_is_false` on
+        // the diff altitude.
+        let m: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 2);
+        assert!(!m.tiers_singular_support());
+        assert!(m.tiers_any_observed());
+    }
+
+    #[test]
+    fn tiers_singular_support_implies_tiers_any_observed_pointwise() {
+        // Subsumption pin: `tiers_singular_support() ⇒
+        // tiers_any_observed()` on every fixture. A singleton-support
+        // fold observes exactly one cell, so it observes at least
+        // one cell — the any-observed predicate holds. The strict
+        // subsumption relates the singleton-support boundary and the
+        // any-observed boundary as strictly-tighter cardinality
+        // slices of the coverage-support partition (=1 ⇒ ≥1). Peer
+        // of `kinds_singular_support_implies_kinds_any_observed_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_singular_support() {
+                assert!(
+                    map.tiers_any_observed(),
+                    "singular-support map must be any-observed",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_singular_support_implies_tiers_balanced_pointwise() {
+        // Subsumption pin: `tiers_singular_support() ⇒
+        // tiers_balanced()` on every fixture. A singleton-support
+        // fold has one observed count, so its support is trivially
+        // uniform (a single value is vacuously equal to itself) —
+        // the balanced predicate holds. Pins the interaction between
+        // the singular-support boundary and the uniformity boundary.
+        // Peer of
+        // `kinds_singular_support_implies_kinds_balanced_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_singular_support() {
+                assert!(
+                    map.tiers_balanced(),
+                    "singular-support map must be balanced",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_singular_support_implies_not_tiers_full_cover_pointwise() {
+        // Disjointness pin: `tiers_singular_support() ⇒
+        // !tiers_full_cover()` on every fixture. A singleton support
+        // has cardinality 1; a full cover has cardinality
+        // `axis_cardinality::<ConfigTierKind>()` (four). The two are
+        // disjoint on every axis with cardinality `>= 2`, which
+        // includes ConfigTierKind (four cells). Direct witness that
+        // the two coverage-support boundaries are pairwise disjoint
+        // on the implementor set today. Peer of
+        // `kinds_singular_support_implies_not_kinds_full_cover_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_singular_support() {
+                assert!(
+                    !map.tiers_full_cover(),
+                    "singular-support map cannot be full-cover on \
+                     a cardinality >= 2 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_singular_support_implies_leaf_count_positive_pointwise() {
+        // Leaf-count lower-bound pin: `tiers_singular_support() ⇒
+        // self.len() >= 1`. Any fold with a singleton support has at
+        // least one leaf contributing to the one observed cell. Peer
+        // of `tiers_any_observed_implies_leaf_count_positive_pointwise`
+        // on the strictly-tighter cardinality slice of the same
+        // coverage-support partition. Peer of
+        // `kinds_singular_support_implies_line_count_positive_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_singular_support() {
+                assert!(
+                    !map.is_empty(),
+                    "singular-support map must have at least one leaf",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_singular_support_implies_dominant_equals_recessive_pointwise() {
+        // Modal-collapse pin: `tiers_singular_support() ⇒
+        // dominant_tier() == recessive_tier() &&
+        // dominant_tier().is_some()`. When support is singular, the
+        // modal pair collapses to the one observed cell on both
+        // sides. Direct witness of the trait-uniform
+        // `has_singular_support() ⇒ dominant_cell() == recessive_cell()`
+        // law on AxisHistogram, lifted to the tier altitude. Peer of
+        // `kinds_singular_support_implies_dominant_equals_recessive_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_singular_support() {
+                let dom = map.dominant_tier();
+                let rec = map.recessive_tier();
+                assert!(
+                    dom.is_some(),
+                    "singular-support map must have Some dominant tier",
+                );
+                assert_eq!(
+                    dom, rec,
+                    "singular-support map must have dominant == recessive",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_any_observed_negation_implies_not_tiers_singular_support_pointwise() {
+        // Contrapositive: `!tiers_any_observed() ⇒
+        // !tiers_singular_support()`. If no cell was observed, the
+        // support is empty (cardinality 0), which is strictly less
+        // than 1 — the singleton-support predicate fails. Pins the
+        // strictly-tighter cardinality relation between the two
+        // coverage-support boundaries. Peer of
+        // `kinds_any_observed_negation_implies_not_kinds_singular_support_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if !map.tiers_any_observed() {
+                assert!(
+                    !map.tiers_singular_support(),
+                    "empty-support map cannot be singular-support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_singular_support_agrees_with_open_coded_exactly_one_positive_walk() {
+        // Parity against the exact hand-rolled singular-support walk
+        // this lift replaces: walk every cell of the histogram and
+        // count how many carry a positive count; the singleton-
+        // support predicate reads `true` iff exactly one cell is
+        // positive. Mirrors the parity pins
+        // `tiers_any_observed_agrees_with_open_coded_any_positive_walk`
+        // and `tiers_full_cover_agrees_with_open_coded_all_positive_walk`
+        // on the same coverage-support partition's cardinality-1
+        // boundary. Peer of
+        // `kinds_singular_support_agrees_with_open_coded_exactly_one_positive_walk`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_singular_support();
+            let hist = map.tier_histogram();
+            let hand_rolled = hist.iter().filter(|(_, c)| *c > 0).count() == 1;
             assert_eq!(via_seam, hand_rolled);
         }
     }
