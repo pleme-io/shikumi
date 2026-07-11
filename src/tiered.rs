@@ -3816,6 +3816,143 @@ impl ConfigDiff {
     pub fn kinds_full_cover(&self) -> bool {
         self.kind_histogram().is_full_cover()
     }
+
+    /// `true` exactly when at least one [`DiffLineKind`] cell was
+    /// observed on this diff — the **any-observed-diff-kinds boolean
+    /// predicate** on the diff altitude. Routes through
+    /// `!self.kind_histogram().is_empty()` one altitude down: the
+    /// single-pass scan over the fixed-cardinality counts vector that
+    /// short-circuits on the first nonzero cell, tighter than any of
+    /// the four support / coverage-gap equality forms one seam over.
+    ///
+    /// The **any-observed-diff-kinds peer** of the fused
+    /// `(present_kinds, absent_kinds, present_kinds_count,
+    /// absent_kinds_count)` support / coverage-gap 2×2 grid on the
+    /// diff altitude — the natural typed boolean primitive for CLI
+    /// `config-diff` summaries, attestation manifests, and alerting
+    /// policies asking *"did any diff-cell kind fire at least once on
+    /// this rebuild?"*: the summary line *"non-empty diff: at least
+    /// one diff kind fired"*, the attestation manifest gate *"rebuild
+    /// window carries at least one diff-kind observation"*, the
+    /// alerting policy predicate *"diff non-empty"*. Before this lift,
+    /// every such consumer re-derived the predicate inline as one of
+    /// four pointwise-equivalent forms: `!diff.lines.is_empty()` (the
+    /// line-list-nonempty form, which projects the boolean off the
+    /// raw line vector without saying structurally *what* is being
+    /// asked at the diff-cell-kind axis), `diff.present_kinds_count() > 0`
+    /// (the support-scalar form, which pays for a full-axis scan and
+    /// compares a `usize` to zero without naming the coverage-
+    /// support boundary), `!diff.present_kinds().is_empty()` (the
+    /// support-`Vec` form, which allocates a `Vec<DiffLineKind>` and
+    /// reads its emptiness back), and `diff.absent_kinds_count() <
+    /// crate::axis_cardinality::<DiffLineKind>()` (the coverage-gap
+    /// scalar form, which pays for the coverage-gap scan and pulls
+    /// in the [`crate::axis_cardinality`] turbofish at every call
+    /// site). The four forms drifted in subtle ways at every consumer
+    /// site (line-vector vs. histogram surface, scalar vs. `Vec`,
+    /// support side vs. coverage-gap side, turbofish vs. name-only).
+    /// This lift names the any-observed-diff-kinds predicate directly
+    /// at the diff-altitude surface with a single-pass short-
+    /// circuiting scan — the typed boolean every operator-facing
+    /// "did the diff observe anything at all?" check reads off as a
+    /// single method call.
+    ///
+    /// The diff-altitude any-observed-predicate peer that **seeds
+    /// the "any-observed across altitudes" projection** — the
+    /// coverage-support boolean sister of the "full-cover across
+    /// altitudes" projection seeded by [`Self::kinds_full_cover`].
+    /// The natural next lifts climb to the tier altitude
+    /// (`ProvenanceMap::tiers_any_observed` over
+    /// [`Self::tier_histogram`]) and sideways along the chain
+    /// altitude's three sub-axes (`layer_kinds_any_observed`,
+    /// `file_formats_any_observed`, `env_prefix_kinds_any_observed`
+    /// over the corresponding chain histograms). The pattern is the
+    /// same at every altitude / sub-axis: fuse the (`present_cells`,
+    /// `absent_cells`, `present_cells_count`, `absent_cells_count`)
+    /// support / coverage-gap 2×2 grid's non-empty-boundary into a
+    /// single boolean predicate named at the surface, routed through
+    /// the shared `!AxisHistogram::is_empty` primitive one altitude
+    /// down. Parallels the just-closed "full-cover across altitudes"
+    /// projection ([`Self::kinds_full_cover`] seed →
+    /// [`crate::ProvenanceMap::tiers_full_cover`] climb →
+    /// [`crate::ConfigSourceChain::layer_kinds_full_cover`] /
+    /// [`crate::ConfigSourceChain::file_formats_full_cover`] /
+    /// [`crate::ConfigSourceChain::env_prefix_kinds_full_cover`]
+    /// chain-sub-axis lifts) on the opposite boundary of the
+    /// coverage-support partition.
+    ///
+    /// **Empty-diff convention** — returns `false` on the empty
+    /// diff: the empty diff has no observed cells, so the "any
+    /// observed" predicate fails. Matches
+    /// [`crate::AxisHistogram::is_empty`]'s empty-histogram
+    /// convention negated one altitude down. The empty diff is
+    /// therefore on the `false` side of the any-observed boundary —
+    /// matching [`Self::kinds_full_cover`]'s empty-diff `false`
+    /// polarity and orthogonal to [`Self::kinds_balanced`]'s empty-
+    /// diff `true` polarity.
+    ///
+    /// **Singleton-support convention** — returns `true` on every
+    /// diff whose observed support is a single [`DiffLineKind`]: one
+    /// observed cell suffices for the any-observed predicate. Every
+    /// diff of only-`Removed`, only-`Added`, or only-`Context` lines
+    /// is a witness. Matches [`Self::kinds_balanced`]'s `true` side
+    /// on the singleton and orthogonal to
+    /// [`Self::kinds_full_cover`]'s `false` side on the same
+    /// singleton — the three boundaries partition the singleton-
+    /// support fixture with (`any_observed`=true, `balanced`=true,
+    /// `full_cover`=false).
+    ///
+    /// **Uniform three-kind cover convention** — returns `true` on
+    /// every diff where each [`DiffLineKind`] cell was observed at
+    /// least once. The uniform cover is on the `true` side of all
+    /// three coverage-support boundaries (`any_observed`, `balanced`,
+    /// `full_cover`).
+    ///
+    /// # Invariants
+    ///
+    /// - `kinds_any_observed() == !kind_histogram().is_empty()` —
+    ///   both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram
+    ///   surface.
+    /// - `kinds_any_observed() == !self.lines.is_empty()` always —
+    ///   every diff line contributes to a [`DiffLineKind`] cell, so
+    ///   the histogram is empty iff the line list is empty.
+    /// - `kinds_any_observed() == (present_kinds_count() > 0)`
+    ///   always — the support-scalar surface, without allocating the
+    ///   `Vec<DiffLineKind>`.
+    /// - `kinds_any_observed() == !present_kinds().is_empty()`
+    ///   always — the support-`Vec` surface.
+    /// - `kinds_any_observed() == (absent_kinds_count() <
+    ///   crate::axis_cardinality::<DiffLineKind>())` always — the
+    ///   coverage-gap-scalar surface, the dual-side surfacing of the
+    ///   same boolean across the (observed, unobserved) partition.
+    /// - `kinds_full_cover() ⇒ kinds_any_observed()` — every full-
+    ///   cover diff observes at least one cell (in fact every cell),
+    ///   so the any-observed predicate holds. Contrapositively,
+    ///   `!kinds_any_observed() ⇒ !kinds_full_cover()`.
+    /// - `kinds_any_observed() ⇒ self.lines.len() >= 1` — a diff
+    ///   with any observed kind carries at least one line.
+    /// - `!kinds_any_observed() ⇒ kinds_balanced()` — the empty diff
+    ///   is vacuously balanced (the only diff on the `false` side of
+    ///   `kinds_any_observed`).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the any-
+    /// observed scan). Both are `O(n)` in practice since the diff-
+    /// cell axis carries a fixed three-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan short-circuits
+    /// on the first nonzero cell (bounded at one nonzero cell
+    /// visited on any non-empty diff), strictly tighter than the
+    /// four support / coverage-gap equality forms — no
+    /// `Vec<DiffLineKind>` allocation, no [`crate::axis_cardinality`]
+    /// turbofish, no scalar equality against a magic axis-cardinality
+    /// constant.
+    #[must_use]
+    pub fn kinds_any_observed(&self) -> bool {
+        !self.kind_histogram().is_empty()
+    }
 }
 
 #[cfg(test)]
@@ -7625,6 +7762,246 @@ mod tests {
             let via_seam = diff.kinds_full_cover();
             let hist = diff.kind_histogram();
             let hand_rolled = hist.iter().all(|(_, c)| c > 0);
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ConfigDiff::kinds_any_observed — any-observed-diff-kinds boolean
+    //    predicate on the diff altitude, lifting !is_empty from the histogram
+    //    surface and seeding the "any-observed across altitudes" projection ──
+
+    #[test]
+    fn kinds_any_observed_matches_kind_histogram_is_empty_negation_pointwise() {
+        // Routing pin: `kinds_any_observed` routes through
+        // `!kind_histogram().is_empty()`, so the two seams must stay
+        // pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Diff-altitude
+        // any-observed-predicate seed of the "any-observed across
+        // altitudes" projection — peer of
+        // `kinds_full_cover_matches_kind_histogram_is_full_cover_pointwise`
+        // on the coverage-support partition's opposite boundary.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = !diff.kind_histogram().is_empty();
+            assert_eq!(diff.kinds_any_observed(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kinds_any_observed_agrees_with_lines_nonempty_pointwise() {
+        // Defining equivalence on the line-list surface: every diff
+        // line contributes to a `DiffLineKind` cell, so the histogram
+        // is empty iff the line list is empty. Pins the O(n) histogram
+        // routing against the O(1) line-vector projection.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_any_observed();
+            let via_lines = !diff.lines.is_empty();
+            assert_eq!(
+                via_seam, via_lines,
+                "kinds_any_observed ({via_seam}) must agree with \
+                 !lines.is_empty() ({via_lines}) for diff",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_any_observed_agrees_with_present_kinds_count_positive_pointwise() {
+        // Support-scalar surface: `kinds_any_observed() ==
+        // (present_kinds_count() > 0)` on every fixture. The dual-
+        // side surfacing of the same boolean across the (observed,
+        // unobserved) partition. Lifted from the trait-uniform
+        // `!is_empty() == (distinct_cells() > 0)` law on
+        // AxisHistogram.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_any_observed();
+            let via_scalar = diff.present_kinds_count() > 0;
+            assert_eq!(
+                via_seam,
+                via_scalar,
+                "kinds_any_observed ({via_seam}) must agree with \
+                 present_kinds_count > 0 (count={c}) for diff",
+                c = diff.present_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_any_observed_agrees_with_present_kinds_nonempty_pointwise() {
+        // Support-`Vec` form: `kinds_any_observed() ==
+        // !present_kinds().is_empty()` on every fixture. Pins the
+        // predicate against the `Vec<DiffLineKind>` emptiness form
+        // consumers reach for when they already hold the support
+        // vector.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_any_observed();
+            let via_vec = !diff.present_kinds().is_empty();
+            assert_eq!(
+                via_seam, via_vec,
+                "kinds_any_observed ({via_seam}) must agree with \
+                 !present_kinds().is_empty() ({via_vec}) for diff",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_any_observed_agrees_with_absent_kinds_count_below_axis_cardinality_pointwise() {
+        // Coverage-gap-scalar form: `kinds_any_observed() ==
+        // (absent_kinds_count() < axis_cardinality::<DiffLineKind>())`
+        // on every fixture. The coverage-gap-side surfacing of the
+        // same boolean — an empty diff has the full coverage gap
+        // (equal to the axis cardinality); any non-empty diff has a
+        // strictly-smaller coverage gap.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_any_observed();
+            let via_gap = diff.absent_kinds_count() < crate::axis_cardinality::<DiffLineKind>();
+            assert_eq!(
+                via_seam,
+                via_gap,
+                "kinds_any_observed ({via_seam}) must agree with \
+                 absent_kinds_count < axis_cardinality (gap={g}) for diff",
+                g = diff.absent_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_any_observed_empty_diff_is_false() {
+        // Empty-diff boundary: the empty diff has no observed cells,
+        // so the any-observed predicate reads `false`. Matches
+        // `is_empty` reading `true` on the empty histogram one
+        // altitude down — negated at the diff-altitude surface.
+        // Peer of `kinds_full_cover_empty_diff_is_false` on the same
+        // polarity of the coverage-support partition, and orthogonal
+        // to `kinds_balanced_empty_diff_is_true` on the opposite
+        // polarity.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert!(!empty.kinds_any_observed());
+        assert_eq!(empty.present_kinds_count(), 0);
+    }
+
+    #[test]
+    fn kinds_any_observed_singleton_support_is_true() {
+        // Singleton-support pin: every line lands on the same kind,
+        // so one observed cell suffices — `kinds_any_observed` reads
+        // `true`. Peer of `kinds_balanced_singleton_support_is_true`
+        // on the same polarity and orthogonal to
+        // `kinds_full_cover_singleton_support_is_false` on the
+        // opposite polarity. The singleton-support fixture
+        // partitions the three boundaries with (`any_observed`=true,
+        // `balanced`=true, `full_cover`=false).
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Added("a1".into()), DiffLine::Added("a2".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 1);
+        assert!(diff.kinds_any_observed());
+        assert!(diff.kinds_balanced());
+        assert!(!diff.kinds_full_cover());
+    }
+
+    #[test]
+    fn kinds_any_observed_uniform_cover_is_true() {
+        // Uniform-cover pin: every observed kind contributes one
+        // line, so every cell of `DiffLineKind::ALL` receives at
+        // least one observation — `kinds_any_observed` reads `true`.
+        // The uniform three-kind cover is on the `true` side of ALL
+        // three coverage-support boundaries: `any_observed`,
+        // `balanced`, and `full_cover`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kinds_any_observed());
+        assert!(diff.kinds_balanced());
+        assert!(diff.kinds_full_cover());
+    }
+
+    #[test]
+    fn kinds_any_observed_two_kind_partial_cover_is_true() {
+        // Two-kind cover pin: a diff of only Added + Removed lines
+        // has two observed cells out of three — `kinds_any_observed`
+        // reads `true` even though `kinds_full_cover` reads `false`.
+        // Direct witness of the strict subsumption
+        // `kinds_full_cover ⇒ kinds_any_observed` on a fixture where
+        // the two boundaries split.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 2);
+        assert!(diff.kinds_any_observed());
+        assert!(!diff.kinds_full_cover());
+    }
+
+    #[test]
+    fn kinds_full_cover_implies_kinds_any_observed_pointwise() {
+        // Subsumption pin: `kinds_full_cover() ⇒ kinds_any_observed()`
+        // on every fixture. A full-cover diff observes every cell,
+        // so it observes at least one cell — the any-observed
+        // predicate holds. The strict subsumption relates the two
+        // ends of the coverage-support partition:
+        // `any_observed ⇔ !is_empty` and
+        // `full_cover ⇔ every_cell_positive`, with
+        // `full_cover ⇒ any_observed` structurally.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_full_cover() {
+                assert!(
+                    diff.kinds_any_observed(),
+                    "full-cover diff must be any-observed",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_any_observed_implies_line_count_positive_pointwise() {
+        // Line-count lower-bound pin: `kinds_any_observed() ⇒
+        // self.lines.len() >= 1`. Any diff with a nonzero histogram
+        // cell has at least one line contributing to that cell.
+        // Direct witness of the trait-uniform
+        // `!is_empty() ⇒ total() >= 1` law on AxisHistogram, lifted
+        // to the diff altitude.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_any_observed() {
+                assert!(
+                    !diff.lines.is_empty(),
+                    "any-observed diff must have at least one line",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_any_observed_negation_implies_kinds_balanced_pointwise() {
+        // The empty diff is the only fixture on the `false` side of
+        // `kinds_any_observed`, and it is vacuously balanced. So
+        // `!kinds_any_observed() ⇒ kinds_balanced()` holds
+        // structurally. Pins the interaction between the coverage-
+        // support boundary and the uniformity boundary at the empty-
+        // diff corner.
+        for diff in dominant_kind_fixtures() {
+            if !diff.kinds_any_observed() {
+                assert!(
+                    diff.kinds_balanced(),
+                    "empty diff must be vacuously balanced",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_any_observed_agrees_with_open_coded_any_positive_walk() {
+        // Parity against the exact hand-rolled any-observed walk this
+        // lift replaces: walk every cell of the histogram and check
+        // any count is positive. Mirrors the parity pin
+        // `kinds_full_cover_agrees_with_open_coded_all_positive_walk`
+        // on the coverage-support partition's opposite boundary.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_any_observed();
+            let hist = diff.kind_histogram();
+            let hand_rolled = hist.iter().any(|(_, c)| c > 0);
             assert_eq!(via_seam, hand_rolled);
         }
     }
