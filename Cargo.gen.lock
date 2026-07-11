@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "cargo_lock_sha256": "979b1169f06da2d7db340c34b8ae97a75e1b89d49cce5d3f2567a7200b0c1e68",
+  "cargo_lock_sha256": "b9dbd8753d7d99e3066718c8b463b38afe835c4fffc24fe5c8819bda6f1d461d",
   "target_resolves": {
     "base": {
       "arc-swap-1.9.2": {
@@ -84,7 +84,7 @@
           "std"
         ]
       },
-      "cc-1.2.66": {
+      "cc-1.2.67": {
         "runtime_dependencies": [
           {
             "name": "find_msvc_tools",
@@ -1165,7 +1165,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.221": {
+      "shikumi-0.1.222": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -1917,7 +1917,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.2.66",
+                "package_key": "cc-1.2.67",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2246,7 +2246,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.2.66",
+                "package_key": "cc-1.2.67",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2579,7 +2579,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.2.66",
+                "package_key": "cc-1.2.67",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -2922,7 +2922,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.2.66",
+                "package_key": "cc-1.2.67",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3266,7 +3266,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.2.66",
+                "package_key": "cc-1.2.67",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3614,7 +3614,7 @@
             "build_dependencies": [
               {
                 "name": "cc",
-                "package_key": "cc-1.2.66",
+                "package_key": "cc-1.2.67",
                 "kind": "build",
                 "features": [],
                 "uses_default_features": true,
@@ -3930,7 +3930,7 @@
       "edition": "2024",
       "build_script": "build.rs"
     },
-    "cc-1.2.66": {
+    "cc-1.2.67": {
       "edition": "2018"
     },
     "cfg-if-1.0.4": {
@@ -4097,7 +4097,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.221": {
+    "shikumi-0.1.222": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
