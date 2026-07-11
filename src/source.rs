@@ -3465,6 +3465,149 @@ pub trait ConfigSourceChain {
         self.file_format_histogram().is_full_cover()
     }
 
+    /// Named typed boolean predicate — `true` exactly when at least one
+    /// [`crate::discovery::Format`] cell was observed on this chain's
+    /// [`ConfigSource::File`] layers with recognized extensions (at
+    /// least one cell of the closed [`crate::discovery::Format`] axis
+    /// has a nonzero count on the recipe's file-format histogram).
+    /// Routes through [`Self::file_format_histogram`]'s
+    /// [`crate::AxisHistogram::is_empty`], negated: the cube-native
+    /// single-pass short-circuiting scan over the fixed-cardinality
+    /// counts vector one altitude down that returns on the first
+    /// nonzero cell.
+    ///
+    /// Operator-facing consumers answering *"did any file format fire
+    /// on this recipe at all?"* — the CLI `config-show` headline *"non-
+    /// empty file-format recipe: at least one recognized-extension file
+    /// layer fired"*, the attestation manifest gate *"rebuild window
+    /// carries at least one recognized file-format observation"*, the
+    /// alerting policy predicate *"recipe has any file-format layer"* —
+    /// now route through this named seam instead of four previously
+    /// drifting inline forms: `!chain.file_format_histogram().is_empty()`
+    /// (the histogram-nonempty form, which reads through the histogram
+    /// primitive but without a chain-level named seam),
+    /// `chain.present_file_formats_count() > 0` (the support-scalar
+    /// form, which pays for a full-axis scan and compares a `usize` to
+    /// zero without naming the coverage-support boundary),
+    /// `!chain.present_file_formats().is_empty()` (the support-`Vec`
+    /// form, which allocates a `Vec<crate::discovery::Format>` and
+    /// reads its emptiness back), and `chain.absent_file_formats_count()
+    /// < crate::axis_cardinality::<crate::discovery::Format>()` (the
+    /// coverage-gap-scalar form, which pays for the coverage-gap scan
+    /// and pulls in the `axis_cardinality` turbofish at every call
+    /// site). Routes through `!AxisHistogram::is_empty` one altitude
+    /// down.
+    ///
+    /// **Lifts sideways to the file-format sub-axis of the chain
+    /// altitude** in the "any-observed across altitudes" projection
+    /// seeded on the diff altitude by
+    /// [`crate::ConfigDiff::kinds_any_observed`], climbed to the tier
+    /// altitude by [`crate::ProvenanceMap::tiers_any_observed`], and
+    /// lifted sideways to the layer-kind sub-axis by
+    /// [`Self::layer_kinds_any_observed`]. Parallels the "balanced
+    /// across altitudes" projection lifted to the same sub-axis by
+    /// [`Self::file_formats_balanced`] and the "full-cover across
+    /// altitudes" projection lifted to the same sub-axis by
+    /// [`Self::file_formats_full_cover`]. The last remaining chain-
+    /// altitude sub-axis is the natural next sideways lift:
+    /// [`Self::env_prefix_kinds_any_observed`] over
+    /// [`Self::env_prefix_kind_histogram`], closing the "any-observed
+    /// across altitudes" projection across every altitude / sub-axis
+    /// alongside the balanced / full-cover projections that already
+    /// closed the same grid.
+    ///
+    /// **Empty-histogram convention** — returns `false` on every chain
+    /// whose file-format histogram is empty: no observed cells means
+    /// the any-observed predicate fails. Matches
+    /// [`crate::AxisHistogram::is_empty`]'s `true` reading on the empty
+    /// histogram one altitude down, projected through the negation
+    /// seam. Cross-sub-axis divergence from
+    /// [`Self::layer_kinds_any_observed`]: the empty-chain boundary is
+    /// weaker on the file-format sub-axis — a non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::Env`] /
+    /// unrecognized-extension [`ConfigSource::File`] layers ALSO reads
+    /// `false` (the histogram is empty even though the chain is not).
+    /// Matches [`Self::file_formats_full_cover`]'s same-sided
+    /// convention at the empty-histogram boundary and dual of
+    /// [`Self::file_formats_balanced`]'s vacuous-uniformity witness
+    /// (which reads `true` on every empty-histogram chain): any-
+    /// observed and balanced fall on opposite sides of the empty-
+    /// histogram boundary, matching the layer-kind sub-axis
+    /// (`any_observed`, `balanced`, `full_cover`) empty-chain polarity
+    /// triple.
+    ///
+    /// **Singleton-support convention** — returns `true` on every
+    /// chain whose observed support is a single [`crate::discovery::Format`]
+    /// (one observed cell suffices for the any-observed predicate).
+    /// Every chain in which one format owns every recognized-extension
+    /// file layer is a witness. Matches [`Self::file_formats_balanced`]'s
+    /// `true` side on the singleton and orthogonal to
+    /// [`Self::file_formats_full_cover`]'s `false` side on the same
+    /// singleton — the three boundaries partition the singleton-
+    /// support fixture into the polarity triple
+    /// (`any_observed`=true, `balanced`=true, `full_cover`=false).
+    ///
+    /// **Uniform four-format cover convention** — returns `true` on
+    /// every chain where each of the four [`crate::discovery::Format`]
+    /// cells was observed at least once. The uniform four-format cover
+    /// is on the `true` side of all three coverage-support boundaries
+    /// (`any_observed`, `balanced`, `full_cover`).
+    ///
+    /// # Invariants
+    ///
+    /// - `file_formats_any_observed() == !file_format_histogram().is_empty()`
+    ///   — both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram
+    ///   surface.
+    /// - `file_formats_any_observed() == (present_file_formats_count() >
+    ///   0)` always — the support-scalar surface, without allocating
+    ///   the `Vec<crate::discovery::Format>`.
+    /// - `file_formats_any_observed() == !present_file_formats().is_empty()`
+    ///   always — the support-`Vec` surface.
+    /// - `file_formats_any_observed() == (absent_file_formats_count() <
+    ///   crate::axis_cardinality::<crate::discovery::Format>())`
+    ///   always — the coverage-gap-scalar surface, the dual-side
+    ///   surfacing of the same boolean across the (observed,
+    ///   unobserved) partition.
+    /// - `file_formats_full_cover() ⇒ file_formats_any_observed()` — a
+    ///   full-cover chain observes every cell, so it observes at least
+    ///   one cell. Contrapositively, `!file_formats_any_observed() ⇒
+    ///   !file_formats_full_cover()`.
+    /// - `file_formats_any_observed() ⇒
+    ///   layer_kind_histogram().count(ConfigSourceKind::File) >= 1` —
+    ///   a chain observing any file format has at least one
+    ///   recognized-extension file layer, and every such layer is a
+    ///   [`ConfigSource::File`]. Cross-sub-axis lower-bound implication
+    ///   linking the file-format sub-axis any-observed boundary to the
+    ///   layer-kind sub-axis File cell count. Cross-sub-axis
+    ///   divergence from [`Self::layer_kinds_any_observed`]'s
+    ///   `self.as_ref().len() >= 1` implication, which reads on the
+    ///   chain-length rather than the File-layer count.
+    /// - `!file_formats_any_observed() ⇒ file_formats_balanced()` — the
+    ///   empty-histogram chain is the only chain on the `false` side of
+    ///   `file_formats_any_observed` and it is vacuously balanced.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram
+    /// build) and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the any-observed scan). Both are `O(n)` in practice since the
+    /// file-format axis carries a fixed four-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan short-circuits on
+    /// the first nonzero cell (bounded at one nonzero cell visited on
+    /// any non-empty-histogram chain), strictly tighter than the four
+    /// support / coverage-gap equality forms — no
+    /// `Vec<crate::discovery::Format>` allocation, no
+    /// [`crate::axis_cardinality`] turbofish, no scalar equality
+    /// against a magic axis-cardinality constant.
+    #[must_use]
+    fn file_formats_any_observed(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        !self.file_format_histogram().is_empty()
+    }
+
     /// Dense per-env-prefix-presence tally of the chain's
     /// [`ConfigSource::Env`] layers over the [`EnvMetadataTagKind`] axis
     /// — the typed histogram every attestation manifest, structured-log
@@ -18742,6 +18885,336 @@ mod tests {
             let via_seam = slice.file_formats_full_cover();
             let hist = slice.file_format_histogram();
             let hand_rolled = hist.iter().all(|(_, c)| c > 0);
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::file_formats_any_observed — any-observed-
+    //      file-formats boolean predicate on the file-format sub-axis of
+    //      the chain altitude, lifting the "any-observed across altitudes"
+    //      projection sideways from the layer-kind sub-axis to the second
+    //      chain-altitude sub-axis. Routed through the shared
+    //      `!AxisHistogram::is_empty` primitive one altitude down. ----
+
+    #[test]
+    fn file_formats_any_observed_matches_file_format_histogram_is_empty_negation_pointwise() {
+        // The routing pin: `file_formats_any_observed` routes through
+        // `!file_format_histogram().is_empty()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. File-format sub-
+        // axis peer of
+        // `layer_kinds_any_observed_matches_layer_kind_histogram_is_empty_negation_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_any_observed_matches_tier_histogram_is_empty_negation_pointwise`
+        // on the tier altitude, and
+        // `kinds_any_observed_matches_kind_histogram_is_empty_negation_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = !slice.file_format_histogram().is_empty();
+            assert_eq!(slice.file_formats_any_observed(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn file_formats_any_observed_agrees_with_present_file_formats_count_positive_pointwise() {
+        // Support-scalar surface: `file_formats_any_observed() ==
+        // (present_file_formats_count() > 0)`, without allocating the
+        // `Vec<crate::discovery::Format>`. Peer of
+        // `layer_kinds_any_observed_agrees_with_present_layer_kinds_count_positive_pointwise`
+        // on the layer-kind sub-axis and
+        // `tiers_any_observed_agrees_with_contributing_tiers_count_positive_pointwise`
+        // on the tier altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_any_observed();
+            let via_scalar = slice.present_file_formats_count() > 0;
+            assert_eq!(
+                via_seam,
+                via_scalar,
+                "file_formats_any_observed ({via_seam}) must agree with \
+                 present_file_formats_count > 0 (count={c}) for chain",
+                c = slice.present_file_formats_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_any_observed_agrees_with_present_file_formats_nonempty_pointwise() {
+        // Support-`Vec` surface: `file_formats_any_observed() ==
+        // !present_file_formats().is_empty()`. Pins the predicate
+        // against the `Vec<crate::discovery::Format>` non-empty form
+        // consumers reach for when they already hold the support
+        // vector. Peer of
+        // `layer_kinds_any_observed_agrees_with_present_layer_kinds_nonempty_pointwise`.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_any_observed();
+            let via_vec = !slice.present_file_formats().is_empty();
+            assert_eq!(
+                via_seam, via_vec,
+                "file_formats_any_observed ({via_seam}) must agree with \
+                 !present_file_formats().is_empty() ({via_vec}) for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_any_observed_agrees_with_absent_file_formats_count_below_axis_cardinality_pointwise()
+     {
+        // Coverage-gap-scalar surface: `file_formats_any_observed() ==
+        // (absent_file_formats_count() <
+        // crate::axis_cardinality::<crate::discovery::Format>())`. The
+        // dual-side surfacing of the same boolean across the
+        // (observed, unobserved) partition. Peer of
+        // `layer_kinds_any_observed_agrees_with_absent_layer_kinds_count_below_axis_cardinality_pointwise`.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_any_observed();
+            let via_gap = slice.absent_file_formats_count()
+                < crate::axis_cardinality::<crate::discovery::Format>();
+            assert_eq!(
+                via_seam, via_gap,
+                "file_formats_any_observed ({via_seam}) must agree with \
+                 absent_file_formats_count < axis_cardinality ({via_gap}) for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_any_observed_empty_chain_is_false() {
+        // Empty-chain boundary: the empty chain has no observed cells,
+        // so the "any observed" predicate fails —
+        // `file_formats_any_observed` reads `false`. Matches
+        // `is_empty` reading `true` on the empty histogram over the
+        // `crate::discovery::Format` axis one altitude down. Dual of
+        // `file_formats_balanced_empty_chain_is_true`: the empty chain
+        // is on the opposite side of the any-observed boundary from
+        // the balanced boundary and on the same side as the full-cover
+        // boundary — the (`any_observed`=false, `balanced`=true,
+        // `full_cover`=false) polarity triple. Peer of
+        // `layer_kinds_any_observed_empty_chain_is_false` on the
+        // layer-kind sub-axis, `tiers_any_observed_empty_map_is_false`
+        // on the tier altitude, and
+        // `kinds_any_observed_empty_diff_is_false` on the diff
+        // altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(!empty.file_formats_any_observed());
+        assert!(empty.file_formats_balanced());
+        assert!(!empty.file_formats_full_cover());
+    }
+
+    #[test]
+    fn file_formats_any_observed_no_recognized_files_is_false() {
+        // Cross-sub-axis divergence pin against
+        // `layer_kinds_any_observed_empty_chain_is_false`: on the file-
+        // format sub-axis the *non-empty-chain / empty-histogram*
+        // boundary ALSO reads `false`. A chain of only Defaults / Env
+        // / unrecognized-extension File layers is non-empty but has an
+        // empty file-format histogram, so no observed cell fires —
+        // `file_formats_any_observed` reads `false`. Distinguishing
+        // pin against `file_formats_balanced` on the exact same
+        // fixtures (where the vacuous-uniformity boundary reads
+        // `true`): any-observed and balanced fall on opposite sides
+        // of the empty-histogram boundary at the file-format sub-
+        // axis. Also matches
+        // `file_formats_full_cover_no_recognized_files_is_false` on
+        // the same-shape fixtures (both any-observed and full-cover
+        // read `false` on empty-histogram non-empty chains).
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(!slice.is_empty(), "fixture must be non-empty");
+            assert!(
+                slice.file_format_histogram().is_empty(),
+                "fixture must have empty file-format histogram",
+            );
+            assert!(!slice.file_formats_any_observed());
+            assert!(slice.file_formats_balanced());
+            assert!(!slice.file_formats_full_cover());
+        }
+    }
+
+    #[test]
+    fn file_formats_any_observed_singleton_support_is_true() {
+        // Singleton-support pin: every recognized-extension file layer
+        // lands on the same format, so one observed cell out of four
+        // suffices for the any-observed predicate —
+        // `file_formats_any_observed` reads `true`. Peer of
+        // `file_formats_balanced_singleton_support_is_true` on the
+        // same side of the boundary and orthogonal to
+        // `file_formats_full_cover_singleton_support_is_false` on the
+        // opposite side: singleton-support is trivially observed and
+        // trivially balanced but never full-cover on a four-cell
+        // axis. Peer of `layer_kinds_any_observed_singleton_support_is_true`
+        // on the layer-kind sub-axis — same
+        // (`any_observed`=true, `balanced`=true, `full_cover`=false)
+        // polarity triple on the singleton-support fixture.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 1);
+        assert!(slice.file_formats_any_observed());
+        assert!(slice.file_formats_balanced());
+        assert!(!slice.file_formats_full_cover());
+    }
+
+    #[test]
+    fn file_formats_any_observed_uniform_cover_is_true() {
+        // Uniform-cover pin: every format contributes one file layer,
+        // so every cell of `crate::discovery::Format::ALL` receives at
+        // least one observation — `file_formats_any_observed` reads
+        // `true`. Peer of `file_formats_balanced_uniform_cover_is_true`
+        // and `file_formats_full_cover_uniform_cover_is_true`: uniform
+        // four-format cover is on the `true` side of ALL THREE
+        // coverage-support boundaries at this sub-axis. Peer of
+        // `layer_kinds_any_observed_uniform_cover_is_true` on the
+        // layer-kind sub-axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.file_formats_any_observed());
+        assert!(slice.file_formats_balanced());
+        assert!(slice.file_formats_full_cover());
+    }
+
+    #[test]
+    fn file_formats_any_observed_two_format_partial_cover_is_true() {
+        // Two-format cover pin: a chain observing Toml + Yaml but
+        // never Lisp / Nix (support size 2 out of 4) still fires at
+        // least one observed cell — `file_formats_any_observed` reads
+        // `true`. Direct witness of `file_formats_full_cover ⇒
+        // file_formats_any_observed` on a fixture where full-cover
+        // reads `false` but any-observed still holds. Peer of
+        // `layer_kinds_any_observed_two_kind_partial_cover_is_true`
+        // on the layer-kind sub-axis at the sister partial-cover
+        // fixture.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 2);
+        assert!(slice.file_formats_any_observed());
+        assert!(!slice.file_formats_full_cover());
+    }
+
+    #[test]
+    fn file_formats_full_cover_implies_file_formats_any_observed_pointwise() {
+        // Subsumption pin: `file_formats_full_cover() ⇒
+        // file_formats_any_observed()` on every fixture — a full-cover
+        // chain observes every cell, so it observes at least one cell.
+        // Peer of `layer_kinds_full_cover_implies_layer_kinds_any_observed_pointwise`
+        // on the layer-kind sub-axis,
+        // `tiers_full_cover_implies_tiers_any_observed_pointwise` on
+        // the tier altitude, and
+        // `kinds_full_cover_implies_kinds_any_observed_pointwise` on
+        // the diff altitude. Names the ordering `full_cover ≤
+        // any_observed` on the coverage-support partition at the file-
+        // format sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_full_cover() {
+                assert!(
+                    slice.file_formats_any_observed(),
+                    "full-cover chain must be any-observed (fixture len={})",
+                    slice.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_any_observed_implies_layer_kind_file_count_positive_pointwise() {
+        // Cross-sub-axis lower-bound implication:
+        // `file_formats_any_observed() ⇒
+        // layer_kind_histogram().count(ConfigSourceKind::File) >= 1`.
+        // A chain observing any file format has at least one
+        // recognized-extension file layer, and every such layer is a
+        // `ConfigSource::File`. Cross-sub-axis divergence from
+        // `layer_kinds_any_observed_implies_chain_length_positive_pointwise`
+        // on the layer-kind sub-axis, which reads on the chain-length
+        // rather than the File-layer count — the file-format sub-axis
+        // carries the stronger implication because Defaults / Env /
+        // unrecognized-extension File layers don't contribute to the
+        // file-format histogram.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_any_observed() {
+                assert!(
+                    slice.layer_kind_histogram().count(ConfigSourceKind::File) >= 1,
+                    "any-observed chain must have >= 1 File layer (was {})",
+                    slice.layer_kind_histogram().count(ConfigSourceKind::File),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_any_observed_negation_implies_file_formats_balanced_pointwise() {
+        // Empty-histogram / vacuous-balanced interaction pin: the
+        // empty-histogram chain is the only chain on the `false` side
+        // of `file_formats_any_observed`, and it is vacuously
+        // balanced. So `!file_formats_any_observed() ⇒
+        // file_formats_balanced()` holds pointwise. Peer of
+        // `layer_kinds_any_observed_negation_implies_layer_kinds_balanced_pointwise`
+        // on the layer-kind sub-axis and
+        // `tiers_any_observed_negation_implies_tiers_balanced_pointwise`
+        // on the tier altitude. Cross-sub-axis divergence from the
+        // layer-kind sub-axis: on the file-format sub-axis the `false`
+        // side of `any_observed` includes both the empty chain and
+        // every non-empty chain of only Defaults / Env / unrecognized-
+        // extension File layers.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.file_formats_any_observed() {
+                assert!(
+                    slice.file_formats_balanced(),
+                    "non-any-observed chain must be vacuously balanced",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_any_observed_agrees_with_open_coded_any_positive_walk() {
+        // Parity against the exact hand-rolled any-observed walk this
+        // lift replaces: walk every cell of the histogram and check
+        // any count is positive. Mirrors the parity pin
+        // `layer_kinds_any_observed_agrees_with_open_coded_any_positive_walk`
+        // on the layer-kind sub-axis,
+        // `tiers_any_observed_agrees_with_open_coded_any_positive_walk`
+        // on the tier altitude, and
+        // `kinds_any_observed_agrees_with_open_coded_any_positive_walk`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_any_observed();
+            let hist = slice.file_format_histogram();
+            let hand_rolled = hist.iter().any(|(_, c)| c > 0);
             assert_eq!(via_seam, hand_rolled);
         }
     }
