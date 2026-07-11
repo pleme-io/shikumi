@@ -2114,6 +2114,177 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().has_singular_support()
     }
 
+    /// Returns `true` exactly when this chain observes every
+    /// [`ConfigSourceKind`] cell except one — the singleton-gap
+    /// boundary of the coverage-support partition on the layer-kind
+    /// sub-axis of the chain altitude.
+    ///
+    /// The cube-native answer to *"did this chain miss exactly one
+    /// layer-kind cell?"*, routed through the shared
+    /// [`crate::AxisHistogram::has_singular_gap`] primitive on
+    /// [`Self::layer_kind_histogram`] one altitude down. Consumers
+    /// asking that question — the fleet dashboard singleton-gap
+    /// headline over the chain's layer-kind composition, the
+    /// attestation manifest gate *"chain observes all-but-one layer
+    /// kind"*, the alerting policy predicate *"layer-kind gap
+    /// singular"* — now route through this named seam instead of four
+    /// previously drifting inline forms: `chain.absent_layer_kinds_count()
+    /// == 1` (coverage-gap-scalar), `chain.absent_layer_kinds().len() ==
+    /// 1` (coverage-gap-`Vec`), `chain.present_layer_kinds_count() ==
+    /// crate::axis_cardinality::<ConfigSourceKind>() - 1` (support-
+    /// scalar, which pays for a full-axis scan and pulls in the
+    /// [`crate::axis_cardinality`] turbofish at every call site), and
+    /// `chain.present_layer_kinds().len() ==
+    /// crate::axis_cardinality::<ConfigSourceKind>() - 1` (support-
+    /// `Vec`, which allocates a `Vec<ConfigSourceKind>` and reads its
+    /// length back). The four forms drifted in subtle ways at every
+    /// consumer site (allocation vs. scalar, turbofish vs. name-only,
+    /// coverage-gap side vs. support side). This lift names the
+    /// singleton-gap-layer-kinds predicate directly at the chain-
+    /// altitude surface with a single-pass short-circuiting scan.
+    ///
+    /// **Lifts sideways to the layer-kind sub-axis of the chain
+    /// altitude** in the "singleton-gap across altitudes" projection
+    /// seeded on the diff altitude by
+    /// [`crate::ConfigDiff::kinds_singular_gap`] and climbed to the
+    /// tier altitude by
+    /// [`crate::ProvenanceMap::tiers_singular_gap`]. Dual of the
+    /// closed "singleton-support across altitudes" projection lifted
+    /// to the same sub-axis by [`Self::layer_kinds_singular_support`]
+    /// on the *complementary* cardinality slice of the same coverage-
+    /// support partition (`singular_support` = *exactly-one* observed
+    /// cell; `singular_gap` = *exactly-one* unobserved cell). Parallels
+    /// the "any-observed across altitudes" projection lifted to the
+    /// same sub-axis by [`Self::layer_kinds_any_observed`] on the
+    /// strictly-looser cardinality slice of the same partition
+    /// (`any_observed` = *at-least-one* cell), the "full-cover across
+    /// altitudes" projection lifted to the same sub-axis by
+    /// [`Self::layer_kinds_full_cover`] on the opposite-extreme
+    /// cardinality slice, and the "balanced across altitudes"
+    /// projection lifted to the same sub-axis by
+    /// [`Self::layer_kinds_balanced`] on the count-uniformity axis.
+    /// The two remaining chain-altitude sub-axes are the natural next
+    /// sideways lifts: `file_formats_singular_gap` over
+    /// [`Self::file_format_histogram`] and
+    /// `env_prefix_kinds_singular_gap` over
+    /// [`Self::env_prefix_kind_histogram`], closing the "singleton-gap
+    /// across altitudes" projection across every altitude / sub-axis
+    /// alongside the balanced / full-cover / any-observed /
+    /// singular-support projections that already closed the same grid.
+    ///
+    /// **Empty-chain convention** — returns `false` on the empty chain
+    /// (on every axis with cardinality `>= 2`, i.e. every implementor
+    /// today — [`ConfigSourceKind`] carries three cells): the empty
+    /// chain has every cell unobserved (three, not one), so the
+    /// singleton-gap predicate fails. Matches
+    /// [`crate::AxisHistogram::has_singular_gap`]'s empty-histogram
+    /// `false` convention one altitude down. The empty chain is
+    /// therefore on the `false` side of the singular-gap boundary —
+    /// matching [`Self::layer_kinds_any_observed`]'s and
+    /// [`Self::layer_kinds_full_cover`]'s and
+    /// [`Self::layer_kinds_singular_support`]'s empty-chain `false`
+    /// polarity, and orthogonal to [`Self::layer_kinds_balanced`]'s
+    /// empty-chain `true` polarity. The five predicates partition the
+    /// empty chain into the polarity quintuple (`any_observed`=false,
+    /// `singular_support`=false, `singular_gap`=false, `balanced`=true,
+    /// `full_cover`=false).
+    ///
+    /// **Singleton-support convention** — returns `false` on every
+    /// chain whose observed support is a single [`ConfigSourceKind`]:
+    /// two cells are unobserved on the three-cell axis (not one), so
+    /// the singleton-gap predicate fails. Every chain in which one
+    /// kind owns every layer is a witness on the `false` side. The
+    /// singleton-support fixture partitions the five coverage-support
+    /// boundaries with (`any_observed`=true, `singular_support`=true,
+    /// `singular_gap`=false, `balanced`=true, `full_cover`=false) —
+    /// orthogonal to `singular_gap` on this axis.
+    ///
+    /// **Two-kind partial cover convention** — returns `true` on every
+    /// chain whose observed support is exactly two [`ConfigSourceKind`]
+    /// cells: one cell is unobserved (three total minus two observed
+    /// equals one unobserved), exactly the singleton-gap boundary.
+    /// [`crate::ConfigSourceChain`]'s `sample_chain()` (two `File` +
+    /// one `Env`) is a witness: `Defaults` is silent, satisfying the
+    /// singular-gap. The two-kind partial cover fixture partitions the
+    /// five coverage-support boundaries with (`any_observed`=true,
+    /// `singular_support`=false, `singular_gap`=true, `balanced`=either
+    /// polarity depending on per-kind counts, `full_cover`=false) —
+    /// the row this predicate isolates from the surrounding boundaries.
+    ///
+    /// **Uniform three-kind cover convention** — returns `false` on
+    /// every chain where each of the three [`ConfigSourceKind`] cells
+    /// was observed at least once: zero cells are unobserved (not
+    /// one), so the singleton-gap predicate fails. Matches
+    /// [`Self::layer_kinds_full_cover`]'s `true` side on the same
+    /// fixture — the two boundaries `singular_gap` and `full_cover`
+    /// are disjoint at the top of the coverage-support partition
+    /// (adjacent support cardinalities `axis_cardinality - 1` and
+    /// `axis_cardinality`). The uniform three-kind cover partitions
+    /// the five coverage-support boundaries with (`any_observed`=true,
+    /// `singular_support`=false, `singular_gap`=false, `balanced`=true,
+    /// `full_cover`=true).
+    ///
+    /// # Invariants
+    ///
+    /// - `layer_kinds_singular_gap() ==
+    ///   layer_kind_histogram().has_singular_gap()` — both project the
+    ///   same predicate off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `layer_kinds_singular_gap() == (absent_layer_kinds_count() == 1)`
+    ///   always — the coverage-gap-scalar surface, without allocating
+    ///   the `Vec<ConfigSourceKind>`.
+    /// - `layer_kinds_singular_gap() == (absent_layer_kinds().len() == 1)`
+    ///   always — the coverage-gap-`Vec` surface.
+    /// - `layer_kinds_singular_gap() == (present_layer_kinds_count() ==
+    ///   crate::axis_cardinality::<ConfigSourceKind>() - 1)` always —
+    ///   the support-scalar surface, the dual-side surfacing of the
+    ///   same boolean across the (observed, unobserved) partition.
+    /// - `layer_kinds_singular_gap() == (present_layer_kinds().len() ==
+    ///   crate::axis_cardinality::<ConfigSourceKind>() - 1)` always —
+    ///   the support-`Vec` surface.
+    /// - `layer_kinds_singular_gap() ⇒ layer_kinds_any_observed()` on
+    ///   every axis with cardinality `>= 2` (every implementor today
+    ///   — [`ConfigSourceKind`] carries three cells): a chain missing
+    ///   exactly one cell observes at least `axis_cardinality - 1 >= 1`
+    ///   cells. Contrapositively, `!layer_kinds_any_observed() ⇒
+    ///   !layer_kinds_singular_gap()`.
+    /// - `layer_kinds_singular_gap() ⇒ !layer_kinds_full_cover()`
+    ///   always: full cover has zero unobserved cells, singular gap
+    ///   has exactly one, so the two boundaries are disjoint on every
+    ///   axis.
+    /// - `layer_kinds_singular_gap() ⇒ !layer_kinds_singular_support()`
+    ///   on every axis with cardinality `>= 3` (every implementor
+    ///   today — [`ConfigSourceKind`] carries three cells): singleton-
+    ///   support has support cardinality `1`, singleton-gap has
+    ///   support cardinality `axis_cardinality - 1 >= 2`, so the two
+    ///   are disjoint. On the cardinality-`2` corner (no chain-
+    ///   altitude sub-axis today) the two coincide pointwise.
+    /// - `layer_kinds_singular_gap() ⇒ self.as_ref().len() >=
+    ///   crate::axis_cardinality::<ConfigSourceKind>() - 1` — a chain
+    ///   missing exactly one cell has at least one layer for each of
+    ///   the `axis_cardinality - 1` observed cells.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the
+    /// singular-gap scan). Both are `O(n)` in practice since the
+    /// layer-kind axis carries a fixed three-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan short-circuits on
+    /// the second zero cell (bounded at two zero cells visited on any
+    /// two-or-more-cell-gap chain), strictly tighter than the four
+    /// support / coverage-gap equality forms — no
+    /// `Vec<ConfigSourceKind>` allocation, no
+    /// [`crate::axis_cardinality`] turbofish, no scalar equality
+    /// against a magic axis-cardinality-minus-one constant.
+    #[must_use]
+    fn layer_kinds_singular_gap(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().has_singular_gap()
+    }
+
     /// Dense per-format tally of the chain's [`ConfigSource::File`]
     /// layers over the [`crate::discovery::Format`] axis — the typed
     /// histogram every per-format dashboard, attestation manifest
@@ -18740,6 +18911,361 @@ mod tests {
             let via_seam = slice.layer_kinds_singular_support();
             let hist = slice.layer_kind_histogram();
             let hand_rolled = hist.iter().filter(|(_, c)| *c > 0).count() == 1;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::layer_kinds_singular_gap — singleton-gap-
+    //      layer-kinds boolean predicate on the layer-kind sub-axis of
+    //      the chain altitude, lifting the "singleton-gap across
+    //      altitudes" projection sideways from the tier altitude
+    //      (`ProvenanceMap::tiers_singular_gap`) into the first chain
+    //      sub-axis. Routed through the shared
+    //      `AxisHistogram::has_singular_gap` primitive one altitude
+    //      down. ----
+
+    #[test]
+    fn layer_kinds_singular_gap_matches_layer_kind_histogram_has_singular_gap_pointwise() {
+        // Routing pin: `layer_kinds_singular_gap` routes through
+        // `layer_kind_histogram().has_singular_gap()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Layer-
+        // kind sub-axis peer of
+        // `tiers_singular_gap_matches_tier_histogram_has_singular_gap_pointwise`
+        // on the tier altitude and
+        // `kinds_singular_gap_matches_kind_histogram_has_singular_gap_pointwise`
+        // on the diff altitude, in the "singleton-gap across
+        // altitudes" projection.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.layer_kind_histogram().has_singular_gap();
+            assert_eq!(slice.layer_kinds_singular_gap(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_gap_agrees_with_absent_layer_kinds_count_equals_one_pointwise() {
+        // Coverage-gap-scalar surface: `layer_kinds_singular_gap() ==
+        // (absent_layer_kinds_count() == 1)` on every fixture. The
+        // coverage-gap-side scalar surfacing of the same boolean,
+        // without allocating the `Vec<ConfigSourceKind>`. Peer of
+        // `tiers_singular_gap_agrees_with_absent_tiers_count_equals_one_pointwise`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_singular_gap();
+            let via_gap_scalar = slice.absent_layer_kinds_count() == 1;
+            assert_eq!(
+                via_seam,
+                via_gap_scalar,
+                "layer_kinds_singular_gap ({via_seam}) must agree with \
+                 absent_layer_kinds_count == 1 (gap={g}) for chain",
+                g = slice.absent_layer_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_gap_agrees_with_absent_layer_kinds_len_equals_one_pointwise() {
+        // Coverage-gap-`Vec` form: `layer_kinds_singular_gap() ==
+        // (absent_layer_kinds().len() == 1)` on every fixture. Pins
+        // the predicate against the `Vec<ConfigSourceKind>` length
+        // form consumers reach for when they already hold the
+        // coverage-gap vector. Peer of
+        // `tiers_singular_gap_agrees_with_absent_tiers_len_equals_one_pointwise`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_singular_gap();
+            let via_vec = slice.absent_layer_kinds().len() == 1;
+            assert_eq!(
+                via_seam, via_vec,
+                "layer_kinds_singular_gap ({via_seam}) must agree with \
+                 absent_layer_kinds().len() == 1 ({via_vec}) for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_gap_agrees_with_present_layer_kinds_count_equals_axis_cardinality_minus_one_pointwise()
+     {
+        // Support-scalar form: `layer_kinds_singular_gap() ==
+        // (present_layer_kinds_count() ==
+        // axis_cardinality::<ConfigSourceKind>() - 1)` on every
+        // fixture. The support-side surfacing of the same boolean —
+        // a singleton-gap chain observes `axis_cardinality - 1` cells
+        // and misses one. Peer of
+        // `tiers_singular_gap_agrees_with_contributing_tiers_count_equals_axis_cardinality_minus_one_pointwise`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_singular_gap();
+            let via_support_scalar = slice.present_layer_kinds_count()
+                == crate::axis_cardinality::<ConfigSourceKind>() - 1;
+            assert_eq!(
+                via_seam,
+                via_support_scalar,
+                "layer_kinds_singular_gap ({via_seam}) must agree with \
+                 present_layer_kinds_count == axis_cardinality - 1 (count={c}) for chain",
+                c = slice.present_layer_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_gap_agrees_with_present_layer_kinds_len_equals_axis_cardinality_minus_one_pointwise()
+     {
+        // Support-`Vec` form: `layer_kinds_singular_gap() ==
+        // (present_layer_kinds().len() == axis_cardinality::<ConfigSourceKind>()
+        // - 1)` on every fixture. Pins the predicate against the
+        // `Vec<ConfigSourceKind>` length form consumers reach for
+        // when they already hold the support vector. Peer of
+        // `tiers_singular_gap_agrees_with_contributing_tiers_len_equals_axis_cardinality_minus_one_pointwise`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_singular_gap();
+            let via_support_vec = slice.present_layer_kinds().len()
+                == crate::axis_cardinality::<ConfigSourceKind>() - 1;
+            assert_eq!(
+                via_seam, via_support_vec,
+                "layer_kinds_singular_gap ({via_seam}) must agree with \
+                 present_layer_kinds().len() == axis_cardinality - 1 ({via_support_vec}) for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_gap_empty_chain_is_false() {
+        // Empty-chain boundary: the empty chain has every cell
+        // unobserved (three, not one), so the singular-gap predicate
+        // reads `false`. Matches `has_singular_gap` reading `false`
+        // on the empty histogram one altitude down. Peer of
+        // `layer_kinds_any_observed_empty_chain_is_false`,
+        // `layer_kinds_full_cover_empty_chain_is_false`, and
+        // `layer_kinds_singular_support_empty_chain_is_false` on the
+        // same polarity of the coverage-support partition, and
+        // orthogonal to `layer_kinds_balanced_empty_chain_is_true` on
+        // the opposite polarity — the five boundaries partition the
+        // empty chain into the polarity quintuple
+        // (`any_observed`=false, `singular_support`=false,
+        // `singular_gap`=false, `balanced`=true, `full_cover`=false).
+        // Peer of `tiers_singular_gap_empty_map_is_false` on the tier
+        // altitude and `kinds_singular_gap_empty_diff_is_false` on
+        // the diff altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(!empty.layer_kinds_singular_gap());
+        assert!(!empty.layer_kinds_any_observed());
+        assert!(empty.layer_kinds_balanced());
+        assert!(!empty.layer_kinds_full_cover());
+        assert!(!empty.layer_kinds_singular_support());
+    }
+
+    #[test]
+    fn layer_kinds_singular_gap_singleton_support_is_false() {
+        // Singleton-support pin: every layer lands on the same kind,
+        // so two cells are unobserved on the three-cell axis (not
+        // one) — `layer_kinds_singular_gap` reads `false`. The row
+        // this predicate isolates from the singleton-support boundary
+        // one cardinality slice over: the strict disjointness
+        // `layer_kinds_singular_gap ⇒ !layer_kinds_singular_support`
+        // (adjacent support cardinalities `1` vs. `2` on this axis).
+        // Peer of `tiers_singular_gap_singleton_support_is_false` on
+        // the tier altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 1);
+        assert!(slice.layer_kinds_singular_support());
+        assert!(!slice.layer_kinds_singular_gap());
+        assert!(slice.layer_kinds_any_observed());
+        assert!(slice.layer_kinds_balanced());
+        assert!(!slice.layer_kinds_full_cover());
+    }
+
+    #[test]
+    fn layer_kinds_singular_gap_two_kind_partial_cover_is_true() {
+        // Two-kind-cover pin: `sample_chain()` observes {Env, File}
+        // (support size 2 out of 3, missing {Defaults}) —
+        // `layer_kinds_singular_gap` reads `true`. The row this
+        // predicate isolates from the surrounding boundaries: direct
+        // witness of the strict subsumption `layer_kinds_singular_gap
+        // ⇒ layer_kinds_any_observed` and the disjointness
+        // `layer_kinds_singular_gap ⇒ !layer_kinds_full_cover` on the
+        // same fixture. Peer of
+        // `tiers_singular_gap_three_tier_partial_cover_is_true` on
+        // the tier altitude.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 2);
+        assert_eq!(slice.absent_layer_kinds().len(), 1);
+        assert!(slice.layer_kinds_singular_gap());
+        assert!(slice.layer_kinds_any_observed());
+        assert!(!slice.layer_kinds_singular_support());
+        assert!(!slice.layer_kinds_full_cover());
+    }
+
+    #[test]
+    fn layer_kinds_singular_gap_uniform_cover_is_false() {
+        // Uniform-cover pin: every kind contributes one layer, so
+        // zero cells are unobserved (not one) —
+        // `layer_kinds_singular_gap` reads `false`. The uniform
+        // three-kind cover is on the `false` side of the singular-
+        // gap boundary and on the `true` side of `full_cover` — the
+        // two boundaries are disjoint at the top of the coverage-
+        // support partition (adjacent support cardinalities
+        // `axis_cardinality - 1` and `axis_cardinality`). Peer of
+        // `tiers_singular_gap_uniform_cover_is_false` on the tier
+        // altitude.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(!slice.layer_kinds_singular_gap());
+        assert!(slice.layer_kinds_any_observed());
+        assert!(slice.layer_kinds_balanced());
+        assert!(slice.layer_kinds_full_cover());
+        assert!(!slice.layer_kinds_singular_support());
+    }
+
+    #[test]
+    fn layer_kinds_singular_gap_implies_layer_kinds_any_observed_pointwise() {
+        // Subsumption pin: `layer_kinds_singular_gap() ⇒
+        // layer_kinds_any_observed()` on every fixture — a chain
+        // missing exactly one cell observes at least
+        // `axis_cardinality - 1 >= 1` cells (ConfigSourceKind carries
+        // three cells). The strict subsumption relates the singleton-
+        // gap boundary and the any-observed boundary as strictly-
+        // tighter cardinality slices of the coverage-support
+        // partition (=axis_cardinality - 1 ⇒ ≥1). Peer of
+        // `tiers_singular_gap_implies_tiers_any_observed_pointwise`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_singular_gap() {
+                assert!(
+                    slice.layer_kinds_any_observed(),
+                    "singular-gap chain must be any-observed",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_gap_implies_not_layer_kinds_full_cover_pointwise() {
+        // Disjointness pin: `layer_kinds_singular_gap() ⇒
+        // !layer_kinds_full_cover()` on every fixture. Full cover has
+        // zero unobserved cells; singular gap has exactly one — the
+        // two boundaries are disjoint on every axis. Peer of
+        // `tiers_singular_gap_implies_not_tiers_full_cover_pointwise`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_singular_gap() {
+                assert!(
+                    !slice.layer_kinds_full_cover(),
+                    "singular-gap chain cannot be full-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_gap_implies_not_layer_kinds_singular_support_pointwise() {
+        // Disjointness pin: `layer_kinds_singular_gap() ⇒
+        // !layer_kinds_singular_support()` on every fixture. On the
+        // three-cell [`ConfigSourceKind`] axis, singleton-support has
+        // support cardinality `1` and singleton-gap has support
+        // cardinality `axis_cardinality - 1 = 2`, so the two are
+        // disjoint. Direct witness of the strict disjointness between
+        // the two coverage-support boundary predicates on a
+        // cardinality-≥3 axis. Peer of
+        // `tiers_singular_gap_implies_not_tiers_singular_support_pointwise`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_singular_gap() {
+                assert!(
+                    !slice.layer_kinds_singular_support(),
+                    "singular-gap chain cannot be singular-support on \
+                     a cardinality >= 3 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_gap_implies_chain_length_at_least_axis_cardinality_minus_one_pointwise()
+    {
+        // Chain-length lower-bound pin: `layer_kinds_singular_gap()
+        // ⇒ self.as_ref().len() >= axis_cardinality::<ConfigSourceKind>()
+        // - 1`. Any chain missing exactly one cell has at least one
+        // layer for each of the `axis_cardinality - 1` observed cells.
+        // Tightened from the `>= 1` bound `layer_kinds_singular_support`
+        // carries to `>= axis_cardinality - 1` since every observed
+        // cell has at least one layer. Peer of
+        // `tiers_singular_gap_implies_leaf_count_at_least_axis_cardinality_minus_one_pointwise`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_singular_gap() {
+                assert!(
+                    slice.len() >= crate::axis_cardinality::<ConfigSourceKind>() - 1,
+                    "singular-gap chain must have at least axis_cardinality - 1 = {} \
+                     layers (len={})",
+                    crate::axis_cardinality::<ConfigSourceKind>() - 1,
+                    slice.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_any_observed_negation_implies_not_layer_kinds_singular_gap_pointwise() {
+        // Contrapositive: `!layer_kinds_any_observed() ⇒
+        // !layer_kinds_singular_gap()` on every axis with cardinality
+        // `>= 2`. If no cell was observed, the coverage gap has size
+        // `axis_cardinality > 1`, so the singleton-gap predicate
+        // fails. Pins the strictly-looser cardinality relation
+        // between the two coverage-support boundaries in the negative
+        // direction. Peer of
+        // `tiers_any_observed_negation_implies_not_tiers_singular_gap_pointwise`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.layer_kinds_any_observed() {
+                assert!(
+                    !slice.layer_kinds_singular_gap(),
+                    "empty-support chain cannot be singular-gap on a \
+                     cardinality >= 2 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_gap_agrees_with_open_coded_exactly_one_zero_walk() {
+        // Parity against the exact hand-rolled singular-gap walk this
+        // lift replaces: walk every cell of the histogram and count
+        // how many carry a zero count; the singleton-gap predicate
+        // reads `true` iff exactly one cell is zero. Mirrors the
+        // parity pins
+        // `tiers_singular_gap_agrees_with_open_coded_exactly_one_zero_walk`
+        // on the tier altitude and
+        // `kinds_singular_gap_agrees_with_open_coded_exactly_one_zero_walk`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_singular_gap();
+            let hist = slice.layer_kind_histogram();
+            let hand_rolled = hist.iter().filter(|(_, c)| *c == 0).count() == 1;
             assert_eq!(via_seam, hand_rolled);
         }
     }
