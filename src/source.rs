@@ -2285,6 +2285,195 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().has_singular_gap()
     }
 
+    /// Returns `true` exactly when this chain's observed
+    /// [`ConfigSourceKind`] support sits *strictly between* the two
+    /// singular-cardinality boundaries — at least *two* observed cells
+    /// *and* at least *two* unobserved cells. The boundary-free interior
+    /// of the coverage-support partition strictly inside the middle leg
+    /// of the coarser coverage trichotomy on the layer-kind sub-axis of
+    /// the chain altitude.
+    ///
+    /// The cube-native answer to *"did this chain land in the strict
+    /// interior of the layer-kind support-cardinality interval — neither
+    /// on a singular boundary nor on a coverage boundary?"*, routed
+    /// through the shared
+    /// [`crate::AxisHistogram::has_strict_partial_cover`] primitive on
+    /// [`Self::layer_kind_histogram`] one altitude down. Consumers
+    /// asking that question — the fleet dashboard strict-interior
+    /// headline over the chain's layer-kind composition, the
+    /// attestation manifest gate *"chain layer-kind support strictly
+    /// interior"*, the alerting policy predicate *"layer-kind support
+    /// strictly interior"* — now route through this named seam instead
+    /// of four previously drifting inline forms:
+    /// `chain.layer_kind_histogram().has_partial_cover() &&
+    /// !chain.layer_kinds_singular_support() &&
+    /// !chain.layer_kinds_singular_gap()` (structural conjunction on
+    /// three named predicates), `1 < chain.present_layer_kinds_count()
+    /// && chain.present_layer_kinds_count() + 1 <
+    /// crate::axis_cardinality::<ConfigSourceKind>()` (support-scalar
+    /// strict-interval with [`crate::axis_cardinality`] turbofish and
+    /// `+ 1 <` arithmetic), `1 < chain.absent_layer_kinds_count() &&
+    /// chain.absent_layer_kinds_count() + 1 <
+    /// crate::axis_cardinality::<ConfigSourceKind>()` (coverage-gap-
+    /// scalar strict-interval on the complementary side), and
+    /// `chain.present_layer_kinds().len() >= 2 &&
+    /// chain.absent_layer_kinds().len() >= 2` (dual-`Vec` at-least-two-
+    /// of-each, allocating two vectors just to peek their lengths).
+    ///
+    /// **Lifts sideways to the layer-kind sub-axis of the chain
+    /// altitude** in the "strict-partial-cover across altitudes"
+    /// projection seeded on the diff altitude by
+    /// [`crate::ConfigDiff::kinds_strict_partial_cover`] and climbed to
+    /// the tier altitude by
+    /// [`crate::ProvenanceMap::tiers_strict_partial_cover`]. Middle-leg-
+    /// corner peer of the five already-closed coverage-support boundary
+    /// families on the same sub-axis
+    /// ([`Self::layer_kinds_balanced`], [`Self::layer_kinds_full_cover`],
+    /// [`Self::layer_kinds_any_observed`],
+    /// [`Self::layer_kinds_singular_support`],
+    /// [`Self::layer_kinds_singular_gap`]) — the last unnamed corner of
+    /// the 5-corner support-cardinality partition on the layer-kind
+    /// sub-axis. The two remaining chain-altitude sub-axes are the
+    /// natural next sideways lifts: `file_formats_strict_partial_cover`
+    /// over [`Self::file_format_histogram`] and
+    /// `env_prefix_kinds_strict_partial_cover` over
+    /// [`Self::env_prefix_kind_histogram`], closing the "strict-partial-
+    /// cover across altitudes" projection across every altitude / sub-
+    /// axis alongside the five previously-closed rows and promoting the
+    /// coverage-support predicate cube from 5×5 to 6×5 corners.
+    ///
+    /// **Cardinality-`3` reachability at the chain layer-kind sub-axis
+    /// — vacuously `false` on every chain.** The strict interior carries
+    /// witnesses only on axes with `axis_cardinality::<A>() >= 4` (the
+    /// strict interval `[2, cardinality - 2]` is empty on cardinality
+    /// `0`, `1`, `2`, or `3`). [`ConfigSourceKind`] carries three cells,
+    /// so `layer_kinds_strict_partial_cover()` reads `false` on every
+    /// chain regardless of the observed support — the empty chain (0
+    /// observed), every singleton-support chain (1 observed), every
+    /// two-kind partial cover (2 observed, gap 1), and every uniform
+    /// three-kind cover (3 observed, gap 0) all read `false`. Matches
+    /// the diff-altitude peer
+    /// [`crate::ConfigDiff::kinds_strict_partial_cover`], where
+    /// [`crate::tiered::DiffLineKind`] also carries three cells and the
+    /// predicate is likewise vacuously `false`. The value of this lift
+    /// at the chain layer-kind sub-axis lies in naming the boundary at
+    /// the surface for downstream consumers reading the recipe — not in
+    /// its witnesses, which are structurally empty by the cardinality-
+    /// conditional-reachability trait-uniform law on
+    /// [`crate::AxisHistogram::has_strict_partial_cover`] one altitude
+    /// down. The remaining two chain sub-axes carry the same vacuously-
+    /// `false` polarity on
+    /// [`crate::env_metadata::EnvMetadataTagKind`] (cardinality `2`) and
+    /// a witness on [`crate::discovery::Format`] (cardinality `4`) — the
+    /// only chain-altitude sub-axis where the strict interior is
+    /// reachable.
+    ///
+    /// **Empty-chain convention** — returns `false` on the empty chain:
+    /// the empty chain has zero observed cells, so the "at least two
+    /// observed" half of the conjunction fails uniformly. Matches
+    /// [`crate::AxisHistogram::has_strict_partial_cover`]'s empty-
+    /// histogram `false` convention one altitude down. The empty chain
+    /// is therefore on the `false` side of the strict-interior boundary
+    /// — matching [`Self::layer_kinds_any_observed`]'s empty-chain
+    /// `false` polarity, [`Self::layer_kinds_full_cover`]'s empty-chain
+    /// `false` polarity, [`Self::layer_kinds_singular_support`]'s empty-
+    /// chain `false` polarity, and [`Self::layer_kinds_singular_gap`]'s
+    /// empty-chain `false` polarity.
+    ///
+    /// **Singleton-support convention** — returns `false` on every
+    /// chain whose observed support is a single [`ConfigSourceKind`]
+    /// cell: the support cardinality is `1` (not `>= 2`), so the "at
+    /// least two observed" half fails uniformly.
+    ///
+    /// **Two-kind partial cover convention** — returns `false` on every
+    /// chain whose observed support is exactly two [`ConfigSourceKind`]
+    /// cells: only one cell is unobserved (three total minus two
+    /// observed equals one unobserved), so the "at least two unobserved"
+    /// half fails uniformly. Direct witness of
+    /// `layer_kinds_singular_gap ⇒ !layer_kinds_strict_partial_cover`
+    /// on the cardinality-`3` [`ConfigSourceKind`] axis.
+    ///
+    /// **Uniform three-kind cover convention** — returns `false` on
+    /// every chain where each [`ConfigSourceKind`] cell was observed at
+    /// least once: zero cells are unobserved, so the "at least two
+    /// unobserved" half fails uniformly. Matches
+    /// [`crate::AxisHistogram::has_strict_partial_cover`]'s full-cover
+    /// `false` convention one altitude down.
+    ///
+    /// # Invariants
+    ///
+    /// - `layer_kinds_strict_partial_cover() ==
+    ///   layer_kind_histogram().has_strict_partial_cover()` — both
+    ///   project the same predicate off the same primitive; the named
+    ///   seam is the cube-native routing of the histogram surface.
+    /// - `layer_kinds_strict_partial_cover() ⇔
+    ///   layer_kind_histogram().has_partial_cover() &&
+    ///   !layer_kinds_singular_support() && !layer_kinds_singular_gap()`
+    ///   always — the defining structural-conjunction form on the
+    ///   existing named-boundary triad: the strict interior is exactly
+    ///   the partial-cover middle leg minus its two singular-cardinality
+    ///   corners.
+    /// - `layer_kinds_strict_partial_cover() == (1 <
+    ///   present_layer_kinds_count() && present_layer_kinds_count() + 1
+    ///   < crate::axis_cardinality::<ConfigSourceKind>())` always — the
+    ///   support-scalar strict-interval form, without allocating the
+    ///   `Vec<ConfigSourceKind>`.
+    /// - `layer_kinds_strict_partial_cover() == (1 <
+    ///   absent_layer_kinds_count() && absent_layer_kinds_count() + 1
+    ///   < crate::axis_cardinality::<ConfigSourceKind>())` always — the
+    ///   coverage-gap-scalar strict-interval form on the complementary
+    ///   side of the same partition.
+    /// - `layer_kinds_strict_partial_cover() ⇒
+    ///   layer_kinds_any_observed()` on every axis with cardinality
+    ///   `>= 4`. On [`ConfigSourceKind`] (cardinality `3`) the
+    ///   antecedent never fires so the implication holds vacuously.
+    ///   Contrapositively, `!layer_kinds_any_observed() ⇒
+    ///   !layer_kinds_strict_partial_cover()`.
+    /// - `layer_kinds_strict_partial_cover() ⇒
+    ///   !layer_kinds_full_cover()` always: the strict interior
+    ///   requires `>= 2` unobserved cells, a full cover has zero
+    ///   unobserved cells.
+    /// - `layer_kinds_strict_partial_cover() ⇒
+    ///   !layer_kinds_singular_support()` always: the strict interior
+    ///   requires `>= 2` observed cells, a singleton support has
+    ///   exactly `1` observed cell.
+    /// - `layer_kinds_strict_partial_cover() ⇒
+    ///   !layer_kinds_singular_gap()` always: the strict interior
+    ///   requires `>= 2` unobserved cells, a singleton gap has exactly
+    ///   `1` unobserved cell.
+    /// - `layer_kinds_strict_partial_cover() ⇒ self.as_ref().len() >= 2`
+    ///   — a chain with `>= 2` observed cells has at least one layer on
+    ///   each observed cell.
+    /// - `(!layer_kinds_any_observed, layer_kinds_singular_support,
+    ///   layer_kinds_strict_partial_cover, layer_kinds_singular_gap,
+    ///   layer_kinds_full_cover)` is pairwise disjoint on every chain —
+    ///   distinct support cardinalities `0`, `1`, `[2, cardinality - 2]`,
+    ///   `cardinality - 1`, `cardinality` never overlap. Together the
+    ///   five predicates partition every chain on the layer-kind sub-
+    ///   axis (exactly one of the five corners fires per chain).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the
+    /// strict-partial-cover scan). Both are `O(n)` in practice since
+    /// the layer-kind axis carries a fixed three-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan short-circuits
+    /// once it has witnessed both *two* zero counts and *two* nonzero
+    /// counts (bounded at four witness cells visited on any strict-
+    /// interior histogram — unreachable on cardinality-`3` axes),
+    /// strictly tighter than the four documented open-coded surfaces —
+    /// no `Vec<ConfigSourceKind>` allocation, no
+    /// [`crate::axis_cardinality`] turbofish, no dual scalar equality
+    /// against a magic axis-cardinality-minus-one constant.
+    #[must_use]
+    fn layer_kinds_strict_partial_cover(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().has_strict_partial_cover()
+    }
+
     /// Dense per-format tally of the chain's [`ConfigSource::File`]
     /// layers over the [`crate::discovery::Format`] axis — the typed
     /// histogram every per-format dashboard, attestation manifest
@@ -19689,6 +19878,429 @@ mod tests {
             let hist = slice.layer_kind_histogram();
             let hand_rolled = hist.iter().filter(|(_, c)| *c == 0).count() == 1;
             assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::layer_kinds_strict_partial_cover —
+    //      strict-partial-cover-layer-kinds boolean predicate on the
+    //      layer-kind sub-axis of the chain altitude, lifting the
+    //      "strict-partial-cover across altitudes" projection sideways
+    //      from the tier altitude
+    //      (`ProvenanceMap::tiers_strict_partial_cover`) into the first
+    //      chain sub-axis. Routed through the shared
+    //      `AxisHistogram::has_strict_partial_cover` primitive one
+    //      altitude down. Vacuously `false` on every chain by the
+    //      cardinality-`3` reachability convention — `ConfigSourceKind`
+    //      carries three cells so the strict interval
+    //      `[2, cardinality - 2] = [2, 1]` is empty. ----
+
+    #[test]
+    fn layer_kinds_strict_partial_cover_matches_layer_kind_histogram_has_strict_partial_cover_pointwise()
+     {
+        // Routing pin: `layer_kinds_strict_partial_cover` routes through
+        // `layer_kind_histogram().has_strict_partial_cover()`, so the
+        // two seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Layer-
+        // kind sub-axis peer of
+        // `tiers_strict_partial_cover_matches_tier_histogram_has_strict_partial_cover_pointwise`
+        // on the tier altitude and
+        // `kinds_strict_partial_cover_matches_kind_histogram_has_strict_partial_cover_pointwise`
+        // on the diff altitude, in the "strict-partial-cover across
+        // altitudes" projection.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.layer_kind_histogram().has_strict_partial_cover();
+            assert_eq!(slice.layer_kinds_strict_partial_cover(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn layer_kinds_strict_partial_cover_matches_structural_conjunction_pointwise() {
+        // Defining structural-conjunction form:
+        // `layer_kinds_strict_partial_cover() ⇔
+        // layer_kind_histogram().has_partial_cover() &&
+        // !layer_kinds_singular_support() &&
+        // !layer_kinds_singular_gap()` on every fixture. Pins the
+        // predicate against the three-way conjunction on the existing
+        // named-boundary triad consumers reach for when they open-code
+        // the strict interior in structural terms. Peer of
+        // `tiers_strict_partial_cover_matches_structural_conjunction_pointwise`
+        // on the tier altitude and
+        // `kinds_strict_partial_cover_matches_structural_conjunction_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_strict_partial_cover();
+            let via_structural = slice.layer_kind_histogram().has_partial_cover()
+                && !slice.layer_kinds_singular_support()
+                && !slice.layer_kinds_singular_gap();
+            assert_eq!(
+                via_seam, via_structural,
+                "layer_kinds_strict_partial_cover ({via_seam}) must agree with \
+                 has_partial_cover && !singular_support && !singular_gap ({via_structural})",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_strict_partial_cover_agrees_with_present_layer_kinds_count_strict_interval_pointwise()
+     {
+        // Support-scalar strict-interval form:
+        // `layer_kinds_strict_partial_cover() == (1 <
+        // present_layer_kinds_count() && present_layer_kinds_count() + 1
+        // < axis_cardinality::<ConfigSourceKind>())` on every fixture.
+        // The support-side surfacing of the same boolean, without
+        // allocating the `Vec<ConfigSourceKind>`. Peer of
+        // `tiers_strict_partial_cover_agrees_with_contributing_tiers_count_strict_interval_pointwise`
+        // on the tier altitude and
+        // `kinds_strict_partial_cover_agrees_with_present_kinds_count_strict_interval_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_strict_partial_cover();
+            let count = slice.present_layer_kinds_count();
+            let via_interval =
+                1 < count && count + 1 < crate::axis_cardinality::<ConfigSourceKind>();
+            assert_eq!(
+                via_seam, via_interval,
+                "layer_kinds_strict_partial_cover ({via_seam}) must agree with \
+                 1 < present_layer_kinds_count && present_layer_kinds_count + 1 < axis_cardinality \
+                 (count={count})",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_strict_partial_cover_agrees_with_absent_layer_kinds_count_strict_interval_pointwise()
+     {
+        // Coverage-gap-scalar strict-interval form:
+        // `layer_kinds_strict_partial_cover() == (1 <
+        // absent_layer_kinds_count() && absent_layer_kinds_count() + 1
+        // < axis_cardinality::<ConfigSourceKind>())` on every fixture.
+        // The coverage-gap-side surfacing of the same boolean, without
+        // allocating the `Vec<ConfigSourceKind>`. Complementary to the
+        // support-scalar strict-interval form on the same partition via
+        // the `present_layer_kinds_count + absent_layer_kinds_count ==
+        // axis_cardinality` invariant. Peer of
+        // `tiers_strict_partial_cover_agrees_with_absent_tiers_count_strict_interval_pointwise`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_strict_partial_cover();
+            let gap = slice.absent_layer_kinds_count();
+            let via_interval = 1 < gap && gap + 1 < crate::axis_cardinality::<ConfigSourceKind>();
+            assert_eq!(
+                via_seam, via_interval,
+                "layer_kinds_strict_partial_cover ({via_seam}) must agree with \
+                 1 < absent_layer_kinds_count && absent_layer_kinds_count + 1 < axis_cardinality \
+                 (gap={gap})",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_strict_partial_cover_agrees_with_dual_vec_at_least_two_of_each_pointwise() {
+        // Dual-`Vec` at-least-two-of-each form:
+        // `layer_kinds_strict_partial_cover() ==
+        // (present_layer_kinds().len() >= 2 &&
+        // absent_layer_kinds().len() >= 2)` on every fixture. Pins the
+        // predicate against the dual-vector form consumers reach for
+        // when they already hold both support and coverage-gap vectors
+        // — the allocating-both-vectors open-coding this lift replaces.
+        // Peer of
+        // `tiers_strict_partial_cover_agrees_with_dual_vec_at_least_two_of_each_pointwise`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_strict_partial_cover();
+            let via_vec =
+                slice.present_layer_kinds().len() >= 2 && slice.absent_layer_kinds().len() >= 2;
+            assert_eq!(
+                via_seam, via_vec,
+                "layer_kinds_strict_partial_cover ({via_seam}) must agree with \
+                 present_layer_kinds().len() >= 2 && absent_layer_kinds().len() >= 2 ({via_vec})",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_strict_partial_cover_chain_altitude_is_vacuously_false_pointwise() {
+        // Cardinality-conditional reachability pin at the chain layer-
+        // kind sub-axis: `!layer_kinds_strict_partial_cover()` on every
+        // chain fixture. `ConfigSourceKind` carries three cells, so the
+        // strict interval `[2, cardinality - 2] = [2, 1]` on the
+        // support-cardinality scalar is empty — no chain can observe
+        // `>= 2` cells AND leave `>= 2` cells unobserved simultaneously.
+        // Trait-uniform pin of the lift's vacuously-`false` polarity at
+        // the chain layer-kind sub-axis, matching
+        // `AxisHistogram::has_strict_partial_cover`'s cardinality-`3`
+        // scan one altitude down and the diff-altitude peer
+        // `kinds_strict_partial_cover_diff_altitude_is_vacuously_false_pointwise`
+        // (also on cardinality `3`). Distinguishes this chain sub-axis
+        // from the tier altitude and the chain file-format sub-axis,
+        // where cardinality `>= 4` opens a strict-interior witness.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                !slice.layer_kinds_strict_partial_cover(),
+                "layer_kinds_strict_partial_cover must read false on every \
+                 ConfigSourceKind (cardinality-3) chain — the strict interior \
+                 is unreachable on cardinality-`<= 3` axes",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_strict_partial_cover_empty_chain_is_false() {
+        // Empty-chain boundary: the empty chain observes zero cells, so
+        // the "at least two observed" half of the conjunction fails
+        // uniformly — `layer_kinds_strict_partial_cover` reads `false`.
+        // Matches `has_strict_partial_cover` reading `false` on the
+        // empty histogram one altitude down. Peer of
+        // `layer_kinds_any_observed_empty_chain_is_false`,
+        // `layer_kinds_full_cover_empty_chain_is_false`,
+        // `layer_kinds_singular_support_empty_chain_is_false`, and
+        // `layer_kinds_singular_gap_empty_chain_is_false` on the same
+        // polarity of the coverage-support partition. Peer of
+        // `tiers_strict_partial_cover_empty_map_is_false` on the tier
+        // altitude and
+        // `kinds_strict_partial_cover_empty_diff_is_false` on the diff
+        // altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(!empty.layer_kinds_strict_partial_cover());
+        assert!(!empty.layer_kinds_any_observed());
+        assert!(!empty.layer_kinds_singular_support());
+        assert!(!empty.layer_kinds_singular_gap());
+        assert!(!empty.layer_kinds_full_cover());
+    }
+
+    #[test]
+    fn layer_kinds_strict_partial_cover_singleton_support_is_false() {
+        // Singleton-support pin: every layer lands on the same kind, so
+        // the support cardinality is `1` (not `>= 2`) — the "at least
+        // two observed" half fails uniformly. Direct witness of the
+        // strict disjointness `layer_kinds_singular_support ⇒
+        // !layer_kinds_strict_partial_cover`. Peer of
+        // `tiers_strict_partial_cover_singleton_support_is_false` on
+        // the tier altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 1);
+        assert!(slice.layer_kinds_singular_support());
+        assert!(!slice.layer_kinds_strict_partial_cover());
+    }
+
+    #[test]
+    fn layer_kinds_strict_partial_cover_two_kind_partial_cover_is_false() {
+        // Two-kind-cover pin: `sample_chain()` observes {Env, File}
+        // (support size 2 out of 3, missing {Defaults}) — the coverage
+        // gap is `1` (not `>= 2`), so the "at least two unobserved"
+        // half fails uniformly and `layer_kinds_strict_partial_cover`
+        // reads `false`. Direct witness of the strict disjointness
+        // `layer_kinds_singular_gap ⇒
+        // !layer_kinds_strict_partial_cover` on the cardinality-`3`
+        // axis (the two boundaries occupy adjacent, non-overlapping
+        // support-cardinality slices). Distinguishes the chain layer-
+        // kind sub-axis from the tier altitude, where the two-tier
+        // partial cover falls on the strict interior (cardinality-`4`
+        // reachability opens a strict-interior witness at support
+        // cardinality `2`).
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 2);
+        assert_eq!(slice.absent_layer_kinds().len(), 1);
+        assert!(slice.layer_kinds_singular_gap());
+        assert!(!slice.layer_kinds_strict_partial_cover());
+    }
+
+    #[test]
+    fn layer_kinds_strict_partial_cover_uniform_cover_is_false() {
+        // Uniform-cover pin: every kind contributes at least one layer,
+        // so zero cells are unobserved — the "at least two unobserved"
+        // half fails uniformly. Direct witness of the strict
+        // disjointness `layer_kinds_full_cover ⇒
+        // !layer_kinds_strict_partial_cover` on every axis. Peer of
+        // `tiers_strict_partial_cover_uniform_cover_is_false` on the
+        // tier altitude and
+        // `kinds_strict_partial_cover_uniform_cover_is_false` on the
+        // diff altitude.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kinds_full_cover());
+        assert!(!slice.layer_kinds_strict_partial_cover());
+    }
+
+    #[test]
+    fn layer_kinds_strict_partial_cover_implies_layer_kinds_any_observed_pointwise() {
+        // Subsumption pin: `layer_kinds_strict_partial_cover() ⇒
+        // layer_kinds_any_observed()` on every axis with cardinality
+        // `>= 4`. On the cardinality-`3` `ConfigSourceKind` axis the
+        // antecedent never fires so the implication holds vacuously;
+        // the pin still walks every fixture to catch any future
+        // implementation that would erroneously fire the antecedent.
+        // Peer of
+        // `tiers_strict_partial_cover_implies_tiers_any_observed_pointwise`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_strict_partial_cover() {
+                assert!(
+                    slice.layer_kinds_any_observed(),
+                    "strict-partial-cover chain must be any-observed",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_strict_partial_cover_implies_not_layer_kinds_singular_support_pointwise() {
+        // Disjointness pin: `layer_kinds_strict_partial_cover() ⇒
+        // !layer_kinds_singular_support()` on every axis. A strict-
+        // interior chain has `>= 2` observed cells; a singleton support
+        // has exactly `1`. Peer of
+        // `tiers_strict_partial_cover_implies_not_tiers_singular_support_pointwise`
+        // on the tier altitude and
+        // `kinds_strict_partial_cover_implies_not_kinds_singular_support_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_strict_partial_cover() {
+                assert!(
+                    !slice.layer_kinds_singular_support(),
+                    "strict-partial-cover chain cannot be singular-support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_strict_partial_cover_implies_not_layer_kinds_singular_gap_pointwise() {
+        // Disjointness pin: `layer_kinds_strict_partial_cover() ⇒
+        // !layer_kinds_singular_gap()` on every axis. A strict-interior
+        // chain has `>= 2` unobserved cells; a singleton gap has
+        // exactly `1`. Peer of
+        // `tiers_strict_partial_cover_implies_not_tiers_singular_gap_pointwise`
+        // on the tier altitude and
+        // `kinds_strict_partial_cover_implies_not_kinds_singular_gap_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_strict_partial_cover() {
+                assert!(
+                    !slice.layer_kinds_singular_gap(),
+                    "strict-partial-cover chain cannot be singular-gap",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_strict_partial_cover_implies_not_layer_kinds_full_cover_pointwise() {
+        // Disjointness pin: `layer_kinds_strict_partial_cover() ⇒
+        // !layer_kinds_full_cover()` on every axis. A strict-interior
+        // chain has `>= 2` unobserved cells; a full cover has zero.
+        // Peer of
+        // `tiers_strict_partial_cover_implies_not_tiers_full_cover_pointwise`
+        // on the tier altitude and
+        // `kinds_strict_partial_cover_implies_not_kinds_full_cover_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_strict_partial_cover() {
+                assert!(
+                    !slice.layer_kinds_full_cover(),
+                    "strict-partial-cover chain cannot be full-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_any_observed_negation_implies_not_layer_kinds_strict_partial_cover_pointwise() {
+        // Contrapositive: `!layer_kinds_any_observed() ⇒
+        // !layer_kinds_strict_partial_cover()` on every axis. If no
+        // cell was observed, the "at least two observed" half of the
+        // conjunction fails uniformly — the strict-interior predicate
+        // fails. Peer of
+        // `tiers_any_observed_negation_implies_not_tiers_strict_partial_cover_pointwise`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.layer_kinds_any_observed() {
+                assert!(
+                    !slice.layer_kinds_strict_partial_cover(),
+                    "empty-support chain cannot be strict-partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_strict_partial_cover_agrees_with_open_coded_dual_at_least_two_walk() {
+        // Parity against the exact hand-rolled strict-partial-cover
+        // walk this lift replaces: walk every cell of the histogram
+        // and count how many carry a zero count and how many carry a
+        // positive count; the strict-partial-cover predicate reads
+        // `true` iff at least two cells are zero AND at least two
+        // cells are positive. On the cardinality-`3` `ConfigSourceKind`
+        // axis this is unreachable — both sides read `false` on every
+        // fixture. Peer of
+        // `tiers_strict_partial_cover_agrees_with_open_coded_dual_at_least_two_walk`
+        // on the tier altitude and
+        // `kinds_strict_partial_cover_agrees_with_open_coded_dual_at_least_two_walk`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_strict_partial_cover();
+            let hist = slice.layer_kind_histogram();
+            let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
+            let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
+            let hand_rolled = zeros >= 2 && nonzeros >= 2;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn layer_kinds_partition_covers_every_chain_pointwise() {
+        // Trichotomy closure pin at the chain layer-kind sub-axis:
+        // exactly one of `(!layer_kinds_any_observed,
+        // layer_kinds_singular_support,
+        // layer_kinds_strict_partial_cover, layer_kinds_singular_gap,
+        // layer_kinds_full_cover)` fires per chain on every axis with
+        // cardinality `>= 3`. With this lift the 5-corner support-
+        // cardinality partition is jointly exhaustive AND pairwise
+        // disjoint on every chain fixture. On the cardinality-`3`
+        // `ConfigSourceKind` axis the strict-interior corner is
+        // structurally empty, so every chain fires exactly one of the
+        // other four corners — the pin still enforces the exclusivity
+        // discipline (no chain fires two corners simultaneously). Peer
+        // of `tiers_partition_covers_every_map_pointwise` on the tier
+        // altitude and `kinds_partition_covers_every_diff_pointwise`
+        // on the diff altitude in the same closed-partition shape.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let empty = !slice.layer_kinds_any_observed();
+            let sup = slice.layer_kinds_singular_support();
+            let strict = slice.layer_kinds_strict_partial_cover();
+            let gap = slice.layer_kinds_singular_gap();
+            let full = slice.layer_kinds_full_cover();
+            let fires =
+                u8::from(empty) + u8::from(sup) + u8::from(strict) + u8::from(gap) + u8::from(full);
+            assert_eq!(
+                fires, 1,
+                "exactly one of (empty, singular_support, strict_partial_cover, \
+                 singular_gap, full_cover) must fire per chain — observed {fires}",
+            );
         }
     }
 
