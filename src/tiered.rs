@@ -6097,6 +6097,270 @@ impl ConfigDiff {
     pub fn kinds_high_support(&self) -> bool {
         self.kind_histogram().has_high_support()
     }
+
+    /// `true` exactly when this diff's observed [`DiffLineKind`]
+    /// support sits on a **singular near-boundary** — either exactly
+    /// one observed cell ([`Self::kinds_singular_support`]) or
+    /// exactly one unobserved cell ([`Self::kinds_singular_gap`]).
+    /// The **singular-diff-kinds boolean predicate** on the diff
+    /// altitude, the singular near-boundary corner of the distance-
+    /// from-boundary ternary partition
+    /// `(has_boundary, has_singular, has_strict_partial_cover)` — the
+    /// middle leg of the distance ternary, folding the two singular-
+    /// cardinality boundaries into a single named one-cell-off-
+    /// boundary corner without discarding the finer resolution below.
+    /// Routes through [`crate::AxisHistogram::has_singular`] one
+    /// altitude down: the single-pass short-circuiting scan over the
+    /// fixed-cardinality counts vector that short-circuits the moment
+    /// both a *second* zero cell *and* a *second* nonzero cell have
+    /// been witnessed, bounded at four witness cells — strictly
+    /// tighter than any of the four documented open-coded surfaces
+    /// one seam over.
+    ///
+    /// The **singular-diff-kinds peer** of the four documented
+    /// surface forms consumers previously re-derived inline:
+    /// `diff.kinds_singular_support() || diff.kinds_singular_gap()`
+    /// (the defining union-of-singular-boundaries disjunction on the
+    /// two named histogram-side peers — two method calls across two
+    /// named predicates with a boolean or), `diff.kinds_any_observed()
+    /// && !diff.kinds_full_cover()` (the partial-cover form on the
+    /// two named coverage-boundary peers, which reads
+    /// `has_partial_cover` on the cardinality-`3` axis where the
+    /// strict-interior leg is vacuous — the equivalence collapses to
+    /// the singular-only middle leg), `diff.present_kinds_count() ==
+    /// 1 || diff.present_kinds_count() ==
+    /// crate::axis_cardinality::<DiffLineKind>() - 1` (the support-
+    /// scalar dual-equality form, which pays for a full-axis scan and
+    /// equates a `usize` against two magic thresholds with a
+    /// turbofish), and `diff.present_kinds_count() == 1 ||
+    /// diff.absent_kinds_count() == 1` (the dual-scalar equality
+    /// form on the two named cardinality peers). The four forms
+    /// drifted in subtle ways at every consumer site (disjunction
+    /// across two singular peers vs. partial-cover-minus-strict-
+    /// interior vs. two-equality dual-interval vs. dual-scalar-
+    /// equality). This lift names the singular-diff-kinds predicate
+    /// directly at the diff-altitude surface with a single-pass
+    /// short-circuiting scan — the typed boolean every operator-facing
+    /// *"did the diff land one cell off the coverage boundary?"*
+    /// check reads off as a single method call.
+    ///
+    /// The diff-altitude singular-predicate peer that **seeds the
+    /// "singular across altitudes" projection** — the middle-leg
+    /// corner of the distance-from-boundary ternary partition
+    /// `(has_boundary, has_singular, has_strict_partial_cover)`, a
+    /// fresh vertical opened above the just-closed magnitude-
+    /// direction ternary `(low_support, strict_partial_cover,
+    /// high_support)`. The natural next lifts climb to the tier
+    /// altitude ([`crate::ProvenanceMap::tiers_singular`] over
+    /// [`Self::tier_histogram`]) and sideways along the chain
+    /// altitude's three sub-axes ([`crate::ConfigSourceChain::layer_kinds_singular`],
+    /// [`crate::ConfigSourceChain::file_formats_singular`],
+    /// [`crate::ConfigSourceChain::env_prefix_kinds_singular`] over
+    /// the corresponding chain histograms). The pattern is the same
+    /// at every altitude / sub-axis: fuse the four documented open-
+    /// coded surface forms (union-of-singular-boundaries disjunction,
+    /// partial-cover-minus-strict-interior, support-scalar dual-
+    /// equality, dual-scalar equality) into a single boolean
+    /// predicate named at the surface, routed through the shared
+    /// [`crate::AxisHistogram::has_singular`] primitive one altitude
+    /// down. Complements the magnitude-direction ternary's two
+    /// magnitude corners already seeded across the two prior rows
+    /// with a new *distance-from-boundary* row — the ternary
+    /// partition `(has_boundary, has_singular, has_strict_partial_cover)`
+    /// folds the 5-corner support-cardinality partition into three
+    /// named legs along the orthogonal axis, naming the singular
+    /// near-boundary corner without discarding the finer resolution
+    /// below.
+    ///
+    /// **Cardinality-`>= 2` reachability at the diff altitude — the
+    /// singular near-boundary carries non-vacuous witnesses.** The
+    /// singular near-boundary carries witnesses on every axis with
+    /// `axis_cardinality::<A>() >= 2` (the singleton fixture always
+    /// witnesses singular via the `has_singular_support` disjunct).
+    /// [`DiffLineKind`] carries three cells, so `kinds_singular()`
+    /// reads `true` on every singleton-support diff (support size `1`
+    /// — `kinds_singular_support` fires) and on every two-kind
+    /// partial cover (support size `2 = cardinality - 1` —
+    /// `kinds_singular_gap` fires), and `false` on the empty diff
+    /// (three unobserved cells — neither disjunct fires) and on
+    /// every uniform three-kind cover (three observed cells — neither
+    /// disjunct fires). Non-vacuous on both sides of the singular
+    /// near-boundary at the diff altitude, in contrast to the
+    /// vacuously-`false` [`Self::kinds_strict_partial_cover`] seed at
+    /// the same altitude — the diff altitude witnesses two of the
+    /// three distance corners with content and folds the third away
+    /// via the cardinality-`3` reduction.
+    ///
+    /// **Empty-diff convention** — returns `false` on the empty diff:
+    /// the empty diff observes zero cells, so all three cells are
+    /// unobserved — neither `kinds_singular_support` (nonzeros == 1)
+    /// nor `kinds_singular_gap` (zeros == 1) fires. Matches
+    /// [`crate::AxisHistogram::has_singular`]'s empty-histogram
+    /// `false` convention one altitude down on every cardinality-
+    /// `>= 2` axis. The empty diff sits on the disjoint
+    /// [`Self::kinds_any_observed`]-negation boundary at the bottom
+    /// coverage boundary, one of the two boundary corners carried by
+    /// `has_boundary` in the distance ternary.
+    ///
+    /// **Singleton-support convention** — returns `true` on every
+    /// diff whose observed support is a single [`DiffLineKind`]: the
+    /// support cardinality is `1` (two unobserved cells on the
+    /// cardinality-`3` axis), so `kinds_singular_support` fires and
+    /// the disjunction holds via that disjunct. Every diff of only-
+    /// `Removed`, only-`Added`, or only-`Context` lines is a witness
+    /// on the `true` side. The singleton-support fixture partitions
+    /// the eight coverage-support boundaries with (`any_observed`=true,
+    /// `singular_support`=true, `singular_gap`=false, `balanced`=true,
+    /// `full_cover`=false, `strict_partial_cover`=false,
+    /// `low_support`=true, `high_support`=false, `singular`=true).
+    ///
+    /// **Two-kind partial cover convention** — returns `true` on
+    /// every diff whose observed support is exactly two
+    /// [`DiffLineKind`] cells: the support cardinality is `2` (one
+    /// unobserved cell on the cardinality-`3` axis), so
+    /// `kinds_singular_gap` fires and the disjunction holds via that
+    /// disjunct. A diff of only-`Removed`+`Added` lines is a witness
+    /// on the `true` side: `Context` is the singleton gap. The two-
+    /// kind partial cover fixture partitions the eight coverage-
+    /// support boundaries with (`any_observed`=true,
+    /// `singular_support`=false, `singular_gap`=true, `balanced`=?,
+    /// `full_cover`=false, `strict_partial_cover`=false,
+    /// `low_support`=false, `high_support`=true, `singular`=true).
+    /// Direct witness of the strict subsumption
+    /// `kinds_singular_gap ⇒ kinds_singular` on every axis via the
+    /// singleton-gap disjunct of the defining union.
+    ///
+    /// **Uniform three-kind cover convention** — returns `false` on
+    /// every diff where each [`DiffLineKind`] cell was observed at
+    /// least once: the support cardinality is `3` (no unobserved
+    /// cells), so `kinds_singular_gap` fails (`zeros == 0 ≠ 1`) and
+    /// `kinds_singular_support` fails (`nonzeros == 3 ≠ 1`) — the
+    /// full-cover boundary sits at the top of the coverage interval,
+    /// one of the two boundary corners carried by `has_boundary` in
+    /// the distance ternary.
+    ///
+    /// # Invariants
+    ///
+    /// - `kinds_singular() == kind_histogram().has_singular()` —
+    ///   both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram
+    ///   surface.
+    /// - `kinds_singular() ⇔ kinds_singular_support() ||
+    ///   kinds_singular_gap()` — the defining union-of-singular-
+    ///   boundaries disjunction on the two named histogram-side
+    ///   peers. The singular near-boundary corner folds the two
+    ///   singular-cardinality boundaries into one named one-cell-
+    ///   off-boundary corner without discarding the finer resolution
+    ///   below.
+    /// - `kinds_singular() == (kinds_any_observed() &&
+    ///   !kinds_full_cover())` on every axis with cardinality `<= 3`
+    ///   (every diff-altitude implementor today — [`DiffLineKind`]
+    ///   carries three cells): the strict-interior leg vanishes on
+    ///   cardinality-`<= 3` axes, so the middle-leg singular corner
+    ///   equals the partial-cover fold. On cardinality-`>= 4` axes
+    ///   the partial-cover fold would strictly contain the singular
+    ///   near-boundary via the strict-interior refinement, so the
+    ///   equivalence lifts to `kinds_singular() ⇔ (kinds_any_observed()
+    ///   && !kinds_full_cover()) && !kinds_strict_partial_cover()`
+    ///   verbatim.
+    /// - `kinds_singular() == (present_kinds_count() == 1 ||
+    ///   present_kinds_count() ==
+    ///   crate::axis_cardinality::<DiffLineKind>() - 1)` always —
+    ///   the support-scalar dual-equality surface, without allocating
+    ///   either `Vec<DiffLineKind>`. On the cardinality-`2` corner
+    ///   the two equalities coincide (both fire on the singleton
+    ///   support), so the disjunction reduces to a single equality;
+    ///   on cardinality-`>= 3` axes the two equalities are disjoint
+    ///   and the disjunction reads the true dual.
+    /// - `kinds_singular() == (present_kinds_count() == 1 ||
+    ///   absent_kinds_count() == 1)` always — the dual-scalar
+    ///   equality form on the two named cardinality peers, the
+    ///   `distinct_cells + unobserved_cells == axis_cardinality`
+    ///   invariant restated. Peer of the histogram-side dual-scalar
+    ///   equality form `hist.distinct_cells() == 1 ||
+    ///   hist.unobserved_cells() == 1` pinned one altitude down.
+    /// - `kinds_singular_support() ⇒ kinds_singular()` always — the
+    ///   subsumption via the `kinds_singular_support` disjunct of
+    ///   the defining union. The singleton-support boundary always
+    ///   sits inside the singular near-boundary corner.
+    /// - `kinds_singular_gap() ⇒ kinds_singular()` always — the
+    ///   subsumption via the `kinds_singular_gap` disjunct of the
+    ///   defining union. The singleton-gap boundary always sits
+    ///   inside the singular near-boundary corner.
+    /// - `kinds_singular() ⇒ kinds_any_observed()` on every axis with
+    ///   cardinality `>= 2`: both disjuncts require at least one
+    ///   observed cell (`singular_support` has nonzeros `>= 1`;
+    ///   `singular_gap` has nonzeros `= cardinality - 1 >= 1`).
+    ///   Empty-diff subsumption on the bottom coverage boundary.
+    /// - `kinds_singular() ⇒ !kinds_full_cover()` on every axis with
+    ///   cardinality `>= 2`: `kinds_singular_support` has support `1
+    ///   < cardinality`, `kinds_singular_gap` has support
+    ///   `cardinality - 1 < cardinality`. Full-cover disjointness on
+    ///   the top coverage boundary.
+    /// - `kinds_singular() ⇒ !kinds_strict_partial_cover()` always —
+    ///   the two named corners of the distance-from-boundary ternary
+    ///   are pairwise disjoint. Vacuously true at the diff altitude
+    ///   (the consequent never fires on cardinality-`3`
+    ///   [`DiffLineKind`]), but the shape of the implication is
+    ///   pinned here so downstream lifts at cardinality-`>= 4`
+    ///   altitudes inherit it verbatim. Peer of the histogram-side
+    ///   `axis_histogram_has_boundary_has_singular_has_strict_partial_cover_form_strict_ternary_partition_for_every_closed_axis_implementor`
+    ///   partition law one altitude down.
+    /// - `!kinds_any_observed() || kinds_full_cover() ⇒
+    ///   !kinds_singular()` on every axis with cardinality `>= 2`:
+    ///   the two boundary corners carried by `has_boundary` in the
+    ///   distance ternary are disjoint from the singular near-
+    ///   boundary corner. Direct pin of the partition edge from the
+    ///   boundary leg into the singular leg — the two singular
+    ///   cardinalities (`1` and `cardinality - 1`) sit strictly
+    ///   between the two boundary cardinalities (`0` and
+    ///   `cardinality`).
+    /// - `(!kinds_any_observed() || kinds_full_cover(), kinds_singular,
+    ///   kinds_strict_partial_cover)` is a strict ternary partition
+    ///   on every axis with cardinality `>= 2` (every diff-altitude
+    ///   implementor today). Exactly one leg fires on every diff —
+    ///   the distance-from-boundary ternary of the 5-corner support-
+    ///   cardinality partition, folding the two boundary corners
+    ///   into `has_boundary`, the two singular near-boundary corners
+    ///   into `has_singular`, and the boundary-free strict interior
+    ///   into `has_strict_partial_cover`. At the diff altitude the
+    ///   `has_strict_partial_cover` leg is vacuously `false`, so the
+    ///   ternary reduces to the dual partition
+    ///   `(!kinds_any_observed || kinds_full_cover, kinds_singular)`
+    ///   pointwise — every diff lands on exactly one of the boundary
+    ///   corner or the singular near-boundary corner.
+    /// - **Cross-surface bridge law** —
+    ///   `diff.kinds_singular() ==
+    ///    diff.kind_histogram().support_cardinality_class().is_singular()`
+    ///   always. The class-side projection lands on
+    ///   [`crate::SupportCardinalityClass::SingularSupport`] or
+    ///   [`crate::SupportCardinalityClass::SingularGap`] exactly
+    ///   when the histogram-side disjunction fires, and
+    ///   [`crate::SupportCardinalityClass::is_singular`] reads
+    ///   `true` on either variant. Peer of the histogram-side bridge
+    ///   `axis_histogram_has_singular_agrees_with_class_is_singular_for_every_closed_axis_implementor`
+    ///   one altitude down.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the
+    /// singular scan). Both are `O(n)` in practice since the diff-
+    /// cell axis carries a fixed three-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan short-circuits
+    /// the *moment* both a *second* zero count *and* a *second*
+    /// nonzero count have been witnessed (bounded at four witness
+    /// cells visited on any strict-interior histogram), strictly
+    /// tighter than the four documented open-coded surfaces — no
+    /// boolean disjunction across two named predicates, no two full
+    /// walks of the counts vector across the
+    /// `kinds_singular_support` + `kinds_singular_gap` disjunction,
+    /// no [`crate::axis_cardinality`] turbofish with `- 1` arithmetic
+    /// against a magic threshold.
+    #[must_use]
+    pub fn kinds_singular(&self) -> bool {
+        self.kind_histogram().has_singular()
+    }
 }
 
 #[cfg(test)]
@@ -11809,6 +12073,375 @@ mod tests {
             let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
             let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
             let hand_rolled = zeros <= 1 && nonzeros >= 2;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn kinds_singular_matches_kind_histogram_has_singular_pointwise() {
+        // Routing pin: `kinds_singular` routes through
+        // `kind_histogram().has_singular()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Diff-altitude
+        // singular-predicate seed of the new "singular across
+        // altitudes" projection — middle-leg-corner peer of the
+        // distance-from-boundary ternary partition
+        // `(has_boundary, has_singular, has_strict_partial_cover)`,
+        // opening a fresh vertical above the just-closed magnitude-
+        // direction ternary `(low_support, strict_partial_cover,
+        // high_support)`.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().has_singular();
+            assert_eq!(diff.kinds_singular(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kinds_singular_matches_defining_union_of_singular_boundaries_pointwise() {
+        // Defining union-of-singular-boundaries form:
+        // `kinds_singular() ⇔ kinds_singular_support() ||
+        // kinds_singular_gap()`. Pins the predicate against the two-
+        // way disjunction on two named histogram-side peers consumers
+        // reach for when they open-code the singular near-boundary
+        // corner as a boolean fold over the two singular-cardinality
+        // boundaries. The middle-leg-fold peer of the two singular
+        // boundaries.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_singular();
+            let via_union = diff.kinds_singular_support() || diff.kinds_singular_gap();
+            assert_eq!(
+                via_seam, via_union,
+                "kinds_singular ({via_seam}) must agree with \
+                 kinds_singular_support || kinds_singular_gap ({via_union})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_singular_agrees_with_any_observed_and_not_full_cover_on_cardinality_three_pointwise() {
+        // Partial-cover-minus-strict-interior surface, reduced on the
+        // cardinality-`3` axis: `kinds_singular() == (kinds_any_observed()
+        // && !kinds_full_cover())` on every fixture. On
+        // cardinality-`<= 3` axes the strict-interior leg vanishes
+        // (the interval `[2, cardinality - 2] = [2, 1]` is empty), so
+        // the middle-leg singular corner equals the partial-cover
+        // fold `has_partial_cover = has_any_observed && !is_full_cover`.
+        // On cardinality-`>= 4` axes the equivalence lifts to
+        // `kinds_singular ⇔ (kinds_any_observed && !kinds_full_cover)
+        // && !kinds_strict_partial_cover` verbatim — the reduction
+        // pinned here is the diff-altitude specialization.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_singular();
+            let via_partial_cover = diff.kinds_any_observed() && !diff.kinds_full_cover();
+            assert_eq!(
+                via_seam, via_partial_cover,
+                "kinds_singular ({via_seam}) must agree with \
+                 kinds_any_observed && !kinds_full_cover ({via_partial_cover}) \
+                 on the cardinality-3 DiffLineKind axis",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_singular_agrees_with_present_kinds_count_dual_equality_pointwise() {
+        // Support-scalar dual-equality surface:
+        // `kinds_singular() == (present_kinds_count() == 1 ||
+        // present_kinds_count() == axis_cardinality::<DiffLineKind>() - 1)`
+        // on every fixture. The support-side surfacing of the same
+        // boolean, without allocating either `Vec<DiffLineKind>`. On
+        // the cardinality-`3` axis the two equalities are disjoint
+        // (`1 != 2 = cardinality - 1`); on cardinality-`2` sub-axes
+        // the two coincide and the disjunction reduces to a single
+        // equality.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_singular();
+            let support = diff.present_kinds_count();
+            let via_scalar =
+                support == 1 || support == crate::axis_cardinality::<DiffLineKind>() - 1;
+            assert_eq!(
+                via_seam, via_scalar,
+                "kinds_singular ({via_seam}) must agree with \
+                 present_kinds_count == 1 || present_kinds_count == cardinality - 1 \
+                 ({via_scalar}, support={support})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_singular_agrees_with_present_and_absent_kinds_count_dual_equality_pointwise() {
+        // Dual-scalar equality surface: `kinds_singular() ==
+        // (present_kinds_count() == 1 || absent_kinds_count() == 1)`
+        // on every fixture. The `distinct_cells + unobserved_cells
+        // == axis_cardinality` invariant restated on the two named
+        // cardinality peers, without allocating either
+        // `Vec<DiffLineKind>`. Peer of the histogram-side dual-scalar
+        // equality form `hist.distinct_cells() == 1 ||
+        // hist.unobserved_cells() == 1` pinned one altitude down.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_singular();
+            let support = diff.present_kinds_count();
+            let gap = diff.absent_kinds_count();
+            let via_scalar = support == 1 || gap == 1;
+            assert_eq!(
+                via_seam, via_scalar,
+                "kinds_singular ({via_seam}) must agree with \
+                 present_kinds_count == 1 || absent_kinds_count == 1 \
+                 ({via_scalar}, support={support}, gap={gap})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_singular_empty_diff_is_false() {
+        // Empty-diff boundary: the empty diff observes zero cells,
+        // so all three cells are unobserved (three zeros on the
+        // cardinality-`3` axis) — neither `kinds_singular_support`
+        // (nonzeros == 1) nor `kinds_singular_gap` (zeros == 1)
+        // fires. `kinds_singular` reads `false`. Matches `has_singular`
+        // reading `false` on the empty histogram one altitude down
+        // for every cardinality-`>= 2` axis. The empty diff sits on
+        // the disjoint bottom coverage boundary of the distance-
+        // from-boundary ternary partition, carried by `has_boundary`
+        // (via `!kinds_any_observed`) instead.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert!(!empty.kinds_singular());
+        assert!(!empty.kinds_any_observed());
+    }
+
+    #[test]
+    fn kinds_singular_singleton_support_is_true() {
+        // Singleton-support pin: every line lands on the same kind,
+        // so the support cardinality is `1` (two unobserved cells on
+        // the cardinality-`3` axis) — `kinds_singular_support` fires
+        // and the disjunction holds via that disjunct.
+        // `kinds_singular` reads `true`. Direct witness of the
+        // subsumption `kinds_singular_support ⇒ kinds_singular` on
+        // every axis with cardinality `>= 2`.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Added("a1".into()), DiffLine::Added("a2".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 1);
+        assert!(diff.kinds_singular_support());
+        assert!(diff.kinds_singular());
+    }
+
+    #[test]
+    fn kinds_singular_two_kind_partial_cover_is_true() {
+        // Two-kind cover pin: a diff of only Added + Removed lines
+        // has two observed cells on the three-cell DiffLineKind axis
+        // — one unobserved cell (`Context`) — so `kinds_singular_gap`
+        // fires and the disjunction holds via that disjunct.
+        // `kinds_singular` reads `true`. Direct witness of the
+        // subsumption `kinds_singular_gap ⇒ kinds_singular` on every
+        // axis via the singleton-gap disjunct.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 2);
+        assert!(diff.kinds_singular_gap());
+        assert!(diff.kinds_singular());
+    }
+
+    #[test]
+    fn kinds_singular_uniform_cover_is_false() {
+        // Uniform-cover pin: every kind receives at least one
+        // observation, so the support cardinality is `3` (no
+        // unobserved cells) — `kinds_singular_gap` fails
+        // (`zeros == 0 ≠ 1`) and `kinds_singular_support` fails
+        // (`nonzeros == 3 ≠ 1`), so `kinds_singular` reads `false`.
+        // The full-cover boundary sits at the top of the coverage
+        // interval, one of the two boundary corners carried by
+        // `has_boundary` (via `kinds_full_cover`) in the distance
+        // ternary — disjoint from the singular near-boundary corner.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.present_kinds().len(), 3);
+        assert!(diff.kinds_full_cover());
+        assert!(!diff.kinds_singular());
+    }
+
+    #[test]
+    fn kinds_singular_implies_kinds_any_observed_pointwise() {
+        // Subsumption pin: `kinds_singular() ⇒ kinds_any_observed()`
+        // on every axis with cardinality `>= 2`. Both disjuncts
+        // require at least one observed cell (`singular_support` has
+        // nonzeros `>= 1`; `singular_gap` has nonzeros `= cardinality
+        // - 1 >= 1`). The empty diff sits on the disjoint
+        // `!kinds_any_observed` boundary at the bottom coverage
+        // boundary — every singular diff is non-empty.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular() {
+                assert!(
+                    diff.kinds_any_observed(),
+                    "singular diff must observe at least one cell",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_implies_not_kinds_full_cover_pointwise() {
+        // Disjointness pin: `kinds_singular() ⇒ !kinds_full_cover()`
+        // on every axis with cardinality `>= 2`. `kinds_singular_support`
+        // has support `1 < cardinality`; `kinds_singular_gap` has
+        // support `cardinality - 1 < cardinality`. The full-cover
+        // corner sits at the top coverage boundary — one of the two
+        // boundary corners disjoint from the singular near-boundary
+        // corner.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular() {
+                assert!(
+                    !diff.kinds_full_cover(),
+                    "singular diff cannot be full-cover on a cardinality \
+                     >= 2 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_implies_not_kinds_strict_partial_cover_pointwise() {
+        // Disjointness pin: `kinds_singular() ⇒
+        // !kinds_strict_partial_cover()` on every axis. The two
+        // named corners of the distance-from-boundary ternary
+        // partition are pairwise disjoint. Vacuously true at the
+        // diff altitude (the consequent never fires on cardinality-
+        // `3` DiffLineKind), but the shape of the implication is
+        // pinned here so downstream lifts at cardinality-`>= 4`
+        // altitudes inherit it verbatim. Peer of the histogram-side
+        // partition law
+        // `axis_histogram_has_boundary_has_singular_has_strict_partial_cover_form_strict_ternary_partition_for_every_closed_axis_implementor`
+        // one altitude down.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular() {
+                assert!(
+                    !diff.kinds_strict_partial_cover(),
+                    "singular diff cannot be strict-partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_support_implies_kinds_singular_pointwise() {
+        // Subsumption pin: `kinds_singular_support() ⇒
+        // kinds_singular()` on every axis via the
+        // `kinds_singular_support` disjunct of the defining union.
+        // The singleton-support boundary always sits inside the
+        // singular near-boundary corner. Direct witness of one leg
+        // of the union bridge.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular_support() {
+                assert!(
+                    diff.kinds_singular(),
+                    "singular-support diff must be singular",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_gap_implies_kinds_singular_pointwise() {
+        // Subsumption pin: `kinds_singular_gap() ⇒ kinds_singular()`
+        // on every axis via the `kinds_singular_gap` disjunct of the
+        // defining union. The singleton-gap boundary always sits
+        // inside the singular near-boundary corner. Direct witness of
+        // the other leg of the union bridge.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular_gap() {
+                assert!(diff.kinds_singular(), "singular-gap diff must be singular",);
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_boundary_and_kinds_singular_and_kinds_strict_partial_cover_form_ternary_partition_pointwise()
+     {
+        // Ternary partition pin at the diff altitude: exactly one
+        // of the three legs
+        // `(!kinds_any_observed || kinds_full_cover,
+        //   kinds_singular,
+        //   kinds_strict_partial_cover)`
+        // fires on every diff — the distance-from-boundary ternary
+        // of the 5-corner support-cardinality partition, folding the
+        // two boundary corners (empty and full-cover) into
+        // `has_boundary`, the two singular near-boundary corners
+        // into `has_singular`, and the boundary-free strict interior
+        // into `has_strict_partial_cover`. At the diff altitude the
+        // `has_strict_partial_cover` leg is vacuously `false`, so the
+        // ternary reduces to the dual partition
+        // `(!kinds_any_observed || kinds_full_cover, kinds_singular)`
+        // pointwise — every diff lands on exactly one of the
+        // boundary corner or the singular near-boundary corner.
+        // Peer of the trait-uniform pin
+        // `axis_histogram_has_boundary_has_singular_has_strict_partial_cover_form_strict_ternary_partition_for_every_closed_axis_implementor`
+        // one altitude down.
+        for diff in dominant_kind_fixtures() {
+            let boundary = !diff.kinds_any_observed() || diff.kinds_full_cover();
+            let singular = diff.kinds_singular();
+            let strict = diff.kinds_strict_partial_cover();
+            let count = usize::from(boundary) + usize::from(singular) + usize::from(strict);
+            assert_eq!(
+                count, 1,
+                "exactly one of (boundary, singular, strict_partial_cover) \
+                 must fire (boundary={boundary}, singular={singular}, \
+                 strict={strict})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_singular_bridges_support_cardinality_class_is_singular_pointwise() {
+        // Cross-surface bridge law: `kinds_singular() ==
+        // kind_histogram().support_cardinality_class().is_singular()`
+        // on every fixture. The class-side projection lands on
+        // `SupportCardinalityClass::SingularSupport` or
+        // `SupportCardinalityClass::SingularGap` exactly when the
+        // histogram-side disjunction fires, and
+        // `SupportCardinalityClass::is_singular` reads `true` on
+        // either variant. Peer of the histogram-side bridge
+        // `axis_histogram_has_singular_agrees_with_class_is_singular_for_every_closed_axis_implementor`
+        // one altitude down, closing the (histogram, class) duality
+        // on the singular near-boundary leg at the diff altitude.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_singular();
+            let via_class = diff
+                .kind_histogram()
+                .support_cardinality_class()
+                .is_singular();
+            assert_eq!(
+                via_seam, via_class,
+                "kinds_singular ({via_seam}) must agree with \
+                 kind_histogram().support_cardinality_class().is_singular() \
+                 ({via_class})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_singular_agrees_with_open_coded_singular_boundary_walk() {
+        // Parity against the exact hand-rolled singular walk this
+        // lift replaces on cardinality-`>= 2` axes: walk every cell
+        // of the histogram and count how many carry a zero count and
+        // how many carry a nonzero count; the singular predicate
+        // reads `true` iff exactly one cell is nonzero (singular
+        // support) or exactly one cell is a zero (singular gap).
+        // Mirrors the parity pin
+        // `kinds_high_support_agrees_with_open_coded_at_most_one_zero_walk`
+        // on the sibling projection.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_singular();
+            let hist = diff.kind_histogram();
+            let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
+            let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
+            let hand_rolled = nonzeros == 1 || zeros == 1;
             assert_eq!(via_seam, hand_rolled);
         }
     }
