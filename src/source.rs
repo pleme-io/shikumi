@@ -2656,6 +2656,232 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().has_low_support()
     }
 
+    /// Returns `true` exactly when this chain's observed
+    /// [`ConfigSourceKind`] support sits at the *top* of the
+    /// support-cardinality interval — at most *one* unobserved cell,
+    /// excising the cardinality-`2` dual-singular-collapse case
+    /// (`ConfigSourceKind` carries three cells so the excision never
+    /// fires at the layer-kind sub-axis). The **high-support-layer-
+    /// kinds boolean predicate** on the layer-kind sub-axis of the
+    /// chain altitude, the strict-singular-gap-or-full-cover corner
+    /// of the support-cardinality magnitude-direction ternary
+    /// partition `(low_support, strict_partial_cover, high_support)`
+    /// — the top leg of the magnitude ternary, folding the full-
+    /// cover and the strict singleton-gap boundaries into a single
+    /// named high-magnitude corner.
+    ///
+    /// The cube-native answer to *"did this chain land in the
+    /// high-magnitude corner of the layer-kind support-cardinality
+    /// interval?"*, routed through the shared
+    /// [`crate::AxisHistogram::has_high_support`] primitive on
+    /// [`Self::layer_kind_histogram`] one altitude down. Consumers
+    /// asking that question — the fleet dashboard high-magnitude
+    /// headline over the chain's layer-kind composition, the
+    /// attestation manifest gate *"chain layer-kind support at least
+    /// axis-cardinality-minus-one"*, the alerting policy predicate
+    /// *"layer-kind support high-magnitude"* — now route through
+    /// this named seam instead of four previously drifting inline
+    /// forms: defining strict-singular-gap-or-full-cover disjunction
+    /// on three named histogram-side peers
+    /// (`chain.layer_kinds_full_cover() ||
+    /// (chain.layer_kinds_singular_gap() &&
+    /// !chain.layer_kinds_singular_support())`), coverage-gap-scalar
+    /// dual-interval form (`chain.absent_layer_kinds_count() <= 1 &&
+    /// chain.present_layer_kinds_count() >= 2`), support-scalar
+    /// dual-interval form (`chain.present_layer_kinds_count() + 1 >=
+    /// crate::axis_cardinality::<ConfigSourceKind>() &&
+    /// chain.present_layer_kinds_count() >= 2`), and support-`Vec`
+    /// dual-length form (`chain.present_layer_kinds().len() + 1 >=
+    /// crate::axis_cardinality::<ConfigSourceKind>() &&
+    /// chain.present_layer_kinds().len() >= 2`, allocating a
+    /// `Vec<ConfigSourceKind>` just to peek its length).
+    ///
+    /// **Lifts sideways to the layer-kind sub-axis of the chain
+    /// altitude** in the "high-support across altitudes" projection
+    /// seeded on the diff altitude by
+    /// [`crate::ConfigDiff::kinds_high_support`] and climbed to the
+    /// tier altitude by [`crate::ProvenanceMap::tiers_high_support`].
+    /// Top-leg-corner peer of the seven already-closed coverage-
+    /// support and magnitude boundary and interior families on the
+    /// same sub-axis ([`Self::layer_kinds_balanced`],
+    /// [`Self::layer_kinds_full_cover`],
+    /// [`Self::layer_kinds_any_observed`],
+    /// [`Self::layer_kinds_singular_support`],
+    /// [`Self::layer_kinds_singular_gap`],
+    /// [`Self::layer_kinds_strict_partial_cover`],
+    /// [`Self::layer_kinds_low_support`]). The two remaining chain-
+    /// altitude sub-axes are the natural next sideways lifts:
+    /// `file_formats_high_support` over
+    /// [`Self::file_format_histogram`] and
+    /// `env_prefix_kinds_high_support` over
+    /// [`Self::env_prefix_kind_histogram`], closing the "high-
+    /// support across altitudes" projection alongside the parallel
+    /// low-support projection and continuing the magnitude-direction
+    /// ternary vertical row by row.
+    ///
+    /// **Cardinality-`3` reachability at the chain layer-kind
+    /// sub-axis — non-vacuous witnesses on both sides, degenerate
+    /// ternary.** The top magnitude corner carries witnesses on
+    /// every axis with `axis_cardinality::<A>() >= 2` (the full-
+    /// cover fixture always witnesses high support via the
+    /// `is_full_cover()` disjunct). [`ConfigSourceKind`] carries
+    /// three cells, so `layer_kinds_high_support()` reads `true` on
+    /// every two-kind partial cover (support size
+    /// `axis_cardinality - 1 = 2`, `layer_kinds_singular_gap` fires)
+    /// and every uniform three-kind cover (support size `3`,
+    /// `layer_kinds_full_cover` fires), and `false` on the empty
+    /// chain and on every singleton-support chain. The strict-
+    /// interior middle leg [`Self::layer_kinds_strict_partial_cover`]
+    /// is vacuously `false` on the cardinality-`3` layer-kind axis
+    /// (the strict interval `[2, cardinality - 2] = [2, 1]` is
+    /// empty), so the magnitude-direction ternary degenerates to
+    /// the dual partition `(layer_kinds_low_support,
+    /// layer_kinds_high_support)` on this sub-axis — matching the
+    /// diff-altitude peer [`crate::ConfigDiff::kinds_high_support`]
+    /// on the same cardinality-`3` [`crate::tiered::DiffLineKind`]
+    /// axis, and diverging from the tier-altitude peer
+    /// [`crate::ProvenanceMap::tiers_high_support`] where the
+    /// cardinality-`4` axis inhabits every leg. The value of the
+    /// non-vacuous disjointness `layer_kinds_high_support ⇒
+    /// !layer_kinds_strict_partial_cover` at this sub-axis is the
+    /// vacuously-`true` closure that transports the ternary
+    /// discipline verbatim to the tier altitude, where every leg is
+    /// inhabited.
+    ///
+    /// **Empty-chain convention** — returns `false` on the empty
+    /// chain: zero observed cells fail the "at least two observed"
+    /// clause uniformly. Matches
+    /// [`crate::AxisHistogram::has_high_support`]'s empty-histogram
+    /// `false` convention one altitude down for every cardinality-
+    /// `>= 2` axis. Orthogonal polarity to
+    /// [`Self::layer_kinds_low_support`]'s empty-chain `true` — the
+    /// two magnitude corners partition every non-strict-interior
+    /// fold at the layer-kind sub-axis and the empty chain sits at
+    /// the *bottom* of the magnitude interval, not the top.
+    ///
+    /// **Singleton-support convention** — returns `false` on every
+    /// chain whose observed support is a single [`ConfigSourceKind`]
+    /// cell: support cardinality `1` violates the "at least
+    /// axis-cardinality-minus-one" clause uniformly on cardinality-
+    /// `>= 3` axes. Peer of
+    /// [`Self::layer_kinds_singular_support`]'s `true` side on the
+    /// same fixture — the singleton-support boundary lands on the
+    /// low-magnitude corner, not the high-magnitude corner.
+    ///
+    /// **Two-kind partial cover convention** — returns `true` on
+    /// every chain whose observed support is exactly two
+    /// [`ConfigSourceKind`] cells: support cardinality `2` on the
+    /// cardinality-`3` axis leaves exactly one unobserved cell —
+    /// `layer_kinds_singular_gap` fires. Direct witness of the
+    /// strict subsumption `layer_kinds_singular_gap ⇒
+    /// layer_kinds_high_support` on the cardinality-`>= 3` axis
+    /// where the dual-singular-collapse never fires. Distinguishes
+    /// the layer-kind sub-axis from the tier altitude, where two-
+    /// tier partial cover falls in the strict interior (support
+    /// size `2` on the cardinality-`4` axis) and lands on
+    /// `tiers_high_support == false`.
+    ///
+    /// **Uniform three-kind cover convention** — returns `true` on
+    /// every chain where each [`ConfigSourceKind`] cell was
+    /// observed at least once: support cardinality `3` (no
+    /// unobserved cells) — `layer_kinds_full_cover` fires. Direct
+    /// witness of the strict subsumption `layer_kinds_full_cover ⇒
+    /// layer_kinds_high_support` on every axis with
+    /// `axis_cardinality::<A>() >= 2`. Matches
+    /// [`crate::AxisHistogram::has_high_support`]'s full-cover
+    /// `true` convention one altitude down.
+    ///
+    /// # Invariants
+    ///
+    /// - `layer_kinds_high_support() ==
+    ///   layer_kind_histogram().has_high_support()` — both project
+    ///   the same predicate off the same primitive; the named seam
+    ///   is the cube-native routing of the histogram surface.
+    /// - `layer_kinds_high_support() ⇔ layer_kinds_full_cover() ||
+    ///   (layer_kinds_singular_gap() && !layer_kinds_singular_support())`
+    ///   always — the defining strict-singular-gap-or-full-cover
+    ///   disjunction on three named histogram-side peers. The
+    ///   `!layer_kinds_singular_support()` excision is vacuous on
+    ///   the cardinality-`3` layer-kind axis (when singular-gap
+    ///   fires, support size `2 != 1`) but is pinned verbatim so
+    ///   downstream cardinality-`2` sub-axis lifts inherit the
+    ///   dual-singular-collapse excision.
+    /// - `layer_kinds_high_support() == (absent_layer_kinds_count()
+    ///   <= 1 && present_layer_kinds_count() >= 2)` always — the
+    ///   coverage-gap-scalar dual-interval form on the
+    ///   complementary side of the same partition, without
+    ///   allocating either `Vec<ConfigSourceKind>`.
+    /// - `layer_kinds_high_support() == (present_layer_kinds_count() + 1 >=
+    ///   crate::axis_cardinality::<ConfigSourceKind>() &&
+    ///   present_layer_kinds_count() >= 2)` always — the support-
+    ///   scalar dual-interval form.
+    /// - `layer_kinds_high_support() == (present_layer_kinds().len() + 1 >=
+    ///   crate::axis_cardinality::<ConfigSourceKind>() &&
+    ///   present_layer_kinds().len() >= 2)` always — the support-
+    ///   `Vec` dual-length form, the allocating peer of the scalar
+    ///   surface above.
+    /// - `layer_kinds_high_support() ⇒ !layer_kinds_low_support()`
+    ///   on every axis with `axis_cardinality::<A>() >= 2` (every
+    ///   implementor today — [`ConfigSourceKind`] carries three
+    ///   cells): high support has size `>= 2`, low support has
+    ///   size `<= 1`, so the two magnitude corners are disjoint.
+    /// - `layer_kinds_high_support() ⇒
+    ///   !layer_kinds_strict_partial_cover()` always: the strict
+    ///   interior requires `>= 2` unobserved cells; high support
+    ///   has `<= 1`. On the cardinality-`3` `ConfigSourceKind`
+    ///   axis this holds vacuously (the consequent is always
+    ///   `true` — the strict interior is unreachable).
+    /// - `layer_kinds_high_support() ⇒ layer_kinds_any_observed()`
+    ///   on every axis with `axis_cardinality::<A>() >= 2`: high
+    ///   support has size `>= 2 >= 1`, so at least one cell was
+    ///   observed. The empty chain sits on the disjoint
+    ///   `!layer_kinds_any_observed()` boundary at the bottom of
+    ///   the magnitude interval.
+    /// - `layer_kinds_full_cover() ⇒ layer_kinds_high_support()`
+    ///   always — the strict subsumption over the top full-cover
+    ///   peer via the `is_full_cover()` disjunct on the bridge.
+    ///   The full-cover corner always sits inside the high-
+    ///   magnitude corner.
+    /// - `layer_kinds_singular_gap() ⇒ layer_kinds_high_support()`
+    ///   on every axis with cardinality `>= 3` (every layer-kind
+    ///   implementor today): singleton-gap has support size
+    ///   `axis_cardinality - 1 >= 2`, so the "at most one
+    ///   unobserved" *and* "at least two observed" clauses both
+    ///   hold. On the cardinality-`2` corner (no layer-kind axis
+    ///   today) the two diverge via the dual-singular-collapse
+    ///   excision.
+    /// - `(layer_kinds_low_support, layer_kinds_strict_partial_cover,
+    ///   layer_kinds_high_support)` forms a strict ternary partition
+    ///   on every axis with `axis_cardinality::<A>() >= 2`. On the
+    ///   cardinality-`3` layer-kind axis the middle leg is
+    ///   vacuously empty and the ternary degenerates to the dual
+    ///   partition `(layer_kinds_low_support,
+    ///   layer_kinds_high_support)` — pinned trait-uniformly one
+    ///   altitude down by
+    ///   `axis_histogram_has_low_support_has_strict_partial_cover_has_high_support_form_strict_ternary_partition_for_every_closed_axis_implementor`.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram
+    /// build) and `k = crate::axis_cardinality::<ConfigSourceKind>()`
+    /// (the high-support scan). Both are `O(n)` in practice since
+    /// the layer-kind axis carries a fixed three-cell cardinality;
+    /// the returned `bool` reads one predicate. The scan short-
+    /// circuits on the *second* zero cell (bounded at two zero-
+    /// witness cells visited on any two-or-more-unobserved-cell
+    /// chain), strictly tighter than the four documented open-
+    /// coded surfaces — no three-way boolean disjunction across
+    /// three named predicates, no `Vec<ConfigSourceKind>`
+    /// allocation, no [`crate::axis_cardinality`] turbofish with
+    /// `+ 1` arithmetic against a magic threshold.
+    #[must_use]
+    fn layer_kinds_high_support(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().has_high_support()
+    }
+
     /// Dense per-format tally of the chain's [`ConfigSource::File`]
     /// layers over the [`crate::discovery::Format`] axis — the typed
     /// histogram every per-format dashboard, attestation manifest
@@ -21713,6 +21939,481 @@ mod tests {
             let hist = slice.layer_kind_histogram();
             let positives = hist.iter().filter(|(_, c)| *c > 0).count();
             let hand_rolled = positives <= 1;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::layer_kinds_high_support —
+    //      high-support-layer-kinds boolean predicate on the layer-
+    //      kind sub-axis of the chain altitude, lifting the "high-
+    //      support across altitudes" projection sideways from the
+    //      tier altitude (`ProvenanceMap::tiers_high_support`) and
+    //      the diff altitude (`ConfigDiff::kinds_high_support`) into
+    //      the first chain sub-axis. Routed through the shared
+    //      `AxisHistogram::has_high_support` primitive one altitude
+    //      down. Non-vacuous on the cardinality-`3`
+    //      `ConfigSourceKind` axis: every two-kind partial cover and
+    //      every uniform three-kind cover read `true`; the empty
+    //      chain and every singleton-support chain read `false`.
+    //      The strict-interior middle leg is vacuously empty on the
+    //      cardinality-`3` axis, so the magnitude-direction ternary
+    //      degenerates to the dual partition — matches the diff
+    //      altitude's degenerate two-way partition and diverges from
+    //      the tier altitude's non-vacuous three-way partition. ----
+
+    #[test]
+    fn layer_kinds_high_support_matches_layer_kind_histogram_has_high_support_pointwise() {
+        // Routing pin: `layer_kinds_high_support` routes through
+        // `layer_kind_histogram().has_high_support()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation
+        // stops projecting through the shared cube-native primitive.
+        // Layer-kind sub-axis peer of
+        // `tiers_high_support_matches_tier_histogram_has_high_support_pointwise`
+        // on the tier altitude and
+        // `kinds_high_support_matches_kind_histogram_has_high_support_pointwise`
+        // on the diff altitude, in the "high-support across
+        // altitudes" projection.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.layer_kind_histogram().has_high_support();
+            assert_eq!(slice.layer_kinds_high_support(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn layer_kinds_high_support_matches_defining_strict_singular_gap_or_full_cover_pointwise() {
+        // Defining strict-singular-gap-or-full-cover form:
+        // `layer_kinds_high_support() ⇔ layer_kinds_full_cover() ||
+        // (layer_kinds_singular_gap() &&
+        // !layer_kinds_singular_support())`. Pins the predicate
+        // against the three-way disjunction on three named
+        // histogram-side peers consumers reach for when they open-
+        // code the high-magnitude corner as a boolean fold over the
+        // full-cover and strict singleton-gap boundaries. The
+        // `!layer_kinds_singular_support()` excision is vacuously
+        // `true` on the cardinality-`3` layer-kind axis when
+        // `layer_kinds_singular_gap` fires (support size `2 != 1`),
+        // so the disjunction reduces to `layer_kinds_full_cover ||
+        // layer_kinds_singular_gap` at this sub-axis — but the raw
+        // form is pinned here so downstream lifts to cardinality-`2`
+        // sub-axes inherit the excision verbatim. Peer of
+        // `tiers_high_support_matches_defining_strict_singular_gap_or_full_cover_pointwise`
+        // on the tier altitude and
+        // `kinds_high_support_matches_defining_strict_singular_gap_or_full_cover_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_high_support();
+            let via_union = slice.layer_kinds_full_cover()
+                || (slice.layer_kinds_singular_gap() && !slice.layer_kinds_singular_support());
+            assert_eq!(
+                via_seam, via_union,
+                "layer_kinds_high_support ({via_seam}) must agree with \
+                 layer_kinds_full_cover || (layer_kinds_singular_gap && !layer_kinds_singular_support) ({via_union})",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_high_support_agrees_with_absent_layer_kinds_count_at_most_one_and_support_at_least_two_pointwise()
+     {
+        // Coverage-gap-scalar dual-interval surface:
+        // `layer_kinds_high_support() == (absent_layer_kinds_count()
+        // <= 1 && present_layer_kinds_count() >= 2)` on every
+        // fixture. The coverage-gap-side surfacing of the same
+        // boolean, without allocating either `Vec<ConfigSourceKind>`.
+        // On the cardinality-`3` axis the `>= 2` clause is
+        // redundant with the `<= 1` clause via the partition
+        // invariant `present_count + absent_count ==
+        // axis_cardinality == 3` (absent_count <= 1 forces
+        // present_count >= 2), but the raw dual form lifts verbatim
+        // to cardinality-`2` sub-axes where the excision is load-
+        // bearing. Peer of
+        // `tiers_high_support_agrees_with_absent_tiers_count_at_most_one_and_support_at_least_two_pointwise`
+        // on the tier altitude and
+        // `kinds_high_support_agrees_with_absent_kinds_count_at_most_one_and_support_at_least_two_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_high_support();
+            let gap = slice.absent_layer_kinds_count();
+            let support = slice.present_layer_kinds_count();
+            let via_scalar = gap <= 1 && support >= 2;
+            assert_eq!(
+                via_seam, via_scalar,
+                "layer_kinds_high_support ({via_seam}) must agree with \
+                 absent_layer_kinds_count <= 1 && present_layer_kinds_count >= 2 \
+                 (gap={gap}, support={support})",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_high_support_agrees_with_present_layer_kinds_count_plus_one_at_least_axis_cardinality_pointwise()
+     {
+        // Support-scalar dual-interval form:
+        // `layer_kinds_high_support() == (present_layer_kinds_count()
+        // + 1 >= axis_cardinality::<ConfigSourceKind>() &&
+        // present_layer_kinds_count() >= 2)` on every fixture. The
+        // support-side surfacing of the same boolean — a high-
+        // magnitude fold observes at least `axis_cardinality - 1`
+        // cells; the `>= 2` clause excises the cardinality-`2`
+        // singleton where the dual-singular-collapse fires. Dual of
+        // the coverage-gap-scalar surface on the complementary side
+        // of the same partition via the `present + absent ==
+        // axis_cardinality` invariant. Peer of
+        // `tiers_high_support_agrees_with_contributing_tiers_count_plus_one_at_least_axis_cardinality_pointwise`
+        // on the tier altitude and
+        // `kinds_high_support_agrees_with_present_kinds_count_plus_one_at_least_axis_cardinality_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_high_support();
+            let support = slice.present_layer_kinds_count();
+            let via_scalar =
+                support + 1 >= crate::axis_cardinality::<ConfigSourceKind>() && support >= 2;
+            assert_eq!(
+                via_seam, via_scalar,
+                "layer_kinds_high_support ({via_seam}) must agree with \
+                 present_layer_kinds_count + 1 >= axis_cardinality && \
+                 present_layer_kinds_count >= 2 (support={support})",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_high_support_agrees_with_present_layer_kinds_len_at_least_axis_cardinality_minus_one_pointwise()
+     {
+        // Support-`Vec` dual-length form:
+        // `layer_kinds_high_support() == (present_layer_kinds().len()
+        // + 1 >= axis_cardinality::<ConfigSourceKind>() &&
+        // present_layer_kinds().len() >= 2)` on every fixture. Pins
+        // the predicate against the `Vec<ConfigSourceKind>` length
+        // form consumers reach for when they already hold the
+        // support vector. Allocating peer of the support-scalar
+        // dual-interval surface one pin over. Peer of
+        // `tiers_high_support_agrees_with_contributing_tiers_len_at_least_axis_cardinality_minus_one_pointwise`
+        // on the tier altitude and
+        // `kinds_high_support_agrees_with_present_kinds_len_at_least_axis_cardinality_minus_one_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_high_support();
+            let len = slice.present_layer_kinds().len();
+            let via_vec = len + 1 >= crate::axis_cardinality::<ConfigSourceKind>() && len >= 2;
+            assert_eq!(
+                via_seam, via_vec,
+                "layer_kinds_high_support ({via_seam}) must agree with \
+                 present_layer_kinds().len() dual-interval ({via_vec}, len={len})",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_high_support_empty_chain_is_false() {
+        // Empty-chain boundary: the empty chain observes zero
+        // cells, so every cell is unobserved (three zeros on the
+        // cardinality-`3` axis) — the "at most one unobserved"
+        // predicate fails and `layer_kinds_high_support` reads
+        // `false`. Matches `has_high_support` reading `false` on
+        // the empty histogram one altitude down for every
+        // cardinality-`>= 2` axis. Direct witness of the
+        // disjointness `layer_kinds_low_support ⇒
+        // !layer_kinds_high_support` on the empty-chain corner —
+        // the empty chain sits at the *bottom* of the magnitude
+        // interval, not the top. Orthogonal polarity to
+        // `layer_kinds_low_support` reading `true` on the empty
+        // chain — the two magnitude corners partition every non-
+        // strict-interior fold at the layer-kind sub-axis. Peer of
+        // `tiers_high_support_empty_map_is_false` on the tier
+        // altitude and `kinds_high_support_empty_diff_is_false` on
+        // the diff altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(!empty.layer_kinds_high_support());
+        assert!(empty.layer_kinds_low_support());
+        assert!(!empty.layer_kinds_any_observed());
+        assert!(!empty.layer_kinds_singular_support());
+        assert!(!empty.layer_kinds_singular_gap());
+        assert!(!empty.layer_kinds_full_cover());
+        assert!(!empty.layer_kinds_strict_partial_cover());
+    }
+
+    #[test]
+    fn layer_kinds_high_support_singleton_support_is_false() {
+        // Singleton-support pin: every layer lands on the same
+        // kind, so the support cardinality is `1` (two unobserved
+        // cells on the cardinality-`3` axis) — the "at most one
+        // unobserved" predicate fails and `layer_kinds_high_support`
+        // reads `false`. Direct witness of the disjointness
+        // `layer_kinds_singular_support ⇒ !layer_kinds_high_support`
+        // on every cardinality-`>= 2` axis. Peer of
+        // `tiers_high_support_singleton_support_is_false` on the
+        // tier altitude and `kinds_high_support_singleton_support_is_false`
+        // on the diff altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 1);
+        assert!(slice.layer_kinds_singular_support());
+        assert!(!slice.layer_kinds_high_support());
+    }
+
+    #[test]
+    fn layer_kinds_high_support_two_kind_partial_cover_is_true() {
+        // Two-kind-cover pin: `sample_chain()` observes {Env, File}
+        // (support size 2 out of 3) — `layer_kinds_singular_gap`
+        // fires (one unobserved cell on the cardinality-`3` axis)
+        // and `layer_kinds_high_support` reads `true`. Direct
+        // witness of the strict subsumption `layer_kinds_singular_gap
+        // ⇒ layer_kinds_high_support` on the cardinality-`>= 3`
+        // axis where the dual-singular-collapse never fires, and of
+        // the non-vacuous content on the `true` side of the high-
+        // support boundary at the layer-kind sub-axis.
+        // Distinguishes the layer-kind sub-axis from the tier
+        // altitude, where two-tier partial cover falls in the
+        // strict interior (support size `2` on the cardinality-`4`
+        // axis) and lands on `tiers_high_support == false` via the
+        // non-vacuous disjointness. Peer of
+        // `kinds_high_support_two_kind_partial_cover_is_true` on
+        // the diff altitude — the singleton-gap fixture on the
+        // respective cardinality-`3` axis.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 2);
+        assert!(slice.layer_kinds_singular_gap());
+        assert!(slice.layer_kinds_high_support());
+    }
+
+    #[test]
+    fn layer_kinds_high_support_uniform_cover_is_true() {
+        // Uniform-cover pin: every kind contributes at least one
+        // layer, so the support cardinality is `3` (no unobserved
+        // cells) — the "at most one unobserved" predicate holds
+        // and `layer_kinds_high_support` reads `true`. Direct
+        // witness of the strict subsumption `layer_kinds_full_cover
+        // ⇒ layer_kinds_high_support` on every axis (the full-
+        // cover corner always sits inside the high-magnitude
+        // corner). The uniform three-kind cover partitions the
+        // seven coverage-support boundaries with
+        // (`any_observed`=true, `singular_support`=false,
+        // `singular_gap`=false, `full_cover`=true,
+        // `strict_partial_cover`=false, `low_support`=false,
+        // `high_support`=true). Peer of
+        // `tiers_high_support_uniform_cover_is_true` on the tier
+        // altitude and `kinds_high_support_uniform_cover_is_true`
+        // on the diff altitude.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kinds_full_cover());
+        assert!(slice.layer_kinds_high_support());
+    }
+
+    #[test]
+    fn layer_kinds_high_support_implies_not_layer_kinds_low_support_pointwise() {
+        // Disjointness pin: `layer_kinds_high_support() ⇒
+        // !layer_kinds_low_support()` on every axis with
+        // cardinality `>= 2`. High support has size `>= 2`; low
+        // support has size `<= 1`. The two magnitude corners sit
+        // at opposite ends of the support-cardinality interval on
+        // every non-degenerate axis. Pins the strict pairwise
+        // disjointness of the magnitude-direction ternary's two
+        // magnitude legs at the layer-kind sub-axis. Peer of
+        // `tiers_high_support_implies_not_tiers_low_support_pointwise`
+        // on the tier altitude and
+        // `kinds_high_support_implies_not_kinds_low_support_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_high_support() {
+                assert!(
+                    !slice.layer_kinds_low_support(),
+                    "high-support chain cannot be low-support on a \
+                     cardinality >= 2 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_high_support_implies_not_layer_kinds_strict_partial_cover_pointwise() {
+        // Disjointness pin: `layer_kinds_high_support() ⇒
+        // !layer_kinds_strict_partial_cover()` always. The strict
+        // interior requires `>= 2` unobserved cells; high support
+        // has `<= 1`. On the cardinality-`3` `ConfigSourceKind`
+        // axis the consequent holds vacuously (the strict interior
+        // is unreachable), but the pin still walks every fixture
+        // to enforce the disjointness discipline. Vacuous-here
+        // sister of the *non-vacuous* pin at the tier altitude
+        // where the two-tier partial-cover fixture separates the
+        // strict interior from high support. Peer of
+        // `tiers_high_support_implies_not_tiers_strict_partial_cover_pointwise`
+        // on the tier altitude and
+        // `kinds_high_support_implies_not_kinds_strict_partial_cover_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_high_support() {
+                assert!(
+                    !slice.layer_kinds_strict_partial_cover(),
+                    "high-support chain cannot be strict-partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_high_support_implies_layer_kinds_any_observed_pointwise() {
+        // Subsumption pin: `layer_kinds_high_support() ⇒
+        // layer_kinds_any_observed()` on every axis with
+        // cardinality `>= 2`. High support has size `>= 2 >= 1`,
+        // so at least one cell was observed. The empty chain sits
+        // on the disjoint `!layer_kinds_any_observed` boundary at
+        // the bottom of the magnitude interval — every high-
+        // support chain is non-empty. Peer of
+        // `tiers_high_support_implies_tiers_any_observed_pointwise`
+        // on the tier altitude and
+        // `kinds_high_support_implies_kinds_any_observed_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_high_support() {
+                assert!(
+                    slice.layer_kinds_any_observed(),
+                    "high-support chain must observe at least one cell",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_full_cover_implies_layer_kinds_high_support_pointwise() {
+        // Subsumption pin: `layer_kinds_full_cover() ⇒
+        // layer_kinds_high_support()` on every axis. The full-
+        // cover corner always sits inside the high-magnitude
+        // corner via the `is_full_cover()` disjunct on the bridge.
+        // Direct witness of the strict subsumption between the
+        // top coverage-support boundary and the top magnitude
+        // corner at the layer-kind sub-axis. Peer of
+        // `tiers_full_cover_implies_tiers_high_support_pointwise`
+        // on the tier altitude and
+        // `kinds_full_cover_implies_kinds_high_support_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_full_cover() {
+                assert!(
+                    slice.layer_kinds_high_support(),
+                    "full-cover chain must be high-support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_gap_implies_layer_kinds_high_support_pointwise() {
+        // Subsumption pin: `layer_kinds_singular_gap() ⇒
+        // layer_kinds_high_support()` on every axis with
+        // cardinality `>= 3` (every layer-kind implementor today
+        // — `ConfigSourceKind` carries three cells). A singleton-
+        // gap fold has support size `axis_cardinality - 1 >= 2`,
+        // so the "at most one unobserved" *and* "at least two
+        // observed" clauses both hold. Direct witness of the
+        // strict subsumption between the strict singleton-gap
+        // boundary and the top magnitude corner. On cardinality-
+        // `2` sub-axes (no layer-kind axis today) the two diverge
+        // via the dual-singular-collapse excision — pinned
+        // separately by the histogram-side test one altitude
+        // down. Peer of
+        // `tiers_singular_gap_implies_tiers_high_support_pointwise`
+        // on the tier altitude and
+        // `kinds_singular_gap_implies_kinds_high_support_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_singular_gap() {
+                assert!(
+                    slice.layer_kinds_high_support(),
+                    "singular-gap chain must be high-support on a \
+                     cardinality >= 3 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_low_support_strict_partial_cover_high_support_form_ternary_partition_pointwise()
+    {
+        // Ternary partition pin: `(layer_kinds_low_support,
+        // layer_kinds_strict_partial_cover,
+        // layer_kinds_high_support)` is a strict partition on every
+        // axis with cardinality `>= 2` (every layer-kind
+        // implementor today). Exactly one leg fires on every
+        // chain — the magnitude-direction ternary of the 5-corner
+        // support-cardinality partition, folding the two singular-
+        // cardinality boundaries into the two magnitude corners
+        // and naming the boundary-free strict interior separately.
+        // At the layer-kind sub-axis the middle leg is vacuously
+        // `false` on the cardinality-`3` axis (the strict-interior
+        // interval `[2, 1]` is empty), so the ternary degenerates
+        // to the dual partition `(low_support, high_support)` —
+        // matching the diff altitude's degenerate two-way
+        // partition on the same cardinality-`3` `DiffLineKind`
+        // axis and diverging from the tier altitude's non-vacuous
+        // three-way partition on the cardinality-`4`
+        // `ConfigTierKind` axis. Peer of
+        // `tiers_low_support_strict_partial_cover_high_support_form_ternary_partition_pointwise`
+        // on the tier altitude and
+        // `kinds_low_support_strict_partial_cover_high_support_form_ternary_partition_pointwise`
+        // on the diff altitude, and of the trait-uniform pin
+        // `axis_histogram_has_low_support_has_strict_partial_cover_has_high_support_form_strict_ternary_partition_for_every_closed_axis_implementor`
+        // one altitude down.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let low = slice.layer_kinds_low_support();
+            let mid = slice.layer_kinds_strict_partial_cover();
+            let high = slice.layer_kinds_high_support();
+            let count = usize::from(low) + usize::from(mid) + usize::from(high);
+            assert_eq!(
+                count, 1,
+                "exactly one of (low_support, strict_partial_cover, \
+                 high_support) must fire (low={low}, mid={mid}, \
+                 high={high})",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_high_support_agrees_with_open_coded_at_most_one_zero_walk() {
+        // Parity against the exact hand-rolled high-support walk
+        // this lift replaces on cardinality-`>= 3` axes: walk
+        // every cell of the histogram and count how many carry a
+        // zero count; the high-support predicate reads `true` iff
+        // at most one cell is a zero (and at least two cells are
+        // nonzero — the dual-singular-collapse excision, vacuously
+        // satisfied on cardinality-`>= 3` axes when the "at most
+        // one zero" clause holds). Mirrors the parity pin
+        // `layer_kinds_low_support_agrees_with_open_coded_at_most_one_positive_walk`
+        // on the opposite magnitude leg. Peer of
+        // `tiers_high_support_agrees_with_open_coded_at_most_one_zero_walk`
+        // on the tier altitude and
+        // `kinds_high_support_agrees_with_open_coded_at_most_one_zero_walk`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_high_support();
+            let hist = slice.layer_kind_histogram();
+            let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
+            let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
+            let hand_rolled = zeros <= 1 && nonzeros >= 2;
             assert_eq!(via_seam, hand_rolled);
         }
     }
