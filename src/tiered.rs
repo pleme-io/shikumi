@@ -2398,6 +2398,196 @@ impl ProvenanceMap {
     pub fn tiers_singular_gap(&self) -> bool {
         self.tier_histogram().has_singular_gap()
     }
+
+    /// Returns `true` exactly when this fold's observed
+    /// [`ConfigTierKind`] support sits *strictly between* the two
+    /// singular-cardinality boundaries — at least *two* observed cells
+    /// *and* at least *two* unobserved cells. The **strict-partial-
+    /// cover-tier-counts boolean predicate** on the tier altitude, the
+    /// boundary-free interior of the coverage-support partition
+    /// strictly inside the [`Self::tier_histogram`]-supplied
+    /// `has_partial_cover`-shaped middle leg of the coarser coverage
+    /// trichotomy. Routes through
+    /// [`crate::AxisHistogram::has_strict_partial_cover`] one altitude
+    /// down: the single-pass short-circuiting scan over the fixed-
+    /// cardinality counts vector that bounds the cost at four witness
+    /// cells (two zero cells and two nonzero cells) — tighter than any
+    /// of the four documented open-coded surfaces one seam over.
+    ///
+    /// The **strict-interior-tier-counts peer** of the four documented
+    /// surface forms consumers previously re-derived inline:
+    /// `map.tier_histogram().has_partial_cover() &&
+    /// !map.tiers_singular_support() && !map.tiers_singular_gap()` (the
+    /// structural-conjunction form on the existing named-boundary triad
+    /// — three method calls and two negations across three named
+    /// predicates), `1 < map.contributing_tiers_count() &&
+    /// map.contributing_tiers_count() + 1 <
+    /// crate::axis_cardinality::<ConfigTierKind>()` (the support-scalar
+    /// strict-interval form, which pays for a full-axis scan and pulls
+    /// in the [`crate::axis_cardinality`] turbofish with `+ 1 <`
+    /// strict-bound arithmetic at every call site), `1 <
+    /// map.absent_tiers_count() && map.absent_tiers_count() + 1 <
+    /// crate::axis_cardinality::<ConfigTierKind>()` (the coverage-gap-
+    /// scalar strict-interval form on the complementary side of the
+    /// same partition), and `map.contributing_tiers().len() >= 2 &&
+    /// map.absent_tiers().len() >= 2` (the dual-`Vec` at-least-two-of-
+    /// each form, which allocates two `Vec<ConfigTierKind>` just to
+    /// peek at their lengths). The four forms drifted in subtle ways at
+    /// every consumer site (allocation vs. scalar, turbofish vs. name-
+    /// only, support side vs. coverage-gap side, structural conjunction
+    /// vs. interval arithmetic). This lift names the strict-interior-
+    /// tier-counts predicate directly at the tier-altitude surface with
+    /// a single-pass short-circuiting scan — the typed boolean every
+    /// operator-facing "did the fold land in the strict interior of the
+    /// tier-support-cardinality interval?" check reads off as a single
+    /// method call.
+    ///
+    /// The tier-altitude strict-partial-cover-predicate peer that
+    /// **climbs the "strict-partial-cover across altitudes"
+    /// projection** from the diff altitude seeded by
+    /// [`ConfigDiff::kinds_strict_partial_cover`]. The chain altitude's
+    /// three sub-axes (`layer_kinds_strict_partial_cover`,
+    /// `file_formats_strict_partial_cover`,
+    /// `env_prefix_kinds_strict_partial_cover` over the corresponding
+    /// chain histograms) are the natural next sideways lifts. Completes
+    /// the middle-leg-corner of the 5-corner support-cardinality
+    /// partition `(tiers_singular_support, tiers_strict_partial_cover,
+    /// tiers_singular_gap)` inside the middle leg of the coverage
+    /// trichotomy `(!tiers_any_observed, tier_histogram().has_partial_cover(),
+    /// tiers_full_cover)` — the last unnamed corner in the closed
+    /// 5-corner support-cardinality partition of the tier altitude.
+    ///
+    /// **Cardinality-`4` reachability at the tier altitude — one
+    /// strict-interior witness at support cardinality `2`.**
+    /// [`ConfigTierKind`] carries four cells so the strict interval
+    /// `[2, cardinality - 2] = [2, 2]` on the support-cardinality
+    /// scalar is the singleton `{2}` — a fold observes the strict
+    /// interior exactly when its support is *precisely two* tier
+    /// cells. Every fold observing three tiers (support cardinality
+    /// `3`) reads `false` (falls on the singleton-gap side); every fold
+    /// observing one tier (support cardinality `1`) reads `false`
+    /// (falls on the singleton-support side); only the two-tier
+    /// partial-cover fixture (e.g. `Bare` + `Default` with `Discovered`
+    /// and `Custom` silent) reads `true`. The four documented open-
+    /// codings agree pointwise on the cardinality-`4` axis; the seam
+    /// names the boundary at the surface once and for all.
+    ///
+    /// **Empty-map convention** — returns `false` on the empty map: the
+    /// empty map has zero observed cells, so the "at least two
+    /// observed" half of the conjunction fails uniformly. Matches
+    /// [`crate::AxisHistogram::has_strict_partial_cover`]'s empty-
+    /// histogram `false` convention one altitude down. The empty map is
+    /// therefore on the `false` side of the strict-interior boundary —
+    /// matching [`Self::tiers_any_observed`]'s empty-map `false`
+    /// polarity, [`Self::tiers_full_cover`]'s empty-map `false`
+    /// polarity, [`Self::tiers_singular_support`]'s empty-map `false`
+    /// polarity, and [`Self::tiers_singular_gap`]'s empty-map `false`
+    /// polarity.
+    ///
+    /// **Singleton-support convention** — returns `false` on every fold
+    /// whose observed support is a single [`ConfigTierKind`] cell: the
+    /// support cardinality is `1` (not `>= 2`), so the "at least two
+    /// observed" half fails uniformly. Every fold with all leaves
+    /// attributed to only-`Bare`, only-`Discovered`, only-`Default`, or
+    /// only-`Custom` is a witness on the `false` side. The singleton-
+    /// support fixture partitions the six coverage-support boundaries
+    /// with (`any_observed`=true, `singular_support`=true,
+    /// `singular_gap`=false, `balanced`=true, `full_cover`=false,
+    /// `strict_partial_cover`=false).
+    ///
+    /// **Two-tier partial cover convention** — returns `true` on every
+    /// fold whose observed support is exactly two [`ConfigTierKind`]
+    /// cells: two cells observed AND two cells unobserved (four total
+    /// minus two observed equals two unobserved), the unique strict-
+    /// interior witness on the cardinality-`4` tier axis. A fold
+    /// observing only the `Bare` and `Default` tiers is a witness:
+    /// `Discovered` and `Custom` are silent. The two-tier partial-cover
+    /// fixture partitions the six coverage-support boundaries with
+    /// (`any_observed`=true, `singular_support`=false,
+    /// `singular_gap`=false, `balanced`=either polarity depending on
+    /// per-tier counts, `full_cover`=false,
+    /// `strict_partial_cover`=true) — the row this predicate isolates
+    /// from the surrounding boundaries.
+    ///
+    /// **Three-tier partial cover convention** — returns `false` on
+    /// every fold whose observed support is exactly three
+    /// [`ConfigTierKind`] cells: only one cell is unobserved (not
+    /// `>= 2`), so the "at least two unobserved" half fails uniformly.
+    /// Direct witness of `tiers_singular_gap ⇒
+    /// !tiers_strict_partial_cover` on the cardinality-`4` tier axis.
+    ///
+    /// **Uniform four-tier cover convention** — returns `false` on
+    /// every fold where each [`ConfigTierKind`] cell was observed at
+    /// least once: zero cells are unobserved, so the "at least two
+    /// unobserved" half fails uniformly. Matches
+    /// [`crate::AxisHistogram::has_strict_partial_cover`]'s full-cover
+    /// `false` convention one altitude down.
+    ///
+    /// # Invariants
+    ///
+    /// - `tiers_strict_partial_cover() ==
+    ///   tier_histogram().has_strict_partial_cover()` — both project
+    ///   the same predicate off the same primitive; the named seam is
+    ///   the cube-native routing of the histogram surface.
+    /// - `tiers_strict_partial_cover() ⇔ tier_histogram().has_partial_cover()
+    ///   && !tiers_singular_support() && !tiers_singular_gap()` always
+    ///   — the defining structural-conjunction form on the existing
+    ///   named-boundary triad: the strict interior is exactly the
+    ///   partial-cover middle leg minus its two singular-cardinality
+    ///   corners.
+    /// - `tiers_strict_partial_cover() == (1 < contributing_tiers_count()
+    ///   && contributing_tiers_count() + 1 <
+    ///   crate::axis_cardinality::<ConfigTierKind>())` always — the
+    ///   support-scalar strict-interval form, without allocating the
+    ///   `Vec<ConfigTierKind>`.
+    /// - `tiers_strict_partial_cover() == (1 < absent_tiers_count() &&
+    ///   absent_tiers_count() + 1 <
+    ///   crate::axis_cardinality::<ConfigTierKind>())` always — the
+    ///   coverage-gap-scalar strict-interval form on the complementary
+    ///   side of the same partition.
+    /// - `tiers_strict_partial_cover() ⇒ tiers_any_observed()` on every
+    ///   axis with cardinality `>= 4` (every implementor today —
+    ///   [`ConfigTierKind`] carries four cells): a strict-interior fold
+    ///   observes at least two cells. Contrapositively,
+    ///   `!tiers_any_observed() ⇒ !tiers_strict_partial_cover()`.
+    /// - `tiers_strict_partial_cover() ⇒ !tiers_full_cover()` always:
+    ///   the strict interior requires `>= 2` unobserved cells, a full
+    ///   cover has zero unobserved cells.
+    /// - `tiers_strict_partial_cover() ⇒ !tiers_singular_support()`
+    ///   always: the strict interior requires `>= 2` observed cells,
+    ///   a singleton support has exactly `1` observed cell.
+    /// - `tiers_strict_partial_cover() ⇒ !tiers_singular_gap()` always:
+    ///   the strict interior requires `>= 2` unobserved cells, a
+    ///   singleton gap has exactly `1` unobserved cell.
+    /// - `tiers_strict_partial_cover() ⇒ self.len() >= 2` — a fold with
+    ///   `>= 2` observed cells has at least one leaf on each observed
+    ///   cell (at least two leaves total).
+    /// - `(tiers_singular_support, tiers_strict_partial_cover,
+    ///   tiers_singular_gap)` is pairwise disjoint on every fold —
+    ///   distinct support cardinalities `1`, `[2, cardinality - 2]`,
+    ///   `cardinality - 1` never overlap on the cardinality-`4` tier
+    ///   axis. Together with the two boundary corners
+    ///   (`!tiers_any_observed`, `tiers_full_cover`) the five
+    ///   predicates partition every fold on the tier altitude — exactly
+    ///   one of the five corners fires per fold.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigTierKind>()` (the
+    /// strict-partial-cover scan). Both are `O(n)` in practice since
+    /// the tier axis carries a fixed four-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan short-circuits
+    /// once it has witnessed both *two* zero counts and *two* nonzero
+    /// counts (bounded at four witness cells visited on any strict-
+    /// interior histogram), strictly tighter than the four documented
+    /// open-coded surfaces — no `Vec<ConfigTierKind>` allocation, no
+    /// [`crate::axis_cardinality`] turbofish, no dual scalar equality
+    /// against a magic axis-cardinality-minus-one constant.
+    #[must_use]
+    pub fn tiers_strict_partial_cover(&self) -> bool {
+        self.tier_histogram().has_strict_partial_cover()
+    }
 }
 
 /// Zero-allocation `(&[String], &Provenance)` stream over the sorted
@@ -14678,6 +14868,452 @@ mod progressive_tests {
             let hist = map.tier_histogram();
             let hand_rolled = hist.iter().filter(|(_, c)| *c == 0).count() == 1;
             assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::tiers_strict_partial_cover — strict-partial-
+    //    cover-tier-counts boolean predicate on the tier altitude,
+    //    lifting has_strict_partial_cover from the histogram surface
+    //    and climbing the "strict-partial-cover across altitudes"
+    //    projection from the diff altitude. The cardinality-`4`
+    //    ConfigTierKind axis carries the strict-interior witness at
+    //    support cardinality `2` — the unique fixture that reads
+    //    `true`. ──
+
+    #[test]
+    fn tiers_strict_partial_cover_matches_tier_histogram_has_strict_partial_cover_pointwise() {
+        // Routing pin: `tiers_strict_partial_cover` routes through
+        // `tier_histogram().has_strict_partial_cover()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Tier-
+        // altitude peer of
+        // `kinds_strict_partial_cover_matches_kind_histogram_has_strict_partial_cover_pointwise`
+        // on the diff altitude in the "strict-partial-cover across
+        // altitudes" projection.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().has_strict_partial_cover();
+            assert_eq!(map.tiers_strict_partial_cover(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn tiers_strict_partial_cover_matches_structural_conjunction_pointwise() {
+        // Defining structural-conjunction form:
+        // `tiers_strict_partial_cover() ⇔ tier_histogram().has_partial_cover()
+        // && !tiers_singular_support() && !tiers_singular_gap()` on
+        // every fixture. Pins the predicate against the three-way
+        // conjunction on the existing named-boundary triad consumers
+        // reach for when they open-code the strict interior in
+        // structural terms.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_strict_partial_cover();
+            let via_structural = map.tier_histogram().has_partial_cover()
+                && !map.tiers_singular_support()
+                && !map.tiers_singular_gap();
+            assert_eq!(
+                via_seam, via_structural,
+                "tiers_strict_partial_cover ({via_seam}) must agree with \
+                 has_partial_cover && !singular_support && !singular_gap ({via_structural})",
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_strict_partial_cover_agrees_with_contributing_tiers_count_strict_interval_pointwise() {
+        // Support-scalar strict-interval form:
+        // `tiers_strict_partial_cover() == (1 <
+        // contributing_tiers_count() && contributing_tiers_count() + 1
+        // < axis_cardinality::<ConfigTierKind>())` on every fixture.
+        // The support-side surfacing of the same boolean, without
+        // allocating the `Vec<ConfigTierKind>`. Peer of
+        // `kinds_strict_partial_cover_agrees_with_present_kinds_count_strict_interval_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_strict_partial_cover();
+            let count = map.contributing_tiers_count();
+            let via_interval = 1 < count && count + 1 < crate::axis_cardinality::<ConfigTierKind>();
+            assert_eq!(
+                via_seam, via_interval,
+                "tiers_strict_partial_cover ({via_seam}) must agree with \
+                 1 < contributing_tiers_count && contributing_tiers_count + 1 < axis_cardinality \
+                 (count={count})",
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_strict_partial_cover_agrees_with_absent_tiers_count_strict_interval_pointwise() {
+        // Coverage-gap-scalar strict-interval form:
+        // `tiers_strict_partial_cover() == (1 < absent_tiers_count()
+        // && absent_tiers_count() + 1 <
+        // axis_cardinality::<ConfigTierKind>())` on every fixture. The
+        // coverage-gap-side surfacing of the same boolean, without
+        // allocating the `Vec<ConfigTierKind>`. Complementary to the
+        // support-scalar strict-interval form on the same partition
+        // via the `contributing_tiers_count + absent_tiers_count ==
+        // axis_cardinality` invariant.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_strict_partial_cover();
+            let gap = map.absent_tiers_count();
+            let via_interval = 1 < gap && gap + 1 < crate::axis_cardinality::<ConfigTierKind>();
+            assert_eq!(
+                via_seam, via_interval,
+                "tiers_strict_partial_cover ({via_seam}) must agree with \
+                 1 < absent_tiers_count && absent_tiers_count + 1 < axis_cardinality \
+                 (gap={gap})",
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_strict_partial_cover_agrees_with_dual_vec_at_least_two_of_each_pointwise() {
+        // Dual-`Vec` at-least-two-of-each form:
+        // `tiers_strict_partial_cover() == (contributing_tiers().len()
+        // >= 2 && absent_tiers().len() >= 2)` on every fixture. Pins
+        // the predicate against the dual-vector form consumers reach
+        // for when they already hold both support and coverage-gap
+        // vectors — the allocating-both-vectors open-coding this lift
+        // replaces.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_strict_partial_cover();
+            let via_vec = map.contributing_tiers().len() >= 2 && map.absent_tiers().len() >= 2;
+            assert_eq!(
+                via_seam, via_vec,
+                "tiers_strict_partial_cover ({via_seam}) must agree with \
+                 contributing_tiers().len() >= 2 && absent_tiers().len() >= 2 ({via_vec})",
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_strict_partial_cover_empty_map_is_false() {
+        // Empty-map boundary: the empty map observes zero cells, so
+        // the "at least two observed" half of the conjunction fails
+        // uniformly — `tiers_strict_partial_cover` reads `false`.
+        // Matches `has_strict_partial_cover` reading `false` on the
+        // empty histogram one altitude down. Peer of
+        // `tiers_any_observed_empty_map_is_false`,
+        // `tiers_full_cover_empty_map_is_false`,
+        // `tiers_singular_support_empty_map_is_false`, and
+        // `tiers_singular_gap_empty_map_is_false` on the same polarity
+        // of the coverage-support partition. Peer of
+        // `kinds_strict_partial_cover_empty_diff_is_false` on the diff
+        // altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert!(!empty.tiers_strict_partial_cover());
+        assert!(!empty.tiers_any_observed());
+        assert!(!empty.tiers_singular_support());
+        assert!(!empty.tiers_singular_gap());
+        assert!(!empty.tiers_full_cover());
+    }
+
+    #[test]
+    fn tiers_strict_partial_cover_singleton_support_is_false() {
+        // Singleton-support pin: every leaf lands on the same tier,
+        // so the support cardinality is `1` (not `>= 2`) — the "at
+        // least two observed" half fails uniformly. Direct witness of
+        // the strict disjointness `tiers_singular_support ⇒
+        // !tiers_strict_partial_cover` on the cardinality-`4` tier
+        // axis. Peer of
+        // `kinds_strict_partial_cover_singleton_support_is_false` on
+        // the diff altitude.
+        let m: ProvenanceMap = ["a", "b", "c", "d"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 1);
+        assert!(m.tiers_singular_support());
+        assert!(!m.tiers_strict_partial_cover());
+    }
+
+    #[test]
+    fn tiers_strict_partial_cover_two_tier_partial_cover_is_true() {
+        // Two-tier cover pin: a fold observing exactly two tiers (say
+        // `Bare` + `Default`) has two observed cells AND two
+        // unobserved cells (`Discovered` and `Custom`) on the four-
+        // cell `ConfigTierKind` axis — `tiers_strict_partial_cover`
+        // reads `true` (the unique strict-interior witness at support
+        // cardinality `2`). Direct witness of the strict-partial-
+        // cover-tier-counts predicate's `true` side, exactly the
+        // fixture that isolates it from the surrounding five
+        // coverage-support boundaries. Distinguishes the tier
+        // altitude from the diff altitude, where the two-kind partial
+        // cover falls on the singleton-gap boundary (not
+        // strict-interior) by cardinality-`3` reachability.
+        let m: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 2);
+        assert_eq!(m.absent_tiers().len(), 2);
+        assert!(m.tiers_strict_partial_cover());
+        assert!(m.tiers_any_observed());
+        assert!(!m.tiers_full_cover());
+        assert!(!m.tiers_singular_support());
+        assert!(!m.tiers_singular_gap());
+    }
+
+    #[test]
+    fn tiers_strict_partial_cover_three_tier_partial_cover_is_false() {
+        // Three-tier cover pin: a fold observing exactly three tiers
+        // has one silent tier (support cardinality `3`, coverage-gap
+        // `1`) — the "at least two unobserved" half fails uniformly
+        // and `tiers_strict_partial_cover` reads `false`. Direct
+        // witness of the strict disjointness `tiers_singular_gap ⇒
+        // !tiers_strict_partial_cover` on the cardinality-`4` tier
+        // axis.
+        let m: ProvenanceMap = [
+            ("b", ConfigTierKind::Bare),
+            ("d", ConfigTierKind::Default),
+            ("c", ConfigTierKind::Custom),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        assert_eq!(m.contributing_tiers().len(), 3);
+        assert!(m.tiers_singular_gap());
+        assert!(!m.tiers_strict_partial_cover());
+    }
+
+    #[test]
+    fn tiers_strict_partial_cover_uniform_cover_is_false() {
+        // Uniform-cover pin: every tier contributes at least one leaf,
+        // so zero cells are unobserved — the "at least two unobserved"
+        // half fails uniformly. Direct witness of the strict
+        // disjointness `tiers_full_cover ⇒ !tiers_strict_partial_cover`
+        // on every axis. Peer of
+        // `kinds_strict_partial_cover_uniform_cover_is_false` on the
+        // diff altitude.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(m.tiers_full_cover());
+        assert!(!m.tiers_strict_partial_cover());
+    }
+
+    #[test]
+    fn tiers_strict_partial_cover_implies_tiers_any_observed_pointwise() {
+        // Subsumption pin: `tiers_strict_partial_cover() ⇒
+        // tiers_any_observed()` on every axis with cardinality `>= 4`
+        // (every implementor today — `ConfigTierKind` carries four
+        // cells): a strict-interior fold observes `>= 2 >= 1` cells,
+        // so the any-observed predicate holds. Peer of
+        // `tiers_singular_support_implies_tiers_any_observed_pointwise`
+        // and `tiers_singular_gap_implies_tiers_any_observed_pointwise`
+        // on the same subsumption ladder.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_strict_partial_cover() {
+                assert!(
+                    map.tiers_any_observed(),
+                    "strict-partial-cover map must be any-observed",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_strict_partial_cover_implies_not_tiers_singular_support_pointwise() {
+        // Disjointness pin: `tiers_strict_partial_cover() ⇒
+        // !tiers_singular_support()` on every axis. A strict-interior
+        // fold has `>= 2` observed cells; a singleton support has
+        // exactly `1`. The two coverage-support corners are disjoint.
+        // Peer of
+        // `kinds_strict_partial_cover_implies_not_kinds_singular_support_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_strict_partial_cover() {
+                assert!(
+                    !map.tiers_singular_support(),
+                    "strict-partial-cover map cannot be singular-support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_strict_partial_cover_implies_not_tiers_singular_gap_pointwise() {
+        // Disjointness pin: `tiers_strict_partial_cover() ⇒
+        // !tiers_singular_gap()` on every axis. A strict-interior fold
+        // has `>= 2` unobserved cells; a singleton gap has exactly
+        // `1`. The two coverage-support corners are disjoint. Peer of
+        // `kinds_strict_partial_cover_implies_not_kinds_singular_gap_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_strict_partial_cover() {
+                assert!(
+                    !map.tiers_singular_gap(),
+                    "strict-partial-cover map cannot be singular-gap",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_strict_partial_cover_implies_not_tiers_full_cover_pointwise() {
+        // Disjointness pin: `tiers_strict_partial_cover() ⇒
+        // !tiers_full_cover()` on every axis. A strict-interior fold
+        // has `>= 2` unobserved cells; a full cover has zero. The two
+        // are disjoint. Peer of
+        // `kinds_strict_partial_cover_implies_not_kinds_full_cover_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_strict_partial_cover() {
+                assert!(
+                    !map.tiers_full_cover(),
+                    "strict-partial-cover map cannot be full-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_any_observed_negation_implies_not_tiers_strict_partial_cover_pointwise() {
+        // Contrapositive: `!tiers_any_observed() ⇒
+        // !tiers_strict_partial_cover()` on every axis. If no cell was
+        // observed, the "at least two observed" half of the
+        // conjunction fails uniformly — the strict-interior predicate
+        // fails. Peer of
+        // `tiers_any_observed_negation_implies_not_tiers_singular_support_pointwise`
+        // and
+        // `tiers_any_observed_negation_implies_not_tiers_singular_gap_pointwise`
+        // on the middle-leg-corner cardinality slice of the same
+        // coverage-support partition.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if !map.tiers_any_observed() {
+                assert!(
+                    !map.tiers_strict_partial_cover(),
+                    "empty-support map cannot be strict-partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_strict_partial_cover_implies_leaf_count_lower_bound_pointwise() {
+        // Leaf-count lower-bound pin: `tiers_strict_partial_cover() ⇒
+        // self.len() >= 2` — a strict-interior fold has at least two
+        // observed cells, and each observed cell has at least one leaf
+        // by construction of `tier_histogram`. Tightened from the
+        // `>= 1` bound `tiers_singular_support` carries.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_strict_partial_cover() {
+                assert!(
+                    map.len() >= 2,
+                    "strict-partial-cover map must have at least 2 leaves \
+                     (got {n})",
+                    n = map.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_strict_partial_cover_agrees_with_open_coded_dual_at_least_two_walk() {
+        // Parity against the exact hand-rolled strict-partial-cover
+        // walk this lift replaces: walk every cell of the histogram
+        // and count how many carry a zero count and how many carry a
+        // positive count; the strict-partial-cover predicate reads
+        // `true` iff at least two cells are zero AND at least two
+        // cells are positive. Peer of
+        // `kinds_strict_partial_cover_agrees_with_open_coded_dual_at_least_two_walk`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_strict_partial_cover();
+            let hist = map.tier_histogram();
+            let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
+            let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
+            let hand_rolled = zeros >= 2 && nonzeros >= 2;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn tiers_partition_covers_every_map_pointwise() {
+        // Trichotomy closure pin at the tier altitude: exactly one of
+        // `(!tiers_any_observed, tiers_singular_support,
+        // tiers_strict_partial_cover, tiers_singular_gap,
+        // tiers_full_cover)` fires per fold on every axis with
+        // cardinality `>= 3`. With this climb the 5-corner support-
+        // cardinality partition is jointly exhaustive AND pairwise
+        // disjoint on every `ProvenanceMap` fixture: exactly one
+        // corner fires per fold. Peer of
+        // `kinds_partition_covers_every_diff_pointwise` on the diff
+        // altitude in the same closed-partition shape.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let empty = !map.tiers_any_observed();
+            let sup = map.tiers_singular_support();
+            let strict = map.tiers_strict_partial_cover();
+            let gap = map.tiers_singular_gap();
+            let full = map.tiers_full_cover();
+            let fires =
+                u8::from(empty) + u8::from(sup) + u8::from(strict) + u8::from(gap) + u8::from(full);
+            assert_eq!(
+                fires, 1,
+                "exactly one of (empty, singular_support, strict_partial_cover, \
+                 singular_gap, full_cover) must fire per map — observed {fires}",
+            );
         }
     }
 
