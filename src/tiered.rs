@@ -5154,6 +5154,207 @@ impl ConfigDiff {
     pub fn kinds_strict_partial_cover(&self) -> bool {
         self.kind_histogram().has_strict_partial_cover()
     }
+
+    /// `true` exactly when this diff's observed [`DiffLineKind`]
+    /// support sits at the *bottom* of the support-cardinality
+    /// interval — at most *one* observed cell. The **low-support-
+    /// diff-kinds boolean predicate** on the diff altitude, the
+    /// union-of-low-boundaries corner of the support-cardinality
+    /// magnitude-direction ternary partition
+    /// `(low_support, strict_partial_cover, high_support)` — the
+    /// bottom leg of the magnitude ternary, folding the empty-diff
+    /// and the singleton-support boundaries into a single named
+    /// low-magnitude corner. Routes through
+    /// [`crate::AxisHistogram::has_low_support`] one altitude down:
+    /// the single-pass short-circuiting scan over the fixed-
+    /// cardinality counts vector that finds the *second* nonzero
+    /// cell and short-circuits, bounded at two nonzero witnesses,
+    /// strictly tighter than any of the three documented open-coded
+    /// surfaces one seam over.
+    ///
+    /// The **low-magnitude-diff-kinds peer** of the three documented
+    /// surface forms consumers previously re-derived inline:
+    /// `diff.is_empty_diff() || diff.kinds_singular_support()` (the
+    /// defining union-of-low-boundaries disjunction on the two
+    /// named histogram-side peers — two method calls across two
+    /// named predicates with a boolean or), `diff.present_kinds_count()
+    /// <= 1` (the support-scalar surface, which pays for a full-axis
+    /// scan and equates a `usize` against a magic threshold),
+    /// `diff.present_kinds().len() <= 1` (the support-`Vec` form,
+    /// which allocates a `Vec<DiffLineKind>` and reads its length
+    /// back), and `diff.absent_kinds_count() >=
+    /// crate::axis_cardinality::<DiffLineKind>() - 1` (the coverage-
+    /// gap-scalar form on the complementary side of the same
+    /// partition, which pays for a full-axis scan and pulls in the
+    /// [`crate::axis_cardinality`] turbofish with `- 1` arithmetic
+    /// at every call site). The four forms drifted in subtle ways
+    /// at every consumer site (allocation vs. scalar, turbofish vs.
+    /// name-only, support side vs. coverage-gap side, structural
+    /// disjunction vs. interval arithmetic). This lift names the
+    /// low-support-diff-kinds predicate directly at the diff-altitude
+    /// surface with a single-pass short-circuiting scan — the typed
+    /// boolean every operator-facing "did the diff land in the low-
+    /// magnitude corner of the support-cardinality interval?" check
+    /// reads off as a single method call.
+    ///
+    /// The diff-altitude low-support-predicate peer that **seeds the
+    /// "low-support across altitudes" projection** — the bottom-leg
+    /// corner of the magnitude-direction ternary partition
+    /// `(low_support, strict_partial_cover, high_support)`, a fresh
+    /// vertical on top of the just-closed 6×5 coverage-support
+    /// predicate cube. The natural next lifts climb to the tier
+    /// altitude (`ProvenanceMap::tiers_low_support` over
+    /// [`Self::tier_histogram`]) and sideways along the chain
+    /// altitude's three sub-axes (`layer_kinds_low_support`,
+    /// `file_formats_low_support`, `env_prefix_kinds_low_support`
+    /// over the corresponding chain histograms). The pattern is the
+    /// same at every altitude / sub-axis: fuse the four documented
+    /// open-coded surface forms (union-of-low-boundaries disjunction,
+    /// support-scalar at-most-one, support-`Vec` at-most-one,
+    /// coverage-gap-scalar at-least-axis-cardinality-minus-one) into
+    /// a single boolean predicate named at the surface, routed
+    /// through the shared [`crate::AxisHistogram::has_low_support`]
+    /// primitive one altitude down. Complements the six coverage-
+    /// support boundary corners already seeded across the six
+    /// altitude / sub-axis rows with a new *magnitude-direction*
+    /// row — the ternary partition
+    /// `(low_support, strict_partial_cover, high_support)` folds
+    /// the 5-corner support-cardinality partition into three named
+    /// legs at the surface, naming the union-of-low-boundaries
+    /// corner without discarding the finer resolution below.
+    ///
+    /// **Cardinality-`>= 1` reachability at the diff altitude — the
+    /// only always-reachable corner in the projection.** The bottom
+    /// magnitude corner carries witnesses on every axis with
+    /// `axis_cardinality::<A>() >= 1` (the empty diff always
+    /// witnesses low support via the "at most one observed" clause,
+    /// so the corner is non-empty on every non-degenerate axis).
+    /// [`DiffLineKind`] carries three cells, so
+    /// `kinds_low_support()` reads `true` on the empty diff and on
+    /// every singleton-support diff, and `false` on every two-or-more-
+    /// cell-cover diff. Strictly wider than the strict-interior
+    /// predicate [`Self::kinds_strict_partial_cover`] which is
+    /// vacuously `false` on cardinality-`<= 3` axes.
+    ///
+    /// **Empty-diff convention** — returns `true` on the empty diff:
+    /// the empty diff observes zero cells, so the "at most one
+    /// observed" predicate holds vacuously. Matches
+    /// [`crate::AxisHistogram::has_low_support`]'s empty-histogram
+    /// `true` convention one altitude down. The empty diff is on
+    /// the `true` side of the low-support boundary — the low-
+    /// support corner is the union-of-low-boundaries fold that
+    /// pulls the empty diff and every singleton-support diff into
+    /// one named low-magnitude corner. Orthogonal to
+    /// [`Self::kinds_any_observed`]'s empty-diff `false` polarity,
+    /// [`Self::kinds_full_cover`]'s empty-diff `false` polarity,
+    /// [`Self::kinds_singular_support`]'s empty-diff `false`
+    /// polarity, [`Self::kinds_singular_gap`]'s empty-diff `false`
+    /// polarity, and [`Self::kinds_strict_partial_cover`]'s empty-
+    /// diff `false` polarity.
+    ///
+    /// **Singleton-support convention** — returns `true` on every
+    /// diff whose observed support is a single [`DiffLineKind`]: the
+    /// support cardinality is `1`, so the "at most one observed"
+    /// predicate holds. Every diff of only-`Removed`, only-`Added`,
+    /// or only-`Context` lines is a witness on the `true` side. The
+    /// singleton-support fixture partitions the seven coverage-
+    /// support boundaries with (`any_observed`=true,
+    /// `singular_support`=true, `singular_gap`=false, `balanced`=true,
+    /// `full_cover`=false, `strict_partial_cover`=false,
+    /// `low_support`=true).
+    ///
+    /// **Two-kind partial cover convention** — returns `false` on
+    /// every diff whose observed support is exactly two
+    /// [`DiffLineKind`] cells: the support cardinality is `2`, so
+    /// the "at most one observed" predicate fails uniformly. A diff
+    /// of only-`Removed`+`Added` lines is a witness on the `false`
+    /// side: `Context` is silent. The two-kind partial cover fixture
+    /// partitions the seven coverage-support boundaries with
+    /// (`any_observed`=true, `singular_support`=false,
+    /// `singular_gap`=true, `balanced`=?, `full_cover`=false,
+    /// `strict_partial_cover`=false, `low_support`=false).
+    ///
+    /// **Uniform three-kind cover convention** — returns `false` on
+    /// every diff where each [`DiffLineKind`] cell was observed at
+    /// least once: the support cardinality is `3`, so the "at most
+    /// one observed" predicate fails uniformly. Matches
+    /// [`Self::kinds_full_cover`]'s `true` side on the same fixture —
+    /// the two boundaries `low_support` and `full_cover` are
+    /// disjoint at the top and bottom of the support-cardinality
+    /// magnitude interval on every cardinality-`>= 2` axis.
+    ///
+    /// # Invariants
+    ///
+    /// - `kinds_low_support() == kind_histogram().has_low_support()`
+    ///   — both project the same predicate off the same primitive;
+    ///   the named seam is the cube-native routing of the histogram
+    ///   surface.
+    /// - `kinds_low_support() ⇔ is_empty_diff() ||
+    ///   kinds_singular_support()` — the defining union-of-low-
+    ///   boundaries disjunction on the two named histogram-side
+    ///   peers. The low-support corner folds the empty-diff and
+    ///   the singleton-support boundaries into one named low-
+    ///   magnitude corner without discarding the finer resolution
+    ///   below.
+    /// - `kinds_low_support() == (present_kinds_count() <= 1)`
+    ///   always — the support-scalar surface, without allocating
+    ///   the `Vec<DiffLineKind>`.
+    /// - `kinds_low_support() == (present_kinds().len() <= 1)`
+    ///   always — the support-`Vec` surface.
+    /// - `kinds_low_support() == (absent_kinds_count() >=
+    ///   crate::axis_cardinality::<DiffLineKind>() - 1)` always —
+    ///   the coverage-gap-scalar surface, the dual-side surfacing
+    ///   of the same boolean across the (observed, unobserved)
+    ///   partition.
+    /// - `kinds_low_support() ⇒ !kinds_full_cover()` on every axis
+    ///   with cardinality `>= 2` (every implementor today —
+    ///   [`DiffLineKind`] carries three cells): low support has
+    ///   size `<= 1`, a full cover has size
+    ///   `axis_cardinality >= 2`, so the two boundaries are disjoint.
+    /// - `kinds_low_support() ⇒ !kinds_singular_gap()` on every
+    ///   axis with cardinality `>= 3` (every implementor today):
+    ///   low support has size `<= 1`, singleton-gap has support
+    ///   size `axis_cardinality - 1 >= 2`, so the two are disjoint.
+    ///   On the cardinality-`2` corner (no diff-altitude axis
+    ///   today) the two coincide pointwise on the singleton
+    ///   fixture.
+    /// - `kinds_low_support() ⇒ !kinds_strict_partial_cover()`
+    ///   always: the strict interior requires `>= 2` observed
+    ///   cells; low support has `<= 1`. The two are disjoint on
+    ///   every axis (vacuously on cardinality-`<= 3` axes where
+    ///   `kinds_strict_partial_cover` never fires).
+    /// - `(kinds_low_support, kinds_strict_partial_cover,
+    ///   kinds_high_support)` will form a strict ternary partition
+    ///   once `kinds_high_support` lifts — the magnitude-direction
+    ///   ternary of the 5-corner support-cardinality partition,
+    ///   folding the two singular-cardinality boundaries into the
+    ///   two magnitude corners and naming the boundary-free strict
+    ///   interior separately. Pinned on the histogram surface as
+    ///   `axis_histogram_has_low_support_has_strict_partial_cover_has_high_support_form_strict_ternary_partition_for_every_closed_axis_implementor`.
+    /// - `!kinds_any_observed() ⇒ kinds_low_support()` — the empty
+    ///   diff always sits at the bottom of the magnitude interval.
+    /// - `kinds_singular_support() ⇒ kinds_low_support()` — every
+    ///   singleton-support diff lands on the low-magnitude corner
+    ///   by the union-of-low-boundaries disjunction.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram
+    /// build) and `k = crate::axis_cardinality::<DiffLineKind>()`
+    /// (the low-support scan). Both are `O(n)` in practice since
+    /// the diff-cell axis carries a fixed three-cell cardinality;
+    /// the returned `bool` reads one predicate. The scan short-
+    /// circuits on the *second* nonzero cell (bounded at two
+    /// nonzero-witness cells visited on any two-or-more-cell-
+    /// support diff), strictly tighter than the four documented
+    /// open-coded surfaces — no boolean disjunction across two
+    /// named predicates, no `Vec<DiffLineKind>` allocation, no
+    /// [`crate::axis_cardinality`] turbofish with `- 1` arithmetic
+    /// against a magic threshold.
+    #[must_use]
+    pub fn kinds_low_support(&self) -> bool {
+        self.kind_histogram().has_low_support()
+    }
 }
 
 #[cfg(test)]
@@ -10168,6 +10369,323 @@ mod tests {
                 "exactly one of (empty, singular_support, strict_partial_cover, \
                  singular_gap, full_cover) must fire per diff — observed {fires}",
             );
+        }
+    }
+
+    // ── ConfigDiff::kinds_low_support — low-support-diff-kinds
+    //    boolean predicate on the diff altitude, seeding the "low-
+    //    support across altitudes" projection: the bottom-leg
+    //    corner of the magnitude-direction ternary partition
+    //    `(low_support, strict_partial_cover, high_support)`, a
+    //    fresh vertical on top of the just-closed 6×5 coverage-
+    //    support predicate cube. Union-of-low-boundaries corner
+    //    folding the empty-diff and the singleton-support boundaries
+    //    into one named low-magnitude corner. ──
+
+    #[test]
+    fn kinds_low_support_matches_kind_histogram_has_low_support_pointwise() {
+        // Routing pin: `kinds_low_support` routes through
+        // `kind_histogram().has_low_support()`, so the two seams
+        // must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Diff-
+        // altitude low-support-predicate seed of the new "low-support
+        // across altitudes" projection — bottom-leg-corner peer of
+        // the magnitude-direction ternary partition on top of the
+        // just-closed 6×5 coverage-support predicate cube.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().has_low_support();
+            assert_eq!(diff.kinds_low_support(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kinds_low_support_matches_defining_union_of_low_boundaries_pointwise() {
+        // Defining union-of-low-boundaries form:
+        // `kinds_low_support() ⇔ is_empty_diff() ||
+        // kinds_singular_support()`. Pins the predicate against the
+        // two-way disjunction on the two named histogram-side peers
+        // consumers reach for when they open-code the low-magnitude
+        // corner as a boolean fold over the empty-diff and singleton-
+        // support boundaries.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_low_support();
+            let via_union = diff.is_empty_diff() || diff.kinds_singular_support();
+            assert_eq!(
+                via_seam, via_union,
+                "kinds_low_support ({via_seam}) must agree with \
+                 is_empty_diff || kinds_singular_support ({via_union})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_low_support_agrees_with_present_kinds_count_at_most_one_pointwise() {
+        // Support-scalar surface: `kinds_low_support() ==
+        // (present_kinds_count() <= 1)` on every fixture. The
+        // support-side surfacing of the same boolean, without
+        // allocating the `Vec<DiffLineKind>`. Lifted from the
+        // trait-uniform `has_low_support() ⇔ distinct_cells() <= 1`
+        // law on AxisHistogram.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_low_support();
+            let count = diff.present_kinds_count();
+            let via_scalar = count <= 1;
+            assert_eq!(
+                via_seam, via_scalar,
+                "kinds_low_support ({via_seam}) must agree with \
+                 present_kinds_count <= 1 (count={count})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_low_support_agrees_with_present_kinds_len_at_most_one_pointwise() {
+        // Support-`Vec` form: `kinds_low_support() ==
+        // (present_kinds().len() <= 1)` on every fixture. Pins the
+        // predicate against the `Vec<DiffLineKind>` length form
+        // consumers reach for when they already hold the support
+        // vector.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_low_support();
+            let via_vec = diff.present_kinds().len() <= 1;
+            assert_eq!(
+                via_seam, via_vec,
+                "kinds_low_support ({via_seam}) must agree with \
+                 present_kinds().len() <= 1 ({via_vec})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_low_support_agrees_with_absent_kinds_count_at_least_axis_cardinality_minus_one_pointwise()
+     {
+        // Coverage-gap-scalar form: `kinds_low_support() ==
+        // (absent_kinds_count() >= axis_cardinality::<DiffLineKind>()
+        // - 1)` on every fixture. The coverage-gap-side surfacing of
+        // the same boolean — a low-magnitude fold observes at most
+        // one cell and misses at least `axis_cardinality - 1` cells.
+        // Dual of the support-scalar at-most-one form on the
+        // complementary side of the same partition via the
+        // `present_kinds_count + absent_kinds_count ==
+        // axis_cardinality` invariant.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_low_support();
+            let gap = diff.absent_kinds_count();
+            let via_gap = gap >= crate::axis_cardinality::<DiffLineKind>() - 1;
+            assert_eq!(
+                via_seam, via_gap,
+                "kinds_low_support ({via_seam}) must agree with \
+                 absent_kinds_count >= axis_cardinality - 1 (gap={gap})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_low_support_empty_diff_is_true() {
+        // Empty-diff boundary: the empty diff observes zero cells,
+        // so the "at most one observed" predicate holds vacuously —
+        // `kinds_low_support` reads `true`. Matches `has_low_support`
+        // reading `true` on the empty histogram one altitude down.
+        // Orthogonal polarity to the six coverage-support boundary
+        // corners on the empty diff (`any_observed`=false,
+        // `singular_support`=false, `singular_gap`=false,
+        // `full_cover`=false, `strict_partial_cover`=false,
+        // `low_support`=true) — the empty diff is the union-of-low-
+        // boundaries fold's first witness on the `true` side, folded
+        // into the low-magnitude corner alongside every singleton-
+        // support fixture.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert!(empty.kinds_low_support());
+        assert!(!empty.kinds_any_observed());
+        assert!(!empty.kinds_singular_support());
+        assert!(!empty.kinds_singular_gap());
+        assert!(!empty.kinds_full_cover());
+        assert!(!empty.kinds_strict_partial_cover());
+    }
+
+    #[test]
+    fn kinds_low_support_singleton_support_is_true() {
+        // Singleton-support pin: every line lands on the same kind,
+        // so the support cardinality is `1` — `kinds_low_support`
+        // reads `true` via the union-of-low-boundaries disjunction.
+        // Direct witness of the strict subsumption
+        // `kinds_singular_support ⇒ kinds_low_support` on every
+        // axis. The singleton-support fixture partitions the seven
+        // coverage-support boundaries with (`any_observed`=true,
+        // `singular_support`=true, `singular_gap`=false,
+        // `full_cover`=false, `strict_partial_cover`=false,
+        // `low_support`=true).
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Added("a1".into()), DiffLine::Added("a2".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 1);
+        assert!(diff.kinds_singular_support());
+        assert!(diff.kinds_low_support());
+    }
+
+    #[test]
+    fn kinds_low_support_two_kind_partial_cover_is_false() {
+        // Two-kind cover pin: a diff of only Added + Removed lines
+        // has two observed cells on the three-cell DiffLineKind
+        // axis, so the "at most one observed" predicate fails
+        // uniformly — `kinds_low_support` reads `false`. Direct
+        // witness of the strict disjointness `kinds_singular_gap ⇒
+        // !kinds_low_support` on the cardinality-`3` axis where
+        // singleton-gap fires at support size `2`, and of the
+        // negation side of the union-of-low-boundaries disjunction
+        // (neither empty nor singleton-support).
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 2);
+        assert!(diff.kinds_singular_gap());
+        assert!(!diff.kinds_low_support());
+    }
+
+    #[test]
+    fn kinds_low_support_uniform_cover_is_false() {
+        // Uniform-cover pin: every kind receives at least one
+        // observation, so the support cardinality is `3` (the full
+        // three-cell DiffLineKind axis) — the "at most one observed"
+        // predicate fails uniformly. Direct witness of the strict
+        // disjointness `kinds_full_cover ⇒ !kinds_low_support` on
+        // every axis with cardinality `>= 2`. The uniform three-
+        // kind cover partitions the seven coverage-support
+        // boundaries with (`any_observed`=true,
+        // `singular_support`=false, `singular_gap`=false,
+        // `full_cover`=true, `strict_partial_cover`=false,
+        // `low_support`=false).
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.present_kinds().len(), 3);
+        assert!(diff.kinds_full_cover());
+        assert!(!diff.kinds_low_support());
+    }
+
+    #[test]
+    fn kinds_low_support_implies_not_kinds_full_cover_pointwise() {
+        // Disjointness pin: `kinds_low_support() ⇒
+        // !kinds_full_cover()` on every axis with cardinality
+        // `>= 2`. Low support has size `<= 1`; a full cover has
+        // size `axis_cardinality >= 2`. The two boundaries sit at
+        // opposite ends of the support-cardinality magnitude
+        // interval on every non-degenerate axis. Pins the strict
+        // subsumption between the magnitude-direction ternary's
+        // bottom corner and the 5-corner support-cardinality
+        // partition's top corner.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_low_support() {
+                assert!(
+                    !diff.kinds_full_cover(),
+                    "low-support diff cannot be full-cover on a \
+                     cardinality >= 2 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_low_support_implies_not_kinds_singular_gap_pointwise() {
+        // Disjointness pin: `kinds_low_support() ⇒
+        // !kinds_singular_gap()` on every axis with cardinality
+        // `>= 3` (every implementor today — DiffLineKind carries
+        // three cells). Low support has size `<= 1`; singleton-gap
+        // has support size `axis_cardinality - 1 >= 2`. The two
+        // corners are disjoint on cardinality-`>= 3` axes.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_low_support() {
+                assert!(
+                    !diff.kinds_singular_gap(),
+                    "low-support diff cannot be singular-gap on a \
+                     cardinality >= 3 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_low_support_implies_not_kinds_strict_partial_cover_pointwise() {
+        // Disjointness pin: `kinds_low_support() ⇒
+        // !kinds_strict_partial_cover()` on every axis. The strict
+        // interior requires `>= 2` observed cells; low support has
+        // `<= 1`. Vacuously true at the diff altitude (the
+        // consequent never fires on cardinality-`3` DiffLineKind),
+        // but the shape of the implication is pinned here so
+        // downstream lifts at cardinality-`>= 4` altitudes inherit
+        // it verbatim. Direct pin of the pairwise disjointness of
+        // the two named corners of the magnitude-direction ternary
+        // partition `(low_support, strict_partial_cover,
+        // high_support)`.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_low_support() {
+                assert!(
+                    !diff.kinds_strict_partial_cover(),
+                    "low-support diff cannot be strict-partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_any_observed_negation_implies_kinds_low_support_pointwise() {
+        // Subsumption pin: `!kinds_any_observed() ⇒
+        // kinds_low_support()` on every axis. If no cell was
+        // observed, the support cardinality is `0 <= 1` — the low-
+        // support predicate holds vacuously. Direct witness of the
+        // strictly-tighter cardinality relation between the empty-
+        // support boundary and the low-magnitude corner.
+        for diff in dominant_kind_fixtures() {
+            if !diff.kinds_any_observed() {
+                assert!(
+                    diff.kinds_low_support(),
+                    "empty-support diff must be low-support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_support_implies_kinds_low_support_pointwise() {
+        // Subsumption pin: `kinds_singular_support() ⇒
+        // kinds_low_support()` on every axis. A singleton-support
+        // diff observes exactly one cell (`<= 1`), so the low-
+        // support predicate holds via the union-of-low-boundaries
+        // disjunction. Direct witness of the strict subsumption
+        // between the singleton-support boundary and the low-
+        // magnitude corner.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular_support() {
+                assert!(
+                    diff.kinds_low_support(),
+                    "singular-support diff must be low-support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_low_support_agrees_with_open_coded_at_most_one_positive_walk() {
+        // Parity against the exact hand-rolled low-support walk
+        // this lift replaces: walk every cell of the histogram and
+        // count how many carry a positive count; the low-support
+        // predicate reads `true` iff at most one cell is positive.
+        // Mirrors the parity pins on the other coverage-support
+        // boundaries — `kinds_singular_support_agrees_with_open_coded_exactly_one_positive_walk`
+        // on the strictly-tighter cardinality slice of the same
+        // magnitude corner.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_low_support();
+            let hist = diff.kind_histogram();
+            let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
+            let hand_rolled = nonzeros <= 1;
+            assert_eq!(via_seam, hand_rolled);
         }
     }
 
