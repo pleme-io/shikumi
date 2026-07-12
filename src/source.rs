@@ -7604,6 +7604,223 @@ pub trait ConfigSourceChain {
     {
         self.env_prefix_kind_histogram().has_strict_partial_cover()
     }
+
+    /// Returns `true` exactly when this chain's [`ConfigSource::Env`]
+    /// layers observe an [`EnvMetadataTagKind`] support sitting at the
+    /// *bottom* of the support-cardinality interval — at most *one*
+    /// observed cell. The **low-support-env-prefix-kinds boolean
+    /// predicate** on the env-prefix sub-axis of the chain altitude, the
+    /// union-of-low-boundaries corner of the support-cardinality
+    /// magnitude-direction ternary partition `(low_support,
+    /// strict_partial_cover, high_support)` — the bottom leg of the
+    /// magnitude ternary, folding the empty-histogram and the singleton-
+    /// support boundaries into a single named low-magnitude corner.
+    ///
+    /// The cube-native answer to *"did this chain's env-prefix
+    /// composition land in the low-magnitude corner of the support-
+    /// cardinality interval?"*, routed through the shared
+    /// [`crate::AxisHistogram::has_low_support`] primitive on
+    /// [`Self::env_prefix_kind_histogram`] one altitude down. Consumers
+    /// asking that question — the fleet dashboard low-magnitude headline
+    /// over the chain's env-prefix composition, the attestation manifest
+    /// gate *"chain env-prefix support at most singleton"*, the alerting
+    /// policy predicate *"env-prefix support low-magnitude"* — now route
+    /// through this named seam instead of four previously drifting inline
+    /// forms: defining-union-of-low-boundaries disjunction on the two
+    /// named histogram-side peers
+    /// (`!chain.env_prefix_kinds_any_observed() ||
+    /// chain.env_prefix_kinds_singular_support()`), support-scalar
+    /// at-most-one form
+    /// (`chain.present_env_prefix_kinds_count() <= 1`), support-`Vec`
+    /// at-most-one form (`chain.present_env_prefix_kinds().len() <= 1`,
+    /// allocating a `Vec<EnvMetadataTagKind>` just to peek its length),
+    /// and coverage-gap-scalar at-least-axis-cardinality-minus-one form
+    /// (`chain.absent_env_prefix_kinds_count() >=
+    /// crate::axis_cardinality::<EnvMetadataTagKind>() - 1` with
+    /// [`crate::axis_cardinality`] turbofish and `- 1` arithmetic).
+    ///
+    /// **Closes the "low-support across altitudes" projection** at the
+    /// fifth and final altitude / sub-axis: seeded on the diff altitude
+    /// by [`crate::ConfigDiff::kinds_low_support`], climbed to the tier
+    /// altitude by [`crate::ProvenanceMap::tiers_low_support`], lifted
+    /// sideways to the chain layer-kind sub-axis by
+    /// [`Self::layer_kinds_low_support`], and lifted sideways to the
+    /// chain file-format sub-axis by [`Self::file_formats_low_support`].
+    /// Bottom-leg-corner peer of the six already-closed coverage-support
+    /// boundary and interior families on the same sub-axis
+    /// ([`Self::env_prefix_kinds_balanced`],
+    /// [`Self::env_prefix_kinds_full_cover`],
+    /// [`Self::env_prefix_kinds_any_observed`],
+    /// [`Self::env_prefix_kinds_singular_support`],
+    /// [`Self::env_prefix_kinds_singular_gap`],
+    /// [`Self::env_prefix_kinds_strict_partial_cover`]) — the last
+    /// unnamed corner of the magnitude-direction ternary partition on
+    /// the env-prefix sub-axis. With this lift the "low-support across
+    /// altitudes" projection carries the same one-predicate row at
+    /// every altitude / sub-axis of the closed 6×5 coverage-support
+    /// predicate cube, and the magnitude-direction ternary's bottom leg
+    /// closes at every altitude / sub-axis pointwise alongside the
+    /// six coverage-support boundary corners already named.
+    ///
+    /// **Cardinality-`2` reachability at the chain env-prefix sub-axis —
+    /// wider than the strict interior, coinciding with the two singular
+    /// corners.** The bottom magnitude corner carries witnesses on every
+    /// axis with `axis_cardinality::<A>() >= 1` (the empty histogram
+    /// always witnesses low support via the "at most one observed"
+    /// clause). [`EnvMetadataTagKind`] carries two cells, so
+    /// `env_prefix_kinds_low_support()` reads `true` on the empty chain,
+    /// on every non-empty chain whose env-prefix histogram is empty
+    /// (chains of only [`ConfigSource::Defaults`] / [`ConfigSource::File`]
+    /// layers), and on every singleton-support chain (every env layer
+    /// carries the same prefix polarity — all-`Prefixed` or all-`Bare`),
+    /// and `false` only on uniform two-kind cover chains (both cells
+    /// observe at least one env layer). Coincides pointwise with the
+    /// disjunction of the two singular corners
+    /// (`!env_prefix_kinds_any_observed || env_prefix_kinds_singular_support`)
+    /// which on the cardinality-`2` axis further coincides with
+    /// `!env_prefix_kinds_full_cover` — the low-magnitude corner is
+    /// exactly the complement of the full-cover corner on the two-cell
+    /// axis, since the strict interior is structurally empty and every
+    /// non-full-cover chain sits at support cardinality `0` or `1`
+    /// (both `<= 1`). Strictly disjoint from the strict-interior
+    /// predicate [`Self::env_prefix_kinds_strict_partial_cover`] whose
+    /// support-cardinality interval `[2, cardinality - 2]` is empty on
+    /// cardinality-`2` axes — the disjointness holds vacuously (the
+    /// antecedent never fires). Matches the vacuously-`false`
+    /// strict-interior polarity at the two other cardinality-`<= 3`
+    /// altitudes in the projection (diff / chain layer-kind); the
+    /// strict-interior disjointness carries no non-vacuous witness here,
+    /// mirroring [`Self::layer_kinds_low_support`]'s vacuous behavior on
+    /// its own strict-interior peer.
+    ///
+    /// **Empty-chain convention** — returns `true` on the empty chain:
+    /// zero observed cells satisfy the "at most one observed" clause
+    /// vacuously. Matches [`crate::AxisHistogram::has_low_support`]'s
+    /// empty-histogram `true` convention one altitude down, and
+    /// diverges from [`Self::env_prefix_kinds_any_observed`]'s empty-
+    /// chain `false` polarity — the low-support boundary strictly
+    /// includes the empty chain by folding the "no observation" case
+    /// into the low-magnitude corner.
+    ///
+    /// **No-env-layers convention** — returns `true` on every non-empty
+    /// chain whose env-prefix histogram is empty (chains of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::File`] layers). The
+    /// histogram is empty even though the chain is not, so the "at most
+    /// one observed" clause holds vacuously. Cross-sub-axis divergence
+    /// from [`Self::layer_kinds_low_support`]: the low-magnitude corner
+    /// is wider on the env-prefix sub-axis — the empty-histogram
+    /// non-empty-chain case reads `true` here, matching
+    /// [`Self::file_formats_low_support`]'s no-recognized-files
+    /// convention one sub-axis over and diverging from the layer-kind
+    /// sub-axis peer where every non-empty chain observes at least one
+    /// layer-kind cell.
+    ///
+    /// **Singleton-support convention** — returns `true` on every chain
+    /// whose observed env-prefix support is a single [`EnvMetadataTagKind`]
+    /// cell: support cardinality `1` satisfies `<= 1`. Peer of
+    /// [`Self::env_prefix_kinds_singular_support`]'s `true` side on the
+    /// same fixture — the singleton-support boundary fires into the
+    /// low-magnitude corner via the union-of-low-boundaries disjunction.
+    /// On the two-cell env-prefix axis this side coincides pointwise
+    /// with [`Self::env_prefix_kinds_singular_gap`]'s `true` side by the
+    /// two-cell-axis coincidence (`singular_support ⇔ singular_gap` on
+    /// cardinality-`2` axes), so the low-magnitude corner absorbs both
+    /// singular boundaries into one named row.
+    ///
+    /// **Uniform two-kind cover convention** — returns `false` on every
+    /// chain where each [`EnvMetadataTagKind`] cell was observed at
+    /// least once: support cardinality `2` violates `<= 1`. Matches
+    /// [`crate::AxisHistogram::has_low_support`]'s full-cover `false`
+    /// convention one altitude down on cardinality-`>= 2` axes. On the
+    /// cardinality-`2` env-prefix axis the uniform two-kind cover is
+    /// the *unique* `false` side of the boundary — the low-magnitude
+    /// corner is exactly the complement of the full-cover corner here.
+    ///
+    /// # Invariants
+    ///
+    /// - `env_prefix_kinds_low_support() ==
+    ///   env_prefix_kind_histogram().has_low_support()` — both project
+    ///   the same predicate off the same primitive; the named seam is
+    ///   the cube-native routing of the histogram surface.
+    /// - `env_prefix_kinds_low_support() ⇔ !env_prefix_kinds_any_observed()
+    ///   || env_prefix_kinds_singular_support()` always — the defining
+    ///   union-of-low-boundaries disjunction on the two named
+    ///   histogram-side peers.
+    /// - `env_prefix_kinds_low_support() ==
+    ///   (present_env_prefix_kinds_count() <= 1)` always — the support-
+    ///   scalar at-most-one form, without allocating the
+    ///   `Vec<EnvMetadataTagKind>`.
+    /// - `env_prefix_kinds_low_support() ==
+    ///   (present_env_prefix_kinds().len() <= 1)` always — the support-
+    ///   `Vec` at-most-one form.
+    /// - `env_prefix_kinds_low_support() == (absent_env_prefix_kinds_count() >=
+    ///   crate::axis_cardinality::<EnvMetadataTagKind>() - 1)` always —
+    ///   the coverage-gap-scalar at-least-axis-cardinality-minus-one
+    ///   form, the dual-side surfacing of the same boolean across the
+    ///   (observed, unobserved) partition.
+    /// - `env_prefix_kinds_low_support() ⇔ !env_prefix_kinds_full_cover()`
+    ///   on the cardinality-`2` env-prefix axis — the low-magnitude
+    ///   corner is exactly the complement of the full-cover corner
+    ///   here, since the strict interior is structurally empty and
+    ///   every non-full-cover chain sits at support cardinality `<= 1`.
+    ///   The two-cell-axis tightening of the general disjointness
+    ///   `low_support ⇒ !full_cover` into an equivalence — the two
+    ///   corners partition the two-cell axis. Does NOT lift to the
+    ///   cardinality-`>= 3` sub-axes ([`Self::layer_kinds_low_support`]
+    ///   and [`Self::file_formats_low_support`]) where two-kind and
+    ///   three-format partial covers sit on the `!low_support ∧
+    ///   !full_cover` middle interval.
+    /// - `env_prefix_kinds_low_support() ⇒ !env_prefix_kinds_full_cover()`
+    ///   always — the general side of the tightening above; low support
+    ///   has size `<= 1`, full cover has size `axis_cardinality >= 2`.
+    /// - `env_prefix_kinds_low_support() ⇒
+    ///   !env_prefix_kinds_strict_partial_cover()` always: the strict
+    ///   interior requires `>= 2` observed cells; low support has
+    ///   `<= 1`. On the cardinality-`2` [`EnvMetadataTagKind`] axis
+    ///   this holds vacuously (the antecedent's negation is always
+    ///   `true`).
+    /// - `!env_prefix_kinds_any_observed() ⇒ env_prefix_kinds_low_support()`
+    ///   always — the empty histogram always sits at the bottom of the
+    ///   magnitude interval.
+    /// - `env_prefix_kinds_singular_support() ⇒
+    ///   env_prefix_kinds_low_support()` always — every singleton-
+    ///   support chain lands on the low-magnitude corner by the union-
+    ///   of-low-boundaries disjunction.
+    /// - `env_prefix_kinds_singular_gap() ⇒ env_prefix_kinds_low_support()`
+    ///   on the cardinality-`2` env-prefix axis by the two-cell-axis
+    ///   coincidence `singular_gap ⇔ singular_support`, folded through
+    ///   the singular-support subsumption above. Does NOT lift to the
+    ///   cardinality-`>= 3` sub-axes where singular-gap sits at support
+    ///   cardinality `axis_cardinality - 1 >= 2` on the wrong side of
+    ///   the low-support boundary.
+    /// - `(env_prefix_kinds_low_support,
+    ///   env_prefix_kinds_strict_partial_cover,
+    ///   env_prefix_kinds_high_support)` forms a strict ternary
+    ///   partition on every axis with `axis_cardinality::<A>() >= 2` —
+    ///   pinned trait-uniformly one altitude down by
+    ///   `axis_histogram_has_low_support_has_strict_partial_cover_has_high_support_form_strict_ternary_partition_for_every_closed_axis_implementor`.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<EnvMetadataTagKind>()` (the
+    /// low-support scan). Both are `O(n)` in practice since the env-
+    /// prefix axis carries a fixed two-cell cardinality; the returned
+    /// `bool` reads one predicate. The scan short-circuits once it has
+    /// witnessed the *second* nonzero cell (bounded at two nonzero
+    /// cells visited on any two-or-more-cell-support chain — on the
+    /// cardinality-`2` axis the bound coincides with the full axis
+    /// scan), strictly tighter than the four documented open-coded
+    /// surfaces — no `Vec<EnvMetadataTagKind>` allocation, no
+    /// [`crate::axis_cardinality`] turbofish, no `- 1` arithmetic
+    /// against a magic axis-cardinality-minus-one constant.
+    #[must_use]
+    fn env_prefix_kinds_low_support(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().has_low_support()
+    }
 }
 
 impl ConfigSourceChain for [ConfigSource] {
@@ -27223,6 +27440,459 @@ mod tests {
                 "exactly one of (empty, singular, full_cover) must fire per chain on \
                  the two-cell env-prefix axis — observed {fires}",
             );
+        }
+    }
+
+    // ---- ConfigSourceChain::env_prefix_kinds_low_support — low-support-
+    //      env-prefix-kinds boolean predicate on the env-prefix sub-axis
+    //      of the chain altitude, lifting `has_low_support` from the
+    //      histogram surface and closing the "low-support across
+    //      altitudes" projection sideways to the fifth and final
+    //      altitude / sub-axis. `EnvMetadataTagKind` cardinality-`2`
+    //      axis: the low-magnitude corner coincides pointwise with
+    //      `!full_cover` (equivalent to the union of the empty-histogram
+    //      and singleton-support corners with the two-cell-axis
+    //      coincidence folding `singular_support ⇔ singular_gap`); every
+    //      chain except the uniform two-kind cover reads `true`. Routed
+    //      through the shared `AxisHistogram::has_low_support` primitive
+    //      one altitude down. ----
+
+    #[test]
+    fn env_prefix_kinds_low_support_matches_env_prefix_kind_histogram_has_low_support_pointwise() {
+        // Routing pin: `env_prefix_kinds_low_support` routes through
+        // `env_prefix_kind_histogram().has_low_support()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Env-
+        // prefix sub-axis peer of
+        // `file_formats_low_support_matches_file_format_histogram_has_low_support_pointwise`
+        // on the file-format sub-axis,
+        // `layer_kinds_low_support_matches_layer_kind_histogram_has_low_support_pointwise`
+        // on the layer-kind sub-axis,
+        // `tiers_low_support_matches_tier_histogram_has_low_support_pointwise`
+        // on the tier altitude, and
+        // `kinds_low_support_matches_kind_histogram_has_low_support_pointwise`
+        // on the diff altitude, closing the "low-support across
+        // altitudes" projection at the fifth and final altitude /
+        // sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.env_prefix_kind_histogram().has_low_support();
+            assert_eq!(slice.env_prefix_kinds_low_support(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_low_support_matches_defining_union_of_low_boundaries_pointwise() {
+        // Defining-union-of-low-boundaries disjunction:
+        // `env_prefix_kinds_low_support() ⇔ !env_prefix_kinds_any_observed()
+        // || env_prefix_kinds_singular_support()` on every fixture. Pins
+        // the predicate against the two-way disjunction on the two named
+        // histogram-side peers consumers reach for when they open-code
+        // the low-magnitude corner as "empty OR singleton-support". Peer
+        // of
+        // `file_formats_low_support_matches_defining_union_of_low_boundaries_pointwise`
+        // on the file-format sub-axis and
+        // `layer_kinds_low_support_matches_defining_union_of_low_boundaries_pointwise`
+        // on the layer-kind sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_low_support();
+            let via_disj =
+                !slice.env_prefix_kinds_any_observed() || slice.env_prefix_kinds_singular_support();
+            assert_eq!(
+                via_seam, via_disj,
+                "env_prefix_kinds_low_support ({via_seam}) must agree with \
+                 !env_prefix_kinds_any_observed || env_prefix_kinds_singular_support \
+                 ({via_disj})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_low_support_agrees_with_present_env_prefix_kinds_count_at_most_one_pointwise()
+     {
+        // Support-scalar at-most-one form:
+        // `env_prefix_kinds_low_support() ==
+        // (present_env_prefix_kinds_count() <= 1)` on every fixture. The
+        // support-side surfacing of the same boolean, without allocating
+        // the `Vec<EnvMetadataTagKind>`. Peer of
+        // `file_formats_low_support_agrees_with_present_file_formats_count_at_most_one_pointwise`
+        // on the file-format sub-axis and
+        // `layer_kinds_low_support_agrees_with_present_layer_kinds_count_at_most_one_pointwise`
+        // on the layer-kind sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_low_support();
+            let count = slice.present_env_prefix_kinds_count();
+            assert_eq!(
+                via_seam,
+                count <= 1,
+                "env_prefix_kinds_low_support ({via_seam}) must agree with \
+                 present_env_prefix_kinds_count() <= 1 (count={count})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_low_support_agrees_with_present_env_prefix_kinds_len_at_most_one_pointwise()
+    {
+        // Support-`Vec` at-most-one form:
+        // `env_prefix_kinds_low_support() ==
+        // (present_env_prefix_kinds().len() <= 1)` on every fixture.
+        // Pins the predicate against the support-`Vec` form consumers
+        // reach for when they already hold the support vector — the
+        // allocating open-coding this lift replaces. Peer of
+        // `file_formats_low_support_agrees_with_present_file_formats_len_at_most_one_pointwise`
+        // on the file-format sub-axis and
+        // `layer_kinds_low_support_agrees_with_present_layer_kinds_len_at_most_one_pointwise`
+        // on the layer-kind sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_low_support();
+            let via_vec = slice.present_env_prefix_kinds().len() <= 1;
+            assert_eq!(
+                via_seam, via_vec,
+                "env_prefix_kinds_low_support ({via_seam}) must agree with \
+                 present_env_prefix_kinds().len() <= 1 ({via_vec})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_low_support_agrees_with_absent_env_prefix_kinds_count_at_least_axis_cardinality_minus_one_pointwise()
+     {
+        // Coverage-gap-scalar at-least-axis-cardinality-minus-one form:
+        // `env_prefix_kinds_low_support() == (absent_env_prefix_kinds_count()
+        // >= axis_cardinality::<EnvMetadataTagKind>() - 1)` on every
+        // fixture. The coverage-gap-side surfacing of the same boolean
+        // via the `present + absent == axis_cardinality` invariant. Peer
+        // of
+        // `file_formats_low_support_agrees_with_absent_file_formats_count_at_least_axis_cardinality_minus_one_pointwise`
+        // on the file-format sub-axis and
+        // `layer_kinds_low_support_agrees_with_absent_layer_kinds_count_at_least_axis_cardinality_minus_one_pointwise`
+        // on the layer-kind sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_low_support();
+            let gap = slice.absent_env_prefix_kinds_count();
+            let via_gap = gap >= crate::axis_cardinality::<EnvMetadataTagKind>() - 1;
+            assert_eq!(
+                via_seam, via_gap,
+                "env_prefix_kinds_low_support ({via_seam}) must agree with \
+                 absent_env_prefix_kinds_count() >= axis_cardinality - 1 ({via_gap}, gap={gap})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_low_support_empty_chain_is_true() {
+        // Empty-chain boundary: zero observed cells satisfy the "at
+        // most one observed" clause vacuously —
+        // `env_prefix_kinds_low_support` reads `true`. Matches
+        // `has_low_support` reading `true` on the empty histogram one
+        // altitude down. Diverges from
+        // `env_prefix_kinds_any_observed`'s,
+        // `env_prefix_kinds_full_cover`'s,
+        // `env_prefix_kinds_singular_support`'s, and
+        // `env_prefix_kinds_singular_gap`'s empty-chain `false` polarity
+        // — the low-support boundary strictly *includes* the empty
+        // chain by folding the "no observation" case into the low-
+        // magnitude corner. Peer of
+        // `layer_kinds_low_support_empty_chain_is_true` on the layer-
+        // kind sub-axis and
+        // `file_formats_low_support_empty_chain_is_true` on the file-
+        // format sub-axis.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(empty.env_prefix_kinds_low_support());
+        assert!(!empty.env_prefix_kinds_any_observed());
+        assert!(!empty.env_prefix_kinds_singular_support());
+        assert!(!empty.env_prefix_kinds_singular_gap());
+        assert!(!empty.env_prefix_kinds_full_cover());
+        assert!(!empty.env_prefix_kinds_strict_partial_cover());
+    }
+
+    #[test]
+    fn env_prefix_kinds_low_support_no_env_layers_is_true() {
+        // Non-empty-chain / empty-histogram boundary the env-prefix
+        // sub-axis pins that the layer-kind sub-axis does *not*. A
+        // chain of only `Defaults` / `File` layers is non-empty but has
+        // no `Some` env_prefix_kind projection, so the histogram is
+        // empty and the "at most one observed" clause holds vacuously
+        // — `env_prefix_kinds_low_support` reads `true`. Cross-sub-axis
+        // divergence pin against `layer_kinds_low_support`: on the same
+        // fixtures the layer-kind sub-axis observes at least one
+        // layer-kind cell (Defaults / File) so the low-support corner
+        // is narrower there. Matches
+        // `file_formats_low_support_no_recognized_files_is_true` on the
+        // file-format sub-axis one axis over — both sub-axes pin the
+        // wider empty-histogram boundary that the layer-kind sub-axis
+        // does not.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.nix")),
+                ConfigSource::File(PathBuf::from("/b.lisp")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(!slice.is_empty(), "fixture must be non-empty");
+            assert!(
+                slice.env_prefix_kind_histogram().is_empty(),
+                "fixture must have empty env-prefix histogram",
+            );
+            assert!(!slice.env_prefix_kinds_any_observed());
+            assert!(slice.env_prefix_kinds_low_support());
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_low_support_singleton_support_is_true() {
+        // Singleton-support pin: every env layer carries the same
+        // prefix polarity, so the support cardinality is `1` (at most
+        // `1`) — `env_prefix_kinds_low_support` reads `true`. Direct
+        // witness of the subsumption `env_prefix_kinds_singular_support
+        // ⇒ env_prefix_kinds_low_support`: every singleton-support
+        // chain lands on the low-magnitude corner by the union-of-low-
+        // boundaries disjunction. Two witnesses on the two-cell axis
+        // — one for each cell (Prefixed and Bare) — collapsed into one
+        // test since both fire the same polarity by the two-cell-axis
+        // coincidence. Also witnesses the two-cell tightening
+        // `env_prefix_kinds_singular_gap ⇒ env_prefix_kinds_low_support`
+        // (both singular predicates coincide pointwise on the two-cell
+        // axis and both subsume into the low-magnitude corner). Peer of
+        // `layer_kinds_low_support_singleton_support_is_true` on the
+        // layer-kind sub-axis and
+        // `file_formats_low_support_singleton_support_is_true` on the
+        // file-format sub-axis.
+        let prefixed = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+        ];
+        let bare = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+        ];
+        for chain in [prefixed, bare] {
+            let slice = chain.as_slice();
+            assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+            assert!(slice.env_prefix_kinds_singular_support());
+            assert!(slice.env_prefix_kinds_singular_gap());
+            assert!(slice.env_prefix_kinds_low_support());
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_low_support_uniform_cover_is_false() {
+        // Uniform-cover pin: both env-prefix cells contribute at least
+        // one env layer, so the support cardinality is `2` (violates
+        // `<= 1`) — `env_prefix_kinds_low_support` reads `false`.
+        // Direct witness of the disjointness
+        // `env_prefix_kinds_full_cover ⇒ !env_prefix_kinds_low_support`
+        // on every cardinality-`>= 2` axis, tightened on the two-cell
+        // env-prefix axis into the equivalence
+        // `env_prefix_kinds_low_support ⇔ !env_prefix_kinds_full_cover`
+        // — the uniform two-kind cover is the *unique* `false` side of
+        // the low-support boundary on the two-cell axis. Peer of
+        // `layer_kinds_low_support_uniform_cover_is_false` on the
+        // layer-kind sub-axis and
+        // `file_formats_low_support_uniform_cover_is_false` on the
+        // file-format sub-axis.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.env_prefix_kinds_full_cover());
+        assert!(!slice.env_prefix_kinds_low_support());
+    }
+
+    #[test]
+    fn env_prefix_kinds_low_support_implies_not_env_prefix_kinds_full_cover_pointwise() {
+        // Disjointness pin: `env_prefix_kinds_low_support() ⇒
+        // !env_prefix_kinds_full_cover()` on every axis with
+        // cardinality `>= 2`. Low support has size `<= 1`; full cover
+        // has size `axis_cardinality >= 2`. Peer of
+        // `layer_kinds_low_support_implies_not_layer_kinds_full_cover_pointwise`
+        // on the layer-kind sub-axis and
+        // `file_formats_low_support_implies_not_file_formats_full_cover_pointwise`
+        // on the file-format sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_low_support() {
+                assert!(
+                    !slice.env_prefix_kinds_full_cover(),
+                    "low-support chain cannot be full-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_low_support_implies_not_env_prefix_kinds_strict_partial_cover_pointwise() {
+        // Disjointness pin: `env_prefix_kinds_low_support() ⇒
+        // !env_prefix_kinds_strict_partial_cover()` always. The strict
+        // interior requires `>= 2` observed cells; low support has
+        // `<= 1`. On the cardinality-`2` `EnvMetadataTagKind` axis the
+        // consequent holds vacuously (the strict interior is
+        // structurally empty on the two-cell axis, so
+        // `!env_prefix_kinds_strict_partial_cover` reads `true` on every
+        // chain), matching
+        // `layer_kinds_low_support_implies_not_layer_kinds_strict_partial_cover_pointwise`
+        // on the cardinality-`3` layer-kind sub-axis where the same
+        // implication also holds vacuously (the strict interior is
+        // unreachable). Contrasts with
+        // `file_formats_low_support_implies_not_file_formats_strict_partial_cover_pointwise`
+        // on the cardinality-`4` file-format sub-axis where the
+        // consequent is meaningfully constrained AND the antecedent is
+        // reachable — the two-format partial cover fixture is a
+        // `strict_partial_cover=true, low_support=false` witness. The
+        // env-prefix sub-axis carries the *tightest* vacuously-true
+        // consequent in the projection — the strict interval closes
+        // two cardinality steps below the reachability threshold, so
+        // the strict-interior disjointness carries no non-vacuous
+        // witness here.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_low_support() {
+                assert!(
+                    !slice.env_prefix_kinds_strict_partial_cover(),
+                    "low-support chain cannot be strict-partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_any_observed_negation_implies_env_prefix_kinds_low_support_pointwise() {
+        // Subsumption pin: `!env_prefix_kinds_any_observed() ⇒
+        // env_prefix_kinds_low_support()` on every axis. If no cell was
+        // observed, the "at most one observed" clause holds vacuously.
+        // Peer of
+        // `layer_kinds_any_observed_negation_implies_layer_kinds_low_support_pointwise`
+        // on the layer-kind sub-axis and
+        // `file_formats_any_observed_negation_implies_file_formats_low_support_pointwise`
+        // on the file-format sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.env_prefix_kinds_any_observed() {
+                assert!(
+                    slice.env_prefix_kinds_low_support(),
+                    "empty-support chain must be low-support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_implies_env_prefix_kinds_low_support_pointwise() {
+        // Subsumption pin: `env_prefix_kinds_singular_support() ⇒
+        // env_prefix_kinds_low_support()` on every axis. A singleton-
+        // support chain lands on the low-magnitude corner by the union-
+        // of-low-boundaries disjunction. Peer of
+        // `layer_kinds_singular_support_implies_layer_kinds_low_support_pointwise`
+        // on the layer-kind sub-axis and
+        // `file_formats_singular_support_implies_file_formats_low_support_pointwise`
+        // on the file-format sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular_support() {
+                assert!(
+                    slice.env_prefix_kinds_low_support(),
+                    "singular-support chain must be low-support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_implies_env_prefix_kinds_low_support_pointwise() {
+        // Cardinality-`2` two-cell-axis coincidence pin: on the two-
+        // cell env-prefix axis `singular_gap ⇔ singular_support`, so
+        // `env_prefix_kinds_singular_gap() ⇒ env_prefix_kinds_low_support()`
+        // holds by folding through the singular-support subsumption
+        // above. Does NOT lift to the cardinality-`>= 3` sub-axes
+        // ([`Self::layer_kinds_low_support`] on the cardinality-`3`
+        // layer-kind sub-axis and [`Self::file_formats_low_support`] on
+        // the cardinality-`4` file-format sub-axis) where singular-gap
+        // sits at support cardinality `axis_cardinality - 1 >= 2` on
+        // the wrong side of the low-support boundary — those sub-axes
+        // pin the strict disjointness `low_support ⇒ !singular_gap`
+        // instead. This lift carries the *unique* two-cell-axis
+        // tightening of the singular-gap / low-support relationship
+        // into a same-sided subsumption.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular_gap() {
+                assert!(
+                    slice.env_prefix_kinds_low_support(),
+                    "singular-gap chain must be low-support on the two-cell env-prefix axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_low_support_equivalent_to_not_env_prefix_kinds_full_cover_pointwise() {
+        // Cardinality-`2` two-cell-axis tightening pin:
+        // `env_prefix_kinds_low_support() ⇔ !env_prefix_kinds_full_cover()`
+        // on every fixture. Unique tightening of the general
+        // disjointness `low_support ⇒ !full_cover` (documented at every
+        // altitude / sub-axis) into an equivalence on the two-cell
+        // axis, since the strict interior is structurally empty and
+        // every non-full-cover chain sits at support cardinality `0`
+        // or `1` (both `<= 1`) — the low-magnitude corner and the
+        // full-cover corner partition the two-cell axis exhaustively.
+        // Cross-sub-axis divergence from
+        // `layer_kinds_low_support_implies_not_layer_kinds_full_cover_pointwise`
+        // and
+        // `file_formats_low_support_implies_not_file_formats_full_cover_pointwise`:
+        // the same equivalence does not lift to the cardinality-`3`
+        // layer-kind sub-axis (two-kind partial covers sit on the
+        // `!low_support ∧ !full_cover` middle interval) or the
+        // cardinality-`4` file-format sub-axis (two-format and three-
+        // format partial covers sit on the same middle interval).
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_low_support();
+            let via_negation = !slice.env_prefix_kinds_full_cover();
+            assert_eq!(
+                via_seam, via_negation,
+                "env_prefix_kinds_low_support ({via_seam}) must equal \
+                 !env_prefix_kinds_full_cover ({via_negation}) on the two-cell axis",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_low_support_agrees_with_open_coded_at_most_one_positive_walk() {
+        // Parity against the exact hand-rolled at-most-one-positive
+        // walk this lift replaces: walk every cell of the histogram
+        // and count how many carry a positive count; the low-support
+        // predicate reads `true` iff at most one cell carries a
+        // positive count. Peer of
+        // `layer_kinds_low_support_agrees_with_open_coded_at_most_one_positive_walk`
+        // on the layer-kind sub-axis and
+        // `file_formats_low_support_agrees_with_open_coded_at_most_one_positive_walk`
+        // on the file-format sub-axis, closing the parity discipline
+        // at the fifth and final altitude / sub-axis in the "low-
+        // support across altitudes" projection.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_low_support();
+            let hist = slice.env_prefix_kind_histogram();
+            let positives = hist.iter().filter(|(_, c)| *c > 0).count();
+            let hand_rolled = positives <= 1;
+            assert_eq!(via_seam, hand_rolled);
         }
     }
 
