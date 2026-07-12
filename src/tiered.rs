@@ -2588,6 +2588,210 @@ impl ProvenanceMap {
     pub fn tiers_strict_partial_cover(&self) -> bool {
         self.tier_histogram().has_strict_partial_cover()
     }
+
+    /// Returns `true` exactly when this fold's observed
+    /// [`ConfigTierKind`] support sits at the *bottom* of the support-
+    /// cardinality interval — at most *one* observed cell. The **low-
+    /// support-tier-counts boolean predicate** on the tier altitude,
+    /// the union-of-low-boundaries corner of the support-cardinality
+    /// magnitude-direction ternary partition
+    /// `(low_support, strict_partial_cover, high_support)` — the
+    /// bottom leg of the magnitude ternary, folding the empty-map and
+    /// the singleton-support boundaries into a single named low-
+    /// magnitude corner. Routes through
+    /// [`crate::AxisHistogram::has_low_support`] one altitude down:
+    /// the single-pass short-circuiting scan over the fixed-
+    /// cardinality counts vector that finds the *second* nonzero cell
+    /// and short-circuits, bounded at two nonzero witnesses.
+    ///
+    /// The **low-support-tier-counts peer** of the four documented
+    /// surface forms consumers previously re-derived inline:
+    /// `map.is_empty() || map.tiers_singular_support()` (the
+    /// defining-union-of-low-boundaries disjunction on the two named
+    /// histogram-side peers, a boolean or on two method calls),
+    /// `map.contributing_tiers_count() <= 1` (the support-scalar
+    /// surface, which pays for a full-axis scan and equates a `usize`
+    /// against a magic threshold), `map.contributing_tiers().len() <=
+    /// 1` (the support-`Vec` form, which allocates a
+    /// `Vec<ConfigTierKind>` and reads its length back), and
+    /// `map.absent_tiers_count() >=
+    /// crate::axis_cardinality::<ConfigTierKind>() - 1` (the
+    /// coverage-gap-scalar form on the complementary side of the same
+    /// partition, which pays for a full-axis scan and pulls in the
+    /// [`crate::axis_cardinality`] turbofish with `- 1` arithmetic at
+    /// every call site). The four forms drifted in subtle ways at
+    /// every consumer site (allocation vs. scalar, turbofish vs.
+    /// name-only, support side vs. coverage-gap side, structural
+    /// disjunction vs. interval arithmetic). This lift names the
+    /// low-support-tier-counts predicate directly at the tier-altitude
+    /// surface with a single-pass short-circuiting scan — the typed
+    /// boolean every operator-facing *"did the fold land in the low-
+    /// magnitude corner of the tier-support-cardinality interval?"*
+    /// check reads off as a single method call.
+    ///
+    /// The tier-altitude low-support-predicate peer that **climbs the
+    /// "low-support across altitudes" projection** from the diff
+    /// altitude seeded by [`ConfigDiff::kinds_low_support`]. The
+    /// pattern is the same at every altitude: fuse the four documented
+    /// open-coded surface forms (union-of-low-boundaries disjunction,
+    /// support-scalar at-most-one, support-`Vec` at-most-one,
+    /// coverage-gap-scalar at-least-axis-cardinality-minus-one) into a
+    /// single boolean predicate named at the surface, routed through
+    /// the shared [`crate::AxisHistogram::has_low_support`] primitive
+    /// one altitude down. The chain altitude's three sub-axes
+    /// (`layer_kinds_low_support`, `file_formats_low_support`,
+    /// `env_prefix_kinds_low_support` over the corresponding chain
+    /// histograms) are the natural next sideways lifts. Complements
+    /// the six coverage-support boundary corners already seeded across
+    /// the six altitude / sub-axis rows with the second row of the
+    /// *magnitude-direction* projection — the ternary partition
+    /// `(low_support, strict_partial_cover, high_support)` folds the
+    /// 5-corner support-cardinality partition into three named legs
+    /// at the surface, naming the union-of-low-boundaries corner
+    /// without discarding the finer resolution below.
+    ///
+    /// **Cardinality-`4` reachability at the tier altitude — the two
+    /// low-magnitude witnesses.** The bottom magnitude corner carries
+    /// witnesses on every axis with `axis_cardinality::<A>() >= 1`
+    /// (the empty map always witnesses low support via the "at most
+    /// one observed" clause, so the corner is non-empty on every non-
+    /// degenerate axis). [`ConfigTierKind`] carries four cells, so
+    /// `tiers_low_support()` reads `true` on the empty map and on
+    /// every singleton-support fold (all leaves attributed to only-
+    /// `Bare`, only-`Discovered`, only-`Default`, or only-`Custom`),
+    /// and `false` on every two-or-more-cell-cover fold (two-tier
+    /// partial cover, three-tier partial cover, uniform four-tier
+    /// cover). Strictly wider than the strict-interior predicate
+    /// [`Self::tiers_strict_partial_cover`] whose support-cardinality
+    /// singleton `{2}` never overlaps the at-most-one clause.
+    ///
+    /// **Empty-map convention** — returns `true` on the empty map: the
+    /// empty map observes zero cells, so the "at most one observed"
+    /// predicate holds vacuously. Matches
+    /// [`crate::AxisHistogram::has_low_support`]'s empty-histogram
+    /// `true` convention one altitude down. The empty map is on the
+    /// `true` side of the low-support boundary — the low-support
+    /// corner is the union-of-low-boundaries fold that pulls the empty
+    /// map and every singleton-support fold into one named low-
+    /// magnitude corner. Orthogonal to [`Self::tiers_any_observed`]'s
+    /// empty-map `false` polarity, [`Self::tiers_full_cover`]'s empty-
+    /// map `false` polarity, [`Self::tiers_singular_support`]'s empty-
+    /// map `false` polarity, [`Self::tiers_singular_gap`]'s empty-map
+    /// `false` polarity, and [`Self::tiers_strict_partial_cover`]'s
+    /// empty-map `false` polarity. Matches
+    /// [`ConfigDiff::kinds_low_support`]'s empty-diff `true` polarity
+    /// on the diff altitude in the same projection.
+    ///
+    /// **Singleton-support convention** — returns `true` on every fold
+    /// whose observed support is a single [`ConfigTierKind`]: the
+    /// support cardinality is `1`, so the "at most one observed"
+    /// predicate holds. Every fold with all leaves attributed to only-
+    /// `Bare`, only-`Discovered`, only-`Default`, or only-`Custom` is
+    /// a witness on the `true` side. The singleton-support fixture
+    /// partitions the seven coverage-support boundaries with
+    /// (`any_observed`=true, `singular_support`=true,
+    /// `singular_gap`=false, `balanced`=true, `full_cover`=false,
+    /// `strict_partial_cover`=false, `low_support`=true).
+    ///
+    /// **Two-tier partial cover convention** — returns `false` on
+    /// every fold whose observed support is exactly two
+    /// [`ConfigTierKind`] cells: the support cardinality is `2`, so
+    /// the "at most one observed" predicate fails uniformly. A fold
+    /// observing only the `Bare` and `Default` tiers is a witness on
+    /// the `false` side: `Discovered` and `Custom` are silent. The
+    /// two-tier partial-cover fixture partitions the seven coverage-
+    /// support boundaries with (`any_observed`=true,
+    /// `singular_support`=false, `singular_gap`=false,
+    /// `full_cover`=false, `strict_partial_cover`=true,
+    /// `low_support`=false) — the strict-interior witness at support
+    /// cardinality `2` on the cardinality-`4` tier axis, disjoint
+    /// from the low-magnitude corner.
+    ///
+    /// **Three-tier partial cover convention** — returns `false` on
+    /// every fold whose observed support is exactly three
+    /// [`ConfigTierKind`] cells: the support cardinality is `3`, so
+    /// the "at most one observed" predicate fails uniformly. Matches
+    /// [`Self::tiers_singular_gap`]'s `true` side on the same fixture
+    /// — the singleton-gap boundary sits inside the high-magnitude
+    /// half of the interval, disjoint from the low-magnitude corner.
+    ///
+    /// **Uniform four-tier cover convention** — returns `false` on
+    /// every fold where each [`ConfigTierKind`] cell was observed at
+    /// least once: the support cardinality is `4`, so the "at most
+    /// one observed" predicate fails uniformly. Matches
+    /// [`Self::tiers_full_cover`]'s `true` side on the same fixture —
+    /// the two boundaries `low_support` and `full_cover` are disjoint
+    /// at the top and bottom of the support-cardinality magnitude
+    /// interval on every cardinality-`>= 2` axis.
+    ///
+    /// # Invariants
+    ///
+    /// - `tiers_low_support() == tier_histogram().has_low_support()`
+    ///   — both project the same predicate off the same primitive;
+    ///   the named seam is the cube-native routing of the histogram
+    ///   surface.
+    /// - `tiers_low_support() ⇔ is_empty() ||
+    ///   tiers_singular_support()` — the defining union-of-low-
+    ///   boundaries disjunction on the two named histogram-side
+    ///   peers. The low-support corner folds the empty-map and the
+    ///   singleton-support boundaries into one named low-magnitude
+    ///   corner without discarding the finer resolution below.
+    /// - `tiers_low_support() == (contributing_tiers_count() <= 1)`
+    ///   always — the support-scalar surface, without allocating the
+    ///   `Vec<ConfigTierKind>`.
+    /// - `tiers_low_support() == (contributing_tiers().len() <= 1)`
+    ///   always — the support-`Vec` surface.
+    /// - `tiers_low_support() == (absent_tiers_count() >=
+    ///   crate::axis_cardinality::<ConfigTierKind>() - 1)` always —
+    ///   the coverage-gap-scalar surface, the dual-side surfacing of
+    ///   the same boolean across the (observed, unobserved)
+    ///   partition.
+    /// - `tiers_low_support() ⇒ !tiers_full_cover()` on every axis
+    ///   with cardinality `>= 2` (every implementor today —
+    ///   [`ConfigTierKind`] carries four cells): low support has
+    ///   size `<= 1`, a full cover has size
+    ///   `axis_cardinality >= 2`, so the two boundaries are disjoint.
+    /// - `tiers_low_support() ⇒ !tiers_singular_gap()` on every axis
+    ///   with cardinality `>= 3` (every implementor today): low
+    ///   support has size `<= 1`, singleton-gap has support size
+    ///   `axis_cardinality - 1 >= 2`, so the two are disjoint.
+    /// - `tiers_low_support() ⇒ !tiers_strict_partial_cover()`
+    ///   always: the strict interior requires `>= 2` observed cells,
+    ///   low support has `<= 1`. The two are disjoint on every axis
+    ///   — direct pin of the pairwise disjointness of the two named
+    ///   corners of the magnitude-direction ternary partition
+    ///   `(low_support, strict_partial_cover, high_support)`.
+    /// - `(tiers_low_support, tiers_strict_partial_cover,
+    ///   tiers_high_support)` will form a strict ternary partition
+    ///   once `tiers_high_support` lifts — the magnitude-direction
+    ///   ternary of the 5-corner support-cardinality partition,
+    ///   folding the two singular-cardinality boundaries into the
+    ///   two magnitude corners and naming the boundary-free strict
+    ///   interior separately. Pinned on the histogram surface as
+    ///   `axis_histogram_has_low_support_has_strict_partial_cover_has_high_support_form_strict_ternary_partition_for_every_closed_axis_implementor`.
+    /// - `!tiers_any_observed() ⇒ tiers_low_support()` — the empty
+    ///   map always sits at the bottom of the magnitude interval.
+    /// - `tiers_singular_support() ⇒ tiers_low_support()` — every
+    ///   singleton-support fold lands on the low-magnitude corner by
+    ///   the union-of-low-boundaries disjunction.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigTierKind>()` (the
+    /// low-support scan). Both are `O(n)` in practice since the tier
+    /// axis carries a fixed four-cell cardinality; the returned
+    /// `bool` reads one predicate. The scan short-circuits on the
+    /// *second* nonzero cell (bounded at two nonzero-witness cells
+    /// visited on any two-or-more-cell-support fold), strictly
+    /// tighter than the four documented open-coded surfaces — no
+    /// boolean disjunction across two named predicates, no
+    /// `Vec<ConfigTierKind>` allocation, no [`crate::axis_cardinality`]
+    /// turbofish with `- 1` arithmetic against a magic threshold.
+    #[must_use]
+    pub fn tiers_low_support(&self) -> bool {
+        self.tier_histogram().has_low_support()
+    }
 }
 
 /// Zero-allocation `(&[String], &Provenance)` stream over the sorted
@@ -15799,6 +16003,423 @@ mod progressive_tests {
             let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
             let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
             let hand_rolled = zeros >= 2 && nonzeros >= 2;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::tiers_low_support — low-support-tier-counts
+    //    boolean predicate on the tier altitude, lifting
+    //    has_low_support from the histogram surface and climbing the
+    //    "low-support across altitudes" projection from the diff
+    //    altitude. The cardinality-`4` ConfigTierKind axis carries
+    //    two low-magnitude witnesses: the empty map (via the "at
+    //    most one observed" vacuous clause) and every singleton-
+    //    support fold. ──
+
+    #[test]
+    fn tiers_low_support_matches_tier_histogram_has_low_support_pointwise() {
+        // Routing pin: `tiers_low_support` routes through
+        // `tier_histogram().has_low_support()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Tier-altitude peer
+        // of
+        // `kinds_low_support_matches_kind_histogram_has_low_support_pointwise`
+        // on the diff altitude in the "low-support across altitudes"
+        // projection.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().has_low_support();
+            assert_eq!(map.tiers_low_support(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn tiers_low_support_matches_defining_union_of_low_boundaries_pointwise() {
+        // Defining union-of-low-boundaries form:
+        // `tiers_low_support() ⇔ is_empty() ||
+        // tiers_singular_support()`. Pins the predicate against the
+        // two-way disjunction on the two named histogram-side peers
+        // consumers reach for when they open-code the low-magnitude
+        // corner as a boolean fold over the empty-map and singleton-
+        // support boundaries. Peer of
+        // `kinds_low_support_matches_defining_union_of_low_boundaries_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_low_support();
+            let via_union = map.is_empty() || map.tiers_singular_support();
+            assert_eq!(
+                via_seam, via_union,
+                "tiers_low_support ({via_seam}) must agree with \
+                 is_empty || tiers_singular_support ({via_union})",
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_low_support_agrees_with_contributing_tiers_count_at_most_one_pointwise() {
+        // Support-scalar surface: `tiers_low_support() ==
+        // (contributing_tiers_count() <= 1)` on every fixture. The
+        // support-side surfacing of the same boolean, without
+        // allocating the `Vec<ConfigTierKind>`. Lifted from the
+        // trait-uniform `has_low_support() ⇔ distinct_cells() <= 1`
+        // law on AxisHistogram. Peer of
+        // `kinds_low_support_agrees_with_present_kinds_count_at_most_one_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_low_support();
+            let count = map.contributing_tiers_count();
+            let via_scalar = count <= 1;
+            assert_eq!(
+                via_seam, via_scalar,
+                "tiers_low_support ({via_seam}) must agree with \
+                 contributing_tiers_count <= 1 (count={count})",
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_low_support_agrees_with_contributing_tiers_len_at_most_one_pointwise() {
+        // Support-`Vec` form: `tiers_low_support() ==
+        // (contributing_tiers().len() <= 1)` on every fixture. Pins
+        // the predicate against the `Vec<ConfigTierKind>` length form
+        // consumers reach for when they already hold the support
+        // vector. Peer of
+        // `kinds_low_support_agrees_with_present_kinds_len_at_most_one_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_low_support();
+            let via_vec = map.contributing_tiers().len() <= 1;
+            assert_eq!(
+                via_seam, via_vec,
+                "tiers_low_support ({via_seam}) must agree with \
+                 contributing_tiers().len() <= 1 ({via_vec})",
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_low_support_agrees_with_absent_tiers_count_at_least_axis_cardinality_minus_one_pointwise()
+     {
+        // Coverage-gap-scalar form: `tiers_low_support() ==
+        // (absent_tiers_count() >=
+        // axis_cardinality::<ConfigTierKind>() - 1)` on every
+        // fixture. The coverage-gap-side surfacing of the same
+        // boolean — a low-magnitude fold observes at most one cell
+        // and misses at least `axis_cardinality - 1` cells. Dual of
+        // the support-scalar at-most-one form on the complementary
+        // side of the same partition via the
+        // `contributing_tiers_count + absent_tiers_count ==
+        // axis_cardinality` invariant. Peer of
+        // `kinds_low_support_agrees_with_absent_kinds_count_at_least_axis_cardinality_minus_one_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_low_support();
+            let gap = map.absent_tiers_count();
+            let via_gap = gap >= crate::axis_cardinality::<ConfigTierKind>() - 1;
+            assert_eq!(
+                via_seam, via_gap,
+                "tiers_low_support ({via_seam}) must agree with \
+                 absent_tiers_count >= axis_cardinality - 1 (gap={gap})",
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_low_support_empty_map_is_true() {
+        // Empty-map boundary: the empty map observes zero cells, so
+        // the "at most one observed" predicate holds vacuously —
+        // `tiers_low_support` reads `true`. Matches
+        // `has_low_support` reading `true` on the empty histogram
+        // one altitude down. Orthogonal polarity to the six
+        // coverage-support boundary corners on the empty map
+        // (`any_observed`=false, `singular_support`=false,
+        // `singular_gap`=false, `full_cover`=false,
+        // `strict_partial_cover`=false, `low_support`=true) — the
+        // empty map is the union-of-low-boundaries fold's first
+        // witness on the `true` side, folded into the low-magnitude
+        // corner alongside every singleton-support fixture. Peer of
+        // `kinds_low_support_empty_diff_is_true` on the diff
+        // altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert!(empty.tiers_low_support());
+        assert!(!empty.tiers_any_observed());
+        assert!(!empty.tiers_singular_support());
+        assert!(!empty.tiers_singular_gap());
+        assert!(!empty.tiers_full_cover());
+        assert!(!empty.tiers_strict_partial_cover());
+    }
+
+    #[test]
+    fn tiers_low_support_singleton_support_is_true() {
+        // Singleton-support pin: every leaf lands on the same tier,
+        // so the support cardinality is `1` — `tiers_low_support`
+        // reads `true` via the union-of-low-boundaries disjunction.
+        // Direct witness of the strict subsumption
+        // `tiers_singular_support ⇒ tiers_low_support` on every
+        // axis. The singleton-support fixture partitions the seven
+        // coverage-support boundaries with (`any_observed`=true,
+        // `singular_support`=true, `singular_gap`=false,
+        // `full_cover`=false, `strict_partial_cover`=false,
+        // `low_support`=true). Peer of
+        // `kinds_low_support_singleton_support_is_true` on the diff
+        // altitude.
+        let m: ProvenanceMap = ["a", "b", "c", "d"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 1);
+        assert!(m.tiers_singular_support());
+        assert!(m.tiers_low_support());
+    }
+
+    #[test]
+    fn tiers_low_support_two_tier_partial_cover_is_false() {
+        // Two-tier cover pin: a fold observing exactly two tiers (say
+        // `Bare` + `Default`) has two observed cells on the four-cell
+        // `ConfigTierKind` axis — the "at most one observed"
+        // predicate fails uniformly and `tiers_low_support` reads
+        // `false`. Direct witness of the strict disjointness
+        // `tiers_strict_partial_cover ⇒ !tiers_low_support` on the
+        // cardinality-`4` tier axis (the strict-interior fold is the
+        // two-tier partial cover). Distinguishes the tier altitude
+        // from the diff altitude, where two-kind partial cover falls
+        // on the singleton-gap boundary (not strict-interior) by
+        // cardinality-`3` reachability.
+        let m: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 2);
+        assert!(m.tiers_strict_partial_cover());
+        assert!(!m.tiers_low_support());
+    }
+
+    #[test]
+    fn tiers_low_support_three_tier_partial_cover_is_false() {
+        // Three-tier cover pin: a fold observing exactly three tiers
+        // has support cardinality `3` on the four-cell
+        // `ConfigTierKind` axis — the "at most one observed"
+        // predicate fails uniformly and `tiers_low_support` reads
+        // `false`. Direct witness of the strict disjointness
+        // `tiers_singular_gap ⇒ !tiers_low_support` on the
+        // cardinality-`4` tier axis (three observed cells sit in the
+        // high-magnitude half of the support-cardinality interval).
+        let m: ProvenanceMap = [
+            ("b", ConfigTierKind::Bare),
+            ("d", ConfigTierKind::Default),
+            ("c", ConfigTierKind::Custom),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        assert_eq!(m.contributing_tiers().len(), 3);
+        assert!(m.tiers_singular_gap());
+        assert!(!m.tiers_low_support());
+    }
+
+    #[test]
+    fn tiers_low_support_uniform_cover_is_false() {
+        // Uniform-cover pin: every tier receives at least one leaf,
+        // so the support cardinality is `4` (the full four-cell
+        // `ConfigTierKind` axis) — the "at most one observed"
+        // predicate fails uniformly. Direct witness of the strict
+        // disjointness `tiers_full_cover ⇒ !tiers_low_support` on
+        // every axis with cardinality `>= 2`. The uniform four-tier
+        // cover partitions the seven coverage-support boundaries
+        // with (`any_observed`=true, `singular_support`=false,
+        // `singular_gap`=false, `full_cover`=true,
+        // `strict_partial_cover`=false, `low_support`=false). Peer
+        // of `kinds_low_support_uniform_cover_is_false` on the diff
+        // altitude.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(m.tiers_full_cover());
+        assert!(!m.tiers_low_support());
+    }
+
+    #[test]
+    fn tiers_low_support_implies_not_tiers_full_cover_pointwise() {
+        // Disjointness pin: `tiers_low_support() ⇒
+        // !tiers_full_cover()` on every axis with cardinality `>=
+        // 2`. Low support has size `<= 1`; a full cover has size
+        // `axis_cardinality >= 2`. The two boundaries sit at
+        // opposite ends of the support-cardinality magnitude
+        // interval on every non-degenerate axis. Pins the strict
+        // subsumption between the magnitude-direction ternary's
+        // bottom corner and the 5-corner support-cardinality
+        // partition's top corner at the tier altitude. Peer of
+        // `kinds_low_support_implies_not_kinds_full_cover_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_low_support() {
+                assert!(
+                    !map.tiers_full_cover(),
+                    "low-support map cannot be full-cover on a \
+                     cardinality >= 2 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_low_support_implies_not_tiers_singular_gap_pointwise() {
+        // Disjointness pin: `tiers_low_support() ⇒
+        // !tiers_singular_gap()` on every axis with cardinality `>=
+        // 3` (every implementor today — `ConfigTierKind` carries
+        // four cells). Low support has size `<= 1`; singleton-gap
+        // has support size `axis_cardinality - 1 >= 2`. The two
+        // corners are disjoint on cardinality-`>= 3` axes. Peer of
+        // `kinds_low_support_implies_not_kinds_singular_gap_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_low_support() {
+                assert!(
+                    !map.tiers_singular_gap(),
+                    "low-support map cannot be singular-gap on a \
+                     cardinality >= 3 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_low_support_implies_not_tiers_strict_partial_cover_pointwise() {
+        // Disjointness pin: `tiers_low_support() ⇒
+        // !tiers_strict_partial_cover()` on every axis. The strict
+        // interior requires `>= 2` observed cells; low support has
+        // `<= 1`. Direct pin of the pairwise disjointness of the two
+        // named corners of the magnitude-direction ternary partition
+        // `(low_support, strict_partial_cover, high_support)` at the
+        // tier altitude — where the strict-interior fixture (two-tier
+        // partial cover) is reachable on the cardinality-`4` axis,
+        // so the disjointness carries content (unlike the vacuous
+        // shape on the diff altitude's cardinality-`3` axis). Peer
+        // of
+        // `kinds_low_support_implies_not_kinds_strict_partial_cover_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_low_support() {
+                assert!(
+                    !map.tiers_strict_partial_cover(),
+                    "low-support map cannot be strict-partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_any_observed_negation_implies_tiers_low_support_pointwise() {
+        // Subsumption pin: `!tiers_any_observed() ⇒
+        // tiers_low_support()` on every axis. If no cell was
+        // observed, the support cardinality is `0 <= 1` — the low-
+        // support predicate holds vacuously. Direct witness of the
+        // strictly-tighter cardinality relation between the empty-
+        // support boundary and the low-magnitude corner at the tier
+        // altitude. Peer of
+        // `kinds_any_observed_negation_implies_kinds_low_support_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if !map.tiers_any_observed() {
+                assert!(
+                    map.tiers_low_support(),
+                    "empty-support map must be low-support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_singular_support_implies_tiers_low_support_pointwise() {
+        // Subsumption pin: `tiers_singular_support() ⇒
+        // tiers_low_support()` on every axis. A singleton-support
+        // fold observes exactly one cell (`<= 1`), so the low-
+        // support predicate holds via the union-of-low-boundaries
+        // disjunction. Direct witness of the strict subsumption
+        // between the singleton-support boundary and the low-
+        // magnitude corner at the tier altitude. Peer of
+        // `kinds_singular_support_implies_kinds_low_support_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_singular_support() {
+                assert!(
+                    map.tiers_low_support(),
+                    "singular-support map must be low-support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_low_support_agrees_with_open_coded_at_most_one_positive_walk() {
+        // Parity against the exact hand-rolled low-support walk
+        // this lift replaces: walk every cell of the histogram and
+        // count how many carry a positive count; the low-support
+        // predicate reads `true` iff at most one cell is positive.
+        // Mirrors the parity pins on the other coverage-support
+        // boundaries — `tiers_singular_support_agrees_with_open_coded_exactly_one_positive_walk`
+        // on the strictly-tighter cardinality slice of the same
+        // magnitude corner. Peer of
+        // `kinds_low_support_agrees_with_open_coded_at_most_one_positive_walk`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_low_support();
+            let hist = map.tier_histogram();
+            let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
+            let hand_rolled = nonzeros <= 1;
             assert_eq!(via_seam, hand_rolled);
         }
     }
