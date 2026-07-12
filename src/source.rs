@@ -6333,6 +6333,241 @@ pub trait ConfigSourceChain {
     {
         self.env_prefix_kind_histogram().has_singular_support()
     }
+
+    /// Returns `true` exactly when this chain's [`ConfigSource::Env`]
+    /// layers observe every [`EnvMetadataTagKind`] cell except one —
+    /// the singleton-gap boundary of the coverage-support partition on
+    /// the env-prefix sub-axis of the chain altitude.
+    ///
+    /// The cube-native answer to *"did this chain miss exactly one
+    /// env-prefix cell?"*, routed through the shared
+    /// [`crate::AxisHistogram::has_singular_gap`] primitive on
+    /// [`Self::env_prefix_kind_histogram`] one altitude down. Consumers
+    /// asking that question — the fleet dashboard singleton-gap headline
+    /// over the recipe's env-prefix composition, the attestation
+    /// manifest gate *"rebuild window observes all-but-one env-prefix
+    /// kind"*, the alerting policy predicate *"env-prefix gap singular"*
+    /// — now route through this named seam instead of four previously
+    /// drifting inline forms:
+    /// `chain.absent_env_prefix_kinds_count() == 1` (coverage-gap-scalar),
+    /// `chain.absent_env_prefix_kinds().len() == 1` (coverage-gap-`Vec`),
+    /// `chain.present_env_prefix_kinds_count() ==
+    /// crate::axis_cardinality::<EnvMetadataTagKind>() - 1` (support-
+    /// scalar, which pays for a full-axis scan and pulls in the
+    /// [`crate::axis_cardinality`] turbofish at every call site), and
+    /// `chain.present_env_prefix_kinds().len() ==
+    /// crate::axis_cardinality::<EnvMetadataTagKind>() - 1` (support-
+    /// `Vec`, which allocates a `Vec<EnvMetadataTagKind>` and reads its
+    /// length back). The four forms drifted in subtle ways at every
+    /// consumer site (allocation vs. scalar, turbofish vs. name-only,
+    /// coverage-gap side vs. support side). This lift names the
+    /// singleton-gap-env-prefix predicate directly at the chain-altitude
+    /// surface with a single-pass short-circuiting scan.
+    ///
+    /// **Closes the "singleton-gap across altitudes" projection**
+    /// across every altitude / sub-axis. Seeded on the diff altitude
+    /// by [`crate::ConfigDiff::kinds_singular_gap`], climbed to the
+    /// tier altitude by [`crate::ProvenanceMap::tiers_singular_gap`],
+    /// and lifted sideways to the chain-altitude sister sub-axes by
+    /// [`Self::layer_kinds_singular_gap`] over
+    /// [`Self::layer_kind_histogram`] and
+    /// [`Self::file_formats_singular_gap`] over
+    /// [`Self::file_format_histogram`]; this lift closes the third and
+    /// final chain-altitude sub-axis, matching the fully-covered
+    /// chain-shape triples `(layer_kinds_balanced, file_formats_balanced,
+    /// env_prefix_kinds_balanced)`, `(layer_kinds_full_cover,
+    /// file_formats_full_cover, env_prefix_kinds_full_cover)`,
+    /// `(layer_kinds_any_observed, file_formats_any_observed,
+    /// env_prefix_kinds_any_observed)`, and `(layer_kinds_singular_support,
+    /// file_formats_singular_support, env_prefix_kinds_singular_support)`
+    /// one boundary surface over. The 5-boundary × 5-altitude/sub-axis
+    /// (`kinds`, `tiers`, `layer_kinds`, `file_formats`,
+    /// `env_prefix_kinds`) coverage-support predicate cube — `(balanced,
+    /// full_cover, any_observed, singular_support, singular_gap)` ×
+    /// (diff, tier, chain-layer-kind, chain-file-format, chain-env-
+    /// prefix) — now spans every corner at every altitude / sub-axis,
+    /// each corner routed through the same [`crate::AxisHistogram`]
+    /// primitive one altitude down at a single named seam. Dual of
+    /// [`Self::env_prefix_kinds_singular_support`] on the *complementary*
+    /// cardinality slice of the same coverage-support partition
+    /// (`singular_support` = *exactly-one* observed cell; `singular_gap`
+    /// = *exactly-one* unobserved cell).
+    ///
+    /// **Two-cell-axis singular-boundary coincidence** — unique on
+    /// this two-cell env-prefix axis:
+    /// [`EnvMetadataTagKind::ALL`] carries exactly two cells, so
+    /// support cardinality `1` (singleton-support) and support
+    /// cardinality `axis_cardinality - 1 = 1` (singleton-gap) coincide
+    /// pointwise. Every chain reads
+    /// `env_prefix_kinds_singular_gap() ==
+    /// env_prefix_kinds_singular_support()` — the two boundaries name
+    /// the same fixture set from opposite sides of the coverage-
+    /// support partition. This coincidence is a *feature*, not a
+    /// degeneracy: the named seams stay separate so consumers writing
+    /// *"missed exactly one cell"* diagnostics route through
+    /// `singular_gap` and consumers writing *"landed on exactly one
+    /// cell"* diagnostics route through `singular_support`, matching
+    /// the semantic they mean at the call site instead of forcing one
+    /// name onto both sides. The coincidence does NOT lift to the
+    /// three-cell layer-kind or four-cell file-format sub-axes, where
+    /// singleton-support has support cardinality `1` and singleton-gap
+    /// has support cardinality `axis_cardinality - 1 >= 2` and the two
+    /// boundaries are strictly disjoint. Pinned by
+    /// [`crate::AxisHistogram::has_singular_gap`]'s trait-uniform law
+    /// `has_singular_gap() ⇔ has_singular_support()` on every axis
+    /// with cardinality `2`, of which the env-prefix sub-axis is the
+    /// sole chain-altitude witness today.
+    ///
+    /// **Empty-histogram convention** — returns `false` on every chain
+    /// whose env-prefix histogram is empty: every cell is unobserved
+    /// (`axis_cardinality::<EnvMetadataTagKind>() = 2`, not one), so the
+    /// singleton-gap predicate fails. Matches
+    /// [`crate::AxisHistogram::has_singular_gap`]'s empty-histogram
+    /// `false` convention one altitude down. Agreement with
+    /// [`Self::file_formats_singular_gap`]'s and
+    /// [`Self::env_prefix_kinds_singular_support`]'s same-sided
+    /// convention at the empty-histogram / non-empty-chain boundary: a
+    /// non-empty chain of only [`ConfigSource::Defaults`] /
+    /// [`ConfigSource::File`] layers ALSO reads `false` (the histogram
+    /// is empty even though the chain is not). Cross-sub-axis
+    /// divergence from [`Self::layer_kinds_singular_gap`], where the
+    /// empty-chain boundary reads on `self.as_ref().is_empty()` instead
+    /// of the histogram-empty predicate. Unlike
+    /// [`Self::file_formats_singular_gap`], the empty-histogram / no-
+    /// `Env`-layers condition is exactly the layer-kind
+    /// `count(ConfigSourceKind::Env) == 0` condition: every `Env` entry
+    /// projects to a `Some` cell regardless of prefix value, so no
+    /// `Env` entry is silently dropped by the projection the way an
+    /// unrecognized-extension `File` entry is on the file-format sub-
+    /// axis. Dual of the vacuous-uniformity witness on
+    /// [`Self::env_prefix_kinds_balanced`], which reads `true` on
+    /// every empty-histogram chain: the five boundaries partition the
+    /// empty-histogram chain into the polarity quintuple
+    /// (`any_observed`=false, `singular_support`=false,
+    /// `singular_gap`=false, `balanced`=true, `full_cover`=false).
+    ///
+    /// **Singleton-support convention** — returns `true` on every
+    /// chain whose observed support is a single [`EnvMetadataTagKind`]:
+    /// on the two-cell env-prefix axis a singleton support has exactly
+    /// one unobserved cell, so the singleton-gap predicate holds by
+    /// the two-cell-axis coincidence. Every prefixed-only chain (all
+    /// env layers carry non-empty prefixes) and every bare-only chain
+    /// (all env layers carry the empty prefix) is a witness — as is
+    /// `sample_chain` (two `.yaml` file layers + one prefixed env
+    /// layer: `Prefixed` is the sole observed cell, `Bare` the sole
+    /// unobserved cell). Matches
+    /// [`Self::env_prefix_kinds_singular_support`]'s,
+    /// [`Self::env_prefix_kinds_any_observed`]'s, and
+    /// [`Self::env_prefix_kinds_balanced`]'s `true` side on the
+    /// singleton and orthogonal to [`Self::env_prefix_kinds_full_cover`]'s
+    /// `false` side on the same singleton — the five boundaries
+    /// partition the singleton-support fixture into the polarity
+    /// quintuple (`any_observed`=true, `singular_support`=true,
+    /// `singular_gap`=true, `balanced`=true, `full_cover`=false).
+    ///
+    /// **Uniform two-kind cover convention** — returns `false` on
+    /// every chain where each of the two [`EnvMetadataTagKind`] cells
+    /// was observed at least once: zero cells are unobserved (not
+    /// one), so the singleton-gap predicate fails. Matches
+    /// [`Self::env_prefix_kinds_full_cover`]'s `true` side on the same
+    /// fixture — the two boundaries `singular_gap` and `full_cover`
+    /// are disjoint at the top of the coverage-support partition
+    /// (adjacent support cardinalities `axis_cardinality - 1` and
+    /// `axis_cardinality`). The uniform two-kind cover partitions the
+    /// five coverage-support boundaries with (`any_observed`=true,
+    /// `singular_support`=false, `singular_gap`=false, `balanced`=true,
+    /// `full_cover`=true).
+    ///
+    /// **Two-cell-axis boundary tightening — `singular_gap ⇔
+    /// any_observed ∧ !full_cover`** — unique tightening on the two-
+    /// cell env-prefix axis: because the two-cell-axis polarity space
+    /// realizes only four of the eight triples
+    /// (`(any_observed, balanced, full_cover)` ∈ {(F,T,F), (T,T,F),
+    /// (T,F,T), (T,T,T)}), the `true` side of `singular_gap` is
+    /// exactly the (T,T,F) triple — every chain observing at least
+    /// one cell but not both — and the `false` side is the union of
+    /// the other three triples. Equivalently on the two-cell axis:
+    /// `singular_gap ⇔ singular_support ⇔ balanced ∧ any_observed ∧
+    /// !full_cover ⇔ !balanced ∨ !any_observed ⇒ !singular_gap`. This
+    /// tightening does NOT lift to the three-cell layer-kind or four-
+    /// cell file-format sub-axes, where two-cell partial covers can
+    /// carry (T,F,F) polarity (any observed, not balanced, not full
+    /// cover) and singular-gap and singular-support isolate strictly
+    /// disjoint sides of that region.
+    ///
+    /// # Invariants
+    ///
+    /// - `env_prefix_kinds_singular_gap() ==
+    ///   env_prefix_kind_histogram().has_singular_gap()` — both project
+    ///   the same predicate off the same primitive; the named seam is
+    ///   the cube-native routing of the histogram surface.
+    /// - `env_prefix_kinds_singular_gap() == (absent_env_prefix_kinds_count()
+    ///   == 1)` always — the coverage-gap-scalar surface, without
+    ///   allocating the `Vec<EnvMetadataTagKind>`.
+    /// - `env_prefix_kinds_singular_gap() == (absent_env_prefix_kinds().len()
+    ///   == 1)` always — the coverage-gap-`Vec` surface.
+    /// - `env_prefix_kinds_singular_gap() == (present_env_prefix_kinds_count()
+    ///   == crate::axis_cardinality::<EnvMetadataTagKind>() - 1)`
+    ///   always — the support-scalar surface, the dual-side surfacing
+    ///   of the same boolean across the (observed, unobserved)
+    ///   partition.
+    /// - `env_prefix_kinds_singular_gap() == (present_env_prefix_kinds().len()
+    ///   == crate::axis_cardinality::<EnvMetadataTagKind>() - 1)`
+    ///   always — the support-`Vec` surface.
+    /// - `env_prefix_kinds_singular_gap() ⇒ env_prefix_kinds_any_observed()`
+    ///   on every axis with cardinality `>= 2` (every implementor today
+    ///   — [`EnvMetadataTagKind`] carries two cells): a chain missing
+    ///   exactly one cell observes at least `axis_cardinality - 1 >= 1`
+    ///   cells. Contrapositively, `!env_prefix_kinds_any_observed() ⇒
+    ///   !env_prefix_kinds_singular_gap()`.
+    /// - `env_prefix_kinds_singular_gap() ⇒ !env_prefix_kinds_full_cover()`
+    ///   always: full cover has zero unobserved cells, singular gap has
+    ///   exactly one, so the two boundaries are disjoint on every axis.
+    /// - `env_prefix_kinds_singular_gap() ⇔ env_prefix_kinds_singular_support()`
+    ///   on the two-cell env-prefix axis (unique cardinality-2
+    ///   coincidence — support `1` and support `axis_cardinality - 1`
+    ///   coincide). Combined with the general disjointness
+    ///   `singular_gap ⇒ !singular_support` on cardinality `>= 3` axes,
+    ///   this is the unique two-cell exception the sub-axis carries.
+    /// - `env_prefix_kinds_singular_gap() ⇒
+    ///   layer_kind_histogram().count(ConfigSourceKind::Env) >= 1` —
+    ///   a chain with a singleton env-prefix gap observes exactly one
+    ///   env-prefix cell (by the two-cell-axis coincidence) so has at
+    ///   least one env layer, and every such layer is a
+    ///   [`ConfigSource::Env`]. Cross-sub-axis lower-bound implication
+    ///   linking the env-prefix sub-axis singleton-gap boundary to the
+    ///   layer-kind sub-axis Env cell count. Cross-sub-axis divergence
+    ///   from [`Self::layer_kinds_singular_gap`]'s
+    ///   `self.as_ref().len() >= axis_cardinality::<ConfigSourceKind>() - 1`
+    ///   implication, which reads on the chain-length rather than the
+    ///   Env-layer count — matching the same divergence pattern
+    ///   between [`Self::env_prefix_kinds_singular_support`] and
+    ///   [`Self::layer_kinds_singular_support`] on the complementary
+    ///   cardinality slice, tightened on this env-prefix sub-axis by
+    ///   the two-cell-axis coincidence: the lower bound is exactly
+    ///   `>= 1` (not `>= axis_cardinality - 1`), matching
+    ///   [`Self::env_prefix_kinds_singular_support`]'s bound.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<EnvMetadataTagKind>()` (the
+    /// singular-gap scan). Both are `O(n)` in practice since the env-
+    /// prefix axis carries a fixed two-cell cardinality; the returned
+    /// `bool` reads one predicate. The scan short-circuits on the
+    /// second zero cell (bounded at two zero cells visited on any
+    /// two-or-more-cell-gap chain), strictly tighter than the four
+    /// support / coverage-gap equality forms — no
+    /// `Vec<EnvMetadataTagKind>` allocation, no
+    /// [`crate::axis_cardinality`] turbofish, no scalar equality
+    /// against a magic axis-cardinality-minus-one constant.
+    #[must_use]
+    fn env_prefix_kinds_singular_gap(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().has_singular_gap()
+    }
 }
 
 impl ConfigSourceChain for [ConfigSource] {
@@ -23270,6 +23505,483 @@ mod tests {
             let via_seam = slice.env_prefix_kinds_singular_support();
             let hist = slice.env_prefix_kind_histogram();
             let hand_rolled = hist.iter().filter(|(_, c)| *c > 0).count() == 1;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::env_prefix_kinds_singular_gap — singleton-
+    //      gap-env-prefix-kinds boolean predicate on the env-prefix sub-
+    //      axis of the chain altitude, closing the "singleton-gap across
+    //      altitudes" projection sideways to the third and final chain-
+    //      altitude sub-axis — the last remaining corner of the 5-boundary
+    //      × 5-altitude/sub-axis coverage-support predicate cube ----
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_matches_env_prefix_kind_histogram_has_singular_gap_pointwise()
+    {
+        // Routing pin: `env_prefix_kinds_singular_gap` routes through
+        // `env_prefix_kind_histogram().has_singular_gap()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Env-
+        // prefix sub-axis peer of
+        // `file_formats_singular_gap_matches_file_format_histogram_has_singular_gap_pointwise`
+        // and
+        // `layer_kinds_singular_gap_matches_layer_kind_histogram_has_singular_gap_pointwise`
+        // on the sister sub-axes of the chain altitude,
+        // `tiers_singular_gap_matches_tier_histogram_has_singular_gap_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_gap_matches_kind_histogram_has_singular_gap_pointwise`
+        // on the diff altitude — closing the "singleton-gap across
+        // altitudes" projection across every altitude / sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.env_prefix_kind_histogram().has_singular_gap();
+            assert_eq!(slice.env_prefix_kinds_singular_gap(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_agrees_with_absent_env_prefix_kinds_count_equals_one_pointwise()
+     {
+        // Coverage-gap-scalar surface: `env_prefix_kinds_singular_gap()
+        // == (absent_env_prefix_kinds_count() == 1)` on every fixture
+        // — the coverage-gap-side scalar surfacing of the same boolean,
+        // without allocating the `Vec<EnvMetadataTagKind>`. Peer of
+        // `file_formats_singular_gap_agrees_with_absent_file_formats_count_equals_one_pointwise`
+        // and
+        // `layer_kinds_singular_gap_agrees_with_absent_layer_kinds_count_equals_one_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_singular_gap();
+            let via_gap_scalar = slice.absent_env_prefix_kinds_count() == 1;
+            assert_eq!(
+                via_seam,
+                via_gap_scalar,
+                "env_prefix_kinds_singular_gap ({via_seam}) must agree with \
+                 absent_env_prefix_kinds_count == 1 (gap={g}) for chain",
+                g = slice.absent_env_prefix_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_agrees_with_absent_env_prefix_kinds_len_equals_one_pointwise()
+    {
+        // Coverage-gap-`Vec` form: `env_prefix_kinds_singular_gap() ==
+        // (absent_env_prefix_kinds().len() == 1)` on every fixture —
+        // the allocating coverage-gap-vec form the seam replaces. Peer
+        // of `file_formats_singular_gap_agrees_with_absent_file_formats_len_equals_one_pointwise`
+        // and `layer_kinds_singular_gap_agrees_with_absent_layer_kinds_len_equals_one_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_singular_gap();
+            let via_vec = slice.absent_env_prefix_kinds().len() == 1;
+            assert_eq!(
+                via_seam, via_vec,
+                "env_prefix_kinds_singular_gap ({via_seam}) must agree with \
+                 absent_env_prefix_kinds().len() == 1 ({via_vec}) for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_agrees_with_present_env_prefix_kinds_count_equals_axis_cardinality_minus_one_pointwise()
+     {
+        // Support-scalar surface: `env_prefix_kinds_singular_gap() ==
+        // (present_env_prefix_kinds_count() ==
+        // axis_cardinality::<EnvMetadataTagKind>() - 1)` on every
+        // fixture — the support-side surfacing of the same boolean
+        // across the (observed, unobserved) partition. Peer of
+        // `file_formats_singular_gap_agrees_with_present_file_formats_count_equals_axis_cardinality_minus_one_pointwise`
+        // and
+        // `layer_kinds_singular_gap_agrees_with_present_layer_kinds_count_equals_axis_cardinality_minus_one_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_singular_gap();
+            let via_support_scalar = slice.present_env_prefix_kinds_count()
+                == crate::axis_cardinality::<EnvMetadataTagKind>() - 1;
+            assert_eq!(
+                via_seam,
+                via_support_scalar,
+                "env_prefix_kinds_singular_gap ({via_seam}) must agree with \
+                 present_env_prefix_kinds_count == axis_cardinality - 1 (count={c}) for chain",
+                c = slice.present_env_prefix_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_agrees_with_present_env_prefix_kinds_len_equals_axis_cardinality_minus_one_pointwise()
+     {
+        // Support-`Vec` form: `env_prefix_kinds_singular_gap() ==
+        // (present_env_prefix_kinds().len() ==
+        // axis_cardinality::<EnvMetadataTagKind>() - 1)` on every
+        // fixture — the allocating support-vec form the seam replaces.
+        // Peer of `file_formats_singular_gap_agrees_with_present_file_formats_len_equals_axis_cardinality_minus_one_pointwise`
+        // and `layer_kinds_singular_gap_agrees_with_present_layer_kinds_len_equals_axis_cardinality_minus_one_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_singular_gap();
+            let via_support_vec = slice.present_env_prefix_kinds().len()
+                == crate::axis_cardinality::<EnvMetadataTagKind>() - 1;
+            assert_eq!(
+                via_seam, via_support_vec,
+                "env_prefix_kinds_singular_gap ({via_seam}) must agree with \
+                 present_env_prefix_kinds().len() == axis_cardinality - 1 ({via_support_vec}) for chain",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_empty_chain_is_false() {
+        // Empty-chain boundary: the empty chain has every cell
+        // unobserved (both, not one), so the singular-gap predicate
+        // reads `false`. Matches `has_singular_gap` reading `false` on
+        // the empty histogram over the `EnvMetadataTagKind` axis one
+        // altitude down. Empty-chain polarity quintuple:
+        // (`any_observed`=false, `singular_support`=false,
+        // `singular_gap`=false, `balanced`=true, `full_cover`=false).
+        // Peer of `file_formats_singular_gap_empty_chain_is_false` and
+        // `layer_kinds_singular_gap_empty_chain_is_false` on the
+        // sister sub-axes of the same chain altitude,
+        // `tiers_singular_gap_empty_map_is_false` on the tier altitude,
+        // and `kinds_singular_gap_empty_diff_is_false` on the diff
+        // altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(!empty.env_prefix_kinds_singular_gap());
+        assert!(!empty.env_prefix_kinds_singular_support());
+        assert!(!empty.env_prefix_kinds_any_observed());
+        assert!(empty.env_prefix_kinds_balanced());
+        assert!(!empty.env_prefix_kinds_full_cover());
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_no_env_layers_is_false() {
+        // Cross-sub-axis divergence pin against
+        // `layer_kinds_singular_gap_empty_chain_is_false`: on the env-
+        // prefix sub-axis the *non-empty-chain / empty-histogram*
+        // boundary ALSO reads `false`. A chain of only Defaults / File
+        // layers is non-empty but has an empty env-prefix histogram, so
+        // no cells are observed and every cell is unobserved (both,
+        // not one) — `env_prefix_kinds_singular_gap` reads `false`.
+        // Matches `env_prefix_kinds_singular_support_no_env_layers_is_false`,
+        // `env_prefix_kinds_any_observed_no_env_layers_is_false`, and
+        // `env_prefix_kinds_full_cover_no_env_layers_is_false` on the
+        // same-shape fixtures (all four read `false` on empty-histogram
+        // non-empty chains); distinguishing pin against
+        // `env_prefix_kinds_balanced` on the exact same fixtures
+        // (where the vacuous-uniformity boundary reads `true`).
+        // Unlike the file-format sub-axis, the empty-histogram / non-
+        // empty-chain condition is exactly
+        // `layer_kind_histogram().count(Env) == 0` — every Env layer
+        // projects to a Some cell regardless of prefix value.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.nix")),
+                ConfigSource::File(PathBuf::from("/b.lisp")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(!slice.is_empty(), "fixture must be non-empty");
+            assert!(
+                slice.env_prefix_kind_histogram().is_empty(),
+                "fixture must have empty env-prefix histogram",
+            );
+            assert_eq!(
+                slice.layer_kind_histogram().count(ConfigSourceKind::Env),
+                0,
+                "fixture must have zero Env layers",
+            );
+            assert!(!slice.env_prefix_kinds_singular_gap());
+            assert!(!slice.env_prefix_kinds_singular_support());
+            assert!(!slice.env_prefix_kinds_any_observed());
+            assert!(slice.env_prefix_kinds_balanced());
+            assert!(!slice.env_prefix_kinds_full_cover());
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_prefixed_only_is_true() {
+        // Singleton-gap pin on the prefixed side: every env layer
+        // carries a non-empty prefix, so `Prefixed` is the sole
+        // observed cell and `Bare` is the sole unobserved cell —
+        // exactly one cell missing on the two-cell axis, so
+        // `env_prefix_kinds_singular_gap` reads `true`. Direct witness
+        // of the two-cell-axis coincidence
+        // `env_prefix_kinds_singular_gap ⇔ env_prefix_kinds_singular_support`.
+        // Polarity quintuple on this fixture:
+        // (`any_observed`=true, `singular_support`=true,
+        // `singular_gap`=true, `balanced`=true, `full_cover`=false).
+        // Cross-sub-axis divergence from
+        // `file_formats_singular_gap_singleton_support_is_false` and
+        // `layer_kinds_singular_gap_singleton_support_is_false` on the
+        // sister sub-axes — where the same "one observed cell" shape
+        // reads singular-gap FALSE because those cardinality-≥3 axes
+        // isolate the two singular boundaries into strictly disjoint
+        // sides.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert_eq!(slice.absent_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_gap());
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert!(slice.env_prefix_kinds_any_observed());
+        assert!(slice.env_prefix_kinds_balanced());
+        assert!(!slice.env_prefix_kinds_full_cover());
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_bare_only_is_true() {
+        // Singleton-gap pin on the bare side: every env layer carries
+        // the empty prefix, so `Bare` is the sole observed cell and
+        // `Prefixed` is the sole unobserved cell — exactly one cell
+        // missing on the two-cell axis, so
+        // `env_prefix_kinds_singular_gap` reads `true`. Symmetric
+        // sister of `env_prefix_kinds_singular_gap_prefixed_only_is_true`
+        // on the two-cell env-prefix axis: both singletons sit on the
+        // (`any_observed`=true, `singular_support`=true,
+        // `singular_gap`=true, `balanced`=true, `full_cover`=false)
+        // polarity quintuple. Peer of
+        // `env_prefix_kinds_any_observed_bare_only_is_true` and
+        // `env_prefix_kinds_full_cover_bare_only_is_false` on the
+        // sister boundaries.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert_eq!(slice.absent_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_gap());
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert!(slice.env_prefix_kinds_any_observed());
+        assert!(slice.env_prefix_kinds_balanced());
+        assert!(!slice.env_prefix_kinds_full_cover());
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_sample_chain_is_true() {
+        // Direct pin against `sample_chain()`: two `.yaml` file layers
+        // + one prefixed env layer (`"APP_"`). `Prefixed` is the sole
+        // observed env-prefix cell, `Bare` the sole unobserved cell —
+        // exactly one cell missing on the two-cell axis, so
+        // `env_prefix_kinds_singular_gap` reads `true`. Peer of
+        // `env_prefix_kinds_singular_support_sample_chain_is_true` on
+        // the same fixture — the two-cell-axis coincidence collapses
+        // both named seams onto the same fixture reading. Cross-sub-
+        // axis divergence from
+        // `file_formats_singular_gap_singleton_support_is_false` on
+        // `sample_chain()`: on the four-cell file-format sub-axis
+        // `sample_chain` has support size 1 (Yaml the sole observed
+        // cell) and gap size 3, so file-format singular-gap reads
+        // `false`.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert_eq!(slice.absent_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_gap());
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert!(slice.env_prefix_kinds_any_observed());
+        assert!(slice.env_prefix_kinds_balanced());
+        assert!(!slice.env_prefix_kinds_full_cover());
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_uniform_cover_is_false() {
+        // Uniform-cover pin: one Prefixed env + one Bare env layer, so
+        // both cells of `EnvMetadataTagKind::ALL` are observed and
+        // zero cells are unobserved (not one) —
+        // `env_prefix_kinds_singular_gap` reads `false`. The uniform
+        // two-kind cover is on the `false` side of the singular-gap
+        // boundary and on the `true` side of `full_cover` — the two
+        // boundaries are disjoint at the top of the coverage-support
+        // partition (adjacent support cardinalities
+        // `axis_cardinality - 1` and `axis_cardinality`). Peer of
+        // `file_formats_singular_gap_uniform_cover_is_false` and
+        // `layer_kinds_singular_gap_uniform_cover_is_false` on the
+        // sister sub-axes.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 2);
+        assert_eq!(slice.absent_env_prefix_kinds().len(), 0);
+        assert!(!slice.env_prefix_kinds_singular_gap());
+        assert!(!slice.env_prefix_kinds_singular_support());
+        assert!(slice.env_prefix_kinds_any_observed());
+        assert!(slice.env_prefix_kinds_balanced());
+        assert!(slice.env_prefix_kinds_full_cover());
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_iff_singular_support_pointwise() {
+        // Two-cell-axis coincidence pin: on the two-cell
+        // `EnvMetadataTagKind` axis, singleton-support (exactly one
+        // observed cell) and singleton-gap (exactly one unobserved
+        // cell) coincide pointwise because `axis_cardinality - 1 == 1`.
+        // This is the UNIQUE two-cell exception to the general
+        // strict disjointness `singular_gap ⇒ !singular_support` on
+        // cardinality-≥3 axes; every consumer relying on that
+        // disjointness on the layer-kind / file-format sub-axes must
+        // NOT rely on it here. Distinguishing pin against
+        // `file_formats_singular_gap_implies_not_file_formats_singular_support_pointwise`
+        // and
+        // `layer_kinds_singular_gap_implies_not_layer_kinds_singular_support_pointwise`
+        // on the sister sub-axes where the disjointness holds.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.env_prefix_kinds_singular_gap(),
+                slice.env_prefix_kinds_singular_support(),
+                "two-cell-axis coincidence: singular_gap must equal singular_support \
+                 on the env-prefix sub-axis (fixture len={})",
+                slice.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_implies_env_prefix_kinds_any_observed_pointwise() {
+        // Subsumption pin: `env_prefix_kinds_singular_gap() ⇒
+        // env_prefix_kinds_any_observed()` on every fixture — a chain
+        // missing exactly one cell observes at least
+        // `axis_cardinality - 1 >= 1` cells (EnvMetadataTagKind carries
+        // two cells). Peer of
+        // `file_formats_singular_gap_implies_file_formats_any_observed_pointwise`
+        // and
+        // `layer_kinds_singular_gap_implies_layer_kinds_any_observed_pointwise`
+        // on the sister sub-axes,
+        // `tiers_singular_gap_implies_tiers_any_observed_pointwise` on
+        // the tier altitude, and
+        // `kinds_singular_gap_implies_kinds_any_observed_pointwise` on
+        // the diff altitude. Names the ordering `singular_gap ≤
+        // any_observed` on the coverage-support partition at the env-
+        // prefix sub-axis, closing the subsumption implication across
+        // every altitude / sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular_gap() {
+                assert!(
+                    slice.env_prefix_kinds_any_observed(),
+                    "singular-gap chain must be any-observed (fixture len={})",
+                    slice.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_implies_not_env_prefix_kinds_full_cover_pointwise() {
+        // Disjointness pin: `env_prefix_kinds_singular_gap() ⇒
+        // !env_prefix_kinds_full_cover()` on every fixture — full
+        // cover has zero unobserved cells, singular gap has exactly
+        // one, so the two boundaries are disjoint on every axis. Peer
+        // of `file_formats_singular_gap_implies_not_file_formats_full_cover_pointwise`
+        // and `layer_kinds_singular_gap_implies_not_layer_kinds_full_cover_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular_gap() {
+                assert!(
+                    !slice.env_prefix_kinds_full_cover(),
+                    "singular-gap chain cannot be full-cover (fixture len={})",
+                    slice.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_implies_layer_kind_env_count_positive_pointwise() {
+        // Cross-sub-axis lower-bound implication:
+        // `env_prefix_kinds_singular_gap() ⇒
+        // layer_kind_histogram().count(ConfigSourceKind::Env) >= 1`. A
+        // chain with a singleton env-prefix gap observes exactly one
+        // env-prefix cell (by the two-cell-axis coincidence) so has
+        // at least one env layer, and every such layer is a
+        // `ConfigSource::Env`. Sister of
+        // `env_prefix_kinds_singular_support_implies_layer_kind_env_count_positive_pointwise`
+        // on the complementary cardinality slice (same lower bound
+        // by the coincidence). Cross-sub-axis divergence from
+        // `layer_kinds_singular_gap_implies_chain_length_at_least_axis_cardinality_minus_one_pointwise`
+        // on the layer-kind sub-axis, which reads on the chain-length
+        // and on `axis_cardinality - 1` rather than the Env-layer
+        // count — the env-prefix sub-axis carries the two-cell-axis-
+        // tightened bound `>= 1` (not `>= axis_cardinality - 1`),
+        // matching the sister singular-support lower-bound on this
+        // sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular_gap() {
+                assert!(
+                    slice.layer_kind_histogram().count(ConfigSourceKind::Env) >= 1,
+                    "singular-gap chain must have >= 1 Env layer (was {})",
+                    slice.layer_kind_histogram().count(ConfigSourceKind::Env),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_any_observed_negation_implies_not_env_prefix_kinds_singular_gap_pointwise()
+    {
+        // Contrapositive of `singular_gap ⇒ any_observed`: if no cell
+        // was observed, the singular-gap predicate fails. Peer of
+        // `file_formats_any_observed_negation_implies_not_file_formats_singular_gap_pointwise`
+        // and `layer_kinds_any_observed_negation_implies_not_layer_kinds_singular_gap_pointwise`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.env_prefix_kinds_any_observed() {
+                assert!(
+                    !slice.env_prefix_kinds_singular_gap(),
+                    "empty-support chain cannot be singular-gap on a \
+                     cardinality >= 2 axis (fixture len={})",
+                    slice.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_agrees_with_open_coded_exactly_one_zero_walk() {
+        // Parity against the exact hand-rolled singular-gap walk this
+        // lift replaces: walk every cell of the histogram and count
+        // how many carry a zero count; the singleton-gap predicate
+        // reads `true` iff exactly one cell is zero. Mirrors the
+        // parity pin
+        // `file_formats_singular_gap_agrees_with_open_coded_exactly_one_zero_walk`
+        // on the file-format sub-axis,
+        // `layer_kinds_singular_gap_agrees_with_open_coded_exactly_one_zero_walk`
+        // on the layer-kind sub-axis,
+        // `tiers_singular_gap_agrees_with_open_coded_exactly_one_zero_walk`
+        // on the tier altitude, and
+        // `kinds_singular_gap_agrees_with_open_coded_exactly_one_zero_walk`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_singular_gap();
+            let hist = slice.env_prefix_kind_histogram();
+            let hand_rolled = hist.iter().filter(|(_, c)| *c == 0).count() == 1;
             assert_eq!(via_seam, hand_rolled);
         }
     }
