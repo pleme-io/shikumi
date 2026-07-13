@@ -6386,6 +6386,224 @@ pub trait ConfigSourceChain {
         self.file_format_histogram().has_singular()
     }
 
+    /// `true` exactly when this chain's observed
+    /// [`crate::discovery::Format`] support sits on a *coverage boundary*
+    /// — either every file-format cell unobserved
+    /// ([`Self::file_formats_any_observed`] `== false`) or every file-
+    /// format cell observed at least once
+    /// ([`Self::file_formats_full_cover`] `== true`).
+    ///
+    /// The **boundary-file-formats boolean predicate** on the file-
+    /// format sub-axis of the chain altitude, the top-leg corner of
+    /// the distance-from-boundary ternary partition `(has_boundary,
+    /// has_singular, has_strict_partial_cover)` — folding the two
+    /// extreme coverage-cardinality corners (support cardinality `0`
+    /// and `axis_cardinality`) into a single named on-boundary corner
+    /// without discarding the finer resolution below. Routes through
+    /// [`Self::file_format_histogram`]`::has_boundary`, the single-pass
+    /// short-circuiting scan over the fixed-cardinality counts vector
+    /// that returns `false` the moment both a zero cell *and* a
+    /// nonzero cell have been witnessed, bounded at two witness cells
+    /// — strictly tighter than any of the documented open-coded
+    /// surfaces one seam over.
+    ///
+    /// The **boundary-file-formats peer** of the two documented surface
+    /// forms consumers previously re-derived inline:
+    /// `!chain.file_formats_any_observed() ||
+    /// chain.file_formats_full_cover()` (the defining union-of-coverage-
+    /// boundaries disjunction on the two named histogram-side peers —
+    /// one negation and two method calls with a boolean or), and
+    /// `chain.present_file_formats_count() == 0 ||
+    /// chain.present_file_formats_count() ==
+    /// crate::axis_cardinality::<crate::discovery::Format>()` (the
+    /// support-scalar dual-equality form, which pays for a full-axis
+    /// scan and equates a `usize` against two magic thresholds with a
+    /// turbofish). This lift names the boundary-file-formats predicate
+    /// directly at the chain-altitude surface with a single-pass
+    /// short-circuiting scan — the typed boolean every operator-facing
+    /// *"did the chain land on a file-format coverage boundary?"*
+    /// check reads off as a single method call.
+    ///
+    /// The chain-altitude file-format sub-axis boundary-predicate peer
+    /// that **lifts the "boundary across altitudes" projection
+    /// sideways** from the layer-kind sub-axis
+    /// ([`Self::layer_kinds_boundary`]) to the second chain-altitude
+    /// sub-axis, matching the tier-altitude climb
+    /// ([`crate::ProvenanceMap::tiers_boundary`]) and the diff-altitude
+    /// seed ([`crate::ConfigDiff::kinds_boundary`]). The remaining
+    /// chain-altitude sub-axis ([`Self::env_prefix_kinds_boundary`]
+    /// over [`Self::env_prefix_kind_histogram`]) is the natural next
+    /// sideways lift. The pattern is the same at every altitude /
+    /// sub-axis: fuse the documented open-coded surface forms into a
+    /// single boolean predicate named at the surface, routed through
+    /// the shared [`crate::AxisHistogram::has_boundary`] primitive one
+    /// altitude down.
+    ///
+    /// **Cardinality-`4` reachability at the file-format sub-axis —
+    /// non-vacuous witnesses on every distance-ternary leg.**
+    /// [`crate::discovery::Format`] carries four cells so
+    /// `file_formats_boundary()` reads `true` on the empty chain (four
+    /// unobserved cells — empty disjunct), on every no-recognized-
+    /// files chain whose histogram is empty (same empty disjunct even
+    /// though the chain itself is non-empty — the file-format
+    /// projection is a partial function unlike the layer-kind
+    /// projection), and on every uniform four-format cover (four
+    /// observed cells — full-cover disjunct), and `false` on every
+    /// singleton-support chain (support cardinality `1` — one nonzero
+    /// and three zeros mixed), every two-format partial cover (support
+    /// cardinality `2` — two nonzeros and two zeros mixed, the strict-
+    /// interior of the cardinality-`4` axis where `[2, cardinality -
+    /// 2] = [2, 2]` is a singleton), and every three-format partial
+    /// cover (support cardinality `3` — three nonzeros and one zero
+    /// mixed, the singleton-gap boundary). The strict-interior middle
+    /// leg [`Self::file_formats_strict_partial_cover`] is *reachable*
+    /// on the cardinality-`4` axis (the two-format partial cover is
+    /// the unique strict-interior witness), so the distance ternary
+    /// closes strictly *and* non-vacuously on every leg — matching
+    /// the tier-altitude peer's non-vacuous three-leg partition on
+    /// the cardinality-`4` `ConfigTierKind` axis and diverging from
+    /// the layer-kind sub-axis and the diff altitude where the
+    /// strict-interior leg is vacuously empty and the ternary
+    /// degenerates pointwise to the dual `(has_boundary,
+    /// has_singular)` partition.
+    ///
+    /// **Empty-chain convention** — returns `true` on the empty chain:
+    /// the empty chain observes zero cells, so every cell is
+    /// unobserved (four zeros on the cardinality-`4` axis) — the
+    /// single-pass scan sees no nonzero cell and falls through to
+    /// `true`. Matches [`crate::AxisHistogram::has_boundary`]'s empty-
+    /// histogram `true` convention one altitude down. The empty chain
+    /// sits on the bottom coverage boundary via the
+    /// [`Self::file_formats_any_observed`]-negation disjunct. Peer of
+    /// [`Self::layer_kinds_boundary`]'s empty-chain `true` polarity
+    /// one sub-axis over on the same chain altitude, of
+    /// [`crate::ProvenanceMap::tiers_boundary`]'s empty-map `true`
+    /// polarity, and of [`crate::ConfigDiff::kinds_boundary`]'s empty-
+    /// diff `true` polarity in the same projection.
+    ///
+    /// **No-recognized-files convention** — returns `true` on every
+    /// non-empty chain whose file-format histogram is empty (only
+    /// `Defaults`, `Env`, and unrecognized-extension `File` layers).
+    /// The file-format projection is a partial function
+    /// ([`ConfigSource::file_format`] returns [`None`] for the
+    /// unrecognized cases), so a non-empty chain can still project to
+    /// an empty histogram — the single-pass scan sees no nonzero cell
+    /// and falls through to `true`. This is the boundary-side
+    /// cross-sub-axis divergence pin against
+    /// [`Self::layer_kinds_boundary`]: on the same fixtures the
+    /// layer-kind sub-axis observes at least one layer-kind cell
+    /// (Defaults / Env / File) so the boundary corner reads `false`
+    /// on the no-recognized-files chain that has cover between `1`
+    /// and `axis_cardinality`, while the file-format sub-axis's
+    /// narrower boundary corner still fires via the empty-histogram
+    /// disjunct.
+    ///
+    /// **Singleton-support convention** — returns `false` on every
+    /// chain whose observed file-format support is a single
+    /// [`crate::discovery::Format`] cell: the support cardinality is
+    /// `1` (one nonzero and three zeros on the cardinality-`4` axis),
+    /// so the single-pass scan sees a nonzero cell *and* a zero cell
+    /// and returns `false`. `sample_chain()` (two `.yaml` file layers
+    /// alongside one Env layer, `{Yaml}` file-format support) is a
+    /// witness on the `false` side.
+    ///
+    /// **Two-format partial cover convention** — returns `false` on
+    /// every chain whose observed file-format support is exactly two
+    /// [`crate::discovery::Format`] cells: the support cardinality is
+    /// `2` (two nonzeros and two zeros on the cardinality-`4` axis),
+    /// so the single-pass scan sees both a nonzero and a zero cell
+    /// and returns `false`. A chain with a `.yaml` + a `.toml` file
+    /// layer is the strict-interior witness (the two-format partial
+    /// cover fixture).
+    ///
+    /// **Three-format partial cover convention** — returns `false` on
+    /// every chain whose observed file-format support is exactly
+    /// three [`crate::discovery::Format`] cells: the support
+    /// cardinality is `3` (three nonzeros and one zero on the
+    /// cardinality-`4` axis), so the single-pass scan sees both a
+    /// nonzero and a zero cell and returns `false`. A chain with
+    /// `.yaml + .toml + .lisp` file layers is a witness on the
+    /// `false` side — sitting on the disjoint
+    /// [`Self::file_formats_singular_gap`] boundary carried by
+    /// [`Self::file_formats_singular`] in the distance ternary.
+    ///
+    /// **Uniform four-format cover convention** — returns `true` on
+    /// every chain where each [`crate::discovery::Format`] cell was
+    /// observed at least once: the support cardinality is `4` (no
+    /// unobserved cells on the cardinality-`4` axis), so the single-
+    /// pass scan sees only nonzero cells and falls through to `true`.
+    /// The full-cover boundary sits at the top of the coverage
+    /// interval via the [`Self::file_formats_full_cover`] disjunct.
+    ///
+    /// # Invariants
+    ///
+    /// - `file_formats_boundary() == file_format_histogram().has_boundary()`
+    ///   — both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `file_formats_boundary() ⇔ !file_formats_any_observed() ||
+    ///   file_formats_full_cover()` — the defining union-of-coverage-
+    ///   boundaries disjunction on the two named coverage-boundary
+    ///   peers.
+    /// - `file_formats_boundary() == (present_file_formats_count() ==
+    ///   0 || present_file_formats_count() ==
+    ///   crate::axis_cardinality::<crate::discovery::Format>())` always
+    ///   — the support-scalar dual-equality surface, without
+    ///   allocating `Vec<crate::discovery::Format>`. The two
+    ///   equalities are strictly disjoint (`0 != 4 = cardinality` on
+    ///   the file-format axis).
+    /// - `file_formats_boundary() == (present_file_formats_count() ==
+    ///   0 || absent_file_formats_count() == 0)` always — the dual-
+    ///   scalar equality form on the two named cardinality peers, the
+    ///   `present + absent == axis_cardinality` invariant restated.
+    /// - `!file_formats_any_observed() ⇒ file_formats_boundary()`
+    ///   always — the empty chain and every no-recognized-files chain
+    ///   sit on the boundary via the bottom disjunct.
+    /// - `file_formats_full_cover() ⇒ file_formats_boundary()` always
+    ///   — the full-cover chain sits on the boundary via the top
+    ///   disjunct.
+    /// - `file_formats_boundary() ⇒ !file_formats_singular()` on
+    ///   every axis with cardinality `>= 2`: the two boundary
+    ///   cardinalities sit strictly outside the two singular
+    ///   cardinalities.
+    /// - `file_formats_boundary() ⇒
+    ///   !file_formats_strict_partial_cover()` always. *Non-vacuous*
+    ///   on the cardinality-`4` file-format axis (the two-format
+    ///   partial cover fixture is the strict-interior witness reading
+    ///   `strict_partial_cover=true, boundary=false`), a strict
+    ///   advance over the layer-kind sub-axis where the strict
+    ///   interior is unreachable and the disjointness holds vacuously.
+    /// - `(file_formats_boundary, file_formats_singular,
+    ///   file_formats_strict_partial_cover)` is a strict ternary
+    ///   partition on every axis with cardinality `>= 2`. Every leg
+    ///   is inhabited on the cardinality-`4` file-format axis — the
+    ///   ternary closes strictly *and* non-vacuously, matching the
+    ///   tier altitude's non-vacuous partition on `ConfigTierKind`
+    ///   and diverging from the layer-kind sub-axis's degenerate
+    ///   two-way partition on `ConfigSourceKind`.
+    /// - **Cross-surface bridge law** — `chain.file_formats_boundary() ==
+    ///   chain.file_format_histogram().support_cardinality_class().is_boundary()`
+    ///   always. Peer of the histogram-side bridge
+    ///   `axis_histogram_has_boundary_agrees_with_class_is_boundary_for_every_closed_axis_implementor`
+    ///   one altitude down.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the boundary scan). Both are `O(n)` in practice since the
+    /// file-format axis carries a fixed four-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan returns `false`
+    /// the *moment* a mixed-parity witness (one zero *and* one
+    /// nonzero) has been seen — bounded at two witness cells visited
+    /// — strictly tighter than the documented open-coded surfaces.
+    #[must_use]
+    fn file_formats_boundary(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().has_boundary()
+    }
+
     /// Dense per-env-prefix-presence tally of the chain's
     /// [`ConfigSource::Env`] layers over the [`EnvMetadataTagKind`] axis
     /// — the typed histogram every attestation manifest, structured-log
@@ -29559,6 +29777,544 @@ mod tests {
             let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
             let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
             let hand_rolled = nonzeros == 1 || zeros == 1;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── file_formats_boundary coverage — the boundary-file-formats
+    //    top-leg corner of the distance-from-boundary ternary partition
+    //    `(has_boundary, has_singular, has_strict_partial_cover)` at
+    //    the chain file-format sub-axis, lifting the layer-kind sub-
+    //    axis sideways `layer_kinds_boundary` to the second chain-
+    //    altitude sub-axis. On the cardinality-`4` `Format` axis the
+    //    distance ternary closes non-vacuously on every leg — matches
+    //    the tier altitude and diverges from the degenerate two-way
+    //    partition at the layer-kind sub-axis and the diff altitude.
+    //    The file-format projection is a partial function, so the
+    //    empty-histogram disjunct fires on the no-recognized-files
+    //    non-empty-chain fixture as well as on the truly empty chain.
+    //    ──
+
+    #[test]
+    fn file_formats_boundary_matches_file_format_histogram_has_boundary_pointwise() {
+        // Routing pin: `file_formats_boundary` routes through
+        // `file_format_histogram().has_boundary()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. File-
+        // format sub-axis peer of
+        // `layer_kinds_boundary_matches_layer_kind_histogram_has_boundary_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_boundary_matches_tier_histogram_has_boundary_pointwise`
+        // on the tier altitude, and
+        // `kinds_boundary_matches_kind_histogram_has_boundary_pointwise`
+        // on the diff altitude, in the "boundary across altitudes"
+        // projection.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.file_format_histogram().has_boundary();
+            assert_eq!(slice.file_formats_boundary(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn file_formats_boundary_matches_defining_union_of_coverage_boundaries_pointwise() {
+        // Defining union-of-coverage-boundaries form:
+        // `file_formats_boundary() ⇔ !file_formats_any_observed() ||
+        // file_formats_full_cover()`. Pins the predicate against the
+        // two-way disjunction on the two named coverage-boundary
+        // peers consumers reach for when they open-code the boundary
+        // corner as a boolean fold over the two extreme coverage
+        // cardinalities. Peer of
+        // `layer_kinds_boundary_matches_defining_union_of_coverage_boundaries_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_boundary_matches_defining_union_of_coverage_boundaries_pointwise`
+        // on the tier altitude, and
+        // `kinds_boundary_matches_defining_union_of_coverage_boundaries_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_boundary();
+            let via_union = !slice.file_formats_any_observed() || slice.file_formats_full_cover();
+            assert_eq!(
+                via_seam, via_union,
+                "file_formats_boundary ({via_seam}) must agree with \
+                 !file_formats_any_observed || file_formats_full_cover ({via_union})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_boundary_agrees_with_present_file_formats_count_dual_equality_pointwise() {
+        // Support-scalar dual-equality surface:
+        // `file_formats_boundary() == (present_file_formats_count() ==
+        // 0 || present_file_formats_count() ==
+        // axis_cardinality::<crate::discovery::Format>())` on every
+        // fixture. The support-side surfacing of the same boolean,
+        // without allocating either `Vec<crate::discovery::Format>`.
+        // The two equalities are strictly disjoint (`0 != 4 =
+        // cardinality` on the file-format axis). Peer of
+        // `layer_kinds_boundary_agrees_with_present_layer_kinds_count_dual_equality_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_boundary_agrees_with_contributing_tiers_count_dual_equality_pointwise`
+        // on the tier altitude, and
+        // `kinds_boundary_agrees_with_present_kinds_count_dual_equality_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_boundary();
+            let support = slice.present_file_formats_count();
+            let via_scalar =
+                support == 0 || support == crate::axis_cardinality::<crate::discovery::Format>();
+            assert_eq!(
+                via_seam, via_scalar,
+                "file_formats_boundary ({via_seam}) must agree with \
+                 present_file_formats_count == 0 || present_file_formats_count == cardinality \
+                 ({via_scalar}, support={support})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_boundary_agrees_with_present_and_absent_file_formats_count_dual_equality_pointwise()
+     {
+        // Dual-scalar equality surface: `file_formats_boundary() ==
+        // (present_file_formats_count() == 0 ||
+        // absent_file_formats_count() == 0)` on every fixture. The
+        // `present + absent == axis_cardinality` invariant restated
+        // on the two named cardinality peers, without allocating
+        // either `Vec<crate::discovery::Format>`. Peer of the
+        // histogram-side dual-scalar equality form
+        // `hist.distinct_cells() == 0 || hist.unobserved_cells() == 0`
+        // pinned one altitude down. Peer of
+        // `layer_kinds_boundary_agrees_with_present_and_absent_layer_kinds_count_dual_equality_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_boundary_agrees_with_contributing_and_absent_tiers_count_dual_equality_pointwise`
+        // on the tier altitude, and
+        // `kinds_boundary_agrees_with_present_and_absent_kinds_count_dual_equality_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_boundary();
+            let support = slice.present_file_formats_count();
+            let gap = slice.absent_file_formats_count();
+            let via_scalar = support == 0 || gap == 0;
+            assert_eq!(
+                via_seam, via_scalar,
+                "file_formats_boundary ({via_seam}) must agree with \
+                 present_file_formats_count == 0 || absent_file_formats_count == 0 \
+                 ({via_scalar}, support={support}, gap={gap})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_boundary_empty_chain_is_true() {
+        // Empty-chain boundary: the empty chain observes zero cells,
+        // so every cell is unobserved (four zeros on the cardinality-
+        // `4` axis) — the scan sees no nonzero cell and falls through
+        // to `true`. `file_formats_boundary` reads `true`. Matches
+        // `has_boundary` reading `true` on the empty histogram one
+        // altitude down. Direct witness of the subsumption
+        // `!file_formats_any_observed ⇒ file_formats_boundary` via
+        // the empty-chain disjunct. Peer of
+        // `layer_kinds_boundary_empty_chain_is_true` on the layer-
+        // kind sub-axis of the same chain altitude,
+        // `tiers_boundary_empty_map_is_true` on the tier altitude,
+        // and `kinds_boundary_empty_diff_is_true` on the diff
+        // altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(empty.file_formats_boundary());
+        assert!(!empty.file_formats_any_observed());
+    }
+
+    #[test]
+    fn file_formats_boundary_no_recognized_files_is_true() {
+        // Non-empty-chain / empty-histogram boundary the file-format
+        // sub-axis pins that the layer-kind sub-axis does *not*. A
+        // chain of only `Defaults` / `Env` / unrecognized-extension
+        // `File` layers is non-empty but has no `Some` file-format
+        // projection, so the histogram is empty (four zeros on the
+        // cardinality-`4` axis) — the scan sees no nonzero cell and
+        // falls through to `true`. `file_formats_boundary` reads
+        // `true` via the empty-histogram disjunct. Cross-sub-axis
+        // divergence pin against `layer_kinds_boundary`: on the same
+        // fixtures the layer-kind sub-axis observes at least one
+        // layer-kind cell (Defaults / Env / File) with partial
+        // support, so `layer_kinds_boundary` typically reads `false`
+        // — the narrower file-format boundary still fires via the
+        // partial-function projection's empty-histogram case. Peer
+        // of `file_formats_singular_no_recognized_files_is_false`
+        // via the disjoint-corner relationship — the singular near-
+        // boundary corner does not fire on the same fixture that
+        // sits on the boundary corner.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(slice.file_format_histogram().is_empty());
+            assert!(!slice.file_formats_any_observed());
+            assert!(slice.file_formats_boundary());
+        }
+    }
+
+    #[test]
+    fn file_formats_boundary_singleton_support_is_false() {
+        // Singleton-support pin: `sample_chain()` observes only Yaml
+        // (two `.yaml` file layers + one Env layer), so the file-
+        // format support cardinality is `1` (one nonzero and three
+        // zeros on the cardinality-`4` axis) — the scan sees a
+        // nonzero cell *and* a zero cell and returns `false`.
+        // `file_formats_boundary` reads `false`. Direct witness of
+        // the disjointness `file_formats_singular_support ⇒
+        // !file_formats_boundary` via the mixed-parity witness. Peer
+        // of `layer_kinds_boundary_singleton_support_is_false` on the
+        // layer-kind sub-axis of the same chain altitude,
+        // `tiers_boundary_singleton_support_is_false` on the tier
+        // altitude, and `kinds_boundary_singleton_support_is_false`
+        // on the diff altitude.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 1);
+        assert!(!slice.file_formats_boundary());
+        assert!(slice.file_formats_singular_support());
+    }
+
+    #[test]
+    fn file_formats_boundary_two_format_partial_cover_is_false() {
+        // Two-format-cover pin — the *first non-vacuous* strict-
+        // interior disjointness witness on the chain altitude for
+        // the boundary corner. A chain observing exactly two file-
+        // format cells (`.yaml + .toml`) reads
+        // `strict_partial_cover=true` on the cardinality-`4`
+        // `crate::discovery::Format` axis; support cardinality `2`
+        // satisfies neither `support == 0` nor `support ==
+        // cardinality`, so `file_formats_boundary` reads `false`.
+        // Direct witness of the *non-vacuous* strict disjointness
+        // `file_formats_strict_partial_cover ⇒
+        // !file_formats_boundary` — unavailable at the cardinality-
+        // `3` layer-kind sub-axis where the strict-interior
+        // antecedent is vacuous. Matches the tier altitude
+        // (cardinality-`4` `ConfigTierKind`) — the two-tier partial-
+        // cover fixture there reads
+        // `tiers_strict_partial_cover=true, tiers_boundary=false`
+        // on the same strict-interior boundary.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 2);
+        assert!(slice.file_format_histogram().count(Format::Yaml) > 0);
+        assert!(slice.file_format_histogram().count(Format::Toml) > 0);
+        assert!(slice.file_formats_strict_partial_cover());
+        assert!(!slice.file_formats_boundary());
+    }
+
+    #[test]
+    fn file_formats_boundary_three_format_partial_cover_is_false() {
+        // Three-format-cover pin: a chain observing exactly three
+        // file-format cells (`.yaml + .toml + .lisp`) sits at
+        // support cardinality `3` = `axis_cardinality - 1`, exactly
+        // the singleton-gap boundary on the cardinality-`4` axis —
+        // the scan sees a nonzero and a zero cell and returns
+        // `false`. `file_formats_boundary` reads `false`. Direct
+        // witness of the disjointness `file_formats_singular_gap ⇒
+        // !file_formats_boundary` via the mixed-parity witness —
+        // the singleton-gap boundary is a singular near-boundary
+        // corner, disjoint from the boundary corners of the
+        // distance ternary. Distinguishes the file-format sub-axis
+        // from the layer-kind sub-axis where the two-kind partial
+        // cover at support `2` is the singleton-gap fixture on the
+        // cardinality-`3` axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 3);
+        assert!(slice.file_formats_singular_gap());
+        assert!(!slice.file_formats_boundary());
+    }
+
+    #[test]
+    fn file_formats_boundary_uniform_cover_is_true() {
+        // Uniform-cover pin: every file-format cell contributes at
+        // least one recognized-extension file layer, so the support
+        // cardinality is `4` (no unobserved cells on the cardinality-
+        // `4` axis) — the scan sees only nonzero cells and falls
+        // through to `true`. `file_formats_boundary` reads `true`.
+        // Direct witness of the subsumption `file_formats_full_cover
+        // ⇒ file_formats_boundary` via the full-cover disjunct. Peer
+        // of `layer_kinds_boundary_uniform_cover_is_true` on the
+        // layer-kind sub-axis of the same chain altitude,
+        // `tiers_boundary_uniform_cover_is_true` on the tier
+        // altitude, and `kinds_boundary_uniform_cover_is_true` on
+        // the diff altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.file_formats_full_cover());
+        assert!(slice.file_formats_boundary());
+    }
+
+    #[test]
+    fn file_formats_not_any_observed_implies_file_formats_boundary_pointwise() {
+        // Subsumption pin: `!file_formats_any_observed() ⇒
+        // file_formats_boundary()` always via the bottom-boundary
+        // disjunct of the defining union. The empty chain AND every
+        // empty-histogram non-empty chain (no-recognized-files) sit
+        // inside the boundary corner. Peer of
+        // `layer_kinds_not_any_observed_implies_layer_kinds_boundary_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_not_any_observed_implies_tiers_boundary_pointwise`
+        // on the tier altitude, and
+        // `kinds_not_any_observed_implies_kinds_boundary_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.file_formats_any_observed() {
+                assert!(
+                    slice.file_formats_boundary(),
+                    "empty-histogram chain must be on boundary",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_full_cover_implies_file_formats_boundary_pointwise() {
+        // Subsumption pin: `file_formats_full_cover() ⇒
+        // file_formats_boundary()` always via the top-boundary
+        // disjunct of the defining union. The full-cover chain
+        // always sits inside the boundary corner. Peer of
+        // `layer_kinds_full_cover_implies_layer_kinds_boundary_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_full_cover_implies_tiers_boundary_pointwise` on
+        // the tier altitude, and
+        // `kinds_full_cover_implies_kinds_boundary_pointwise` on
+        // the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_full_cover() {
+                assert!(
+                    slice.file_formats_boundary(),
+                    "full-cover chain must be on boundary",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_boundary_implies_not_file_formats_singular_pointwise() {
+        // Disjointness pin: `file_formats_boundary() ⇒
+        // !file_formats_singular()` on every axis with cardinality
+        // `>= 2`. The two boundary cardinalities (`0` and
+        // `cardinality`) sit strictly outside the two singular
+        // cardinalities (`1` and `cardinality - 1`) — the boundary
+        // corner and the singular near-boundary corner are pairwise
+        // disjoint legs of the distance ternary. Peer of
+        // `layer_kinds_boundary_implies_not_layer_kinds_singular_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_boundary_implies_not_tiers_singular_pointwise` on
+        // the tier altitude, and
+        // `kinds_boundary_implies_not_kinds_singular_pointwise` on
+        // the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_boundary() {
+                assert!(
+                    !slice.file_formats_singular(),
+                    "boundary chain cannot be singular on a cardinality \
+                     >= 2 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_boundary_implies_not_file_formats_strict_partial_cover_pointwise() {
+        // Disjointness pin: `file_formats_boundary() ⇒
+        // !file_formats_strict_partial_cover()` always. The strict-
+        // interior interval `[2, cardinality - 2]` never contains
+        // the two boundary cardinalities `0` and `cardinality` —
+        // the third pairwise-disjointness leg of the distance
+        // ternary. *Non-vacuous* on the cardinality-`4` file-format
+        // axis (the two-format partial cover fixture is the strict-
+        // interior witness reading `strict_partial_cover=true,
+        // boundary=false`) — a strict advance over the layer-kind
+        // sub-axis where the strict interior is unreachable and
+        // the disjointness holds vacuously. Matches the tier
+        // altitude's non-vacuous disjointness on the same
+        // cardinality-`4` `ConfigTierKind` axis. Peer of
+        // `layer_kinds_boundary_implies_not_layer_kinds_strict_partial_cover_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_boundary_implies_not_tiers_strict_partial_cover_pointwise`
+        // on the tier altitude, and
+        // `kinds_boundary_implies_not_kinds_strict_partial_cover_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_boundary() {
+                assert!(
+                    !slice.file_formats_strict_partial_cover(),
+                    "boundary chain cannot be strict-partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_boundary_file_formats_singular_file_formats_strict_partial_cover_form_ternary_partition_pointwise()
+     {
+        // Ternary partition pin at the chain file-format sub-axis
+        // via the named seam: exactly one of the three legs
+        // `(file_formats_boundary, file_formats_singular,
+        // file_formats_strict_partial_cover)` fires on every chain
+        // — the distance-from-boundary ternary of the 5-corner
+        // support-cardinality partition. Every leg is inhabited on
+        // the cardinality-`4` file-format axis — the ternary closes
+        // strictly *and* non-vacuously (interval `[2, cardinality -
+        // 2] = [2, 2]` is non-empty) — matching the tier altitude
+        // on the same cardinality-`4` `ConfigTierKind` axis and
+        // diverging from the layer-kind sub-axis and the diff
+        // altitude where the third leg vanishes and the ternary
+        // degenerates pointwise to the dual `(has_boundary,
+        // has_singular)`. The `file_formats_boundary` seam now
+        // names the top leg of the ternary directly at the surface,
+        // replacing the open-coded `!file_formats_any_observed ||
+        // file_formats_full_cover` disjunction used by the sibling
+        // `file_formats_boundary_singular_strict_partial_cover_form_ternary_partition_pointwise`
+        // pin (still kept alongside as the open-coded parity
+        // witness). Peer of
+        // `layer_kinds_boundary_layer_kinds_singular_layer_kinds_strict_partial_cover_form_ternary_partition_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_boundary_tiers_singular_tiers_strict_partial_cover_form_ternary_partition_pointwise`
+        // on the tier altitude, and
+        // `kinds_boundary_kinds_singular_kinds_strict_partial_cover_form_ternary_partition_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let boundary = slice.file_formats_boundary();
+            let singular = slice.file_formats_singular();
+            let strict = slice.file_formats_strict_partial_cover();
+            let count = usize::from(boundary) + usize::from(singular) + usize::from(strict);
+            assert_eq!(
+                count, 1,
+                "exactly one of (boundary, singular, strict_partial_cover) \
+                 must fire (boundary={boundary}, singular={singular}, \
+                 strict={strict})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_boundary_and_file_formats_partial_cover_form_strict_bipartition_pointwise() {
+        // Strict-bipartition pin at the chain file-format sub-axis:
+        // `file_formats_boundary` and its complement
+        // `file_formats_any_observed && !file_formats_full_cover`
+        // (the partial-cover strict interior at the file-format
+        // sub-axis) are pointwise complementary — exactly one fires
+        // on every chain. The named boundary corner is the exact
+        // complement of the partial-cover strict interior. Peer of
+        // the histogram-side bipartition law
+        // `axis_histogram_has_boundary_and_has_partial_cover_form_strict_bipartition_for_every_closed_axis_implementor`
+        // one altitude down,
+        // `layer_kinds_boundary_and_layer_kinds_partial_cover_form_strict_bipartition_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_boundary_and_tiers_partial_cover_form_strict_bipartition_pointwise`
+        // on the tier altitude, and
+        // `kinds_boundary_and_kinds_partial_cover_form_strict_bipartition_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let boundary = slice.file_formats_boundary();
+            let partial = slice.file_formats_any_observed() && !slice.file_formats_full_cover();
+            let count = usize::from(boundary) + usize::from(partial);
+            assert_eq!(
+                count, 1,
+                "exactly one of (boundary, partial_cover) must fire \
+                 (boundary={boundary}, partial={partial})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_boundary_bridges_support_cardinality_class_is_boundary_pointwise() {
+        // Cross-surface bridge law: `file_formats_boundary() ==
+        // file_format_histogram().support_cardinality_class().is_boundary()`
+        // on every fixture. The class-side projection lands on
+        // `SupportCardinalityClass::Empty` or
+        // `SupportCardinalityClass::FullCover` exactly when the
+        // histogram-side disjunction fires, and
+        // `SupportCardinalityClass::is_boundary` reads `true` on
+        // either variant. Peer of the histogram-side bridge
+        // `axis_histogram_has_boundary_agrees_with_class_is_boundary_for_every_closed_axis_implementor`
+        // one altitude down, closing the (histogram, class) duality
+        // on the boundary leg at the chain file-format sub-axis.
+        // Peer of
+        // `layer_kinds_boundary_bridges_support_cardinality_class_is_boundary_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_boundary_bridges_support_cardinality_class_is_boundary_pointwise`
+        // on the tier altitude, and
+        // `kinds_boundary_bridges_support_cardinality_class_is_boundary_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_boundary();
+            let via_class = slice
+                .file_format_histogram()
+                .support_cardinality_class()
+                .is_boundary();
+            assert_eq!(
+                via_seam, via_class,
+                "file_formats_boundary ({via_seam}) must agree with \
+                 file_format_histogram().support_cardinality_class().is_boundary() \
+                 ({via_class})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_boundary_agrees_with_open_coded_uniform_parity_walk() {
+        // Parity against the exact hand-rolled boundary walk this
+        // lift replaces on cardinality-`>= 1` axes: walk every cell
+        // of the histogram and count how many carry a zero count
+        // and how many carry a nonzero count; the boundary predicate
+        // reads `true` iff every cell is zero (empty) or every cell
+        // is nonzero (full cover) — i.e. not both a zero *and* a
+        // nonzero cell appear. Peer of
+        // `layer_kinds_boundary_agrees_with_open_coded_uniform_parity_walk`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_boundary_agrees_with_open_coded_uniform_parity_walk`
+        // on the tier altitude, and
+        // `kinds_boundary_agrees_with_open_coded_uniform_parity_walk`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_boundary();
+            let hist = slice.file_format_histogram();
+            let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
+            let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
+            let hand_rolled = zeros == 0 || nonzeros == 0;
             assert_eq!(via_seam, hand_rolled);
         }
     }
