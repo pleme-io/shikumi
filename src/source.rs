@@ -2882,6 +2882,279 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().has_high_support()
     }
 
+    /// Returns `true` exactly when this chain's observed
+    /// [`ConfigSourceKind`] support sits on a *singular near-boundary*
+    /// — either exactly one observed cell
+    /// ([`Self::layer_kinds_singular_support`]) or exactly one
+    /// unobserved cell ([`Self::layer_kinds_singular_gap`]). The
+    /// **singular-layer-kinds boolean predicate** on the layer-kind
+    /// sub-axis of the chain altitude, the singular near-boundary
+    /// corner of the distance-from-boundary ternary partition
+    /// `(has_boundary, has_singular, has_strict_partial_cover)` —
+    /// the middle leg of the distance ternary, folding the two
+    /// singular-cardinality boundaries into a single named one-cell-
+    /// off-boundary corner. Routes through
+    /// [`crate::AxisHistogram::has_singular`] one altitude down: the
+    /// single-pass short-circuiting scan over the fixed-cardinality
+    /// counts vector that short-circuits the moment both a *second*
+    /// zero cell *and* a *second* nonzero cell have been witnessed,
+    /// bounded at four witness cells — strictly tighter than any of
+    /// the four documented open-coded surfaces one seam over.
+    ///
+    /// The **singular-layer-kinds peer** of the four documented
+    /// surface forms consumers previously re-derived inline:
+    /// `chain.layer_kinds_singular_support() ||
+    /// chain.layer_kinds_singular_gap()` (the defining-union-of-
+    /// singular-boundaries disjunction on two named histogram-side
+    /// peers, a boolean or on two method calls that walks the counts
+    /// vector twice), `chain.present_layer_kinds_count() == 1 ||
+    /// chain.present_layer_kinds_count() ==
+    /// crate::axis_cardinality::<ConfigSourceKind>() - 1` (the
+    /// support-scalar dual-equality form, which pays for a full-
+    /// axis scan and equates a `usize` against two magic thresholds
+    /// with the [`crate::axis_cardinality`] turbofish and `- 1`
+    /// arithmetic), `chain.present_layer_kinds_count() == 1 ||
+    /// chain.absent_layer_kinds_count() == 1` (the dual-scalar
+    /// equality form on the two named cardinality peers, without
+    /// allocating either `Vec<ConfigSourceKind>`), and
+    /// `chain.present_layer_kinds().len() == 1 ||
+    /// chain.absent_layer_kinds().len() == 1` (the dual-`Vec`
+    /// equality form, which allocates *two* `Vec<ConfigSourceKind>`
+    /// values just to peek their lengths). The four forms drifted
+    /// in subtle ways at every consumer site (allocation vs.
+    /// scalar, turbofish vs. name-only, support side vs. coverage-
+    /// gap side, structural disjunction vs. dual-equality
+    /// arithmetic). This lift names the singular-layer-kinds
+    /// predicate directly at the chain-altitude surface with a
+    /// single-pass short-circuiting scan — the typed boolean every
+    /// operator-facing *"did the chain land one layer-kind cell off
+    /// the coverage boundary?"* check reads off as a single method
+    /// call.
+    ///
+    /// **Lifts sideways to the layer-kind sub-axis of the chain
+    /// altitude** in the "singular across altitudes" projection
+    /// seeded on the diff altitude by
+    /// [`crate::ConfigDiff::kinds_singular`] and climbed to the tier
+    /// altitude by [`crate::ProvenanceMap::tiers_singular`].
+    /// Middle-leg-corner peer of the seven already-closed coverage-
+    /// support and magnitude boundary and interior families on the
+    /// same sub-axis ([`Self::layer_kinds_balanced`],
+    /// [`Self::layer_kinds_full_cover`],
+    /// [`Self::layer_kinds_any_observed`],
+    /// [`Self::layer_kinds_singular_support`],
+    /// [`Self::layer_kinds_singular_gap`],
+    /// [`Self::layer_kinds_strict_partial_cover`],
+    /// [`Self::layer_kinds_low_support`],
+    /// [`Self::layer_kinds_high_support`]). The two remaining
+    /// chain-altitude sub-axes are the natural next sideways lifts:
+    /// `file_formats_singular` over [`Self::file_format_histogram`]
+    /// and `env_prefix_kinds_singular` over
+    /// [`Self::env_prefix_kind_histogram`], closing the "singular
+    /// across altitudes" projection alongside the already-closed
+    /// coverage-support predicate cube and completing the middle
+    /// leg of the distance-from-boundary ternary row by row.
+    ///
+    /// **Cardinality-`3` reachability at the chain layer-kind sub-
+    /// axis — non-vacuous witnesses on both sides, degenerate
+    /// ternary.** [`ConfigSourceKind`] carries three cells, so the
+    /// two singular boundaries sit at support cardinalities `1` and
+    /// `2` (= `axis_cardinality - 1`), disjoint from each other and
+    /// from the two boundary cardinalities `0` and `3`. Every chain
+    /// whose observed support is a single layer-kind (support `1`)
+    /// reads `true` via `layer_kinds_singular_support`; every chain
+    /// observing exactly two layer-kinds (support `2`) reads `true`
+    /// via `layer_kinds_singular_gap`; every empty chain and every
+    /// uniform three-kind cover reads `false`. The strict-interior
+    /// middle leg [`Self::layer_kinds_strict_partial_cover`] is
+    /// vacuously `false` on the cardinality-`3` layer-kind axis
+    /// (the strict interval `[2, cardinality - 2] = [2, 1]` is
+    /// empty), so the distance-from-boundary ternary degenerates to
+    /// the dual partition `(has_boundary, has_singular)` on this
+    /// sub-axis — matching the diff-altitude peer
+    /// [`crate::ConfigDiff::kinds_singular`] on the same
+    /// cardinality-`3` [`crate::tiered::DiffLineKind`] axis, and
+    /// diverging from the tier-altitude peer
+    /// [`crate::ProvenanceMap::tiers_singular`] where the
+    /// cardinality-`4` axis inhabits every leg. On the cardinality-
+    /// `3` layer-kind axis `layer_kinds_singular ⇔
+    /// (layer_kinds_any_observed && !layer_kinds_full_cover)`
+    /// pointwise — the middle-leg fold reduces to the partial-cover
+    /// slice of the coverage boundary.
+    ///
+    /// **Empty-chain convention** — returns `false` on the empty
+    /// chain: zero observed cells satisfy neither the `nonzeros ==
+    /// 1` nor the `zeros == 1` clause on the cardinality-`3` axis
+    /// (three zeros, zero nonzeros). Matches
+    /// [`crate::AxisHistogram::has_singular`]'s empty-histogram
+    /// `false` convention one altitude down for every cardinality-
+    /// `>= 2` axis. The empty chain sits on the disjoint bottom
+    /// coverage boundary of the distance-from-boundary ternary
+    /// partition, carried by `has_boundary` (via
+    /// `!layer_kinds_any_observed`) instead. Peer of
+    /// [`crate::ConfigDiff::kinds_singular`]'s empty-diff `false`
+    /// polarity and
+    /// [`crate::ProvenanceMap::tiers_singular`]'s empty-map `false`
+    /// polarity in the same projection.
+    ///
+    /// **Singleton-support convention** — returns `true` on every
+    /// chain whose observed support is a single [`ConfigSourceKind`]
+    /// cell: the support cardinality is `1` (two unobserved cells
+    /// on the cardinality-`3` axis), so `layer_kinds_singular_support`
+    /// fires and the disjunction holds via that disjunct. Every
+    /// chain whose layers all attribute to only-`Defaults`,
+    /// only-`Env`, or only-`File` is a witness on the `true` side.
+    /// Direct witness of the subsumption
+    /// `layer_kinds_singular_support ⇒ layer_kinds_singular` on
+    /// every axis with cardinality `>= 2`.
+    ///
+    /// **Two-kind partial cover convention** — returns `true` on
+    /// every chain whose observed support is exactly two
+    /// [`ConfigSourceKind`] cells: the support cardinality is `2`
+    /// (one unobserved cell on the cardinality-`3` axis), exactly
+    /// the singleton-gap boundary, so `layer_kinds_singular_gap`
+    /// fires and the disjunction holds via that disjunct. Direct
+    /// witness of the subsumption `layer_kinds_singular_gap ⇒
+    /// layer_kinds_singular` on every axis via the singleton-gap
+    /// disjunct of the defining union. Distinguishes the layer-
+    /// kind sub-axis from the tier altitude, where two-tier partial
+    /// cover falls in the strict interior (support size `2` on the
+    /// cardinality-`4` axis) and lands on `tiers_singular == false`
+    /// via the strict-interior disjointness.
+    ///
+    /// **Uniform three-kind cover convention** — returns `false` on
+    /// every chain where each [`ConfigSourceKind`] cell was observed
+    /// at least once: the support cardinality is `3` (no unobserved
+    /// cells on the cardinality-`3` axis) — `layer_kinds_singular_gap`
+    /// fails (`zeros == 0 ≠ 1`) and `layer_kinds_singular_support`
+    /// fails (`nonzeros == 3 ≠ 1`). The full-cover boundary sits
+    /// at the top of the coverage interval, one of the two boundary
+    /// corners carried by `has_boundary` (via
+    /// `layer_kinds_full_cover`) in the distance ternary — disjoint
+    /// from the singular near-boundary corner.
+    ///
+    /// # Invariants
+    ///
+    /// - `layer_kinds_singular() ==
+    ///   layer_kind_histogram().has_singular()` — both project the
+    ///   same predicate off the same primitive; the named seam is
+    ///   the cube-native routing of the histogram surface.
+    /// - `layer_kinds_singular() ⇔ layer_kinds_singular_support()
+    ///   || layer_kinds_singular_gap()` — the defining union-of-
+    ///   singular-boundaries disjunction on the two named
+    ///   histogram-side peers. The singular near-boundary corner
+    ///   folds the two singular-cardinality boundaries into one
+    ///   named one-cell-off-boundary corner without discarding the
+    ///   finer resolution below.
+    /// - `layer_kinds_singular() ⇔ (layer_kinds_any_observed()
+    ///   && !layer_kinds_full_cover())` on the cardinality-`3`
+    ///   layer-kind axis — the partial-cover-minus-strict-interior
+    ///   form reduced pointwise on the cardinality-`3` axis where
+    ///   the strict interior is empty. Matches the diff-altitude
+    ///   peer `kinds_singular ⇔ (kinds_any_observed &&
+    ///   !kinds_full_cover)` on the same cardinality-`3` axis and
+    ///   diverges from the tier altitude where the strict-interior
+    ///   leg carries content and the equivalence tightens to
+    ///   `tiers_singular ⇔ (tiers_any_observed && !tiers_full_cover)
+    ///   && !tiers_strict_partial_cover`.
+    /// - `layer_kinds_singular() == (present_layer_kinds_count()
+    ///   == 1 || present_layer_kinds_count() ==
+    ///   crate::axis_cardinality::<ConfigSourceKind>() - 1)`
+    ///   always — the support-scalar dual-equality surface,
+    ///   without allocating either `Vec<ConfigSourceKind>`. On the
+    ///   cardinality-`3` layer-kind axis the two equalities are
+    ///   disjoint (`1 ≠ 2 = cardinality - 1`) and the disjunction
+    ///   reads the true dual.
+    /// - `layer_kinds_singular() == (present_layer_kinds_count()
+    ///   == 1 || absent_layer_kinds_count() == 1)` always — the
+    ///   dual-scalar equality form on the two named cardinality
+    ///   peers, the `present + absent == axis_cardinality`
+    ///   invariant restated. Peer of the histogram-side dual-
+    ///   scalar equality form `hist.distinct_cells() == 1 ||
+    ///   hist.unobserved_cells() == 1` pinned one altitude down.
+    /// - `layer_kinds_singular_support() ⇒ layer_kinds_singular()`
+    ///   always — the subsumption via the
+    ///   `layer_kinds_singular_support` disjunct of the defining
+    ///   union. The singleton-support boundary always sits inside
+    ///   the singular near-boundary corner.
+    /// - `layer_kinds_singular_gap() ⇒ layer_kinds_singular()`
+    ///   always — the subsumption via the `layer_kinds_singular_gap`
+    ///   disjunct of the defining union. The singleton-gap
+    ///   boundary always sits inside the singular near-boundary
+    ///   corner.
+    /// - `layer_kinds_singular() ⇒ layer_kinds_any_observed()` on
+    ///   every axis with cardinality `>= 2`: both disjuncts require
+    ///   at least one observed cell (`singular_support` has
+    ///   nonzeros `>= 1`; `singular_gap` has nonzeros `=
+    ///   cardinality - 1 >= 1`). Empty-chain subsumption on the
+    ///   bottom coverage boundary.
+    /// - `layer_kinds_singular() ⇒ !layer_kinds_full_cover()` on
+    ///   every axis with cardinality `>= 2`:
+    ///   `layer_kinds_singular_support` has support `1 <
+    ///   cardinality`, `layer_kinds_singular_gap` has support
+    ///   `cardinality - 1 < cardinality`. Full-cover disjointness
+    ///   on the top coverage boundary.
+    /// - `layer_kinds_singular() ⇒
+    ///   !layer_kinds_strict_partial_cover()` always — the two
+    ///   named corners of the distance-from-boundary ternary are
+    ///   pairwise disjoint. On the cardinality-`3` layer-kind axis
+    ///   the consequent holds vacuously (the strict interior is
+    ///   unreachable), unlike the non-vacuous consequent at the
+    ///   cardinality-`4` tier altitude where the two-tier partial-
+    ///   cover fixture separates the strict interior from the
+    ///   singular near-boundary. Peer of the histogram-side
+    ///   `axis_histogram_has_boundary_has_singular_has_strict_partial_cover_form_strict_ternary_partition_for_every_closed_axis_implementor`
+    ///   partition law one altitude down.
+    /// - `(!layer_kinds_any_observed() || layer_kinds_full_cover(),
+    ///   layer_kinds_singular, layer_kinds_strict_partial_cover)`
+    ///   is a strict ternary partition on every axis with
+    ///   cardinality `>= 2`. On the cardinality-`3` layer-kind
+    ///   axis the third leg vanishes and the ternary degenerates
+    ///   to the dual `(!layer_kinds_any_observed() ||
+    ///   layer_kinds_full_cover(), layer_kinds_singular)`
+    ///   pointwise — matching the diff altitude's degenerate two-
+    ///   way partition on the same cardinality-`3`
+    ///   [`crate::tiered::DiffLineKind`] axis. Pinned on the
+    ///   histogram surface as
+    ///   `axis_histogram_has_boundary_has_singular_has_strict_partial_cover_form_strict_ternary_partition_for_every_closed_axis_implementor`.
+    /// - **Cross-surface bridge law** —
+    ///   `chain.layer_kinds_singular() ==
+    ///    chain.layer_kind_histogram().support_cardinality_class().is_singular()`
+    ///   always. The class-side projection lands on
+    ///   [`crate::SupportCardinalityClass::SingularSupport`] or
+    ///   [`crate::SupportCardinalityClass::SingularGap`] exactly
+    ///   when the histogram-side disjunction fires, and
+    ///   [`crate::SupportCardinalityClass::is_singular`] reads
+    ///   `true` on either variant. Peer of the histogram-side
+    ///   bridge
+    ///   `axis_histogram_has_singular_agrees_with_class_is_singular_for_every_closed_axis_implementor`
+    ///   one altitude down, closing the (histogram, class) duality
+    ///   on the singular near-boundary leg at the chain layer-
+    ///   kind sub-axis.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram
+    /// build) and `k = crate::axis_cardinality::<ConfigSourceKind>()`
+    /// (the singular scan). Both are `O(n)` in practice since the
+    /// layer-kind axis carries a fixed three-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan short-circuits
+    /// the *moment* both a *second* zero count *and* a *second*
+    /// nonzero count have been witnessed (bounded at four witness
+    /// cells visited on any strict-interior histogram —
+    /// unreachable on cardinality-`3` axes), strictly tighter than
+    /// the four documented open-coded surfaces — no boolean
+    /// disjunction across two named predicates with two full walks
+    /// of the counts vector, no [`crate::axis_cardinality`]
+    /// turbofish with `- 1` arithmetic against a magic threshold,
+    /// no `Vec<ConfigSourceKind>` allocation.
+    #[must_use]
+    fn layer_kinds_singular(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().has_singular()
+    }
+
     /// Dense per-format tally of the chain's [`ConfigSource::File`]
     /// layers over the [`crate::discovery::Format`] axis — the typed
     /// histogram every per-format dashboard, attestation manifest
@@ -22949,6 +23222,477 @@ mod tests {
             let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
             let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
             let hand_rolled = zeros <= 1 && nonzeros >= 2;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::layer_kinds_singular — singular-near-boundary
+    //      boolean predicate on the layer-kind sub-axis of the chain
+    //      altitude, lifting the "singular across altitudes" projection
+    //      sideways from the tier altitude ([`ProvenanceMap::tiers_singular`])
+    //      onto the first chain-altitude sub-axis. On the cardinality-`3`
+    //      `ConfigSourceKind` axis the distance ternary degenerates to
+    //      the dual `(has_boundary, has_singular)` — matches the diff
+    //      altitude and diverges from the tier altitude's non-vacuous
+    //      three-leg ternary. ──
+
+    #[test]
+    fn layer_kinds_singular_matches_layer_kind_histogram_has_singular_pointwise() {
+        // Routing pin: `layer_kinds_singular` routes through
+        // `layer_kind_histogram().has_singular()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Layer-
+        // kind sub-axis peer of
+        // `tiers_singular_matches_tier_histogram_has_singular_pointwise`
+        // on the tier altitude and
+        // `kinds_singular_matches_kind_histogram_has_singular_pointwise`
+        // on the diff altitude, in the "singular across altitudes"
+        // projection.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.layer_kind_histogram().has_singular();
+            assert_eq!(slice.layer_kinds_singular(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_matches_defining_union_of_singular_boundaries_pointwise() {
+        // Defining union-of-singular-boundaries form:
+        // `layer_kinds_singular() ⇔ layer_kinds_singular_support() ||
+        // layer_kinds_singular_gap()`. Pins the predicate against the
+        // two-way disjunction on two named histogram-side peers
+        // consumers reach for when they open-code the singular near-
+        // boundary corner as a boolean fold over the two singular-
+        // cardinality boundaries. Peer of
+        // `tiers_singular_matches_defining_union_of_singular_boundaries_pointwise`
+        // on the tier altitude and
+        // `kinds_singular_matches_defining_union_of_singular_boundaries_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_singular();
+            let via_union =
+                slice.layer_kinds_singular_support() || slice.layer_kinds_singular_gap();
+            assert_eq!(
+                via_seam, via_union,
+                "layer_kinds_singular ({via_seam}) must agree with \
+                 layer_kinds_singular_support || layer_kinds_singular_gap ({via_union})",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_agrees_with_any_observed_and_not_full_cover_on_cardinality_three_pointwise()
+     {
+        // Partial-cover-minus-strict-interior form reduced on the
+        // cardinality-`3` layer-kind axis: `layer_kinds_singular() ==
+        // layer_kinds_any_observed() && !layer_kinds_full_cover()`.
+        // The strict interior of the layer-kind axis is empty
+        // (interval `[2, cardinality - 2] = [2, 1]`), so the middle-
+        // leg fold reduces pointwise to the partial-cover slice of
+        // the coverage boundary. Matches the diff-altitude peer
+        // `kinds_singular ⇔ (kinds_any_observed && !kinds_full_cover)`
+        // on the same cardinality-`3` axis and diverges from the
+        // tier altitude where the strict-interior leg carries content
+        // and the equivalence tightens further. Peer of
+        // `kinds_singular_agrees_with_any_observed_and_not_full_cover_on_cardinality_three_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_singular();
+            let via_slice = slice.layer_kinds_any_observed() && !slice.layer_kinds_full_cover();
+            assert_eq!(
+                via_seam, via_slice,
+                "layer_kinds_singular ({via_seam}) must agree with \
+                 layer_kinds_any_observed && !layer_kinds_full_cover ({via_slice})",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_agrees_with_present_layer_kinds_count_dual_equality_pointwise() {
+        // Support-scalar dual-equality surface:
+        // `layer_kinds_singular() == (present_layer_kinds_count() ==
+        // 1 || present_layer_kinds_count() ==
+        // axis_cardinality::<ConfigSourceKind>() - 1)` on every
+        // fixture. The support-side surfacing of the same boolean,
+        // without allocating either `Vec<ConfigSourceKind>`. On the
+        // cardinality-`3` layer-kind axis the two equalities are
+        // disjoint (`1 ≠ 2 = cardinality - 1`) and the disjunction
+        // reads the true dual. Peer of
+        // `tiers_singular_agrees_with_contributing_tiers_count_dual_equality_pointwise`
+        // on the tier altitude and
+        // `kinds_singular_agrees_with_present_kinds_count_dual_equality_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_singular();
+            let support = slice.present_layer_kinds_count();
+            let via_scalar =
+                support == 1 || support == crate::axis_cardinality::<ConfigSourceKind>() - 1;
+            assert_eq!(
+                via_seam, via_scalar,
+                "layer_kinds_singular ({via_seam}) must agree with \
+                 present_layer_kinds_count == 1 || present_layer_kinds_count == cardinality - 1 \
+                 ({via_scalar}, support={support})",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_agrees_with_present_and_absent_layer_kinds_count_dual_equality_pointwise()
+     {
+        // Dual-scalar equality surface: `layer_kinds_singular() ==
+        // (present_layer_kinds_count() == 1 ||
+        // absent_layer_kinds_count() == 1)` on every fixture. The
+        // `present + absent == axis_cardinality` invariant restated
+        // on the two named cardinality peers, without allocating
+        // either `Vec<ConfigSourceKind>`. Peer of the histogram-side
+        // dual-scalar equality form `hist.distinct_cells() == 1 ||
+        // hist.unobserved_cells() == 1` pinned one altitude down.
+        // Peer of
+        // `tiers_singular_agrees_with_contributing_and_absent_tiers_count_dual_equality_pointwise`
+        // on the tier altitude and
+        // `kinds_singular_agrees_with_present_and_absent_kinds_count_dual_equality_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_singular();
+            let support = slice.present_layer_kinds_count();
+            let gap = slice.absent_layer_kinds_count();
+            let via_scalar = support == 1 || gap == 1;
+            assert_eq!(
+                via_seam, via_scalar,
+                "layer_kinds_singular ({via_seam}) must agree with \
+                 present_layer_kinds_count == 1 || absent_layer_kinds_count == 1 \
+                 ({via_scalar}, support={support}, gap={gap})",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_empty_chain_is_false() {
+        // Empty-chain boundary: the empty chain observes zero cells,
+        // so all three cells are unobserved (three zeros on the
+        // cardinality-`3` axis) — neither `layer_kinds_singular_support`
+        // (nonzeros `== 1`) nor `layer_kinds_singular_gap` (zeros
+        // `== 1`) fires. `layer_kinds_singular` reads `false`.
+        // Matches `has_singular` reading `false` on the empty
+        // histogram one altitude down for every cardinality-`>= 2`
+        // axis. The empty chain sits on the disjoint bottom coverage
+        // boundary of the distance-from-boundary ternary partition,
+        // carried by `has_boundary` (via `!layer_kinds_any_observed`)
+        // instead. Peer of `tiers_singular_empty_map_is_false` on
+        // the tier altitude and `kinds_singular_empty_diff_is_false`
+        // on the diff altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(!empty.layer_kinds_singular());
+        assert!(!empty.layer_kinds_any_observed());
+        assert!(!empty.layer_kinds_singular_support());
+        assert!(!empty.layer_kinds_singular_gap());
+    }
+
+    #[test]
+    fn layer_kinds_singular_singleton_support_is_true() {
+        // Singleton-support pin: every layer lands on the same kind,
+        // so the support cardinality is `1` (two unobserved cells on
+        // the cardinality-`3` axis) — `layer_kinds_singular_support`
+        // fires and the disjunction holds via that disjunct.
+        // `layer_kinds_singular` reads `true`. Direct witness of the
+        // subsumption `layer_kinds_singular_support ⇒
+        // layer_kinds_singular` on every axis with cardinality `>=
+        // 2`. Peer of `tiers_singular_singleton_support_is_true` on
+        // the tier altitude and
+        // `kinds_singular_singleton_support_is_true` on the diff
+        // altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 1);
+        assert!(slice.layer_kinds_singular_support());
+        assert!(slice.layer_kinds_singular());
+    }
+
+    #[test]
+    fn layer_kinds_singular_two_kind_partial_cover_is_true() {
+        // Two-kind-cover pin: `sample_chain()` observes {Env, File}
+        // (support size 2 out of 3) — the support cardinality is `2`
+        // = `axis_cardinality - 1`, exactly the singleton-gap
+        // boundary on the cardinality-`3` axis — so
+        // `layer_kinds_singular_gap` fires and the disjunction holds
+        // via that disjunct. `layer_kinds_singular` reads `true`.
+        // Direct witness of the subsumption
+        // `layer_kinds_singular_gap ⇒ layer_kinds_singular` on the
+        // cardinality-`>= 3` axis via the singleton-gap disjunct of
+        // the defining union. Distinguishes the layer-kind sub-axis
+        // from the tier altitude, where two-tier partial cover falls
+        // in the strict interior (support size `2` on the
+        // cardinality-`4` axis) and lands on `tiers_singular ==
+        // false` via the strict-interior disjointness. Peer of
+        // `kinds_singular_two_kind_partial_cover_is_true` on the diff
+        // altitude at the same cardinality-`3` singleton-gap fixture.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 2);
+        assert!(slice.layer_kinds_singular_gap());
+        assert!(slice.layer_kinds_singular());
+    }
+
+    #[test]
+    fn layer_kinds_singular_uniform_cover_is_false() {
+        // Uniform-cover pin: every kind contributes at least one
+        // layer, so the support cardinality is `3` (no unobserved
+        // cells on the cardinality-`3` axis) — `layer_kinds_singular_gap`
+        // fails (`zeros == 0 ≠ 1`) and `layer_kinds_singular_support`
+        // fails (`nonzeros == 3 ≠ 1`). `layer_kinds_singular` reads
+        // `false`. The full-cover boundary sits at the top of the
+        // coverage interval, one of the two boundary corners carried
+        // by `has_boundary` (via `layer_kinds_full_cover`) in the
+        // distance ternary — disjoint from the singular near-
+        // boundary corner. Peer of `tiers_singular_uniform_cover_is_false`
+        // on the tier altitude and
+        // `kinds_singular_uniform_cover_is_false` on the diff altitude.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kinds_full_cover());
+        assert!(!slice.layer_kinds_singular());
+    }
+
+    #[test]
+    fn layer_kinds_singular_support_implies_layer_kinds_singular_pointwise() {
+        // Subsumption pin: `layer_kinds_singular_support() ⇒
+        // layer_kinds_singular()` on every axis via the
+        // `layer_kinds_singular_support` disjunct of the defining
+        // union. The singleton-support boundary always sits inside
+        // the singular near-boundary corner. Direct witness of one
+        // leg of the union bridge. Peer of
+        // `tiers_singular_support_implies_tiers_singular_pointwise`
+        // on the tier altitude and
+        // `kinds_singular_support_implies_kinds_singular_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_singular_support() {
+                assert!(
+                    slice.layer_kinds_singular(),
+                    "singular-support chain must be singular",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_gap_implies_layer_kinds_singular_pointwise() {
+        // Subsumption pin: `layer_kinds_singular_gap() ⇒
+        // layer_kinds_singular()` on every axis via the
+        // `layer_kinds_singular_gap` disjunct of the defining union.
+        // The singleton-gap boundary always sits inside the singular
+        // near-boundary corner. Direct witness of the other leg of
+        // the union bridge. Peer of
+        // `tiers_singular_gap_implies_tiers_singular_pointwise` on
+        // the tier altitude and
+        // `kinds_singular_gap_implies_kinds_singular_pointwise` on
+        // the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_singular_gap() {
+                assert!(
+                    slice.layer_kinds_singular(),
+                    "singular-gap chain must be singular",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_implies_layer_kinds_any_observed_pointwise() {
+        // Subsumption pin: `layer_kinds_singular() ⇒
+        // layer_kinds_any_observed()` on every axis with cardinality
+        // `>= 2`. Both disjuncts require at least one observed cell
+        // (`singular_support` has nonzeros `>= 1`; `singular_gap` has
+        // nonzeros `= cardinality - 1 >= 1`). The empty chain sits
+        // on the disjoint `!layer_kinds_any_observed` boundary at
+        // the bottom coverage boundary — every singular chain is
+        // non-empty. Peer of
+        // `tiers_singular_implies_tiers_any_observed_pointwise` on
+        // the tier altitude and
+        // `kinds_singular_implies_kinds_any_observed_pointwise` on
+        // the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_singular() {
+                assert!(
+                    slice.layer_kinds_any_observed(),
+                    "singular chain must observe at least one cell",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_implies_not_layer_kinds_full_cover_pointwise() {
+        // Disjointness pin: `layer_kinds_singular() ⇒
+        // !layer_kinds_full_cover()` on every axis with cardinality
+        // `>= 2`. `layer_kinds_singular_support` has support `1 <
+        // cardinality`; `layer_kinds_singular_gap` has support
+        // `cardinality - 1 < cardinality`. The full-cover corner
+        // sits at the top coverage boundary — one of the two
+        // boundary corners disjoint from the singular near-boundary
+        // corner. Peer of
+        // `tiers_singular_implies_not_tiers_full_cover_pointwise` on
+        // the tier altitude and
+        // `kinds_singular_implies_not_kinds_full_cover_pointwise` on
+        // the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_singular() {
+                assert!(
+                    !slice.layer_kinds_full_cover(),
+                    "singular chain cannot be full-cover on a \
+                     cardinality >= 2 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_implies_not_layer_kinds_strict_partial_cover_pointwise() {
+        // Disjointness pin: `layer_kinds_singular() ⇒
+        // !layer_kinds_strict_partial_cover()` always. The two named
+        // corners of the distance-from-boundary ternary partition
+        // are pairwise disjoint. On the cardinality-`3`
+        // `ConfigSourceKind` axis the consequent holds vacuously
+        // (the strict interior is unreachable), but the pin still
+        // walks every fixture to enforce the disjointness
+        // discipline. Vacuous-here sister of the *non-vacuous* pin
+        // at the tier altitude where the two-tier partial-cover
+        // fixture separates the strict interior from the singular
+        // near-boundary. Peer of
+        // `tiers_singular_implies_not_tiers_strict_partial_cover_pointwise`
+        // on the tier altitude and
+        // `kinds_singular_implies_not_kinds_strict_partial_cover_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kinds_singular() {
+                assert!(
+                    !slice.layer_kinds_strict_partial_cover(),
+                    "singular chain cannot be strict-partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kinds_boundary_singular_strict_partial_cover_form_ternary_partition_pointwise() {
+        // Ternary partition pin at the chain layer-kind sub-axis:
+        // exactly one of the three legs
+        // `(!layer_kinds_any_observed || layer_kinds_full_cover,
+        //   layer_kinds_singular,
+        //   layer_kinds_strict_partial_cover)`
+        // fires on every chain — the distance-from-boundary ternary
+        // of the 5-corner support-cardinality partition, folding
+        // the two boundary corners (empty and full-cover) into
+        // `has_boundary`, the two singular near-boundary corners
+        // into `has_singular`, and the boundary-free strict interior
+        // into `has_strict_partial_cover`. On the cardinality-`3`
+        // `ConfigSourceKind` axis the `has_strict_partial_cover` leg
+        // is vacuously empty (interval `[2, 1]` is empty), so the
+        // ternary degenerates to the dual partition
+        // `(!layer_kinds_any_observed || layer_kinds_full_cover,
+        // layer_kinds_singular)` pointwise — matching the diff-
+        // altitude peer on the same cardinality-`3` `DiffLineKind`
+        // axis and diverging from the tier altitude's non-vacuous
+        // three-leg partition on the cardinality-`4` `ConfigTierKind`
+        // axis. Peer of the trait-uniform pin
+        // `axis_histogram_has_boundary_has_singular_has_strict_partial_cover_form_strict_ternary_partition_for_every_closed_axis_implementor`
+        // one altitude down, of
+        // `tiers_boundary_singular_strict_partial_cover_form_ternary_partition_pointwise`
+        // on the tier altitude, and of
+        // `kinds_boundary_and_kinds_singular_and_kinds_strict_partial_cover_form_ternary_partition_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let boundary = !slice.layer_kinds_any_observed() || slice.layer_kinds_full_cover();
+            let singular = slice.layer_kinds_singular();
+            let strict = slice.layer_kinds_strict_partial_cover();
+            let count = usize::from(boundary) + usize::from(singular) + usize::from(strict);
+            assert_eq!(
+                count, 1,
+                "exactly one of (boundary, singular, strict_partial_cover) \
+                 must fire (boundary={boundary}, singular={singular}, \
+                 strict={strict})",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_bridges_support_cardinality_class_is_singular_pointwise() {
+        // Cross-surface bridge law: `layer_kinds_singular() ==
+        // layer_kind_histogram().support_cardinality_class().is_singular()`
+        // on every fixture. The class-side projection lands on
+        // `SupportCardinalityClass::SingularSupport` or
+        // `SupportCardinalityClass::SingularGap` exactly when the
+        // histogram-side disjunction fires, and
+        // `SupportCardinalityClass::is_singular` reads `true` on
+        // either variant. Peer of the histogram-side bridge
+        // `axis_histogram_has_singular_agrees_with_class_is_singular_for_every_closed_axis_implementor`
+        // one altitude down, closing the (histogram, class) duality
+        // on the singular near-boundary leg at the chain layer-kind
+        // sub-axis. Peer of
+        // `tiers_singular_bridges_support_cardinality_class_is_singular_pointwise`
+        // on the tier altitude and
+        // `kinds_singular_bridges_support_cardinality_class_is_singular_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_singular();
+            let via_class = slice
+                .layer_kind_histogram()
+                .support_cardinality_class()
+                .is_singular();
+            assert_eq!(
+                via_seam, via_class,
+                "layer_kinds_singular ({via_seam}) must agree with \
+                 layer_kind_histogram().support_cardinality_class().is_singular() \
+                 ({via_class})",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kinds_singular_agrees_with_open_coded_singular_boundary_walk() {
+        // Parity against the exact hand-rolled singular walk this
+        // lift replaces on cardinality-`>= 2` axes: walk every cell
+        // of the histogram and count how many carry a zero count
+        // and how many carry a nonzero count; the singular predicate
+        // reads `true` iff exactly one cell is nonzero (singular
+        // support) or exactly one cell is a zero (singular gap).
+        // Mirrors the parity pins
+        // `layer_kinds_singular_support_agrees_with_open_coded_exactly_one_positive_walk`
+        // and `layer_kinds_singular_gap_agrees_with_open_coded_exactly_one_zero_walk`
+        // on the two singular-cardinality boundaries the union
+        // folds. Peer of
+        // `tiers_singular_agrees_with_open_coded_singular_boundary_walk`
+        // on the tier altitude and
+        // `kinds_singular_agrees_with_open_coded_singular_boundary_walk`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kinds_singular();
+            let hist = slice.layer_kind_histogram();
+            let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
+            let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
+            let hand_rolled = nonzeros == 1 || zeros == 1;
             assert_eq!(via_seam, hand_rolled);
         }
     }
