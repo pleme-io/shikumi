@@ -9162,6 +9162,354 @@ pub trait ConfigSourceChain {
     {
         self.env_prefix_kind_histogram().has_high_support()
     }
+
+    /// Returns `true` exactly when this chain's observed
+    /// [`EnvMetadataTagKind`] support sits on a *singular near-
+    /// boundary* — either exactly one observed cell
+    /// ([`Self::env_prefix_kinds_singular_support`]) or exactly one
+    /// unobserved cell ([`Self::env_prefix_kinds_singular_gap`]). The
+    /// **singular-env-prefix-kinds boolean predicate** on the env-
+    /// prefix sub-axis of the chain altitude, the singular near-
+    /// boundary corner of the distance-from-boundary ternary
+    /// partition `(has_boundary, has_singular,
+    /// has_strict_partial_cover)` — the middle leg of the distance
+    /// ternary, folding the two singular-cardinality boundaries into
+    /// a single named one-cell-off-boundary corner. Routes through
+    /// [`crate::AxisHistogram::has_singular`] one altitude down: the
+    /// single-pass short-circuiting scan over the fixed-cardinality
+    /// counts vector that short-circuits the moment both a *second*
+    /// zero cell *and* a *second* nonzero cell have been witnessed,
+    /// bounded at four witness cells — strictly tighter than any of
+    /// the four documented open-coded surfaces one seam over.
+    ///
+    /// The **singular-env-prefix-kinds peer** of the four documented
+    /// surface forms consumers previously re-derived inline:
+    /// `chain.env_prefix_kinds_singular_support() ||
+    /// chain.env_prefix_kinds_singular_gap()` (the defining-union-of-
+    /// singular-boundaries disjunction on two named histogram-side
+    /// peers, a boolean or on two method calls that walks the counts
+    /// vector twice — on the cardinality-`2` env-prefix axis the two
+    /// disjuncts coincide by the two-cell-axis dual-singular-
+    /// collapse `singular_support ⇔ singular_gap`, so the union
+    /// reads pointwise `singular ⇔ singular_support ⇔ singular_gap`),
+    /// `chain.present_env_prefix_kinds_count() == 1 ||
+    /// chain.present_env_prefix_kinds_count() ==
+    /// crate::axis_cardinality::<crate::EnvMetadataTagKind>() - 1`
+    /// (the support-scalar dual-equality form, which pays for a full-
+    /// axis scan and equates a `usize` against two magic thresholds
+    /// with the [`crate::axis_cardinality`] turbofish and `- 1`
+    /// arithmetic — on the cardinality-`2` env-prefix axis the two
+    /// thresholds coincide `1 == 1 = cardinality - 1` and the
+    /// disjunction reads the same scalar equality twice),
+    /// `chain.present_env_prefix_kinds_count() == 1 ||
+    /// chain.absent_env_prefix_kinds_count() == 1` (the dual-scalar
+    /// equality form on the two named cardinality peers, without
+    /// allocating either `Vec<crate::EnvMetadataTagKind>` — on the
+    /// cardinality-`2` env-prefix axis `present == 1 ⇔ absent == 1`
+    /// via the `present + absent == axis_cardinality` invariant so
+    /// the two disjuncts coincide pointwise), and
+    /// `chain.present_env_prefix_kinds().len() == 1 ||
+    /// chain.absent_env_prefix_kinds().len() == 1` (the dual-`Vec`
+    /// equality form, which allocates *two*
+    /// `Vec<crate::EnvMetadataTagKind>` values just to peek their
+    /// lengths). The four forms drifted in subtle ways at every
+    /// consumer site (allocation vs. scalar, turbofish vs. name-only,
+    /// support side vs. coverage-gap side, structural disjunction vs.
+    /// dual-equality arithmetic). This lift names the singular-env-
+    /// prefix-kinds predicate directly at the chain-altitude surface
+    /// with a single-pass short-circuiting scan — the typed boolean
+    /// every operator-facing *"did the chain land one env-prefix
+    /// cell off the coverage boundary?"* check reads off as a single
+    /// method call.
+    ///
+    /// **Closes the "singular across altitudes" projection** at the
+    /// fifth and final altitude / sub-axis: seeded on the diff
+    /// altitude by [`crate::ConfigDiff::kinds_singular`], climbed to
+    /// the tier altitude by [`crate::ProvenanceMap::tiers_singular`],
+    /// lifted sideways to the chain layer-kind sub-axis by
+    /// [`Self::layer_kinds_singular`], and lifted sideways to the
+    /// chain file-format sub-axis by
+    /// [`Self::file_formats_singular`]. Middle-leg-corner peer of
+    /// the eight already-closed coverage-support and magnitude
+    /// boundary and interior families on the same sub-axis
+    /// ([`Self::env_prefix_kinds_balanced`],
+    /// [`Self::env_prefix_kinds_full_cover`],
+    /// [`Self::env_prefix_kinds_any_observed`],
+    /// [`Self::env_prefix_kinds_singular_support`],
+    /// [`Self::env_prefix_kinds_singular_gap`],
+    /// [`Self::env_prefix_kinds_strict_partial_cover`],
+    /// [`Self::env_prefix_kinds_low_support`],
+    /// [`Self::env_prefix_kinds_high_support`]) — the last unnamed
+    /// corner of the distance-from-boundary ternary partition on the
+    /// env-prefix sub-axis. With this lift the "singular across
+    /// altitudes" projection carries the same one-predicate row at
+    /// every altitude / sub-axis of the closed 6×5 coverage-support
+    /// predicate cube, and the distance-from-boundary ternary's
+    /// middle leg closes at every altitude / sub-axis pointwise
+    /// alongside the boundary corners already named. Symmetric peer
+    /// of the parallel "high-support across altitudes" and "low-
+    /// support across altitudes" projections closed at this same
+    /// sub-axis by [`Self::env_prefix_kinds_high_support`] and
+    /// [`Self::env_prefix_kinds_low_support`].
+    ///
+    /// **Cardinality-`2` reachability at the chain env-prefix sub-
+    /// axis — dual-singular-collapse, degenerate distance ternary.**
+    /// [`EnvMetadataTagKind`] carries two cells, so the two singular
+    /// boundaries sit at support cardinalities `1` and
+    /// `cardinality - 1`, which coincide at `1` pointwise (the
+    /// dual-singular-collapse case where
+    /// `singular_support ⇔ singular_gap`). The
+    /// distance-from-boundary ternary degenerates to the dual
+    /// partition `(has_boundary, has_singular)` on this sub-axis —
+    /// the strict-interior middle leg
+    /// [`Self::env_prefix_kinds_strict_partial_cover`] is vacuously
+    /// `false` (the strict interval `[2, cardinality - 2] = [2, 0]`
+    /// is empty), matching the layer-kind sub-axis and the diff
+    /// altitude on their cardinality-`3` axes and diverging from the
+    /// tier altitude and the file-format sub-axis where the
+    /// cardinality-`4` axis inhabits every leg. The env-prefix sub-
+    /// axis carries the *tightest* degenerate distance ternary in
+    /// the projection: two cardinality steps below the reachability
+    /// threshold, the two singular boundaries themselves collapse on
+    /// top of each other, so `singular` reduces to the same fixture
+    /// set as each of its two disjuncts.
+    ///
+    /// **Empty-chain convention** — returns `false` on the empty
+    /// chain: zero observed cells satisfy neither the `nonzeros ==
+    /// 1` nor the `zeros == 1` clause on the cardinality-`2` axis
+    /// (two zeros, zero nonzeros). Matches
+    /// [`crate::AxisHistogram::has_singular`]'s empty-histogram
+    /// `false` convention one altitude down for every cardinality-
+    /// `>= 2` axis. The empty chain sits on the disjoint bottom
+    /// coverage boundary of the distance-from-boundary ternary
+    /// partition, carried by `has_boundary` (via
+    /// `!env_prefix_kinds_any_observed`) instead.
+    ///
+    /// **No-env-layers convention** — returns `false` on every non-
+    /// empty chain whose env-prefix histogram is empty (chains of
+    /// only [`ConfigSource::Defaults`] / [`ConfigSource::File`]
+    /// layers). The histogram is empty even though the chain is
+    /// not, so neither singular boundary fires. Cross-sub-axis
+    /// divergence from [`Self::layer_kinds_singular`]: the singular
+    /// near-boundary corner does NOT open on the empty-histogram
+    /// non-empty-chain fixtures at the env-prefix sub-axis —
+    /// matching [`Self::file_formats_singular`]'s no-recognized-
+    /// files convention one sub-axis over and
+    /// [`Self::env_prefix_kinds_any_observed`]'s empty-histogram
+    /// `false` polarity through subsumption, and diverging from the
+    /// layer-kind sub-axis peer where a chain of only `Defaults`
+    /// observes one layer-kind cell and lands on
+    /// `layer_kinds_singular_support ⇒ layer_kinds_singular = true`.
+    ///
+    /// **Singleton-support convention** — returns `true` on every
+    /// chain whose observed support is a single
+    /// [`EnvMetadataTagKind`] cell: on the cardinality-`2` env-
+    /// prefix axis a singleton-support chain has exactly one
+    /// unobserved cell, so BOTH `env_prefix_kinds_singular_support`
+    /// AND `env_prefix_kinds_singular_gap` fire (the dual-singular-
+    /// collapse), and the disjunction holds via either disjunct.
+    /// Every prefixed-only chain (all env layers carry non-empty
+    /// prefixes) and every bare-only chain (all env layers carry the
+    /// empty prefix) is a witness — as is `sample_chain` (two
+    /// `.yaml` file layers + one prefixed env layer: `Prefixed` is
+    /// the sole observed cell, `Bare` the sole unobserved cell).
+    /// Direct witness of BOTH direction subsumptions
+    /// `env_prefix_kinds_singular_support ⇒
+    /// env_prefix_kinds_singular` and
+    /// `env_prefix_kinds_singular_gap ⇒ env_prefix_kinds_singular`
+    /// simultaneously on the same fixture — the two subsumptions
+    /// coincide pointwise on the cardinality-`2` env-prefix axis
+    /// (their antecedents coincide, their consequent is the same).
+    ///
+    /// **Uniform two-kind cover convention** — returns `false` on
+    /// every chain where each [`EnvMetadataTagKind`] cell was
+    /// observed at least once: the support cardinality is `2` (no
+    /// unobserved cells on the cardinality-`2` axis) —
+    /// `env_prefix_kinds_singular_gap` fails (`zeros == 0 ≠ 1`) and
+    /// `env_prefix_kinds_singular_support` fails (`nonzeros == 2 ≠
+    /// 1`). `env_prefix_kinds_singular` reads `false`. The full-
+    /// cover boundary sits at the top of the coverage interval, one
+    /// of the two boundary corners carried by `has_boundary` (via
+    /// `env_prefix_kinds_full_cover`) in the distance ternary —
+    /// disjoint from the singular near-boundary corner.
+    ///
+    /// # Invariants
+    ///
+    /// - `env_prefix_kinds_singular() ==
+    ///   env_prefix_kind_histogram().has_singular()` — both project
+    ///   the same predicate off the same primitive; the named seam
+    ///   is the cube-native routing of the histogram surface.
+    /// - `env_prefix_kinds_singular() ⇔
+    ///   env_prefix_kinds_singular_support() ||
+    ///   env_prefix_kinds_singular_gap()` — the defining union-of-
+    ///   singular-boundaries disjunction on the two named histogram-
+    ///   side peers. On the cardinality-`2` env-prefix axis the two
+    ///   disjuncts coincide pointwise (the dual-singular-collapse
+    ///   `singular_support ⇔ singular_gap`) so the union reads
+    ///   `env_prefix_kinds_singular ⇔ env_prefix_kinds_singular_support
+    ///   ⇔ env_prefix_kinds_singular_gap` — the *unique* two-cell-
+    ///   axis three-way collapse in the projection.
+    /// - `env_prefix_kinds_singular() ⇔ (env_prefix_kinds_any_observed()
+    ///   && !env_prefix_kinds_full_cover())` on the cardinality-`2`
+    ///   env-prefix axis — the partial-cover-minus-strict-interior
+    ///   form reduced on the two-cell axis: no strict-interior
+    ///   excision needed because
+    ///   `env_prefix_kinds_strict_partial_cover` is vacuously
+    ///   `false` (the strict interval `[2, cardinality - 2] = [2, 0]`
+    ///   is empty). Matches the layer-kind sub-axis's degenerate
+    ///   reduction `layer_kinds_singular ⇔ (layer_kinds_any_observed
+    ///   && !layer_kinds_full_cover)` on the cardinality-`3` layer-
+    ///   kind axis and the diff altitude's degenerate reduction
+    ///   `kinds_singular ⇔ (kinds_any_observed && !kinds_full_cover)`
+    ///   on the cardinality-`3` diff axis, diverging from the tier
+    ///   altitude's and the file-format sub-axis's tightened
+    ///   equivalences that carry a load-bearing strict-interior
+    ///   excision clause on their cardinality-`4` axes.
+    /// - `env_prefix_kinds_singular() ⇔ (env_prefix_kinds_any_observed()
+    ///   && env_prefix_kinds_low_support())` on the cardinality-`2`
+    ///   env-prefix axis — folding the two-cell-axis equivalence
+    ///   `env_prefix_kinds_low_support ⇔ !env_prefix_kinds_full_cover`
+    ///   (documented at
+    ///   [`Self::env_prefix_kinds_low_support`]) through the reduced
+    ///   form above. Reads the singular near-boundary corner off the
+    ///   magnitude-direction ternary's bottom leg on this sub-axis —
+    ///   the *unique* two-cell-axis cross-projection tightening
+    ///   between the distance-from-boundary and magnitude-direction
+    ///   ternaries, unavailable at any cardinality-`>= 3` altitude
+    ///   / sub-axis where the strict interior separates the
+    ///   `low_support ∧ !full_cover` middle from the singular near-
+    ///   boundary corner.
+    /// - `env_prefix_kinds_singular() == (present_env_prefix_kinds_count()
+    ///   == 1 || present_env_prefix_kinds_count() ==
+    ///   crate::axis_cardinality::<crate::EnvMetadataTagKind>() - 1)`
+    ///   always — the support-scalar dual-equality surface, without
+    ///   allocating either `Vec<crate::EnvMetadataTagKind>`. On the
+    ///   cardinality-`2` env-prefix axis the two equalities coincide
+    ///   `1 == 1 = cardinality - 1` and the disjunction reads the
+    ///   same scalar equality twice — the *unique* two-cell-axis
+    ///   collapse of the dual-equality form onto a single equality.
+    /// - `env_prefix_kinds_singular() == (present_env_prefix_kinds_count()
+    ///   == 1 || absent_env_prefix_kinds_count() == 1)` always — the
+    ///   dual-scalar equality form on the two named cardinality
+    ///   peers, the `present + absent == axis_cardinality` invariant
+    ///   restated. On the cardinality-`2` env-prefix axis the two
+    ///   disjuncts coincide pointwise (`present == 1 ⇔ absent == 1`
+    ///   via the invariant). Peer of the histogram-side dual-scalar
+    ///   equality form `hist.distinct_cells() == 1 ||
+    ///   hist.unobserved_cells() == 1` pinned one altitude down.
+    /// - `env_prefix_kinds_singular_support() ⇒
+    ///   env_prefix_kinds_singular()` always — the subsumption via
+    ///   the `env_prefix_kinds_singular_support` disjunct of the
+    ///   defining union. The singleton-support boundary always sits
+    ///   inside the singular near-boundary corner. Tightened on the
+    ///   cardinality-`2` env-prefix axis into the equivalence
+    ///   `env_prefix_kinds_singular_support ⇔
+    ///   env_prefix_kinds_singular` by the dual-singular-collapse
+    ///   folded through the defining union.
+    /// - `env_prefix_kinds_singular_gap() ⇒
+    ///   env_prefix_kinds_singular()` always — the subsumption via
+    ///   the `env_prefix_kinds_singular_gap` disjunct of the
+    ///   defining union. Tightened on the cardinality-`2` env-prefix
+    ///   axis into the equivalence `env_prefix_kinds_singular_gap ⇔
+    ///   env_prefix_kinds_singular` by the dual-singular-collapse
+    ///   folded through the defining union.
+    /// - `env_prefix_kinds_singular() ⇒ env_prefix_kinds_any_observed()`
+    ///   on every axis with cardinality `>= 2`: both disjuncts
+    ///   require at least one observed cell (`singular_support` has
+    ///   nonzeros `>= 1`; `singular_gap` has nonzeros
+    ///   `= cardinality - 1 >= 1`). Empty-chain and empty-histogram
+    ///   subsumption on the bottom coverage boundary.
+    /// - `env_prefix_kinds_singular() ⇒ !env_prefix_kinds_full_cover()`
+    ///   on every axis with cardinality `>= 2`:
+    ///   `env_prefix_kinds_singular_support` has support `1 <
+    ///   cardinality`, `env_prefix_kinds_singular_gap` has support
+    ///   `cardinality - 1 < cardinality`. Full-cover disjointness
+    ///   on the top coverage boundary.
+    /// - `env_prefix_kinds_singular() ⇒
+    ///   !env_prefix_kinds_strict_partial_cover()` always — the two
+    ///   named corners of the distance-from-boundary ternary are
+    ///   pairwise disjoint. On the cardinality-`2`
+    ///   [`EnvMetadataTagKind`] axis this holds *vacuously* — the
+    ///   strict interior is structurally empty (the strict interval
+    ///   `[2, cardinality - 2] = [2, 0]` is empty), so
+    ///   `!env_prefix_kinds_strict_partial_cover` reads `true` on
+    ///   every chain regardless of `env_prefix_kinds_singular`. The
+    ///   env-prefix sub-axis carries the *tightest* vacuously-true
+    ///   consequent in the projection — two cardinality steps below
+    ///   the reachability threshold, matching the layer-kind sub-
+    ///   axis's and the diff altitude's vacuously-`true` consequent
+    ///   on their cardinality-`3` axes (one cardinality step below
+    ///   the threshold) and diverging from the tier altitude's and
+    ///   the file-format sub-axis's non-vacuous consequent on their
+    ///   cardinality-`4` axes. Peer of the histogram-side
+    ///   `axis_histogram_has_boundary_has_singular_has_strict_partial_cover_form_strict_ternary_partition_for_every_closed_axis_implementor`
+    ///   partition law one altitude down.
+    /// - `env_prefix_kinds_singular() ⇒
+    ///   env_prefix_kinds_low_support()` on the cardinality-`2` env-
+    ///   prefix axis by the cross-projection tightening above,
+    ///   folding the equivalence `env_prefix_kinds_singular ⇔
+    ///   (env_prefix_kinds_any_observed &&
+    ///   env_prefix_kinds_low_support)` through the low-support
+    ///   conjunct. The *unique* two-cell-axis cross-projection
+    ///   subsumption between the distance-from-boundary and
+    ///   magnitude-direction ternaries. Does NOT lift to the
+    ///   cardinality-`>= 3` sub-axes where the singleton-gap
+    ///   boundary sits on the `high_support` side of the magnitude
+    ///   partition (support cardinality `axis_cardinality - 1 >= 2`)
+    ///   and the singular near-boundary corner spans both magnitude
+    ///   legs.
+    /// - `(!env_prefix_kinds_any_observed() || env_prefix_kinds_full_cover(),
+    ///   env_prefix_kinds_singular,
+    ///   env_prefix_kinds_strict_partial_cover)` is a strict ternary
+    ///   partition on every axis with cardinality `>= 2`. On the
+    ///   cardinality-`2` env-prefix axis the third leg is vacuously
+    ///   empty and the ternary degenerates to the dual partition
+    ///   `(!env_prefix_kinds_any_observed || env_prefix_kinds_full_cover,
+    ///   env_prefix_kinds_singular)` pointwise — the *tightest*
+    ///   degenerate distance ternary in the projection, matching the
+    ///   layer-kind sub-axis's and the diff altitude's degenerate
+    ///   two-way partition on their cardinality-`3` axes and
+    ///   diverging from the tier altitude's and the file-format
+    ///   sub-axis's non-vacuous three-leg partition on their
+    ///   cardinality-`4` axes.
+    /// - **Cross-surface bridge law** —
+    ///   `chain.env_prefix_kinds_singular() ==
+    ///    chain.env_prefix_kind_histogram().support_cardinality_class().is_singular()`
+    ///   always. The class-side projection lands on
+    ///   [`crate::SupportCardinalityClass::SingularSupport`] or
+    ///   [`crate::SupportCardinalityClass::SingularGap`] exactly
+    ///   when the histogram-side disjunction fires, and
+    ///   [`crate::SupportCardinalityClass::is_singular`] reads
+    ///   `true` on either variant. Peer of the histogram-side
+    ///   bridge
+    ///   `axis_histogram_has_singular_agrees_with_class_is_singular_for_every_closed_axis_implementor`
+    ///   one altitude down, closing the (histogram, class) duality
+    ///   on the singular near-boundary leg at the chain env-prefix
+    ///   sub-axis.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram
+    /// build) and `k = crate::axis_cardinality::<crate::EnvMetadataTagKind>()`
+    /// (the singular scan). Both are `O(n)` in practice since the
+    /// env-prefix axis carries a fixed two-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan short-circuits
+    /// the *moment* both a *second* zero count *and* a *second*
+    /// nonzero count have been witnessed — on the cardinality-`2`
+    /// axis this bound coincides with the full axis scan (the axis
+    /// carries only two cells), strictly tighter than the four
+    /// documented open-coded surfaces — no boolean disjunction
+    /// across two named predicates with two full walks of the
+    /// counts vector, no [`crate::axis_cardinality`] turbofish with
+    /// `- 1` arithmetic against a magic threshold, no
+    /// `Vec<crate::EnvMetadataTagKind>` allocation.
+    #[must_use]
+    fn env_prefix_kinds_singular(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().has_singular()
+    }
 }
 
 impl ConfigSourceChain for [ConfigSource] {
@@ -32092,6 +32440,723 @@ mod tests {
             let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
             let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
             let hand_rolled = zeros <= 1 && nonzeros >= 2;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::env_prefix_kinds_singular — singular-
+    //      near-boundary boolean predicate on the env-prefix sub-axis
+    //      of the chain altitude, closing the "singular across
+    //      altitudes" projection at the fifth and final altitude /
+    //      sub-axis. On the cardinality-`2` `EnvMetadataTagKind` axis
+    //      the distance-from-boundary ternary degenerates to the dual
+    //      partition and the two singular boundaries coincide (the
+    //      dual-singular-collapse). ──
+
+    #[test]
+    fn env_prefix_kinds_singular_matches_env_prefix_kind_histogram_has_singular_pointwise() {
+        // Routing pin: `env_prefix_kinds_singular` routes through
+        // `env_prefix_kind_histogram().has_singular()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Env-
+        // prefix sub-axis peer of
+        // `file_formats_singular_matches_file_format_histogram_has_singular_pointwise`
+        // on the file-format sub-axis and
+        // `layer_kinds_singular_matches_layer_kind_histogram_has_singular_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_matches_tier_histogram_has_singular_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_matches_kind_histogram_has_singular_pointwise`
+        // on the diff altitude — closing the routing discipline at
+        // the fifth and final altitude / sub-axis in the "singular
+        // across altitudes" projection.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.env_prefix_kind_histogram().has_singular();
+            assert_eq!(slice.env_prefix_kinds_singular(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_matches_defining_union_of_singular_boundaries_pointwise() {
+        // Defining union-of-singular-boundaries form:
+        // `env_prefix_kinds_singular() ⇔
+        // env_prefix_kinds_singular_support() ||
+        // env_prefix_kinds_singular_gap()`. Pins the predicate against
+        // the two-way disjunction on two named histogram-side peers
+        // consumers reach for when they open-code the singular near-
+        // boundary corner as a boolean fold over the two singular-
+        // cardinality boundaries. On the cardinality-`2` env-prefix
+        // axis the two disjuncts coincide pointwise (the dual-
+        // singular-collapse `singular_support ⇔ singular_gap`) so the
+        // union reads `singular ⇔ singular_support ⇔ singular_gap` —
+        // the *unique* two-cell-axis three-way collapse in the
+        // projection. Peer of
+        // `file_formats_singular_matches_defining_union_of_singular_boundaries_pointwise`
+        // on the file-format sub-axis and
+        // `layer_kinds_singular_matches_defining_union_of_singular_boundaries_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_matches_defining_union_of_singular_boundaries_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_matches_defining_union_of_singular_boundaries_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_singular();
+            let via_union =
+                slice.env_prefix_kinds_singular_support() || slice.env_prefix_kinds_singular_gap();
+            assert_eq!(
+                via_seam, via_union,
+                "env_prefix_kinds_singular ({via_seam}) must agree with \
+                 env_prefix_kinds_singular_support || env_prefix_kinds_singular_gap ({via_union})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_agrees_with_any_observed_and_not_full_cover_on_cardinality_two_pointwise()
+     {
+        // Partial-cover-minus-strict-interior form reduced on the
+        // cardinality-`2` env-prefix axis: `env_prefix_kinds_singular()
+        // ⇔ env_prefix_kinds_any_observed() &&
+        // !env_prefix_kinds_full_cover()`. The strict interior of the
+        // env-prefix axis is *vacuously empty* (interval `[2,
+        // cardinality - 2] = [2, 0]`), so the middle-leg fold reads
+        // through the partial-cover slice without a strict-interior
+        // excision. Matches the layer-kind sub-axis's degenerate
+        // reduction on its cardinality-`3` axis and diverges from the
+        // tier altitude and file-format sub-axis which carry a load-
+        // bearing strict-interior excision on their cardinality-`4`
+        // axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_singular();
+            let via_slice =
+                slice.env_prefix_kinds_any_observed() && !slice.env_prefix_kinds_full_cover();
+            assert_eq!(
+                via_seam, via_slice,
+                "env_prefix_kinds_singular ({via_seam}) must agree with \
+                 env_prefix_kinds_any_observed && !env_prefix_kinds_full_cover ({via_slice})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_agrees_with_any_observed_and_low_support_on_cardinality_two_pointwise()
+     {
+        // Cross-projection tightening on the cardinality-`2` env-
+        // prefix axis: `env_prefix_kinds_singular() ⇔
+        // env_prefix_kinds_any_observed() &&
+        // env_prefix_kinds_low_support()`. Folds the two-cell-axis
+        // equivalence `env_prefix_kinds_low_support ⇔
+        // !env_prefix_kinds_full_cover` through the reduced form
+        // above, reading the singular near-boundary corner off the
+        // magnitude-direction ternary's bottom leg on this sub-axis.
+        // The *unique* two-cell-axis cross-projection tightening
+        // between the distance-from-boundary and magnitude-direction
+        // ternaries, unavailable at any cardinality-`>= 3` altitude /
+        // sub-axis where the strict interior separates the
+        // `low_support ∧ !full_cover` middle from the singular near-
+        // boundary corner.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_singular();
+            let via_slice =
+                slice.env_prefix_kinds_any_observed() && slice.env_prefix_kinds_low_support();
+            assert_eq!(
+                via_seam, via_slice,
+                "env_prefix_kinds_singular ({via_seam}) must agree with \
+                 env_prefix_kinds_any_observed && env_prefix_kinds_low_support ({via_slice})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_agrees_with_present_env_prefix_kinds_count_dual_equality_pointwise()
+     {
+        // Support-scalar dual-equality surface:
+        // `env_prefix_kinds_singular() ==
+        // (present_env_prefix_kinds_count() == 1 ||
+        // present_env_prefix_kinds_count() ==
+        // axis_cardinality::<crate::EnvMetadataTagKind>() - 1)` on
+        // every fixture. The support-side surfacing of the same
+        // boolean, without allocating either
+        // `Vec<crate::EnvMetadataTagKind>`. On the cardinality-`2`
+        // env-prefix axis the two thresholds coincide `1 == 1 =
+        // cardinality - 1` and the disjunction reads the same scalar
+        // equality twice — the *unique* two-cell-axis collapse of
+        // the dual-equality form onto a single equality. Peer of
+        // `file_formats_singular_agrees_with_present_file_formats_count_dual_equality_pointwise`
+        // on the file-format sub-axis and
+        // `layer_kinds_singular_agrees_with_present_layer_kinds_count_dual_equality_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_agrees_with_contributing_tiers_count_dual_equality_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_agrees_with_present_kinds_count_dual_equality_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_singular();
+            let support = slice.present_env_prefix_kinds_count();
+            let via_scalar = support == 1
+                || support == crate::axis_cardinality::<crate::EnvMetadataTagKind>() - 1;
+            assert_eq!(
+                via_seam, via_scalar,
+                "env_prefix_kinds_singular ({via_seam}) must agree with \
+                 present_env_prefix_kinds_count == 1 || present_env_prefix_kinds_count == cardinality - 1 \
+                 ({via_scalar}, support={support})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_agrees_with_present_and_absent_env_prefix_kinds_count_dual_equality_pointwise()
+     {
+        // Dual-scalar equality surface: `env_prefix_kinds_singular()
+        // == (present_env_prefix_kinds_count() == 1 ||
+        // absent_env_prefix_kinds_count() == 1)` on every fixture. The
+        // `present + absent == axis_cardinality` invariant restated on
+        // the two named cardinality peers, without allocating either
+        // `Vec<crate::EnvMetadataTagKind>`. On the cardinality-`2`
+        // env-prefix axis the two disjuncts coincide pointwise
+        // (`present == 1 ⇔ absent == 1` via the invariant). Peer of
+        // the histogram-side dual-scalar equality form
+        // `hist.distinct_cells() == 1 || hist.unobserved_cells() == 1`
+        // pinned one altitude down. Peer of
+        // `file_formats_singular_agrees_with_present_and_absent_file_formats_count_dual_equality_pointwise`
+        // on the file-format sub-axis and
+        // `layer_kinds_singular_agrees_with_present_and_absent_layer_kinds_count_dual_equality_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_agrees_with_contributing_and_absent_tiers_count_dual_equality_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_agrees_with_present_and_absent_kinds_count_dual_equality_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_singular();
+            let support = slice.present_env_prefix_kinds_count();
+            let gap = slice.absent_env_prefix_kinds_count();
+            let via_scalar = support == 1 || gap == 1;
+            assert_eq!(
+                via_seam, via_scalar,
+                "env_prefix_kinds_singular ({via_seam}) must agree with \
+                 present_env_prefix_kinds_count == 1 || absent_env_prefix_kinds_count == 1 \
+                 ({via_scalar}, support={support}, gap={gap})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_dual_singular_collapse_pointwise() {
+        // Two-cell-axis dual-singular-collapse pin: on the
+        // cardinality-`2` env-prefix axis
+        // `env_prefix_kinds_singular_support ⇔
+        // env_prefix_kinds_singular_gap ⇔
+        // env_prefix_kinds_singular` — the three predicates coincide
+        // pointwise. Direct witness of the *unique* two-cell-axis
+        // three-way collapse in the projection: the two singular
+        // boundaries themselves coincide (support cardinalities `1`
+        // and `axis_cardinality - 1 = 1` are the same), so the
+        // defining union of the two singular disjuncts reduces to
+        // each disjunct individually. Does NOT lift to the
+        // cardinality-`>= 3` sub-axes where singular-support and
+        // singular-gap are strictly disjoint.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let sup = slice.env_prefix_kinds_singular_support();
+            let gap = slice.env_prefix_kinds_singular_gap();
+            let sing = slice.env_prefix_kinds_singular();
+            assert_eq!(
+                sup, gap,
+                "on cardinality-2 axis singular_support ({sup}) must \
+                 coincide with singular_gap ({gap})",
+            );
+            assert_eq!(
+                sing, sup,
+                "on cardinality-2 axis singular ({sing}) must coincide \
+                 with singular_support ({sup})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_empty_chain_is_false() {
+        // Empty-chain boundary: the empty chain observes zero cells,
+        // so every cell is unobserved (two zeros on the cardinality-
+        // `2` axis) — neither `env_prefix_kinds_singular_support`
+        // (nonzeros `== 1`) nor `env_prefix_kinds_singular_gap`
+        // (zeros `== 1`) fires. `env_prefix_kinds_singular` reads
+        // `false`. Matches `has_singular` reading `false` on the
+        // empty histogram one altitude down for every cardinality-
+        // `>= 2` axis. The empty chain sits on the disjoint bottom
+        // coverage boundary of the distance-from-boundary ternary
+        // partition, carried by `has_boundary` (via
+        // `!env_prefix_kinds_any_observed`) instead. Peer of
+        // `file_formats_singular_empty_chain_is_false` on the file-
+        // format sub-axis and `layer_kinds_singular_empty_chain_is_false`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_empty_map_is_false` on the tier altitude,
+        // and `kinds_singular_empty_diff_is_false` on the diff
+        // altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(!empty.env_prefix_kinds_singular());
+        assert!(!empty.env_prefix_kinds_any_observed());
+        assert!(!empty.env_prefix_kinds_singular_support());
+        assert!(!empty.env_prefix_kinds_singular_gap());
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_no_env_layers_is_false() {
+        // Non-empty-chain / empty-histogram boundary the env-prefix
+        // sub-axis pins that the layer-kind sub-axis does *not*. A
+        // chain of only `Defaults` / `File` layers is non-empty but
+        // has no `Some` env-prefix projection, so the histogram is
+        // empty (two zeros on the cardinality-`2` axis) — neither
+        // `env_prefix_kinds_singular_support` nor
+        // `env_prefix_kinds_singular_gap` fires and
+        // `env_prefix_kinds_singular` reads `false`. Cross-sub-axis
+        // divergence pin against `layer_kinds_singular`: on the same
+        // fixtures the layer-kind sub-axis observes at least one
+        // layer-kind cell (Defaults / File) so the singular near-
+        // boundary corner can fire there, but the env-prefix sub-
+        // axis's narrower singular corner does not. Matches
+        // `file_formats_singular_no_recognized_files_is_false` on the
+        // file-format sub-axis pattern for empty-histogram non-empty-
+        // chain fixtures.
+        let fixtures: [Vec<ConfigSource>; 3] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(slice.env_prefix_kind_histogram().is_empty());
+            assert!(!slice.env_prefix_kinds_any_observed());
+            assert!(!slice.env_prefix_kinds_singular());
+            assert!(!slice.env_prefix_kinds_singular_support());
+            assert!(!slice.env_prefix_kinds_singular_gap());
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_prefixed_only_is_true() {
+        // Singleton-support (prefixed-only) pin: a chain of only
+        // prefixed env layers observes the single
+        // `EnvMetadataTagKind::Prefixed` cell, so the support
+        // cardinality is `1` (one unobserved cell — `Bare` — on the
+        // cardinality-`2` axis). On the cardinality-`2` env-prefix
+        // axis BOTH `env_prefix_kinds_singular_support` AND
+        // `env_prefix_kinds_singular_gap` fire (the dual-singular-
+        // collapse), so `env_prefix_kinds_singular` reads `true`.
+        // Direct witness of BOTH direction subsumptions
+        // `env_prefix_kinds_singular_support ⇒
+        // env_prefix_kinds_singular` and
+        // `env_prefix_kinds_singular_gap ⇒
+        // env_prefix_kinds_singular` simultaneously on the same
+        // fixture — the two subsumptions coincide pointwise on the
+        // cardinality-`2` env-prefix axis.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert!(slice.env_prefix_kinds_singular_gap());
+        assert!(slice.env_prefix_kinds_singular());
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_bare_only_is_true() {
+        // Singleton-support (bare-only) pin — the dual of the
+        // prefixed-only pin above: a chain of only bare env layers
+        // observes the single `EnvMetadataTagKind::Bare` cell, so
+        // the support cardinality is `1` (one unobserved cell —
+        // `Prefixed` — on the cardinality-`2` axis). On the
+        // cardinality-`2` env-prefix axis BOTH
+        // `env_prefix_kinds_singular_support` AND
+        // `env_prefix_kinds_singular_gap` fire (the dual-singular-
+        // collapse), so `env_prefix_kinds_singular` reads `true`.
+        // Pins both bare and prefixed sides of the singleton-
+        // support fixture as witnesses of the singular near-
+        // boundary corner on this sub-axis.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert!(slice.env_prefix_kinds_singular_gap());
+        assert!(slice.env_prefix_kinds_singular());
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_sample_chain_is_true() {
+        // Singleton-support (sample-chain) pin: `sample_chain`
+        // carries two `.yaml` file layers plus one prefixed env
+        // layer, so the env-prefix histogram observes only the
+        // `Prefixed` cell — support cardinality `1` (one unobserved
+        // cell on the cardinality-`2` axis). Both singular boundaries
+        // fire (the dual-singular-collapse) and
+        // `env_prefix_kinds_singular` reads `true`. Reuses the
+        // canonical sample fixture to keep this pin in lockstep with
+        // the singleton-support pins on
+        // `env_prefix_kinds_singular_support` and
+        // `env_prefix_kinds_singular_gap` at the same test fixture.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert!(slice.env_prefix_kinds_singular_gap());
+        assert!(slice.env_prefix_kinds_singular());
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_uniform_cover_is_false() {
+        // Uniform-cover pin: every `EnvMetadataTagKind` cell
+        // contributes at least one env layer, so the support
+        // cardinality is `2` (no unobserved cells on the cardinality-
+        // `2` axis) — `env_prefix_kinds_singular_gap` fails (`zeros
+        // == 0 ≠ 1`) and `env_prefix_kinds_singular_support` fails
+        // (`nonzeros == 2 ≠ 1`). `env_prefix_kinds_singular` reads
+        // `false`. The full-cover boundary sits at the top of the
+        // coverage interval, one of the two boundary corners carried
+        // by `has_boundary` (via `env_prefix_kinds_full_cover`) in
+        // the distance ternary — disjoint from the singular near-
+        // boundary corner. Peer of
+        // `file_formats_singular_uniform_cover_is_false` on the file-
+        // format sub-axis and `layer_kinds_singular_uniform_cover_is_false`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_uniform_cover_is_false` on the tier
+        // altitude, and `kinds_singular_uniform_cover_is_false` on
+        // the diff altitude.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.env_prefix_kinds_full_cover());
+        assert!(!slice.env_prefix_kinds_singular());
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_implies_env_prefix_kinds_singular_pointwise() {
+        // Subsumption pin: `env_prefix_kinds_singular_support() ⇒
+        // env_prefix_kinds_singular()` on every axis via the
+        // `env_prefix_kinds_singular_support` disjunct of the defining
+        // union. The singleton-support boundary always sits inside
+        // the singular near-boundary corner. Direct witness of one
+        // leg of the union bridge. Tightened on the cardinality-`2`
+        // env-prefix axis into the equivalence
+        // `env_prefix_kinds_singular_support ⇔
+        // env_prefix_kinds_singular` by the dual-singular-collapse.
+        // Peer of
+        // `file_formats_singular_support_implies_file_formats_singular_pointwise`
+        // on the file-format sub-axis and
+        // `layer_kinds_singular_support_implies_layer_kinds_singular_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_support_implies_tiers_singular_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_support_implies_kinds_singular_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular_support() {
+                assert!(
+                    slice.env_prefix_kinds_singular(),
+                    "singular-support chain must be singular",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_implies_env_prefix_kinds_singular_pointwise() {
+        // Subsumption pin: `env_prefix_kinds_singular_gap() ⇒
+        // env_prefix_kinds_singular()` on every axis via the
+        // `env_prefix_kinds_singular_gap` disjunct of the defining
+        // union. The singleton-gap boundary always sits inside the
+        // singular near-boundary corner. Direct witness of the other
+        // leg of the union bridge. Tightened on the cardinality-`2`
+        // env-prefix axis into the equivalence
+        // `env_prefix_kinds_singular_gap ⇔
+        // env_prefix_kinds_singular` by the dual-singular-collapse.
+        // Peer of
+        // `file_formats_singular_gap_implies_file_formats_singular_pointwise`
+        // on the file-format sub-axis and
+        // `layer_kinds_singular_gap_implies_layer_kinds_singular_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_gap_implies_tiers_singular_pointwise` on
+        // the tier altitude, and
+        // `kinds_singular_gap_implies_kinds_singular_pointwise` on
+        // the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular_gap() {
+                assert!(
+                    slice.env_prefix_kinds_singular(),
+                    "singular-gap chain must be singular",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_implies_env_prefix_kinds_any_observed_pointwise() {
+        // Subsumption pin: `env_prefix_kinds_singular() ⇒
+        // env_prefix_kinds_any_observed()` on every axis with
+        // cardinality `>= 2`. Both disjuncts require at least one
+        // observed cell (`singular_support` has nonzeros `>= 1`;
+        // `singular_gap` has nonzeros `= cardinality - 1 >= 1`). The
+        // empty chain AND every empty-histogram non-empty chain sit
+        // on the disjoint `!env_prefix_kinds_any_observed` boundary
+        // at the bottom coverage boundary — every singular chain
+        // observes at least one env-prefix cell. Peer of
+        // `file_formats_singular_implies_file_formats_any_observed_pointwise`
+        // on the file-format sub-axis and
+        // `layer_kinds_singular_implies_layer_kinds_any_observed_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_implies_tiers_any_observed_pointwise` on
+        // the tier altitude, and
+        // `kinds_singular_implies_kinds_any_observed_pointwise` on
+        // the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular() {
+                assert!(
+                    slice.env_prefix_kinds_any_observed(),
+                    "singular chain must observe at least one cell",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_implies_not_env_prefix_kinds_full_cover_pointwise() {
+        // Disjointness pin: `env_prefix_kinds_singular() ⇒
+        // !env_prefix_kinds_full_cover()` on every axis with
+        // cardinality `>= 2`. `env_prefix_kinds_singular_support`
+        // has support `1 < cardinality`;
+        // `env_prefix_kinds_singular_gap` has support `cardinality
+        // - 1 < cardinality`. The full-cover corner sits at the top
+        // coverage boundary — one of the two boundary corners
+        // disjoint from the singular near-boundary corner. Peer of
+        // `file_formats_singular_implies_not_file_formats_full_cover_pointwise`
+        // on the file-format sub-axis and
+        // `layer_kinds_singular_implies_not_layer_kinds_full_cover_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_implies_not_tiers_full_cover_pointwise` on
+        // the tier altitude, and
+        // `kinds_singular_implies_not_kinds_full_cover_pointwise` on
+        // the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular() {
+                assert!(
+                    !slice.env_prefix_kinds_full_cover(),
+                    "singular chain cannot be full-cover on a \
+                     cardinality >= 2 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_implies_not_env_prefix_kinds_strict_partial_cover_pointwise() {
+        // Disjointness pin: `env_prefix_kinds_singular() ⇒
+        // !env_prefix_kinds_strict_partial_cover()` always. The two
+        // named corners of the distance-from-boundary ternary
+        // partition are pairwise disjoint. On the cardinality-`2`
+        // `EnvMetadataTagKind` axis this holds *vacuously* — the
+        // strict interior is structurally empty (the strict interval
+        // `[2, cardinality - 2] = [2, 0]` is empty), so
+        // `!env_prefix_kinds_strict_partial_cover` reads `true` on
+        // every chain regardless of `env_prefix_kinds_singular`. The
+        // env-prefix sub-axis carries the *tightest* vacuously-true
+        // consequent in the projection — two cardinality steps below
+        // the reachability threshold, matching the layer-kind sub-
+        // axis's and the diff altitude's vacuously-`true` consequent
+        // on their cardinality-`3` axes (one cardinality step below
+        // the threshold) and diverging from the tier altitude's and
+        // the file-format sub-axis's non-vacuous consequent on their
+        // cardinality-`4` axes. Peer of
+        // `file_formats_singular_implies_not_file_formats_strict_partial_cover_pointwise`
+        // on the file-format sub-axis and
+        // `layer_kinds_singular_implies_not_layer_kinds_strict_partial_cover_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_implies_not_tiers_strict_partial_cover_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_implies_not_kinds_strict_partial_cover_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular() {
+                assert!(
+                    !slice.env_prefix_kinds_strict_partial_cover(),
+                    "singular chain cannot be strict-partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_implies_env_prefix_kinds_low_support_on_cardinality_two_pointwise()
+    {
+        // Two-cell-axis cross-projection subsumption pin:
+        // `env_prefix_kinds_singular() ⇒
+        // env_prefix_kinds_low_support()` on the cardinality-`2`
+        // env-prefix axis by folding the equivalence
+        // `env_prefix_kinds_singular ⇔ (env_prefix_kinds_any_observed
+        // && env_prefix_kinds_low_support)` through the low-support
+        // conjunct. The *unique* two-cell-axis cross-projection
+        // subsumption between the distance-from-boundary and
+        // magnitude-direction ternaries — every singular chain lands
+        // on the low-magnitude corner of the parallel magnitude
+        // partition on this sub-axis. Does NOT lift to the
+        // cardinality-`>= 3` sub-axes where the singleton-gap
+        // boundary sits on the `high_support` side of the magnitude
+        // partition (support cardinality `axis_cardinality - 1 >= 2`)
+        // and the singular near-boundary corner spans both magnitude
+        // legs.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular() {
+                assert!(
+                    slice.env_prefix_kinds_low_support(),
+                    "singular chain must land on low-support on the \
+                     cardinality-2 env-prefix axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_boundary_singular_strict_partial_cover_form_ternary_partition_pointwise() {
+        // Ternary partition pin at the chain env-prefix sub-axis:
+        // exactly one of the three legs
+        // `(!env_prefix_kinds_any_observed ||
+        // env_prefix_kinds_full_cover,
+        //   env_prefix_kinds_singular,
+        //   env_prefix_kinds_strict_partial_cover)`
+        // fires on every chain — the distance-from-boundary ternary
+        // of the 5-corner support-cardinality partition, folding the
+        // two boundary corners (empty/empty-histogram and full-cover)
+        // into `has_boundary`, the two singular near-boundary corners
+        // into `has_singular`, and the boundary-free strict interior
+        // into `has_strict_partial_cover`. On the cardinality-`2`
+        // `EnvMetadataTagKind` axis the third leg is vacuously empty
+        // and the ternary degenerates to the dual partition
+        // `(has_boundary, has_singular)` pointwise — the *tightest*
+        // degenerate distance ternary in the projection, matching
+        // the layer-kind sub-axis's and the diff altitude's
+        // degenerate two-way partition on their cardinality-`3` axes
+        // and diverging from the tier altitude's and the file-format
+        // sub-axis's non-vacuous three-leg partition on their
+        // cardinality-`4` axes. Peer of the trait-uniform pin
+        // `axis_histogram_has_boundary_has_singular_has_strict_partial_cover_form_strict_ternary_partition_for_every_closed_axis_implementor`
+        // one altitude down, of
+        // `file_formats_boundary_singular_strict_partial_cover_form_ternary_partition_pointwise`
+        // on the file-format sub-axis and
+        // `layer_kinds_boundary_singular_strict_partial_cover_form_ternary_partition_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_boundary_singular_strict_partial_cover_form_ternary_partition_pointwise`
+        // on the tier altitude, and
+        // `kinds_boundary_and_kinds_singular_and_kinds_strict_partial_cover_form_ternary_partition_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let boundary =
+                !slice.env_prefix_kinds_any_observed() || slice.env_prefix_kinds_full_cover();
+            let singular = slice.env_prefix_kinds_singular();
+            let strict = slice.env_prefix_kinds_strict_partial_cover();
+            let count = usize::from(boundary) + usize::from(singular) + usize::from(strict);
+            assert_eq!(
+                count, 1,
+                "exactly one of (boundary, singular, strict_partial_cover) \
+                 must fire (boundary={boundary}, singular={singular}, \
+                 strict={strict})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_bridges_support_cardinality_class_is_singular_pointwise() {
+        // Cross-surface bridge law: `env_prefix_kinds_singular() ==
+        // env_prefix_kind_histogram().support_cardinality_class().is_singular()`
+        // on every fixture. The class-side projection lands on
+        // `SupportCardinalityClass::SingularSupport` or
+        // `SupportCardinalityClass::SingularGap` exactly when the
+        // histogram-side disjunction fires, and
+        // `SupportCardinalityClass::is_singular` reads `true` on
+        // either variant. Peer of the histogram-side bridge
+        // `axis_histogram_has_singular_agrees_with_class_is_singular_for_every_closed_axis_implementor`
+        // one altitude down, closing the (histogram, class) duality
+        // on the singular near-boundary leg at the chain env-prefix
+        // sub-axis. Peer of
+        // `file_formats_singular_bridges_support_cardinality_class_is_singular_pointwise`
+        // on the file-format sub-axis and
+        // `layer_kinds_singular_bridges_support_cardinality_class_is_singular_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_bridges_support_cardinality_class_is_singular_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_bridges_support_cardinality_class_is_singular_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_singular();
+            let via_class = slice
+                .env_prefix_kind_histogram()
+                .support_cardinality_class()
+                .is_singular();
+            assert_eq!(
+                via_seam, via_class,
+                "env_prefix_kinds_singular ({via_seam}) must agree with \
+                 env_prefix_kind_histogram().support_cardinality_class().is_singular() \
+                 ({via_class})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_agrees_with_open_coded_singular_boundary_walk() {
+        // Parity against the exact hand-rolled singular walk this
+        // lift replaces on cardinality-`>= 2` axes: walk every cell
+        // of the histogram and count how many carry a zero count
+        // and how many carry a nonzero count; the singular predicate
+        // reads `true` iff exactly one cell is nonzero (singular
+        // support) or exactly one cell is a zero (singular gap). On
+        // the cardinality-`2` env-prefix axis the two conditions
+        // coincide pointwise (`nonzeros == 1 ⇔ zeros == 1` via the
+        // `nonzeros + zeros == 2` invariant), so the disjunction
+        // reads the same clause twice. Mirrors the parity pins
+        // `env_prefix_kinds_singular_support_agrees_with_open_coded_exactly_one_positive_walk`
+        // and `env_prefix_kinds_singular_gap_agrees_with_open_coded_exactly_one_zero_walk`
+        // on the two singular-cardinality boundaries the union folds.
+        // Peer of
+        // `file_formats_singular_agrees_with_open_coded_singular_boundary_walk`
+        // on the file-format sub-axis and
+        // `layer_kinds_singular_agrees_with_open_coded_singular_boundary_walk`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_agrees_with_open_coded_singular_boundary_walk`
+        // on the tier altitude, and
+        // `kinds_singular_agrees_with_open_coded_singular_boundary_walk`
+        // on the diff altitude — closing the parity discipline at
+        // the fifth and final altitude / sub-axis in the "singular
+        // across altitudes" projection.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_singular();
+            let hist = slice.env_prefix_kind_histogram();
+            let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
+            let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
+            let hand_rolled = nonzeros == 1 || zeros == 1;
             assert_eq!(via_seam, hand_rolled);
         }
     }
