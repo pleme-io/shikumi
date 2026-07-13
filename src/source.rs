@@ -5901,6 +5901,313 @@ pub trait ConfigSourceChain {
         self.file_format_histogram().has_high_support()
     }
 
+    /// Returns `true` exactly when this chain's observed
+    /// [`crate::discovery::Format`] support sits on a *singular near-
+    /// boundary* — either exactly one observed cell
+    /// ([`Self::file_formats_singular_support`]) or exactly one
+    /// unobserved cell ([`Self::file_formats_singular_gap`]). The
+    /// **singular-file-formats boolean predicate** on the file-format
+    /// sub-axis of the chain altitude, the singular near-boundary
+    /// corner of the distance-from-boundary ternary partition
+    /// `(has_boundary, has_singular, has_strict_partial_cover)` — the
+    /// middle leg of the distance ternary, folding the two singular-
+    /// cardinality boundaries into a single named one-cell-off-
+    /// boundary corner. Routes through
+    /// [`crate::AxisHistogram::has_singular`] one altitude down: the
+    /// single-pass short-circuiting scan over the fixed-cardinality
+    /// counts vector that short-circuits the moment both a *second*
+    /// zero cell *and* a *second* nonzero cell have been witnessed,
+    /// bounded at four witness cells — strictly tighter than any of
+    /// the four documented open-coded surfaces one seam over.
+    ///
+    /// The **singular-file-formats peer** of the four documented
+    /// surface forms consumers previously re-derived inline:
+    /// `chain.file_formats_singular_support() ||
+    /// chain.file_formats_singular_gap()` (the defining-union-of-
+    /// singular-boundaries disjunction on two named histogram-side
+    /// peers, a boolean or on two method calls that walks the counts
+    /// vector twice), `chain.present_file_formats_count() == 1 ||
+    /// chain.present_file_formats_count() ==
+    /// crate::axis_cardinality::<crate::discovery::Format>() - 1`
+    /// (the support-scalar dual-equality form, which pays for a full-
+    /// axis scan and equates a `usize` against two magic thresholds
+    /// with the [`crate::axis_cardinality`] turbofish and `- 1`
+    /// arithmetic), `chain.present_file_formats_count() == 1 ||
+    /// chain.absent_file_formats_count() == 1` (the dual-scalar
+    /// equality form on the two named cardinality peers, without
+    /// allocating either `Vec<crate::discovery::Format>`), and
+    /// `chain.present_file_formats().len() == 1 ||
+    /// chain.absent_file_formats().len() == 1` (the dual-`Vec`
+    /// equality form, which allocates *two*
+    /// `Vec<crate::discovery::Format>` values just to peek their
+    /// lengths). The four forms drifted in subtle ways at every
+    /// consumer site (allocation vs. scalar, turbofish vs. name-only,
+    /// support side vs. coverage-gap side, structural disjunction vs.
+    /// dual-equality arithmetic). This lift names the singular-file-
+    /// formats predicate directly at the chain-altitude surface with
+    /// a single-pass short-circuiting scan — the typed boolean every
+    /// operator-facing *"did the chain land one file-format cell off
+    /// the coverage boundary?"* check reads off as a single method
+    /// call.
+    ///
+    /// **Lifts sideways to the file-format sub-axis of the chain
+    /// altitude** in the "singular across altitudes" projection
+    /// seeded on the diff altitude by
+    /// [`crate::ConfigDiff::kinds_singular`], climbed to the tier
+    /// altitude by [`crate::ProvenanceMap::tiers_singular`], and
+    /// lifted sideways to the layer-kind sub-axis by
+    /// [`Self::layer_kinds_singular`]. Middle-leg-corner peer of the
+    /// eight already-closed coverage-support and magnitude boundary
+    /// and interior families on the same sub-axis
+    /// ([`Self::file_formats_balanced`],
+    /// [`Self::file_formats_full_cover`],
+    /// [`Self::file_formats_any_observed`],
+    /// [`Self::file_formats_singular_support`],
+    /// [`Self::file_formats_singular_gap`],
+    /// [`Self::file_formats_strict_partial_cover`],
+    /// [`Self::file_formats_low_support`],
+    /// [`Self::file_formats_high_support`]). The remaining chain-
+    /// altitude sub-axis is the natural next sideways lift:
+    /// `env_prefix_kinds_singular` over
+    /// [`Self::env_prefix_kind_histogram`] (cardinality-`2`, where
+    /// the dual-singular-collapse fires and both singular boundaries
+    /// coincide with the two-cell cover), closing the "singular
+    /// across altitudes" projection across the same 5-column altitude
+    /// / sub-axis grid the prior coverage-support predicate rows
+    /// already carry.
+    ///
+    /// **Cardinality-`4` reachability at the chain file-format sub-
+    /// axis — non-vacuous strict-interior middle leg.**
+    /// [`crate::discovery::Format`] carries four cells, so the two
+    /// singular boundaries sit at support cardinalities `1` and `3`
+    /// (= `axis_cardinality - 1`), disjoint from each other AND —
+    /// crucially — from a reachable strict-interior leg (support
+    /// cardinality `2`, the two-format partial cover fixture). The
+    /// distance-from-boundary ternary closes strictly *and* non-
+    /// vacuously on every leg at this sub-axis: a strict advance over
+    /// the layer-kind sub-axis ([`Self::layer_kinds_singular`]) and
+    /// the diff altitude ([`crate::ConfigDiff::kinds_singular`]),
+    /// where the cardinality-`3` axis renders the strict-interior leg
+    /// unreachable and the ternary degenerates to the dual partition
+    /// `(has_boundary, has_singular)`. Matches the tier altitude
+    /// ([`crate::tiered::ConfigTierKind`] cardinality `4`) as the
+    /// second reachable strict-interior peer in this projection —
+    /// the singular near-boundary corner reduces here to the tighter
+    /// `file_formats_singular ⇔ (file_formats_any_observed &&
+    /// !file_formats_full_cover && !file_formats_strict_partial_cover)`
+    /// form, matching the tier altitude's tightened equivalence and
+    /// diverging from the layer-kind sub-axis's degenerate reduction
+    /// `layer_kinds_singular ⇔ (layer_kinds_any_observed &&
+    /// !layer_kinds_full_cover)`.
+    ///
+    /// **Empty-chain convention** — returns `false` on the empty
+    /// chain: zero observed cells satisfy neither the `nonzeros == 1`
+    /// nor the `zeros == 1` clause on the cardinality-`4` axis (four
+    /// zeros, zero nonzeros). Matches
+    /// [`crate::AxisHistogram::has_singular`]'s empty-histogram
+    /// `false` convention one altitude down for every cardinality-
+    /// `>= 2` axis. The empty chain sits on the disjoint bottom
+    /// coverage boundary of the distance-from-boundary ternary
+    /// partition, carried by `has_boundary` (via
+    /// `!file_formats_any_observed`) instead.
+    ///
+    /// **No-recognized-files convention** — returns `false` on every
+    /// non-empty chain whose file-format histogram is empty (chains
+    /// of only [`ConfigSource::Defaults`] / [`ConfigSource::Env`] /
+    /// unrecognized-extension [`ConfigSource::File`] layers). The
+    /// histogram is empty even though the chain is not, so neither
+    /// singular boundary fires. Cross-sub-axis divergence from
+    /// [`Self::layer_kinds_singular`]: the singular near-boundary
+    /// corner does NOT open on the empty-histogram non-empty-chain
+    /// fixtures at the file-format sub-axis — matching
+    /// [`Self::file_formats_any_observed`]'s empty-histogram `false`
+    /// polarity through subsumption and diverging from the layer-
+    /// kind sub-axis peer where a chain of only `Defaults` observes
+    /// one layer-kind cell and lands on
+    /// `layer_kinds_singular_support ⇒ layer_kinds_singular = true`.
+    ///
+    /// **Singleton-support convention** — returns `true` on every
+    /// chain whose observed support is a single
+    /// [`crate::discovery::Format`] cell: the support cardinality is
+    /// `1` (three unobserved cells on the cardinality-`4` axis), so
+    /// `file_formats_singular_support` fires and the disjunction
+    /// holds via that disjunct. Every chain whose recognized-
+    /// extension file layers all attribute to only-`Yaml`, only-
+    /// `Toml`, only-`Lisp`, or only-`Nix` is a witness on the
+    /// `true` side. Direct witness of the subsumption
+    /// `file_formats_singular_support ⇒ file_formats_singular` on
+    /// every axis with cardinality `>= 2`.
+    ///
+    /// **Two-format partial cover convention (the strict-interior
+    /// witness)** — returns `false` on every chain whose observed
+    /// support is exactly two [`crate::discovery::Format`] cells:
+    /// support cardinality `2` on the cardinality-`4` axis lands in
+    /// the strict interior `[2, cardinality - 2] = [2, 2]`,
+    /// satisfying neither `nonzeros == 1` nor `zeros == 1`. Direct
+    /// witness of the *non-vacuous* strict disjointness
+    /// `file_formats_strict_partial_cover ⇒
+    /// !file_formats_singular` on the cardinality-`4`
+    /// [`crate::discovery::Format`] axis — a strict advance over the
+    /// cardinality-`3` layer-kind sub-axis where the same
+    /// disjointness holds vacuously (the strict interior is
+    /// unreachable). Matches the tier altitude's non-vacuous witness
+    /// on the cardinality-`4` [`crate::tiered::ConfigTierKind`] axis
+    /// (the two-tier partial cover fixture) — the file-format sub-
+    /// axis is the second reachable strict-interior peer in the
+    /// "singular across altitudes" projection, exercising both sides
+    /// of the strict disjointness on the same fixture. Distinguishes
+    /// the file-format sub-axis from the layer-kind sub-axis where
+    /// two-kind partial cover (support size `2` on the cardinality-
+    /// `3` axis) falls at the singleton-gap boundary and lands on
+    /// `layer_kinds_singular = true` via the singleton-gap disjunct.
+    ///
+    /// **Three-format partial cover convention** — returns `true` on
+    /// every chain whose observed support is exactly three
+    /// [`crate::discovery::Format`] cells: support cardinality `3`
+    /// on the cardinality-`4` axis leaves exactly one unobserved
+    /// cell — `file_formats_singular_gap` fires and the disjunction
+    /// holds via that disjunct. Direct witness of the subsumption
+    /// `file_formats_singular_gap ⇒ file_formats_singular` on every
+    /// axis via the singleton-gap disjunct of the defining union.
+    ///
+    /// **Uniform four-format cover convention** — returns `false` on
+    /// every chain where each [`crate::discovery::Format`] cell was
+    /// observed at least once: the support cardinality is `4` (no
+    /// unobserved cells on the cardinality-`4` axis) —
+    /// `file_formats_singular_gap` fails (`zeros == 0 ≠ 1`) and
+    /// `file_formats_singular_support` fails (`nonzeros == 4 ≠ 1`).
+    /// The full-cover boundary sits at the top of the coverage
+    /// interval, one of the two boundary corners carried by
+    /// `has_boundary` (via `file_formats_full_cover`) in the distance
+    /// ternary — disjoint from the singular near-boundary corner.
+    ///
+    /// # Invariants
+    ///
+    /// - `file_formats_singular() ==
+    ///   file_format_histogram().has_singular()` — both project the
+    ///   same predicate off the same primitive; the named seam is
+    ///   the cube-native routing of the histogram surface.
+    /// - `file_formats_singular() ⇔ file_formats_singular_support()
+    ///   || file_formats_singular_gap()` — the defining union-of-
+    ///   singular-boundaries disjunction on the two named histogram-
+    ///   side peers. The singular near-boundary corner folds the two
+    ///   singular-cardinality boundaries into one named one-cell-off-
+    ///   boundary corner without discarding the finer resolution
+    ///   below.
+    /// - `file_formats_singular() ⇔ (file_formats_any_observed() &&
+    ///   !file_formats_full_cover() &&
+    ///   !file_formats_strict_partial_cover())` on the cardinality-
+    ///   `4` file-format axis — the partial-cover-minus-strict-
+    ///   interior form tightened by the non-vacuous strict-interior
+    ///   excision. Matches the tier altitude's tightened equivalence
+    ///   `tiers_singular ⇔ (tiers_any_observed && !tiers_full_cover
+    ///   && !tiers_strict_partial_cover)` on the same cardinality-
+    ///   `4` `ConfigTierKind` axis and diverges from the layer-kind
+    ///   sub-axis where the strict-interior slice is vacuously empty
+    ///   and the equivalence loosens to
+    ///   `(layer_kinds_any_observed && !layer_kinds_full_cover)`
+    ///   with no strict-interior excision needed.
+    /// - `file_formats_singular() == (present_file_formats_count()
+    ///   == 1 || present_file_formats_count() ==
+    ///   crate::axis_cardinality::<crate::discovery::Format>() - 1)`
+    ///   always — the support-scalar dual-equality surface, without
+    ///   allocating either `Vec<crate::discovery::Format>`. On the
+    ///   cardinality-`4` file-format axis the two equalities are
+    ///   disjoint (`1 ≠ 3 = cardinality - 1`) and the disjunction
+    ///   reads the true dual.
+    /// - `file_formats_singular() == (present_file_formats_count()
+    ///   == 1 || absent_file_formats_count() == 1)` always — the
+    ///   dual-scalar equality form on the two named cardinality
+    ///   peers, the `present + absent == axis_cardinality`
+    ///   invariant restated. Peer of the histogram-side dual-scalar
+    ///   equality form `hist.distinct_cells() == 1 ||
+    ///   hist.unobserved_cells() == 1` pinned one altitude down.
+    /// - `file_formats_singular_support() ⇒ file_formats_singular()`
+    ///   always — the subsumption via the
+    ///   `file_formats_singular_support` disjunct of the defining
+    ///   union. The singleton-support boundary always sits inside
+    ///   the singular near-boundary corner.
+    /// - `file_formats_singular_gap() ⇒ file_formats_singular()`
+    ///   always — the subsumption via the `file_formats_singular_gap`
+    ///   disjunct of the defining union. The singleton-gap boundary
+    ///   always sits inside the singular near-boundary corner.
+    /// - `file_formats_singular() ⇒ file_formats_any_observed()` on
+    ///   every axis with cardinality `>= 2`: both disjuncts require
+    ///   at least one observed cell (`singular_support` has nonzeros
+    ///   `>= 1`; `singular_gap` has nonzeros `= cardinality - 1 >=
+    ///   1`). Empty-chain and empty-histogram subsumption on the
+    ///   bottom coverage boundary.
+    /// - `file_formats_singular() ⇒ !file_formats_full_cover()` on
+    ///   every axis with cardinality `>= 2`:
+    ///   `file_formats_singular_support` has support `1 <
+    ///   cardinality`, `file_formats_singular_gap` has support
+    ///   `cardinality - 1 < cardinality`. Full-cover disjointness on
+    ///   the top coverage boundary.
+    /// - `file_formats_singular() ⇒
+    ///   !file_formats_strict_partial_cover()` always — the two
+    ///   named corners of the distance-from-boundary ternary are
+    ///   pairwise disjoint. On the cardinality-`4`
+    ///   [`crate::discovery::Format`] axis this is *non-vacuous* —
+    ///   the two-format partial-cover fixture reads
+    ///   `strict_partial_cover=true, singular=false`, exercising
+    ///   both sides of the strict disjointness on the same fixture.
+    ///   Strict advance over the vacuously-`true` peer at the
+    ///   cardinality-`3` layer-kind sub-axis and matching the non-
+    ///   vacuous peer at the cardinality-`4` tier altitude. Peer of
+    ///   the histogram-side
+    ///   `axis_histogram_has_boundary_has_singular_has_strict_partial_cover_form_strict_ternary_partition_for_every_closed_axis_implementor`
+    ///   partition law one altitude down.
+    /// - `(!file_formats_any_observed() || file_formats_full_cover(),
+    ///   file_formats_singular, file_formats_strict_partial_cover)`
+    ///   is a strict ternary partition on every axis with
+    ///   cardinality `>= 2`. On the cardinality-`4` file-format
+    ///   axis every leg is inhabited — the ternary closes non-
+    ///   vacuously (empty and uniform four-format cover on the
+    ///   boundary leg, singleton support and three-format cover on
+    ///   the singular leg, two-format partial cover on the strict-
+    ///   interior middle leg). Strict advance over the layer-kind
+    ///   sub-axis where the third leg vanishes and the ternary
+    ///   degenerates to the dual pointwise, matching the tier
+    ///   altitude's non-vacuous three-leg partition.
+    /// - **Cross-surface bridge law** —
+    ///   `chain.file_formats_singular() ==
+    ///    chain.file_format_histogram().support_cardinality_class().is_singular()`
+    ///   always. The class-side projection lands on
+    ///   [`crate::SupportCardinalityClass::SingularSupport`] or
+    ///   [`crate::SupportCardinalityClass::SingularGap`] exactly
+    ///   when the histogram-side disjunction fires, and
+    ///   [`crate::SupportCardinalityClass::is_singular`] reads
+    ///   `true` on either variant. Peer of the histogram-side
+    ///   bridge
+    ///   `axis_histogram_has_singular_agrees_with_class_is_singular_for_every_closed_axis_implementor`
+    ///   one altitude down, closing the (histogram, class) duality
+    ///   on the singular near-boundary leg at the chain file-format
+    ///   sub-axis.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram
+    /// build) and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the singular scan). Both are `O(n)` in practice since the
+    /// file-format axis carries a fixed four-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan short-circuits
+    /// the *moment* both a *second* zero count *and* a *second*
+    /// nonzero count have been witnessed (bounded at four witness
+    /// cells visited on any strict-interior histogram — reachable
+    /// on the cardinality-`4` file-format axis), strictly tighter
+    /// than the four documented open-coded surfaces — no boolean
+    /// disjunction across two named predicates with two full walks
+    /// of the counts vector, no [`crate::axis_cardinality`]
+    /// turbofish with `- 1` arithmetic against a magic threshold,
+    /// no `Vec<crate::discovery::Format>` allocation.
+    #[must_use]
+    fn file_formats_singular(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().has_singular()
+    }
+
     /// Dense per-env-prefix-presence tally of the chain's
     /// [`ConfigSource::Env`] layers over the [`EnvMetadataTagKind`] axis
     /// — the typed histogram every attestation manifest, structured-log
@@ -27653,6 +27960,657 @@ mod tests {
             let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
             let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
             let hand_rolled = zeros <= 1 && nonzeros >= 2;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::file_formats_singular — singular-near-
+    //      boundary boolean predicate on the file-format sub-axis of
+    //      the chain altitude, lifting the "singular across altitudes"
+    //      projection sideways from the layer-kind sub-axis to the
+    //      second chain-altitude sub-axis. On the cardinality-`4`
+    //      `crate::discovery::Format` axis the distance ternary closes
+    //      non-vacuously on every leg — matches the tier altitude and
+    //      diverges from the degenerate two-way partition at the
+    //      layer-kind sub-axis and the diff altitude. ──
+
+    #[test]
+    fn file_formats_singular_matches_file_format_histogram_has_singular_pointwise() {
+        // Routing pin: `file_formats_singular` routes through
+        // `file_format_histogram().has_singular()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. File-
+        // format sub-axis peer of
+        // `layer_kinds_singular_matches_layer_kind_histogram_has_singular_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_matches_tier_histogram_has_singular_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_matches_kind_histogram_has_singular_pointwise`
+        // on the diff altitude, in the "singular across altitudes"
+        // projection.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.file_format_histogram().has_singular();
+            assert_eq!(slice.file_formats_singular(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_matches_defining_union_of_singular_boundaries_pointwise() {
+        // Defining union-of-singular-boundaries form:
+        // `file_formats_singular() ⇔ file_formats_singular_support() ||
+        // file_formats_singular_gap()`. Pins the predicate against the
+        // two-way disjunction on two named histogram-side peers
+        // consumers reach for when they open-code the singular near-
+        // boundary corner as a boolean fold over the two singular-
+        // cardinality boundaries. Peer of
+        // `layer_kinds_singular_matches_defining_union_of_singular_boundaries_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_matches_defining_union_of_singular_boundaries_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_matches_defining_union_of_singular_boundaries_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_singular();
+            let via_union =
+                slice.file_formats_singular_support() || slice.file_formats_singular_gap();
+            assert_eq!(
+                via_seam, via_union,
+                "file_formats_singular ({via_seam}) must agree with \
+                 file_formats_singular_support || file_formats_singular_gap ({via_union})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_agrees_with_any_observed_not_full_cover_not_strict_partial_cover_pointwise()
+     {
+        // Partial-cover-minus-strict-interior form tightened by the
+        // non-vacuous strict-interior excision on the cardinality-`4`
+        // file-format axis: `file_formats_singular() ==
+        // file_formats_any_observed() && !file_formats_full_cover() &&
+        // !file_formats_strict_partial_cover()`. The strict interior
+        // of the file-format axis is reachable (interval
+        // `[2, cardinality - 2] = [2, 2]`), so the middle-leg fold
+        // requires the `!strict_partial_cover` excision to read
+        // through the partial-cover slice cleanly. Matches the tier-
+        // altitude peer `tiers_singular ⇔ (tiers_any_observed &&
+        // !tiers_full_cover && !tiers_strict_partial_cover)` on the
+        // same cardinality-`4` axis and diverges from the layer-kind
+        // sub-axis where the strict-interior leg is vacuously empty
+        // and the equivalence loosens to `(any_observed &&
+        // !full_cover)`.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_singular();
+            let via_slice = slice.file_formats_any_observed()
+                && !slice.file_formats_full_cover()
+                && !slice.file_formats_strict_partial_cover();
+            assert_eq!(
+                via_seam, via_slice,
+                "file_formats_singular ({via_seam}) must agree with \
+                 file_formats_any_observed && !file_formats_full_cover && \
+                 !file_formats_strict_partial_cover ({via_slice})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_agrees_with_present_file_formats_count_dual_equality_pointwise() {
+        // Support-scalar dual-equality surface:
+        // `file_formats_singular() == (present_file_formats_count() ==
+        // 1 || present_file_formats_count() ==
+        // axis_cardinality::<crate::discovery::Format>() - 1)` on
+        // every fixture. The support-side surfacing of the same
+        // boolean, without allocating either
+        // `Vec<crate::discovery::Format>`. On the cardinality-`4`
+        // file-format axis the two equalities are disjoint (`1 ≠ 3 =
+        // cardinality - 1`) and the disjunction reads the true dual.
+        // Peer of
+        // `layer_kinds_singular_agrees_with_present_layer_kinds_count_dual_equality_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_agrees_with_contributing_tiers_count_dual_equality_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_agrees_with_present_kinds_count_dual_equality_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_singular();
+            let support = slice.present_file_formats_count();
+            let via_scalar = support == 1
+                || support == crate::axis_cardinality::<crate::discovery::Format>() - 1;
+            assert_eq!(
+                via_seam, via_scalar,
+                "file_formats_singular ({via_seam}) must agree with \
+                 present_file_formats_count == 1 || present_file_formats_count == cardinality - 1 \
+                 ({via_scalar}, support={support})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_agrees_with_present_and_absent_file_formats_count_dual_equality_pointwise()
+     {
+        // Dual-scalar equality surface: `file_formats_singular() ==
+        // (present_file_formats_count() == 1 ||
+        // absent_file_formats_count() == 1)` on every fixture. The
+        // `present + absent == axis_cardinality` invariant restated
+        // on the two named cardinality peers, without allocating
+        // either `Vec<crate::discovery::Format>`. Peer of the
+        // histogram-side dual-scalar equality form
+        // `hist.distinct_cells() == 1 || hist.unobserved_cells() == 1`
+        // pinned one altitude down. Peer of
+        // `layer_kinds_singular_agrees_with_present_and_absent_layer_kinds_count_dual_equality_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_agrees_with_contributing_and_absent_tiers_count_dual_equality_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_agrees_with_present_and_absent_kinds_count_dual_equality_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_singular();
+            let support = slice.present_file_formats_count();
+            let gap = slice.absent_file_formats_count();
+            let via_scalar = support == 1 || gap == 1;
+            assert_eq!(
+                via_seam, via_scalar,
+                "file_formats_singular ({via_seam}) must agree with \
+                 present_file_formats_count == 1 || absent_file_formats_count == 1 \
+                 ({via_scalar}, support={support}, gap={gap})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_empty_chain_is_false() {
+        // Empty-chain boundary: the empty chain observes zero cells,
+        // so every cell is unobserved (four zeros on the cardinality-
+        // `4` axis) — neither `file_formats_singular_support`
+        // (nonzeros `== 1`) nor `file_formats_singular_gap` (zeros
+        // `== 1`) fires. `file_formats_singular` reads `false`.
+        // Matches `has_singular` reading `false` on the empty
+        // histogram one altitude down for every cardinality-`>= 2`
+        // axis. The empty chain sits on the disjoint bottom coverage
+        // boundary of the distance-from-boundary ternary partition,
+        // carried by `has_boundary` (via `!file_formats_any_observed`)
+        // instead. Peer of `layer_kinds_singular_empty_chain_is_false`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_empty_map_is_false` on the tier altitude,
+        // and `kinds_singular_empty_diff_is_false` on the diff
+        // altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(!empty.file_formats_singular());
+        assert!(!empty.file_formats_any_observed());
+        assert!(!empty.file_formats_singular_support());
+        assert!(!empty.file_formats_singular_gap());
+    }
+
+    #[test]
+    fn file_formats_singular_no_recognized_files_is_false() {
+        // Non-empty-chain / empty-histogram boundary the file-format
+        // sub-axis pins that the layer-kind sub-axis does *not*. A
+        // chain of only `Defaults` / `Env` / unrecognized-extension
+        // `File` layers is non-empty but has no `Some` file-format
+        // projection, so the histogram is empty (four zeros on the
+        // cardinality-`4` axis) — neither
+        // `file_formats_singular_support` nor
+        // `file_formats_singular_gap` fires and
+        // `file_formats_singular` reads `false`. Cross-sub-axis
+        // divergence pin against `layer_kinds_singular`: on the same
+        // fixtures the layer-kind sub-axis observes at least one
+        // layer-kind cell (Defaults / Env / File) so the singular
+        // near-boundary corner can fire there, but the file-format
+        // sub-axis's narrower singular corner does not. Peer of
+        // `file_formats_high_support_no_recognized_files_is_false`
+        // via the `singular ⇒ any_observed` subsumption on the empty-
+        // histogram fixture.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(slice.file_format_histogram().is_empty());
+            assert!(!slice.file_formats_any_observed());
+            assert!(!slice.file_formats_singular());
+            assert!(!slice.file_formats_singular_support());
+            assert!(!slice.file_formats_singular_gap());
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_singleton_support_is_true() {
+        // Singleton-support pin: `sample_chain()` observes only Yaml
+        // (two `.yaml` file layers + one Env layer), so the file-
+        // format support cardinality is `1` (three unobserved cells
+        // on the cardinality-`4` axis) — `file_formats_singular_support`
+        // fires and the disjunction holds via that disjunct.
+        // `file_formats_singular` reads `true`. Direct witness of
+        // the subsumption `file_formats_singular_support ⇒
+        // file_formats_singular` on every axis with cardinality
+        // `>= 2`. Peer of
+        // `layer_kinds_singular_singleton_support_is_true` on the
+        // layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_singleton_support_is_true` on the tier
+        // altitude, and `kinds_singular_singleton_support_is_true`
+        // on the diff altitude.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 1);
+        assert!(slice.file_formats_singular_support());
+        assert!(slice.file_formats_singular());
+    }
+
+    #[test]
+    fn file_formats_singular_two_format_partial_cover_is_false() {
+        // Two-format-cover pin — the *first non-vacuous* strict-
+        // interior disjointness witness on the chain altitude for
+        // the singular near-boundary corner. A chain observing
+        // exactly two file-format cells (`.yaml + .toml`) reads
+        // `strict_partial_cover=true` on the cardinality-`4`
+        // `crate::discovery::Format` axis; support cardinality `2`
+        // satisfies neither `nonzeros == 1` nor `zeros == 1`, so
+        // `file_formats_singular` reads `false`. Direct witness of
+        // the *non-vacuous* strict disjointness
+        // `file_formats_strict_partial_cover ⇒
+        // !file_formats_singular` — unavailable at the cardinality-
+        // `3` layer-kind sub-axis where the strict-interior
+        // antecedent is vacuous and the two-kind partial cover
+        // fixture reads `layer_kinds_singular_gap ⇒
+        // layer_kinds_singular = true` instead. Matches the tier
+        // altitude (cardinality-`4` `ConfigTierKind`) — the two-
+        // tier partial-cover fixture there reads
+        // `tiers_strict_partial_cover=true, tiers_singular=false`
+        // on the same strict-interior boundary.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 2);
+        assert!(slice.file_format_histogram().count(Format::Yaml) > 0);
+        assert!(slice.file_format_histogram().count(Format::Toml) > 0);
+        assert!(slice.file_formats_strict_partial_cover());
+        assert!(!slice.file_formats_singular());
+        assert!(!slice.file_formats_singular_support());
+        assert!(!slice.file_formats_singular_gap());
+    }
+
+    #[test]
+    fn file_formats_singular_three_format_partial_cover_is_true() {
+        // Three-format-cover pin: a chain observing exactly three
+        // file-format cells (`.yaml + .toml + .lisp`) sits at
+        // support cardinality `3` = `axis_cardinality - 1`, exactly
+        // the singleton-gap boundary on the cardinality-`4` axis —
+        // so `file_formats_singular_gap` fires and the disjunction
+        // holds via that disjunct. `file_formats_singular` reads
+        // `true`. Direct witness of the subsumption
+        // `file_formats_singular_gap ⇒ file_formats_singular` on
+        // every axis via the singleton-gap disjunct of the defining
+        // union. Distinguishes the file-format sub-axis from the
+        // layer-kind sub-axis where the singleton-gap boundary sits
+        // at support cardinality `2` on the cardinality-`3` axis
+        // instead.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 3);
+        assert!(slice.file_formats_singular_gap());
+        assert!(slice.file_formats_singular());
+    }
+
+    #[test]
+    fn file_formats_singular_uniform_cover_is_false() {
+        // Uniform-cover pin: every file-format cell contributes at
+        // least one recognized-extension file layer, so the support
+        // cardinality is `4` (no unobserved cells on the cardinality-
+        // `4` axis) — `file_formats_singular_gap` fails (`zeros == 0
+        // ≠ 1`) and `file_formats_singular_support` fails (`nonzeros
+        // == 4 ≠ 1`). `file_formats_singular` reads `false`. The
+        // full-cover boundary sits at the top of the coverage
+        // interval, one of the two boundary corners carried by
+        // `has_boundary` (via `file_formats_full_cover`) in the
+        // distance ternary — disjoint from the singular near-
+        // boundary corner. Peer of
+        // `layer_kinds_singular_uniform_cover_is_false` on the layer-
+        // kind sub-axis of the same chain altitude,
+        // `tiers_singular_uniform_cover_is_false` on the tier
+        // altitude, and `kinds_singular_uniform_cover_is_false` on
+        // the diff altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.file_formats_full_cover());
+        assert!(!slice.file_formats_singular());
+    }
+
+    #[test]
+    fn file_formats_singular_support_implies_file_formats_singular_pointwise() {
+        // Subsumption pin: `file_formats_singular_support() ⇒
+        // file_formats_singular()` on every axis via the
+        // `file_formats_singular_support` disjunct of the defining
+        // union. The singleton-support boundary always sits inside
+        // the singular near-boundary corner. Direct witness of one
+        // leg of the union bridge. Peer of
+        // `layer_kinds_singular_support_implies_layer_kinds_singular_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_support_implies_tiers_singular_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_support_implies_kinds_singular_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_singular_support() {
+                assert!(
+                    slice.file_formats_singular(),
+                    "singular-support chain must be singular",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_gap_implies_file_formats_singular_pointwise() {
+        // Subsumption pin: `file_formats_singular_gap() ⇒
+        // file_formats_singular()` on every axis via the
+        // `file_formats_singular_gap` disjunct of the defining union.
+        // The singleton-gap boundary always sits inside the singular
+        // near-boundary corner. Direct witness of the other leg of
+        // the union bridge. Peer of
+        // `layer_kinds_singular_gap_implies_layer_kinds_singular_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_gap_implies_tiers_singular_pointwise` on
+        // the tier altitude, and
+        // `kinds_singular_gap_implies_kinds_singular_pointwise` on
+        // the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_singular_gap() {
+                assert!(
+                    slice.file_formats_singular(),
+                    "singular-gap chain must be singular",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_implies_file_formats_any_observed_pointwise() {
+        // Subsumption pin: `file_formats_singular() ⇒
+        // file_formats_any_observed()` on every axis with cardinality
+        // `>= 2`. Both disjuncts require at least one observed cell
+        // (`singular_support` has nonzeros `>= 1`; `singular_gap` has
+        // nonzeros `= cardinality - 1 >= 1`). The empty chain AND
+        // every empty-histogram non-empty chain sit on the disjoint
+        // `!file_formats_any_observed` boundary at the bottom
+        // coverage boundary — every singular chain observes at least
+        // one file-format cell. Peer of
+        // `layer_kinds_singular_implies_layer_kinds_any_observed_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_implies_tiers_any_observed_pointwise` on
+        // the tier altitude, and
+        // `kinds_singular_implies_kinds_any_observed_pointwise` on
+        // the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_singular() {
+                assert!(
+                    slice.file_formats_any_observed(),
+                    "singular chain must observe at least one cell",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_implies_not_file_formats_full_cover_pointwise() {
+        // Disjointness pin: `file_formats_singular() ⇒
+        // !file_formats_full_cover()` on every axis with cardinality
+        // `>= 2`. `file_formats_singular_support` has support `1 <
+        // cardinality`; `file_formats_singular_gap` has support
+        // `cardinality - 1 < cardinality`. The full-cover corner
+        // sits at the top coverage boundary — one of the two
+        // boundary corners disjoint from the singular near-boundary
+        // corner. Peer of
+        // `layer_kinds_singular_implies_not_layer_kinds_full_cover_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_implies_not_tiers_full_cover_pointwise` on
+        // the tier altitude, and
+        // `kinds_singular_implies_not_kinds_full_cover_pointwise` on
+        // the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_singular() {
+                assert!(
+                    !slice.file_formats_full_cover(),
+                    "singular chain cannot be full-cover on a \
+                     cardinality >= 2 axis",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_implies_not_file_formats_strict_partial_cover_pointwise() {
+        // Disjointness pin: `file_formats_singular() ⇒
+        // !file_formats_strict_partial_cover()` always. The two
+        // named corners of the distance-from-boundary ternary
+        // partition are pairwise disjoint. On the cardinality-`4`
+        // `crate::discovery::Format` axis this is *non-vacuous* —
+        // the two-format partial-cover fixture reads
+        // `strict_partial_cover=true, singular=false`, exercising
+        // both sides of the strict disjointness on the same fixture.
+        // Strict advance over the vacuously-`true` peer at the
+        // cardinality-`3` layer-kind sub-axis where the strict
+        // interior is unreachable and the consequent holds
+        // vacuously. Matches the non-vacuous peer at the tier
+        // altitude on the cardinality-`4` `ConfigTierKind` axis. Peer
+        // of
+        // `layer_kinds_singular_implies_not_layer_kinds_strict_partial_cover_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_implies_not_tiers_strict_partial_cover_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_implies_not_kinds_strict_partial_cover_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_singular() {
+                assert!(
+                    !slice.file_formats_strict_partial_cover(),
+                    "singular chain cannot be strict-partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_boundary_singular_strict_partial_cover_form_ternary_partition_pointwise() {
+        // Ternary partition pin at the chain file-format sub-axis:
+        // exactly one of the three legs
+        // `(!file_formats_any_observed || file_formats_full_cover,
+        //   file_formats_singular,
+        //   file_formats_strict_partial_cover)`
+        // fires on every chain — the distance-from-boundary ternary
+        // of the 5-corner support-cardinality partition, folding
+        // the two boundary corners (empty/empty-histogram and full-
+        // cover) into `has_boundary`, the two singular near-boundary
+        // corners into `has_singular`, and the boundary-free strict
+        // interior into `has_strict_partial_cover`. On the
+        // cardinality-`4` `crate::discovery::Format` axis every leg
+        // is inhabited — the ternary closes strictly *and* non-
+        // vacuously (interval `[2, cardinality - 2] = [2, 2]` is
+        // non-empty) — a strict advance over the layer-kind sub-
+        // axis and the diff altitude where the third leg vanishes
+        // and the ternary degenerates to the dual pointwise, and
+        // matching the tier altitude's non-vacuous three-leg
+        // partition on the cardinality-`4` `ConfigTierKind` axis.
+        // Peer of the trait-uniform pin
+        // `axis_histogram_has_boundary_has_singular_has_strict_partial_cover_form_strict_ternary_partition_for_every_closed_axis_implementor`
+        // one altitude down, of
+        // `layer_kinds_boundary_singular_strict_partial_cover_form_ternary_partition_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_boundary_singular_strict_partial_cover_form_ternary_partition_pointwise`
+        // on the tier altitude, and
+        // `kinds_boundary_and_kinds_singular_and_kinds_strict_partial_cover_form_ternary_partition_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let boundary = !slice.file_formats_any_observed() || slice.file_formats_full_cover();
+            let singular = slice.file_formats_singular();
+            let strict = slice.file_formats_strict_partial_cover();
+            let count = usize::from(boundary) + usize::from(singular) + usize::from(strict);
+            assert_eq!(
+                count, 1,
+                "exactly one of (boundary, singular, strict_partial_cover) \
+                 must fire (boundary={boundary}, singular={singular}, \
+                 strict={strict})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_boundary_singular_strict_partial_cover_ternary_partition_all_legs_inhabited() {
+        // Non-vacuous ternary pin: each of the three legs of the
+        // distance-from-boundary ternary partition
+        // `(!file_formats_any_observed || file_formats_full_cover,
+        // file_formats_singular, file_formats_strict_partial_cover)`
+        // is inhabited by an explicit fixture on the cardinality-
+        // `4` `crate::discovery::Format` axis. Strict advance over
+        // the cardinality-`3` layer-kind sub-axis and the diff
+        // altitude where the strict-interior middle leg is
+        // vacuously empty (the strict interval `[2, cardinality - 2]
+        // = [2, 1]` is empty on the cardinality-`3` axis). Matches
+        // the tier altitude's non-vacuous peer
+        // `tiers_boundary_singular_strict_partial_cover_ternary_partition_all_legs_inhabited`.
+        // Boundary leg witnessed by the empty chain (support size
+        // `0`) and by the uniform four-format cover (support size
+        // `4`), singular leg witnessed by the singleton-support
+        // fixture (support size `1`) and by the three-format cover
+        // (support size `3`), strict-interior middle leg witnessed
+        // by the two-format partial cover (support size `2`).
+        let empty_chain: Vec<ConfigSource> = Vec::new();
+        let empty_slice = empty_chain.as_slice();
+        assert!(!empty_slice.file_formats_any_observed());
+        assert!(!empty_slice.file_formats_singular());
+        assert!(!empty_slice.file_formats_strict_partial_cover());
+
+        let singleton_chain = vec![ConfigSource::File(PathBuf::from("/a.yaml"))];
+        let singleton_slice = singleton_chain.as_slice();
+        assert!(singleton_slice.file_formats_singular());
+        assert!(!singleton_slice.file_formats_full_cover());
+        assert!(!singleton_slice.file_formats_strict_partial_cover());
+
+        let two_chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+        ];
+        let two_slice = two_chain.as_slice();
+        assert!(!two_slice.file_formats_singular());
+        assert!(two_slice.file_formats_strict_partial_cover());
+
+        let three_chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+        ];
+        let three_slice = three_chain.as_slice();
+        assert!(three_slice.file_formats_singular());
+        assert!(!three_slice.file_formats_full_cover());
+        assert!(!three_slice.file_formats_strict_partial_cover());
+
+        let uniform_chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        let uniform_slice = uniform_chain.as_slice();
+        assert!(uniform_slice.file_formats_full_cover());
+        assert!(!uniform_slice.file_formats_singular());
+        assert!(!uniform_slice.file_formats_strict_partial_cover());
+    }
+
+    #[test]
+    fn file_formats_singular_bridges_support_cardinality_class_is_singular_pointwise() {
+        // Cross-surface bridge law: `file_formats_singular() ==
+        // file_format_histogram().support_cardinality_class().is_singular()`
+        // on every fixture. The class-side projection lands on
+        // `SupportCardinalityClass::SingularSupport` or
+        // `SupportCardinalityClass::SingularGap` exactly when the
+        // histogram-side disjunction fires, and
+        // `SupportCardinalityClass::is_singular` reads `true` on
+        // either variant. Peer of the histogram-side bridge
+        // `axis_histogram_has_singular_agrees_with_class_is_singular_for_every_closed_axis_implementor`
+        // one altitude down, closing the (histogram, class) duality
+        // on the singular near-boundary leg at the chain file-
+        // format sub-axis. Peer of
+        // `layer_kinds_singular_bridges_support_cardinality_class_is_singular_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_bridges_support_cardinality_class_is_singular_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_bridges_support_cardinality_class_is_singular_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_singular();
+            let via_class = slice
+                .file_format_histogram()
+                .support_cardinality_class()
+                .is_singular();
+            assert_eq!(
+                via_seam, via_class,
+                "file_formats_singular ({via_seam}) must agree with \
+                 file_format_histogram().support_cardinality_class().is_singular() \
+                 ({via_class})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_agrees_with_open_coded_singular_boundary_walk() {
+        // Parity against the exact hand-rolled singular walk this
+        // lift replaces on cardinality-`>= 2` axes: walk every cell
+        // of the histogram and count how many carry a zero count
+        // and how many carry a nonzero count; the singular predicate
+        // reads `true` iff exactly one cell is nonzero (singular
+        // support) or exactly one cell is a zero (singular gap).
+        // Mirrors the parity pins
+        // `file_formats_singular_support_agrees_with_present_file_formats_count_equals_one_pointwise`
+        // and the sibling on `singular_gap` on the two singular-
+        // cardinality boundaries the union folds. Peer of
+        // `layer_kinds_singular_agrees_with_open_coded_singular_boundary_walk`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_agrees_with_open_coded_singular_boundary_walk`
+        // on the tier altitude, and
+        // `kinds_singular_agrees_with_open_coded_singular_boundary_walk`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_singular();
+            let hist = slice.file_format_histogram();
+            let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
+            let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
+            let hand_rolled = nonzeros == 1 || zeros == 1;
             assert_eq!(via_seam, hand_rolled);
         }
     }
