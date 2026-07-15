@@ -4359,6 +4359,216 @@ impl ProvenanceMap {
     pub fn tiers_strictly_modally_unique(&self) -> bool {
         self.tier_histogram().is_strictly_modally_unique()
     }
+
+    /// Returns `true` exactly when this fold's observed [`ConfigTierKind`]
+    /// histogram has exactly one cell holding the trough leaf count — the
+    /// **strictly-antimodally-unique-tier-counts boolean predicate** on the
+    /// tier altitude, the direct strict-complement of the antimodally-tied
+    /// predicate [`Self::tiers_antimodally_tied`] on every non-empty fold
+    /// (both read `false` on the empty map — the shared boundary below
+    /// both branches of the strict antimodal partition). Routes through
+    /// [`crate::AxisHistogram::is_strictly_antimodally_unique`] one
+    /// altitude down: the single-pass scan over the fixed-cardinality
+    /// counts vector reading `self.trough_multiplicity() == 1` off one
+    /// predicate, tighter than either open-coded surface form one seam
+    /// over.
+    ///
+    /// The **strictly-antimodally-unique-tier-counts peer** of the two
+    /// documented surface forms consumers previously re-derived inline:
+    /// `map.tier_histogram().trough_multiplicity() == 1` (the
+    /// multiplicity-scalar equality form, one method call *plus* a
+    /// comparison against a magic `1` threshold), and
+    /// `map.tier_histogram().modality_degree().1 == 1` (the modality-pair
+    /// projection-equality form, reading the antimodal component of the
+    /// fused `(peak_multiplicity, trough_multiplicity)` pair before the
+    /// equality). Both surface forms drift subtly at every consumer site
+    /// (scalar vs. pair-component, `== 1` vs. `!= 2` after singular-
+    /// support fixup). This lift names the strictly-antimodally-unique-
+    /// tier-counts predicate directly at the tier-altitude surface as one
+    /// method call — the typed boolean every operator-facing *"is the
+    /// rarest tier uniquely held on this fold, or is the declaration-
+    /// order tie-break exercised?"* check reads off at one method call,
+    /// on the strict-uniqueness side of the strict antimodal partition.
+    ///
+    /// The tier-altitude strict-antimodal-uniqueness predicate peer that
+    /// **climbs the "strictly-antimodally-unique across altitudes"
+    /// projection** from the diff altitude — the fourth and final row of
+    /// the four-primitive multiplicity boolean algebra
+    /// `(is_strictly_modally_unique, is_modally_tied,
+    /// is_strictly_antimodally_unique, is_antimodally_tied)` opened on
+    /// top of the closed strict-modal-uniqueness projection; this climb
+    /// lifts the diff-altitude seed
+    /// [`ConfigDiff::kinds_strictly_antimodally_unique`] one altitude up.
+    /// The natural next lifts fan sideways along the chain altitude's
+    /// three sub-axes
+    /// ([`crate::ConfigSourceChain::layer_kinds_strictly_antimodally_unique`],
+    /// [`crate::ConfigSourceChain::file_formats_strictly_antimodally_unique`],
+    /// [`crate::ConfigSourceChain::env_prefix_kinds_strictly_antimodally_unique`]
+    /// over the corresponding chain histograms). The pattern is the same
+    /// at every altitude / sub-axis: fuse the two open-coded surface
+    /// forms (multiplicity-scalar equality, modality-pair projection-
+    /// equality) into a single boolean predicate named at the surface,
+    /// routed through the shared
+    /// [`crate::AxisHistogram::is_strictly_antimodally_unique`] primitive
+    /// one altitude down. Once closed at every altitude / sub-axis in the
+    /// same five-step trajectory the nine prior projections closed, the
+    /// substrate closes the FULL four-primitive multiplicity boolean
+    /// algebra at every altitude / sub-axis of the 5-column grid.
+    ///
+    /// **Cardinality-`4` reachability at the tier altitude — the
+    /// strictly-antimodally-unique corner carries witnesses across more
+    /// support cardinalities.** [`ConfigTierKind`] carries four cells, so
+    /// `tiers_strictly_antimodally_unique()` reads `true` on every fold
+    /// whose trough leaf count is uniquely held by exactly one observed
+    /// tier cell (e.g. a fold with all leaves on `Default` singleton-
+    /// support with `Default` sitting alone at count `n`, or two-`Bare`+
+    /// one-`Default` where `Default` uniquely sits at the trough count
+    /// `1` while `Bare` peaks at `2`, or two-`Bare`+two-`Default`+one-
+    /// `Custom` where `Custom` uniquely sits at the trough count `1`
+    /// while `Bare` and `Default` share the peak at `2` — a fold whose
+    /// trough is uniquely held yet whose peak is tied, uninhabited on the
+    /// cardinality-`3` diff altitude with only three observed cells to
+    /// spread the tie across), and `false` on the empty map (no observed
+    /// cell, no trough), on every fold whose trough is shared by two or
+    /// more observed cells (e.g. one-`Bare`+one-`Default` tied at count
+    /// `1`, three-tier tied-at-count-`1` on `Bare`+`Default`+`Custom`, or
+    /// the uniform four-tier cover where all four sit at count `1`).
+    ///
+    /// **Empty-map convention** — returns `false` on the empty map: the
+    /// empty map observes zero cells, so
+    /// [`crate::AxisHistogram::trough_multiplicity`] reads `0` and the
+    /// equality `0 == 1` fails. Matches
+    /// [`crate::AxisHistogram::is_strictly_antimodally_unique`]'s empty-
+    /// histogram convention one altitude down. The empty-map row on the
+    /// strict antimodal partition pair
+    /// `(is_strictly_antimodally_unique, is_antimodally_tied)` reads
+    /// `(false, false)` — the shared boundary below both branches. Peer
+    /// of [`ConfigDiff::kinds_strictly_antimodally_unique`]'s empty-diff
+    /// `false` polarity on the diff altitude in the same projection.
+    ///
+    /// **Singleton-support convention** — returns `true` on every fold
+    /// whose observed support is a single [`ConfigTierKind`] cell: the
+    /// lone observed cell stands alone at its own trough (peak and
+    /// trough coincide), so `trough_multiplicity` reads `1` and the
+    /// equality `1 == 1` fires. Every fold with all leaves attributed to
+    /// only-`Bare`, only-`Discovered`, only-`Default`, or only-`Custom`
+    /// is a witness on the `true` side — the singleton-support corner is
+    /// uniformly on the strictly-antimodally-unique side of the strict
+    /// antimodal partition. Direct pin of the histogram-side subsumption
+    /// `has_singular_support ⇒ is_strictly_antimodally_unique` one
+    /// altitude down, the antimodal-side dual of the modal-side
+    /// subsumption `has_singular_support ⇒ is_strictly_modally_unique`.
+    ///
+    /// **Uniform four-tier cover convention** — returns `false` on every
+    /// fold where each [`ConfigTierKind`] cell was observed at exactly
+    /// the same positive count (in particular the fold with one leaf per
+    /// tier): the four cells share the same count, so
+    /// `trough_multiplicity` reads `4` and the equality `4 == 1` fails.
+    /// Peer of the histogram-side axis-cover convention one altitude
+    /// down, which reads `false` on every implementor with
+    /// `axis_cardinality::<A>() >= 2` — the cardinality-`4`
+    /// [`ConfigTierKind`] axis honours the general condition.
+    ///
+    /// **Two-way antimodal partition on non-empty maps** — on every non-
+    /// empty map exactly one of the antimodal-uniqueness pair
+    /// `(tiers_strictly_antimodally_unique, tiers_antimodally_tied)`
+    /// fires: either the trough is uniquely held (strictly-antimodally-
+    /// unique fires, antimodally-tied does not) or the trough is shared
+    /// (antimodally-tied fires, strictly-antimodally-unique does not).
+    /// The empty map sits below both branches (both read `false`).
+    /// Direct pin of the histogram-side strict antimodal partition
+    /// `!is_empty ⇒ is_strictly_antimodally_unique ⇔
+    /// !is_antimodally_tied` one altitude down.
+    ///
+    /// **Strict-uniqueness modal / antimodal collapse on uniform-count
+    /// non-empty maps** — on every uniform-count non-empty map the peak
+    /// and trough level sets coincide with the support, so
+    /// `tiers_strictly_antimodally_unique ⇔
+    /// tiers_strictly_modally_unique` — the strict-uniqueness pair
+    /// collapses to a single boolean, the singleton-support witness.
+    /// Direct pin of the histogram-side collapse law
+    /// `is_uniform_count ∧ !is_empty ⇒ is_strictly_antimodally_unique ⇔
+    /// is_strictly_modally_unique` one altitude down — the strict-
+    /// uniqueness-side peer of the tie-side collapse
+    /// `is_antimodally_tied ⇔ is_modally_tied` pinned at
+    /// [`Self::tiers_antimodally_tied`].
+    ///
+    /// # Invariants
+    ///
+    /// - `tiers_strictly_antimodally_unique() == tier_histogram().is_strictly_antimodally_unique()`
+    ///   — both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `tiers_strictly_antimodally_unique() ⇔ tier_histogram().trough_multiplicity() == 1`
+    ///   — the defining multiplicity-scalar equality form on the
+    ///   [`crate::AxisHistogram::trough_multiplicity`] scalar peer, the
+    ///   canonical open-coded expression of the predicate one altitude
+    ///   down.
+    /// - `tiers_strictly_antimodally_unique() ⇔ tier_histogram().modality_degree().1 == 1`
+    ///   — the modality-pair projection-equality form, reading the
+    ///   antimodal component of the fused
+    ///   [`crate::AxisHistogram::modality_degree`] pair before the
+    ///   equality.
+    /// - `tiers_strictly_antimodally_unique() ⇒ tiers_any_observed()`
+    ///   always — a strictly-unique trough requires at least one observed
+    ///   cell, so the empty map (zero observed cells) cannot fire.
+    ///   Contrapositively, `!tiers_any_observed() ⇒
+    ///   !tiers_strictly_antimodally_unique()`.
+    /// - `tiers_singular_support() ⇒ tiers_strictly_antimodally_unique()`
+    ///   always — a singleton-support fold has exactly one observed cell
+    ///   as the sole member of the antimodal level set, so the uniqueness
+    ///   predicate fires. Direct pin of the histogram-side subsumption
+    ///   `has_singular_support ⇒ is_strictly_antimodally_unique` one
+    ///   altitude down.
+    /// - **Strict antimodal partition on non-empty maps** —
+    ///   `tiers_any_observed() ⇒ (tiers_strictly_antimodally_unique ⇔
+    ///   !tiers_antimodally_tied())` always. On every non-empty map
+    ///   exactly one of `(tiers_strictly_antimodally_unique,
+    ///   tiers_antimodally_tied)` fires; both read `false` on the empty
+    ///   map — the shared boundary below both branches. Direct pin of
+    ///   the histogram-side strict-antimodal-partition law one altitude
+    ///   down, phrased as an XOR on the two named seams at the tier-
+    ///   altitude surface.
+    /// - `tiers_full_cover() ∧ tiers_balanced() ⇒
+    ///   !tiers_strictly_antimodally_unique()` on the cardinality-`>= 2`
+    ///   axis: a full-cover uniform-count fold has every cell observed
+    ///   at the same count, so the antimodal level set equals the full
+    ///   axis — the trough multiplicity rises to
+    ///   `axis_cardinality::<ConfigTierKind>()` which is `4`, and the
+    ///   uniqueness predicate fails. Cardinality-`>= 2` witness of the
+    ///   uniform-cover corner of the histogram-side subsumption tying
+    ///   [`crate::AxisHistogram::is_uniform_count`] and
+    ///   [`crate::AxisHistogram::has_singular_support`] on non-empty
+    ///   histograms one altitude down.
+    /// - **Strict-uniqueness modal / antimodal collapse on uniform-count
+    ///   maps** — `tiers_balanced() ∧ tiers_any_observed() ⇒
+    ///   tiers_strictly_antimodally_unique() ⇔
+    ///   tiers_strictly_modally_unique()`. On every uniform-count non-
+    ///   empty map the two strict-uniqueness predicates collapse to the
+    ///   same value (both `true` on the singleton-support uniform
+    ///   corner, both `false` on every multi-cell uniform-cover fold).
+    ///   Direct pin of the histogram-side collapse `is_uniform_count ∧
+    ///   !is_empty ⇒ is_strictly_antimodally_unique ⇔
+    ///   is_strictly_modally_unique` one altitude down — the strict-
+    ///   uniqueness-side dual of the tie-side collapse pinned at
+    ///   [`Self::tiers_antimodally_tied`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<ConfigTierKind>()` (the trough-
+    /// multiplicity scan). Both are `O(n)` in practice since the tier
+    /// axis carries a fixed four-cell cardinality; the returned `bool`
+    /// reads one predicate — the trough scan walks the counts vector once
+    /// and counts cells matching the strictly-positive minimum, then
+    /// reads `multiplicity == 1` off one comparison. Strictly tighter
+    /// than the two documented open-coded surfaces one seam over (no
+    /// exposed `== 1` magic threshold at the consumer site, no
+    /// [`crate::AxisHistogram::modality_degree`] fused-pair build for a
+    /// single-component projection).
+    #[must_use]
+    pub fn tiers_strictly_antimodally_unique(&self) -> bool {
+        self.tier_histogram().is_strictly_antimodally_unique()
+    }
 }
 
 /// Zero-allocation `(&[String], &Provenance)` stream over the sorted
@@ -25757,6 +25967,437 @@ mod progressive_tests {
                 false
             } else {
                 hist.iter().filter(|(_, c)| *c == max).count() == 1
+            };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::tiers_strictly_antimodally_unique — strictly-
+    //    antimodally-unique-tier-counts boolean predicate on the tier
+    //    altitude, climbing is_strictly_antimodally_unique from the
+    //    histogram surface and lifting the "strictly-antimodally-unique
+    //    across altitudes" projection from the diff altitude. The
+    //    cardinality-`4` ConfigTierKind axis carries the singleton-support
+    //    witness *and* a strictly-antimodal skewed-map witness on support-
+    //    `2` (the strictly-modal skewed corner where peak and trough are
+    //    both uniquely held), plus a strictly-antimodal-but-not-modally-
+    //    unique witness on support-`3` (two-`Bare`+two-`Default`+one-
+    //    `Custom` where the peak ties at `2` but `Custom` uniquely sits at
+    //    the trough count `1`) uninhabited on the cardinality-`3` diff
+    //    altitude, plus tied-trough counter-witnesses on support-`2` /
+    //    support-`3` / support-`4` that are reachable on the cardinality-
+    //    `4` tier axis. Fourth and final row of the four-primitive
+    //    multiplicity boolean algebra at the tier altitude, on top of the
+    //    closed modality-tie boolean pair (is_modally_tied,
+    //    is_antimodally_tied) and the just-climbed
+    //    tiers_strictly_modally_unique modal sibling. ──
+
+    #[test]
+    fn tiers_strictly_antimodally_unique_matches_tier_histogram_is_strictly_antimodally_unique_pointwise()
+     {
+        // Routing pin: `tiers_strictly_antimodally_unique` routes through
+        // `tier_histogram().is_strictly_antimodally_unique()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Tier-
+        // altitude strict-antimodal-uniqueness-predicate climb of the
+        // "strictly-antimodally-unique across altitudes" projection seeded
+        // by
+        // `kinds_strictly_antimodally_unique_matches_kind_histogram_is_strictly_antimodally_unique_pointwise`
+        // on the diff altitude — the fourth and final row of the four-
+        // primitive multiplicity boolean algebra.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().is_strictly_antimodally_unique();
+            assert_eq!(map.tiers_strictly_antimodally_unique(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn tiers_strictly_antimodally_unique_matches_defining_trough_multiplicity_equality_pointwise() {
+        // Defining multiplicity-scalar equality form:
+        // `tiers_strictly_antimodally_unique() ⇔ tier_histogram().trough_multiplicity() == 1`.
+        // Pins the predicate against the canonical open-coded expression
+        // on the `AxisHistogram::trough_multiplicity` scalar peer one
+        // altitude down — the surface consumers reach for when they open-
+        // code "exactly one cell holds the trough". Peer of
+        // `kinds_strictly_antimodally_unique_matches_defining_trough_multiplicity_equality_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_strictly_antimodally_unique();
+            let mult = map.tier_histogram().trough_multiplicity();
+            let via_scalar = mult == 1;
+            assert_eq!(
+                via_seam, via_scalar,
+                "tiers_strictly_antimodally_unique ({via_seam}) must \
+                 agree with trough_multiplicity == 1 ({via_scalar}, \
+                 mult={mult})",
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_strictly_antimodally_unique_matches_modality_degree_antimodal_component_pointwise() {
+        // Modality-pair projection-equality form:
+        // `tiers_strictly_antimodally_unique() ⇔ tier_histogram().modality_degree().1 == 1`.
+        // Pins the predicate against the antimodal-component reading of
+        // the fused `(peak_multiplicity, trough_multiplicity)` pair, the
+        // second documented surface form consumers reach for when they
+        // read the classifier pair before the equality. Peer of
+        // `kinds_strictly_antimodally_unique_matches_modality_degree_antimodal_component_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_strictly_antimodally_unique();
+            let (_, trough_mult) = map.tier_histogram().modality_degree();
+            let via_pair = trough_mult == 1;
+            assert_eq!(
+                via_seam, via_pair,
+                "tiers_strictly_antimodally_unique ({via_seam}) must \
+                 agree with modality_degree().1 == 1 ({via_pair}, \
+                 trough_mult={trough_mult})",
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_strictly_antimodally_unique_empty_map_is_false() {
+        // Empty-map strict-antimodal-uniqueness: the empty map observes
+        // zero cells, so `trough_multiplicity` reads `0` and the equality
+        // `0 == 1` fails. `tiers_strictly_antimodally_unique` reads
+        // `false`. Matches `is_strictly_antimodally_unique` reading
+        // `false` on the empty histogram one altitude down. The empty-map
+        // row on the strict antimodal partition pair
+        // `(is_strictly_antimodally_unique, is_antimodally_tied)` reads
+        // `(false, false)` — the shared boundary below both branches.
+        // Peer of `kinds_strictly_antimodally_unique_empty_diff_is_false`
+        // on the diff altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert!(!empty.tiers_strictly_antimodally_unique());
+        assert!(!empty.tiers_any_observed());
+    }
+
+    #[test]
+    fn tiers_strictly_antimodally_unique_singleton_support_is_true() {
+        // Singleton-support pin: every leaf lands on the same tier, so
+        // the lone observed cell stands alone at its own trough (peak and
+        // trough coincide) — `trough_multiplicity` reads `1` and the
+        // equality `1 == 1` fires. `tiers_strictly_antimodally_unique`
+        // reads `true`. Direct witness of the subsumption
+        // `tiers_singular_support ⇒ tiers_strictly_antimodally_unique`
+        // via the singleton-support corner, the antimodal-side dual of
+        // `tiers_singular_support ⇒ tiers_strictly_modally_unique` on the
+        // modal side. Peer of
+        // `kinds_strictly_antimodally_unique_singleton_support_is_true`
+        // on the diff altitude.
+        let m: ProvenanceMap = ["a", "b", "c", "d"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 1);
+        assert!(m.tiers_singular_support());
+        assert!(m.tiers_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn tiers_strictly_antimodally_unique_two_tier_uniform_cover_is_false() {
+        // Two-tier tied-at-count-`1` pin: a fold observing one `Bare` +
+        // one `Default` leaf has two observed cells tied at count `1` on
+        // the four-cell ConfigTierKind axis (with two silent cells at
+        // count `0`) — `trough_multiplicity` reads `2` and the equality
+        // `2 == 1` fails. `tiers_strictly_antimodally_unique` reads
+        // `false`. Witness on the antimodally-tied side of the strict
+        // antimodal partition at the tier altitude. Peer of
+        // `kinds_strictly_antimodally_unique_two_kind_uniform_cover_is_false`
+        // on the diff altitude, promoted from the cardinality-`3` diff
+        // axis to the cardinality-`4` tier axis on the same shape.
+        let m: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 2);
+        assert!(!m.tiers_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn tiers_strictly_antimodally_unique_uniform_four_tier_cover_is_false() {
+        // Uniform axis-cover pin: a fold observing every cell of
+        // ConfigTierKind exactly once has four observed cells tied at
+        // count `1` — `trough_multiplicity` reads `4` and the equality
+        // `4 == 1` fails. `tiers_strictly_antimodally_unique` reads
+        // `false`. Peer of the histogram-side axis-cover convention one
+        // altitude down, which reads `false` on every implementor with
+        // `axis_cardinality::<A>() >= 2` — the cardinality-`4`
+        // ConfigTierKind axis honours the general condition. Peer of
+        // `kinds_strictly_antimodally_unique_uniform_three_kind_cover_is_false`
+        // on the diff altitude, promoted to the cardinality-`4` tier
+        // axis.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(m.tiers_full_cover());
+        assert!(m.tiers_balanced());
+        assert!(!m.tiers_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn tiers_strictly_antimodally_unique_strictly_antimodal_skewed_map_is_true() {
+        // Strictly-antimodal skewed-map pin: a fold with two `Bare` + one
+        // `Default` leaves has `Default` uniquely sitting at the trough
+        // count `1` (Bare peaks at `2`, Discovered and Custom silent at
+        // `0`) — `trough_multiplicity` reads `1` and the equality `1 ==
+        // 1` fires. `tiers_strictly_antimodally_unique` reads `true`.
+        // Witness on the strictly-antimodally-unique side of the strict
+        // antimodal partition — the strict-uniqueness-side dual of
+        // `tiers_strictly_modally_unique_strictly_modal_skewed_map_is_true`
+        // pinned at the exact same fixture (both sides fire on the
+        // strictly-modal-skewed fold, since peak and trough are both
+        // uniquely held). Peer of
+        // `kinds_strictly_antimodally_unique_strictly_antimodal_skewed_diff_is_true`
+        // on the diff altitude.
+        let m: ProvenanceMap = [
+            ("b1", ConfigTierKind::Bare),
+            ("b2", ConfigTierKind::Bare),
+            ("d", ConfigTierKind::Default),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        assert_eq!(m.recessive_tier(), Some(ConfigTierKind::Default));
+        assert_eq!(m.trough_tier_count(), 1);
+        assert!(m.tiers_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn tiers_strictly_antimodally_unique_three_tier_uniform_cover_is_false() {
+        // Three-tier tied-at-count-`1` pin: a fold observing one `Bare` +
+        // one `Default` + one `Custom` leaf has three observed cells tied
+        // at count `1` on the four-cell ConfigTierKind axis (with one
+        // silent cell — `Discovered` — at count `0`) —
+        // `trough_multiplicity` reads `3` and the equality `3 == 1`
+        // fails. `tiers_strictly_antimodally_unique` reads `false`.
+        // Cardinality-`4` reachability: the tier axis carries an
+        // antimodally-tied witness on the three-tier partial-cover
+        // (`tiers_singular_gap` boundary) support cardinality that is
+        // *reachable* on the tier axis but does not exist on the
+        // cardinality-`3` diff altitude.
+        let m: ProvenanceMap = [
+            ("b", ConfigTierKind::Bare),
+            ("d", ConfigTierKind::Default),
+            ("c", ConfigTierKind::Custom),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        assert_eq!(m.contributing_tiers().len(), 3);
+        assert!(m.tiers_singular_gap());
+        assert!(!m.tiers_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn tiers_strictly_antimodally_unique_implies_tiers_any_observed_pointwise() {
+        // Subsumption pin: `tiers_strictly_antimodally_unique() ⇒
+        // tiers_any_observed()` always. A strictly-unique trough requires
+        // at least one observed cell as the sole member of the antimodal
+        // level set, so the empty map (zero observed cells) cannot fire
+        // the uniqueness predicate. Direct pin of the histogram-side
+        // subsumption `is_strictly_antimodally_unique ⇒ !is_empty` one
+        // altitude down. Peer of
+        // `kinds_strictly_antimodally_unique_implies_kinds_any_observed_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_strictly_antimodally_unique() {
+                assert!(
+                    map.tiers_any_observed(),
+                    "strictly-antimodally-unique map must observe at \
+                     least one cell",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_singular_support_implies_tiers_strictly_antimodally_unique_pointwise() {
+        // Subsumption pin: `tiers_singular_support() ⇒
+        // tiers_strictly_antimodally_unique()` always. A single observed
+        // cell is the only member of the antimodal level set (cardinality
+        // `1`), so the uniqueness predicate fires on every singleton-
+        // support fold. Every singleton-support fold sits uniformly on
+        // the strictly-antimodally-unique side of the strict antimodal
+        // partition. Direct pin of the histogram-side subsumption
+        // `has_singular_support ⇒ is_strictly_antimodally_unique` one
+        // altitude down, the antimodal-side dual of the modal-side
+        // subsumption `has_singular_support ⇒ is_strictly_modally_unique`.
+        // Peer of
+        // `kinds_singular_support_implies_kinds_strictly_antimodally_unique_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_singular_support() {
+                assert!(
+                    map.tiers_strictly_antimodally_unique(),
+                    "singular-support map must be strictly antimodally \
+                     unique",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_strictly_antimodally_unique_forms_strict_antimodal_partition_on_non_empty_maps_pointwise()
+     {
+        // Strict antimodal partition pin on non-empty maps: on every non-
+        // empty map exactly one of the pair
+        // (tiers_strictly_antimodally_unique, tiers_antimodally_tied)
+        // fires. On the empty map both read `false` (the shared boundary
+        // below both branches of the strict antimodal partition). Direct
+        // pin of the histogram-side strict-antimodal-partition law
+        // `!is_empty ⇒ is_strictly_antimodally_unique ⇔
+        // !is_antimodally_tied` one altitude down, phrased as an XOR on
+        // the two named seams at the tier-altitude surface — the seam-
+        // level dual of the matching pin
+        // `tiers_antimodally_tied_forms_strict_antimodal_partition_on_non_empty_maps_pointwise`
+        // that reads the strict side off the histogram primitive. Peer
+        // of
+        // `kinds_strictly_antimodally_unique_forms_strict_antimodal_partition_on_non_empty_diffs_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let strict = map.tiers_strictly_antimodally_unique();
+            let tied = map.tiers_antimodally_tied();
+            if map.tiers_any_observed() {
+                let count = usize::from(strict) + usize::from(tied);
+                assert_eq!(
+                    count, 1,
+                    "on a non-empty map exactly one of \
+                     (strictly_antimodally_unique, antimodally_tied) \
+                     must fire (strict={strict}, tied={tied})",
+                );
+            } else {
+                assert!(!strict, "empty map cannot be strictly antimodally unique",);
+                assert!(!tied, "empty map cannot be antimodally tied");
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_full_cover_and_tiers_balanced_imply_not_tiers_strictly_antimodally_unique_pointwise() {
+        // Cardinality-`>= 2` uniform-cover pin: on every full-cover
+        // balanced fold on the cardinality-`4` ConfigTierKind axis, the
+        // antimodal level set equals the full axis — all four cells share
+        // the trough count — so `tiers_strictly_antimodally_unique`
+        // fails. Cardinality-`>= 2` witness of the histogram-side
+        // subsumption `is_uniform_count ∧ !is_empty ⇒
+        // is_strictly_antimodally_unique ⇔ has_singular_support` one
+        // altitude down: on a uniform-cover with cardinality `>= 2`,
+        // singleton-support fails so strict-antimodal-uniqueness fails.
+        // Peer of
+        // `kinds_full_cover_and_kinds_balanced_imply_not_kinds_strictly_antimodally_unique_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_full_cover() && map.tiers_balanced() {
+                assert!(
+                    !map.tiers_strictly_antimodally_unique(),
+                    "full-cover balanced map on cardinality-4 axis \
+                     cannot be strictly antimodally unique",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_strictly_antimodally_unique_collapses_with_tiers_strictly_modally_unique_on_uniform_multi_cell_maps_pointwise()
+     {
+        // Strict-uniqueness modal / antimodal collapse pin: on every
+        // uniform-count non-empty map the two strict-uniqueness
+        // predicates read the same value. Direct pin of the histogram-
+        // side collapse law `is_uniform_count ∧ !is_empty ⇒
+        // is_strictly_antimodally_unique ⇔ is_strictly_modally_unique`
+        // one altitude down, at the tier altitude — the strict-
+        // uniqueness-side dual of the tie-side collapse
+        // `tiers_antimodally_tied_collapses_with_tiers_modally_tied_on_uniform_multi_cell_maps_pointwise`
+        // and peer of the diff-altitude collapse pinned at
+        // `kinds_strictly_antimodally_unique_collapses_with_kinds_strictly_modally_unique_on_uniform_multi_cell_diffs_pointwise`.
+        // On the singleton-support uniform corner both read `true`; on
+        // every multi-cell uniform fold both read `false`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_balanced() && map.tiers_any_observed() {
+                assert_eq!(
+                    map.tiers_strictly_antimodally_unique(),
+                    map.tiers_strictly_modally_unique(),
+                    "on a uniform-count non-empty map the two strict-\
+                     uniqueness predicates must collapse to the same \
+                     value",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_strictly_antimodally_unique_agrees_with_open_coded_trough_multiplicity_walk() {
+        // Parity against the exact hand-rolled trough-multiplicity walk
+        // this lift replaces: walk every cell of the histogram and count
+        // how many carry the strictly-positive minimum observed count;
+        // the strictly-antimodally-unique predicate reads `true` iff the
+        // multiplicity is exactly `1`. Empty histogram has no strictly-
+        // positive counts, so multiplicity reads `0` and the predicate
+        // fails. Peer of
+        // `kinds_strictly_antimodally_unique_agrees_with_open_coded_trough_multiplicity_walk`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_strictly_antimodally_unique();
+            let hist = map.tier_histogram();
+            let min = hist
+                .iter()
+                .map(|(_, c)| c)
+                .filter(|c| *c > 0)
+                .min()
+                .unwrap_or(0);
+            let hand_rolled = if min == 0 {
+                false
+            } else {
+                hist.iter().filter(|(_, c)| *c == min).count() == 1
             };
             assert_eq!(via_seam, hand_rolled);
         }
