@@ -12777,6 +12777,301 @@ pub trait ConfigSourceChain {
     {
         self.env_prefix_kind_histogram().is_antimodally_tied()
     }
+
+    /// `true` exactly when this chain's observed [`EnvMetadataTagKind`]
+    /// histogram has exactly one cell holding the peak leaf count — the
+    /// peak env-prefix kind is *uniquely held* rather than shared.
+    ///
+    /// The **strictly-modally-unique-env-prefix-kinds boolean predicate**
+    /// on the env-prefix sub-axis of the chain altitude, the direct
+    /// strict-complement of [`Self::env_prefix_kinds_modally_tied`] on
+    /// every non-empty env-prefix histogram (both read `false` on the
+    /// empty env-prefix histogram — the shared boundary below both
+    /// branches of the strict modal partition). Routes through
+    /// [`Self::env_prefix_kind_histogram`]`::is_strictly_modally_unique`,
+    /// the single-pass scan over the fixed-cardinality counts vector
+    /// reading `peak_multiplicity() == 1` off one predicate — strictly
+    /// tighter than either of the documented open-coded surface forms
+    /// one seam over.
+    ///
+    /// The **strictly-modally-unique-env-prefix-kinds peer** of the two
+    /// documented surface forms consumers previously re-derived inline:
+    /// `chain.env_prefix_kind_histogram().peak_multiplicity() == 1` (the
+    /// defining multiplicity-scalar equality form — one method call plus
+    /// a magic `== 1` threshold at the consumer site), and
+    /// `chain.env_prefix_kind_histogram().modality_degree().0 == 1` (the
+    /// modality-pair projection-equality form, reading the modal
+    /// component of the fused
+    /// [`crate::AxisHistogram::modality_degree`] pair before the
+    /// equality — a fused-pair build for a single-component projection).
+    /// This lift names the strictly-modally-unique-env-prefix-kinds
+    /// predicate directly at the chain-altitude surface — the typed
+    /// boolean every operator-facing *"is the dominant env-prefix kind
+    /// uniquely held on this chain, or is the declaration-order tie-
+    /// break exercised?"* check reads off as a single method call, on
+    /// the strict-uniqueness side of the strict modal partition.
+    ///
+    /// **Closes the "strictly-modally-unique across altitudes"
+    /// projection** at the fifth and final altitude / sub-axis: seeded
+    /// on the diff altitude by
+    /// [`crate::ConfigDiff::kinds_strictly_modally_unique`], climbed to
+    /// the tier altitude by
+    /// [`crate::ProvenanceMap::tiers_strictly_modally_unique`], lifted
+    /// sideways to the chain layer-kind sub-axis by
+    /// [`Self::layer_kinds_strictly_modally_unique`], and lifted
+    /// sideways to the chain file-format sub-axis by
+    /// [`Self::file_formats_strictly_modally_unique`]. Strict-modal-
+    /// uniqueness-side row on top of the closed modality-tie boolean
+    /// pair ([`Self::env_prefix_kinds_modally_tied`],
+    /// [`Self::env_prefix_kinds_antimodally_tied`]) at the same env-
+    /// prefix sub-axis — the ninth projection to close at every altitude
+    /// / sub-axis in lockstep, matching the shape of the eight prior
+    /// projections on the same grid. With this lift the "strictly-
+    /// modally-unique across altitudes" projection carries the same
+    /// one-predicate row at every altitude / sub-axis of the fully-
+    /// closed cube (diff, tier, chain layer-kind, chain file-format,
+    /// chain env-prefix) — three-quarters of the four-primitive
+    /// multiplicity boolean algebra
+    /// `(is_strictly_modally_unique, is_modally_tied,
+    /// is_strictly_antimodally_unique, is_antimodally_tied)` now carries
+    /// a named cube-native seam at every altitude / sub-axis of the 5-
+    /// column grid. The remaining sibling row (`strictly-antimodally-
+    /// unique across altitudes`, complementary to
+    /// [`Self::env_prefix_kinds_antimodally_tied`] on the antimodal
+    /// side) is the natural next seed at the diff altitude.
+    ///
+    /// **Cardinality-`2` reachability at the chain env-prefix sub-axis
+    /// — degenerate strict modal partition, strictly-modally-unique
+    /// collapses onto the singleton-support ∪ strictly-skewed corners.**
+    /// [`EnvMetadataTagKind`] carries two cells so
+    /// `env_prefix_kinds_strictly_modally_unique()` reads `true` exactly
+    /// when one of the two cells uniquely holds the peak leaf count
+    /// (the singleton-support corner — one prefixed-only or bare-only
+    /// chain — OR the strictly-modal-skewed corner, e.g. two prefixed
+    /// plus one bare where `Prefixed` uniquely peaks at count `2`),
+    /// and `false` on the empty chain (no observed cell), on every no-
+    /// env-layers non-empty chain (empty env-prefix histogram via the
+    /// partial-function projection — no observed cell), and on every
+    /// uniform two-kind cover (both cells tied at the same count,
+    /// `peak_multiplicity` reads `2`). On the cardinality-`2` axis the
+    /// strictly-modally-unique corner reduces to *exactly* the union of
+    /// the singleton-support corner and the strictly-skewed corner
+    /// (`env_prefix_kinds_strictly_modally_unique ⇔
+    /// env_prefix_kinds_any_observed ∧ !(env_prefix_kinds_full_cover ∧
+    /// env_prefix_kinds_balanced)`), the *tightest* degenerate strict-
+    /// modal-uniqueness leg in the projection. Peer of the modal-tie
+    /// row's cardinality-`2` degeneracy at the same sub-axis and of the
+    /// full modal / antimodal collapse `strictly_modally_unique ⇔
+    /// strictly_antimodally_unique` on this axis. The additional
+    /// support-`3` counter-witnesses (three-format tied-at-`1` uniform
+    /// partial cover with `strictly_modally_unique=false`) unavailable
+    /// at the cardinality-`2` env-prefix sub-axis remain reachable at
+    /// the cardinality-`>= 3` sister sub-axes / altitudes.
+    ///
+    /// **Empty-chain convention** — returns `false` on the empty chain:
+    /// the empty chain observes zero cells, so
+    /// [`crate::AxisHistogram::peak_multiplicity`] reads `0` and the
+    /// equality `0 == 1` fails. Matches
+    /// [`crate::AxisHistogram::is_strictly_modally_unique`]'s empty-
+    /// histogram convention one altitude down. The empty-chain row on
+    /// the strict modal partition pair
+    /// `(is_strictly_modally_unique, is_modally_tied)` reads
+    /// `(false, false)` — the shared boundary below both branches. Peer
+    /// of [`Self::file_formats_strictly_modally_unique`]'s empty-chain
+    /// `false` polarity and
+    /// [`Self::layer_kinds_strictly_modally_unique`]'s empty-chain
+    /// `false` polarity one sub-axis over on the same chain altitude,
+    /// of [`crate::ProvenanceMap::tiers_strictly_modally_unique`]'s
+    /// empty-map `false` polarity, and of
+    /// [`crate::ConfigDiff::kinds_strictly_modally_unique`]'s empty-
+    /// diff `false` polarity — closing the empty-witness row of the
+    /// projection at the fifth and final altitude / sub-axis.
+    ///
+    /// **No-env-layers convention** — returns `false` on every non-
+    /// empty chain whose env-prefix histogram is empty (only `Defaults`
+    /// and `File` layers). The env-prefix projection is a partial
+    /// function ([`ConfigSource::env_prefix_kind`] returns [`None`] for
+    /// both `Defaults` and `File`), so a non-empty chain can still
+    /// project to an empty histogram — `peak_multiplicity` reads `0`
+    /// and the equality `0 == 1` fails. This is the strict-uniqueness-
+    /// side cross-sub-axis divergence pin against
+    /// [`Self::layer_kinds_strictly_modally_unique`]: on the same
+    /// fixtures the layer-kind sub-axis observes at least one layer-
+    /// kind cell (Defaults / File) and may fire the strictly-modally-
+    /// unique predicate (e.g. one `Defaults` reads
+    /// `layer_kinds_strictly_modally_unique = true` via singleton-
+    /// support), while the env-prefix sub-axis's strictly-modally-
+    /// unique predicate silently drops out via the empty-histogram
+    /// disjunct — the strict-uniqueness leg's meaning is *narrower* at
+    /// the env-prefix sub-axis than at the layer-kind sub-axis,
+    /// matching the same narrowing pinned at the tie rows
+    /// [`Self::env_prefix_kinds_modally_tied`],
+    /// [`Self::env_prefix_kinds_antimodally_tied`] and at the file-
+    /// format sister sub-axis
+    /// [`Self::file_formats_strictly_modally_unique`].
+    ///
+    /// **Singleton-support convention** — returns `true` on every
+    /// chain whose observed env-prefix support is a single
+    /// [`EnvMetadataTagKind`] cell (prefixed-only or bare-only): the
+    /// lone observed cell stands alone at its own peak (no tie-break
+    /// to exercise), so `peak_multiplicity` reads `1` and the equality
+    /// `1 == 1` fires. The `sample_chain()` fixture (two `.yaml` file
+    /// layers + one `"APP_"` Env layer, `{Prefixed}` env-prefix
+    /// support with count `1`) is a witness on the `true` side — the
+    /// singleton-support corner is uniformly on the strictly-modally-
+    /// unique side of the strict modal partition. Direct pin of the
+    /// histogram-side subsumption `has_singular_support ⇒
+    /// is_strictly_modally_unique` one altitude down.
+    ///
+    /// **Uniform two-kind cover convention** — returns `false` on
+    /// every chain where each [`EnvMetadataTagKind`] cell was observed
+    /// at exactly the same positive count (in particular the chain
+    /// with one prefixed + one bare env layer): both cells share the
+    /// same count, so `peak_multiplicity` reads `2` and the equality
+    /// `2 == 1` fails. Peer of the histogram-side axis-cover
+    /// convention one altitude down, which reads `false` on every
+    /// implementor with `axis_cardinality::<A>() >= 2` — the
+    /// cardinality-`2` [`EnvMetadataTagKind`] axis honours the general
+    /// condition.
+    ///
+    /// **Two-way modal partition on non-empty env-prefix histograms**
+    /// — on every non-empty env-prefix histogram exactly one of the
+    /// modal-uniqueness pair fires: either the peak is uniquely held
+    /// (strictly-modally-unique fires, modally-tied does not) or the
+    /// peak is shared (modally-tied fires, strictly-modally-unique
+    /// does not). The empty histogram sits below both branches (both
+    /// read `false`) — this covers both the empty chain and every no-
+    /// env-layers non-empty chain. Direct pin of the histogram-side
+    /// strict modal partition `!is_empty ⇒ is_strictly_modally_unique
+    /// ⇔ !is_modally_tied` one altitude down.
+    ///
+    /// **Full modal / antimodal collapse on the cardinality-`2` env-
+    /// prefix axis** — on this axis
+    /// `env_prefix_kinds_strictly_modally_unique ⇔
+    /// env_prefix_kind_histogram().is_strictly_antimodally_unique()` on
+    /// *every* histogram (empty, singleton-support, uniform, and
+    /// strictly-skewed), the strict-uniqueness dual of the tied-side
+    /// full collapse pinned at
+    /// [`Self::env_prefix_kinds_antimodally_tied`]. Direct consequence
+    /// of the two-cell degeneracy where the peak level set and the
+    /// trough level set coincide pointwise: either both cells share
+    /// the same count (uniform two-kind cover, both multiplicities
+    /// read `2`, neither strict-uniqueness predicate fires), or carry
+    /// distinct counts (peak and trough are the two distinct counts,
+    /// both multiplicities read `1`, both fire), or only one cell is
+    /// observed (multiplicity `1`, both fire — the singleton-support
+    /// corner), or neither is observed (empty histogram, both read
+    /// `false`). Does NOT lift to the cardinality-`>= 3` sister sub-
+    /// axes / altitudes where the two strict-interior corners
+    /// `(strictly_modally_unique, strictly_antimodally_unique) ∈
+    /// {(true, false), (false, true)}` carry witnesses non-vacuously.
+    ///
+    /// # Invariants
+    ///
+    /// - `env_prefix_kinds_strictly_modally_unique() ==
+    ///   env_prefix_kind_histogram().is_strictly_modally_unique()` —
+    ///   both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram
+    ///   surface.
+    /// - `env_prefix_kinds_strictly_modally_unique() ⇔
+    ///   env_prefix_kind_histogram().peak_multiplicity() == 1` — the
+    ///   defining multiplicity-scalar equality form on the
+    ///   [`crate::AxisHistogram::peak_multiplicity`] scalar peer, the
+    ///   canonical open-coded expression of the predicate one altitude
+    ///   down.
+    /// - `env_prefix_kinds_strictly_modally_unique() ⇔
+    ///   env_prefix_kind_histogram().modality_degree().0 == 1` — the
+    ///   modality-pair projection-equality form, reading the modal
+    ///   component of the fused
+    ///   [`crate::AxisHistogram::modality_degree`] pair before the
+    ///   equality.
+    /// - `env_prefix_kinds_strictly_modally_unique() ⇒
+    ///   env_prefix_kinds_any_observed()` always — a strictly-unique
+    ///   peak requires at least one observed cell as the sole member
+    ///   of the modal level set, so both the empty chain (zero
+    ///   observed cells) and every no-env-layers non-empty chain
+    ///   (empty env-prefix histogram via the partial-function
+    ///   projection) cannot fire. Contrapositively,
+    ///   `!env_prefix_kinds_any_observed() ⇒
+    ///   !env_prefix_kinds_strictly_modally_unique()`.
+    /// - `env_prefix_kinds_singular_support() ⇒
+    ///   env_prefix_kinds_strictly_modally_unique()` always — a single
+    ///   observed cell is the only member of the modal level set
+    ///   (cardinality `1`), so the uniqueness predicate fires on every
+    ///   singleton-support chain. Direct pin of the histogram-side
+    ///   subsumption `has_singular_support ⇒
+    ///   is_strictly_modally_unique` one altitude down.
+    /// - `env_prefix_kinds_full_cover() ∧ env_prefix_kinds_balanced()
+    ///   ⇒ !env_prefix_kinds_strictly_modally_unique()` on the
+    ///   cardinality-`>= 2` axis: a full-cover uniform-count chain has
+    ///   every cell observed at the same count, so the modal level
+    ///   set equals the full axis — the peak multiplicity rises to
+    ///   `axis_cardinality::<EnvMetadataTagKind>()` which is `2`, and
+    ///   the strict-uniqueness predicate fails. Cardinality-`>= 2`
+    ///   witness of the uniform-cover corner of the histogram-side
+    ///   subsumption `is_uniform_count ∧ !is_empty ⇒
+    ///   is_strictly_modally_unique ⇔ has_singular_support` one
+    ///   altitude down.
+    /// - `env_prefix_kinds_strictly_modally_unique() ⇔
+    ///   env_prefix_kinds_any_observed() ∧
+    ///   !(env_prefix_kinds_full_cover() ∧
+    ///   env_prefix_kinds_balanced())` pointwise on the cardinality-
+    ///   `2` env-prefix axis — the *unique* two-cell-axis tightening
+    ///   of the general uniform-cover subsumption above into an
+    ///   equivalence, via the collapse of the strictly-modally-unique
+    ///   corner onto the (singleton-support ∪ strictly-skewed) union
+    ///   corner. On this axis the modal level set has cardinality `1`
+    ///   iff either one cell is unobserved (singleton-support) or the
+    ///   two cells carry distinct counts (strictly-skewed) — i.e.
+    ///   precisely the non-empty non-uniform-cover corner.
+    /// - **Strict modal partition on non-empty env-prefix histograms**
+    ///   — `!env_prefix_kind_histogram().is_empty() ⇒
+    ///   (env_prefix_kinds_strictly_modally_unique ⇔
+    ///   !env_prefix_kinds_modally_tied)` always. On every non-empty
+    ///   env-prefix histogram exactly one of
+    ///   `(env_prefix_kinds_strictly_modally_unique,
+    ///   env_prefix_kinds_modally_tied)` fires; both read `false` on
+    ///   the empty histogram — the shared boundary below both
+    ///   branches. Direct pin of the histogram-side strict modal
+    ///   partition one altitude down, phrased as an XOR on the two
+    ///   named seams at the chain env-prefix sub-axis surface.
+    /// - **Full modal / antimodal collapse on the cardinality-`2`
+    ///   env-prefix axis** — `env_prefix_kinds_strictly_modally_unique
+    ///   ⇔ env_prefix_kind_histogram().is_strictly_antimodally_unique()`
+    ///   pointwise on the cardinality-`2` env-prefix axis, on *every*
+    ///   histogram regardless of shape (empty, singleton-support,
+    ///   uniform, strictly-skewed). The strict-uniqueness-side dual of
+    ///   the tied-side full collapse `is_antimodally_tied ⇔
+    ///   is_modally_tied` pinned at
+    ///   [`Self::env_prefix_kinds_antimodally_tied`]. Direct
+    ///   consequence of the two-cell degeneracy where the peak level
+    ///   set and the trough level set coincide pointwise. Does NOT
+    ///   lift to the cardinality-`>= 3` sister sub-axes / altitudes
+    ///   where the two strict-interior corners `(strictly_modally_unique,
+    ///   strictly_antimodally_unique) ∈ {(true, false), (false, true)}`
+    ///   carry witnesses non-vacuously.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram
+    /// build) and `k = crate::axis_cardinality::<crate::EnvMetadataTagKind>()`
+    /// (the peak-multiplicity scan). Both are `O(n)` in practice since
+    /// the env-prefix axis carries a fixed two-cell cardinality; the
+    /// returned `bool` reads one predicate — the peak scan walks the
+    /// counts vector once and counts cells matching the max, then
+    /// reads `multiplicity == 1` off one comparison. Strictly tighter
+    /// than the two documented open-coded surfaces one seam over (no
+    /// exposed `== 1` magic threshold at the consumer site, no
+    /// [`crate::AxisHistogram::modality_degree`] fused-pair build for
+    /// a single-component projection).
+    #[must_use]
+    fn env_prefix_kinds_strictly_modally_unique(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram()
+            .is_strictly_modally_unique()
+    }
 }
 
 impl ConfigSourceChain for [ConfigSource] {
@@ -37965,6 +38260,493 @@ mod tests {
                 false
             } else {
                 hist.iter().filter(|(_, c)| *c == min).count() >= 2
+            };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::env_prefix_kinds_strictly_modally_unique —
+    //      strictly-modally-unique-env-prefix-kinds boolean predicate on
+    //      the env-prefix sub-axis of the chain altitude, lifting
+    //      is_strictly_modally_unique from the histogram surface and
+    //      closing the "strictly-modally-unique across altitudes"
+    //      projection at the fifth and final altitude / sub-axis.
+    //      Strict-modal-uniqueness-side row, direct strict-complement
+    //      of `env_prefix_kinds_modally_tied` on every non-empty env-
+    //      prefix histogram (both read `false` on the empty env-prefix
+    //      histogram — the shared boundary below both branches of the
+    //      strict modal partition). ──
+
+    #[test]
+    fn env_prefix_kinds_strictly_modally_unique_matches_env_prefix_kind_histogram_is_strictly_modally_unique_pointwise()
+     {
+        // Routing pin: `env_prefix_kinds_strictly_modally_unique` routes
+        // through `env_prefix_kind_histogram().is_strictly_modally_unique()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared cube-native primitive.
+        // Env-prefix sub-axis peer of
+        // `file_formats_strictly_modally_unique_matches_file_format_histogram_is_strictly_modally_unique_pointwise`
+        // and
+        // `layer_kinds_strictly_modally_unique_matches_layer_kind_histogram_is_strictly_modally_unique_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_strictly_modally_unique_matches_tier_histogram_is_strictly_modally_unique_pointwise`
+        // on the tier altitude, and
+        // `kinds_strictly_modally_unique_matches_kind_histogram_is_strictly_modally_unique_pointwise`
+        // on the diff altitude — closing the "strictly-modally-unique
+        // across altitudes" projection across every altitude / sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice
+                .env_prefix_kind_histogram()
+                .is_strictly_modally_unique();
+            assert_eq!(
+                slice.env_prefix_kinds_strictly_modally_unique(),
+                via_histogram,
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_strictly_modally_unique_matches_defining_peak_multiplicity_equality_pointwise()
+     {
+        // Defining multiplicity-scalar equality form:
+        // `env_prefix_kinds_strictly_modally_unique() ⇔
+        // env_prefix_kind_histogram().peak_multiplicity() == 1`. Pins
+        // the predicate against the canonical open-coded expression on
+        // the `AxisHistogram::peak_multiplicity` scalar peer one
+        // altitude down — the surface consumers reach for when they
+        // open-code "exactly one cell holds the peak". Peer of the
+        // peak-multiplicity equality pin at every sibling altitude /
+        // sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_strictly_modally_unique();
+            let mult = slice.env_prefix_kind_histogram().peak_multiplicity();
+            let via_scalar = mult == 1;
+            assert_eq!(
+                via_seam, via_scalar,
+                "env_prefix_kinds_strictly_modally_unique ({via_seam}) must \
+                 agree with peak_multiplicity == 1 ({via_scalar}, mult={mult})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_strictly_modally_unique_matches_modality_degree_modal_component_pointwise()
+    {
+        // Modality-pair projection-equality form:
+        // `env_prefix_kinds_strictly_modally_unique() ⇔
+        // env_prefix_kind_histogram().modality_degree().0 == 1`. Pins
+        // the predicate against the modal-component reading of the
+        // fused `(peak_multiplicity, trough_multiplicity)` pair, the
+        // second documented surface form consumers reach for when they
+        // read the classifier pair before the equality.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_strictly_modally_unique();
+            let (peak_mult, _) = slice.env_prefix_kind_histogram().modality_degree();
+            let via_pair = peak_mult == 1;
+            assert_eq!(
+                via_seam, via_pair,
+                "env_prefix_kinds_strictly_modally_unique ({via_seam}) must \
+                 agree with modality_degree().0 == 1 ({via_pair}, peak_mult={peak_mult})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_strictly_modally_unique_empty_chain_is_false() {
+        // Empty-chain strict-modal-uniqueness: the empty chain observes
+        // zero cells, so `peak_multiplicity` reads `0` and the equality
+        // `0 == 1` fails. Peer of the empty-chain false polarity at
+        // every sibling altitude / sub-axis in the "strictly-modally-
+        // unique across altitudes" projection — closing the empty-
+        // witness row at the fifth and final altitude / sub-axis.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(!empty.env_prefix_kinds_strictly_modally_unique());
+        assert!(!empty.env_prefix_kinds_any_observed());
+    }
+
+    #[test]
+    fn env_prefix_kinds_strictly_modally_unique_no_env_layers_is_false() {
+        // No-env-layers pin: a non-empty chain of only `Defaults` /
+        // `File` layers projects to an empty env-prefix histogram via
+        // the partial function `ConfigSource::env_prefix_kind` —
+        // `peak_multiplicity` reads `0` and the equality `0 == 1`
+        // fails. Cross-sub-axis divergence pin against
+        // `layer_kinds_strictly_modally_unique`: on the same fixture
+        // the layer-kind sub-axis observes at least one layer-kind cell
+        // and may fire the strictly-modally-unique predicate (e.g. one
+        // `Defaults` reads `layer_kinds_strictly_modally_unique = true`
+        // via singleton-support), while the env-prefix sub-axis's
+        // strictly-modally-unique predicate silently drops out via the
+        // empty-histogram disjunct — the strict-uniqueness leg is
+        // *narrower* at the env-prefix sub-axis than at the layer-kind
+        // sub-axis. Mirrors the shape of
+        // `file_formats_strictly_modally_unique_no_recognized_files_is_false`
+        // on the sister partial-function sub-axis, and of
+        // `env_prefix_kinds_modally_tied_no_env_layers_is_false` on the
+        // sibling modal-tie row at the same env-prefix sub-axis.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(!slice.is_empty(), "fixture must be non-empty");
+            assert!(
+                slice.env_prefix_kind_histogram().is_empty(),
+                "fixture must have empty env-prefix histogram",
+            );
+            assert!(
+                !slice.env_prefix_kinds_strictly_modally_unique(),
+                "no-env-layers chain must not fire strictly-modally-unique",
+            );
+            assert!(!slice.env_prefix_kinds_any_observed());
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_strictly_modally_unique_singleton_support_is_true() {
+        // Singleton-support pin: every env layer lands on the same
+        // env-prefix cell, so the lone observed cell stands alone at
+        // its own peak (no tie-break to exercise) —
+        // `peak_multiplicity` reads `1` and the equality `1 == 1`
+        // fires. Direct witness of the subsumption
+        // `env_prefix_kinds_singular_support ⇒
+        // env_prefix_kinds_strictly_modally_unique` via the singleton-
+        // support corner. The `sample_chain()` fixture is a witness on
+        // the `true` side — the singleton-support corner is uniformly
+        // on the strictly-modally-unique side of the strict modal
+        // partition.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert!(slice.env_prefix_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn env_prefix_kinds_strictly_modally_unique_prefixed_only_is_true() {
+        // Singleton-support pin on the prefixed side: `Prefixed` is
+        // the sole observed cell out of two — peak multiplicity `1`,
+        // so `env_prefix_kinds_strictly_modally_unique` reads `true`.
+        // Symmetric sister of the bare-only pin below on the two-cell
+        // env-prefix axis: both singleton-support corners sit on the
+        // (`strictly_modally_unique`=true, `singular_support`=true)
+        // polarity pair.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert!(slice.env_prefix_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn env_prefix_kinds_strictly_modally_unique_bare_only_is_true() {
+        // Singleton-support pin on the bare side: `Bare` is the sole
+        // observed cell — peak multiplicity `1`, so
+        // `env_prefix_kinds_strictly_modally_unique` reads `true`.
+        // Symmetric sister of the prefixed-only pin above.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert!(slice.env_prefix_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn env_prefix_kinds_strictly_modally_unique_uniform_two_kind_cover_is_false() {
+        // Uniform axis-cover pin: one prefixed + one bare env layer,
+        // so both cells of `EnvMetadataTagKind::ALL` receive equal
+        // counts (both `1`) — `peak_multiplicity` reads `2` and the
+        // equality `2 == 1` fails. On the cardinality-`2` axis the
+        // uniform-cover corner is the *only* modally-tied witness
+        // class, so the strict-uniqueness predicate fails uniformly on
+        // it. Peer of the histogram-side axis-cover convention one
+        // altitude down.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 2);
+        assert!(slice.env_prefix_kinds_full_cover());
+        assert!(slice.env_prefix_kinds_balanced());
+        assert!(!slice.env_prefix_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn env_prefix_kinds_strictly_modally_unique_uniform_two_kind_cover_at_count_two_is_false() {
+        // Multi-count uniform-cover pin: two prefixed + two bare env
+        // layers, so both cells receive equal counts (both `2`) —
+        // `peak_multiplicity` reads `2` and the equality `2 == 1`
+        // fails. Direct pin that the strict-uniqueness predicate
+        // depends only on the modal-cell multiplicity, not on the
+        // absolute count height — the uniform-cover corner witnesses
+        // `strictly_modally_unique = false` regardless of the height
+        // at which the cells are tied.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 2);
+        assert_eq!(slice.env_prefix_kind_histogram().peak_multiplicity(), 2);
+        assert!(slice.env_prefix_kinds_full_cover());
+        assert!(slice.env_prefix_kinds_balanced());
+        assert!(!slice.env_prefix_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn env_prefix_kinds_strictly_modally_unique_strictly_modal_skewed_chain_is_true() {
+        // Strictly-modal skewed-chain pin: two prefixed + one bare env
+        // layer. `Prefixed` uniquely peaks at count `2` (Bare sits at
+        // `1`) — `peak_multiplicity` reads `1` and the equality
+        // `1 == 1` fires. `env_prefix_kinds_strictly_modally_unique`
+        // reads `true`. Witness on the strictly-modally-unique side of
+        // the strict modal partition. On the cardinality-`2` axis
+        // every strictly-skewed chain sits identically on both strict-
+        // uniqueness legs (peak and trough are the two distinct
+        // counts, both multiplicities read `1`) — the full modal /
+        // antimodal collapse degeneracy of the two-cell axis.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(
+            slice.dominant_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+        assert_eq!(slice.peak_env_prefix_kind_count(), 2);
+        assert_eq!(slice.env_prefix_kind_histogram().peak_multiplicity(), 1);
+        assert!(slice.env_prefix_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn env_prefix_kinds_strictly_modally_unique_implies_env_prefix_kinds_any_observed_pointwise() {
+        // Subsumption pin: `env_prefix_kinds_strictly_modally_unique() ⇒
+        // env_prefix_kinds_any_observed()` always. A strictly-unique
+        // peak requires at least one observed cell as the sole member
+        // of the modal level set, so both the empty chain (zero
+        // observed cells) and every no-env-layers non-empty chain
+        // (empty env-prefix histogram via the partial-function
+        // projection) cannot fire. Direct pin of the histogram-side
+        // subsumption `is_strictly_modally_unique ⇒ !is_empty` one
+        // altitude down.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_strictly_modally_unique() {
+                assert!(
+                    slice.env_prefix_kinds_any_observed(),
+                    "strictly-modally-unique chain must observe at \
+                     least one env-prefix cell",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_implies_env_prefix_kinds_strictly_modally_unique_pointwise()
+     {
+        // Subsumption pin: `env_prefix_kinds_singular_support() ⇒
+        // env_prefix_kinds_strictly_modally_unique()` always. A single
+        // observed cell is the only member of the modal level set
+        // (cardinality `1`), so the uniqueness predicate fires on
+        // every singleton-support chain. Direct pin of the histogram-
+        // side subsumption `has_singular_support ⇒
+        // is_strictly_modally_unique` one altitude down.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular_support() {
+                assert!(
+                    slice.env_prefix_kinds_strictly_modally_unique(),
+                    "singular-support chain must be strictly modally unique",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_strictly_modally_unique_forms_strict_modal_partition_on_non_empty_histograms_pointwise()
+     {
+        // Strict modal partition pin on non-empty env-prefix
+        // histograms: on every chain whose env-prefix histogram is
+        // non-empty exactly one of the pair
+        // (env_prefix_kinds_strictly_modally_unique,
+        // env_prefix_kinds_modally_tied) fires. On the empty histogram
+        // (empty chain OR no-env-layers chain) both read `false` (the
+        // shared boundary below both branches of the strict modal
+        // partition). Direct pin of the histogram-side strict-modal-
+        // partition law `!is_empty ⇒ is_strictly_modally_unique ⇔
+        // !is_modally_tied` one altitude down, phrased as an XOR on
+        // the two named seams at the chain env-prefix sub-axis surface.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let hist = slice.env_prefix_kind_histogram();
+            let strict = slice.env_prefix_kinds_strictly_modally_unique();
+            let tied = slice.env_prefix_kinds_modally_tied();
+            if !hist.is_empty() {
+                let count = usize::from(strict) + usize::from(tied);
+                assert_eq!(
+                    count, 1,
+                    "on a non-empty env-prefix histogram exactly one \
+                     of (strictly_modally_unique, modally_tied) must \
+                     fire (strict={strict}, tied={tied})",
+                );
+            } else {
+                assert!(
+                    !strict,
+                    "empty env-prefix histogram cannot be strictly modally unique",
+                );
+                assert!(!tied, "empty env-prefix histogram cannot be modally tied");
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_and_env_prefix_kinds_balanced_imply_not_env_prefix_kinds_strictly_modally_unique_pointwise()
+     {
+        // Cardinality-`>= 2` uniform-cover pin: on every full-cover
+        // balanced chain on the cardinality-`2` `EnvMetadataTagKind`
+        // axis, the modal level set equals the full axis — both cells
+        // share the peak count — so
+        // `env_prefix_kinds_strictly_modally_unique` fails.
+        // Cardinality-`>= 2` witness of the histogram-side subsumption
+        // `is_uniform_count ∧ !is_empty ⇒ is_strictly_modally_unique
+        // ⇔ has_singular_support` one altitude down: on a uniform-
+        // cover with cardinality `>= 2`, singleton-support fails so
+        // strict-modal-uniqueness fails.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_full_cover() && slice.env_prefix_kinds_balanced() {
+                assert!(
+                    !slice.env_prefix_kinds_strictly_modally_unique(),
+                    "full-cover balanced chain on cardinality-2 axis \
+                     cannot be strictly modally unique",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_strictly_modally_unique_iff_env_prefix_kinds_any_observed_and_not_full_cover_balanced_on_cardinality_two_pointwise()
+     {
+        // Two-cell-axis strictly_modally_unique/(support ∪ skewed)
+        // equivalence pin: `env_prefix_kinds_strictly_modally_unique ⇔
+        // env_prefix_kinds_any_observed ∧
+        // !(env_prefix_kinds_full_cover ∧ env_prefix_kinds_balanced)`
+        // on the cardinality-`2` env-prefix axis. On this axis the
+        // modal level set has cardinality `1` iff either one cell is
+        // unobserved (singleton-support) or the two cells carry
+        // distinct counts (strictly-skewed) — i.e. precisely the non-
+        // empty non-uniform-cover corner. The *unique* two-cell-axis
+        // tightening of the general uniform-cover subsumption into an
+        // equivalence, via the collapse of the strictly-modally-unique
+        // corner onto the (singleton-support ∪ strictly-skewed) union
+        // corner. Peer of the same two-cell-axis equivalence pinned
+        // at the modal-tie row
+        // `env_prefix_kinds_modally_tied_iff_env_prefix_kinds_full_cover_and_env_prefix_kinds_balanced_on_cardinality_two_pointwise`.
+        // Does NOT lift to the cardinality-`>= 3` sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let strict = slice.env_prefix_kinds_strictly_modally_unique();
+            let non_empty_non_uniform = slice.env_prefix_kinds_any_observed()
+                && !(slice.env_prefix_kinds_full_cover() && slice.env_prefix_kinds_balanced());
+            assert_eq!(
+                strict, non_empty_non_uniform,
+                "on the cardinality-2 env-prefix axis strictly_modally_unique \
+                 ({strict}) must equal any_observed ∧ !(full_cover ∧ balanced) \
+                 ({non_empty_non_uniform})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_strictly_modally_unique_iff_strictly_antimodally_unique_on_cardinality_two_pointwise()
+     {
+        // **Full modal / antimodal collapse pin (strict-uniqueness
+        // side) — unique to the cardinality-`2` env-prefix axis.** On
+        // this axis `env_prefix_kinds_strictly_modally_unique ⇔
+        // env_prefix_kind_histogram().is_strictly_antimodally_unique()`
+        // on *every* histogram (empty, singleton-support, uniform,
+        // strictly-skewed) — the strict-uniqueness-side dual of the
+        // tied-side full collapse pinned at
+        // `env_prefix_kinds_antimodally_tied_iff_env_prefix_kinds_modally_tied_on_cardinality_two_pointwise`.
+        // Direct consequence of the two-cell degeneracy where the
+        // peak level set and the trough level set coincide pointwise:
+        // either both cells share the same count (uniform two-kind
+        // cover, both multiplicities read `2`, neither strict-
+        // uniqueness predicate fires), or the cells carry distinct
+        // counts (peak and trough are the two distinct counts, both
+        // multiplicities read `1`, both fire), or only one cell is
+        // observed (singleton-support, multiplicity `1`, both fire),
+        // or neither is observed (empty histogram, both read `false`).
+        // This unconditional equivalence does NOT lift to the
+        // cardinality-`>= 3` sister sub-axes (`layer_kinds`,
+        // `file_formats`) or the tier / diff altitudes, where the two
+        // strict-interior corners `(strictly_modally_unique,
+        // strictly_antimodally_unique) ∈ {(true, false), (false, true)}`
+        // carry witnesses non-vacuously. The tightest degenerate form
+        // of the strict-uniqueness-pair collapse in the projection.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let modal = slice.env_prefix_kinds_strictly_modally_unique();
+            let antimodal = slice
+                .env_prefix_kind_histogram()
+                .is_strictly_antimodally_unique();
+            assert_eq!(
+                modal, antimodal,
+                "on the cardinality-2 env-prefix axis the two strict-uniqueness \
+                 predicates must collapse to the same value on every histogram \
+                 shape",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_strictly_modally_unique_agrees_with_open_coded_peak_multiplicity_walk() {
+        // Parity against the exact hand-rolled peak-multiplicity walk
+        // this lift replaces: walk every cell of the histogram and
+        // count how many carry the maximum observed count; the
+        // strictly-modally-unique predicate reads `true` iff the
+        // multiplicity is exactly `1`. Empty histogram has max `0`
+        // and no cells above zero, so multiplicity reads `0` and the
+        // predicate fails. Peer of the peak-multiplicity walk parity
+        // at every sibling altitude / sub-axis — closing the peak-
+        // multiplicity parity discipline at the fifth and final
+        // altitude / sub-axis in the "strictly-modally-unique across
+        // altitudes" projection.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_strictly_modally_unique();
+            let hist = slice.env_prefix_kind_histogram();
+            let max = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let hand_rolled = if max == 0 {
+                false
+            } else {
+                hist.iter().filter(|(_, c)| *c == max).count() == 1
             };
             assert_eq!(via_seam, hand_rolled);
         }
