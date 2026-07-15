@@ -7071,6 +7071,234 @@ impl ConfigDiff {
     pub fn kinds_boundary(&self) -> bool {
         self.kind_histogram().has_boundary()
     }
+
+    /// `true` exactly when this diff's observed [`DiffLineKind`] support
+    /// sits *strictly between* the two coverage boundaries — at least
+    /// one cell observed *and* at least one cell unobserved. The
+    /// **partial-cover-diff-kinds boolean predicate** on the diff
+    /// altitude, the *middle* leg of the coverage trichotomy
+    /// `(is_empty, has_partial_cover, is_full_cover)` — folding both
+    /// near-boundary singular corners *and* the strict interior into
+    /// a single "some but not all" corner without discarding the
+    /// finer resolution below. Routes through
+    /// [`crate::AxisHistogram::has_partial_cover`] one altitude down:
+    /// the single-pass short-circuiting scan over the fixed-cardinality
+    /// counts vector that returns `true` the moment both a zero cell
+    /// *and* a nonzero cell have been witnessed, bounded at two
+    /// witness cells — strictly tighter than any of the documented
+    /// open-coded surfaces one seam over.
+    ///
+    /// The **partial-cover-diff-kinds peer** of the four documented
+    /// surface forms consumers previously re-derived inline:
+    /// `diff.kinds_any_observed() && !diff.kinds_full_cover()` (the
+    /// structural conjunction-of-negations form on the two named
+    /// coverage-boundary peers — one negation, two method calls, and
+    /// a boolean and, the surface used verbatim by the pre-existing
+    /// bipartition-law test), `0 < diff.present_kinds_count() &&
+    /// diff.present_kinds_count() <
+    /// crate::axis_cardinality::<DiffLineKind>()` (the support-scalar
+    /// strict-interval form, which pays for a full-axis scan and
+    /// brackets a `usize` against a magic threshold with a turbofish),
+    /// `0 < diff.absent_kinds_count() && diff.absent_kinds_count() <
+    /// crate::axis_cardinality::<DiffLineKind>()` (the coverage-gap
+    /// dual-scalar strict-interval form), and `!diff.present_kinds().is_empty()
+    /// && !diff.absent_kinds().is_empty()` (the dual-`Vec` non-emptiness
+    /// form, which allocates both support and coverage-gap vectors
+    /// just to check their non-emptiness). This lift names the
+    /// partial-cover-diff-kinds predicate directly at the diff-altitude
+    /// surface with a single-pass short-circuiting scan — the typed
+    /// boolean every operator-facing *"did the diff observe some
+    /// kinds but not all?"* check reads off as a single method call.
+    ///
+    /// The diff-altitude partial-cover-predicate peer that **seeds
+    /// the "partial-cover across altitudes" projection** — the *middle*
+    /// leg of the coverage trichotomy `(kinds_any_observed-negation,
+    /// kinds_partial_cover, kinds_full_cover)`, the *complement* of
+    /// the [`Self::kinds_boundary`] top-leg corner. The natural next
+    /// lifts climb to the tier altitude
+    /// ([`crate::ProvenanceMap::tiers_partial_cover`] over
+    /// [`Self::tier_histogram`]) and sideways along the chain
+    /// altitude's three sub-axes
+    /// ([`crate::ConfigSourceChain::layer_kinds_partial_cover`],
+    /// [`crate::ConfigSourceChain::file_formats_partial_cover`],
+    /// [`crate::ConfigSourceChain::env_prefix_kinds_partial_cover`]
+    /// over the corresponding chain histograms). The pattern is the
+    /// same at every altitude / sub-axis: fuse the four documented
+    /// open-coded surface forms (conjunction-of-negations, support-
+    /// scalar strict-interval, coverage-gap dual-scalar strict-
+    /// interval, dual-`Vec` non-emptiness) into a single boolean
+    /// predicate named at the surface, routed through the shared
+    /// [`crate::AxisHistogram::has_partial_cover`] primitive one
+    /// altitude down.
+    ///
+    /// **Cardinality-`>= 2` reachability at the diff altitude — the
+    /// partial-cover corner carries non-vacuous witnesses.** The
+    /// partial-cover corner carries witnesses on every axis with
+    /// `axis_cardinality::<A>() >= 2`: every singleton-support diff
+    /// witnesses `has_partial_cover` (one observed, `cardinality - 1`
+    /// unobserved). [`DiffLineKind`] carries three cells, so
+    /// `kinds_partial_cover()` reads `true` on every singleton-support
+    /// diff (support size `1` — one nonzero and two zeros mixed) and
+    /// on every two-kind partial cover (support size `2` — two
+    /// nonzeros and one zero mixed), and `false` on the empty diff
+    /// (three zeros — no nonzero witness) and on every uniform three-
+    /// kind cover (three nonzeros — no zero witness). Non-vacuous on
+    /// both sides of the coverage-trichotomy middle leg at the diff
+    /// altitude.
+    ///
+    /// **Empty-diff convention** — returns `false` on the empty diff:
+    /// the empty diff observes zero cells, so every cell is unobserved
+    /// (three zeros on the cardinality-`3` axis) — the single-pass
+    /// scan sees no nonzero cell and falls through to `false`.
+    /// Matches [`crate::AxisHistogram::has_partial_cover`]'s
+    /// empty-histogram `false` convention one altitude down. The
+    /// empty diff sits on the [`Self::kinds_boundary`] side (bottom
+    /// coverage boundary), strictly complementary to
+    /// `kinds_partial_cover`.
+    ///
+    /// **Singleton-support convention** — returns `true` on every
+    /// diff whose observed support is a single [`DiffLineKind`]: the
+    /// support cardinality is `1` (one nonzero and two zeros on the
+    /// cardinality-`3` axis), so the single-pass scan sees a nonzero
+    /// cell *and* a zero cell and returns `true`. Every diff of
+    /// only-`Removed`, only-`Added`, or only-`Context` lines is a
+    /// witness on the `true` side — singleton-support diffs sit
+    /// inside the partial-cover middle leg.
+    ///
+    /// **Two-kind partial cover convention** — returns `true` on
+    /// every diff whose observed support is exactly two
+    /// [`DiffLineKind`] cells: the support cardinality is `2` (two
+    /// nonzeros and one zero on the cardinality-`3` axis), so the
+    /// single-pass scan sees both a nonzero and a zero cell and
+    /// returns `true`. A diff of only-`Removed`+`Added` lines is a
+    /// witness on the `true` side.
+    ///
+    /// **Uniform three-kind cover convention** — returns `false` on
+    /// every diff where each [`DiffLineKind`] cell was observed at
+    /// least once: the support cardinality is `3` (no unobserved
+    /// cells on the cardinality-`3` axis), so the single-pass scan
+    /// sees only nonzero cells and falls through to `false`. The
+    /// full-cover boundary sits at the top of the coverage interval
+    /// via the [`Self::kinds_full_cover`] disjunct — strictly outside
+    /// the partial-cover middle leg.
+    ///
+    /// # Invariants
+    ///
+    /// - `kinds_partial_cover() == kind_histogram().has_partial_cover()`
+    ///   — both project the same predicate off the same primitive;
+    ///   the named seam is the cube-native routing of the histogram
+    ///   surface.
+    /// - `kinds_partial_cover() ⇔ kinds_any_observed() &&
+    ///   !kinds_full_cover()` — the defining conjunction-of-negations
+    ///   form on the two named coverage-boundary peers. The middle-leg
+    ///   corner is exactly "at least one observed and at least one
+    ///   unobserved".
+    /// - `kinds_partial_cover() == (0 < present_kinds_count() &&
+    ///   present_kinds_count() <
+    ///   crate::axis_cardinality::<DiffLineKind>())` always — the
+    ///   support-scalar strict-interval surface, without allocating
+    ///   `Vec<DiffLineKind>`.
+    /// - `kinds_partial_cover() == (0 < absent_kinds_count() &&
+    ///   absent_kinds_count() <
+    ///   crate::axis_cardinality::<DiffLineKind>())` always — the
+    ///   coverage-gap dual-scalar strict-interval surface, the
+    ///   `distinct_cells + unobserved_cells == axis_cardinality`
+    ///   invariant restated on the two named cardinality peers.
+    /// - `kinds_partial_cover() == (present_kinds_count() > 0 &&
+    ///   absent_kinds_count() > 0)` always — the mixed-side dual-
+    ///   scalar non-emptiness form, the direct histogram-surface
+    ///   `distinct_cells > 0 && unobserved_cells > 0` pin restated
+    ///   at the diff altitude.
+    /// - `kinds_partial_cover() ⇔ !kinds_boundary()` always — the
+    ///   strict bipartition on the coverage-trichotomy fold: the
+    ///   named boundary corner is the exact complement of the
+    ///   partial-cover strict interior. Peer of the histogram-side
+    ///   bipartition law
+    ///   `axis_histogram_has_boundary_and_has_partial_cover_form_strict_bipartition_for_every_closed_axis_implementor`
+    ///   one altitude down.
+    /// - `kinds_singular_support() ⇒ kinds_partial_cover()` always
+    ///   on cardinality-`>= 2` axes: a single observed cell means at
+    ///   least one observed (support `1 >= 1`) and at least one
+    ///   unobserved (support `1 < cardinality`). Direct pin of the
+    ///   histogram-side subsumption
+    ///   `has_singular_support ⇒ has_partial_cover` one altitude down.
+    /// - `kinds_singular_gap() ⇒ kinds_partial_cover()` always on
+    ///   cardinality-`>= 2` axes: a single unobserved cell means at
+    ///   least one unobserved and at least one observed. Peer of the
+    ///   opposite-end subsumption on the support-cardinality interval.
+    /// - `kinds_singular() ⇒ kinds_partial_cover()` always on
+    ///   cardinality-`>= 2` axes — the union of the two singular-side
+    ///   subsumptions lands the middle-leg singular corners inside
+    ///   the partial-cover middle leg.
+    /// - `kinds_strict_partial_cover() ⇒ kinds_partial_cover()` always
+    ///   — the strict interior sits inside the partial-cover middle
+    ///   leg by definition. The distance-ternary decomposition
+    ///   `(kinds_boundary, kinds_singular, kinds_strict_partial_cover)`
+    ///   splits `kinds_partial_cover` into its two constituent
+    ///   near-boundary and strict-interior legs.
+    /// - `kinds_partial_cover() ⇒ kinds_any_observed()` always — the
+    ///   partial-cover corner requires at least one observed cell.
+    /// - `kinds_partial_cover() ⇒ !kinds_full_cover()` always — the
+    ///   partial-cover corner excludes the top coverage boundary.
+    /// - `kinds_partial_cover() ⇒ !kinds_balanced()` on every
+    ///   cardinality-`>= 2` axis whose partial-cover histograms carry
+    ///   non-uniform counts — a partial cover with count `1` on every
+    ///   observed cell is vacuously balanced (peak == trough at the
+    ///   modal-pair level), so the general implication does *not*
+    ///   hold; the pin is left as a *non-implication* witness so
+    ///   downstream lifts avoid the trap. Direct pin of the
+    ///   partial-cover / balanced independence at the diff altitude.
+    /// - **Cross-surface bridge law** —
+    ///   `diff.kinds_partial_cover() ==
+    ///    diff.kind_histogram().support_cardinality_class().is_partial_cover()`
+    ///   always. The class-side projection lands on
+    ///   [`crate::SupportCardinalityClass::SingularSupport`],
+    ///   [`crate::SupportCardinalityClass::StrictPartialCover`], or
+    ///   [`crate::SupportCardinalityClass::SingularGap`] exactly when
+    ///   the histogram-side conjunction fires, and
+    ///   [`crate::SupportCardinalityClass::is_partial_cover`] reads
+    ///   `true` on any of the three variants. Peer of the histogram-
+    ///   side bridge
+    ///   `axis_histogram_support_cardinality_class_is_partial_cover_agrees_with_histogram_has_partial_cover_for_every_closed_axis_implementor`
+    ///   one altitude down, closing the (histogram, class) duality on
+    ///   the partial-cover middle leg at the diff altitude.
+    /// - **Coverage-trichotomy partition law** —
+    ///   `(!kinds_any_observed, kinds_partial_cover, kinds_full_cover)`
+    ///   is a strict ternary partition on every axis with cardinality
+    ///   `>= 1` (every diff-altitude implementor today). Exactly one
+    ///   leg fires on every diff — the coverage trichotomy of the
+    ///   `(is_empty, has_partial_cover, is_full_cover)` histogram-side
+    ///   partition restated at the diff altitude. Peer of the
+    ///   trait-uniform pin
+    ///   `axis_histogram_coverage_trichotomy_partitions_every_histogram_for_every_closed_axis_implementor`
+    ///   one altitude down. The named seam now carries the middle
+    ///   leg of this partition directly at the surface, folding the
+    ///   two open-coded expressions
+    ///   `kinds_any_observed && !kinds_full_cover` (the
+    ///   conjunction-of-negations form used verbatim by the
+    ///   pre-existing bipartition-law pin
+    ///   [`tests::kinds_boundary_and_kinds_partial_cover_form_strict_bipartition_pointwise`])
+    ///   into one named boolean.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the
+    /// partial-cover scan). Both are `O(n)` in practice since the
+    /// diff-cell axis carries a fixed three-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan returns `true`
+    /// the *moment* a mixed-parity witness (one zero *and* one
+    /// nonzero) has been seen — bounded at two witness cells visited
+    /// on any strict-interior histogram — strictly tighter than the
+    /// documented open-coded surfaces: no boolean conjunction across
+    /// two named coverage-boundary predicates, no full walk of the
+    /// counts vector for a scalar strict-interval bracket, no
+    /// [`crate::axis_cardinality`] turbofish against a magic
+    /// threshold, no `Vec<DiffLineKind>` allocation.
+    #[must_use]
+    pub fn kinds_partial_cover(&self) -> bool {
+        self.kind_histogram().has_partial_cover()
+    }
 }
 
 #[cfg(test)]
@@ -13506,6 +13734,429 @@ mod tests {
             let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
             let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
             let hand_rolled = zeros == 0 || nonzeros == 0;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── kinds_partial_cover coverage — the partial-cover-diff-kinds
+    //    seed of the "partial-cover across altitudes" projection, the
+    //    middle leg of the coverage trichotomy `(!kinds_any_observed,
+    //    kinds_partial_cover, kinds_full_cover)`, direct complement of
+    //    the top-leg `kinds_boundary` corner at the diff altitude.
+
+    #[test]
+    fn kinds_partial_cover_matches_kind_histogram_has_partial_cover_pointwise() {
+        // Routing pin: `kinds_partial_cover` routes through
+        // `kind_histogram().has_partial_cover()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops
+        // projecting through the shared cube-native primitive.
+        // Diff-altitude partial-cover-predicate seed of the new
+        // "partial-cover across altitudes" projection — middle-leg
+        // corner of the coverage trichotomy
+        // `(!kinds_any_observed, kinds_partial_cover, kinds_full_cover)`,
+        // the direct complement of the top-leg `kinds_boundary`
+        // corner.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().has_partial_cover();
+            assert_eq!(diff.kinds_partial_cover(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kinds_partial_cover_matches_defining_conjunction_of_negations_pointwise() {
+        // Defining conjunction-of-negations form:
+        // `kinds_partial_cover() ⇔ kinds_any_observed() && !kinds_full_cover()`.
+        // Pins the predicate against the two-way conjunction on the
+        // two named coverage-boundary peers consumers reach for when
+        // they open-code the middle-leg corner as a boolean fold
+        // over the two extreme coverage cardinalities. The middle-
+        // leg-fold peer of the two boundary corners — the exact
+        // expression used verbatim by the pre-existing bipartition-
+        // law pin
+        // `kinds_boundary_and_kinds_partial_cover_form_strict_bipartition_pointwise`.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_partial_cover();
+            let via_conjunction = diff.kinds_any_observed() && !diff.kinds_full_cover();
+            assert_eq!(
+                via_seam, via_conjunction,
+                "kinds_partial_cover ({via_seam}) must agree with \
+                 kinds_any_observed && !kinds_full_cover ({via_conjunction})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_partial_cover_agrees_with_present_kinds_count_strict_interval_pointwise() {
+        // Support-scalar strict-interval surface:
+        // `kinds_partial_cover() == (0 < present_kinds_count() &&
+        // present_kinds_count() < axis_cardinality::<DiffLineKind>())`
+        // on every fixture. The support-side surfacing of the same
+        // boolean, without allocating either `Vec<DiffLineKind>`. On
+        // every cardinality-`>= 2` axis the interval `(0, cardinality)`
+        // is non-empty.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_partial_cover();
+            let support = diff.present_kinds_count();
+            let via_scalar = 0 < support && support < crate::axis_cardinality::<DiffLineKind>();
+            assert_eq!(
+                via_seam, via_scalar,
+                "kinds_partial_cover ({via_seam}) must agree with \
+                 0 < present_kinds_count < cardinality \
+                 ({via_scalar}, support={support})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_partial_cover_agrees_with_absent_kinds_count_strict_interval_pointwise() {
+        // Coverage-gap dual-scalar strict-interval surface:
+        // `kinds_partial_cover() == (0 < absent_kinds_count() &&
+        // absent_kinds_count() < axis_cardinality::<DiffLineKind>())`
+        // on every fixture. The `distinct_cells + unobserved_cells
+        // == axis_cardinality` invariant restated on the two named
+        // cardinality peers, without allocating either
+        // `Vec<DiffLineKind>`. Peer of the histogram-side dual-scalar
+        // strict-interval form `0 < hist.unobserved_cells() &&
+        // hist.unobserved_cells() < axis_cardinality::<A>()` pinned
+        // one altitude down.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_partial_cover();
+            let gap = diff.absent_kinds_count();
+            let via_scalar = 0 < gap && gap < crate::axis_cardinality::<DiffLineKind>();
+            assert_eq!(
+                via_seam, via_scalar,
+                "kinds_partial_cover ({via_seam}) must agree with \
+                 0 < absent_kinds_count < cardinality \
+                 ({via_scalar}, gap={gap})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_partial_cover_agrees_with_present_and_absent_kinds_count_both_positive_pointwise() {
+        // Mixed-side dual-scalar non-emptiness surface:
+        // `kinds_partial_cover() == (present_kinds_count() > 0 &&
+        // absent_kinds_count() > 0)` on every fixture. The direct
+        // histogram-surface `distinct_cells > 0 && unobserved_cells > 0`
+        // pin restated at the diff altitude — the boolean asking
+        // "did the diff observe at least one cell *and* miss at
+        // least one cell?" against the two named cardinality peers,
+        // without allocating either `Vec<DiffLineKind>`. Peer of
+        // the sibling `kinds_boundary` dual-scalar equality form
+        // `present_kinds_count == 0 || absent_kinds_count == 0`
+        // (its exact strict-complement) one seam over on the
+        // coverage-trichotomy bipartition.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_partial_cover();
+            let support = diff.present_kinds_count();
+            let gap = diff.absent_kinds_count();
+            let via_scalar = support > 0 && gap > 0;
+            assert_eq!(
+                via_seam, via_scalar,
+                "kinds_partial_cover ({via_seam}) must agree with \
+                 present_kinds_count > 0 && absent_kinds_count > 0 \
+                 ({via_scalar}, support={support}, gap={gap})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_partial_cover_empty_diff_is_false() {
+        // Empty-diff partial-cover: the empty diff observes zero
+        // cells, so every cell is unobserved (three zeros on the
+        // cardinality-`3` axis) — the scan sees no nonzero cell and
+        // falls through to `false`. `kinds_partial_cover` reads
+        // `false`. Matches `has_partial_cover` reading `false` on
+        // the empty histogram one altitude down. Direct witness of
+        // the disjointness `!kinds_any_observed ⇒
+        // !kinds_partial_cover` via the empty-diff disjunct of
+        // `kinds_boundary`.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert!(!empty.kinds_partial_cover());
+        assert!(!empty.kinds_any_observed());
+        assert!(empty.kinds_boundary());
+    }
+
+    #[test]
+    fn kinds_partial_cover_singleton_support_is_true() {
+        // Singleton-support pin: every line lands on the same kind,
+        // so the support cardinality is `1` (one nonzero and two
+        // zeros on the cardinality-`3` axis) — the scan sees a
+        // nonzero cell *and* a zero cell and returns `true`.
+        // `kinds_partial_cover` reads `true`. Direct witness of the
+        // subsumption `kinds_singular_support ⇒ kinds_partial_cover`
+        // via the mixed-parity witness.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Added("a1".into()), DiffLine::Added("a2".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 1);
+        assert!(diff.kinds_partial_cover());
+        assert!(diff.kinds_singular_support());
+    }
+
+    #[test]
+    fn kinds_partial_cover_two_kind_cover_is_true() {
+        // Two-kind cover pin: a diff of only Added + Removed lines
+        // has two observed cells on the three-cell DiffLineKind axis
+        // — the support cardinality is `2` (two nonzeros and one
+        // zero) — the scan sees a nonzero and a zero cell and
+        // returns `true`. `kinds_partial_cover` reads `true`. Direct
+        // witness of the subsumption `kinds_singular_gap ⇒
+        // kinds_partial_cover` via the mixed-parity witness (the
+        // cardinality-`3` axis collapses the singular-gap corner
+        // to support cardinality `2`).
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 2);
+        assert!(diff.kinds_partial_cover());
+        assert!(diff.kinds_singular_gap());
+    }
+
+    #[test]
+    fn kinds_partial_cover_uniform_cover_is_false() {
+        // Uniform-cover pin: every kind receives at least one
+        // observation, so the support cardinality is `3` (no
+        // unobserved cells) — the scan sees only nonzero cells and
+        // falls through to `false`. `kinds_partial_cover` reads
+        // `false`. Direct witness of the disjointness
+        // `kinds_full_cover ⇒ !kinds_partial_cover` via the full-
+        // cover boundary of `kinds_boundary`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.present_kinds().len(), 3);
+        assert!(!diff.kinds_partial_cover());
+        assert!(diff.kinds_full_cover());
+    }
+
+    #[test]
+    fn kinds_partial_cover_and_kinds_boundary_form_strict_bipartition_pointwise() {
+        // Strict-bipartition pin at the diff altitude *with the
+        // named seam*: `kinds_partial_cover` and `kinds_boundary`
+        // are pointwise complementary — exactly one fires on every
+        // diff. The named partial-cover corner is the exact
+        // complement of the named boundary corner. Peer of the
+        // pre-existing pin
+        // `kinds_boundary_and_kinds_partial_cover_form_strict_bipartition_pointwise`
+        // (kept alongside as the open-coded parity witness against
+        // `kinds_any_observed && !kinds_full_cover`), and peer of
+        // the histogram-side bipartition law
+        // `axis_histogram_has_boundary_and_has_partial_cover_form_strict_bipartition_for_every_closed_axis_implementor`
+        // one altitude down. The `kinds_partial_cover` seam now
+        // names the middle leg of the coverage trichotomy directly
+        // at the surface, replacing the open-coded conjunction-of-
+        // negations expression used by the pre-existing pin.
+        for diff in dominant_kind_fixtures() {
+            let partial = diff.kinds_partial_cover();
+            let boundary = diff.kinds_boundary();
+            let count = usize::from(partial) + usize::from(boundary);
+            assert_eq!(
+                count, 1,
+                "exactly one of (partial_cover, boundary) must fire \
+                 (partial={partial}, boundary={boundary})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_partial_cover_implies_kinds_any_observed_pointwise() {
+        // Subsumption pin: `kinds_partial_cover() ⇒ kinds_any_observed()`
+        // always via the "at least one observed" half of the defining
+        // conjunction. Every partial-cover diff observes at least
+        // one cell — the middle-leg corner sits on the `true` side
+        // of the any-observed boundary.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_partial_cover() {
+                assert!(
+                    diff.kinds_any_observed(),
+                    "partial-cover diff must observe at least one cell",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_partial_cover_implies_not_kinds_full_cover_pointwise() {
+        // Subsumption pin: `kinds_partial_cover() ⇒ !kinds_full_cover()`
+        // always via the "at least one unobserved" half of the
+        // defining conjunction. Every partial-cover diff misses at
+        // least one cell — the middle-leg corner sits strictly
+        // below the full-cover top boundary.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_partial_cover() {
+                assert!(
+                    !diff.kinds_full_cover(),
+                    "partial-cover diff cannot be full-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_support_implies_kinds_partial_cover_pointwise() {
+        // Subsumption pin: `kinds_singular_support() ⇒
+        // kinds_partial_cover()` always on cardinality-`>= 2` axes.
+        // Support cardinality `1` is strictly between `0` and
+        // cardinality — the singular-support boundary sits inside
+        // the partial-cover middle leg. Direct pin of the histogram-
+        // side subsumption `has_singular_support ⇒ has_partial_cover`
+        // one altitude down.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular_support() {
+                assert!(
+                    diff.kinds_partial_cover(),
+                    "singular-support diff must be partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_gap_implies_kinds_partial_cover_pointwise() {
+        // Subsumption pin: `kinds_singular_gap() ⇒
+        // kinds_partial_cover()` always on cardinality-`>= 2` axes.
+        // Support cardinality `cardinality - 1` is strictly between
+        // `0` and cardinality — the singular-gap boundary sits
+        // inside the partial-cover middle leg. Peer of the
+        // opposite-end subsumption on the support-cardinality
+        // interval, closing the dual-singular pair
+        // `(has_singular_support, has_singular_gap) ⇒ has_partial_cover`
+        // at the diff altitude.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular_gap() {
+                assert!(
+                    diff.kinds_partial_cover(),
+                    "singular-gap diff must be partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_implies_kinds_partial_cover_pointwise() {
+        // Subsumption pin: `kinds_singular() ⇒ kinds_partial_cover()`
+        // always on cardinality-`>= 2` axes. The union of the two
+        // singular-side subsumptions lands the middle-leg singular
+        // corners inside the partial-cover middle leg. Direct fold
+        // over the disjunction — the singular near-boundary corner
+        // of the distance ternary sits inside the partial-cover
+        // middle leg of the coverage trichotomy.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular() {
+                assert!(
+                    diff.kinds_partial_cover(),
+                    "singular diff must be partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_strict_partial_cover_implies_kinds_partial_cover_pointwise() {
+        // Subsumption pin: `kinds_strict_partial_cover() ⇒
+        // kinds_partial_cover()` always. The strict interior sits
+        // inside the partial-cover middle leg by definition. Direct
+        // pin of the histogram-side subsumption
+        // `has_strict_partial_cover ⇒ has_partial_cover` one altitude
+        // down. Vacuously true at the diff altitude (the antecedent
+        // never fires on cardinality-`3` DiffLineKind, whose strict
+        // interior `[2, 1]` is empty), but the shape of the
+        // implication is pinned here so downstream lifts at
+        // cardinality-`>= 4` altitudes inherit it verbatim.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_strict_partial_cover() {
+                assert!(
+                    diff.kinds_partial_cover(),
+                    "strict-partial-cover diff must be partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_partial_cover_and_kinds_any_observed_negation_and_kinds_full_cover_form_coverage_trichotomy_pointwise()
+     {
+        // Coverage-trichotomy partition pin at the diff altitude:
+        // exactly one of the three legs
+        // `(!kinds_any_observed, kinds_partial_cover, kinds_full_cover)`
+        // fires on every diff — the coverage trichotomy of the
+        // `(is_empty, has_partial_cover, is_full_cover)` histogram-
+        // side partition restated at the diff altitude. Peer of
+        // the trait-uniform pin
+        // `axis_histogram_coverage_trichotomy_partitions_every_histogram_for_every_closed_axis_implementor`
+        // one altitude down. The `kinds_partial_cover` seam now
+        // carries the middle leg of this partition directly at the
+        // surface, folding the open-coded expression
+        // `kinds_any_observed && !kinds_full_cover` into one named
+        // boolean.
+        for diff in dominant_kind_fixtures() {
+            let empty = !diff.kinds_any_observed();
+            let partial = diff.kinds_partial_cover();
+            let full = diff.kinds_full_cover();
+            let count = usize::from(empty) + usize::from(partial) + usize::from(full);
+            assert_eq!(
+                count, 1,
+                "exactly one of (!any_observed, partial_cover, full_cover) \
+                 must fire (empty={empty}, partial={partial}, full={full})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_partial_cover_bridges_support_cardinality_class_is_partial_cover_pointwise() {
+        // Cross-surface bridge law: `kinds_partial_cover() ==
+        // kind_histogram().support_cardinality_class().is_partial_cover()`
+        // on every fixture. The class-side projection lands on
+        // `SupportCardinalityClass::SingularSupport`,
+        // `SupportCardinalityClass::StrictPartialCover`, or
+        // `SupportCardinalityClass::SingularGap` exactly when the
+        // histogram-side conjunction fires, and
+        // `SupportCardinalityClass::is_partial_cover` reads `true`
+        // on any of the three variants. Peer of the histogram-side
+        // bridge
+        // `axis_histogram_support_cardinality_class_is_partial_cover_agrees_with_histogram_has_partial_cover_for_every_closed_axis_implementor`
+        // one altitude down, closing the (histogram, class) duality
+        // on the partial-cover middle leg at the diff altitude.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_partial_cover();
+            let via_class = diff
+                .kind_histogram()
+                .support_cardinality_class()
+                .is_partial_cover();
+            assert_eq!(
+                via_seam, via_class,
+                "kinds_partial_cover ({via_seam}) must agree with \
+                 kind_histogram().support_cardinality_class().is_partial_cover() \
+                 ({via_class})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_partial_cover_agrees_with_open_coded_mixed_parity_walk() {
+        // Parity against the exact hand-rolled partial-cover walk
+        // this lift replaces on cardinality-`>= 2` axes: walk every
+        // cell of the histogram and count how many carry a zero
+        // count and how many carry a nonzero count; the partial-
+        // cover predicate reads `true` iff *both* a zero cell *and*
+        // a nonzero cell appear. Mirrors the parity pin
+        // `kinds_boundary_agrees_with_open_coded_uniform_parity_walk`
+        // on the strict-complement top-leg projection — the two
+        // parity walks are pointwise complementary on every
+        // cardinality-`>= 1` axis.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_partial_cover();
+            let hist = diff.kind_histogram();
+            let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
+            let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
+            let hand_rolled = zeros > 0 && nonzeros > 0;
             assert_eq!(via_seam, hand_rolled);
         }
     }
