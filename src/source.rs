@@ -7274,6 +7274,217 @@ pub trait ConfigSourceChain {
         self.file_format_histogram().has_partial_cover()
     }
 
+    /// `true` exactly when this chain's observed
+    /// [`crate::discovery::Format`] histogram has two or more cells tied
+    /// at the peak leaf count — the peak file-format is *shared* rather
+    /// than uniquely held.
+    ///
+    /// The **modally-tied-file-formats boolean predicate** on the file-
+    /// format sub-axis of the chain altitude, the direct strict-complement
+    /// of [`crate::AxisHistogram::is_strictly_modally_unique`] on every
+    /// non-empty file-format histogram (both read `false` on the empty
+    /// histogram — the shared boundary below both branches of the strict
+    /// modal partition). Routes through
+    /// [`Self::file_format_histogram`]`::is_modally_tied`, the single-pass
+    /// scan over the fixed-cardinality counts vector reading
+    /// `peak_multiplicity() >= 2` off one predicate — strictly tighter
+    /// than either of the documented open-coded surface forms one seam
+    /// over.
+    ///
+    /// The **modally-tied-file-formats peer** of the two documented
+    /// surface forms consumers previously re-derived inline:
+    /// `chain.file_format_histogram().peak_multiplicity() >= 2` (the
+    /// defining multiplicity-scalar inequality form — one method call
+    /// plus a magic `>= 2` threshold at the consumer site), and
+    /// `chain.file_format_histogram().modality_degree().0 >= 2` (the
+    /// modality-pair projection-inequality form, reading the modal
+    /// component of the fused
+    /// [`crate::AxisHistogram::modality_degree`] pair before the
+    /// comparison — a fused-pair build for a single-component
+    /// projection). This lift names the modally-tied-file-formats
+    /// predicate directly at the chain-altitude surface — the typed
+    /// boolean every operator-facing *"is the dominant file format
+    /// uniquely held on this chain, or tied?"* check reads off as a
+    /// single method call.
+    ///
+    /// The chain-altitude file-format sub-axis modality-tie-predicate
+    /// peer that **lifts the "modally-tied across altitudes" projection
+    /// sideways** from the first chain-altitude sub-axis
+    /// ([`Self::layer_kinds_modally_tied`]) to the second chain-altitude
+    /// sub-axis, matching the tier-altitude climb
+    /// ([`crate::ProvenanceMap::tiers_modally_tied`]) and the diff-
+    /// altitude seed ([`crate::ConfigDiff::kinds_modally_tied`]). The
+    /// remaining chain-altitude sub-axis
+    /// ([`Self::env_prefix_kinds_modally_tied`] over
+    /// [`Self::env_prefix_kind_histogram`]) is the natural next
+    /// sideways lift. The pattern is the same at every altitude /
+    /// sub-axis: fuse the two open-coded surface forms (multiplicity-
+    /// scalar inequality, modality-pair projection-inequality) into a
+    /// single boolean predicate named at the surface, routed through
+    /// the shared [`crate::AxisHistogram::is_modally_tied`] primitive
+    /// one altitude down.
+    ///
+    /// **Cardinality-`4` reachability at the file-format sub-axis — the
+    /// modally-tied corner carries witnesses on all three off-singleton
+    /// support cardinalities.** [`crate::discovery::Format`] carries
+    /// four cells, so `file_formats_modally_tied()` reads `true` on
+    /// every chain whose peak leaf count is shared by two or more
+    /// observed file-format cells (e.g. one-`.yaml`+one-`.toml` tied at
+    /// count `1`, three-format uniform partial cover tied at count `1`,
+    /// or the uniform four-format cover tied at count `1`), and `false`
+    /// on the empty chain (no observed cell), on every no-recognized-
+    /// files non-empty chain (empty file-format histogram — no observed
+    /// cell via the partial-function projection), on every singleton-
+    /// support chain (support cardinality `1`, peak multiplicity `1`),
+    /// and on every strictly-modal skewed chain (e.g. two-`.yaml` +
+    /// one-`.toml` where `Yaml` uniquely peaks at count `2`). Matches
+    /// the tier-altitude peer on the cardinality-`4` [`crate::ConfigTierKind`]
+    /// axis in reachability — the additional support-`3` tied witness
+    /// unavailable at the cardinality-`3` layer-kind sub-axis / diff
+    /// altitude is *reachable* here, a strict advance over both.
+    ///
+    /// **Empty-chain convention** — returns `false` on the empty chain:
+    /// the empty chain observes zero cells, so
+    /// [`crate::AxisHistogram::peak_multiplicity`] reads `0` and the
+    /// inequality `0 >= 2` fails. Matches
+    /// [`crate::AxisHistogram::is_modally_tied`]'s empty-histogram
+    /// convention one altitude down. The empty-chain row on the strict
+    /// modal partition pair
+    /// `(is_strictly_modally_unique, is_modally_tied)` reads
+    /// `(false, false)` — the shared boundary below both branches. Peer
+    /// of [`Self::layer_kinds_modally_tied`]'s empty-chain `false`
+    /// polarity one sub-axis over on the same chain altitude, of
+    /// [`crate::ProvenanceMap::tiers_modally_tied`]'s empty-map `false`
+    /// polarity, and of [`crate::ConfigDiff::kinds_modally_tied`]'s
+    /// empty-diff `false` polarity in the same projection.
+    ///
+    /// **No-recognized-files convention** — returns `false` on every
+    /// non-empty chain whose file-format histogram is empty (only
+    /// `Defaults`, `Env`, and unrecognized-extension `File` layers).
+    /// The file-format projection is a partial function
+    /// ([`ConfigSource::file_format`] returns [`None`] for the
+    /// unrecognized cases), so a non-empty chain can still project to
+    /// an empty histogram — `peak_multiplicity` reads `0` and the
+    /// inequality `0 >= 2` fails. This is the modal-tie-side cross-sub-
+    /// axis divergence pin against [`Self::layer_kinds_modally_tied`]:
+    /// on the same fixtures the layer-kind sub-axis observes at least
+    /// one layer-kind cell (Defaults / Env / File) and may fire the
+    /// modally-tied predicate (e.g. one `Defaults` + one `Env` reads
+    /// `layer_kinds_modally_tied = true`), while the file-format sub-
+    /// axis's modally-tied predicate silently drops out via the empty-
+    /// histogram disjunct — the modal-tie leg's meaning is *narrower*
+    /// at the file-format sub-axis than at the layer-kind sub-axis.
+    ///
+    /// **Singleton-support convention** — returns `false` on every
+    /// chain whose observed file-format support is a single
+    /// [`crate::discovery::Format`] cell: the lone observed cell stands
+    /// alone at its own peak (no tie-break to exercise), so
+    /// `peak_multiplicity` reads `1` and the inequality `1 >= 2` fails.
+    /// The `sample_chain()` fixture (two `.yaml` file layers + one Env
+    /// layer, `{Yaml}` file-format support with count `2`) is a witness
+    /// on the `false` side — the singleton-support corner is uniformly
+    /// on the strictly-modal-unique side of the strict modal partition.
+    /// Direct pin of the histogram-side subsumption
+    /// `has_singular_support ⇒ !is_modally_tied` one altitude down.
+    ///
+    /// **Uniform four-format cover convention** — returns `true` on
+    /// every chain where each [`crate::discovery::Format`] cell was
+    /// observed at exactly the same positive count (in particular the
+    /// chain with one file per format): the four cells share the same
+    /// count, so `peak_multiplicity` reads `4` and the inequality
+    /// `4 >= 2` fires. Peer of the histogram-side axis-cover convention
+    /// one altitude down, which reads `true` on every implementor with
+    /// `axis_cardinality::<A>() >= 2` — the cardinality-`4`
+    /// [`crate::discovery::Format`] axis honours the general condition.
+    ///
+    /// **Two-way modal partition on non-empty file-format histograms**
+    /// — on every non-empty file-format histogram exactly one of the
+    /// modal-uniqueness pair fires: either the peak is uniquely held
+    /// (strictly-modal-unique fires, modally-tied does not) or the peak
+    /// is shared (modally-tied fires, strictly-modal-unique does not).
+    /// The empty histogram sits below both branches (both read `false`)
+    /// — this covers both the empty chain and every no-recognized-files
+    /// non-empty chain. Direct pin of the histogram-side strict modal
+    /// partition
+    /// `!is_empty ⇒ is_modally_tied ⇔ !is_strictly_modally_unique` one
+    /// altitude down.
+    ///
+    /// # Invariants
+    ///
+    /// - `file_formats_modally_tied() == file_format_histogram().is_modally_tied()`
+    ///   — both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram
+    ///   surface.
+    /// - `file_formats_modally_tied() ⇔
+    ///   file_format_histogram().peak_multiplicity() >= 2` — the
+    ///   defining multiplicity-scalar inequality form on the
+    ///   [`crate::AxisHistogram::peak_multiplicity`] scalar peer, the
+    ///   canonical open-coded expression of the predicate one altitude
+    ///   down.
+    /// - `file_formats_modally_tied() ⇔
+    ///   file_format_histogram().modality_degree().0 >= 2` — the
+    ///   modality-pair projection-inequality form, reading the modal
+    ///   component of the fused
+    ///   [`crate::AxisHistogram::modality_degree`] pair before the
+    ///   comparison.
+    /// - `file_formats_modally_tied() ⇒ file_formats_any_observed()`
+    ///   always — a tied peak requires at least two observed cells,
+    ///   so both the empty chain (zero observed cells) and every no-
+    ///   recognized-files non-empty chain (empty file-format histogram
+    ///   via the partial-function projection) cannot fire.
+    ///   Contrapositively, `!file_formats_any_observed() ⇒
+    ///   !file_formats_modally_tied()`.
+    /// - `file_formats_singular_support() ⇒ !file_formats_modally_tied()`
+    ///   always — a singleton-support chain has exactly one observed
+    ///   cell, so the modal level set has cardinality `1` and the tie
+    ///   predicate fails. Contrapositively, `file_formats_modally_tied()
+    ///   ⇒ !file_formats_singular_support()`: a fired tie predicate
+    ///   means at least two observed cells. Direct pin of the
+    ///   histogram-side subsumption `has_singular_support ⇒
+    ///   !is_modally_tied` one altitude down.
+    /// - `file_formats_full_cover() ∧ file_formats_balanced() ⇒
+    ///   file_formats_modally_tied()` on the cardinality-`>= 2` axis:
+    ///   a full-cover uniform-count chain has every cell observed at
+    ///   the same count, so the modal level set equals the full axis
+    ///   — the peak multiplicity rises to
+    ///   `axis_cardinality::<crate::discovery::Format>()` which is `4`,
+    ///   and the tie predicate fires. Cardinality-`>= 2` witness of
+    ///   the uniform-cover corner of the histogram-side subsumption
+    ///   tying [`crate::AxisHistogram::is_uniform_count`] and
+    ///   [`crate::AxisHistogram::has_singular_support`] on non-empty
+    ///   histograms one altitude down.
+    /// - **Strict modal partition on non-empty file-format histograms**
+    ///   — `!file_format_histogram().is_empty() ⇒
+    ///   (file_formats_modally_tied ⇔
+    ///   !file_format_histogram().is_strictly_modally_unique())` always.
+    ///   On every non-empty file-format histogram exactly one of
+    ///   `(file_formats_modally_tied,
+    ///   file_format_histogram().is_strictly_modally_unique())` fires;
+    ///   both read `false` on the empty histogram — the shared
+    ///   boundary below both branches. Direct pin of the histogram-side
+    ///   strict modal partition one altitude down.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram
+    /// build) and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the peak-multiplicity scan). Both are `O(n)` in practice since
+    /// the file-format axis carries a fixed four-cell cardinality; the
+    /// returned `bool` reads one predicate — the peak scan walks the
+    /// counts vector once and counts cells matching the max, then
+    /// reads `multiplicity >= 2` off one comparison. Strictly tighter
+    /// than the two documented open-coded surfaces one seam over (no
+    /// exposed `>= 2` magic threshold at the consumer site, no
+    /// [`crate::AxisHistogram::modality_degree`] fused-pair build for
+    /// a single-component projection).
+    #[must_use]
+    fn file_formats_modally_tied(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().is_modally_tied()
+    }
+
     /// Dense per-env-prefix-presence tally of the chain's
     /// [`ConfigSource::Env`] layers over the [`EnvMetadataTagKind`] axis
     /// — the typed histogram every attestation manifest, structured-log
@@ -33042,6 +33253,466 @@ mod tests {
             let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
             let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
             let hand_rolled = zeros > 0 && nonzeros > 0;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── file_formats_modally_tied coverage — the modally-tied-file-
+    //    formats boolean predicate on the file-format sub-axis of the
+    //    chain altitude, lifting the layer-kind-sub-axis
+    //    `layer_kinds_modally_tied` sideways to the second chain-
+    //    altitude sub-axis, matching the tier-altitude climb
+    //    `tiers_modally_tied` and the diff-altitude seed
+    //    `ConfigDiff::kinds_modally_tied`. Modal-side row on top of
+    //    the closed coverage-support predicate cube (`low_support`,
+    //    `high_support`, `strict_partial_cover`, `singular`,
+    //    `boundary`, `partial_cover`) — the seventh projection to
+    //    appear at the file-format sub-axis, matching the cadence
+    //    set by the six sibling projections already closed at every
+    //    altitude / sub-axis. Direct strict-complement peer of the
+    //    histogram-side `is_strictly_modally_unique` primitive on
+    //    every non-empty file-format histogram. ──
+
+    #[test]
+    fn file_formats_modally_tied_matches_file_format_histogram_is_modally_tied_pointwise() {
+        // Routing pin: `file_formats_modally_tied` routes through
+        // `file_format_histogram().is_modally_tied()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. File-
+        // format sub-axis peer of
+        // `layer_kinds_modally_tied_matches_layer_kind_histogram_is_modally_tied_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_modally_tied_matches_tier_histogram_is_modally_tied_pointwise`
+        // on the tier altitude, and
+        // `kinds_modally_tied_matches_kind_histogram_is_modally_tied_pointwise`
+        // on the diff altitude, in the "modally-tied across
+        // altitudes" projection.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.file_format_histogram().is_modally_tied();
+            assert_eq!(slice.file_formats_modally_tied(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn file_formats_modally_tied_matches_defining_peak_multiplicity_inequality_pointwise() {
+        // Defining multiplicity-scalar inequality form:
+        // `file_formats_modally_tied() ⇔
+        // file_format_histogram().peak_multiplicity() >= 2`. Pins the
+        // predicate against the canonical open-coded expression on
+        // the `AxisHistogram::peak_multiplicity` scalar peer one
+        // altitude down — the surface consumers reach for when they
+        // open-code "two or more cells tied at the peak". Peer of
+        // `layer_kinds_modally_tied_matches_defining_peak_multiplicity_inequality_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_modally_tied_matches_defining_peak_multiplicity_inequality_pointwise`
+        // on the tier altitude, and
+        // `kinds_modally_tied_matches_defining_peak_multiplicity_inequality_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_modally_tied();
+            let mult = slice.file_format_histogram().peak_multiplicity();
+            let via_scalar = mult >= 2;
+            assert_eq!(
+                via_seam, via_scalar,
+                "file_formats_modally_tied ({via_seam}) must agree with \
+                 peak_multiplicity >= 2 ({via_scalar}, mult={mult})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_modally_tied_matches_modality_degree_modal_component_pointwise() {
+        // Modality-pair projection-inequality form:
+        // `file_formats_modally_tied() ⇔
+        // file_format_histogram().modality_degree().0 >= 2`. Pins the
+        // predicate against the modal-component reading of the fused
+        // `(peak_multiplicity, trough_multiplicity)` pair, the second
+        // documented surface form consumers reach for when they read
+        // the classifier pair before the comparison. Peer of
+        // `layer_kinds_modally_tied_matches_modality_degree_modal_component_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_modally_tied_matches_modality_degree_modal_component_pointwise`
+        // on the tier altitude, and
+        // `kinds_modally_tied_matches_modality_degree_modal_component_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_modally_tied();
+            let (peak_mult, _) = slice.file_format_histogram().modality_degree();
+            let via_pair = peak_mult >= 2;
+            assert_eq!(
+                via_seam, via_pair,
+                "file_formats_modally_tied ({via_seam}) must agree with \
+                 modality_degree().0 >= 2 ({via_pair}, peak_mult={peak_mult})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_modally_tied_empty_chain_is_false() {
+        // Empty-chain modal-tie: the empty chain observes zero cells,
+        // so `peak_multiplicity` reads `0` and the inequality `0 >= 2`
+        // fails. `file_formats_modally_tied` reads `false`. Matches
+        // `is_modally_tied` reading `false` on the empty histogram one
+        // altitude down. Direct witness of the subsumption
+        // `file_formats_modally_tied ⇒ file_formats_any_observed` via
+        // the empty-chain disjunct of `!file_formats_any_observed`.
+        // Peer of `layer_kinds_modally_tied_empty_chain_is_false` on
+        // the sister sub-axis of the same chain altitude,
+        // `tiers_modally_tied_empty_map_is_false` on the tier altitude,
+        // and `kinds_modally_tied_empty_diff_is_false` on the diff
+        // altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(!empty.file_formats_modally_tied());
+        assert!(!empty.file_formats_any_observed());
+    }
+
+    #[test]
+    fn file_formats_modally_tied_no_recognized_files_is_false() {
+        // No-recognized-files pin: a non-empty chain of only
+        // `Defaults` / `Env` / unrecognized-extension `File` layers
+        // projects to an empty file-format histogram via the partial
+        // function `ConfigSource::file_format` — `peak_multiplicity`
+        // reads `0` and the inequality `0 >= 2` fails.
+        // `file_formats_modally_tied` reads `false`. Cross-sub-axis
+        // divergence pin against `layer_kinds_modally_tied`: on the
+        // same fixture the layer-kind sub-axis observes at least one
+        // layer-kind cell and may fire the modal-tie predicate (e.g.
+        // one `Defaults` + one `Env` reads
+        // `layer_kinds_modally_tied = true`), while the file-format
+        // sub-axis's modal-tie predicate silently drops out via the
+        // empty-histogram disjunct — the modal-tie leg is *narrower*
+        // at the file-format sub-axis than at the layer-kind sub-axis.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(!slice.is_empty(), "fixture must be non-empty");
+            assert!(
+                slice.file_format_histogram().is_empty(),
+                "fixture must have empty file-format histogram",
+            );
+            assert!(
+                !slice.file_formats_modally_tied(),
+                "no-recognized-files chain must not fire modally-tied",
+            );
+            assert!(!slice.file_formats_any_observed());
+        }
+    }
+
+    #[test]
+    fn file_formats_modally_tied_singleton_support_is_false() {
+        // Singleton-support pin: every recognized file layer lands on
+        // the same file format, so the lone observed cell stands alone
+        // at its own peak — `peak_multiplicity` reads `1` and the
+        // inequality `1 >= 2` fails. `file_formats_modally_tied` reads
+        // `false`. Direct witness of the subsumption
+        // `file_formats_singular_support ⇒ !file_formats_modally_tied`
+        // via the singleton-support corner. The `sample_chain()`
+        // fixture (two `.yaml` file layers + one Env layer, `{Yaml}`
+        // file-format support with count `2`) is a witness on the
+        // `false` side. Peer of
+        // `layer_kinds_modally_tied_singleton_support_is_false` on the
+        // sister sub-axis of the same chain altitude,
+        // `tiers_modally_tied_singleton_support_is_false` on the tier
+        // altitude, and `kinds_modally_tied_singleton_support_is_false`
+        // on the diff altitude.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 1);
+        assert!(slice.file_formats_singular_support());
+        assert!(!slice.file_formats_modally_tied());
+    }
+
+    #[test]
+    fn file_formats_modally_tied_two_format_uniform_partial_cover_is_true() {
+        // Two-format uniform-partial-cover pin: a chain of one `.yaml`
+        // + one `.toml` file layer has two observed cells tied at
+        // count `1` on the cardinality-`4` `Format` axis —
+        // `peak_multiplicity` reads `2` and the inequality `2 >= 2`
+        // fires. `file_formats_modally_tied` reads `true`. Witness on
+        // the modally-tied side of the strict modal partition.
+        // Support-`2` reachability at the chain file-format sub-axis,
+        // matching the support-`2` reachability at the layer-kind
+        // sub-axis on the cardinality-`3` axis and on the diff
+        // altitude on the same cardinality-`3` axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 2);
+        assert!(slice.file_formats_modally_tied());
+    }
+
+    #[test]
+    fn file_formats_modally_tied_three_format_uniform_partial_cover_is_true() {
+        // Three-format uniform-partial-cover pin: a chain of one
+        // `.yaml` + one `.toml` + one `.lisp` file layer has three
+        // observed cells tied at count `1` on the cardinality-`4`
+        // `Format` axis — `peak_multiplicity` reads `3` and the
+        // inequality `3 >= 2` fires. `file_formats_modally_tied` reads
+        // `true`. Support-`3` tied reachability at the chain file-
+        // format sub-axis — the additional off-singleton support
+        // cardinality unavailable at the layer-kind sub-axis
+        // (cardinality-`3`) and the diff altitude (cardinality-`3`),
+        // matching the tier altitude on the cardinality-`4`
+        // `ConfigTierKind` axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 3);
+        assert!(slice.file_formats_modally_tied());
+    }
+
+    #[test]
+    fn file_formats_modally_tied_uniform_four_format_cover_is_true() {
+        // Uniform axis-cover pin: a chain observing every cell of
+        // `Format` exactly once has four observed cells tied at count
+        // `1` — `peak_multiplicity` reads `4` and the inequality
+        // `4 >= 2` fires. `file_formats_modally_tied` reads `true`.
+        // Peer of the histogram-side axis-cover convention one
+        // altitude down, which reads `true` on every implementor with
+        // `axis_cardinality::<A>() >= 2` — the cardinality-`4`
+        // `Format` axis honours the general condition.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 4);
+        assert!(slice.file_formats_full_cover());
+        assert!(slice.file_formats_balanced());
+        assert!(slice.file_formats_modally_tied());
+    }
+
+    #[test]
+    fn file_formats_modally_tied_strictly_modal_skewed_chain_is_false() {
+        // Strictly-modal skewed-chain pin: the `sample_chain()`
+        // fixture is a *singleton-support* chain on the file-format
+        // sub-axis (see the singleton-support pin above), so we
+        // construct a strictly-modal skewed fixture explicitly here:
+        // two `.yaml` file layers + one `.toml` file layer. `Yaml`
+        // uniquely peaks at count `2` (Toml sits at `1`, Lisp at `0`,
+        // Nix at `0`) — `peak_multiplicity` reads `1` and the
+        // inequality `1 >= 2` fails. `file_formats_modally_tied` reads
+        // `false`. Witness on the strictly-modal side of the strict
+        // modal partition. Peer of
+        // `layer_kinds_modally_tied_strictly_modal_skewed_chain_is_false`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_modally_tied_strictly_modal_skewed_map_is_false` on
+        // the tier altitude, and
+        // `kinds_modally_tied_strictly_modal_skewed_diff_is_false` on
+        // the diff altitude.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.dominant_file_format(), Some(Format::Yaml));
+        assert_eq!(slice.peak_file_format_count(), 2);
+        assert!(!slice.file_formats_modally_tied());
+    }
+
+    #[test]
+    fn file_formats_modally_tied_implies_file_formats_any_observed_pointwise() {
+        // Subsumption pin: `file_formats_modally_tied() ⇒
+        // file_formats_any_observed()` always. A tied peak requires
+        // at least two observed cells, so the empty chain (zero
+        // observed cells) and every no-recognized-files non-empty
+        // chain (empty file-format histogram via the partial-function
+        // projection) cannot fire the tie predicate — every modally-
+        // tied chain observes at least one file-format cell (in fact
+        // at least two). Direct pin of the histogram-side subsumption
+        // `is_modally_tied ⇒ !is_empty` one altitude down. Peer of
+        // `layer_kinds_modally_tied_implies_layer_kinds_any_observed_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_modally_tied_implies_tiers_any_observed_pointwise`
+        // on the tier altitude, and
+        // `kinds_modally_tied_implies_kinds_any_observed_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_modally_tied() {
+                assert!(
+                    slice.file_formats_any_observed(),
+                    "modally-tied chain must observe at least one file-format cell",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_modally_tied_implies_not_file_formats_singular_support_pointwise() {
+        // Subsumption pin: `file_formats_modally_tied() ⇒
+        // !file_formats_singular_support()` always. A tied peak
+        // requires at least two observed cells sitting at the same
+        // maximum count, so the modal level set has cardinality
+        // `>= 2` — strictly more than the singleton-support corner.
+        // Direct pin of the histogram-side subsumption
+        // `has_singular_support ⇒ !is_modally_tied` (contrapositive)
+        // one altitude down. Peer of
+        // `layer_kinds_modally_tied_implies_not_layer_kinds_singular_support_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_modally_tied_implies_not_tiers_singular_support_pointwise`
+        // on the tier altitude, and
+        // `kinds_modally_tied_implies_not_kinds_singular_support_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_modally_tied() {
+                assert!(
+                    !slice.file_formats_singular_support(),
+                    "modally-tied chain cannot be singular-support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_support_implies_not_file_formats_modally_tied_pointwise() {
+        // The forward direction of the singleton-support corner
+        // subsumption: `file_formats_singular_support() ⇒
+        // !file_formats_modally_tied()` always. A single observed
+        // cell is the only member of the modal level set
+        // (cardinality `1`), so the tie predicate never fires on
+        // any singleton-support chain. Every singleton-support
+        // chain sits uniformly on the strictly-modal-unique side
+        // of the strict modal partition. Peer of
+        // `layer_kinds_singular_support_implies_not_layer_kinds_modally_tied_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_singular_support_implies_not_tiers_modally_tied_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_support_implies_not_kinds_modally_tied_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_singular_support() {
+                assert!(
+                    !slice.file_formats_modally_tied(),
+                    "singular-support chain cannot be modally tied",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_modally_tied_forms_strict_modal_partition_on_non_empty_histograms_pointwise() {
+        // Strict modal partition pin on non-empty file-format
+        // histograms: on every chain whose file-format histogram is
+        // non-empty exactly one of the pair
+        // (file_formats_modally_tied, is_strictly_modally_unique)
+        // fires. On the empty histogram (empty chain OR no-recognized-
+        // files chain) both read `false` (the shared boundary below
+        // both branches of the strict modal partition). Direct pin of
+        // the histogram-side strict-modal-partition law
+        // `!is_empty ⇒ is_modally_tied ⇔ !is_strictly_modally_unique`
+        // one altitude down. Peer of
+        // `layer_kinds_modally_tied_forms_strict_modal_partition_on_non_empty_chains_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_modally_tied_forms_strict_modal_partition_on_non_empty_maps_pointwise`
+        // on the tier altitude, and
+        // `kinds_modally_tied_forms_strict_modal_partition_on_non_empty_diffs_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let hist = slice.file_format_histogram();
+            let tied = slice.file_formats_modally_tied();
+            let strict = hist.is_strictly_modally_unique();
+            if !hist.is_empty() {
+                let count = usize::from(tied) + usize::from(strict);
+                assert_eq!(
+                    count, 1,
+                    "on a non-empty file-format histogram exactly one of \
+                     (modally_tied, strictly_modally_unique) must fire \
+                     (tied={tied}, strict={strict})",
+                );
+            } else {
+                assert!(!tied, "empty file-format histogram cannot be modally tied");
+                assert!(
+                    !strict,
+                    "empty file-format histogram cannot be strictly modally unique",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_full_cover_and_file_formats_balanced_imply_file_formats_modally_tied_pointwise()
+    {
+        // Cardinality-`>= 2` uniform-cover pin: on every full-cover
+        // balanced chain on the cardinality-`4` `Format` axis, the
+        // modal level set equals the full axis — all four cells share
+        // the peak count — so `file_formats_modally_tied` fires.
+        // Cardinality-`>= 2` witness of the histogram-side subsumption
+        // `is_uniform_count ∧ !is_empty ⇒ is_modally_tied ⇔
+        // !has_singular_support` one altitude down. Peer of
+        // `layer_kinds_full_cover_and_layer_kinds_balanced_imply_layer_kinds_modally_tied_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_full_cover_and_tiers_balanced_imply_tiers_modally_tied_pointwise`
+        // on the tier altitude, and
+        // `kinds_full_cover_and_kinds_balanced_imply_kinds_modally_tied_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_full_cover() && slice.file_formats_balanced() {
+                assert!(
+                    slice.file_formats_modally_tied(),
+                    "full-cover balanced chain on cardinality-4 axis \
+                     must be modally tied",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_modally_tied_agrees_with_open_coded_peak_multiplicity_walk() {
+        // Parity against the exact hand-rolled peak-multiplicity
+        // walk this lift replaces: walk every cell of the histogram
+        // and count how many carry the maximum observed count; the
+        // modally-tied predicate reads `true` iff the multiplicity
+        // is at least `2`. Empty histogram has max `0` and no cells
+        // above zero, so multiplicity reads `0` and the predicate
+        // fails. Peer of
+        // `layer_kinds_modally_tied_agrees_with_open_coded_peak_multiplicity_walk`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_modally_tied_agrees_with_open_coded_peak_multiplicity_walk`
+        // on the tier altitude, and
+        // `kinds_modally_tied_agrees_with_open_coded_peak_multiplicity_walk`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_modally_tied();
+            let hist = slice.file_format_histogram();
+            let max = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let hand_rolled = if max == 0 {
+                false
+            } else {
+                hist.iter().filter(|(_, c)| *c == max).count() >= 2
+            };
             assert_eq!(via_seam, hand_rolled);
         }
     }
