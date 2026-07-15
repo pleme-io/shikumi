@@ -7700,6 +7700,258 @@ pub trait ConfigSourceChain {
         self.file_format_histogram().is_modally_tied()
     }
 
+    /// `true` exactly when this chain's observed
+    /// [`crate::discovery::Format`] histogram has two or more cells tied
+    /// at the trough leaf count — the recessive file-format is *shared*
+    /// rather than uniquely held.
+    ///
+    /// The **antimodally-tied-file-formats boolean predicate** on the
+    /// file-format sub-axis of the chain altitude, the direct strict-
+    /// complement of [`crate::AxisHistogram::is_strictly_antimodally_unique`]
+    /// on every non-empty file-format histogram (both read `false` on the
+    /// empty histogram — the shared boundary below both branches of the
+    /// strict antimodal partition). Routes through
+    /// [`Self::file_format_histogram`]`::is_antimodally_tied`, the
+    /// single-pass scan over the fixed-cardinality counts vector reading
+    /// `trough_multiplicity() >= 2` off one predicate — strictly tighter
+    /// than either of the documented open-coded surface forms one seam
+    /// over.
+    ///
+    /// The **antimodally-tied-file-formats peer** of the two documented
+    /// surface forms consumers previously re-derived inline:
+    /// `chain.file_format_histogram().trough_multiplicity() >= 2` (the
+    /// defining multiplicity-scalar inequality form — one method call
+    /// plus a magic `>= 2` threshold at the consumer site), and
+    /// `chain.file_format_histogram().modality_degree().1 >= 2` (the
+    /// modality-pair projection-inequality form, reading the antimodal
+    /// component of the fused
+    /// [`crate::AxisHistogram::modality_degree`] pair before the
+    /// comparison — a fused-pair build for a single-component
+    /// projection). This lift names the antimodally-tied-file-formats
+    /// predicate directly at the chain-altitude surface — the typed
+    /// boolean every operator-facing *"is the rarest file format
+    /// uniquely held on this chain, or is the declaration-order tie-
+    /// break exercised?"* check reads off as a single method call.
+    ///
+    /// The chain-altitude file-format sub-axis antimodal-tie-predicate
+    /// peer that **lifts the "antimodally-tied across altitudes"
+    /// projection sideways** from the first chain-altitude sub-axis
+    /// ([`Self::layer_kinds_antimodally_tied`]) to the second chain-
+    /// altitude sub-axis, matching the tier-altitude climb
+    /// ([`crate::ProvenanceMap::tiers_antimodally_tied`]) and the diff-
+    /// altitude seed ([`crate::ConfigDiff::kinds_antimodally_tied`]).
+    /// Antimodal-side row of the modality classifier pair
+    /// `(is_modally_tied, is_antimodally_tied)`, complementary to the
+    /// modally-tied row [`Self::file_formats_modally_tied`] on the same
+    /// chain file-format sub-axis. The remaining chain-altitude sub-axis
+    /// ([`Self::env_prefix_kinds_antimodally_tied`] over
+    /// [`Self::env_prefix_kind_histogram`]) is the natural next sideways
+    /// lift. The pattern is the same at every altitude / sub-axis: fuse
+    /// the two open-coded surface forms (multiplicity-scalar inequality,
+    /// modality-pair projection-inequality) into a single boolean
+    /// predicate named at the surface, routed through the shared
+    /// [`crate::AxisHistogram::is_antimodally_tied`] primitive one
+    /// altitude down.
+    ///
+    /// **Cardinality-`4` reachability at the file-format sub-axis — the
+    /// antimodally-tied corner carries witnesses on all three off-
+    /// singleton support cardinalities.** [`crate::discovery::Format`]
+    /// carries four cells, so `file_formats_antimodally_tied()` reads
+    /// `true` on every chain whose trough leaf count is shared by two or
+    /// more observed file-format cells (e.g. one-`.yaml`+one-`.toml`
+    /// tied at count `1`, three-format uniform partial cover tied at
+    /// count `1`, the uniform four-format cover tied at count `1`, or
+    /// the two-`.yaml`+one-`.toml`+one-`.lisp` mixed-count chain where
+    /// `Toml` and `Lisp` share the trough at count `1` while `Yaml`
+    /// uniquely peaks at count `2` — a strictly-modal *and* antimodally-
+    /// tied witness, unavailable at the cardinality-`3` layer-kind sub-
+    /// axis), and `false` on the empty chain (no observed cell), on
+    /// every no-recognized-files non-empty chain (empty file-format
+    /// histogram via the partial-function projection — no observed
+    /// cell), on every singleton-support chain (support cardinality `1`,
+    /// trough multiplicity `1`), and on every strictly-antimodal skewed
+    /// chain (e.g. two-`.yaml`+one-`.toml` where `Toml` uniquely holds
+    /// the trough at count `1` while `Yaml` peaks at `2`). Matches the
+    /// tier-altitude peer on the cardinality-`4` [`crate::ConfigTierKind`]
+    /// axis in reachability — the additional support-`3` shared-trough
+    /// witness unavailable at the cardinality-`3` layer-kind sub-axis /
+    /// diff altitude is *reachable* here, a strict advance over both.
+    ///
+    /// **Empty-chain convention** — returns `false` on the empty chain:
+    /// the empty chain observes zero cells, so
+    /// [`crate::AxisHistogram::trough_multiplicity`] reads `0` and the
+    /// inequality `0 >= 2` fails. Matches
+    /// [`crate::AxisHistogram::is_antimodally_tied`]'s empty-histogram
+    /// convention one altitude down. The empty-chain row on the strict
+    /// antimodal partition pair
+    /// `(is_strictly_antimodally_unique, is_antimodally_tied)` reads
+    /// `(false, false)` — the shared boundary below both branches. Peer
+    /// of [`Self::layer_kinds_antimodally_tied`]'s empty-chain `false`
+    /// polarity one sub-axis over on the same chain altitude, of
+    /// [`crate::ProvenanceMap::tiers_antimodally_tied`]'s empty-map
+    /// `false` polarity, and of [`crate::ConfigDiff::kinds_antimodally_tied`]'s
+    /// empty-diff `false` polarity in the same projection.
+    ///
+    /// **No-recognized-files convention** — returns `false` on every
+    /// non-empty chain whose file-format histogram is empty (only
+    /// `Defaults`, `Env`, and unrecognized-extension `File` layers).
+    /// The file-format projection is a partial function
+    /// ([`ConfigSource::file_format`] returns [`None`] for the
+    /// unrecognized cases), so a non-empty chain can still project to an
+    /// empty histogram — `trough_multiplicity` reads `0` and the
+    /// inequality `0 >= 2` fails. This is the antimodal-tie-side cross-
+    /// sub-axis divergence pin against
+    /// [`Self::layer_kinds_antimodally_tied`]: on the same fixtures the
+    /// layer-kind sub-axis observes at least one layer-kind cell
+    /// (Defaults / Env / File) and may fire the antimodal-tie predicate
+    /// (e.g. one `Defaults` + one `Env` reads
+    /// `layer_kinds_antimodally_tied = true`), while the file-format
+    /// sub-axis's antimodal-tie predicate silently drops out via the
+    /// empty-histogram disjunct — the antimodal-tie leg's meaning is
+    /// *narrower* at the file-format sub-axis than at the layer-kind
+    /// sub-axis, matching the same narrowing pinned at the modal-tie
+    /// row [`Self::file_formats_modally_tied`].
+    ///
+    /// **Singleton-support convention** — returns `false` on every
+    /// chain whose observed file-format support is a single
+    /// [`crate::discovery::Format`] cell: the lone observed cell stands
+    /// alone at its own trough (peak and trough coincide, no tie-break
+    /// to exercise), so `trough_multiplicity` reads `1` and the
+    /// inequality `1 >= 2` fails. The `sample_chain()` fixture (two
+    /// `.yaml` file layers + one Env layer, `{Yaml}` file-format support
+    /// with count `2`) is a witness on the `false` side — the singleton-
+    /// support corner is uniformly on the strictly-antimodal-unique
+    /// side of the strict antimodal partition. Direct pin of the
+    /// histogram-side subsumption `has_singular_support ⇒
+    /// !is_antimodally_tied` one altitude down.
+    ///
+    /// **Uniform four-format cover convention** — returns `true` on
+    /// every chain where each [`crate::discovery::Format`] cell was
+    /// observed at exactly the same positive count (in particular the
+    /// chain with one file per format): the four cells share the same
+    /// count, so `trough_multiplicity` reads `4` and the inequality
+    /// `4 >= 2` fires. Peer of the histogram-side axis-cover convention
+    /// one altitude down, which reads `true` on every implementor with
+    /// `axis_cardinality::<A>() >= 2` — the cardinality-`4`
+    /// [`crate::discovery::Format`] axis honours the general condition.
+    ///
+    /// **Two-way antimodal partition on non-empty file-format
+    /// histograms** — on every non-empty file-format histogram exactly
+    /// one of the antimodal-uniqueness pair fires: either the trough is
+    /// uniquely held (strictly-antimodal-unique fires, antimodally-tied
+    /// does not) or the trough is shared (antimodally-tied fires,
+    /// strictly-antimodal-unique does not). The empty histogram sits
+    /// below both branches (both read `false`) — this covers both the
+    /// empty chain and every no-recognized-files non-empty chain.
+    /// Direct pin of the histogram-side strict antimodal partition
+    /// `!is_empty ⇒ is_antimodally_tied ⇔
+    /// !is_strictly_antimodally_unique` one altitude down.
+    ///
+    /// **Modal / antimodal collapse on uniform-count non-empty file-
+    /// format histograms** — on every uniform-count non-empty file-
+    /// format histogram the modal and antimodal level sets coincide
+    /// with the support, so `file_formats_antimodally_tied ⇔
+    /// file_formats_modally_tied` — the classifier pair collapses to a
+    /// single boolean, the multi-cell-support witness. Direct pin of
+    /// the histogram-side collapse law `is_uniform_count ∧ !is_empty ⇒
+    /// is_antimodally_tied ⇔ is_modally_tied` one altitude down, peer of
+    /// the same collapse pinned at the diff altitude by
+    /// [`crate::ConfigDiff::kinds_antimodally_tied`], at the tier
+    /// altitude by [`crate::ProvenanceMap::tiers_antimodally_tied`], and
+    /// at the chain layer-kind sub-axis by
+    /// [`Self::layer_kinds_antimodally_tied`].
+    ///
+    /// # Invariants
+    ///
+    /// - `file_formats_antimodally_tied() == file_format_histogram().is_antimodally_tied()`
+    ///   — both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram
+    ///   surface.
+    /// - `file_formats_antimodally_tied() ⇔
+    ///   file_format_histogram().trough_multiplicity() >= 2` — the
+    ///   defining multiplicity-scalar inequality form on the
+    ///   [`crate::AxisHistogram::trough_multiplicity`] scalar peer, the
+    ///   canonical open-coded expression of the predicate one altitude
+    ///   down.
+    /// - `file_formats_antimodally_tied() ⇔
+    ///   file_format_histogram().modality_degree().1 >= 2` — the
+    ///   modality-pair projection-inequality form, reading the
+    ///   antimodal component of the fused
+    ///   [`crate::AxisHistogram::modality_degree`] pair before the
+    ///   comparison.
+    /// - `file_formats_antimodally_tied() ⇒ file_formats_any_observed()`
+    ///   always — a tied trough requires at least two observed cells,
+    ///   so both the empty chain (zero observed cells) and every no-
+    ///   recognized-files non-empty chain (empty file-format histogram
+    ///   via the partial-function projection) cannot fire.
+    ///   Contrapositively, `!file_formats_any_observed() ⇒
+    ///   !file_formats_antimodally_tied()`.
+    /// - `file_formats_singular_support() ⇒
+    ///   !file_formats_antimodally_tied()` always — a singleton-support
+    ///   chain has exactly one observed cell, so the antimodal level
+    ///   set has cardinality `1` and the tie predicate fails.
+    ///   Contrapositively, `file_formats_antimodally_tied() ⇒
+    ///   !file_formats_singular_support()`: a fired tie predicate means
+    ///   at least two observed cells. Direct pin of the histogram-side
+    ///   subsumption `has_singular_support ⇒ !is_antimodally_tied` one
+    ///   altitude down.
+    /// - `file_formats_full_cover() ∧ file_formats_balanced() ⇒
+    ///   file_formats_antimodally_tied()` on the cardinality-`>= 2`
+    ///   axis: a full-cover uniform-count chain has every cell observed
+    ///   at the same count, so the antimodal level set equals the full
+    ///   axis — the trough multiplicity rises to
+    ///   `axis_cardinality::<crate::discovery::Format>()` which is `4`,
+    ///   and the tie predicate fires. Cardinality-`>= 2` witness of the
+    ///   uniform-cover corner of the histogram-side subsumption tying
+    ///   [`crate::AxisHistogram::is_uniform_count`] and
+    ///   [`crate::AxisHistogram::has_singular_support`] on non-empty
+    ///   histograms one altitude down.
+    /// - **Strict antimodal partition on non-empty file-format
+    ///   histograms** — `!file_format_histogram().is_empty() ⇒
+    ///   (file_formats_antimodally_tied ⇔
+    ///   !file_format_histogram().is_strictly_antimodally_unique())`
+    ///   always. On every non-empty file-format histogram exactly one
+    ///   of `(file_formats_antimodally_tied,
+    ///   file_format_histogram().is_strictly_antimodally_unique())`
+    ///   fires; both read `false` on the empty histogram — the shared
+    ///   boundary below both branches. Direct pin of the histogram-side
+    ///   strict antimodal partition one altitude down.
+    /// - **Modal / antimodal collapse on uniform-count non-empty
+    ///   file-format histograms** — `file_formats_balanced() ∧
+    ///   file_formats_any_observed() ⇒ (file_formats_antimodally_tied
+    ///   ⇔ file_formats_modally_tied)`. On every uniform-count non-
+    ///   empty file-format histogram the two tie predicates collapse
+    ///   to the same value. Direct pin of the histogram-side collapse
+    ///   `is_uniform_count ∧ !is_empty ⇒ is_antimodally_tied ⇔
+    ///   is_modally_tied` one altitude down, peer of the same collapse
+    ///   pinned at the diff altitude by
+    ///   [`crate::ConfigDiff::kinds_antimodally_tied`], at the tier
+    ///   altitude by [`crate::ProvenanceMap::tiers_antimodally_tied`],
+    ///   and at the chain layer-kind sub-axis by
+    ///   [`Self::layer_kinds_antimodally_tied`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram
+    /// build) and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the trough-multiplicity scan). Both are `O(n)` in practice
+    /// since the file-format axis carries a fixed four-cell
+    /// cardinality; the returned `bool` reads one predicate — the
+    /// trough scan walks the counts vector once and counts cells
+    /// matching the strictly-positive minimum, then reads
+    /// `multiplicity >= 2` off one comparison. Strictly tighter than
+    /// the two documented open-coded surfaces one seam over (no
+    /// exposed `>= 2` magic threshold at the consumer site, no
+    /// [`crate::AxisHistogram::modality_degree`] fused-pair build for
+    /// a single-component projection).
+    #[must_use]
+    fn file_formats_antimodally_tied(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().is_antimodally_tied()
+    }
+
     /// Dense per-env-prefix-presence tally of the chain's
     /// [`ConfigSource::Env`] layers over the [`EnvMetadataTagKind`] axis
     /// — the typed histogram every attestation manifest, structured-log
@@ -34560,6 +34812,538 @@ mod tests {
                 false
             } else {
                 hist.iter().filter(|(_, c)| *c == max).count() >= 2
+            };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── file_formats_antimodally_tied coverage — the antimodally-tied-
+    //    file-formats boolean predicate on the file-format sub-axis of
+    //    the chain altitude, lifting the layer-kind-sub-axis
+    //    `layer_kinds_antimodally_tied` sideways to the second chain-
+    //    altitude sub-axis, matching the tier-altitude climb
+    //    `tiers_antimodally_tied` and the diff-altitude seed
+    //    `ConfigDiff::kinds_antimodally_tied`. Antimodal-side row on
+    //    the modality classifier pair (is_modally_tied,
+    //    is_antimodally_tied), complementary to the just-closed
+    //    modally-tied row at the same chain file-format sub-axis.
+    //    Direct strict-complement peer of the histogram-side
+    //    `is_strictly_antimodally_unique` primitive on every non-
+    //    empty file-format histogram. ──
+
+    #[test]
+    fn file_formats_antimodally_tied_matches_file_format_histogram_is_antimodally_tied_pointwise() {
+        // Routing pin: `file_formats_antimodally_tied` routes through
+        // `file_format_histogram().is_antimodally_tied()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. File-
+        // format sub-axis peer of
+        // `layer_kinds_antimodally_tied_matches_layer_kind_histogram_is_antimodally_tied_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_antimodally_tied_matches_tier_histogram_is_antimodally_tied_pointwise`
+        // on the tier altitude, and
+        // `kinds_antimodally_tied_matches_kind_histogram_is_antimodally_tied_pointwise`
+        // on the diff altitude, in the "antimodally-tied across
+        // altitudes" projection.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.file_format_histogram().is_antimodally_tied();
+            assert_eq!(slice.file_formats_antimodally_tied(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn file_formats_antimodally_tied_matches_defining_trough_multiplicity_inequality_pointwise() {
+        // Defining multiplicity-scalar inequality form:
+        // `file_formats_antimodally_tied() ⇔
+        // file_format_histogram().trough_multiplicity() >= 2`. Pins
+        // the predicate against the canonical open-coded expression on
+        // the `AxisHistogram::trough_multiplicity` scalar peer one
+        // altitude down — the surface consumers reach for when they
+        // open-code "two or more cells tied at the trough". Peer of
+        // `layer_kinds_antimodally_tied_matches_defining_trough_multiplicity_inequality_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_antimodally_tied_matches_defining_trough_multiplicity_inequality_pointwise`
+        // on the tier altitude, and
+        // `kinds_antimodally_tied_matches_defining_trough_multiplicity_inequality_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_antimodally_tied();
+            let mult = slice.file_format_histogram().trough_multiplicity();
+            let via_scalar = mult >= 2;
+            assert_eq!(
+                via_seam, via_scalar,
+                "file_formats_antimodally_tied ({via_seam}) must agree with \
+                 trough_multiplicity >= 2 ({via_scalar}, mult={mult})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_antimodally_tied_matches_modality_degree_antimodal_component_pointwise() {
+        // Modality-pair projection-inequality form:
+        // `file_formats_antimodally_tied() ⇔
+        // file_format_histogram().modality_degree().1 >= 2`. Pins the
+        // predicate against the antimodal-component reading of the
+        // fused `(peak_multiplicity, trough_multiplicity)` pair, the
+        // second documented surface form consumers reach for when they
+        // read the classifier pair before the comparison. Peer of
+        // `layer_kinds_antimodally_tied_matches_modality_degree_antimodal_component_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_antimodally_tied_matches_modality_degree_antimodal_component_pointwise`
+        // on the tier altitude, and
+        // `kinds_antimodally_tied_matches_modality_degree_antimodal_component_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_antimodally_tied();
+            let (_, trough_mult) = slice.file_format_histogram().modality_degree();
+            let via_pair = trough_mult >= 2;
+            assert_eq!(
+                via_seam, via_pair,
+                "file_formats_antimodally_tied ({via_seam}) must agree with \
+                 modality_degree().1 >= 2 ({via_pair}, trough_mult={trough_mult})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_antimodally_tied_empty_chain_is_false() {
+        // Empty-chain antimodal-tie: the empty chain observes zero
+        // cells, so `trough_multiplicity` reads `0` and the inequality
+        // `0 >= 2` fails. `file_formats_antimodally_tied` reads
+        // `false`. Matches `is_antimodally_tied` reading `false` on
+        // the empty histogram one altitude down. Direct witness of the
+        // subsumption `file_formats_antimodally_tied ⇒
+        // file_formats_any_observed` via the empty-chain disjunct of
+        // `!file_formats_any_observed`. Peer of
+        // `layer_kinds_antimodally_tied_empty_chain_is_false` on the
+        // sister sub-axis of the same chain altitude,
+        // `tiers_antimodally_tied_empty_map_is_false` on the tier
+        // altitude, and `kinds_antimodally_tied_empty_diff_is_false`
+        // on the diff altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(!empty.file_formats_antimodally_tied());
+        assert!(!empty.file_formats_any_observed());
+    }
+
+    #[test]
+    fn file_formats_antimodally_tied_no_recognized_files_is_false() {
+        // No-recognized-files pin: a non-empty chain of only
+        // `Defaults` / `Env` / unrecognized-extension `File` layers
+        // projects to an empty file-format histogram via the partial
+        // function `ConfigSource::file_format` — `trough_multiplicity`
+        // reads `0` and the inequality `0 >= 2` fails.
+        // `file_formats_antimodally_tied` reads `false`. Cross-sub-
+        // axis divergence pin against `layer_kinds_antimodally_tied`:
+        // on the same fixture the layer-kind sub-axis observes at
+        // least one layer-kind cell and may fire the antimodal-tie
+        // predicate (e.g. one `Defaults` + one `Env` reads
+        // `layer_kinds_antimodally_tied = true`), while the file-
+        // format sub-axis's antimodal-tie predicate silently drops out
+        // via the empty-histogram disjunct — the antimodal-tie leg is
+        // *narrower* at the file-format sub-axis than at the layer-
+        // kind sub-axis, matching the same narrowing pinned at the
+        // modal-tie row `file_formats_modally_tied`.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(!slice.is_empty(), "fixture must be non-empty");
+            assert!(
+                slice.file_format_histogram().is_empty(),
+                "fixture must have empty file-format histogram",
+            );
+            assert!(
+                !slice.file_formats_antimodally_tied(),
+                "no-recognized-files chain must not fire antimodally-tied",
+            );
+            assert!(!slice.file_formats_any_observed());
+        }
+    }
+
+    #[test]
+    fn file_formats_antimodally_tied_singleton_support_is_false() {
+        // Singleton-support pin: every recognized file layer lands on
+        // the same file format, so the lone observed cell stands alone
+        // at its own trough (peak and trough coincide) —
+        // `trough_multiplicity` reads `1` and the inequality `1 >= 2`
+        // fails. `file_formats_antimodally_tied` reads `false`. Direct
+        // witness of the subsumption `file_formats_singular_support ⇒
+        // !file_formats_antimodally_tied` via the singleton-support
+        // corner. The `sample_chain()` fixture (two `.yaml` file layers
+        // + one Env layer, `{Yaml}` file-format support with count `2`)
+        // is a witness on the `false` side. Peer of
+        // `layer_kinds_antimodally_tied_singleton_support_is_false` on
+        // the sister sub-axis of the same chain altitude,
+        // `tiers_antimodally_tied_singleton_support_is_false` on the
+        // tier altitude, and
+        // `kinds_antimodally_tied_singleton_support_is_false` on the
+        // diff altitude.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 1);
+        assert!(slice.file_formats_singular_support());
+        assert!(!slice.file_formats_antimodally_tied());
+    }
+
+    #[test]
+    fn file_formats_antimodally_tied_two_format_uniform_partial_cover_is_true() {
+        // Two-format uniform-partial-cover pin: a chain of one `.yaml`
+        // + one `.toml` file layer has two observed cells tied at
+        // count `1` on the cardinality-`4` `Format` axis (with two
+        // silent cells at count `0`) — `trough_multiplicity` reads `2`
+        // and the inequality `2 >= 2` fires.
+        // `file_formats_antimodally_tied` reads `true`. Witness on the
+        // antimodally-tied side of the strict antimodal partition at
+        // the chain file-format sub-axis. Support-`2` reachability at
+        // the chain file-format sub-axis, matching the support-`2`
+        // reachability at the layer-kind sub-axis on the cardinality-
+        // `3` axis and on the diff altitude on the same cardinality-
+        // `3` axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 2);
+        assert!(slice.file_formats_antimodally_tied());
+    }
+
+    #[test]
+    fn file_formats_antimodally_tied_three_format_uniform_partial_cover_is_true() {
+        // Three-format uniform-partial-cover pin: a chain of one
+        // `.yaml` + one `.toml` + one `.lisp` file layer has three
+        // observed cells tied at count `1` on the cardinality-`4`
+        // `Format` axis — `trough_multiplicity` reads `3` and the
+        // inequality `3 >= 2` fires. `file_formats_antimodally_tied`
+        // reads `true`. Support-`3` shared-trough reachability at the
+        // chain file-format sub-axis — the additional off-singleton
+        // support cardinality unavailable at the layer-kind sub-axis
+        // (cardinality-`3`) and the diff altitude (cardinality-`3`),
+        // matching the tier altitude on the cardinality-`4`
+        // `ConfigTierKind` axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 3);
+        assert!(slice.file_formats_antimodally_tied());
+    }
+
+    #[test]
+    fn file_formats_antimodally_tied_uniform_four_format_cover_is_true() {
+        // Uniform axis-cover pin: a chain observing every cell of
+        // `Format` exactly once has four observed cells tied at count
+        // `1` — `trough_multiplicity` reads `4` and the inequality
+        // `4 >= 2` fires. `file_formats_antimodally_tied` reads
+        // `true`. Peer of the histogram-side axis-cover convention
+        // one altitude down, which reads `true` on every implementor
+        // with `axis_cardinality::<A>() >= 2` — the cardinality-`4`
+        // `Format` axis honours the general condition.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 4);
+        assert!(slice.file_formats_full_cover());
+        assert!(slice.file_formats_balanced());
+        assert!(slice.file_formats_antimodally_tied());
+    }
+
+    #[test]
+    fn file_formats_antimodally_tied_strictly_antimodal_skewed_chain_is_false() {
+        // Strictly-antimodal skewed-chain pin: a chain of two `.yaml`
+        // + one `.toml` file layer has `Toml` uniquely holding the
+        // trough at count `1` while `Yaml` peaks at count `2` (Lisp
+        // sits at `0`, Nix at `0`) — `trough_multiplicity` reads `1`
+        // and the inequality `1 >= 2` fails.
+        // `file_formats_antimodally_tied` reads `false`. Witness on
+        // the strictly-antimodal side of the strict antimodal
+        // partition. Peer of
+        // `layer_kinds_antimodally_tied_strictly_antimodal_skewed_chain_is_false`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_antimodally_tied_strictly_antimodal_skewed_map_is_false`
+        // on the tier altitude, and
+        // `kinds_antimodally_tied_strictly_antimodal_skewed_diff_is_false`
+        // on the diff altitude.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.dominant_file_format(), Some(Format::Yaml));
+        assert_eq!(slice.peak_file_format_count(), 2);
+        assert!(!slice.file_formats_antimodally_tied());
+    }
+
+    #[test]
+    fn file_formats_antimodally_tied_strictly_modal_and_antimodally_tied_chain_is_true() {
+        // Modal-side / antimodal-side divergence pin: on the
+        // cardinality-`4` `Format` axis a mixed-count chain can
+        // simultaneously carry a *unique* peak and a *shared* trough
+        // — two `.yaml` + one `.toml` + one `.lisp` gives
+        // `{Yaml: 2, Toml: 1, Lisp: 1, Nix: 0}`. `Yaml` uniquely
+        // peaks at count `2` (`peak_multiplicity = 1`, modally-tied
+        // fails), while `Toml` and `Lisp` share the trough at count
+        // `1` (`trough_multiplicity = 2`, antimodally-tied fires).
+        // Direct witness of the *strictly-modal-unique ∧
+        // antimodally-tied* corner of the four-quadrant modality
+        // classifier — reachable at the file-format sub-axis
+        // (cardinality-`4`) but requiring three off-silent cells,
+        // matching the tier altitude on the cardinality-`4`
+        // `ConfigTierKind` axis. Peer of the corresponding cross-
+        // corner witnesses at the diff and tier altitudes in the
+        // "antimodally-tied across altitudes" projection.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.lisp")),
+        ];
+        let slice = chain.as_slice();
+        assert!(!slice.file_formats_modally_tied());
+        assert!(slice.file_formats_antimodally_tied());
+    }
+
+    #[test]
+    fn file_formats_antimodally_tied_implies_file_formats_any_observed_pointwise() {
+        // Subsumption pin: `file_formats_antimodally_tied() ⇒
+        // file_formats_any_observed()` always. A tied trough requires
+        // at least two observed cells, so the empty chain (zero
+        // observed cells) and every no-recognized-files non-empty
+        // chain (empty file-format histogram via the partial-function
+        // projection) cannot fire the tie predicate — every
+        // antimodally-tied chain observes at least one file-format
+        // cell (in fact at least two). Direct pin of the histogram-
+        // side subsumption `is_antimodally_tied ⇒ !is_empty` one
+        // altitude down. Peer of
+        // `layer_kinds_antimodally_tied_implies_layer_kinds_any_observed_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_antimodally_tied_implies_tiers_any_observed_pointwise`
+        // on the tier altitude, and
+        // `kinds_antimodally_tied_implies_kinds_any_observed_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_antimodally_tied() {
+                assert!(
+                    slice.file_formats_any_observed(),
+                    "antimodally-tied chain must observe at least one file-format cell",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_antimodally_tied_implies_not_file_formats_singular_support_pointwise() {
+        // Subsumption pin: `file_formats_antimodally_tied() ⇒
+        // !file_formats_singular_support()` always. A tied trough
+        // requires at least two observed cells sitting at the same
+        // strictly-positive minimum count, so the antimodal level set
+        // has cardinality `>= 2` — strictly more than the singleton-
+        // support corner. Direct pin of the histogram-side subsumption
+        // `has_singular_support ⇒ !is_antimodally_tied`
+        // (contrapositive) one altitude down. Peer of
+        // `layer_kinds_antimodally_tied_implies_not_layer_kinds_singular_support_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_antimodally_tied_implies_not_tiers_singular_support_pointwise`
+        // on the tier altitude, and
+        // `kinds_antimodally_tied_implies_not_kinds_singular_support_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_antimodally_tied() {
+                assert!(
+                    !slice.file_formats_singular_support(),
+                    "antimodally-tied chain cannot be singular-support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_support_implies_not_file_formats_antimodally_tied_pointwise() {
+        // The forward direction of the singleton-support corner
+        // subsumption: `file_formats_singular_support() ⇒
+        // !file_formats_antimodally_tied()` always. A single observed
+        // cell is the only member of the antimodal level set
+        // (cardinality `1`), so the tie predicate never fires on any
+        // singleton-support chain. Every singleton-support chain sits
+        // uniformly on the strictly-antimodal-unique side of the
+        // strict antimodal partition. Peer of
+        // `layer_kinds_singular_support_implies_not_layer_kinds_antimodally_tied_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_singular_support_implies_not_tiers_antimodally_tied_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_support_implies_not_kinds_antimodally_tied_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_singular_support() {
+                assert!(
+                    !slice.file_formats_antimodally_tied(),
+                    "singular-support chain cannot be antimodally tied",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_antimodally_tied_forms_strict_antimodal_partition_on_non_empty_histograms_pointwise()
+     {
+        // Strict antimodal partition pin on non-empty file-format
+        // histograms: on every chain whose file-format histogram is
+        // non-empty exactly one of the pair
+        // (file_formats_antimodally_tied, is_strictly_antimodally_unique)
+        // fires. On the empty histogram (empty chain OR no-recognized-
+        // files chain) both read `false` (the shared boundary below
+        // both branches of the strict antimodal partition). Direct
+        // pin of the histogram-side strict-antimodal-partition law
+        // `!is_empty ⇒ is_antimodally_tied ⇔
+        // !is_strictly_antimodally_unique` one altitude down. Peer of
+        // `layer_kinds_antimodally_tied_forms_strict_antimodal_partition_on_non_empty_chains_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_antimodally_tied_forms_strict_antimodal_partition_on_non_empty_maps_pointwise`
+        // on the tier altitude, and
+        // `kinds_antimodally_tied_forms_strict_antimodal_partition_on_non_empty_diffs_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let hist = slice.file_format_histogram();
+            let tied = slice.file_formats_antimodally_tied();
+            let strict = hist.is_strictly_antimodally_unique();
+            if !hist.is_empty() {
+                let count = usize::from(tied) + usize::from(strict);
+                assert_eq!(
+                    count, 1,
+                    "on a non-empty file-format histogram exactly one of \
+                     (antimodally_tied, strictly_antimodally_unique) must fire \
+                     (tied={tied}, strict={strict})",
+                );
+            } else {
+                assert!(
+                    !tied,
+                    "empty file-format histogram cannot be antimodally tied",
+                );
+                assert!(
+                    !strict,
+                    "empty file-format histogram cannot be strictly antimodally unique",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_full_cover_and_file_formats_balanced_imply_file_formats_antimodally_tied_pointwise()
+     {
+        // Cardinality-`>= 2` uniform-cover pin: on every full-cover
+        // balanced chain on the cardinality-`4` `Format` axis, the
+        // antimodal level set equals the full axis — all four cells
+        // share the trough count — so
+        // `file_formats_antimodally_tied` fires. Cardinality-`>= 2`
+        // witness of the histogram-side subsumption `is_uniform_count
+        // ∧ !is_empty ⇒ is_antimodally_tied ⇔ !has_singular_support`
+        // one altitude down. Peer of
+        // `layer_kinds_full_cover_and_layer_kinds_balanced_imply_layer_kinds_antimodally_tied_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_full_cover_and_tiers_balanced_imply_tiers_antimodally_tied_pointwise`
+        // on the tier altitude, and
+        // `kinds_full_cover_and_kinds_balanced_imply_kinds_antimodally_tied_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_full_cover() && slice.file_formats_balanced() {
+                assert!(
+                    slice.file_formats_antimodally_tied(),
+                    "full-cover balanced chain on cardinality-4 axis \
+                     must be antimodally tied",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_antimodally_tied_collapses_with_file_formats_modally_tied_on_uniform_multi_cell_chains_pointwise()
+     {
+        // Modal / antimodal collapse pin: on every uniform-count non-
+        // empty file-format histogram the two tie predicates read the
+        // same value. Direct pin of the histogram-side collapse law
+        // `is_uniform_count ∧ !is_empty ⇒ is_antimodally_tied ⇔
+        // is_modally_tied` one altitude down, at the chain file-
+        // format sub-axis. On the singleton-support uniform corner
+        // both read `false`; on every multi-cell uniform chain both
+        // read `true`. Peer of
+        // `layer_kinds_antimodally_tied_collapses_with_layer_kinds_modally_tied_on_uniform_multi_cell_chains_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_antimodally_tied_collapses_with_tiers_modally_tied_on_uniform_multi_cell_maps_pointwise`
+        // on the tier altitude, and
+        // `kinds_antimodally_tied_collapses_with_kinds_modally_tied_on_uniform_multi_cell_diffs_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_balanced() && slice.file_formats_any_observed() {
+                assert_eq!(
+                    slice.file_formats_antimodally_tied(),
+                    slice.file_formats_modally_tied(),
+                    "on a uniform-count non-empty file-format histogram \
+                     the two tie predicates must collapse to the same value",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_antimodally_tied_agrees_with_open_coded_trough_multiplicity_walk() {
+        // Parity against the exact hand-rolled trough-multiplicity
+        // walk this lift replaces: walk every cell of the histogram
+        // and count how many carry the strictly-positive minimum
+        // observed count; the antimodally-tied predicate reads `true`
+        // iff the multiplicity is at least `2`. Empty histogram has
+        // no strictly-positive counts, so multiplicity reads `0` and
+        // the predicate fails. Peer of
+        // `layer_kinds_antimodally_tied_agrees_with_open_coded_trough_multiplicity_walk`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_antimodally_tied_agrees_with_open_coded_trough_multiplicity_walk`
+        // on the tier altitude, and
+        // `kinds_antimodally_tied_agrees_with_open_coded_trough_multiplicity_walk`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_antimodally_tied();
+            let hist = slice.file_format_histogram();
+            let min = hist
+                .iter()
+                .map(|(_, c)| c)
+                .filter(|c| *c > 0)
+                .min()
+                .unwrap_or(0);
+            let hand_rolled = if min == 0 {
+                false
+            } else {
+                hist.iter().filter(|(_, c)| *c == min).count() >= 2
             };
             assert_eq!(via_seam, hand_rolled);
         }
