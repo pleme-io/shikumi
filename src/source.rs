@@ -12006,6 +12006,335 @@ pub trait ConfigSourceChain {
     {
         self.env_prefix_kind_histogram().is_modally_tied()
     }
+
+    /// `true` exactly when this chain's observed [`EnvMetadataTagKind`]
+    /// histogram has two or more cells tied at the trough leaf count —
+    /// the rarest env-prefix kind is *shared* rather than uniquely
+    /// held.
+    ///
+    /// The **antimodally-tied-env-prefix-kinds boolean predicate** on
+    /// the env-prefix sub-axis of the chain altitude, the direct strict-
+    /// complement of [`crate::AxisHistogram::is_strictly_antimodally_unique`]
+    /// on every non-empty env-prefix histogram (both read `false` on the
+    /// empty histogram — the shared boundary below both branches of the
+    /// strict antimodal partition). Routes through
+    /// [`Self::env_prefix_kind_histogram`]`::is_antimodally_tied`, the
+    /// single-pass scan over the fixed-cardinality counts vector reading
+    /// `trough_multiplicity() >= 2` off one predicate — strictly tighter
+    /// than either of the documented open-coded surface forms one seam
+    /// over.
+    ///
+    /// The **antimodally-tied-env-prefix-kinds peer** of the two
+    /// documented surface forms consumers previously re-derived inline:
+    /// `chain.env_prefix_kind_histogram().trough_multiplicity() >= 2`
+    /// (the defining multiplicity-scalar inequality form — one method
+    /// call plus a magic `>= 2` threshold at the consumer site), and
+    /// `chain.env_prefix_kind_histogram().modality_degree().1 >= 2` (the
+    /// modality-pair projection-inequality form, reading the antimodal
+    /// component of the fused [`crate::AxisHistogram::modality_degree`]
+    /// pair before the comparison — a fused-pair build for a single-
+    /// component projection). This lift names the antimodally-tied-env-
+    /// prefix-kinds predicate directly at the chain-altitude surface —
+    /// the typed boolean every operator-facing *"is the rarest env-
+    /// prefix kind uniquely held on this chain, or is the declaration-
+    /// order tie-break exercised?"* check reads off as a single method
+    /// call.
+    ///
+    /// **Closes the "antimodally-tied across altitudes" projection** at
+    /// the fifth and final altitude / sub-axis: seeded on the diff
+    /// altitude by [`crate::ConfigDiff::kinds_antimodally_tied`],
+    /// climbed to the tier altitude by
+    /// [`crate::ProvenanceMap::tiers_antimodally_tied`], lifted sideways
+    /// to the chain layer-kind sub-axis by
+    /// [`Self::layer_kinds_antimodally_tied`], and lifted sideways to
+    /// the chain file-format sub-axis by
+    /// [`Self::file_formats_antimodally_tied`]. Antimodal-tie-side row
+    /// on top of the closed coverage-support predicate cube
+    /// (`low_support`, `high_support`, `strict_partial_cover`,
+    /// `singular`, `boundary`, `partial_cover`) and complementary to
+    /// the modal-tie-side row [`Self::env_prefix_kinds_modally_tied`]
+    /// at the same env-prefix sub-axis — the eighth projection to close
+    /// at every altitude / sub-axis in lockstep, matching the shape of
+    /// the seven sibling projections on the same grid. With this lift
+    /// the "antimodally-tied across altitudes" projection carries the
+    /// same one-predicate row at every altitude / sub-axis of the fully-
+    /// closed cube, and the modality-tie boolean pair
+    /// `(is_modally_tied, is_antimodally_tied)` now carries both rows
+    /// at every altitude / sub-axis of the 5-column grid — closing the
+    /// half of the four-primitive multiplicity boolean algebra
+    /// `(is_strictly_modally_unique, is_modally_tied,
+    /// is_strictly_antimodally_unique, is_antimodally_tied)` covered by
+    /// the two tie predicates.
+    ///
+    /// **Cardinality-`2` reachability at the chain env-prefix sub-axis
+    /// — degenerate strict antimodal partition, antimodally-tied
+    /// collapses onto the uniform-cover boundary corner.**
+    /// [`EnvMetadataTagKind`] carries two cells so
+    /// `env_prefix_kinds_antimodally_tied()` reads `true` exactly when
+    /// both cells share the trough leaf count (the uniform two-kind
+    /// cover, e.g. one prefixed + one bare tied at count `1`, or two
+    /// prefixed + two bare tied at count `2`), and `false` on the empty
+    /// chain (no observed cell), on every no-env-layers non-empty chain
+    /// (empty env-prefix histogram via the partial-function projection),
+    /// on every singleton-support chain (support cardinality `1`,
+    /// trough multiplicity `1` — the lone observed cell stands alone at
+    /// its own trough), and on every strictly-antimodal skewed chain
+    /// (e.g. two prefixed + one bare where `Bare` uniquely holds the
+    /// trough at count `1` while `Prefixed` peaks at `2`). On the
+    /// cardinality-`2` axis the antimodally-tied corner reduces to
+    /// *exactly* the uniform-cover boundary corner
+    /// (`env_prefix_kinds_antimodally_tied ⇔
+    /// env_prefix_kinds_full_cover ∧ env_prefix_kinds_balanced` on this
+    /// axis — the trough-multiplicity walk reaches `2` iff both cells
+    /// are observed at the same count, which on cardinality-`2` is
+    /// precisely the uniform-cover corner). The *tightest* degenerate
+    /// antimodally-tied leg in the projection: the layer-kind sub-axis
+    /// and the diff altitude carry the strict-interior tied witness at
+    /// their cardinality-`3` axes, and the tier altitude and file-
+    /// format sub-axis carry the additional support-`3` tied witness at
+    /// their cardinality-`4` axes — both classes unreachable at the
+    /// cardinality-`2` env-prefix sub-axis.
+    ///
+    /// **Empty-chain convention** — returns `false` on the empty chain:
+    /// the empty chain observes zero cells, so
+    /// [`crate::AxisHistogram::trough_multiplicity`] reads `0` and the
+    /// inequality `0 >= 2` fails. Matches
+    /// [`crate::AxisHistogram::is_antimodally_tied`]'s empty-histogram
+    /// convention one altitude down. The empty-chain row on the strict
+    /// antimodal partition pair
+    /// `(is_strictly_antimodally_unique, is_antimodally_tied)` reads
+    /// `(false, false)` — the shared boundary below both branches. Peer
+    /// of [`Self::file_formats_antimodally_tied`]'s empty-chain `false`
+    /// polarity and [`Self::layer_kinds_antimodally_tied`]'s empty-
+    /// chain `false` polarity one sub-axis over on the same chain
+    /// altitude, of [`crate::ProvenanceMap::tiers_antimodally_tied`]'s
+    /// empty-map `false` polarity, and of
+    /// [`crate::ConfigDiff::kinds_antimodally_tied`]'s empty-diff
+    /// `false` polarity — closing the empty-witness row of the
+    /// projection at the fifth and final altitude / sub-axis.
+    ///
+    /// **No-env-layers convention** — returns `false` on every non-
+    /// empty chain whose env-prefix histogram is empty (only `Defaults`
+    /// and `File` layers). The env-prefix projection is a partial
+    /// function ([`ConfigSource::env_prefix_kind`] returns [`None`] for
+    /// both `Defaults` and `File`), so a non-empty chain can still
+    /// project to an empty histogram — `trough_multiplicity` reads `0`
+    /// and the inequality `0 >= 2` fails. This is the antimodal-tie-
+    /// side cross-sub-axis divergence pin against
+    /// [`Self::layer_kinds_antimodally_tied`]: on the same fixtures the
+    /// layer-kind sub-axis observes at least one layer-kind cell
+    /// (Defaults / File) and may fire the antimodally-tied predicate
+    /// (e.g. one `Defaults` + one `File` reads
+    /// `layer_kinds_antimodally_tied = true`), while the env-prefix
+    /// sub-axis's antimodally-tied predicate silently drops out via the
+    /// empty-histogram disjunct — the antimodal-tie leg's meaning is
+    /// *narrower* at the env-prefix sub-axis than at the layer-kind
+    /// sub-axis, matching the same narrowing pinned at the modal-tie
+    /// row [`Self::env_prefix_kinds_modally_tied`] and at the file-
+    /// format sister sub-axis [`Self::file_formats_antimodally_tied`].
+    ///
+    /// **Singleton-support convention** — returns `false` on every
+    /// chain whose observed env-prefix support is a single
+    /// [`EnvMetadataTagKind`] cell (prefixed-only or bare-only): the
+    /// lone observed cell stands alone at its own trough (peak and
+    /// trough coincide, no tie-break to exercise), so
+    /// `trough_multiplicity` reads `1` and the inequality `1 >= 2`
+    /// fails. The `sample_chain()` fixture (two `.yaml` file layers +
+    /// one `"APP_"` Env layer, `{Prefixed}` env-prefix support with
+    /// count `1`) is a witness on the `false` side — the singleton-
+    /// support corner is uniformly on the strictly-antimodal-unique
+    /// side of the strict antimodal partition. Direct pin of the
+    /// histogram-side subsumption `has_singular_support ⇒
+    /// !is_antimodally_tied` one altitude down.
+    ///
+    /// **Uniform two-kind cover convention** — returns `true` on every
+    /// chain where each [`EnvMetadataTagKind`] cell was observed at
+    /// exactly the same positive count (the *only* antimodally-tied
+    /// witness class on the cardinality-`2` env-prefix axis): the two
+    /// cells share the same count, so `trough_multiplicity` reads `2`
+    /// and the inequality `2 >= 2` fires. Peer of the histogram-side
+    /// axis-cover convention one altitude down, which reads `true` on
+    /// every implementor with `axis_cardinality::<A>() >= 2` — the
+    /// cardinality-`2` [`EnvMetadataTagKind`] axis honours the general
+    /// condition. Also the *tightest* antimodally-tied surface: on
+    /// cardinality-`2` axes the antimodally-tied predicate reads `true`
+    /// iff *both* cells are observed at the same count, i.e. exactly
+    /// the [`Self::env_prefix_kinds_full_cover`] ∧
+    /// [`Self::env_prefix_kinds_balanced`] corner.
+    ///
+    /// **Two-way antimodal partition on non-empty env-prefix
+    /// histograms** — on every non-empty env-prefix histogram exactly
+    /// one of the antimodal-uniqueness pair fires: either the trough is
+    /// uniquely held (strictly-antimodal-unique fires, antimodally-tied
+    /// does not) or the trough is shared (antimodally-tied fires,
+    /// strictly-antimodal-unique does not). The empty histogram sits
+    /// below both branches (both read `false`) — this covers both the
+    /// empty chain and every no-env-layers non-empty chain. Direct pin
+    /// of the histogram-side strict antimodal partition
+    /// `!is_empty ⇒ is_antimodally_tied ⇔
+    /// !is_strictly_antimodally_unique` one altitude down.
+    ///
+    /// **Modal / antimodal collapse on uniform-count non-empty env-
+    /// prefix histograms** — on every uniform-count non-empty env-
+    /// prefix histogram the modal and antimodal level sets coincide
+    /// with the support, so `env_prefix_kinds_antimodally_tied ⇔
+    /// env_prefix_kinds_modally_tied` — the classifier pair collapses
+    /// to a single boolean, the multi-cell-support witness. Direct pin
+    /// of the histogram-side collapse law
+    /// `is_uniform_count ∧ !is_empty ⇒ is_antimodally_tied ⇔
+    /// is_modally_tied` one altitude down, peer of the same collapse
+    /// pinned at the diff altitude by
+    /// [`crate::ConfigDiff::kinds_antimodally_tied`], at the tier
+    /// altitude by [`crate::ProvenanceMap::tiers_antimodally_tied`], at
+    /// the chain layer-kind sub-axis by
+    /// [`Self::layer_kinds_antimodally_tied`], and at the chain file-
+    /// format sub-axis by [`Self::file_formats_antimodally_tied`].
+    ///
+    /// **Full modal / antimodal collapse on the cardinality-`2` env-
+    /// prefix axis** — on this axis `env_prefix_kinds_antimodally_tied
+    /// ⇔ env_prefix_kinds_modally_tied` on *every* histogram (empty,
+    /// singleton-support, uniform, and strictly-skewed), a strict
+    /// tightening of the general uniform-count-non-empty collapse law
+    /// documented above. Direct consequence of the two-cell degeneracy:
+    /// with only two cells the peak level set and the trough level set
+    /// coincide pointwise — either both cells share the same count
+    /// (uniform two-kind cover, both `peak_multiplicity` and
+    /// `trough_multiplicity` read `2`, both tie predicates fire) or
+    /// they carry distinct counts (peak and trough are the two distinct
+    /// counts, both multiplicities read `1`, neither tie predicate
+    /// fires) or only one cell is observed (peak and trough coincide at
+    /// the observed count, multiplicity `1`, neither fires) or neither
+    /// cell is observed (empty histogram, both read `false`). Does NOT
+    /// lift to the cardinality-`>= 3` sub-axes
+    /// ([`Self::layer_kinds_antimodally_tied`] over cardinality-`3`,
+    /// [`Self::file_formats_antimodally_tied`] over cardinality-`4`)
+    /// where the strict-interior corners
+    /// `(modally_tied = true, antimodally_tied = false)` and
+    /// `(modally_tied = false, antimodally_tied = true)` carry
+    /// witnesses non-vacuously, nor to the tier altitude
+    /// ([`crate::ProvenanceMap::tiers_antimodally_tied`] over
+    /// cardinality-`4`) or the diff altitude
+    /// ([`crate::ConfigDiff::kinds_antimodally_tied`] over cardinality-
+    /// `3`) where the same divergence carries witnesses.
+    ///
+    /// # Invariants
+    ///
+    /// - `env_prefix_kinds_antimodally_tied() == env_prefix_kind_histogram().is_antimodally_tied()`
+    ///   — both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram
+    ///   surface.
+    /// - `env_prefix_kinds_antimodally_tied() ⇔
+    ///   env_prefix_kind_histogram().trough_multiplicity() >= 2` — the
+    ///   defining multiplicity-scalar inequality form on the
+    ///   [`crate::AxisHistogram::trough_multiplicity`] scalar peer, the
+    ///   canonical open-coded expression of the predicate one altitude
+    ///   down.
+    /// - `env_prefix_kinds_antimodally_tied() ⇔
+    ///   env_prefix_kind_histogram().modality_degree().1 >= 2` — the
+    ///   modality-pair projection-inequality form, reading the
+    ///   antimodal component of the fused
+    ///   [`crate::AxisHistogram::modality_degree`] pair before the
+    ///   comparison.
+    /// - `env_prefix_kinds_antimodally_tied() ⇒
+    ///   env_prefix_kinds_any_observed()` always — a tied trough
+    ///   requires at least two observed cells, so both the empty chain
+    ///   (zero observed cells) and every no-env-layers non-empty chain
+    ///   (empty env-prefix histogram via the partial-function
+    ///   projection) cannot fire.
+    ///   Contrapositively, `!env_prefix_kinds_any_observed() ⇒
+    ///   !env_prefix_kinds_antimodally_tied()`.
+    /// - `env_prefix_kinds_singular_support() ⇒
+    ///   !env_prefix_kinds_antimodally_tied()` always — a singleton-
+    ///   support chain has exactly one observed cell, so the antimodal
+    ///   level set has cardinality `1` and the tie predicate fails.
+    ///   Contrapositively, `env_prefix_kinds_antimodally_tied() ⇒
+    ///   !env_prefix_kinds_singular_support()`: a fired tie predicate
+    ///   means at least two observed cells. Direct pin of the
+    ///   histogram-side subsumption `has_singular_support ⇒
+    ///   !is_antimodally_tied` one altitude down.
+    /// - `env_prefix_kinds_full_cover() ∧ env_prefix_kinds_balanced() ⇒
+    ///   env_prefix_kinds_antimodally_tied()` on the cardinality-`>= 2`
+    ///   axis: a full-cover uniform-count chain has every cell observed
+    ///   at the same count, so the antimodal level set equals the full
+    ///   axis — the trough multiplicity rises to
+    ///   `axis_cardinality::<EnvMetadataTagKind>()` which is `2`, and
+    ///   the tie predicate fires. Cardinality-`>= 2` witness of the
+    ///   uniform-cover corner of the histogram-side subsumption tying
+    ///   [`crate::AxisHistogram::is_uniform_count`] and
+    ///   [`crate::AxisHistogram::has_singular_support`] on non-empty
+    ///   histograms one altitude down.
+    /// - `env_prefix_kinds_antimodally_tied() ⇔
+    ///   env_prefix_kinds_full_cover() ∧ env_prefix_kinds_balanced()`
+    ///   pointwise on the cardinality-`2` env-prefix axis — the
+    ///   *unique* two-cell-axis tightening of the general uniform-
+    ///   cover subsumption above into an equivalence, via the collapse
+    ///   of the antimodally-tied corner onto the uniform-cover boundary
+    ///   corner. On this axis the strict-interior tied witnesses
+    ///   available at the cardinality-`>= 3` sister sub-axes are
+    ///   structurally unreachable — the *only* antimodally-tied
+    ///   witness class is the uniform-cover corner itself. Peer of the
+    ///   same two-cell-axis equivalence pinned at the modal-tie row
+    ///   [`Self::env_prefix_kinds_modally_tied`].
+    /// - **Strict antimodal partition on non-empty env-prefix
+    ///   histograms** — `!env_prefix_kind_histogram().is_empty() ⇒
+    ///   (env_prefix_kinds_antimodally_tied ⇔
+    ///   !env_prefix_kind_histogram().is_strictly_antimodally_unique())`
+    ///   always. On every non-empty env-prefix histogram exactly one of
+    ///   `(env_prefix_kinds_antimodally_tied,
+    ///   env_prefix_kind_histogram().is_strictly_antimodally_unique())`
+    ///   fires; both read `false` on the empty histogram — the shared
+    ///   boundary below both branches. Direct pin of the histogram-side
+    ///   strict antimodal partition one altitude down.
+    /// - **Modal / antimodal collapse on uniform-count non-empty env-
+    ///   prefix histograms** — `env_prefix_kinds_balanced() ∧
+    ///   env_prefix_kinds_any_observed() ⇒
+    ///   (env_prefix_kinds_antimodally_tied ⇔
+    ///   env_prefix_kinds_modally_tied)`. On every uniform-count non-
+    ///   empty env-prefix histogram the two tie predicates collapse to
+    ///   the same value. Direct pin of the histogram-side collapse
+    ///   `is_uniform_count ∧ !is_empty ⇒ is_antimodally_tied ⇔
+    ///   is_modally_tied` one altitude down, peer of the same collapse
+    ///   pinned at the diff altitude by
+    ///   [`crate::ConfigDiff::kinds_antimodally_tied`], at the tier
+    ///   altitude by [`crate::ProvenanceMap::tiers_antimodally_tied`],
+    ///   at the chain layer-kind sub-axis by
+    ///   [`Self::layer_kinds_antimodally_tied`], and at the chain
+    ///   file-format sub-axis by
+    ///   [`Self::file_formats_antimodally_tied`].
+    /// - **Full modal / antimodal collapse on the cardinality-`2` env-
+    ///   prefix axis** — `env_prefix_kinds_antimodally_tied ⇔
+    ///   env_prefix_kinds_modally_tied` pointwise on the cardinality-
+    ///   `2` env-prefix axis, on *every* histogram regardless of shape
+    ///   (empty, singleton-support, uniform, strictly-skewed). Strict
+    ///   tightening of the uniform-count-non-empty collapse law above
+    ///   into an unconditional equivalence — a direct consequence of
+    ///   the two-cell degeneracy where the peak level set and the
+    ///   trough level set coincide pointwise. Does NOT lift to the
+    ///   cardinality-`>= 3` sister sub-axes / altitudes where the two
+    ///   strict-interior corners
+    ///   `(modally_tied, antimodally_tied) ∈ {(true, false),
+    ///   (false, true)}` carry witnesses non-vacuously.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram
+    /// build) and `k = crate::axis_cardinality::<crate::EnvMetadataTagKind>()`
+    /// (the trough-multiplicity scan). Both are `O(n)` in practice
+    /// since the env-prefix axis carries a fixed two-cell cardinality;
+    /// the returned `bool` reads one predicate — the trough scan walks
+    /// the counts vector once and counts cells matching the strictly-
+    /// positive minimum, then reads `multiplicity >= 2` off one
+    /// comparison. Strictly tighter than the two documented open-coded
+    /// surfaces one seam over (no exposed `>= 2` magic threshold at
+    /// the consumer site, no [`crate::AxisHistogram::modality_degree`]
+    /// fused-pair build for a single-component projection).
+    #[must_use]
+    fn env_prefix_kinds_antimodally_tied(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().is_antimodally_tied()
+    }
 }
 
 impl ConfigSourceChain for [ConfigSource] {
@@ -35880,6 +36209,515 @@ mod tests {
                 false
             } else {
                 hist.iter().filter(|(_, c)| *c == max).count() >= 2
+            };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::env_prefix_kinds_antimodally_tied —
+    //      antimodally-tied-env-prefix-kinds boolean predicate on the
+    //      env-prefix sub-axis of the chain altitude, lifting
+    //      is_antimodally_tied from the histogram surface and closing
+    //      the "antimodally-tied across altitudes" projection at the
+    //      fifth and final altitude / sub-axis. Antimodal-side row
+    //      complementary to `env_prefix_kinds_modally_tied` at the
+    //      same env-prefix sub-axis — with this closing the modality-
+    //      tie boolean pair `(is_modally_tied, is_antimodally_tied)`
+    //      carries both rows at every altitude / sub-axis of the 5-
+    //      column grid ----
+
+    #[test]
+    fn env_prefix_kinds_antimodally_tied_matches_env_prefix_kind_histogram_is_antimodally_tied_pointwise()
+     {
+        // Routing pin: `env_prefix_kinds_antimodally_tied` routes
+        // through `env_prefix_kind_histogram().is_antimodally_tied()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared cube-native primitive.
+        // Env-prefix sub-axis peer of
+        // `file_formats_antimodally_tied_matches_file_format_histogram_is_antimodally_tied_pointwise`
+        // and
+        // `layer_kinds_antimodally_tied_matches_layer_kind_histogram_is_antimodally_tied_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_antimodally_tied_matches_tier_histogram_is_antimodally_tied_pointwise`
+        // on the tier altitude, and
+        // `kinds_antimodally_tied_matches_kind_histogram_is_antimodally_tied_pointwise`
+        // on the diff altitude — closing the "antimodally-tied across
+        // altitudes" projection across every altitude / sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.env_prefix_kind_histogram().is_antimodally_tied();
+            assert_eq!(slice.env_prefix_kinds_antimodally_tied(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_antimodally_tied_matches_defining_trough_multiplicity_inequality_pointwise()
+    {
+        // Defining multiplicity-scalar inequality form:
+        // `env_prefix_kinds_antimodally_tied() ⇔
+        // env_prefix_kind_histogram().trough_multiplicity() >= 2`. Pins
+        // the predicate against the canonical open-coded expression on
+        // the `AxisHistogram::trough_multiplicity` scalar peer one
+        // altitude down. Peer of the trough-multiplicity inequality
+        // pin at every sibling altitude / sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_antimodally_tied();
+            let mult = slice.env_prefix_kind_histogram().trough_multiplicity();
+            let via_scalar = mult >= 2;
+            assert_eq!(
+                via_seam, via_scalar,
+                "env_prefix_kinds_antimodally_tied ({via_seam}) must agree with \
+                 trough_multiplicity >= 2 ({via_scalar}, mult={mult})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_antimodally_tied_matches_modality_degree_antimodal_component_pointwise() {
+        // Modality-pair projection-inequality form:
+        // `env_prefix_kinds_antimodally_tied() ⇔
+        // env_prefix_kind_histogram().modality_degree().1 >= 2`. Pins
+        // the predicate against the antimodal-component reading of the
+        // fused `(peak_multiplicity, trough_multiplicity)` pair.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_antimodally_tied();
+            let (_, trough_mult) = slice.env_prefix_kind_histogram().modality_degree();
+            let via_pair = trough_mult >= 2;
+            assert_eq!(
+                via_seam, via_pair,
+                "env_prefix_kinds_antimodally_tied ({via_seam}) must agree with \
+                 modality_degree().1 >= 2 ({via_pair}, trough_mult={trough_mult})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_antimodally_tied_empty_chain_is_false() {
+        // Empty-chain antimodal-tie: the empty chain observes zero
+        // cells, so `trough_multiplicity` reads `0` and the inequality
+        // `0 >= 2` fails. Peer of the empty-chain false polarity at
+        // every sibling altitude / sub-axis in the "antimodally-tied
+        // across altitudes" projection — closing the empty-witness
+        // row at the fifth and final altitude / sub-axis.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(!empty.env_prefix_kinds_antimodally_tied());
+        assert!(!empty.env_prefix_kinds_any_observed());
+    }
+
+    #[test]
+    fn env_prefix_kinds_antimodally_tied_no_env_layers_is_false() {
+        // No-env-layers pin: a non-empty chain of only `Defaults` /
+        // `File` layers projects to an empty env-prefix histogram via
+        // the partial function `ConfigSource::env_prefix_kind` —
+        // `trough_multiplicity` reads `0` and the inequality `0 >= 2`
+        // fails. Cross-sub-axis divergence pin against
+        // `layer_kinds_antimodally_tied`: on the same fixture the
+        // layer-kind sub-axis observes at least one layer-kind cell
+        // and may fire the antimodal-tie predicate (e.g. one
+        // `Defaults` + one `File` reads `layer_kinds_antimodally_tied
+        // = true`), while the env-prefix sub-axis's antimodal-tie
+        // predicate silently drops out via the empty-histogram
+        // disjunct — the antimodal-tie leg is *narrower* at the env-
+        // prefix sub-axis than at the layer-kind sub-axis. Mirrors the
+        // shape of `file_formats_antimodally_tied_no_recognized_files_is_false`
+        // on the sister partial-function sub-axis, and of
+        // `env_prefix_kinds_modally_tied_no_env_layers_is_false` on
+        // the sibling modal-tie row at the same env-prefix sub-axis.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(!slice.is_empty(), "fixture must be non-empty");
+            assert!(
+                slice.env_prefix_kind_histogram().is_empty(),
+                "fixture must have empty env-prefix histogram",
+            );
+            assert!(
+                !slice.env_prefix_kinds_antimodally_tied(),
+                "no-env-layers chain must not fire antimodally-tied",
+            );
+            assert!(!slice.env_prefix_kinds_any_observed());
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_antimodally_tied_singleton_support_is_false() {
+        // Singleton-support pin: every env layer lands on the same
+        // env-prefix cell, so the lone observed cell stands alone at
+        // its own trough — `trough_multiplicity` reads `1` and the
+        // inequality `1 >= 2` fails. Direct witness of the subsumption
+        // `env_prefix_kinds_singular_support ⇒
+        // !env_prefix_kinds_antimodally_tied` via the singleton-
+        // support corner. The `sample_chain()` fixture is a witness on
+        // the `false` side.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert!(!slice.env_prefix_kinds_antimodally_tied());
+    }
+
+    #[test]
+    fn env_prefix_kinds_antimodally_tied_prefixed_only_is_false() {
+        // Singleton-support pin on the prefixed side: `Prefixed` is
+        // the sole observed cell out of two — trough multiplicity `1`,
+        // so `env_prefix_kinds_antimodally_tied` reads `false`.
+        // Symmetric sister of the bare-only pin below on the two-cell
+        // env-prefix axis: both singleton-support corners sit on the
+        // (`antimodally_tied`=false, `singular_support`=true) polarity
+        // pair.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert!(!slice.env_prefix_kinds_antimodally_tied());
+    }
+
+    #[test]
+    fn env_prefix_kinds_antimodally_tied_bare_only_is_false() {
+        // Singleton-support pin on the bare side: `Bare` is the sole
+        // observed cell — trough multiplicity `1`, so
+        // `env_prefix_kinds_antimodally_tied` reads `false`. Symmetric
+        // sister of the prefixed-only pin above.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert!(!slice.env_prefix_kinds_antimodally_tied());
+    }
+
+    #[test]
+    fn env_prefix_kinds_antimodally_tied_uniform_two_kind_cover_is_true() {
+        // Uniform axis-cover pin: one prefixed + one bare env layer,
+        // so both cells of `EnvMetadataTagKind::ALL` receive equal
+        // counts (both `1`) — `trough_multiplicity` reads `2` and the
+        // inequality `2 >= 2` fires. On the cardinality-`2` axis this
+        // is the *only* antimodally-tied witness class — every other
+        // non-empty configuration is either singleton-support (trough
+        // multiplicity `1`) or strictly-skewed (trough multiplicity
+        // `1`). Peer of the histogram-side axis-cover convention one
+        // altitude down.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 2);
+        assert!(slice.env_prefix_kinds_full_cover());
+        assert!(slice.env_prefix_kinds_balanced());
+        assert!(slice.env_prefix_kinds_antimodally_tied());
+    }
+
+    #[test]
+    fn env_prefix_kinds_antimodally_tied_uniform_two_kind_cover_at_count_two_is_true() {
+        // Multi-count uniform-cover pin: two prefixed + two bare env
+        // layers, so both cells receive equal counts (both `2`) —
+        // `trough_multiplicity` reads `2` and the inequality `2 >= 2`
+        // fires. Direct pin that the antimodally-tied predicate depends
+        // only on the antimodal-cell multiplicity, not on the absolute
+        // count height — the uniform-cover corner witnesses
+        // `antimodally_tied = true` regardless of the height at which
+        // the cells are tied.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 2);
+        assert_eq!(slice.env_prefix_kind_histogram().trough_multiplicity(), 2);
+        assert!(slice.env_prefix_kinds_full_cover());
+        assert!(slice.env_prefix_kinds_balanced());
+        assert!(slice.env_prefix_kinds_antimodally_tied());
+    }
+
+    #[test]
+    fn env_prefix_kinds_antimodally_tied_strictly_skewed_chain_is_false() {
+        // Strictly-skewed chain pin: two prefixed + one bare env
+        // layer. `Bare` uniquely holds the trough at count `1` while
+        // `Prefixed` peaks at count `2` — `trough_multiplicity` reads
+        // `1` and the inequality `1 >= 2` fails.
+        // `env_prefix_kinds_antimodally_tied` reads `false`. Witness on
+        // the strictly-antimodal-unique side of the strict antimodal
+        // partition. On the cardinality-`2` axis every strictly-skewed
+        // chain is *identically* strictly-modal and strictly-antimodal
+        // (peak and trough are the two distinct counts, both held by
+        // a single cell), so this chain also reads
+        // `env_prefix_kinds_modally_tied = false` — the full modal /
+        // antimodal collapse degeneracy of the two-cell axis.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.env_prefix_kind_histogram().trough_multiplicity(), 1);
+        assert_eq!(slice.env_prefix_kind_histogram().peak_multiplicity(), 1);
+        assert!(!slice.env_prefix_kinds_antimodally_tied());
+        assert!(!slice.env_prefix_kinds_modally_tied());
+    }
+
+    #[test]
+    fn env_prefix_kinds_antimodally_tied_implies_env_prefix_kinds_any_observed_pointwise() {
+        // Subsumption pin: `env_prefix_kinds_antimodally_tied() ⇒
+        // env_prefix_kinds_any_observed()` always. A tied trough
+        // requires at least two observed cells, so the empty chain and
+        // every no-env-layers non-empty chain cannot fire the tie
+        // predicate. Direct pin of the histogram-side subsumption
+        // `is_antimodally_tied ⇒ !is_empty` one altitude down.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_antimodally_tied() {
+                assert!(
+                    slice.env_prefix_kinds_any_observed(),
+                    "antimodally-tied chain must observe at least one env-prefix cell",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_antimodally_tied_implies_not_env_prefix_kinds_singular_support_pointwise() {
+        // Subsumption pin: `env_prefix_kinds_antimodally_tied() ⇒
+        // !env_prefix_kinds_singular_support()` always. A tied trough
+        // requires at least two observed cells sitting at the same
+        // minimum count. Direct pin of the histogram-side subsumption
+        // `has_singular_support ⇒ !is_antimodally_tied`
+        // (contrapositive) one altitude down.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_antimodally_tied() {
+                assert!(
+                    !slice.env_prefix_kinds_singular_support(),
+                    "antimodally-tied chain cannot be singular-support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_implies_not_env_prefix_kinds_antimodally_tied_pointwise() {
+        // The forward direction of the singleton-support corner
+        // subsumption: `env_prefix_kinds_singular_support() ⇒
+        // !env_prefix_kinds_antimodally_tied()` always. Every
+        // singleton-support chain sits uniformly on the strictly-
+        // antimodal-unique side of the strict antimodal partition.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular_support() {
+                assert!(
+                    !slice.env_prefix_kinds_antimodally_tied(),
+                    "singular-support chain cannot be antimodally tied",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_antimodally_tied_forms_strict_antimodal_partition_on_non_empty_histograms_pointwise()
+     {
+        // Strict antimodal partition pin on non-empty env-prefix
+        // histograms: on every chain whose env-prefix histogram is
+        // non-empty exactly one of the pair
+        // (env_prefix_kinds_antimodally_tied,
+        // is_strictly_antimodally_unique) fires. On the empty histogram
+        // (empty chain OR no-env-layers chain) both read `false` — the
+        // shared boundary below both branches of the strict antimodal
+        // partition. Direct pin of the histogram-side strict-antimodal-
+        // partition law `!is_empty ⇒ is_antimodally_tied ⇔
+        // !is_strictly_antimodally_unique` one altitude down — closing
+        // the strict-antimodal-partition law at the fifth and final
+        // altitude / sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let hist = slice.env_prefix_kind_histogram();
+            let tied = slice.env_prefix_kinds_antimodally_tied();
+            let strict = hist.is_strictly_antimodally_unique();
+            if !hist.is_empty() {
+                let count = usize::from(tied) + usize::from(strict);
+                assert_eq!(
+                    count, 1,
+                    "on a non-empty env-prefix histogram exactly one of \
+                     (antimodally_tied, strictly_antimodally_unique) must fire \
+                     (tied={tied}, strict={strict})",
+                );
+            } else {
+                assert!(
+                    !tied,
+                    "empty env-prefix histogram cannot be antimodally tied"
+                );
+                assert!(
+                    !strict,
+                    "empty env-prefix histogram cannot be strictly antimodally unique",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_and_env_prefix_kinds_balanced_imply_env_prefix_kinds_antimodally_tied_pointwise()
+     {
+        // Cardinality-`>= 2` uniform-cover pin: on every full-cover
+        // balanced chain on the cardinality-`2` `EnvMetadataTagKind`
+        // axis, the antimodal level set equals the full axis — both
+        // cells share the trough count — so
+        // `env_prefix_kinds_antimodally_tied` fires. Cardinality-`>= 2`
+        // witness of the histogram-side subsumption
+        // `is_uniform_count ∧ !is_empty ⇒ is_antimodally_tied ⇔
+        // !has_singular_support` one altitude down.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_full_cover() && slice.env_prefix_kinds_balanced() {
+                assert!(
+                    slice.env_prefix_kinds_antimodally_tied(),
+                    "full-cover balanced chain on cardinality-2 axis \
+                     must be antimodally tied",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_antimodally_tied_iff_env_prefix_kinds_full_cover_and_env_prefix_kinds_balanced_on_cardinality_two_pointwise()
+     {
+        // Two-cell-axis antimodally_tied/uniform-cover equivalence pin:
+        // `env_prefix_kinds_antimodally_tied ⇔
+        // env_prefix_kinds_full_cover ∧ env_prefix_kinds_balanced` on
+        // the cardinality-`2` env-prefix axis. On this axis the
+        // antimodal level set can reach cardinality `2` only when both
+        // cells are observed at the same count — i.e. precisely the
+        // uniform-cover corner. The *unique* two-cell-axis tightening
+        // of the general uniform-cover subsumption into an equivalence.
+        // Does NOT lift to the cardinality-`>= 3` sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let tied = slice.env_prefix_kinds_antimodally_tied();
+            let uniform = slice.env_prefix_kinds_full_cover() && slice.env_prefix_kinds_balanced();
+            assert_eq!(
+                tied, uniform,
+                "on the cardinality-2 env-prefix axis antimodally_tied ({tied}) \
+                 must equal full_cover ∧ balanced ({uniform})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_antimodally_tied_collapses_with_env_prefix_kinds_modally_tied_on_uniform_multi_cell_chains_pointwise()
+     {
+        // Modal / antimodal collapse pin: on every uniform-count non-
+        // empty env-prefix histogram the two tie predicates read the
+        // same value. Direct pin of the histogram-side collapse law
+        // `is_uniform_count ∧ !is_empty ⇒ is_antimodally_tied ⇔
+        // is_modally_tied` one altitude down, at the chain env-prefix
+        // sub-axis. Peer of
+        // `file_formats_antimodally_tied_collapses_with_file_formats_modally_tied_on_uniform_multi_cell_chains_pointwise`
+        // and
+        // `layer_kinds_antimodally_tied_collapses_with_layer_kinds_modally_tied_on_uniform_multi_cell_chains_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_antimodally_tied_collapses_with_tiers_modally_tied_on_uniform_multi_cell_maps_pointwise`
+        // on the tier altitude, and
+        // `kinds_antimodally_tied_collapses_with_kinds_modally_tied_on_uniform_multi_cell_diffs_pointwise`
+        // on the diff altitude — closing the modal / antimodal collapse
+        // law at the fifth and final altitude / sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_balanced() && slice.env_prefix_kinds_any_observed() {
+                assert_eq!(
+                    slice.env_prefix_kinds_antimodally_tied(),
+                    slice.env_prefix_kinds_modally_tied(),
+                    "on a uniform-count non-empty env-prefix histogram \
+                     the two tie predicates must collapse to the same value",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_antimodally_tied_iff_env_prefix_kinds_modally_tied_on_cardinality_two_pointwise()
+     {
+        // **Full modal / antimodal collapse pin — unique to the
+        // cardinality-`2` env-prefix axis.** On this axis
+        // `env_prefix_kinds_antimodally_tied ⇔
+        // env_prefix_kinds_modally_tied` on *every* histogram
+        // (empty, singleton-support, uniform, strictly-skewed) — a
+        // strict tightening of the uniform-count-non-empty collapse
+        // law above into an unconditional equivalence. Direct
+        // consequence of the two-cell degeneracy where the peak level
+        // set and the trough level set coincide pointwise: either both
+        // cells share the same count (uniform two-kind cover, both
+        // multiplicities read `2`, both tie predicates fire), or the
+        // cells carry distinct counts (peak and trough are the two
+        // distinct counts, both multiplicities read `1`, neither
+        // fires), or only one cell is observed (singleton-support,
+        // multiplicity `1`, neither fires), or neither is observed
+        // (empty histogram, both read `false`). This unconditional
+        // equivalence does NOT lift to the cardinality-`>= 3` sister
+        // sub-axes (`layer_kinds`, `file_formats`) or the tier /
+        // diff altitudes, where the two strict-interior corners
+        // `(modally_tied, antimodally_tied) ∈ {(true, false),
+        // (false, true)}` carry witnesses non-vacuously. The tightest
+        // degenerate form of the tie-pair collapse in the projection.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.env_prefix_kinds_antimodally_tied(),
+                slice.env_prefix_kinds_modally_tied(),
+                "on the cardinality-2 env-prefix axis the two tie \
+                 predicates must collapse to the same value on every \
+                 histogram shape",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_antimodally_tied_agrees_with_open_coded_trough_multiplicity_walk() {
+        // Parity against the exact hand-rolled trough-multiplicity
+        // walk this lift replaces: walk every cell of the histogram
+        // and count how many carry the strictly-positive minimum
+        // observed count; the antimodally-tied predicate reads `true`
+        // iff the multiplicity is at least `2`. Empty histogram has
+        // no strictly-positive counts, so multiplicity reads `0` and
+        // the predicate fails. Peer of the trough-multiplicity walk
+        // parity at every sibling altitude / sub-axis — closing the
+        // trough-multiplicity parity discipline at the fifth and final
+        // altitude / sub-axis in the "antimodally-tied across
+        // altitudes" projection.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_antimodally_tied();
+            let hist = slice.env_prefix_kind_histogram();
+            let min = hist
+                .iter()
+                .map(|(_, c)| c)
+                .filter(|c| *c > 0)
+                .min()
+                .unwrap_or(0);
+            let hand_rolled = if min == 0 {
+                false
+            } else {
+                hist.iter().filter(|(_, c)| *c == min).count() >= 2
             };
             assert_eq!(via_seam, hand_rolled);
         }
