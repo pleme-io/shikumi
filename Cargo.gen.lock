@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "cargo_lock_sha256": "0987ff8e9397f7d8ed8fbc47d8e9d68031186154497c5a02d1139a0d8f45f3f2",
+  "cargo_lock_sha256": "e127181ef7aef28f2a82153c1fb91c7dbc9bbbad23138bcc613627507d0ccef4",
   "target_resolves": {
     "base": {
       "arc-swap-1.9.2": {
@@ -53,7 +53,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-2.0.118",
+            "package_key": "syn-2.0.119",
             "kind": "normal",
             "features": [
               "clone-impls",
@@ -329,7 +329,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-2.0.118",
+            "package_key": "syn-2.0.119",
             "kind": "normal",
             "features": [
               "extra-traits",
@@ -671,7 +671,7 @@
           "std"
         ]
       },
-      "mio-1.2.1": {
+      "mio-1.2.2": {
         "runtime_dependencies": [
           {
             "name": "libc",
@@ -818,7 +818,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-2.0.118",
+            "package_key": "syn-2.0.119",
             "kind": "normal",
             "features": [
               "extra-traits",
@@ -882,7 +882,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-2.0.118",
+            "package_key": "syn-2.0.119",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1022,7 +1022,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-2.0.118",
+            "package_key": "syn-2.0.119",
             "kind": "normal",
             "features": [
               "clone-impls",
@@ -1076,7 +1076,7 @@
           },
           {
             "name": "zmij",
-            "package_key": "zmij-1.0.22",
+            "package_key": "zmij-1.0.23",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1165,7 +1165,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.263": {
+      "shikumi-0.1.264": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -1309,7 +1309,7 @@
           "std"
         ]
       },
-      "syn-2.0.118": {
+      "syn-2.0.119": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -1452,7 +1452,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-2.0.118",
+            "package_key": "syn-2.0.119",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1519,7 +1519,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-2.0.118",
+            "package_key": "syn-2.0.119",
             "kind": "normal",
             "features": [
               "full"
@@ -1755,7 +1755,7 @@
           },
           {
             "name": "syn",
-            "package_key": "syn-2.0.118",
+            "package_key": "syn-2.0.119",
             "kind": "normal",
             "features": [
               "clone-impls",
@@ -1862,7 +1862,7 @@
           "std"
         ]
       },
-      "zmij-1.0.22": {
+      "zmij-1.0.23": {
         "runtime_dependencies": [],
         "build_dependencies": [],
         "features": []
@@ -2063,7 +2063,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.1",
+                "package_key": "mio-1.2.2",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -2075,7 +2075,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.1",
+                "package_key": "mio-1.2.2",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -2087,7 +2087,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.1",
+                "package_key": "mio-1.2.2",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -2365,7 +2365,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.1",
+                "package_key": "mio-1.2.2",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -2377,7 +2377,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.1",
+                "package_key": "mio-1.2.2",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -2389,7 +2389,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.1",
+                "package_key": "mio-1.2.2",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -2698,7 +2698,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.1",
+                "package_key": "mio-1.2.2",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -2710,7 +2710,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.1",
+                "package_key": "mio-1.2.2",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -2722,7 +2722,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.1",
+                "package_key": "mio-1.2.2",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3073,7 +3073,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.1",
+                "package_key": "mio-1.2.2",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3085,7 +3085,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.1",
+                "package_key": "mio-1.2.2",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3097,7 +3097,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.1",
+                "package_key": "mio-1.2.2",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3390,7 +3390,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.1",
+                "package_key": "mio-1.2.2",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3402,7 +3402,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.1",
+                "package_key": "mio-1.2.2",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3414,7 +3414,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.1",
+                "package_key": "mio-1.2.2",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3738,7 +3738,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.1",
+                "package_key": "mio-1.2.2",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3750,7 +3750,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.1",
+                "package_key": "mio-1.2.2",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -3762,7 +3762,7 @@
               },
               {
                 "name": "mio",
-                "package_key": "mio-1.2.1",
+                "package_key": "mio-1.2.2",
                 "kind": "normal",
                 "features": [
                   "os-ext"
@@ -4022,7 +4022,7 @@
     "memchr-2.8.3": {
       "edition": "2021"
     },
-    "mio-1.2.1": {
+    "mio-1.2.2": {
       "edition": "2021"
     },
     "notify-8.2.0": {
@@ -4097,7 +4097,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.263": {
+    "shikumi-0.1.264": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
@@ -4107,7 +4107,7 @@
     "shlex-2.0.1": {
       "edition": "2018"
     },
-    "syn-2.0.118": {
+    "syn-2.0.119": {
       "edition": "2021"
     },
     "tempfile-3.27.0": {
@@ -4182,7 +4182,7 @@
     "yansi-1.0.1": {
       "edition": "2021"
     },
-    "zmij-1.0.22": {
+    "zmij-1.0.23": {
       "edition": "2021",
       "build_script": "build.rs"
     }
