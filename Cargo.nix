@@ -2073,9 +2073,9 @@ rec {
       };
       "bitflags" = rec {
         crateName = "bitflags";
-        version = "2.13.0";
+        version = "2.13.1";
         edition = "2021";
-        sha256 = "1y239gpvl061rfvav7jds8mjs42kmwi39is7yx5d1qw3hvp8nf5l";
+        sha256 = "1nl76mpykmwmb8rq1l5vw1azdh1wvxdrnsk4sy3rdrzx01nvg25m";
         authors = [
           "The Rust Project Developers"
         ];
@@ -7615,7 +7615,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.283";
+        version = "0.1.284";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -8002,8 +8002,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "5eb50036639089d72fb8776c23a5d88572efd003";
-          sha256 = "0p48fz43469hngxw8kqr9rrh3alr45146gr6byxsp05khrkzz4xb";
+          rev = "844336a69a3e28e6fa90b32b0a6dc6810a6f4d57";
+          sha256 = "0rgx3nksxllkn594l8caplk49m141ggybs0rjldgjfipxx81v3wd";
         };
         libName = "tatara_lisp";
         authors = [
@@ -8044,8 +8044,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "5eb50036639089d72fb8776c23a5d88572efd003";
-          sha256 = "0p48fz43469hngxw8kqr9rrh3alr45146gr6byxsp05khrkzz4xb";
+          rev = "844336a69a3e28e6fa90b32b0a6dc6810a6f4d57";
+          sha256 = "0rgx3nksxllkn594l8caplk49m141ggybs0rjldgjfipxx81v3wd";
         };
         procMacro = true;
         libName = "tatara_lisp_derive";
@@ -9224,9 +9224,9 @@ rec {
       };
       "uuid" = rec {
         crateName = "uuid";
-        version = "1.23.5";
+        version = "1.24.0";
         edition = "2021";
-        sha256 = "02na4kbrccvqj99hfgib9qqxd8f7sh1wn2as11qaw09wdh6snpza";
+        sha256 = "0faj5x0zgri8m3i8dv9qgyhiwqwdyhbl2g351cp3iin4ynk26fdz";
         authors = [
           "Ashley Mannix<ashleymannix@live.com.au>"
           "Dylan DPC<dylan.dpc@gmail.com>"
