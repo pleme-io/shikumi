@@ -2430,10 +2430,10 @@ rec {
       };
       "clap" = rec {
         crateName = "clap";
-        version = "4.6.1";
+        version = "4.6.2";
         edition = "2024";
         crateBin = [];
-        sha256 = "0lcf88l7vlg796rrqr7wipbbmfa5sgsgx4211b7xmxxv8dz13nqx";
+        sha256 = "04ah42lfd7imr2mqj7xh0xgk3k5imb63hpgnhwvnphzmljfry1fx";
         dependencies = [
           {
             name = "clap_builder";
@@ -2472,9 +2472,9 @@ rec {
       };
       "clap_builder" = rec {
         crateName = "clap_builder";
-        version = "4.6.0";
+        version = "4.6.2";
         edition = "2024";
-        sha256 = "17q6np22yxhh5y5v53y4l31ps3hlaz45mvz2n2nicr7n3c056jki";
+        sha256 = "12sl6fyj6w2djxj0lsc1lkj1h3wpx74fjhb37izvaf65vjpji5ph";
         dependencies = [
           {
             name = "anstream";
@@ -7615,7 +7615,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.281";
+        version = "0.1.282";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -8002,8 +8002,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "0ac69751a71db31d46cf0228d1c954a2e005c6d6";
-          sha256 = "019yx30qcnwzl0ns8x3j30qbn325j79cfc2qc1yv8anh5xdhg8z9";
+          rev = "c363136fdbbcd7582e803af4bef2a7ebdde21dfe";
+          sha256 = "0wdxsc3jp5x8xji6ny9z7jmxivjh7w9sdb2md5dcy5wsygjninj1";
         };
         libName = "tatara_lisp";
         authors = [
@@ -8044,8 +8044,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "0ac69751a71db31d46cf0228d1c954a2e005c6d6";
-          sha256 = "019yx30qcnwzl0ns8x3j30qbn325j79cfc2qc1yv8anh5xdhg8z9";
+          rev = "c363136fdbbcd7582e803af4bef2a7ebdde21dfe";
+          sha256 = "0wdxsc3jp5x8xji6ny9z7jmxivjh7w9sdb2md5dcy5wsygjninj1";
         };
         procMacro = true;
         libName = "tatara_lisp_derive";
