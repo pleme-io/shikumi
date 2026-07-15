@@ -8260,6 +8260,176 @@ impl ConfigDiff {
     pub fn kinds_antimodally_tied(&self) -> bool {
         self.kind_histogram().is_antimodally_tied()
     }
+
+    /// `true` exactly when this diff's [`DiffLineKind`] histogram has
+    /// exactly one cell holding the peak line count — the **strictly-
+    /// modally-unique-diff-kinds boolean predicate** on the diff altitude,
+    /// the direct strict-complement of the modally-tied predicate
+    /// [`Self::kinds_modally_tied`] on every non-empty diff (both read
+    /// `false` on the empty diff — the shared boundary below both
+    /// branches of the strict modal partition). Routes through
+    /// [`crate::AxisHistogram::is_strictly_modally_unique`] one altitude
+    /// down: the single-pass scan over the fixed-cardinality counts
+    /// vector reading `self.peak_multiplicity() == 1` off one predicate,
+    /// tighter than either open-coded surface form one seam over.
+    ///
+    /// The **strictly-modally-unique-diff-kinds peer** of the two
+    /// documented surface forms consumers previously re-derived inline:
+    /// `diff.kind_histogram().peak_multiplicity() == 1` (the
+    /// multiplicity-scalar equality form, one method call *plus* a
+    /// comparison against a magic `1` threshold), and
+    /// `diff.kind_histogram().modality_degree().0 == 1` (the modality-
+    /// pair projection-equality form, reading the modal component of
+    /// the fused `(peak_multiplicity, trough_multiplicity)` pair before
+    /// the comparison). Both surface forms drift subtly at every
+    /// consumer site (scalar vs. pair-component, `== 1` vs. `!= 2`
+    /// after singular-support fixup). This lift names the strictly-
+    /// modally-unique-diff-kinds predicate directly at the diff-altitude
+    /// surface as one method call — the typed boolean every operator-
+    /// facing *"is the dominant diff kind uniquely held on this rebuild,
+    /// or is the declaration-order tie-break exercised?"* check reads
+    /// off at one method call, on the strict-uniqueness side of the
+    /// strict modal partition.
+    ///
+    /// The diff-altitude strict-modal-uniqueness predicate peer that
+    /// **seeds the "strictly-modally-unique across altitudes"
+    /// projection** — a *new* fresh vertical opening the strict-modal-
+    /// uniqueness row on top of the closed modality-tie boolean pair
+    /// (`kinds_modally_tied`, `kinds_antimodally_tied`), mirroring the
+    /// same 5-column grid the eight prior projections closed
+    /// (`singular`, `boundary`, `partial_cover`, `low_support`,
+    /// `high_support`, `strict_partial_cover`, `modally_tied`,
+    /// `antimodally_tied`). The natural next lifts climb to the tier
+    /// altitude ([`crate::ProvenanceMap::tiers_strictly_modally_unique`]
+    /// over [`Self::tier_histogram`]) and sideways along the chain
+    /// altitude's three sub-axes
+    /// ([`crate::ConfigSourceChain::layer_kinds_strictly_modally_unique`],
+    /// [`crate::ConfigSourceChain::file_formats_strictly_modally_unique`],
+    /// [`crate::ConfigSourceChain::env_prefix_kinds_strictly_modally_unique`]
+    /// over the corresponding chain histograms). The pattern is the
+    /// same at every altitude / sub-axis: fuse the two open-coded
+    /// surface forms (multiplicity-scalar equality, modality-pair
+    /// projection-equality) into a single boolean predicate named at
+    /// the surface, routed through the shared
+    /// [`crate::AxisHistogram::is_strictly_modally_unique`] primitive
+    /// one altitude down.
+    ///
+    /// **Cardinality-`>= 1` reachability at the diff altitude — the
+    /// strictly-modally-unique corner carries witnesses on every non-
+    /// empty support cardinality.** [`DiffLineKind`] carries three
+    /// cells, so `kinds_strictly_modally_unique()` reads `true` on
+    /// every diff whose peak line count is uniquely held by exactly
+    /// one observed cell (e.g. one-`Removed` singleton-support with
+    /// `Removed` peaking at count `1`, or two-`Added`+one-`Context`
+    /// with `Added` uniquely peaking at count `2`), and `false` on the
+    /// empty diff (no observed cell, no peak), on every diff whose
+    /// peak is shared by two or more observed cells (e.g. one-`Removed`
+    /// +one-`Added` tied at count `1`, or the uniform axis-cover where
+    /// all three peak at count `1`).
+    ///
+    /// **Empty-diff convention** — returns `false` on the empty diff:
+    /// the empty diff has no observed cell, so
+    /// [`crate::AxisHistogram::peak_multiplicity`] reads `0` and the
+    /// equality `0 == 1` fails. Matches
+    /// [`crate::AxisHistogram::is_strictly_modally_unique`]'s empty-
+    /// histogram convention one altitude down. The empty-diff row on
+    /// the strict modal partition pair
+    /// `(is_strictly_modally_unique, is_modally_tied)` reads
+    /// `(false, false)` — the shared boundary below both branches.
+    ///
+    /// **Singleton-support convention** — returns `true` on every diff
+    /// whose observed support is a single [`DiffLineKind`]: the lone
+    /// observed cell stands alone at its own peak (no tie-break to
+    /// exercise), so [`crate::AxisHistogram::peak_multiplicity`] reads
+    /// `1` and the equality `1 == 1` fires. Every diff of only-
+    /// `Removed`, only-`Added`, or only-`Context` lines is a witness
+    /// on the `true` side — the singleton-support corner is uniformly
+    /// on the strictly-modally-unique side of the strict modal
+    /// partition. Direct pin of the histogram-side subsumption
+    /// `has_singular_support ⇒ is_strictly_modally_unique` one altitude
+    /// down.
+    ///
+    /// **Uniform axis-cover convention** — returns `false` on every
+    /// diff observing every cell of [`DiffLineKind`] exactly once: the
+    /// three cells share the same count, so
+    /// [`crate::AxisHistogram::peak_multiplicity`] reads `3` and the
+    /// equality `3 == 1` fails. Every diff of one-`Removed` + one-
+    /// `Added` + one-`Context` is a witness on the `false` side. Peer
+    /// of the histogram-side axis-cover convention one altitude down,
+    /// which reads `false` on every implementor with
+    /// `axis_cardinality::<A>() >= 2` — the cardinality-`3`
+    /// [`DiffLineKind`] axis honours the general condition.
+    ///
+    /// **Two-way modal partition on non-empty diffs** — on every non-
+    /// empty diff exactly one of the modal-uniqueness pair
+    /// `(kinds_strictly_modally_unique, kinds_modally_tied)` fires:
+    /// either the peak is uniquely held (strictly-modally-unique
+    /// fires, modally-tied does not) or the peak is shared (modally-
+    /// tied fires, strictly-modally-unique does not). The empty diff
+    /// sits below both branches (both read `false`). Direct pin of the
+    /// histogram-side strict modal partition
+    /// `!is_empty ⇒ is_strictly_modally_unique ⇔ !is_modally_tied`
+    /// one altitude down.
+    ///
+    /// # Invariants
+    ///
+    /// - `kinds_strictly_modally_unique() == kind_histogram().is_strictly_modally_unique()`
+    ///   — both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `kinds_strictly_modally_unique() ⇔ kind_histogram().peak_multiplicity() == 1`
+    ///   — the defining multiplicity-scalar equality form on the
+    ///   [`crate::AxisHistogram::peak_multiplicity`] scalar peer, the
+    ///   canonical open-coded expression of the predicate one altitude
+    ///   down.
+    /// - `kinds_strictly_modally_unique() ⇔ kind_histogram().modality_degree().0 == 1`
+    ///   — the modality-pair projection-equality form, reading the
+    ///   modal component of the fused
+    ///   [`crate::AxisHistogram::modality_degree`] pair before the
+    ///   equality.
+    /// - `kinds_strictly_modally_unique() ⇒ kinds_any_observed()` always
+    ///   — a strictly-unique peak requires at least one observed cell,
+    ///   so the empty diff (zero observed cells) cannot fire.
+    ///   Contrapositively, `!kinds_any_observed() ⇒
+    ///   !kinds_strictly_modally_unique()`.
+    /// - `kinds_singular_support() ⇒ kinds_strictly_modally_unique()`
+    ///   always — a singleton-support diff has exactly one observed
+    ///   cell as the sole member of the modal level set, so the
+    ///   uniqueness predicate fires. Direct pin of the histogram-side
+    ///   subsumption `has_singular_support ⇒ is_strictly_modally_unique`
+    ///   one altitude down.
+    /// - `!kinds_any_observed() ∨ (kinds_strictly_modally_unique() ⊕ kinds_modally_tied())`
+    ///   — the strict modal partition on non-empty diffs: exactly one
+    ///   of the pair fires on every non-empty diff, both read `false`
+    ///   on the empty diff (the shared boundary). Direct pin of the
+    ///   histogram-side strict-modal-partition law one altitude down.
+    /// - `kinds_full_cover() ∧ kinds_balanced() ⇒ !kinds_strictly_modally_unique()`
+    ///   on the cardinality-`>= 2` axis: a full-cover uniform-count
+    ///   diff has every cell observed at the same count, so the modal
+    ///   level set equals the full axis — the peak multiplicity rises
+    ///   to `axis_cardinality::<DiffLineKind>()` which is `>= 2`, and
+    ///   the uniqueness predicate fails. Cardinality-`>= 2` witness of
+    ///   the uniform-cover corner of the histogram-side subsumption
+    ///   tying [`crate::AxisHistogram::is_uniform_count`] and
+    ///   [`crate::AxisHistogram::has_singular_support`] on non-empty
+    ///   histograms one altitude down.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the peak-
+    /// multiplicity scan). Both are `O(n)` in practice since the diff-
+    /// cell axis carries a fixed three-cell cardinality; the returned
+    /// `bool` reads one predicate — the peak scan walks the counts
+    /// vector once and counts cells matching the max, then reads
+    /// `multiplicity == 1` off one comparison. Strictly tighter than
+    /// the two documented open-coded surfaces one seam over (no
+    /// exposed `== 1` magic threshold at the consumer site, no
+    /// [`crate::AxisHistogram::modality_degree`] fused-pair build for
+    /// a single-component projection).
+    #[must_use]
+    pub fn kinds_strictly_modally_unique(&self) -> bool {
+        self.kind_histogram().is_strictly_modally_unique()
+    }
 }
 
 #[cfg(test)]
@@ -15702,6 +15872,276 @@ mod tests {
                 false
             } else {
                 hist.iter().filter(|(_, c)| *c == min).count() >= 2
+            };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ConfigDiff::kinds_strictly_modally_unique — strictly-modally-unique-diff-kinds boolean predicate on the diff altitude ──
+
+    #[test]
+    fn kinds_strictly_modally_unique_matches_kind_histogram_is_strictly_modally_unique_pointwise() {
+        // Routing pin: `kinds_strictly_modally_unique` routes through
+        // `kind_histogram().is_strictly_modally_unique()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Diff-
+        // altitude strict-modal-uniqueness-predicate seed of the new
+        // "strictly-modally-unique across altitudes" projection — the
+        // strict-uniqueness row on top of the closed modality-tie
+        // boolean pair (`kinds_modally_tied`, `kinds_antimodally_tied`).
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().is_strictly_modally_unique();
+            assert_eq!(diff.kinds_strictly_modally_unique(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kinds_strictly_modally_unique_matches_defining_peak_multiplicity_equality_pointwise() {
+        // Defining multiplicity-scalar equality form:
+        // `kinds_strictly_modally_unique() ⇔ kind_histogram().peak_multiplicity() == 1`.
+        // Pins the predicate against the canonical open-coded
+        // expression on the `AxisHistogram::peak_multiplicity` scalar
+        // peer one altitude down — the surface consumers reach for
+        // when they open-code "exactly one cell holds the peak".
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_strictly_modally_unique();
+            let mult = diff.kind_histogram().peak_multiplicity();
+            let via_scalar = mult == 1;
+            assert_eq!(
+                via_seam, via_scalar,
+                "kinds_strictly_modally_unique ({via_seam}) must agree \
+                 with peak_multiplicity == 1 ({via_scalar}, mult={mult})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_strictly_modally_unique_matches_modality_degree_modal_component_pointwise() {
+        // Modality-pair projection-equality form:
+        // `kinds_strictly_modally_unique() ⇔ kind_histogram().modality_degree().0 == 1`.
+        // Pins the predicate against the modal-component reading of
+        // the fused `(peak_multiplicity, trough_multiplicity)` pair,
+        // the second documented surface form consumers reach for when
+        // they read the classifier pair before the equality.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_strictly_modally_unique();
+            let (peak_mult, _) = diff.kind_histogram().modality_degree();
+            let via_pair = peak_mult == 1;
+            assert_eq!(
+                via_seam, via_pair,
+                "kinds_strictly_modally_unique ({via_seam}) must agree \
+                 with modality_degree().0 == 1 ({via_pair}, \
+                 peak_mult={peak_mult})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_strictly_modally_unique_empty_diff_is_false() {
+        // Empty-diff strict-modal-uniqueness: the empty diff observes
+        // zero cells, so `peak_multiplicity` reads `0` and the equality
+        // `0 == 1` fails. `kinds_strictly_modally_unique` reads
+        // `false`. Matches `is_strictly_modally_unique` reading `false`
+        // on the empty histogram one altitude down. The empty-diff row
+        // on the strict modal partition pair
+        // `(is_strictly_modally_unique, is_modally_tied)` reads
+        // `(false, false)` — the shared boundary below both branches.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert!(!empty.kinds_strictly_modally_unique());
+        assert!(!empty.kinds_any_observed());
+    }
+
+    #[test]
+    fn kinds_strictly_modally_unique_singleton_support_is_true() {
+        // Singleton-support pin: every line lands on the same kind, so
+        // the lone observed cell stands alone at its own peak (no tie-
+        // break to exercise) — `peak_multiplicity` reads `1` and the
+        // equality `1 == 1` fires. `kinds_strictly_modally_unique`
+        // reads `true`. Direct witness of the subsumption
+        // `kinds_singular_support ⇒ kinds_strictly_modally_unique` via
+        // the singleton-support corner.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Added("a1".into()), DiffLine::Added("a2".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 1);
+        assert!(diff.kinds_singular_support());
+        assert!(diff.kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn kinds_strictly_modally_unique_two_kind_uniform_cover_is_false() {
+        // Two-kind uniform-cover pin: a diff of one `Removed` + one
+        // `Added` line has two observed cells tied at count `1` on the
+        // three-cell DiffLineKind axis — `peak_multiplicity` reads
+        // `2` and the equality `2 == 1` fails.
+        // `kinds_strictly_modally_unique` reads `false`. Witness on
+        // the modally-tied side of the strict modal partition.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 2);
+        assert!(!diff.kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn kinds_strictly_modally_unique_uniform_three_kind_cover_is_false() {
+        // Uniform axis-cover pin: a diff observing every cell of
+        // DiffLineKind exactly once has three observed cells tied at
+        // count `1` — `peak_multiplicity` reads `3` and the equality
+        // `3 == 1` fails. `kinds_strictly_modally_unique` reads
+        // `false`. Peer of the histogram-side axis-cover convention
+        // one altitude down, which reads `false` on every implementor
+        // with `axis_cardinality::<A>() >= 2` — the cardinality-`3`
+        // DiffLineKind axis honours the general condition.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.present_kinds().len(), 3);
+        assert!(diff.kinds_full_cover());
+        assert!(diff.kinds_balanced());
+        assert!(!diff.kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn kinds_strictly_modally_unique_strictly_modal_skewed_diff_is_true() {
+        // Strictly-modal skewed-diff pin: a diff of two `Added` +
+        // one `Context` has `Added` uniquely peaking at count `2`
+        // (Context sits at `1`, Removed at `0`) — `peak_multiplicity`
+        // reads `1` and the equality `1 == 1` fires.
+        // `kinds_strictly_modally_unique` reads `true`. Witness on
+        // the strictly-modally-unique side of the strict modal
+        // partition.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.dominant_kind(), Some(DiffLineKind::Added));
+        assert_eq!(diff.peak_kind_count(), 2);
+        assert!(diff.kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn kinds_strictly_modally_unique_implies_kinds_any_observed_pointwise() {
+        // Subsumption pin: `kinds_strictly_modally_unique() ⇒
+        // kinds_any_observed()` always. A strictly-unique peak requires
+        // at least one observed cell as the sole member of the modal
+        // level set, so the empty diff (zero observed cells) cannot
+        // fire the uniqueness predicate. Direct pin of the histogram-
+        // side subsumption `is_strictly_modally_unique ⇒ !is_empty`
+        // one altitude down.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_strictly_modally_unique() {
+                assert!(
+                    diff.kinds_any_observed(),
+                    "strictly-modally-unique diff must observe at \
+                     least one cell",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_support_implies_kinds_strictly_modally_unique_pointwise() {
+        // Subsumption pin: `kinds_singular_support() ⇒
+        // kinds_strictly_modally_unique()` always. A single observed
+        // cell is the only member of the modal level set (cardinality
+        // `1`), so the uniqueness predicate fires on every singleton-
+        // support diff. Every singleton-support diff sits uniformly on
+        // the strictly-modally-unique side of the strict modal
+        // partition. Direct pin of the histogram-side subsumption
+        // `has_singular_support ⇒ is_strictly_modally_unique` one
+        // altitude down.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular_support() {
+                assert!(
+                    diff.kinds_strictly_modally_unique(),
+                    "singular-support diff must be strictly modally \
+                     unique",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_strictly_modally_unique_forms_strict_modal_partition_on_non_empty_diffs_pointwise() {
+        // Strict modal partition pin on non-empty diffs: on every
+        // non-empty diff exactly one of the pair
+        // (kinds_strictly_modally_unique, kinds_modally_tied) fires.
+        // On the empty diff both read `false` (the shared boundary
+        // below both branches of the strict modal partition). Direct
+        // pin of the histogram-side strict-modal-partition law
+        // `!is_empty ⇒ is_strictly_modally_unique ⇔ !is_modally_tied`
+        // one altitude down, phrased as an XOR on the two named seams
+        // at the diff-altitude surface — the seam-level dual of the
+        // matching pin
+        // `kinds_modally_tied_forms_strict_modal_partition_on_non_empty_diffs_pointwise`
+        // that reads the strict side off the histogram primitive.
+        for diff in dominant_kind_fixtures() {
+            let strict = diff.kinds_strictly_modally_unique();
+            let tied = diff.kinds_modally_tied();
+            if diff.kinds_any_observed() {
+                let count = usize::from(strict) + usize::from(tied);
+                assert_eq!(
+                    count, 1,
+                    "on a non-empty diff exactly one of \
+                     (strictly_modally_unique, modally_tied) must fire \
+                     (strict={strict}, tied={tied})",
+                );
+            } else {
+                assert!(!strict, "empty diff cannot be strictly modally unique",);
+                assert!(!tied, "empty diff cannot be modally tied");
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_full_cover_and_kinds_balanced_imply_not_kinds_strictly_modally_unique_pointwise() {
+        // Cardinality-`>= 2` uniform-cover pin: on every full-cover
+        // balanced diff on the cardinality-`3` DiffLineKind axis, the
+        // modal level set equals the full axis — all three cells share
+        // the peak count — so `kinds_strictly_modally_unique` fails.
+        // Cardinality-`>= 2` witness of the histogram-side subsumption
+        // `is_uniform_count ∧ !is_empty ⇒ is_strictly_modally_unique
+        // ⇔ has_singular_support` one altitude down: on a uniform-
+        // cover with cardinality `>= 2`, singleton-support fails so
+        // strict-modal-uniqueness fails.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_full_cover() && diff.kinds_balanced() {
+                assert!(
+                    !diff.kinds_strictly_modally_unique(),
+                    "full-cover balanced diff on cardinality-3 axis \
+                     cannot be strictly modally unique",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_strictly_modally_unique_agrees_with_open_coded_peak_multiplicity_walk() {
+        // Parity against the exact hand-rolled peak-multiplicity walk
+        // this lift replaces: walk every cell of the histogram and
+        // count how many carry the maximum observed count; the
+        // strictly-modally-unique predicate reads `true` iff the
+        // multiplicity is exactly `1`. Empty histogram has max `0` and
+        // no cells above zero, so multiplicity reads `0` and the
+        // predicate fails.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_strictly_modally_unique();
+            let hist = diff.kind_histogram();
+            let max = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let hand_rolled = if max == 0 {
+                false
+            } else {
+                hist.iter().filter(|(_, c)| *c == max).count() == 1
             };
             assert_eq!(via_seam, hand_rolled);
         }
