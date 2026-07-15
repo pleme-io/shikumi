@@ -6827,6 +6827,268 @@ pub trait ConfigSourceChain {
         self.file_format_histogram().has_boundary()
     }
 
+    /// `true` exactly when this chain's observed
+    /// [`crate::discovery::Format`] support sits *strictly between* the
+    /// two coverage boundaries — at least one file-format cell observed
+    /// ([`Self::file_formats_any_observed`] `== true`) *and* at least
+    /// one file-format cell unobserved ([`Self::file_formats_full_cover`]
+    /// `== false`).
+    ///
+    /// The **partial-cover-file-formats boolean predicate** on the
+    /// file-format sub-axis of the chain altitude, the *middle* leg of
+    /// the coverage trichotomy `(!file_formats_any_observed,
+    /// file_formats_partial_cover, file_formats_full_cover)` — the
+    /// direct strict-complement of the top-leg
+    /// [`Self::file_formats_boundary`] corner, folding both singular
+    /// near-boundary corners *and* the strict interior into a single
+    /// "some but not all" corner without discarding the finer resolution
+    /// below. Routes through
+    /// [`Self::file_format_histogram`]`::has_partial_cover`, the single-
+    /// pass short-circuiting scan over the fixed-cardinality counts
+    /// vector that returns `true` the moment both a zero cell *and* a
+    /// nonzero cell have been witnessed, bounded at two witness cells
+    /// — strictly tighter than any of the documented open-coded
+    /// surfaces one seam over.
+    ///
+    /// The **partial-cover-file-formats peer** of the documented surface
+    /// forms consumers previously re-derived inline:
+    /// `chain.file_formats_any_observed() &&
+    /// !chain.file_formats_full_cover()` (the defining conjunction-of-
+    /// negations form on the two named coverage-boundary peers — two
+    /// method calls with a boolean and — the exact expression used
+    /// verbatim by the pre-existing bipartition-law pin
+    /// [`tests::file_formats_boundary_and_file_formats_partial_cover_form_strict_bipartition_pointwise`]),
+    /// `0 < chain.present_file_formats_count() &&
+    /// chain.present_file_formats_count() <
+    /// crate::axis_cardinality::<crate::discovery::Format>()` (the
+    /// support-scalar strict-interval form, which pays for a full-axis
+    /// scan and brackets a `usize` between two magic thresholds with a
+    /// turbofish), and `chain.present_file_formats_count() > 0 &&
+    /// chain.absent_file_formats_count() > 0` (the dual-scalar mixed-
+    /// side non-emptiness form on the two named cardinality peers).
+    /// This lift names the partial-cover-file-formats predicate
+    /// directly at the chain-altitude surface with a single-pass
+    /// short-circuiting scan — the typed boolean every operator-facing
+    /// *"did the chain see some but not all file formats?"* check reads
+    /// off as a single method call.
+    ///
+    /// The chain-altitude file-format sub-axis partial-cover-predicate
+    /// peer that **lifts the "partial-cover across altitudes"
+    /// projection sideways** from the layer-kind sub-axis
+    /// ([`Self::layer_kinds_partial_cover`]) to the second chain-
+    /// altitude sub-axis, matching the tier-altitude climb
+    /// ([`crate::ProvenanceMap::tiers_partial_cover`]) and the diff-
+    /// altitude seed ([`crate::ConfigDiff::kinds_partial_cover`]). The
+    /// remaining chain-altitude sub-axis
+    /// ([`Self::env_prefix_kinds_partial_cover`] over
+    /// [`Self::env_prefix_kind_histogram`]) is the natural next
+    /// sideways lift. The pattern is the same at every altitude /
+    /// sub-axis: fuse the documented open-coded surface forms into a
+    /// single boolean predicate named at the surface, routed through
+    /// the shared [`crate::AxisHistogram::has_partial_cover`] primitive
+    /// one altitude down.
+    ///
+    /// **Cardinality-`4` reachability at the file-format sub-axis —
+    /// non-vacuous witnesses on every distance-ternary leg.**
+    /// [`crate::discovery::Format`] carries four cells so
+    /// `file_formats_partial_cover()` reads `true` on every singleton-
+    /// support chain (support cardinality `1` — one nonzero and three
+    /// zeros mixed), every two-format partial cover (support cardinality
+    /// `2` — two nonzeros and two zeros mixed, exactly the strict-
+    /// interior of the cardinality-`4` axis where `[2, cardinality -
+    /// 2] = [2, 2]` is a singleton), and every three-format partial
+    /// cover (support cardinality `3` — three nonzeros and one zero
+    /// mixed, the singleton-gap boundary), and `false` on the empty
+    /// chain (four unobserved cells — no nonzero witness), on every
+    /// no-recognized-files non-empty chain (four unobserved cells via
+    /// the partial-function projection — no nonzero witness), and on
+    /// every uniform four-format cover (four observed cells — no zero
+    /// witness). The strict-interior middle leg
+    /// [`Self::file_formats_strict_partial_cover`] is *reachable* on
+    /// the cardinality-`4` axis (the two-format partial cover is the
+    /// unique strict-interior witness), so the non-vacuous subsumption
+    /// `file_formats_strict_partial_cover ⇒ file_formats_partial_cover`
+    /// carries content on the strict-interior leg — matching the tier-
+    /// altitude peer on the cardinality-`4` `ConfigTierKind` axis and
+    /// diverging from the layer-kind sub-axis and the diff altitude
+    /// where the strict-interior antecedent is vacuous and the same
+    /// subsumption holds only trivially.
+    ///
+    /// **Empty-chain convention** — returns `false` on the empty chain:
+    /// the empty chain observes zero cells, so every cell is
+    /// unobserved (four zeros on the cardinality-`4` axis) — the
+    /// single-pass scan sees no nonzero cell and falls through to
+    /// `false`. Matches [`crate::AxisHistogram::has_partial_cover`]'s
+    /// empty-histogram `false` convention one altitude down. The empty
+    /// chain sits strictly outside the partial-cover middle leg via
+    /// the [`Self::file_formats_any_observed`]-negation half of the
+    /// defining conjunction. Peer of
+    /// [`Self::layer_kinds_partial_cover`]'s empty-chain `false`
+    /// polarity one sub-axis over on the same chain altitude, of
+    /// [`crate::ProvenanceMap::tiers_partial_cover`]'s empty-map
+    /// `false` polarity, and of
+    /// [`crate::ConfigDiff::kinds_partial_cover`]'s empty-diff `false`
+    /// polarity in the same projection.
+    ///
+    /// **No-recognized-files convention** — returns `false` on every
+    /// non-empty chain whose file-format histogram is empty (only
+    /// `Defaults`, `Env`, and unrecognized-extension `File` layers).
+    /// The file-format projection is a partial function
+    /// ([`ConfigSource::file_format`] returns [`None`] for the
+    /// unrecognized cases), so a non-empty chain can still project to
+    /// an empty histogram — the single-pass scan sees no nonzero cell
+    /// and falls through to `false`. This is the partial-cover-side
+    /// cross-sub-axis divergence pin against
+    /// [`Self::layer_kinds_partial_cover`]: on the same fixtures the
+    /// layer-kind sub-axis observes at least one layer-kind cell
+    /// (Defaults / Env / File) at partial support and typically reads
+    /// `layer_kinds_partial_cover = true`, while the file-format sub-
+    /// axis's partial-cover middle leg silently drops out via the
+    /// empty-histogram disjunct of the strict-complement
+    /// [`Self::file_formats_boundary`] corner. Every no-recognized-
+    /// files chain sits on `file_formats_boundary = true`, so the
+    /// bipartition still holds — but the partial-cover leg's meaning
+    /// is *narrower* at the file-format sub-axis than at the layer-
+    /// kind sub-axis.
+    ///
+    /// **Singleton-support convention** — returns `true` on every
+    /// chain whose observed file-format support is a single
+    /// [`crate::discovery::Format`] cell: the support cardinality is
+    /// `1` (one nonzero and three zeros on the cardinality-`4` axis),
+    /// so the single-pass scan sees a nonzero cell *and* a zero cell
+    /// and returns `true`. Direct witness of the subsumption
+    /// `file_formats_singular_support ⇒ file_formats_partial_cover`
+    /// via the mixed-parity witness — `sample_chain()` (two `.yaml`
+    /// file layers alongside one Env layer, `{Yaml}` file-format
+    /// support) is a witness on the `true` side.
+    ///
+    /// **Two-format partial cover convention** — returns `true` on
+    /// every chain whose observed file-format support is exactly two
+    /// [`crate::discovery::Format`] cells: the support cardinality is
+    /// `2` (two nonzeros and two zeros on the cardinality-`4` axis),
+    /// exactly the strict interior of the cardinality-`4` axis where
+    /// `[2, cardinality - 2] = [2, 2]` is a singleton — the single-
+    /// pass scan sees both a nonzero and a zero cell and returns
+    /// `true`. Direct *non-vacuous* witness of the subsumption
+    /// `file_formats_strict_partial_cover ⇒ file_formats_partial_cover`
+    /// unavailable at the cardinality-`3` layer-kind sub-axis where
+    /// the strict interior is vacuous. A chain with a `.yaml` + a
+    /// `.toml` file layer is the strict-interior witness on the `true`
+    /// side.
+    ///
+    /// **Three-format partial cover convention** — returns `true` on
+    /// every chain whose observed file-format support is exactly
+    /// three [`crate::discovery::Format`] cells: the support
+    /// cardinality is `3` (three nonzeros and one zero on the
+    /// cardinality-`4` axis), exactly the singleton-gap boundary —
+    /// the single-pass scan sees both a nonzero and a zero cell and
+    /// returns `true`. Direct witness of the subsumption
+    /// `file_formats_singular_gap ⇒ file_formats_partial_cover` via
+    /// the mixed-parity witness — sitting on the
+    /// [`Self::file_formats_singular_gap`] boundary carried by
+    /// [`Self::file_formats_singular`] in the distance ternary. A
+    /// chain with `.yaml + .toml + .lisp` file layers is a witness on
+    /// the `true` side.
+    ///
+    /// **Uniform four-format cover convention** — returns `false` on
+    /// every chain where each [`crate::discovery::Format`] cell was
+    /// observed at least once: the support cardinality is `4` (no
+    /// unobserved cells on the cardinality-`4` axis), so the single-
+    /// pass scan sees only nonzero cells and falls through to `false`.
+    /// The full-cover boundary sits strictly above the partial-cover
+    /// middle leg via the [`Self::file_formats_full_cover`]-negation
+    /// half of the defining conjunction.
+    ///
+    /// # Invariants
+    ///
+    /// - `file_formats_partial_cover() == file_format_histogram().has_partial_cover()`
+    ///   — both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `file_formats_partial_cover() ⇔ file_formats_any_observed() &&
+    ///   !file_formats_full_cover()` — the defining conjunction-of-
+    ///   negations form on the two named coverage-boundary peers.
+    /// - `file_formats_partial_cover() == (0 < present_file_formats_count()
+    ///   && present_file_formats_count() <
+    ///   crate::axis_cardinality::<crate::discovery::Format>())` always
+    ///   — the support-scalar strict-interval surface, without
+    ///   allocating `Vec<crate::discovery::Format>`.
+    /// - `file_formats_partial_cover() == (0 < absent_file_formats_count()
+    ///   && absent_file_formats_count() <
+    ///   crate::axis_cardinality::<crate::discovery::Format>())` always
+    ///   — the coverage-gap dual-scalar strict-interval surface, the
+    ///   `present + absent == axis_cardinality` invariant restated.
+    /// - `file_formats_partial_cover() == (present_file_formats_count() > 0
+    ///   && absent_file_formats_count() > 0)` always — the mixed-side
+    ///   dual-scalar non-emptiness form, the direct histogram-surface
+    ///   `distinct_cells > 0 && unobserved_cells > 0` pin restated at
+    ///   the chain file-format sub-axis, without allocating either
+    ///   `Vec<crate::discovery::Format>`.
+    /// - `file_formats_partial_cover() ⇒ file_formats_any_observed()`
+    ///   always — the partial-cover corner requires at least one
+    ///   observed cell.
+    /// - `file_formats_partial_cover() ⇒ !file_formats_full_cover()`
+    ///   always — the partial-cover corner excludes the top coverage
+    ///   boundary.
+    /// - `file_formats_singular_support() ⇒ file_formats_partial_cover()`
+    ///   always on cardinality-`>= 2` axes: support cardinality `1`
+    ///   is strictly between `0` and cardinality. Direct pin of the
+    ///   histogram-side subsumption
+    ///   `has_singular_support ⇒ has_partial_cover` one altitude down.
+    /// - `file_formats_singular_gap() ⇒ file_formats_partial_cover()`
+    ///   always on cardinality-`>= 2` axes: support cardinality
+    ///   `cardinality - 1` is strictly between `0` and cardinality.
+    /// - `file_formats_singular() ⇒ file_formats_partial_cover()` always
+    ///   on cardinality-`>= 2` axes — the union of the two singular-
+    ///   side subsumptions.
+    /// - `file_formats_strict_partial_cover() ⇒ file_formats_partial_cover()`
+    ///   always. *Non-vacuous* on the cardinality-`4` file-format axis
+    ///   (the two-format partial cover fixture is the strict-interior
+    ///   witness reading `strict_partial_cover=true,
+    ///   partial_cover=true`), a strict advance over the layer-kind
+    ///   sub-axis where the strict-interior antecedent is unreachable
+    ///   and the subsumption holds vacuously.
+    /// - `file_formats_partial_cover()` and [`Self::file_formats_boundary`]
+    ///   form a strict bipartition — exactly one fires on every
+    ///   chain. Peer of the histogram-side bipartition law
+    ///   `axis_histogram_has_boundary_and_has_partial_cover_form_strict_bipartition_for_every_closed_axis_implementor`
+    ///   one altitude down.
+    /// - **Coverage-trichotomy partition law** —
+    ///   `(!file_formats_any_observed, file_formats_partial_cover,
+    ///   file_formats_full_cover)` is a strict ternary partition on
+    ///   every axis with cardinality `>= 1` (the cardinality-`4`
+    ///   [`crate::discovery::Format`] axis). Exactly one leg fires on
+    ///   every chain — the coverage trichotomy of the `(is_empty,
+    ///   has_partial_cover, is_full_cover)` histogram-side partition
+    ///   restated at the chain file-format sub-axis. Peer of the
+    ///   trait-uniform pin
+    ///   `axis_histogram_coverage_trichotomy_partitions_every_histogram_for_every_closed_axis_implementor`
+    ///   one altitude down.
+    /// - **Cross-surface bridge law** —
+    ///   `chain.file_formats_partial_cover() ==
+    ///   chain.file_format_histogram().support_cardinality_class().is_partial_cover()`
+    ///   always. Peer of the histogram-side bridge
+    ///   `axis_histogram_support_cardinality_class_is_partial_cover_agrees_with_histogram_has_partial_cover_for_every_closed_axis_implementor`
+    ///   one altitude down.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the partial-cover scan). Both are `O(n)` in practice since the
+    /// file-format axis carries a fixed four-cell cardinality; the
+    /// returned `bool` reads one predicate. The scan returns `true`
+    /// the *moment* a mixed-parity witness (one zero *and* one
+    /// nonzero) has been seen — bounded at two witness cells visited
+    /// on any strict-interior histogram — strictly tighter than the
+    /// documented open-coded surfaces.
+    #[must_use]
+    fn file_formats_partial_cover(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().has_partial_cover()
+    }
+
     /// Dense per-env-prefix-presence tally of the chain's
     /// [`ConfigSource::Env`] layers over the [`EnvMetadataTagKind`] axis
     /// — the typed histogram every attestation manifest, structured-log
@@ -31311,6 +31573,667 @@ mod tests {
             let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
             let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
             let hand_rolled = zeros == 0 || nonzeros == 0;
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── file_formats_partial_cover coverage — the partial-cover-file-
+    //    formats middle-leg corner of the coverage trichotomy
+    //    `(!file_formats_any_observed, file_formats_partial_cover,
+    //    file_formats_full_cover)` at the chain file-format sub-axis,
+    //    lifting the layer-kind sub-axis sideways
+    //    `layer_kinds_partial_cover` to the second chain-altitude sub-
+    //    axis. On the cardinality-`4` `Format` axis the strict-interior
+    //    subsumption `file_formats_strict_partial_cover ⇒
+    //    file_formats_partial_cover` carries content non-vacuously —
+    //    matches the tier altitude and diverges from the layer-kind
+    //    sub-axis and the diff altitude where the strict-interior
+    //    antecedent is vacuous. The file-format projection is a partial
+    //    function, so the no-recognized-files non-empty-chain fixture
+    //    silently drops out of the partial-cover middle leg (unlike
+    //    `layer_kinds_partial_cover` which typically fires there via
+    //    partial layer-kind support). Middle-leg peer of
+    //    `file_formats_boundary` / `layer_kinds_partial_cover` /
+    //    `tiers_partial_cover` / `kinds_partial_cover`. ──
+
+    #[test]
+    fn file_formats_partial_cover_matches_file_format_histogram_has_partial_cover_pointwise() {
+        // Routing pin: `file_formats_partial_cover` routes through
+        // `file_format_histogram().has_partial_cover()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. File-
+        // format sub-axis peer of
+        // `layer_kinds_partial_cover_matches_layer_kind_histogram_has_partial_cover_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_partial_cover_matches_tier_histogram_has_partial_cover_pointwise`
+        // on the tier altitude, and
+        // `kinds_partial_cover_matches_kind_histogram_has_partial_cover_pointwise`
+        // on the diff altitude, in the "partial-cover across altitudes"
+        // projection.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.file_format_histogram().has_partial_cover();
+            assert_eq!(slice.file_formats_partial_cover(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn file_formats_partial_cover_matches_defining_conjunction_of_negations_pointwise() {
+        // Defining conjunction-of-negations form:
+        // `file_formats_partial_cover() ⇔ file_formats_any_observed() &&
+        // !file_formats_full_cover()`. Pins the predicate against the
+        // two-way conjunction on the two named coverage-boundary peers
+        // consumers reach for when they open-code the middle-leg corner
+        // as a boolean fold over the two extreme coverage cardinalities.
+        // The middle-leg-fold peer of the two boundary corners — the
+        // exact expression used verbatim by the pre-existing bipartition-
+        // law pin
+        // `file_formats_boundary_and_file_formats_partial_cover_form_strict_bipartition_pointwise`.
+        // Peer of
+        // `layer_kinds_partial_cover_matches_defining_conjunction_of_negations_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_partial_cover_matches_defining_conjunction_of_negations_pointwise`
+        // on the tier altitude, and
+        // `kinds_partial_cover_matches_defining_conjunction_of_negations_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_partial_cover();
+            let via_conjunction =
+                slice.file_formats_any_observed() && !slice.file_formats_full_cover();
+            assert_eq!(
+                via_seam, via_conjunction,
+                "file_formats_partial_cover ({via_seam}) must agree with \
+                 file_formats_any_observed && !file_formats_full_cover ({via_conjunction})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_partial_cover_agrees_with_present_file_formats_count_strict_interval_pointwise()
+    {
+        // Support-scalar strict-interval surface:
+        // `file_formats_partial_cover() == (0 < present_file_formats_count()
+        // && present_file_formats_count() <
+        // axis_cardinality::<crate::discovery::Format>())` on every
+        // fixture. The support-side surfacing of the same boolean,
+        // without allocating `Vec<crate::discovery::Format>`. On every
+        // cardinality-`>= 2` axis the interval `(0, cardinality)` is
+        // non-empty. Peer of
+        // `layer_kinds_partial_cover_agrees_with_present_layer_kinds_count_strict_interval_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_partial_cover_agrees_with_contributing_tiers_count_strict_interval_pointwise`
+        // on the tier altitude, and
+        // `kinds_partial_cover_agrees_with_present_kinds_count_strict_interval_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_partial_cover();
+            let support = slice.present_file_formats_count();
+            let via_scalar =
+                0 < support && support < crate::axis_cardinality::<crate::discovery::Format>();
+            assert_eq!(
+                via_seam, via_scalar,
+                "file_formats_partial_cover ({via_seam}) must agree with \
+                 0 < present_file_formats_count < cardinality \
+                 ({via_scalar}, support={support})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_partial_cover_agrees_with_absent_file_formats_count_strict_interval_pointwise()
+    {
+        // Coverage-gap dual-scalar strict-interval surface:
+        // `file_formats_partial_cover() == (0 < absent_file_formats_count()
+        // && absent_file_formats_count() <
+        // axis_cardinality::<crate::discovery::Format>())` on every
+        // fixture. The `present + absent == axis_cardinality`
+        // invariant restated on the two named cardinality peers,
+        // without allocating `Vec<crate::discovery::Format>`. Peer of
+        // the histogram-side dual-scalar strict-interval form
+        // `0 < hist.unobserved_cells() && hist.unobserved_cells() <
+        // axis_cardinality::<A>()` pinned one altitude down. Peer of
+        // `layer_kinds_partial_cover_agrees_with_absent_layer_kinds_count_strict_interval_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_partial_cover_agrees_with_absent_tiers_count_strict_interval_pointwise`
+        // on the tier altitude, and
+        // `kinds_partial_cover_agrees_with_absent_kinds_count_strict_interval_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_partial_cover();
+            let gap = slice.absent_file_formats_count();
+            let via_scalar = 0 < gap && gap < crate::axis_cardinality::<crate::discovery::Format>();
+            assert_eq!(
+                via_seam, via_scalar,
+                "file_formats_partial_cover ({via_seam}) must agree with \
+                 0 < absent_file_formats_count < cardinality \
+                 ({via_scalar}, gap={gap})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_partial_cover_agrees_with_present_and_absent_file_formats_count_both_positive_pointwise()
+     {
+        // Mixed-side dual-scalar non-emptiness surface:
+        // `file_formats_partial_cover() == (present_file_formats_count() > 0
+        // && absent_file_formats_count() > 0)` on every fixture. The
+        // direct histogram-surface `distinct_cells > 0 &&
+        // unobserved_cells > 0` pin restated at the chain file-format
+        // sub-axis — the boolean asking "did the chain see at least
+        // one format *and* miss at least one format?" against the two
+        // named cardinality peers, without allocating either
+        // `Vec<crate::discovery::Format>`. Peer of the sibling
+        // `file_formats_boundary` dual-scalar equality form
+        // `present_file_formats_count == 0 || absent_file_formats_count
+        // == 0` (its exact strict-complement) one seam over on the
+        // coverage-trichotomy bipartition. Peer of
+        // `layer_kinds_partial_cover_agrees_with_present_and_absent_layer_kinds_count_both_positive_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_partial_cover_agrees_with_contributing_and_absent_tiers_count_both_positive_pointwise`
+        // on the tier altitude, and
+        // `kinds_partial_cover_agrees_with_present_and_absent_kinds_count_both_positive_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_partial_cover();
+            let support = slice.present_file_formats_count();
+            let gap = slice.absent_file_formats_count();
+            let via_scalar = support > 0 && gap > 0;
+            assert_eq!(
+                via_seam, via_scalar,
+                "file_formats_partial_cover ({via_seam}) must agree with \
+                 present_file_formats_count > 0 && absent_file_formats_count > 0 \
+                 ({via_scalar}, support={support}, gap={gap})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_partial_cover_empty_chain_is_false() {
+        // Empty-chain partial-cover: the empty chain observes zero
+        // cells, so every cell is unobserved (four zeros on the
+        // cardinality-`4` axis) — the scan sees no nonzero cell and
+        // falls through to `false`. `file_formats_partial_cover`
+        // reads `false`. Matches `has_partial_cover` reading `false`
+        // on the empty histogram one altitude down. Direct witness
+        // of the disjointness
+        // `!file_formats_any_observed ⇒ !file_formats_partial_cover`
+        // via the empty-chain disjunct of `file_formats_boundary`.
+        // Peer of `layer_kinds_partial_cover_empty_chain_is_false`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_partial_cover_empty_map_is_false` on the tier
+        // altitude, and `kinds_partial_cover_empty_diff_is_false` on
+        // the diff altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(!empty.file_formats_partial_cover());
+        assert!(!empty.file_formats_any_observed());
+        assert!(empty.file_formats_boundary());
+    }
+
+    #[test]
+    fn file_formats_partial_cover_no_recognized_files_is_false() {
+        // Non-empty-chain / empty-histogram partial-cover — the
+        // file-format sub-axis cross-sub-axis divergence pin against
+        // the layer-kind sub-axis. A chain of only `Defaults` /
+        // `Env` / unrecognized-extension `File` layers is non-empty
+        // but has no `Some` file-format projection, so the histogram
+        // is empty (four zeros on the cardinality-`4` axis) — the
+        // scan sees no nonzero cell and falls through to `false`.
+        // `file_formats_partial_cover` reads `false` via the empty-
+        // histogram case. Direct divergence pin against
+        // `layer_kinds_partial_cover`: on the same fixtures the
+        // layer-kind sub-axis observes at least one layer-kind cell
+        // (Defaults / Env / File) at partial support and typically
+        // reads `layer_kinds_partial_cover = true`, while the file-
+        // format sub-axis's partial-cover middle leg silently drops
+        // out via the empty-histogram case of the strict-complement
+        // `file_formats_boundary` corner. Peer of
+        // `file_formats_boundary_no_recognized_files_is_true` via
+        // the disjoint-corner relationship — every no-recognized-
+        // files chain sits on `file_formats_boundary = true`, so
+        // the bipartition still holds. Peer of
+        // `file_formats_singular_no_recognized_files_is_false` and
+        // `file_formats_singular_gap_no_recognized_files_is_false`
+        // on the same fixtures — the singular near-boundary corners
+        // also drop out via the empty-histogram case.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(slice.file_format_histogram().is_empty());
+            assert!(!slice.file_formats_any_observed());
+            assert!(!slice.file_formats_partial_cover());
+            assert!(slice.file_formats_boundary());
+        }
+    }
+
+    #[test]
+    fn file_formats_partial_cover_singleton_support_is_true() {
+        // Singleton-support pin: `sample_chain()` observes only Yaml
+        // (two `.yaml` file layers + one Env layer), so the file-
+        // format support cardinality is `1` (one nonzero and three
+        // zeros on the cardinality-`4` axis) — the scan sees a
+        // nonzero cell *and* a zero cell and returns `true`.
+        // `file_formats_partial_cover` reads `true`. Direct witness
+        // of the subsumption
+        // `file_formats_singular_support ⇒ file_formats_partial_cover`
+        // via the mixed-parity witness. Peer of
+        // `layer_kinds_partial_cover_singleton_support_is_true` on
+        // the layer-kind sub-axis of the same chain altitude,
+        // `tiers_partial_cover_singleton_support_is_true` on the
+        // tier altitude, and
+        // `kinds_partial_cover_singleton_support_is_true` on the
+        // diff altitude.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 1);
+        assert!(slice.file_formats_partial_cover());
+        assert!(slice.file_formats_singular_support());
+    }
+
+    #[test]
+    fn file_formats_partial_cover_two_format_partial_cover_is_true() {
+        // Two-format-cover pin — the *first non-vacuous* strict-
+        // interior subsumption witness on the chain altitude for the
+        // partial-cover middle-leg corner. A chain observing exactly
+        // two file-format cells (`.yaml + .toml`) reads
+        // `strict_partial_cover=true` on the cardinality-`4`
+        // `crate::discovery::Format` axis; support cardinality `2`
+        // satisfies `0 < support < cardinality`, so
+        // `file_formats_partial_cover` reads `true`. Direct witness
+        // of the *non-vacuous* strict-interior subsumption
+        // `file_formats_strict_partial_cover ⇒
+        // file_formats_partial_cover` — unavailable at the
+        // cardinality-`3` layer-kind sub-axis where the strict-
+        // interior antecedent is vacuous. Matches the tier altitude
+        // (cardinality-`4` `ConfigTierKind`) — the two-tier partial-
+        // cover fixture there reads
+        // `tiers_strict_partial_cover=true, tiers_partial_cover=true`
+        // on the same strict-interior middle leg.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 2);
+        assert!(slice.file_format_histogram().count(Format::Yaml) > 0);
+        assert!(slice.file_format_histogram().count(Format::Toml) > 0);
+        assert!(slice.file_formats_strict_partial_cover());
+        assert!(slice.file_formats_partial_cover());
+    }
+
+    #[test]
+    fn file_formats_partial_cover_three_format_partial_cover_is_true() {
+        // Three-format-cover pin: a chain observing exactly three
+        // file-format cells (`.yaml + .toml + .lisp`) sits at
+        // support cardinality `3` = `axis_cardinality - 1`, exactly
+        // the singleton-gap boundary on the cardinality-`4` axis —
+        // the scan sees a nonzero and a zero cell and returns
+        // `true`. `file_formats_partial_cover` reads `true`. Direct
+        // witness of the subsumption `file_formats_singular_gap ⇒
+        // file_formats_partial_cover` via the mixed-parity witness
+        // — the singleton-gap boundary is a singular near-boundary
+        // corner, inside the partial-cover middle leg of the
+        // coverage trichotomy. Peer of
+        // `tiers_partial_cover_three_tier_partial_cover_is_true` on
+        // the tier altitude in the same shape on the cardinality-
+        // `4` `ConfigTierKind` axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 3);
+        assert!(slice.file_formats_partial_cover());
+        assert!(slice.file_formats_singular_gap());
+    }
+
+    #[test]
+    fn file_formats_partial_cover_uniform_cover_is_false() {
+        // Uniform-cover pin: every file-format cell contributes at
+        // least one recognized-extension file layer, so the support
+        // cardinality is `4` (no unobserved cells on the cardinality-
+        // `4` axis) — the scan sees only nonzero cells and falls
+        // through to `false`. `file_formats_partial_cover` reads
+        // `false`. Direct witness of the disjointness
+        // `file_formats_full_cover ⇒ !file_formats_partial_cover`
+        // via the full-cover boundary of `file_formats_boundary`.
+        // Peer of `layer_kinds_partial_cover_uniform_cover_is_false`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_partial_cover_uniform_cover_is_false` on the tier
+        // altitude, and `kinds_partial_cover_uniform_cover_is_false`
+        // on the diff altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.file_formats_full_cover());
+        assert!(!slice.file_formats_partial_cover());
+    }
+
+    #[test]
+    fn file_formats_partial_cover_and_file_formats_boundary_form_strict_bipartition_pointwise() {
+        // Strict-bipartition pin at the chain file-format sub-axis
+        // *with the named seam*: `file_formats_partial_cover` and
+        // `file_formats_boundary` are pointwise complementary —
+        // exactly one fires on every chain. The named partial-cover
+        // corner is the exact complement of the named boundary
+        // corner. Peer of the pre-existing pin
+        // `file_formats_boundary_and_file_formats_partial_cover_form_strict_bipartition_pointwise`
+        // (kept alongside as the open-coded parity witness against
+        // `file_formats_any_observed && !file_formats_full_cover`),
+        // and peer of the histogram-side bipartition law
+        // `axis_histogram_has_boundary_and_has_partial_cover_form_strict_bipartition_for_every_closed_axis_implementor`
+        // one altitude down. The `file_formats_partial_cover` seam
+        // now names the middle leg of the coverage trichotomy
+        // directly at the surface, replacing the open-coded
+        // conjunction-of-negations expression used by the pre-
+        // existing pin. Peer of
+        // `layer_kinds_partial_cover_and_layer_kinds_boundary_form_strict_bipartition_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_partial_cover_and_tiers_boundary_form_strict_bipartition_pointwise`
+        // on the tier altitude, and
+        // `kinds_partial_cover_and_kinds_boundary_form_strict_bipartition_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let partial = slice.file_formats_partial_cover();
+            let boundary = slice.file_formats_boundary();
+            let count = usize::from(partial) + usize::from(boundary);
+            assert_eq!(
+                count, 1,
+                "exactly one of (partial_cover, boundary) must fire \
+                 (partial={partial}, boundary={boundary})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_partial_cover_implies_file_formats_any_observed_pointwise() {
+        // Subsumption pin: `file_formats_partial_cover() ⇒
+        // file_formats_any_observed()` always via the "at least one
+        // observed" half of the defining conjunction. Every partial-
+        // cover chain observes at least one cell — the middle-leg
+        // corner sits on the `true` side of the any-observed
+        // boundary. Peer of
+        // `layer_kinds_partial_cover_implies_layer_kinds_any_observed_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_partial_cover_implies_tiers_any_observed_pointwise`
+        // on the tier altitude, and
+        // `kinds_partial_cover_implies_kinds_any_observed_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_partial_cover() {
+                assert!(
+                    slice.file_formats_any_observed(),
+                    "partial-cover chain must observe at least one cell",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_partial_cover_implies_not_file_formats_full_cover_pointwise() {
+        // Subsumption pin: `file_formats_partial_cover() ⇒
+        // !file_formats_full_cover()` always via the "at least one
+        // unobserved" half of the defining conjunction. Every
+        // partial-cover chain misses at least one cell — the middle-
+        // leg corner sits strictly below the full-cover top boundary.
+        // Peer of
+        // `layer_kinds_partial_cover_implies_not_layer_kinds_full_cover_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_partial_cover_implies_not_tiers_full_cover_pointwise`
+        // on the tier altitude, and
+        // `kinds_partial_cover_implies_not_kinds_full_cover_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_partial_cover() {
+                assert!(
+                    !slice.file_formats_full_cover(),
+                    "partial-cover chain cannot be full-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_support_implies_file_formats_partial_cover_pointwise() {
+        // Subsumption pin: `file_formats_singular_support() ⇒
+        // file_formats_partial_cover()` always on cardinality-`>= 2`
+        // axes. Support cardinality `1` is strictly between `0` and
+        // cardinality — the singular-support boundary sits inside
+        // the partial-cover middle leg. Direct pin of the histogram-
+        // side subsumption `has_singular_support ⇒
+        // has_partial_cover` one altitude down. Peer of
+        // `layer_kinds_singular_support_implies_layer_kinds_partial_cover_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_support_implies_tiers_partial_cover_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_support_implies_kinds_partial_cover_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_singular_support() {
+                assert!(
+                    slice.file_formats_partial_cover(),
+                    "singular-support chain must be partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_gap_implies_file_formats_partial_cover_pointwise() {
+        // Subsumption pin: `file_formats_singular_gap() ⇒
+        // file_formats_partial_cover()` always on cardinality-`>= 2`
+        // axes. Support cardinality `cardinality - 1` is strictly
+        // between `0` and cardinality — the singular-gap boundary
+        // sits inside the partial-cover middle leg. Peer of the
+        // opposite-end subsumption on the support-cardinality
+        // interval, closing the dual-singular pair
+        // `(has_singular_support, has_singular_gap) ⇒
+        // has_partial_cover` at the chain file-format sub-axis. Peer
+        // of
+        // `layer_kinds_singular_gap_implies_layer_kinds_partial_cover_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_gap_implies_tiers_partial_cover_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_gap_implies_kinds_partial_cover_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_singular_gap() {
+                assert!(
+                    slice.file_formats_partial_cover(),
+                    "singular-gap chain must be partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_implies_file_formats_partial_cover_pointwise() {
+        // Subsumption pin: `file_formats_singular() ⇒
+        // file_formats_partial_cover()` always on cardinality-`>= 2`
+        // axes. The union of the two singular-side subsumptions
+        // lands the middle-leg singular corners inside the partial-
+        // cover middle leg. Direct fold over the disjunction — the
+        // singular near-boundary corner of the distance ternary
+        // sits inside the partial-cover middle leg of the coverage
+        // trichotomy. Peer of
+        // `layer_kinds_singular_implies_layer_kinds_partial_cover_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_singular_implies_tiers_partial_cover_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_implies_kinds_partial_cover_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_singular() {
+                assert!(
+                    slice.file_formats_partial_cover(),
+                    "singular chain must be partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_strict_partial_cover_implies_file_formats_partial_cover_pointwise() {
+        // Subsumption pin: `file_formats_strict_partial_cover() ⇒
+        // file_formats_partial_cover()` always. The strict interior
+        // sits inside the partial-cover middle leg by definition.
+        // Direct pin of the histogram-side subsumption
+        // `has_strict_partial_cover ⇒ has_partial_cover` one
+        // altitude down. **Non-vacuous** at the file-format sub-axis
+        // — the two-format partial cover fixture on the cardinality-
+        // `4` `crate::discovery::Format` axis reads
+        // `strict_partial_cover=true, partial_cover=true`, a strict
+        // advance over the layer-kind sub-axis where the strict-
+        // interior antecedent is vacuous and the subsumption holds
+        // only trivially. Peer of
+        // `layer_kinds_strict_partial_cover_implies_layer_kinds_partial_cover_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_strict_partial_cover_implies_tiers_partial_cover_pointwise`
+        // on the tier altitude, and
+        // `kinds_strict_partial_cover_implies_kinds_partial_cover_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_strict_partial_cover() {
+                assert!(
+                    slice.file_formats_partial_cover(),
+                    "strict-partial-cover chain must be partial-cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_partial_cover_and_file_formats_any_observed_negation_and_file_formats_full_cover_form_coverage_trichotomy_pointwise()
+     {
+        // Coverage-trichotomy partition pin at the chain file-format
+        // sub-axis: exactly one of the three legs
+        // `(!file_formats_any_observed, file_formats_partial_cover,
+        // file_formats_full_cover)` fires on every chain — the
+        // coverage trichotomy of the `(is_empty, has_partial_cover,
+        // is_full_cover)` histogram-side partition restated at the
+        // chain file-format sub-axis. Peer of the trait-uniform pin
+        // `axis_histogram_coverage_trichotomy_partitions_every_histogram_for_every_closed_axis_implementor`
+        // one altitude down. The `file_formats_partial_cover` seam
+        // now carries the middle leg of this partition directly at
+        // the surface, folding the open-coded expression
+        // `file_formats_any_observed && !file_formats_full_cover`
+        // (the surface used verbatim by the pre-existing bipartition-
+        // law pin
+        // `file_formats_boundary_and_file_formats_partial_cover_form_strict_bipartition_pointwise`)
+        // into one named boolean. Peer of
+        // `layer_kinds_partial_cover_and_layer_kinds_any_observed_negation_and_layer_kinds_full_cover_form_coverage_trichotomy_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_partial_cover_and_tiers_any_observed_negation_and_tiers_full_cover_form_coverage_trichotomy_pointwise`
+        // on the tier altitude, and
+        // `kinds_partial_cover_and_kinds_any_observed_negation_and_kinds_full_cover_form_coverage_trichotomy_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let empty = !slice.file_formats_any_observed();
+            let partial = slice.file_formats_partial_cover();
+            let full = slice.file_formats_full_cover();
+            let count = usize::from(empty) + usize::from(partial) + usize::from(full);
+            assert_eq!(
+                count, 1,
+                "exactly one of (!any_observed, partial_cover, full_cover) \
+                 must fire (empty={empty}, partial={partial}, full={full})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_partial_cover_bridges_support_cardinality_class_is_partial_cover_pointwise() {
+        // Cross-surface bridge law: `file_formats_partial_cover() ==
+        // file_format_histogram().support_cardinality_class().is_partial_cover()`
+        // on every fixture. The class-side projection lands on
+        // `SupportCardinalityClass::SingularSupport`,
+        // `SupportCardinalityClass::StrictPartialCover`, or
+        // `SupportCardinalityClass::SingularGap` exactly when the
+        // histogram-side conjunction fires, and
+        // `SupportCardinalityClass::is_partial_cover` reads `true`
+        // on any of the three variants. Peer of the histogram-side
+        // bridge
+        // `axis_histogram_support_cardinality_class_is_partial_cover_agrees_with_histogram_has_partial_cover_for_every_closed_axis_implementor`
+        // one altitude down, closing the (histogram, class) duality
+        // on the partial-cover middle leg at the chain file-format
+        // sub-axis. Peer of
+        // `layer_kinds_partial_cover_bridges_support_cardinality_class_is_partial_cover_pointwise`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_partial_cover_bridges_support_cardinality_class_is_partial_cover_pointwise`
+        // on the tier altitude, and
+        // `kinds_partial_cover_bridges_support_cardinality_class_is_partial_cover_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_partial_cover();
+            let via_class = slice
+                .file_format_histogram()
+                .support_cardinality_class()
+                .is_partial_cover();
+            assert_eq!(
+                via_seam, via_class,
+                "file_formats_partial_cover ({via_seam}) must agree with \
+                 file_format_histogram().support_cardinality_class().is_partial_cover() \
+                 ({via_class})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_partial_cover_agrees_with_open_coded_mixed_parity_walk() {
+        // Parity against the exact hand-rolled partial-cover walk
+        // this lift replaces on cardinality-`>= 2` axes: walk every
+        // cell of the histogram and count how many carry a zero
+        // count and how many carry a nonzero count; the partial-
+        // cover predicate reads `true` iff *both* a zero cell *and*
+        // a nonzero cell appear. Mirrors the parity pin
+        // `file_formats_boundary_agrees_with_open_coded_uniform_parity_walk`
+        // on the strict-complement top-leg projection — the two
+        // parity walks are pointwise complementary on every
+        // cardinality-`>= 1` axis. Peer of
+        // `layer_kinds_partial_cover_agrees_with_open_coded_mixed_parity_walk`
+        // on the layer-kind sub-axis of the same chain altitude,
+        // `tiers_partial_cover_agrees_with_open_coded_mixed_parity_walk`
+        // on the tier altitude, and
+        // `kinds_partial_cover_agrees_with_open_coded_mixed_parity_walk`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_partial_cover();
+            let hist = slice.file_format_histogram();
+            let zeros = hist.iter().filter(|(_, c)| *c == 0).count();
+            let nonzeros = hist.iter().filter(|(_, c)| *c > 0).count();
+            let hand_rolled = zeros > 0 && nonzeros > 0;
             assert_eq!(via_seam, hand_rolled);
         }
     }
