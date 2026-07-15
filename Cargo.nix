@@ -728,7 +728,7 @@ rec {
           }
           {
             name = "http-body";
-            packageId = "http-body 1.0.1";
+            packageId = "http-body 1.1.0";
             rename = "http-body-1x";
           }
           {
@@ -1376,7 +1376,7 @@ rec {
           }
           {
             name = "http-body";
-            packageId = "http-body 1.0.1";
+            packageId = "http-body 1.1.0";
             rename = "http-body-1x";
           }
           {
@@ -1512,7 +1512,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.41";
+            packageId = "rustls 0.23.42";
             optional = true;
             usesDefaultFeatures = false;
           }
@@ -1717,7 +1717,7 @@ rec {
           }
           {
             name = "http-body";
-            packageId = "http-body 1.0.1";
+            packageId = "http-body 1.1.0";
             rename = "http-body-1x";
           }
           {
@@ -1892,7 +1892,7 @@ rec {
           }
           {
             name = "http-body";
-            packageId = "http-body 1.0.1";
+            packageId = "http-body 1.1.0";
             rename = "http-body-1-0";
             optional = true;
           }
@@ -3845,11 +3845,11 @@ rec {
         ];
 
       };
-      "http-body 1.0.1" = rec {
+      "http-body 1.1.0" = rec {
         crateName = "http-body";
-        version = "1.0.1";
+        version = "1.1.0";
         edition = "2018";
-        sha256 = "111ir5k2b9ihz5nr9cz7cwm7fnydca7dx4hc7vr16scfzghxrzhy";
+        sha256 = "0b5wj0rdj8p03k20q8x0jy249amg2db919fnmh7zcrgf2clqyana";
         libName = "http_body";
         authors = [
           "Carl Lerche <me@carllerche.com>"
@@ -3870,9 +3870,9 @@ rec {
       };
       "http-body-util" = rec {
         crateName = "http-body-util";
-        version = "0.1.3";
+        version = "0.1.4";
         edition = "2018";
-        sha256 = "0jm6jv4gxsnlsi1kzdyffjrj8cfr3zninnxpw73mvkxy4qzdj8dh";
+        sha256 = "1wizkqx9a75x8v5lm7cawpammz8sfvd7cngnkp34wkcfl3b1zx79";
         libName = "http_body_util";
         authors = [
           "Carl Lerche <me@carllerche.com>"
@@ -3895,7 +3895,7 @@ rec {
           }
           {
             name = "http-body";
-            packageId = "http-body 1.0.1";
+            packageId = "http-body 1.1.0";
           }
           {
             name = "pin-project-lite";
@@ -4077,7 +4077,7 @@ rec {
           }
           {
             name = "http-body";
-            packageId = "http-body 1.0.1";
+            packageId = "http-body 1.1.0";
           }
           {
             name = "httparse";
@@ -4238,7 +4238,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.41";
+            packageId = "rustls 0.23.42";
             usesDefaultFeatures = false;
           }
           {
@@ -4274,7 +4274,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.41";
+            packageId = "rustls 0.23.42";
             usesDefaultFeatures = false;
             features = [ "tls12" ];
           }
@@ -4338,7 +4338,7 @@ rec {
           }
           {
             name = "http-body";
-            packageId = "http-body 1.0.1";
+            packageId = "http-body 1.1.0";
           }
           {
             name = "hyper";
@@ -4365,7 +4365,7 @@ rec {
           }
           {
             name = "socket2";
-            packageId = "socket2 0.6.4";
+            packageId = "socket2 0.6.5";
             optional = true;
             features = [ "all" ];
           }
@@ -5301,9 +5301,9 @@ rec {
       };
       "mio" = rec {
         crateName = "mio";
-        version = "1.2.1";
+        version = "1.2.2";
         edition = "2021";
-        sha256 = "1nkggmrlnjs93w8rja4lvjj4aml1xqahgimv1h0p7d373kvhmg82";
+        sha256 = "09y4b7gc42ymgssshh8sz6gs3y5r8bbigqaw2c4snh6fy5qmrmih";
         authors = [
           "Carl Lerche <me@carllerche.com>"
           "Thomas de Zeeuw <thomasdezeeuw@gmail.com>"
@@ -5789,14 +5789,14 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.41";
+            packageId = "rustls 0.23.42";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
           }
           {
             name = "socket2";
-            packageId = "socket2 0.6.4";
+            packageId = "socket2 0.6.5";
             target = { target, features }: (!((builtins.elem "wasm" target."family") && ("unknown" == target."os" or null)));
           }
           {
@@ -5905,7 +5905,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.41";
+            packageId = "rustls 0.23.42";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -5977,7 +5977,7 @@ rec {
           }
           {
             name = "socket2";
-            packageId = "socket2 0.6.4";
+            packageId = "socket2 0.6.5";
             target = { target, features }: (!((builtins.elem "wasm" target."family") && ("unknown" == target."os" or null)));
           }
           {
@@ -6199,7 +6199,7 @@ rec {
           }
           {
             name = "http-body";
-            packageId = "http-body 1.0.1";
+            packageId = "http-body 1.1.0";
             target = { target, features }: (!("wasm32" == target."arch" or null));
           }
           {
@@ -6263,7 +6263,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.41";
+            packageId = "rustls 0.23.42";
             optional = true;
             usesDefaultFeatures = false;
             target = { target, features }: (!("wasm32" == target."arch" or null));
@@ -6680,11 +6680,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "default" "log" "logging" "tls12" ];
       };
-      "rustls 0.23.41" = rec {
+      "rustls 0.23.42" = rec {
         crateName = "rustls";
-        version = "0.23.41";
+        version = "0.23.42";
         edition = "2021";
-        sha256 = "07vbs2935a7xjqqvy8w3ndzmmw8dg769d9zcgdg7k6sdccjv34kb";
+        sha256 = "0f619dq1izpl40glcqgfjbqzpmwg8g5iffjx4429sh4v06mzqm1w";
         dependencies = [
           {
             name = "aws-lc-rs";
@@ -7615,7 +7615,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.264";
+        version = "0.1.265";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -7845,11 +7845,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "all" ];
       };
-      "socket2 0.6.4" = rec {
+      "socket2 0.6.5" = rec {
         crateName = "socket2";
-        version = "0.6.4";
+        version = "0.6.5";
         edition = "2021";
-        sha256 = "0ldyp5rhba15spwxj1n94xh7sjks1398c3vwpwkxkd1087nwzlaj";
+        sha256 = "1m7diygswpvlpvrxd6ap169nxgax014jr8220nqlr3bzyb3y5lf3";
         authors = [
           "Alex Crichton <alex@alexcrichton.com>"
           "Thomas de Zeeuw <thomasdezeeuw@gmail.com>"
@@ -7910,9 +7910,9 @@ rec {
       };
       "syn" = rec {
         crateName = "syn";
-        version = "2.0.118";
+        version = "2.0.119";
         edition = "2021";
-        sha256 = "08hlbc32lqd5d67p26ck7chg0rkclsw9as6f96vfn4s2j1zyb6hv";
+        sha256 = "15vjy620l91a3q4n4f4gzhnflmdr6pnm38v2m6cpk86i8av32a47";
         authors = [
           "David Tolnay <dtolnay@gmail.com>"
         ];
@@ -8002,8 +8002,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "17df29d020c5da191ab6eb37c17a7ab99dabc7ba";
-          sha256 = "0kfafvhyqa5l68p7mh1yvr970na0cl85l9jgs3lh2a3gnyxaaqrc";
+          rev = "2ffc61d88ca7d02a031371811d579615d685a3aa";
+          sha256 = "0s9n1r3r78xlhd8scgmc29m6laydxrsjp515w49fbjxg4hdrs7dm";
         };
         libName = "tatara_lisp";
         authors = [
@@ -8044,8 +8044,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "17df29d020c5da191ab6eb37c17a7ab99dabc7ba";
-          sha256 = "0kfafvhyqa5l68p7mh1yvr970na0cl85l9jgs3lh2a3gnyxaaqrc";
+          rev = "2ffc61d88ca7d02a031371811d579615d685a3aa";
+          sha256 = "0s9n1r3r78xlhd8scgmc29m6laydxrsjp515w49fbjxg4hdrs7dm";
         };
         procMacro = true;
         libName = "tatara_lisp_derive";
@@ -8400,7 +8400,7 @@ rec {
           }
           {
             name = "socket2";
-            packageId = "socket2 0.6.4";
+            packageId = "socket2 0.6.5";
             optional = true;
             target = { target, features }: ((!(builtins.elem "wasm" target."family")) || (("wasi" == target."os" or null) && (!("p1" == target."env" or null))));
             features = [ "all" ];
@@ -8425,7 +8425,7 @@ rec {
           }
           {
             name = "socket2";
-            packageId = "socket2 0.6.4";
+            packageId = "socket2 0.6.5";
             target = { target, features }: (!(builtins.elem "wasm" target."family"));
           }
           {
@@ -8527,7 +8527,7 @@ rec {
         dependencies = [
           {
             name = "rustls";
-            packageId = "rustls 0.23.41";
+            packageId = "rustls 0.23.42";
             usesDefaultFeatures = false;
             features = [ "std" ];
           }
@@ -8858,7 +8858,7 @@ rec {
           }
           {
             name = "http-body";
-            packageId = "http-body 1.0.1";
+            packageId = "http-body 1.1.0";
             optional = true;
           }
           {
@@ -8895,7 +8895,7 @@ rec {
           }
           {
             name = "http-body";
-            packageId = "http-body 1.0.1";
+            packageId = "http-body 1.1.0";
           }
           {
             name = "tower";
@@ -11542,9 +11542,9 @@ rec {
       };
       "zmij" = rec {
         crateName = "zmij";
-        version = "1.0.22";
+        version = "1.0.23";
         edition = "2021";
-        sha256 = "1n9966iryg08zc686rzxfc497kr4w01kc25pwk4idwpb9d506bxx";
+        sha256 = "06zwri21nnrl34rwinmvbciap8yk1mrl8qfg9pff7lgspc56sri9";
         authors = [
           "David Tolnay <dtolnay@gmail.com>"
         ];
