@@ -9029,6 +9029,172 @@ impl ConfigDiff {
     pub fn kinds_strictly_antimodally_unique(&self) -> bool {
         self.kind_histogram().is_strictly_antimodally_unique()
     }
+
+    /// The **closed modal / antimodal classification** of this diff's
+    /// [`DiffLineKind`] histogram on the diff altitude — a single
+    /// [`crate::ModalityClass`] variant naming the classifier corner the
+    /// diff lands on. Routes through
+    /// [`crate::AxisHistogram::modality_class`] one altitude down: the
+    /// pattern-match over `modality_degree() == (peak_mult, trough_mult)`
+    /// that fuses the four boolean multiplicity predicates
+    /// ([`Self::kinds_strictly_modally_unique`],
+    /// [`Self::kinds_modally_tied`],
+    /// [`Self::kinds_strictly_antimodally_unique`],
+    /// [`Self::kinds_antimodally_tied`]) plus the empty-diff boundary
+    /// into ONE typed variant tag.
+    ///
+    /// The **modality-quotient classifier peer** of the four documented
+    /// boolean predicates on the diff altitude the surface consumers
+    /// previously composed into a 4-or-5-way `if` ladder over the four
+    /// booleans plus [`Self::kinds_any_observed`]. This lift names the
+    /// classifier corner directly at the diff-altitude surface as one
+    /// method call returning [`crate::ModalityClass`] — the typed variant
+    /// every operator-facing *"what modal / antimodal shape does this
+    /// diff's kind distribution carry?"* summary reads off at one method
+    /// call, pattern-matched exhaustively at the consumer site so the
+    /// compiler enforces branch coverage over the five variants
+    /// ([`crate::ModalityClass::Empty`],
+    /// [`crate::ModalityClass::StrictModalStrictAntimodal`],
+    /// [`crate::ModalityClass::TiedModalStrictAntimodal`],
+    /// [`crate::ModalityClass::StrictModalTiedAntimodal`],
+    /// [`crate::ModalityClass::TiedModalTiedAntimodal`]).
+    ///
+    /// The diff-altitude modality-classifier peer that **seeds the
+    /// "modality-class across altitudes" projection** — the natural next
+    /// row one altitude up from the just-closed four-primitive
+    /// multiplicity boolean algebra
+    /// `(is_strictly_modally_unique, is_modally_tied,
+    /// is_strictly_antimodally_unique, is_antimodally_tied)`. The named
+    /// classifier fuses the four booleans into one exhaustive variant
+    /// tag, opening the modality-quotient row of the substrate. The
+    /// natural next lifts climb to the tier altitude
+    /// (`ProvenanceMap::tiers_modality_class` over
+    /// [`Self::tier_histogram`]) and sideways along the chain altitude's
+    /// three sub-axes (`ConfigSourceChain::layer_kinds_modality_class`,
+    /// `ConfigSourceChain::file_formats_modality_class`,
+    /// `ConfigSourceChain::env_prefix_kinds_modality_class` over the
+    /// corresponding chain histograms). Once climbed and closed at every
+    /// altitude / sub-axis in the same five-step trajectory the ten prior
+    /// boolean projections closed, the substrate closes the full
+    /// modality-quotient classifier surface at every altitude / sub-axis
+    /// of the 5-column grid.
+    ///
+    /// **Total classification.** Every diff lands on exactly one of the
+    /// five [`crate::ModalityClass`] variants — the classification is
+    /// total and disjoint by construction over
+    /// [`crate::ModalityClass::ALL`]. Direct pin of the histogram-side
+    /// total-partition law
+    /// `axis_histogram_modality_class_total_classification_partitions_every_shape`
+    /// one altitude down.
+    ///
+    /// **Cardinality-`>= 1` reachability at the diff altitude.**
+    /// [`DiffLineKind`] carries three cells, so
+    /// `kinds_modality_class()` reads witnesses on all five variants —
+    /// [`crate::ModalityClass::Empty`] on the empty diff,
+    /// [`crate::ModalityClass::StrictModalStrictAntimodal`] on every
+    /// singleton-support diff and on strictly-skewed multi-cell diffs
+    /// with unique peak *and* unique trough (e.g. two-`Added` + one-
+    /// `Context` where `Added` alone peaks at `2` and `Context` alone
+    /// troughs at `1`, or three-`Context` + one-`Removed` where
+    /// `Context` alone peaks at `3` and `Removed` alone troughs at `1`),
+    /// [`crate::ModalityClass::TiedModalStrictAntimodal`] on multi-cell
+    /// diffs with a tied peak and a unique trough (e.g. two-`Added` +
+    /// two-`Removed` + one-`Context` where `Added` and `Removed` tie at
+    /// peak `2` while `Context` uniquely holds trough `1`),
+    /// [`crate::ModalityClass::StrictModalTiedAntimodal`] on multi-cell
+    /// diffs with a unique peak and a tied trough (e.g. two-`Added` +
+    /// one-`Removed` + one-`Context` where `Added` uniquely peaks at `2`
+    /// while `Removed` and `Context` tie at trough `1`), and
+    /// [`crate::ModalityClass::TiedModalTiedAntimodal`] on every
+    /// uniform-count multi-cell diff (e.g. one-`Removed` + one-`Added`
+    /// tied at count `1`, or the uniform axis-cover with one of every
+    /// kind at count `1`).
+    ///
+    /// **Empty-diff convention** — returns [`crate::ModalityClass::Empty`]
+    /// on the empty diff: the empty histogram has no observed cells, so
+    /// `modality_degree()` reads `(0, 0)` and the classifier lands on the
+    /// empty-boundary variant. Matches
+    /// [`crate::AxisHistogram::modality_class`]'s empty-histogram
+    /// convention one altitude down. The empty-diff variant is the
+    /// single variant on which all four multiplicity boolean predicates
+    /// ([`Self::kinds_strictly_modally_unique`],
+    /// [`Self::kinds_modally_tied`],
+    /// [`Self::kinds_strictly_antimodally_unique`],
+    /// [`Self::kinds_antimodally_tied`]) read `false` — the shared
+    /// boundary below both the strict modal partition and the strict
+    /// antimodal partition.
+    ///
+    /// **Singleton-support convention** — returns
+    /// [`crate::ModalityClass::StrictModalStrictAntimodal`] on every
+    /// diff whose observed support is a single [`DiffLineKind`]: the
+    /// lone observed cell stands alone at its own peak *and* its own
+    /// trough (peak and trough coincide), so
+    /// `modality_degree()` reads `(1, 1)` and the classifier lands on
+    /// the doubly-strict corner. Direct pin of the histogram-side
+    /// subsumption `has_singular_support ⇒ modality_class ==
+    /// StrictModalStrictAntimodal` one altitude down.
+    ///
+    /// **Uniform axis-cover convention** — returns
+    /// [`crate::ModalityClass::TiedModalTiedAntimodal`] on every diff
+    /// observing every cell of [`DiffLineKind`] exactly once: the three
+    /// cells share the same count, so `modality_degree()` reads `(3, 3)`
+    /// and the classifier lands on the doubly-tied corner. Peer of the
+    /// histogram-side uniform-cover convention one altitude down, which
+    /// reads [`crate::ModalityClass::TiedModalTiedAntimodal`] on every
+    /// uniform-count multi-cell histogram — the cardinality-`3`
+    /// [`DiffLineKind`] axis honours the general condition.
+    ///
+    /// # Invariants
+    ///
+    /// - `kinds_modality_class() == kind_histogram().modality_class()`
+    ///   — both project the same variant off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `kinds_modality_class().is_empty() == !kinds_any_observed()` —
+    ///   the empty-variant peer of the diff-altitude "any observed"
+    ///   predicate; the classifier's empty-boundary variant coincides
+    ///   with the empty-diff row of the four-primitive boolean algebra.
+    /// - `kinds_modality_class().is_modally_tied() == kinds_modally_tied()`
+    ///   — the tied-modal-axis peer of the diff-altitude boolean; both
+    ///   read `false` on the empty diff.
+    /// - `kinds_modality_class().is_antimodally_tied() ==
+    ///   kinds_antimodally_tied()` — the tied-antimodal-axis peer of the
+    ///   diff-altitude boolean; both read `false` on the empty diff.
+    /// - `kinds_modality_class().is_strictly_modally_unique() ==
+    ///   kinds_strictly_modally_unique()` — the strict-modal-uniqueness
+    ///   peer of the diff-altitude boolean; both read `false` on the
+    ///   empty diff.
+    /// - `kinds_modality_class().is_strictly_antimodally_unique() ==
+    ///   kinds_strictly_antimodally_unique()` — the strict-antimodal-
+    ///   uniqueness peer of the diff-altitude boolean; both read `false`
+    ///   on the empty diff.
+    /// - `kinds_singular_support() ⇒ kinds_modality_class() ==
+    ///   ModalityClass::StrictModalStrictAntimodal` — every singleton-
+    ///   support diff lands on the doubly-strict corner: the lone
+    ///   observed cell is uniquely at peak *and* uniquely at trough.
+    ///   Direct pin of the histogram-side subsumption one altitude down.
+    /// - `kinds_full_cover() ∧ kinds_balanced() ⇒
+    ///   kinds_modality_class() == ModalityClass::TiedModalTiedAntimodal`
+    ///   on the cardinality-`>= 2` axis: a full-cover uniform-count diff
+    ///   observes every cell at the same count, so peak and trough
+    ///   coincide with the support of size `>= 2` on both axes — the
+    ///   classifier lands on the doubly-tied corner. Cardinality-`>= 2`
+    ///   witness of the histogram-side uniform-count subsumption one
+    ///   altitude down.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (the modality-
+    /// degree pair scan). Both are `O(n)` in practice since the diff-
+    /// cell axis carries a fixed three-cell cardinality; the returned
+    /// [`crate::ModalityClass`] fits in a `u8` discriminant, so the
+    /// classifier reads off one pattern-match over a fixed 5-way
+    /// discriminant table — no allocation, no branching per cell after
+    /// the modality-degree pair is built.
+    #[must_use]
+    pub fn kinds_modality_class(&self) -> crate::ModalityClass {
+        self.kind_histogram().modality_class()
+    }
 }
 
 #[cfg(test)]
@@ -17060,6 +17226,339 @@ mod tests {
                 false
             } else {
                 hist.iter().filter(|(_, c)| *c == min).count() == 1
+            };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ConfigDiff::kinds_modality_class — modality-quotient classifier on the diff altitude ──
+
+    #[test]
+    fn kinds_modality_class_matches_kind_histogram_modality_class_pointwise() {
+        // Routing pin: `kinds_modality_class` routes through
+        // `kind_histogram().modality_class()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Diff-altitude
+        // modality-classifier seed of the new "modality-class across
+        // altitudes" projection — the natural next row on the
+        // modality-quotient surface one altitude up from the closed
+        // four-primitive multiplicity boolean algebra.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().modality_class();
+            assert_eq!(diff.kinds_modality_class(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kinds_modality_class_empty_diff_is_empty_variant() {
+        // Empty-diff modality classifier: the empty diff observes zero
+        // cells, so `modality_degree` reads `(0, 0)` and the classifier
+        // lands on ModalityClass::Empty. Matches
+        // `AxisHistogram::modality_class` reading Empty on the empty
+        // histogram one altitude down.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert_eq!(empty.kinds_modality_class(), crate::ModalityClass::Empty);
+        assert!(!empty.kinds_any_observed());
+    }
+
+    #[test]
+    fn kinds_modality_class_singleton_support_is_strict_modal_strict_antimodal() {
+        // Singleton-support pin: every line lands on the same kind, so
+        // the lone observed cell stands alone at its own peak *and*
+        // its own trough — `modality_degree` reads `(1, 1)` and the
+        // classifier lands on the doubly-strict corner
+        // ModalityClass::StrictModalStrictAntimodal. Direct witness of
+        // the subsumption `kinds_singular_support ⇒
+        // kinds_modality_class == StrictModalStrictAntimodal`.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Added("a1".into()), DiffLine::Added("a2".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 1);
+        assert!(diff.kinds_singular_support());
+        assert_eq!(
+            diff.kinds_modality_class(),
+            crate::ModalityClass::StrictModalStrictAntimodal,
+        );
+    }
+
+    #[test]
+    fn kinds_modality_class_two_kind_uniform_cover_is_tied_modal_tied_antimodal() {
+        // Two-kind uniform-cover pin: a diff of one `Removed` + one
+        // `Added` has two observed cells tied at count `1` on the
+        // three-cell DiffLineKind axis — `modality_degree` reads
+        // `(2, 2)` and the classifier lands on the doubly-tied corner
+        // ModalityClass::TiedModalTiedAntimodal.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 2);
+        assert!(diff.kinds_balanced());
+        assert_eq!(
+            diff.kinds_modality_class(),
+            crate::ModalityClass::TiedModalTiedAntimodal,
+        );
+    }
+
+    #[test]
+    fn kinds_modality_class_uniform_three_kind_cover_is_tied_modal_tied_antimodal() {
+        // Uniform axis-cover pin: a diff observing every cell of
+        // DiffLineKind exactly once has three observed cells tied at
+        // count `1` — `modality_degree` reads `(3, 3)` and the
+        // classifier lands on the doubly-tied corner. Peer of the
+        // histogram-side uniform-cover convention one altitude down.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kinds_full_cover());
+        assert!(diff.kinds_balanced());
+        assert_eq!(
+            diff.kinds_modality_class(),
+            crate::ModalityClass::TiedModalTiedAntimodal,
+        );
+    }
+
+    #[test]
+    fn kinds_modality_class_strictly_skewed_diff_is_strict_modal_strict_antimodal() {
+        // Strictly-skewed pin: two `Added` + one `Context` has `Added`
+        // uniquely at peak `2` and `Context` uniquely at trough `1`
+        // (Removed is unobserved and does not enter the level sets) —
+        // `modality_degree` reads `(1, 1)` and the classifier lands on
+        // ModalityClass::StrictModalStrictAntimodal. Witness that the
+        // doubly-strict corner covers non-singular-support diffs too.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.recessive_kind(), Some(DiffLineKind::Context));
+        assert!(diff.kinds_strictly_modally_unique());
+        assert!(diff.kinds_strictly_antimodally_unique());
+        assert_eq!(
+            diff.kinds_modality_class(),
+            crate::ModalityClass::StrictModalStrictAntimodal,
+        );
+    }
+
+    #[test]
+    fn kinds_modality_class_tied_peak_strict_trough_is_tied_modal_strict_antimodal() {
+        // Tied-modal-strict-antimodal pin: two `Added` + two `Removed`
+        // + one `Context` has `Added` and `Removed` sharing peak `2`
+        // (modal tie exercised) while `Context` uniquely holds trough
+        // `1` (antimodal uniqueness) — `modality_degree` reads
+        // `(2, 1)` and the classifier lands on
+        // ModalityClass::TiedModalStrictAntimodal.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kinds_modally_tied());
+        assert!(diff.kinds_strictly_antimodally_unique());
+        assert_eq!(
+            diff.kinds_modality_class(),
+            crate::ModalityClass::TiedModalStrictAntimodal,
+        );
+    }
+
+    #[test]
+    fn kinds_modality_class_strict_peak_tied_trough_is_strict_modal_tied_antimodal() {
+        // Strict-modal-tied-antimodal pin: two `Added` + one `Removed`
+        // + one `Context` has `Added` uniquely at peak `2` (modal
+        // uniqueness) while `Removed` and `Context` share trough `1`
+        // (antimodal tie exercised) — `modality_degree` reads `(1, 2)`
+        // and the classifier lands on
+        // ModalityClass::StrictModalTiedAntimodal.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Removed("r".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kinds_strictly_modally_unique());
+        assert!(diff.kinds_antimodally_tied());
+        assert_eq!(
+            diff.kinds_modality_class(),
+            crate::ModalityClass::StrictModalTiedAntimodal,
+        );
+    }
+
+    #[test]
+    fn kinds_modality_class_is_empty_agrees_with_not_kinds_any_observed_pointwise() {
+        // Empty-variant peer-equivalence pin:
+        // `kinds_modality_class().is_empty() == !kinds_any_observed()`.
+        // The classifier's empty-boundary variant is the single variant
+        // on which all four multiplicity boolean predicates read
+        // `false` — the shared boundary between the diff-altitude
+        // empty-diff row and the histogram-side empty-histogram
+        // convention.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kinds_modality_class().is_empty(),
+                !diff.kinds_any_observed(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_modality_class_is_modally_tied_agrees_with_kinds_modally_tied_pointwise() {
+        // Tied-modal-axis peer-equivalence pin:
+        // `kinds_modality_class().is_modally_tied() ==
+        // kinds_modally_tied()`. The classifier's tied-modal-axis
+        // projection is the peer of the diff-altitude boolean; both
+        // read `false` on the empty diff.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kinds_modality_class().is_modally_tied(),
+                diff.kinds_modally_tied(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_modality_class_is_antimodally_tied_agrees_with_kinds_antimodally_tied_pointwise() {
+        // Tied-antimodal-axis peer-equivalence pin:
+        // `kinds_modality_class().is_antimodally_tied() ==
+        // kinds_antimodally_tied()`. The classifier's tied-antimodal-
+        // axis projection is the peer of the diff-altitude boolean;
+        // both read `false` on the empty diff.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kinds_modality_class().is_antimodally_tied(),
+                diff.kinds_antimodally_tied(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_modality_class_is_strictly_modally_unique_agrees_with_kinds_strictly_modally_unique_pointwise()
+     {
+        // Strict-modal-uniqueness peer-equivalence pin:
+        // `kinds_modality_class().is_strictly_modally_unique() ==
+        // kinds_strictly_modally_unique()`. The classifier's strict-
+        // modal-uniqueness projection is the peer of the diff-altitude
+        // boolean; both read `false` on the empty diff.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kinds_modality_class().is_strictly_modally_unique(),
+                diff.kinds_strictly_modally_unique(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_modality_class_is_strictly_antimodally_unique_agrees_with_kinds_strictly_antimodally_unique_pointwise()
+     {
+        // Strict-antimodal-uniqueness peer-equivalence pin:
+        // `kinds_modality_class().is_strictly_antimodally_unique() ==
+        // kinds_strictly_antimodally_unique()`. The classifier's
+        // strict-antimodal-uniqueness projection is the peer of the
+        // diff-altitude boolean; both read `false` on the empty diff.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kinds_modality_class().is_strictly_antimodally_unique(),
+                diff.kinds_strictly_antimodally_unique(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_singular_support_implies_kinds_modality_class_is_strict_modal_strict_antimodal_pointwise()
+     {
+        // Subsumption pin: `kinds_singular_support() ⇒
+        // kinds_modality_class() ==
+        // ModalityClass::StrictModalStrictAntimodal` always. A single
+        // observed cell stands alone at its own peak *and* its own
+        // trough (peak and trough coincide on the lone observed cell),
+        // so `modality_degree` reads `(1, 1)` and the classifier lands
+        // on the doubly-strict corner. Direct pin of the histogram-
+        // side subsumption one altitude down.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular_support() {
+                assert_eq!(
+                    diff.kinds_modality_class(),
+                    crate::ModalityClass::StrictModalStrictAntimodal,
+                    "singular-support diff must land on the doubly-\
+                     strict classifier corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_full_cover_and_balanced_imply_kinds_modality_class_is_tied_modal_tied_antimodal_pointwise()
+     {
+        // Cardinality-`>= 2` uniform-cover pin: on every full-cover
+        // balanced diff on the cardinality-`3` DiffLineKind axis, the
+        // three cells share the same count — peak and trough coincide
+        // with the support of size `3`, so `modality_degree` reads
+        // `(3, 3)` and the classifier lands on the doubly-tied corner
+        // ModalityClass::TiedModalTiedAntimodal. Cardinality-`>= 2`
+        // witness of the histogram-side uniform-count subsumption one
+        // altitude down.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_full_cover() && diff.kinds_balanced() {
+                assert_eq!(
+                    diff.kinds_modality_class(),
+                    crate::ModalityClass::TiedModalTiedAntimodal,
+                    "full-cover balanced diff on cardinality-3 axis \
+                     must land on the doubly-tied classifier corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_modality_class_total_classification_partitions_every_fixture_pointwise() {
+        // Total-classification pin: every diff lands on exactly one of
+        // the five ModalityClass variants (Empty,
+        // StrictModalStrictAntimodal, TiedModalStrictAntimodal,
+        // StrictModalTiedAntimodal, TiedModalTiedAntimodal) —
+        // ModalityClass::ALL. Direct pin of the histogram-side total-
+        // partition law one altitude down.
+        for diff in dominant_kind_fixtures() {
+            let class = diff.kinds_modality_class();
+            let matches: usize = crate::ModalityClass::ALL
+                .iter()
+                .filter(|&&v| v == class)
+                .count();
+            assert_eq!(
+                matches, 1,
+                "every diff must land on exactly one \
+                 ModalityClass variant (class={class:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_modality_class_agrees_with_modality_degree_pattern_match() {
+        // Parity against the exact hand-rolled `modality_degree` pattern
+        // match this lift replaces: read the (peak_mult, trough_mult)
+        // pair and classify by the same five-arm match the histogram-
+        // side classifier lands on. Catches any future drift where
+        // either implementation stops projecting through the same
+        // `modality_degree` primitive.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_modality_class();
+            let hand_rolled = match diff.kind_histogram().modality_degree() {
+                (0, 0) => crate::ModalityClass::Empty,
+                (1, 1) => crate::ModalityClass::StrictModalStrictAntimodal,
+                (_, 1) => crate::ModalityClass::TiedModalStrictAntimodal,
+                (1, _) => crate::ModalityClass::StrictModalTiedAntimodal,
+                _ => crate::ModalityClass::TiedModalTiedAntimodal,
             };
             assert_eq!(via_seam, hand_rolled);
         }
