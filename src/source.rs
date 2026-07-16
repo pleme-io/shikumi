@@ -8631,6 +8631,282 @@ pub trait ConfigSourceChain {
         self.file_format_histogram().is_strictly_modally_unique()
     }
 
+    /// `true` exactly when this chain's observed
+    /// [`crate::discovery::Format`] histogram has exactly one cell holding
+    /// the trough leaf count — the trough file-format is *uniquely held*
+    /// rather than shared.
+    ///
+    /// The **strictly-antimodally-unique-file-formats boolean predicate**
+    /// on the file-format sub-axis of the chain altitude, the direct
+    /// strict-complement of [`Self::file_formats_antimodally_tied`] on
+    /// every non-empty file-format histogram (both read `false` on the
+    /// empty histogram — the shared boundary below both branches of the
+    /// strict antimodal partition). Routes through
+    /// [`Self::file_format_histogram`]`::is_strictly_antimodally_unique`,
+    /// the single-pass scan over the fixed-cardinality counts vector
+    /// reading `trough_multiplicity() == 1` off one predicate — strictly
+    /// tighter than either of the documented open-coded surface forms one
+    /// seam over.
+    ///
+    /// The **strictly-antimodally-unique-file-formats peer** of the two
+    /// documented surface forms consumers previously re-derived inline:
+    /// `chain.file_format_histogram().trough_multiplicity() == 1` (the
+    /// defining multiplicity-scalar equality form — one method call plus
+    /// a magic `== 1` threshold at the consumer site), and
+    /// `chain.file_format_histogram().modality_degree().1 == 1` (the
+    /// modality-pair projection-equality form, reading the antimodal
+    /// component of the fused
+    /// [`crate::AxisHistogram::modality_degree`] pair before the
+    /// equality — a fused-pair build for a single-component projection).
+    /// This lift names the strictly-antimodally-unique-file-formats
+    /// predicate directly at the chain-altitude surface — the typed
+    /// boolean every operator-facing *"is the rarest file format uniquely
+    /// held on this chain, or is the declaration-order tie-break
+    /// exercised?"* check reads off as a single method call, on the
+    /// strict-uniqueness side of the strict antimodal partition.
+    ///
+    /// The chain-altitude file-format sub-axis strict-antimodal-
+    /// uniqueness-predicate peer that **lifts the "strictly-antimodally-
+    /// unique across altitudes" projection sideways** from the first
+    /// chain-altitude sub-axis
+    /// ([`Self::layer_kinds_strictly_antimodally_unique`]) to the second
+    /// chain-altitude sub-axis, matching the tier-altitude climb
+    /// ([`crate::ProvenanceMap::tiers_strictly_antimodally_unique`]) and
+    /// the diff-altitude seed
+    /// ([`crate::ConfigDiff::kinds_strictly_antimodally_unique`]). The
+    /// remaining chain-altitude sub-axis
+    /// ([`Self::env_prefix_kinds_strictly_antimodally_unique`] over
+    /// [`Self::env_prefix_kind_histogram`]) is the natural next sideways
+    /// lift, mirroring the four-step lift trajectory of the ten prior
+    /// projections. Strict-uniqueness row on top of the closed modality-
+    /// tie boolean pair ([`Self::file_formats_modally_tied`],
+    /// [`Self::file_formats_antimodally_tied`]) and the just-lifted
+    /// modal-uniqueness sibling
+    /// ([`Self::file_formats_strictly_modally_unique`]) — with this lift
+    /// the "strictly-antimodally-unique across altitudes" projection
+    /// carries one named cube-native seam at four of the five altitudes /
+    /// sub-axes (diff, tier, chain layer-kind, and chain file-format).
+    /// The pattern is the same at every altitude / sub-axis: fuse the two
+    /// open-coded surface forms (multiplicity-scalar equality, modality-
+    /// pair projection-equality) into a single boolean predicate named at
+    /// the surface, routed through the shared
+    /// [`crate::AxisHistogram::is_strictly_antimodally_unique`] primitive
+    /// one altitude down.
+    ///
+    /// **Cardinality-`4` reachability at the file-format sub-axis — the
+    /// strictly-antimodally-unique corner carries witnesses across the
+    /// singleton-support and strictly-antimodal-skewed corners.**
+    /// [`crate::discovery::Format`] carries four cells, so
+    /// `file_formats_strictly_antimodally_unique()` reads `true` on every
+    /// chain whose trough leaf count is uniquely held by exactly one
+    /// observed file-format cell (e.g. a singleton-support chain with all
+    /// recognized-extension file layers on `.yaml`, or the two-`.yaml`+
+    /// one-`.toml` chain where `Toml` uniquely sits at the trough count
+    /// `1` while `Yaml` peaks at `2`), and `false` on the empty chain (no
+    /// observed cell, no trough), on every no-recognized-files non-empty
+    /// chain (empty file-format histogram via the partial-function
+    /// projection — no observed cell), on every two-format tied-at-count-
+    /// `1` chain (two cells share the trough), on every three-format
+    /// tied-at-count-`1` chain (three cells share the trough), and on the
+    /// uniform four-format cover (all four cells sit at the same trough
+    /// count). Matches the tier-altitude peer on the cardinality-`4`
+    /// [`crate::ConfigTierKind`] axis in reachability — the additional
+    /// support-`3` three-format tied-at-`1` counter-witness unavailable
+    /// at the cardinality-`3` layer-kind sub-axis / diff altitude is
+    /// *reachable* here, a strict advance over both.
+    ///
+    /// **Empty-chain convention** — returns `false` on the empty chain:
+    /// the empty chain observes zero cells, so
+    /// [`crate::AxisHistogram::trough_multiplicity`] reads `0` and the
+    /// equality `0 == 1` fails. Matches
+    /// [`crate::AxisHistogram::is_strictly_antimodally_unique`]'s empty-
+    /// histogram convention one altitude down. The empty-chain row on
+    /// the strict antimodal partition pair
+    /// `(is_strictly_antimodally_unique, is_antimodally_tied)` reads
+    /// `(false, false)` — the shared boundary below both branches. Peer
+    /// of [`Self::layer_kinds_strictly_antimodally_unique`]'s empty-chain
+    /// `false` polarity one sub-axis over on the same chain altitude, of
+    /// [`crate::ProvenanceMap::tiers_strictly_antimodally_unique`]'s
+    /// empty-map `false` polarity, and of
+    /// [`crate::ConfigDiff::kinds_strictly_antimodally_unique`]'s
+    /// empty-diff `false` polarity in the same projection.
+    ///
+    /// **No-recognized-files convention** — returns `false` on every
+    /// non-empty chain whose file-format histogram is empty (only
+    /// `Defaults`, `Env`, and unrecognized-extension `File` layers). The
+    /// file-format projection is a partial function
+    /// ([`ConfigSource::file_format`] returns [`None`] for the
+    /// unrecognized cases), so a non-empty chain can still project to
+    /// an empty histogram — `trough_multiplicity` reads `0` and the
+    /// equality `0 == 1` fails. This is the strict-uniqueness-side
+    /// cross-sub-axis divergence pin against
+    /// [`Self::layer_kinds_strictly_antimodally_unique`]: on the same
+    /// fixtures the layer-kind sub-axis observes at least one layer-kind
+    /// cell (Defaults / Env / File) and may fire the strictly-
+    /// antimodally-unique predicate (e.g. one `Defaults` reads
+    /// `layer_kinds_strictly_antimodally_unique = true`), while the
+    /// file-format sub-axis's strictly-antimodally-unique predicate
+    /// silently drops out via the empty-histogram disjunct — the strict-
+    /// uniqueness leg's meaning is *narrower* at the file-format sub-
+    /// axis than at the layer-kind sub-axis, matching the same narrowing
+    /// pinned at the modal-uniqueness row
+    /// [`Self::file_formats_strictly_modally_unique`].
+    ///
+    /// **Singleton-support convention** — returns `true` on every chain
+    /// whose observed file-format support is a single
+    /// [`crate::discovery::Format`] cell: the lone observed cell stands
+    /// alone at its own trough (peak and trough coincide, no tie-break
+    /// to exercise), so `trough_multiplicity` reads `1` and the equality
+    /// `1 == 1` fires. The `sample_chain()` fixture (two `.yaml` file
+    /// layers + one Env layer, `{Yaml}` file-format support with count
+    /// `2`) is a witness on the `true` side — the singleton-support
+    /// corner is uniformly on the strictly-antimodally-unique side of
+    /// the strict antimodal partition. Direct pin of the histogram-side
+    /// subsumption `has_singular_support ⇒
+    /// is_strictly_antimodally_unique` one altitude down, the antimodal-
+    /// side dual of `has_singular_support ⇒ is_strictly_modally_unique`
+    /// on the modal side.
+    ///
+    /// **Uniform four-format cover convention** — returns `false` on
+    /// every chain where each [`crate::discovery::Format`] cell was
+    /// observed at exactly the same positive count (in particular the
+    /// chain with one file per format): the four cells share the same
+    /// count, so `trough_multiplicity` reads `4` and the equality
+    /// `4 == 1` fails. Peer of the histogram-side axis-cover convention
+    /// one altitude down, which reads `false` on every implementor with
+    /// `axis_cardinality::<A>() >= 2` — the cardinality-`4`
+    /// [`crate::discovery::Format`] axis honours the general condition.
+    ///
+    /// **Two-way antimodal partition on non-empty file-format
+    /// histograms** — on every non-empty file-format histogram exactly
+    /// one of the antimodal-uniqueness pair
+    /// `(file_formats_strictly_antimodally_unique,
+    /// file_formats_antimodally_tied)` fires: either the trough is
+    /// uniquely held (strictly-antimodally-unique fires, antimodally-
+    /// tied does not) or the trough is shared (antimodally-tied fires,
+    /// strictly-antimodally-unique does not). The empty histogram sits
+    /// below both branches (both read `false`) — this covers both the
+    /// empty chain and every no-recognized-files non-empty chain. Direct
+    /// pin of the histogram-side strict antimodal partition
+    /// `!is_empty ⇒ is_strictly_antimodally_unique ⇔
+    /// !is_antimodally_tied` one altitude down, phrased as an XOR on
+    /// the two named seams at the chain file-format sub-axis surface —
+    /// the seam-level dual of the matching pin
+    /// [`Self::file_formats_antimodally_tied`] that reads the strict
+    /// side off the histogram primitive.
+    ///
+    /// **Strict-uniqueness modal / antimodal collapse on uniform-count
+    /// non-empty file-format histograms** — on every uniform-count non-
+    /// empty file-format histogram the peak and trough level sets
+    /// coincide with the support, so
+    /// `file_formats_strictly_antimodally_unique ⇔
+    /// file_formats_strictly_modally_unique` — the strict-uniqueness
+    /// pair collapses to a single boolean, the singleton-support
+    /// witness. Direct pin of the histogram-side collapse law
+    /// `is_uniform_count ∧ !is_empty ⇒ is_strictly_antimodally_unique ⇔
+    /// is_strictly_modally_unique` one altitude down — the strict-
+    /// uniqueness-side peer of the tie-side collapse
+    /// `is_antimodally_tied ⇔ is_modally_tied` pinned at
+    /// [`Self::file_formats_antimodally_tied`], and the chain file-
+    /// format sub-axis peer of the diff-altitude, tier-altitude, and
+    /// chain layer-kind sub-axis collapses pinned at
+    /// [`crate::ConfigDiff::kinds_strictly_antimodally_unique`],
+    /// [`crate::ProvenanceMap::tiers_strictly_antimodally_unique`], and
+    /// [`Self::layer_kinds_strictly_antimodally_unique`].
+    ///
+    /// # Invariants
+    ///
+    /// - `file_formats_strictly_antimodally_unique() == file_format_histogram().is_strictly_antimodally_unique()`
+    ///   — both project the same predicate off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `file_formats_strictly_antimodally_unique() ⇔
+    ///   file_format_histogram().trough_multiplicity() == 1` — the
+    ///   defining multiplicity-scalar equality form on the
+    ///   [`crate::AxisHistogram::trough_multiplicity`] scalar peer, the
+    ///   canonical open-coded expression of the predicate one altitude
+    ///   down.
+    /// - `file_formats_strictly_antimodally_unique() ⇔
+    ///   file_format_histogram().modality_degree().1 == 1` — the
+    ///   modality-pair projection-equality form, reading the antimodal
+    ///   component of the fused
+    ///   [`crate::AxisHistogram::modality_degree`] pair before the
+    ///   equality.
+    /// - `file_formats_strictly_antimodally_unique() ⇒
+    ///   file_formats_any_observed()` always — a strictly-unique trough
+    ///   requires at least one observed cell as the sole member of the
+    ///   antimodal level set, so both the empty chain (zero observed
+    ///   cells) and every no-recognized-files non-empty chain (empty
+    ///   file-format histogram via the partial-function projection)
+    ///   cannot fire. Contrapositively, `!file_formats_any_observed()
+    ///   ⇒ !file_formats_strictly_antimodally_unique()`.
+    /// - `file_formats_singular_support() ⇒
+    ///   file_formats_strictly_antimodally_unique()` always — a
+    ///   singleton-support chain has exactly one observed cell as the
+    ///   sole member of the antimodal level set, so the uniqueness
+    ///   predicate fires. Direct pin of the histogram-side subsumption
+    ///   `has_singular_support ⇒ is_strictly_antimodally_unique` one
+    ///   altitude down, the antimodal-side dual of the modal-side
+    ///   subsumption `has_singular_support ⇒
+    ///   is_strictly_modally_unique`.
+    /// - **Strict antimodal partition on non-empty file-format
+    ///   histograms** — `!file_format_histogram().is_empty() ⇒
+    ///   (file_formats_strictly_antimodally_unique ⇔
+    ///   !file_formats_antimodally_tied())` always. On every non-empty
+    ///   file-format histogram exactly one of
+    ///   `(file_formats_strictly_antimodally_unique,
+    ///   file_formats_antimodally_tied)` fires; both read `false` on the
+    ///   empty file-format histogram — the shared boundary below both
+    ///   branches. Direct pin of the histogram-side strict-antimodal-
+    ///   partition law one altitude down, phrased as an XOR on the two
+    ///   named seams at the chain file-format sub-axis surface.
+    /// - `file_formats_full_cover() ∧ file_formats_balanced() ⇒
+    ///   !file_formats_strictly_antimodally_unique()` on the
+    ///   cardinality-`>= 2` axis: a full-cover uniform-count chain has
+    ///   every cell observed at the same count, so the antimodal level
+    ///   set equals the full axis — the trough multiplicity rises to
+    ///   `axis_cardinality::<crate::discovery::Format>()` which is `4`,
+    ///   and the uniqueness predicate fails. Cardinality-`>= 2` witness
+    ///   of the uniform-cover corner of the histogram-side subsumption
+    ///   tying [`crate::AxisHistogram::is_uniform_count`] and
+    ///   [`crate::AxisHistogram::has_singular_support`] on non-empty
+    ///   histograms one altitude down.
+    /// - **Strict-uniqueness modal / antimodal collapse on uniform-count
+    ///   file-format histograms** — `file_formats_balanced() ∧
+    ///   file_formats_any_observed() ⇒
+    ///   (file_formats_strictly_antimodally_unique ⇔
+    ///   file_formats_strictly_modally_unique)`. On every uniform-count
+    ///   non-empty file-format histogram the two strict-uniqueness
+    ///   predicates collapse to the same value (both `true` on the
+    ///   singleton-support uniform corner, both `false` on every multi-
+    ///   cell uniform-cover chain). Direct pin of the histogram-side
+    ///   collapse `is_uniform_count ∧ !is_empty ⇒
+    ///   is_strictly_antimodally_unique ⇔ is_strictly_modally_unique`
+    ///   one altitude down — the strict-uniqueness-side dual of the
+    ///   tie-side collapse pinned at
+    ///   [`Self::file_formats_antimodally_tied`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the trough-multiplicity scan). Both are `O(n)` in practice since
+    /// the file-format axis carries a fixed four-cell cardinality; the
+    /// returned `bool` reads one predicate — the trough scan walks the
+    /// counts vector once and counts cells matching the strictly-
+    /// positive minimum, then reads `multiplicity == 1` off one
+    /// comparison. Strictly tighter than the two documented open-coded
+    /// surfaces one seam over (no exposed `== 1` magic threshold at the
+    /// consumer site, no [`crate::AxisHistogram::modality_degree`]
+    /// fused-pair build for a single-component projection).
+    #[must_use]
+    fn file_formats_strictly_antimodally_unique(&self) -> bool
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram()
+            .is_strictly_antimodally_unique()
+    }
+
     /// Dense per-env-prefix-presence tally of the chain's
     /// [`ConfigSource::Env`] layers over the [`EnvMetadataTagKind`] axis
     /// — the typed histogram every attestation manifest, structured-log
@@ -37855,6 +38131,530 @@ mod tests {
                 false
             } else {
                 hist.iter().filter(|(_, c)| *c == max).count() == 1
+            };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── file_formats_strictly_antimodally_unique coverage — the
+    //    strictly-antimodally-unique-file-formats boolean predicate on
+    //    the file-format sub-axis of the chain altitude, lifting the
+    //    layer-kind-sub-axis `layer_kinds_strictly_antimodally_unique`
+    //    sideways to the second chain-altitude sub-axis, matching the
+    //    tier-altitude climb `tiers_strictly_antimodally_unique` and the
+    //    diff-altitude seed `ConfigDiff::kinds_strictly_antimodally_unique`.
+    //    Strict-uniqueness row on top of the closed modality-tie boolean
+    //    pair (file_formats_modally_tied, file_formats_antimodally_tied)
+    //    and the just-lifted modal-uniqueness sibling
+    //    (file_formats_strictly_modally_unique) at the chain file-format
+    //    sub-axis. Direct strict-complement peer of
+    //    `file_formats_antimodally_tied` on every non-empty file-format
+    //    histogram (both read `false` on the empty file-format histogram
+    //    — the shared boundary below both branches of the strict
+    //    antimodal partition). ──
+
+    #[test]
+    fn file_formats_strictly_antimodally_unique_matches_file_format_histogram_is_strictly_antimodally_unique_pointwise()
+     {
+        // Routing pin: `file_formats_strictly_antimodally_unique` routes
+        // through
+        // `file_format_histogram().is_strictly_antimodally_unique()`, so
+        // the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared cube-native primitive.
+        // File-format sub-axis peer of
+        // `layer_kinds_strictly_antimodally_unique_matches_layer_kind_histogram_is_strictly_antimodally_unique_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_strictly_antimodally_unique_matches_tier_histogram_is_strictly_antimodally_unique_pointwise`
+        // on the tier altitude, and
+        // `kinds_strictly_antimodally_unique_matches_kind_histogram_is_strictly_antimodally_unique_pointwise`
+        // on the diff altitude, in the "strictly-antimodally-unique
+        // across altitudes" projection.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice
+                .file_format_histogram()
+                .is_strictly_antimodally_unique();
+            assert_eq!(
+                slice.file_formats_strictly_antimodally_unique(),
+                via_histogram,
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_strictly_antimodally_unique_matches_defining_trough_multiplicity_equality_pointwise()
+     {
+        // Defining multiplicity-scalar equality form:
+        // `file_formats_strictly_antimodally_unique() ⇔
+        // file_format_histogram().trough_multiplicity() == 1`. Pins the
+        // predicate against the canonical open-coded expression on the
+        // `AxisHistogram::trough_multiplicity` scalar peer one altitude
+        // down — the surface consumers reach for when they open-code
+        // "exactly one cell holds the strictly-positive trough". Peer of
+        // `layer_kinds_strictly_antimodally_unique_matches_defining_trough_multiplicity_equality_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_strictly_antimodally_unique_matches_defining_trough_multiplicity_equality_pointwise`
+        // on the tier altitude, and
+        // `kinds_strictly_antimodally_unique_matches_defining_trough_multiplicity_equality_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_strictly_antimodally_unique();
+            let mult = slice.file_format_histogram().trough_multiplicity();
+            let via_scalar = mult == 1;
+            assert_eq!(
+                via_seam, via_scalar,
+                "file_formats_strictly_antimodally_unique ({via_seam}) \
+                 must agree with trough_multiplicity == 1 ({via_scalar}, \
+                 mult={mult})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_strictly_antimodally_unique_matches_modality_degree_antimodal_component_pointwise()
+     {
+        // Modality-pair projection-equality form:
+        // `file_formats_strictly_antimodally_unique() ⇔
+        // file_format_histogram().modality_degree().1 == 1`. Pins the
+        // predicate against the antimodal-component reading of the fused
+        // `(peak_multiplicity, trough_multiplicity)` pair, the second
+        // documented surface form consumers reach for when they read the
+        // classifier pair before the equality. Peer of
+        // `layer_kinds_strictly_antimodally_unique_matches_modality_degree_antimodal_component_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_strictly_antimodally_unique_matches_modality_degree_antimodal_component_pointwise`
+        // on the tier altitude, and
+        // `kinds_strictly_antimodally_unique_matches_modality_degree_antimodal_component_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_strictly_antimodally_unique();
+            let (_, trough_mult) = slice.file_format_histogram().modality_degree();
+            let via_pair = trough_mult == 1;
+            assert_eq!(
+                via_seam, via_pair,
+                "file_formats_strictly_antimodally_unique ({via_seam}) \
+                 must agree with modality_degree().1 == 1 ({via_pair}, \
+                 trough_mult={trough_mult})",
+            );
+        }
+    }
+
+    #[test]
+    fn file_formats_strictly_antimodally_unique_empty_chain_is_false() {
+        // Empty-chain strict-antimodal-uniqueness: the empty chain
+        // observes zero cells, so `trough_multiplicity` reads `0` and
+        // the equality `0 == 1` fails.
+        // `file_formats_strictly_antimodally_unique` reads `false`.
+        // Matches `is_strictly_antimodally_unique` reading `false` on
+        // the empty histogram one altitude down. The empty-chain row on
+        // the strict antimodal partition pair
+        // `(is_strictly_antimodally_unique, is_antimodally_tied)` reads
+        // `(false, false)` — the shared boundary below both branches.
+        // Peer of `layer_kinds_strictly_antimodally_unique_empty_chain_is_false`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_strictly_antimodally_unique_empty_map_is_false` on the
+        // tier altitude, and
+        // `kinds_strictly_antimodally_unique_empty_diff_is_false` on the
+        // diff altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert!(!empty.file_formats_strictly_antimodally_unique());
+        assert!(!empty.file_formats_any_observed());
+    }
+
+    #[test]
+    fn file_formats_strictly_antimodally_unique_no_recognized_files_is_false() {
+        // No-recognized-files pin: a non-empty chain of only
+        // `Defaults` / `Env` / unrecognized-extension `File` layers
+        // projects to an empty file-format histogram via the partial
+        // function `ConfigSource::file_format` — `trough_multiplicity`
+        // reads `0` and the equality `0 == 1` fails.
+        // `file_formats_strictly_antimodally_unique` reads `false`.
+        // Cross-sub-axis divergence pin against
+        // `layer_kinds_strictly_antimodally_unique`: on the same fixture
+        // the layer-kind sub-axis observes at least one layer-kind cell
+        // and may fire the strictly-antimodally-unique predicate (e.g.
+        // a single `Defaults` layer reads
+        // `layer_kinds_strictly_antimodally_unique = true` via
+        // singleton-support), while the file-format sub-axis's strictly-
+        // antimodally-unique predicate silently drops out via the empty-
+        // histogram disjunct — the strict-uniqueness leg is *narrower*
+        // at the file-format sub-axis than at the layer-kind sub-axis,
+        // matching the same narrowing pinned at the modal-uniqueness
+        // sibling `file_formats_strictly_modally_unique`.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(!slice.is_empty(), "fixture must be non-empty");
+            assert!(
+                slice.file_format_histogram().is_empty(),
+                "fixture must have empty file-format histogram",
+            );
+            assert!(
+                !slice.file_formats_strictly_antimodally_unique(),
+                "no-recognized-files chain must not fire strictly-antimodally-unique",
+            );
+            assert!(!slice.file_formats_any_observed());
+        }
+    }
+
+    #[test]
+    fn file_formats_strictly_antimodally_unique_singleton_support_is_true() {
+        // Singleton-support pin: every recognized file layer lands on
+        // the same file format, so the lone observed cell stands alone
+        // at its own trough (peak and trough coincide, no tie-break to
+        // exercise) — `trough_multiplicity` reads `1` and the equality
+        // `1 == 1` fires. `file_formats_strictly_antimodally_unique`
+        // reads `true`. Direct witness of the subsumption
+        // `file_formats_singular_support ⇒
+        // file_formats_strictly_antimodally_unique` via the singleton-
+        // support corner, the antimodal-side dual of
+        // `file_formats_singular_support ⇒
+        // file_formats_strictly_modally_unique` on the modal side. The
+        // `sample_chain()` fixture (two `.yaml` file layers + one Env
+        // layer, `{Yaml}` file-format support with count `2`) is a
+        // witness on the `true` side. Peer of
+        // `layer_kinds_strictly_antimodally_unique_singleton_support_is_true`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_strictly_antimodally_unique_singleton_support_is_true`
+        // on the tier altitude, and
+        // `kinds_strictly_antimodally_unique_singleton_support_is_true`
+        // on the diff altitude.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 1);
+        assert!(slice.file_formats_singular_support());
+        assert!(slice.file_formats_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn file_formats_strictly_antimodally_unique_two_format_uniform_partial_cover_is_false() {
+        // Two-format uniform-partial-cover pin: a chain of one `.yaml`
+        // + one `.toml` file layer has two observed cells tied at count
+        // `1` on the cardinality-`4` `Format` axis (with `Lisp` and
+        // `Nix` silent at count `0` — the strictly-positive trough is
+        // shared by both observed cells) — `trough_multiplicity` reads
+        // `2` and the equality `2 == 1` fails.
+        // `file_formats_strictly_antimodally_unique` reads `false`.
+        // Witness on the antimodally-tied side of the strict antimodal
+        // partition at the chain file-format sub-axis. Support-`2`
+        // reachability at the chain file-format sub-axis, matching the
+        // support-`2` reachability at the layer-kind sub-axis on the
+        // cardinality-`3` axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 2);
+        assert!(!slice.file_formats_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn file_formats_strictly_antimodally_unique_three_format_uniform_partial_cover_is_false() {
+        // Three-format uniform-partial-cover pin: a chain of one
+        // `.yaml` + one `.toml` + one `.lisp` file layer has three
+        // observed cells tied at count `1` on the cardinality-`4`
+        // `Format` axis (with `Nix` silent at count `0`) —
+        // `trough_multiplicity` reads `3` and the equality `3 == 1`
+        // fails. `file_formats_strictly_antimodally_unique` reads
+        // `false`. Support-`3` tied reachability at the chain file-
+        // format sub-axis — the additional off-singleton support
+        // cardinality unavailable at the layer-kind sub-axis
+        // (cardinality-`3`) and the diff altitude (cardinality-`3`),
+        // matching the tier altitude on the cardinality-`4`
+        // `ConfigTierKind` axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 3);
+        assert!(!slice.file_formats_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn file_formats_strictly_antimodally_unique_uniform_four_format_cover_is_false() {
+        // Uniform axis-cover pin: a chain observing every cell of
+        // `Format` exactly once has four observed cells tied at count
+        // `1` — `trough_multiplicity` reads `4` and the equality
+        // `4 == 1` fails. `file_formats_strictly_antimodally_unique`
+        // reads `false`. Peer of the histogram-side axis-cover
+        // convention one altitude down, which reads `false` on every
+        // implementor with `axis_cardinality::<A>() >= 2` — the
+        // cardinality-`4` `Format` axis honours the general condition.
+        // Peer of `tiers_strictly_antimodally_unique_uniform_four_tier_cover_is_false`
+        // on the tier altitude, at the same cardinality-`4` support-
+        // `4` uniform-cover corner.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 4);
+        assert!(slice.file_formats_full_cover());
+        assert!(slice.file_formats_balanced());
+        assert!(!slice.file_formats_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn file_formats_strictly_antimodally_unique_strictly_antimodal_skewed_chain_is_true() {
+        // Strictly-antimodal skewed-chain pin: a chain of two `.yaml`
+        // file layers + one `.toml` file layer has `Toml` uniquely
+        // sitting at the strictly-positive trough count `1` (Yaml peaks
+        // at `2`, Lisp silent at `0`, Nix silent at `0`) —
+        // `trough_multiplicity` reads `1` and the equality `1 == 1`
+        // fires. `file_formats_strictly_antimodally_unique` reads
+        // `true`. Witness on the strictly-antimodally-unique side of
+        // the strict antimodal partition. Also a strictly-modally-
+        // unique + strictly-antimodally-unique witness — Yaml uniquely
+        // peaks while Toml uniquely troughs — a support-`2` reachability
+        // corner at the chain file-format sub-axis where the two
+        // strict-uniqueness legs coincide off the uniform-cover corner.
+        // Peer of `layer_kinds_strictly_antimodally_unique_strictly_antimodal_skewed_chain_is_true`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_strictly_antimodally_unique_strictly_antimodal_skewed_map_is_true`
+        // on the tier altitude, and
+        // `kinds_strictly_antimodally_unique_strictly_antimodal_skewed_diff_is_true`
+        // on the diff altitude.
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.dominant_file_format(), Some(Format::Yaml));
+        assert_eq!(slice.peak_file_format_count(), 2);
+        assert!(slice.file_formats_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn file_formats_strictly_antimodally_unique_implies_file_formats_any_observed_pointwise() {
+        // Subsumption pin: `file_formats_strictly_antimodally_unique()
+        // ⇒ file_formats_any_observed()` always. A strictly-unique
+        // trough requires at least one observed cell as the sole
+        // member of the antimodal level set, so both the empty chain
+        // (zero observed cells) and every no-recognized-files non-
+        // empty chain (empty file-format histogram via the partial-
+        // function projection) cannot fire the uniqueness predicate.
+        // Direct pin of the histogram-side subsumption
+        // `is_strictly_antimodally_unique ⇒ !is_empty` one altitude
+        // down. Peer of
+        // `layer_kinds_strictly_antimodally_unique_implies_layer_kinds_any_observed_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_strictly_antimodally_unique_implies_tiers_any_observed_pointwise`
+        // on the tier altitude, and
+        // `kinds_strictly_antimodally_unique_implies_kinds_any_observed_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_strictly_antimodally_unique() {
+                assert!(
+                    slice.file_formats_any_observed(),
+                    "strictly-antimodally-unique chain must observe at \
+                     least one file-format cell",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_singular_support_implies_file_formats_strictly_antimodally_unique_pointwise() {
+        // Subsumption pin: `file_formats_singular_support() ⇒
+        // file_formats_strictly_antimodally_unique()` always. A single
+        // observed cell is the only member of the antimodal level set
+        // (cardinality `1`), so the uniqueness predicate fires on every
+        // singleton-support chain. Every singleton-support chain sits
+        // uniformly on the strictly-antimodally-unique side of the
+        // strict antimodal partition. Direct pin of the histogram-side
+        // subsumption `has_singular_support ⇒
+        // is_strictly_antimodally_unique` one altitude down, the
+        // antimodal-side dual of `has_singular_support ⇒
+        // is_strictly_modally_unique` on the modal side. Peer of
+        // `layer_kinds_singular_support_implies_layer_kinds_strictly_antimodally_unique_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_singular_support_implies_tiers_strictly_antimodally_unique_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_support_implies_kinds_strictly_antimodally_unique_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_singular_support() {
+                assert!(
+                    slice.file_formats_strictly_antimodally_unique(),
+                    "singular-support chain must be strictly antimodally \
+                     unique",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_strictly_antimodally_unique_forms_strict_antimodal_partition_on_non_empty_histograms_pointwise()
+     {
+        // Strict antimodal partition pin on non-empty file-format
+        // histograms: on every chain whose file-format histogram is
+        // non-empty exactly one of the pair
+        // (file_formats_strictly_antimodally_unique,
+        // file_formats_antimodally_tied) fires. On the empty histogram
+        // (empty chain OR no-recognized-files chain) both read `false`
+        // (the shared boundary below both branches of the strict
+        // antimodal partition). Direct pin of the histogram-side
+        // strict-antimodal-partition law
+        // `!is_empty ⇒ is_strictly_antimodally_unique ⇔
+        // !is_antimodally_tied` one altitude down, phrased as an XOR on
+        // the two named seams at the chain file-format sub-axis surface
+        // — the seam-level dual of the matching pin
+        // `file_formats_antimodally_tied_forms_strict_antimodal_partition_on_non_empty_histograms_pointwise`
+        // that reads the strict side off the histogram primitive. Peer
+        // of `layer_kinds_strictly_antimodally_unique_forms_strict_antimodal_partition_on_non_empty_chains_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_strictly_antimodally_unique_forms_strict_antimodal_partition_on_non_empty_maps_pointwise`
+        // on the tier altitude, and
+        // `kinds_strictly_antimodally_unique_forms_strict_antimodal_partition_on_non_empty_diffs_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let hist = slice.file_format_histogram();
+            let strict = slice.file_formats_strictly_antimodally_unique();
+            let tied = slice.file_formats_antimodally_tied();
+            if !hist.is_empty() {
+                let count = usize::from(strict) + usize::from(tied);
+                assert_eq!(
+                    count, 1,
+                    "on a non-empty file-format histogram exactly one \
+                     of (strictly_antimodally_unique, antimodally_tied) \
+                     must fire (strict={strict}, tied={tied})",
+                );
+            } else {
+                assert!(
+                    !strict,
+                    "empty file-format histogram cannot be strictly antimodally unique",
+                );
+                assert!(
+                    !tied,
+                    "empty file-format histogram cannot be antimodally tied",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_full_cover_and_file_formats_balanced_imply_not_file_formats_strictly_antimodally_unique_pointwise()
+     {
+        // Cardinality-`>= 2` uniform-cover pin: on every full-cover
+        // balanced chain on the cardinality-`4` `Format` axis, the
+        // antimodal level set equals the full axis — all four cells
+        // share the trough count — so
+        // `file_formats_strictly_antimodally_unique` fails. Cardinality-
+        // `>= 2` witness of the histogram-side subsumption
+        // `is_uniform_count ∧ !is_empty ⇒ is_strictly_antimodally_unique
+        // ⇔ has_singular_support` one altitude down: on a uniform-cover
+        // with cardinality `>= 2`, singleton-support fails so strict-
+        // antimodal-uniqueness fails. Peer of
+        // `layer_kinds_full_cover_and_layer_kinds_balanced_imply_not_layer_kinds_strictly_antimodally_unique_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_full_cover_and_tiers_balanced_imply_not_tiers_strictly_antimodally_unique_pointwise`
+        // on the tier altitude, and
+        // `kinds_full_cover_and_kinds_balanced_imply_not_kinds_strictly_antimodally_unique_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_full_cover() && slice.file_formats_balanced() {
+                assert!(
+                    !slice.file_formats_strictly_antimodally_unique(),
+                    "full-cover balanced chain on cardinality-4 axis \
+                     cannot be strictly antimodally unique",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_strictly_antimodally_unique_collapses_with_file_formats_strictly_modally_unique_on_uniform_multi_cell_chains_pointwise()
+     {
+        // Strict-uniqueness modal / antimodal collapse pin: on every
+        // uniform-count non-empty file-format histogram the two strict-
+        // uniqueness predicates collapse to the same value — either
+        // both `true` on the singleton-support uniform corner (peak and
+        // trough coincide at the lone observed cell) or both `false` on
+        // every multi-cell uniform-cover chain (peak and trough coincide
+        // at the shared count, so both level sets equal the support of
+        // cardinality `>= 2`). Direct pin of the histogram-side collapse
+        // law `is_uniform_count ∧ !is_empty ⇒
+        // is_strictly_antimodally_unique ⇔ is_strictly_modally_unique`
+        // one altitude down — the strict-uniqueness-side dual of the
+        // tie-side collapse `is_antimodally_tied ⇔ is_modally_tied`
+        // pinned at
+        // `file_formats_antimodally_tied_collapses_with_file_formats_modally_tied_on_uniform_multi_cell_chains_pointwise`.
+        // Peer of `layer_kinds_strictly_antimodally_unique_collapses_with_layer_kinds_strictly_modally_unique_on_uniform_multi_cell_chains_pointwise`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_strictly_antimodally_unique_collapses_with_tiers_strictly_modally_unique_on_uniform_multi_cell_maps_pointwise`
+        // on the tier altitude, and
+        // `kinds_strictly_antimodally_unique_collapses_with_kinds_strictly_modally_unique_on_uniform_multi_cell_diffs_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_formats_balanced() && slice.file_formats_any_observed() {
+                assert_eq!(
+                    slice.file_formats_strictly_antimodally_unique(),
+                    slice.file_formats_strictly_modally_unique(),
+                    "on a uniform-count non-empty file-format histogram \
+                     the two strict-uniqueness predicates must collapse",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_formats_strictly_antimodally_unique_agrees_with_open_coded_trough_multiplicity_walk() {
+        // Parity against the exact hand-rolled trough-multiplicity walk
+        // this lift replaces: walk every cell of the histogram and
+        // count how many carry the strictly-positive minimum observed
+        // count; the strictly-antimodally-unique predicate reads `true`
+        // iff the multiplicity is exactly `1`. Empty histogram has no
+        // strictly-positive cells, so multiplicity reads `0` and the
+        // predicate fails. Peer of
+        // `layer_kinds_strictly_antimodally_unique_agrees_with_open_coded_trough_multiplicity_walk`
+        // on the sister sub-axis of the same chain altitude,
+        // `tiers_strictly_antimodally_unique_agrees_with_open_coded_trough_multiplicity_walk`
+        // on the tier altitude, and
+        // `kinds_strictly_antimodally_unique_agrees_with_open_coded_trough_multiplicity_walk`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_formats_strictly_antimodally_unique();
+            let hist = slice.file_format_histogram();
+            let min = hist
+                .iter()
+                .map(|(_, c)| c)
+                .filter(|c| *c > 0)
+                .min()
+                .unwrap_or(0);
+            let hand_rolled = if min == 0 {
+                false
+            } else {
+                hist.iter().filter(|(_, c)| *c == min).count() == 1
             };
             assert_eq!(via_seam, hand_rolled);
         }
