@@ -4569,6 +4569,176 @@ impl ProvenanceMap {
     pub fn tiers_strictly_antimodally_unique(&self) -> bool {
         self.tier_histogram().is_strictly_antimodally_unique()
     }
+
+    /// Returns the closed modal / antimodal classifier variant for this
+    /// fold's observed [`ConfigTierKind`] histogram — the
+    /// **modality-quotient classifier** on the tier altitude, the fused
+    /// five-corner variant tag that discriminates every combination of
+    /// modal-peak-uniqueness and antimodal-trough-uniqueness (empty,
+    /// doubly-strict, tied-peak-strict-trough, strict-peak-tied-trough,
+    /// doubly-tied) at one method call. Routes through
+    /// [`crate::AxisHistogram::modality_class`] one altitude down: the
+    /// pattern-match over `modality_degree() == (peak_mult, trough_mult)`
+    /// that fuses the four multiplicity boolean predicates
+    /// ([`Self::tiers_strictly_modally_unique`],
+    /// [`Self::tiers_modally_tied`],
+    /// [`Self::tiers_strictly_antimodally_unique`],
+    /// [`Self::tiers_antimodally_tied`]) plus the empty-map boundary into
+    /// ONE typed variant tag on the five-corner
+    /// [`crate::ModalityClass`] classifier.
+    ///
+    /// The tier-altitude modality-classifier peer that **climbs the
+    /// "modality-class across altitudes" projection** from the diff
+    /// altitude — the second altitude of the five-step lift trajectory
+    /// the ten prior boolean projections closed on the underlying four-
+    /// primitive multiplicity boolean algebra. This climb lifts the
+    /// diff-altitude seed [`ConfigDiff::kinds_modality_class`] one
+    /// altitude up on the same fused five-corner variant tag surface.
+    /// The natural next lifts fan sideways along the chain altitude's
+    /// three sub-axes
+    /// ([`crate::ConfigSourceChain::layer_kinds_modality_class`],
+    /// [`crate::ConfigSourceChain::file_formats_modality_class`],
+    /// [`crate::ConfigSourceChain::env_prefix_kinds_modality_class`]
+    /// over the corresponding chain histograms), mirroring the four-step
+    /// lift trajectory of the ten prior boolean projections closed
+    /// across the fully-closed 5-column grid. Once climbed and closed at
+    /// every altitude / sub-axis in the same five-step trajectory, the
+    /// substrate closes the full modality-quotient classifier surface at
+    /// every altitude / sub-axis of the 5-column grid — every named seam
+    /// a consumer reaches for on the modal / antimodal classifier has
+    /// one typed routing through the shared
+    /// [`crate::AxisHistogram::modality_class`] primitive one altitude
+    /// down.
+    ///
+    /// **Total classification.** Every fold lands on exactly one of the
+    /// five [`crate::ModalityClass`] variants — the classification is
+    /// total and disjoint by construction over
+    /// [`crate::ModalityClass::ALL`]. Direct pin of the histogram-side
+    /// total-partition law
+    /// `axis_histogram_modality_class_total_classification_partitions_every_shape`
+    /// one altitude down.
+    ///
+    /// **Cardinality-`4` reachability at the tier altitude — the
+    /// classifier reads witnesses on ALL FIVE variants across more
+    /// support cardinalities.** [`ConfigTierKind`] carries four cells,
+    /// so `tiers_modality_class()` reads:
+    /// [`crate::ModalityClass::Empty`] on the empty map;
+    /// [`crate::ModalityClass::StrictModalStrictAntimodal`] on every
+    /// singleton-support fold *and* on strictly-skewed multi-cell folds
+    /// where peak *and* trough are both uniquely held (e.g. two-`Bare` +
+    /// one-`Default` where `Bare` alone peaks at `2` and `Default` alone
+    /// troughs at `1`);
+    /// [`crate::ModalityClass::TiedModalStrictAntimodal`] on multi-cell
+    /// folds with a tied peak and a unique trough (e.g. two-`Bare` +
+    /// two-`Default` + one-`Custom` where `Bare` and `Default` tie at
+    /// peak `2` while `Custom` uniquely holds trough `1`, or the
+    /// support-`4` two-`Bare` + two-`Default` + two-`Discovered` +
+    /// one-`Custom` shape uninhabited on the cardinality-`3` diff
+    /// altitude);
+    /// [`crate::ModalityClass::StrictModalTiedAntimodal`] on multi-cell
+    /// folds with a unique peak and a tied trough (e.g. two-`Bare` +
+    /// one-`Default` + one-`Custom` where `Bare` uniquely peaks at `2`
+    /// while `Default` and `Custom` tie at trough `1`); and
+    /// [`crate::ModalityClass::TiedModalTiedAntimodal`] on every
+    /// uniform-count multi-cell fold (e.g. one-`Bare` + one-`Default`
+    /// tied at count `1`, three-tier tied-at-count-`1` on
+    /// `Bare`+`Default`+`Custom`, or the uniform four-tier axis-cover
+    /// with one leaf per tier). The cardinality-`4` tier axis reaches
+    /// every variant of the classifier — the tier-altitude modality-
+    /// quotient row is reachability-complete at the climb, matching the
+    /// diff-altitude seed's reachability at the seed one altitude down.
+    ///
+    /// **Empty-map convention** — returns [`crate::ModalityClass::Empty`]
+    /// on the empty map: the empty histogram has no observed cells, so
+    /// `modality_degree()` reads `(0, 0)` and the classifier lands on
+    /// the empty-boundary variant. Matches
+    /// [`crate::AxisHistogram::modality_class`]'s empty-histogram
+    /// convention one altitude down. The empty-map variant is the
+    /// single variant on which all four multiplicity boolean predicates
+    /// ([`Self::tiers_strictly_modally_unique`],
+    /// [`Self::tiers_modally_tied`],
+    /// [`Self::tiers_strictly_antimodally_unique`],
+    /// [`Self::tiers_antimodally_tied`]) read `false` — the shared
+    /// boundary below both the strict modal partition and the strict
+    /// antimodal partition. Peer of
+    /// [`ConfigDiff::kinds_modality_class`]'s empty-diff `Empty`
+    /// polarity on the diff altitude in the same projection.
+    ///
+    /// **Singleton-support convention** — returns
+    /// [`crate::ModalityClass::StrictModalStrictAntimodal`] on every
+    /// fold whose observed support is a single [`ConfigTierKind`] cell:
+    /// the lone observed cell stands alone at its own peak *and* its
+    /// own trough (peak and trough coincide), so `modality_degree()`
+    /// reads `(1, 1)` and the classifier lands on the doubly-strict
+    /// corner. Direct pin of the histogram-side subsumption
+    /// `has_singular_support ⇒ modality_class ==
+    /// StrictModalStrictAntimodal` one altitude down, and peer of the
+    /// diff-altitude subsumption pinned by
+    /// [`ConfigDiff::kinds_modality_class`].
+    ///
+    /// **Uniform four-tier cover convention** — returns
+    /// [`crate::ModalityClass::TiedModalTiedAntimodal`] on every fold
+    /// observing every cell of [`ConfigTierKind`] at exactly the same
+    /// positive count: the four cells share the same count, so peak and
+    /// trough coincide with the full-axis support, and
+    /// `modality_degree()` reads `(4, 4)` — the classifier lands on the
+    /// doubly-tied corner. Peer of the histogram-side uniform-cover
+    /// convention one altitude down, which reads
+    /// [`crate::ModalityClass::TiedModalTiedAntimodal`] on every
+    /// uniform-count multi-cell histogram — the cardinality-`4`
+    /// [`ConfigTierKind`] axis honours the general condition.
+    ///
+    /// # Invariants
+    ///
+    /// - `tiers_modality_class() == tier_histogram().modality_class()`
+    ///   — both project the same variant off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `tiers_modality_class().is_empty() == !tiers_any_observed()` —
+    ///   the empty-variant peer of the tier-altitude "any observed"
+    ///   predicate; the classifier's empty-boundary variant coincides
+    ///   with the empty-map row of the four-primitive boolean algebra.
+    /// - `tiers_modality_class().is_modally_tied() == tiers_modally_tied()`
+    ///   — the tied-modal-axis peer of the tier-altitude boolean; both
+    ///   read `false` on the empty map.
+    /// - `tiers_modality_class().is_antimodally_tied() ==
+    ///   tiers_antimodally_tied()` — the tied-antimodal-axis peer of the
+    ///   tier-altitude boolean; both read `false` on the empty map.
+    /// - `tiers_modality_class().is_strictly_modally_unique() ==
+    ///   tiers_strictly_modally_unique()` — the strict-modal-uniqueness
+    ///   peer of the tier-altitude boolean; both read `false` on the
+    ///   empty map.
+    /// - `tiers_modality_class().is_strictly_antimodally_unique() ==
+    ///   tiers_strictly_antimodally_unique()` — the strict-antimodal-
+    ///   uniqueness peer of the tier-altitude boolean; both read `false`
+    ///   on the empty map.
+    /// - `tiers_singular_support() ⇒ tiers_modality_class() ==
+    ///   ModalityClass::StrictModalStrictAntimodal` — every singleton-
+    ///   support fold lands on the doubly-strict corner: the lone
+    ///   observed cell is uniquely at peak *and* uniquely at trough.
+    ///   Direct pin of the histogram-side subsumption one altitude down.
+    /// - `tiers_full_cover() ∧ tiers_balanced() ⇒
+    ///   tiers_modality_class() == ModalityClass::TiedModalTiedAntimodal`
+    ///   on the cardinality-`>= 2` axis: a full-cover uniform-count fold
+    ///   observes every cell at the same count, so peak and trough
+    ///   coincide with the support of size `>= 2` on both axes — the
+    ///   classifier lands on the doubly-tied corner. Cardinality-`>= 2`
+    ///   witness of the histogram-side uniform-count subsumption one
+    ///   altitude down.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<ConfigTierKind>()` (the modality-
+    /// degree pair scan). Both are `O(n)` in practice since the tier
+    /// axis carries a fixed four-cell cardinality; the returned
+    /// [`crate::ModalityClass`] fits in a `u8` discriminant, so the
+    /// classifier reads off one pattern-match over a fixed 5-way
+    /// discriminant table — no allocation, no branching per cell after
+    /// the modality-degree pair is built.
+    #[must_use]
+    pub fn tiers_modality_class(&self) -> crate::ModalityClass {
+        self.tier_histogram().modality_class()
+    }
 }
 
 /// Zero-allocation `(&[String], &Provenance)` stream over the sorted
@@ -26897,6 +27067,476 @@ mod progressive_tests {
                 false
             } else {
                 hist.iter().filter(|(_, c)| *c == min).count() == 1
+            };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::tiers_modality_class — modality-quotient classifier climb on the tier altitude ──
+    //
+    // Tier-altitude climb of the modality-classifier row seeded on the
+    // diff altitude by ConfigDiff::kinds_modality_class. The five-corner
+    // ModalityClass variant tag fuses the four multiplicity boolean
+    // predicates (tiers_strictly_modally_unique, tiers_modally_tied,
+    // tiers_strictly_antimodally_unique, tiers_antimodally_tied) plus
+    // the empty-map boundary into one exhaustively-matched classifier
+    // surface. Second altitude of the five-step lift trajectory the ten
+    // prior boolean projections closed. The cardinality-`4` tier axis
+    // carries witnesses on every one of the five classifier corners
+    // (Empty, StrictModalStrictAntimodal, TiedModalStrictAntimodal,
+    // StrictModalTiedAntimodal, TiedModalTiedAntimodal) plus additional
+    // cardinality-`4` support shapes (support-`4` tied-peak-strict-
+    // trough, e.g. 2-`Bare`+2-`Default`+2-`Discovered`+1-`Custom`)
+    // uninhabited on the cardinality-`3` diff altitude. ──
+
+    #[test]
+    fn tiers_modality_class_matches_tier_histogram_modality_class_pointwise() {
+        // Routing pin: `tiers_modality_class` routes through
+        // `tier_histogram().modality_class()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Tier-altitude
+        // modality-classifier climb of the "modality-class across
+        // altitudes" projection seeded on the diff altitude by
+        // `kinds_modality_class_matches_kind_histogram_modality_class_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().modality_class();
+            assert_eq!(map.tiers_modality_class(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn tiers_modality_class_empty_map_is_empty_variant() {
+        // Empty-map modality classifier: the empty map observes zero
+        // cells, so `modality_degree` reads `(0, 0)` and the classifier
+        // lands on ModalityClass::Empty. Matches
+        // `AxisHistogram::modality_class` reading Empty on the empty
+        // histogram one altitude down. Peer of
+        // `kinds_modality_class_empty_diff_is_empty_variant` on the
+        // diff altitude. The empty-map variant is the single variant on
+        // which all four multiplicity boolean predicates read `false`
+        // — the shared boundary below both the strict modal partition
+        // and the strict antimodal partition.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert_eq!(empty.tiers_modality_class(), crate::ModalityClass::Empty);
+        assert!(!empty.tiers_any_observed());
+    }
+
+    #[test]
+    fn tiers_modality_class_singleton_support_is_strict_modal_strict_antimodal() {
+        // Singleton-support pin: every leaf lands on the same tier, so
+        // the lone observed cell stands alone at its own peak *and*
+        // its own trough — `modality_degree` reads `(1, 1)` and the
+        // classifier lands on the doubly-strict corner
+        // ModalityClass::StrictModalStrictAntimodal. Direct witness of
+        // the subsumption `tiers_singular_support ⇒
+        // tiers_modality_class == StrictModalStrictAntimodal`. Peer of
+        // `kinds_modality_class_singleton_support_is_strict_modal_strict_antimodal`
+        // on the diff altitude.
+        let m: ProvenanceMap = ["a", "b", "c", "d"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 1);
+        assert!(m.tiers_singular_support());
+        assert_eq!(
+            m.tiers_modality_class(),
+            crate::ModalityClass::StrictModalStrictAntimodal,
+        );
+    }
+
+    #[test]
+    fn tiers_modality_class_two_tier_uniform_cover_is_tied_modal_tied_antimodal() {
+        // Two-tier uniform-cover pin: a fold of one `Bare` + one
+        // `Default` has two observed cells tied at count `1` on the
+        // four-cell ConfigTierKind axis — `modality_degree` reads
+        // `(2, 2)` and the classifier lands on the doubly-tied corner
+        // ModalityClass::TiedModalTiedAntimodal. Peer of
+        // `kinds_modality_class_two_kind_uniform_cover_is_tied_modal_tied_antimodal`
+        // on the diff altitude, promoted from the cardinality-`3` diff
+        // axis to the cardinality-`4` tier axis on the same shape.
+        let m: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 2);
+        assert!(m.tiers_balanced());
+        assert_eq!(
+            m.tiers_modality_class(),
+            crate::ModalityClass::TiedModalTiedAntimodal,
+        );
+    }
+
+    #[test]
+    fn tiers_modality_class_uniform_four_tier_cover_is_tied_modal_tied_antimodal() {
+        // Uniform axis-cover pin: a fold observing every cell of
+        // ConfigTierKind exactly once has four observed cells tied at
+        // count `1` — `modality_degree` reads `(4, 4)` and the
+        // classifier lands on the doubly-tied corner. Peer of the
+        // histogram-side uniform-cover convention one altitude down.
+        // Cardinality-`4` counterpart of the cardinality-`3` diff-
+        // altitude uniform-cover pin
+        // `kinds_modality_class_uniform_three_kind_cover_is_tied_modal_tied_antimodal`.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(m.tiers_full_cover());
+        assert!(m.tiers_balanced());
+        assert_eq!(
+            m.tiers_modality_class(),
+            crate::ModalityClass::TiedModalTiedAntimodal,
+        );
+    }
+
+    #[test]
+    fn tiers_modality_class_strictly_skewed_map_is_strict_modal_strict_antimodal() {
+        // Strictly-skewed pin: two `Bare` + one `Default` has `Bare`
+        // uniquely at peak `2` and `Default` uniquely at trough `1`
+        // (Discovered and Custom silent, not entering the level sets)
+        // — `modality_degree` reads `(1, 1)` and the classifier lands
+        // on ModalityClass::StrictModalStrictAntimodal. Witness that
+        // the doubly-strict corner covers non-singular-support folds
+        // too. Peer of
+        // `kinds_modality_class_strictly_skewed_diff_is_strict_modal_strict_antimodal`
+        // on the diff altitude.
+        let m: ProvenanceMap = [
+            ("b1", ConfigTierKind::Bare),
+            ("b2", ConfigTierKind::Bare),
+            ("d", ConfigTierKind::Default),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        assert!(m.tiers_strictly_modally_unique());
+        assert!(m.tiers_strictly_antimodally_unique());
+        assert_eq!(
+            m.tiers_modality_class(),
+            crate::ModalityClass::StrictModalStrictAntimodal,
+        );
+    }
+
+    #[test]
+    fn tiers_modality_class_tied_peak_strict_trough_is_tied_modal_strict_antimodal() {
+        // Tied-modal-strict-antimodal pin: two `Bare` + two `Default`
+        // + one `Custom` has `Bare` and `Default` sharing peak `2`
+        // (modal tie exercised) while `Custom` uniquely holds trough
+        // `1` (antimodal uniqueness) — `modality_degree` reads
+        // `(2, 1)` and the classifier lands on
+        // ModalityClass::TiedModalStrictAntimodal. Peer of
+        // `kinds_modality_class_tied_peak_strict_trough_is_tied_modal_strict_antimodal`
+        // on the diff altitude.
+        let m: ProvenanceMap = [
+            ("b1", ConfigTierKind::Bare),
+            ("b2", ConfigTierKind::Bare),
+            ("d1", ConfigTierKind::Default),
+            ("d2", ConfigTierKind::Default),
+            ("c", ConfigTierKind::Custom),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        assert!(m.tiers_modally_tied());
+        assert!(m.tiers_strictly_antimodally_unique());
+        assert_eq!(
+            m.tiers_modality_class(),
+            crate::ModalityClass::TiedModalStrictAntimodal,
+        );
+    }
+
+    #[test]
+    fn tiers_modality_class_strict_peak_tied_trough_is_strict_modal_tied_antimodal() {
+        // Strict-modal-tied-antimodal pin: two `Bare` + one `Default`
+        // + one `Custom` has `Bare` uniquely at peak `2` (modal
+        // uniqueness) while `Default` and `Custom` share trough `1`
+        // (antimodal tie exercised) — `modality_degree` reads `(1, 2)`
+        // and the classifier lands on
+        // ModalityClass::StrictModalTiedAntimodal. Peer of
+        // `kinds_modality_class_strict_peak_tied_trough_is_strict_modal_tied_antimodal`
+        // on the diff altitude.
+        let m: ProvenanceMap = [
+            ("b1", ConfigTierKind::Bare),
+            ("b2", ConfigTierKind::Bare),
+            ("d", ConfigTierKind::Default),
+            ("c", ConfigTierKind::Custom),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        assert!(m.tiers_strictly_modally_unique());
+        assert!(m.tiers_antimodally_tied());
+        assert_eq!(
+            m.tiers_modality_class(),
+            crate::ModalityClass::StrictModalTiedAntimodal,
+        );
+    }
+
+    #[test]
+    fn tiers_modality_class_support_four_tied_peak_strict_trough_is_tied_modal_strict_antimodal() {
+        // Cardinality-`4` reachability pin: a support-`4` fold with two
+        // `Bare` + two `Discovered` + two `Default` + one `Custom` has
+        // `Bare`, `Discovered`, `Default` all sharing peak `2` while
+        // `Custom` uniquely holds trough `1` — `modality_degree` reads
+        // `(3, 1)` and the classifier lands on
+        // ModalityClass::TiedModalStrictAntimodal. A support-`4` shape
+        // *uninhabited* on the cardinality-`3` diff altitude with only
+        // three observed cells to spread the tied peak across, witness
+        // that the cardinality-`4` tier axis reaches classifier corners
+        // at support cardinalities the diff altitude cannot. Direct
+        // strict-advance-over-the-diff-altitude pin — the tier-altitude
+        // modality-quotient row carries witnesses at every support
+        // cardinality that the seed one altitude down cannot exhibit.
+        let m: ProvenanceMap = [
+            ("b1", ConfigTierKind::Bare),
+            ("b2", ConfigTierKind::Bare),
+            ("i1", ConfigTierKind::Discovered),
+            ("i2", ConfigTierKind::Discovered),
+            ("d1", ConfigTierKind::Default),
+            ("d2", ConfigTierKind::Default),
+            ("c", ConfigTierKind::Custom),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        assert!(m.tiers_full_cover());
+        assert!(m.tiers_modally_tied());
+        assert!(m.tiers_strictly_antimodally_unique());
+        assert_eq!(
+            m.tiers_modality_class(),
+            crate::ModalityClass::TiedModalStrictAntimodal,
+        );
+    }
+
+    #[test]
+    fn tiers_modality_class_is_empty_agrees_with_not_tiers_any_observed_pointwise() {
+        // Empty-variant peer-equivalence pin:
+        // `tiers_modality_class().is_empty() == !tiers_any_observed()`.
+        // The classifier's empty-boundary variant is the single variant
+        // on which all four multiplicity boolean predicates read
+        // `false` — the shared boundary between the tier-altitude
+        // empty-map row and the histogram-side empty-histogram
+        // convention. Peer of
+        // `kinds_modality_class_is_empty_agrees_with_not_kinds_any_observed_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.tiers_modality_class().is_empty(),
+                !map.tiers_any_observed(),
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_modality_class_is_modally_tied_agrees_with_tiers_modally_tied_pointwise() {
+        // Tied-modal-axis peer-equivalence pin:
+        // `tiers_modality_class().is_modally_tied() ==
+        // tiers_modally_tied()`. The classifier's tied-modal-axis
+        // projection is the peer of the tier-altitude boolean; both
+        // read `false` on the empty map. Peer of
+        // `kinds_modality_class_is_modally_tied_agrees_with_kinds_modally_tied_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.tiers_modality_class().is_modally_tied(),
+                map.tiers_modally_tied(),
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_modality_class_is_antimodally_tied_agrees_with_tiers_antimodally_tied_pointwise() {
+        // Tied-antimodal-axis peer-equivalence pin:
+        // `tiers_modality_class().is_antimodally_tied() ==
+        // tiers_antimodally_tied()`. The classifier's tied-antimodal-
+        // axis projection is the peer of the tier-altitude boolean;
+        // both read `false` on the empty map. Peer of
+        // `kinds_modality_class_is_antimodally_tied_agrees_with_kinds_antimodally_tied_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.tiers_modality_class().is_antimodally_tied(),
+                map.tiers_antimodally_tied(),
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_modality_class_is_strictly_modally_unique_agrees_with_tiers_strictly_modally_unique_pointwise()
+     {
+        // Strict-modal-uniqueness peer-equivalence pin:
+        // `tiers_modality_class().is_strictly_modally_unique() ==
+        // tiers_strictly_modally_unique()`. The classifier's strict-
+        // modal-uniqueness projection is the peer of the tier-altitude
+        // boolean; both read `false` on the empty map. Peer of
+        // `kinds_modality_class_is_strictly_modally_unique_agrees_with_kinds_strictly_modally_unique_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.tiers_modality_class().is_strictly_modally_unique(),
+                map.tiers_strictly_modally_unique(),
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_modality_class_is_strictly_antimodally_unique_agrees_with_tiers_strictly_antimodally_unique_pointwise()
+     {
+        // Strict-antimodal-uniqueness peer-equivalence pin:
+        // `tiers_modality_class().is_strictly_antimodally_unique() ==
+        // tiers_strictly_antimodally_unique()`. The classifier's
+        // strict-antimodal-uniqueness projection is the peer of the
+        // tier-altitude boolean; both read `false` on the empty map.
+        // Peer of
+        // `kinds_modality_class_is_strictly_antimodally_unique_agrees_with_kinds_strictly_antimodally_unique_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.tiers_modality_class().is_strictly_antimodally_unique(),
+                map.tiers_strictly_antimodally_unique(),
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_singular_support_implies_tiers_modality_class_is_strict_modal_strict_antimodal_pointwise()
+     {
+        // Subsumption pin: `tiers_singular_support() ⇒
+        // tiers_modality_class() ==
+        // ModalityClass::StrictModalStrictAntimodal` always. A single
+        // observed cell stands alone at its own peak *and* its own
+        // trough (peak and trough coincide on the lone observed cell),
+        // so `modality_degree` reads `(1, 1)` and the classifier lands
+        // on the doubly-strict corner. Direct pin of the histogram-
+        // side subsumption one altitude down. Peer of
+        // `kinds_singular_support_implies_kinds_modality_class_is_strict_modal_strict_antimodal_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_singular_support() {
+                assert_eq!(
+                    map.tiers_modality_class(),
+                    crate::ModalityClass::StrictModalStrictAntimodal,
+                    "singular-support map must land on the doubly-\
+                     strict classifier corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_full_cover_and_balanced_imply_tiers_modality_class_is_tied_modal_tied_antimodal_pointwise()
+     {
+        // Cardinality-`>= 2` uniform-cover pin: on every full-cover
+        // balanced fold on the cardinality-`4` ConfigTierKind axis,
+        // the four cells share the same count — peak and trough
+        // coincide with the support of size `4`, so `modality_degree`
+        // reads `(4, 4)` and the classifier lands on the doubly-tied
+        // corner ModalityClass::TiedModalTiedAntimodal. Cardinality-
+        // `>= 2` witness of the histogram-side uniform-count
+        // subsumption one altitude down. Peer of
+        // `kinds_full_cover_and_balanced_imply_kinds_modality_class_is_tied_modal_tied_antimodal_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_full_cover() && map.tiers_balanced() {
+                assert_eq!(
+                    map.tiers_modality_class(),
+                    crate::ModalityClass::TiedModalTiedAntimodal,
+                    "full-cover balanced map on cardinality-4 axis \
+                     must land on the doubly-tied classifier corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_modality_class_total_classification_partitions_every_fixture_pointwise() {
+        // Total-classification pin: every fold lands on exactly one of
+        // the five ModalityClass variants (Empty,
+        // StrictModalStrictAntimodal, TiedModalStrictAntimodal,
+        // StrictModalTiedAntimodal, TiedModalTiedAntimodal) —
+        // ModalityClass::ALL. Direct pin of the histogram-side total-
+        // partition law one altitude down. Peer of
+        // `kinds_modality_class_total_classification_partitions_every_fixture_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let class = map.tiers_modality_class();
+            let matches: usize = crate::ModalityClass::ALL
+                .iter()
+                .filter(|&&v| v == class)
+                .count();
+            assert_eq!(
+                matches, 1,
+                "every map must land on exactly one \
+                 ModalityClass variant (class={class:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_modality_class_agrees_with_modality_degree_pattern_match() {
+        // Parity against the exact hand-rolled `modality_degree` pattern
+        // match this climb replaces: read the (peak_mult, trough_mult)
+        // pair and classify by the same five-arm match the histogram-
+        // side classifier lands on. Catches any future drift where
+        // either implementation stops projecting through the same
+        // `modality_degree` primitive. Peer of
+        // `kinds_modality_class_agrees_with_modality_degree_pattern_match`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_modality_class();
+            let hand_rolled = match map.tier_histogram().modality_degree() {
+                (0, 0) => crate::ModalityClass::Empty,
+                (1, 1) => crate::ModalityClass::StrictModalStrictAntimodal,
+                (_, 1) => crate::ModalityClass::TiedModalStrictAntimodal,
+                (1, _) => crate::ModalityClass::StrictModalTiedAntimodal,
+                _ => crate::ModalityClass::TiedModalTiedAntimodal,
             };
             assert_eq!(via_seam, hand_rolled);
         }
