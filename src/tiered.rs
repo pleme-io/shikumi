@@ -10044,6 +10044,179 @@ impl ConfigDiff {
     pub fn kinds_support_boundary_distance(&self) -> crate::SupportBoundaryDistance {
         self.kind_histogram().support_boundary_distance()
     }
+
+    /// The **support-magnitude direction bucket** of this diff's
+    /// [`DiffLineKind`] histogram on the diff altitude — a single
+    /// [`crate::SupportMagnitudeDirection`] variant naming the bucket
+    /// the diff lands on across the three-cell partition of the
+    /// [`crate::SupportCardinalityClass`] surface. Routes through
+    /// [`crate::AxisHistogram::support_magnitude_direction`] one
+    /// altitude down — the closed-classifier projection that fuses the
+    /// two low-support corners
+    /// ([`crate::SupportCardinalityClass::Empty`] +
+    /// [`crate::SupportCardinalityClass::SingularSupport`]) into the
+    /// [`crate::SupportMagnitudeDirection::Low`] bucket, the two high-
+    /// support corners
+    /// ([`crate::SupportCardinalityClass::SingularGap`] +
+    /// [`crate::SupportCardinalityClass::FullCover`]) into the
+    /// [`crate::SupportMagnitudeDirection::High`] bucket, and the
+    /// strict interior [`crate::SupportCardinalityClass::StrictPartialCover`]
+    /// into the [`crate::SupportMagnitudeDirection::StrictInterior`]
+    /// bucket. Equivalently: reads
+    /// [`Self::kinds_support_cardinality_class`] one seam over and
+    /// projects through the class-side
+    /// [`crate::SupportCardinalityClass::support_magnitude_direction`]
+    /// three-bucket variant-tag projection — both routings are
+    /// pointwise equal.
+    ///
+    /// The **support-magnitude direction classifier peer** of the
+    /// fused `(kinds_low_support, kinds_strict_partial_cover,
+    /// kinds_high_support)` three-boolean compound-cover grid on the
+    /// diff altitude — the natural typed classifier every operator-
+    /// facing *"which magnitude direction of the support-cardinality
+    /// interval did this diff land on?"* summary reads off at one
+    /// method call, pattern-matched exhaustively at the consumer site
+    /// so the compiler enforces branch coverage over the three
+    /// buckets ([`crate::SupportMagnitudeDirection::Low`],
+    /// [`crate::SupportMagnitudeDirection::StrictInterior`],
+    /// [`crate::SupportMagnitudeDirection::High`]). Before this lift,
+    /// every such consumer composed a three-way `if` ladder over the
+    /// class-side leg-predicate trio (`if class.is_low_support() { … }
+    /// else if class.is_high_support() { … } else { … }` — three
+    /// method calls with ordering-mattering dispatch, silently
+    /// dropping a leg on any future variant insertion) or open-coded
+    /// a five-way `match` on [`crate::SupportCardinalityClass`]
+    /// variants folding `Empty | SingularSupport`, `SingularGap |
+    /// FullCover`, and `StrictPartialCover` in every site. Collapsed
+    /// to one method call returning a closed three-variant enum whose
+    /// exhaustiveness the compiler enforces uniformly.
+    ///
+    /// The diff-altitude support-magnitude-direction classifier peer
+    /// that **seeds the "support-magnitude-direction across altitudes"
+    /// projection** — the natural next classifier row after the just-
+    /// closed [`Self::kinds_support_boundary_distance`] projection.
+    /// Where the distance-from-boundary classifier fuses the four
+    /// non-interior corners of the five-corner coverage-support
+    /// surface into two boundary-vs-singular buckets around the shared
+    /// strict-interior middle leg, this classifier splits those same
+    /// four corners *orthogonally* into two low-vs-high buckets around
+    /// the shared strict-interior middle leg — the mirror ternary
+    /// partition on the support-cardinality surface. The natural next
+    /// lifts climb to the tier altitude
+    /// (`ProvenanceMap::tiers_support_magnitude_direction` over
+    /// [`Self::tier_histogram`]) and sideways along the chain
+    /// altitude's three sub-axes
+    /// (`ConfigSourceChain::layer_kinds_support_magnitude_direction`,
+    /// `ConfigSourceChain::file_formats_support_magnitude_direction`,
+    /// `ConfigSourceChain::env_prefix_kinds_support_magnitude_direction`
+    /// over the corresponding chain histograms). Once climbed and
+    /// closed at every altitude / sub-axis in the same five-step
+    /// trajectory the eleven prior boolean projections plus the three
+    /// closed classifier rows (modality-class, support-cardinality-
+    /// class, support-boundary-distance) closed, the substrate closes
+    /// the full support-magnitude-direction classifier surface at
+    /// every altitude / sub-axis of the 5-column grid.
+    ///
+    /// **Total classification.** Every diff lands on exactly one of
+    /// the three [`crate::SupportMagnitudeDirection`] variants — the
+    /// classification is total and disjoint by construction over
+    /// [`crate::SupportMagnitudeDirection::ALL`]. Direct pin of the
+    /// class-side three-bucket-partition law one altitude down.
+    ///
+    /// **Cardinality-`3` reachability at the diff altitude.**
+    /// [`DiffLineKind`] carries three cells, so
+    /// `kinds_support_magnitude_direction()` reads witnesses on TWO of
+    /// the three variants — [`crate::SupportMagnitudeDirection::Low`]
+    /// on the empty diff (via the [`crate::SupportCardinalityClass::Empty`]
+    /// corner) and on every singleton-support diff (via
+    /// [`crate::SupportCardinalityClass::SingularSupport`]), and
+    /// [`crate::SupportMagnitudeDirection::High`] on every two-kind
+    /// partial-cover diff (via [`crate::SupportCardinalityClass::SingularGap`])
+    /// and on every uniform three-kind cover (via
+    /// [`crate::SupportCardinalityClass::FullCover`]). The strict-
+    /// interior variant [`crate::SupportMagnitudeDirection::StrictInterior`]
+    /// is **vacuously unreachable** on the cardinality-`3` axis —
+    /// the underlying [`crate::SupportCardinalityClass::StrictPartialCover`]
+    /// corner is itself vacuous on cardinality-`<= 3` axes (the
+    /// strict support interval `[2, cardinality - 2] = [2, 1]` is
+    /// empty), matching the shared vacuous-strict-interior convention
+    /// with [`Self::kinds_strict_partial_cover`] one seam over and
+    /// with the sibling [`Self::kinds_support_boundary_distance`]'s
+    /// `StrictInterior` bucket. This classifier's cardinality-`3`
+    /// two-bucket profile mirrors the sibling boundary-distance
+    /// classifier's two-bucket profile *transposed*: the two inhabited
+    /// buckets are `{Low, High}` instead of `{Boundary, Singular}`,
+    /// pinning the orthogonal-axis split of the four non-interior
+    /// corners.
+    ///
+    /// # Invariants
+    ///
+    /// - `kinds_support_magnitude_direction() ==
+    ///   kind_histogram().support_magnitude_direction()` — the
+    ///   routing equivalence one altitude down; both project the same
+    ///   variant off the same primitive.
+    /// - `kinds_support_magnitude_direction() ==
+    ///   kinds_support_cardinality_class().support_magnitude_direction()`
+    ///   — the *class-side* routing equivalence: reading the support-
+    ///   cardinality classifier one seam over and projecting through
+    ///   the class-side three-bucket variant-tag projection is
+    ///   pointwise equal to reading the histogram-side classifier
+    ///   directly. Pins the composition through the diff altitude so
+    ///   consumers holding either classifier reach the other without
+    ///   re-routing through the originating histogram.
+    /// - `kinds_support_magnitude_direction().is_low() ==
+    ///   kinds_low_support()` — the low-bucket peer of the low-
+    ///   support boolean compound on the diff altitude.
+    /// - `kinds_support_magnitude_direction().is_high() ==
+    ///   kinds_high_support()` — the high-bucket peer of the high-
+    ///   support boolean compound on the diff altitude.
+    /// - `kinds_support_magnitude_direction().is_strict_interior() ==
+    ///   kinds_strict_partial_cover()` — the strict-interior-bucket
+    ///   peer of the strict-partial-cover boolean on the diff
+    ///   altitude. Both read `false` uniformly on the cardinality-`3`
+    ///   [`DiffLineKind`] axis (the strict interior is vacuously
+    ///   empty), matching the shared vacuous-strict-interior
+    ///   convention with the sibling
+    ///   [`Self::kinds_support_boundary_distance`] classifier.
+    /// - `!kinds_any_observed() ⇒ kinds_support_magnitude_direction()
+    ///   == SupportMagnitudeDirection::Low` — the empty diff lands on
+    ///   the low bucket via the [`crate::SupportCardinalityClass::Empty`]
+    ///   corner.
+    /// - `kinds_singular_support() ⇒
+    ///   kinds_support_magnitude_direction() ==
+    ///   SupportMagnitudeDirection::Low` — every singleton-support
+    ///   diff lands on the low bucket via the
+    ///   [`crate::SupportCardinalityClass::SingularSupport`] corner.
+    /// - `kinds_singular_gap() ⇒
+    ///   kinds_support_magnitude_direction() ==
+    ///   SupportMagnitudeDirection::High` — every singular-gap diff
+    ///   lands on the high bucket via the
+    ///   [`crate::SupportCardinalityClass::SingularGap`] corner
+    ///   (reachable on the cardinality-`3` axis where
+    ///   `axis_cardinality - 1 == 2`).
+    /// - `kinds_full_cover() ⇒ kinds_support_magnitude_direction() ==
+    ///   SupportMagnitudeDirection::High` — every full-cover diff
+    ///   lands on the high bucket via the
+    ///   [`crate::SupportCardinalityClass::FullCover`] corner.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the
+    /// distinct-cells scan). Both are `O(n)` in practice since the
+    /// diff-cell axis carries a fixed three-cell cardinality; the
+    /// returned [`crate::SupportMagnitudeDirection`] fits in a `u8`
+    /// discriminant, so the classifier reads off the same fused
+    /// distinct-cells scalar the support-cardinality classifier
+    /// reads and projects through one closed three-way `match` on
+    /// the class-side variant tag — no allocation, no per-cell
+    /// branching after the support cardinality is built. Strictly
+    /// tighter than the three-way `if` ladder over the class-side
+    /// leg-predicate trio the consumer would otherwise write.
+    #[must_use]
+    pub fn kinds_support_magnitude_direction(&self) -> crate::SupportMagnitudeDirection {
+        self.kind_histogram().support_magnitude_direction()
+    }
 }
 
 #[cfg(test)]
@@ -19048,6 +19221,355 @@ mod tests {
                 crate::SupportBoundaryDistance::StrictInterior,
                 "cardinality-3 DiffLineKind axis leaves the \
                  StrictInterior bucket vacuously unreachable",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_support_magnitude_direction_matches_kind_histogram_support_magnitude_direction_pointwise()
+     {
+        // Routing pin: `kinds_support_magnitude_direction` routes
+        // through `kind_histogram().support_magnitude_direction()`, so
+        // the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either
+        // implementation stops projecting through the shared cube-
+        // native primitive. Diff-altitude support-magnitude-direction
+        // classifier seed of the new "support-magnitude-direction
+        // across altitudes" projection — the natural next classifier
+        // row on top of the closed support-boundary-distance
+        // classifier row.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().support_magnitude_direction();
+            assert_eq!(diff.kinds_support_magnitude_direction(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kinds_support_magnitude_direction_matches_class_side_projection_pointwise() {
+        // Class-side routing pin:
+        // `kinds_support_magnitude_direction()` agrees with the
+        // composition of `kinds_support_cardinality_class()` and the
+        // class-side `SupportCardinalityClass::support_magnitude_direction`
+        // three-bucket variant-tag projection. Pins the composition
+        // through the diff altitude so consumers holding either
+        // classifier reach the other without re-routing through the
+        // originating histogram.
+        for diff in dominant_kind_fixtures() {
+            let via_class = diff
+                .kinds_support_cardinality_class()
+                .support_magnitude_direction();
+            assert_eq!(diff.kinds_support_magnitude_direction(), via_class);
+        }
+    }
+
+    #[test]
+    fn kinds_support_magnitude_direction_empty_diff_is_low_variant() {
+        // Empty-diff support-magnitude-direction classifier: the empty
+        // diff has no observed cells, so `distinct_cells` reads `0` and
+        // the support-cardinality classifier lands on
+        // `SupportCardinalityClass::Empty`, which the class-side
+        // projection folds into `SupportMagnitudeDirection::Low`.
+        // Matches `AxisHistogram::support_magnitude_direction` reading
+        // Low on the empty histogram one altitude down.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert_eq!(
+            empty.kinds_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::Low,
+        );
+        assert!(!empty.kinds_any_observed());
+    }
+
+    #[test]
+    fn kinds_support_magnitude_direction_singleton_support_is_low_variant() {
+        // Singleton-support pin: a diff with lines only of a single
+        // kind has `distinct_cells` reading `1`, so the support-
+        // cardinality classifier lands on
+        // `SupportCardinalityClass::SingularSupport`, which the class-
+        // side projection folds into
+        // `SupportMagnitudeDirection::Low`. Direct witness of the
+        // subsumption `kinds_singular_support ⇒
+        // kinds_support_magnitude_direction == Low`.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Added("a1".into()), DiffLine::Added("a2".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 1);
+        assert!(diff.kinds_singular_support());
+        assert_eq!(
+            diff.kinds_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::Low,
+        );
+    }
+
+    #[test]
+    fn kinds_support_magnitude_direction_two_kind_partial_cover_is_high_variant() {
+        // Two-kind partial-cover pin: a diff of one `Removed` + one
+        // `Added` observes two of the three cells (support
+        // `2 = 3 - 1`), so `distinct_cells` reads
+        // `axis_cardinality - 1` and the support-cardinality
+        // classifier lands on `SupportCardinalityClass::SingularGap`,
+        // which the class-side projection folds into
+        // `SupportMagnitudeDirection::High` on the cardinality-3
+        // [`DiffLineKind`] axis. Witness of the subsumption
+        // `kinds_singular_gap ⇒
+        // kinds_support_magnitude_direction == High`.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 2);
+        assert!(diff.kinds_singular_gap());
+        assert_eq!(
+            diff.kinds_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::High,
+        );
+    }
+
+    #[test]
+    fn kinds_support_magnitude_direction_uniform_three_kind_cover_is_high_variant() {
+        // Uniform axis-cover pin: a diff observing every cell of
+        // DiffLineKind at least once has `distinct_cells` reading
+        // `axis_cardinality::<DiffLineKind>() == 3`, so the support-
+        // cardinality classifier lands on
+        // `SupportCardinalityClass::FullCover`, which the class-side
+        // projection folds into `SupportMagnitudeDirection::High` —
+        // the top high-support corner of the support-cardinality
+        // interval. Witness of the subsumption `kinds_full_cover ⇒
+        // kinds_support_magnitude_direction == High`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kinds_full_cover());
+        assert_eq!(
+            diff.kinds_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::High,
+        );
+    }
+
+    #[test]
+    fn kinds_support_magnitude_direction_is_low_agrees_with_kinds_low_support_pointwise() {
+        // Low-bucket peer-equivalence pin:
+        // `kinds_support_magnitude_direction().is_low() ==
+        // kinds_low_support()`. The low-support bucket coincides
+        // pointwise with the class-side `is_low_support` leg
+        // predicate lifted to the histogram-side compound on the diff
+        // altitude.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kinds_support_magnitude_direction().is_low(),
+                diff.kinds_low_support(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_support_magnitude_direction_is_high_agrees_with_kinds_high_support_pointwise() {
+        // High-bucket peer-equivalence pin:
+        // `kinds_support_magnitude_direction().is_high() ==
+        // kinds_high_support()`. The high-support bucket coincides
+        // pointwise with the class-side `is_high_support` leg
+        // predicate lifted to the histogram-side compound on the diff
+        // altitude.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kinds_support_magnitude_direction().is_high(),
+                diff.kinds_high_support(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_support_magnitude_direction_is_strict_interior_agrees_with_kinds_strict_partial_cover_pointwise()
+     {
+        // Strict-interior-bucket peer-equivalence pin. On the
+        // cardinality-3 [`DiffLineKind`] axis the strict interior is
+        // *vacuously empty* (support interval `[2, 1]`), so both sides
+        // read `false` uniformly across every fixture — pinned as the
+        // vacuous-strict-interior shared convention with
+        // `kinds_strict_partial_cover` one seam over and with the
+        // sibling `kinds_support_boundary_distance` classifier's
+        // `StrictInterior` bucket.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kinds_support_magnitude_direction()
+                    .is_strict_interior(),
+                diff.kinds_strict_partial_cover(),
+            );
+            assert!(
+                !diff
+                    .kinds_support_magnitude_direction()
+                    .is_strict_interior(),
+                "cardinality-3 DiffLineKind axis: StrictInterior \
+                 variant is vacuously unreachable",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_empty_implies_kinds_support_magnitude_direction_is_low_pointwise() {
+        // Subsumption pin: `!kinds_any_observed() ⇒
+        // kinds_support_magnitude_direction() ==
+        // SupportMagnitudeDirection::Low`. Direct pin of the class-
+        // side `Empty` → `Low` fold one altitude down.
+        for diff in dominant_kind_fixtures() {
+            if !diff.kinds_any_observed() {
+                assert_eq!(
+                    diff.kinds_support_magnitude_direction(),
+                    crate::SupportMagnitudeDirection::Low,
+                    "empty diff must land on the Low bucket via \
+                     the SupportCardinalityClass::Empty corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_support_implies_kinds_support_magnitude_direction_is_low_pointwise() {
+        // Subsumption pin: `kinds_singular_support() ⇒
+        // kinds_support_magnitude_direction() ==
+        // SupportMagnitudeDirection::Low`. Direct pin of the class-
+        // side `SingularSupport` → `Low` fold one altitude down.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular_support() {
+                assert_eq!(
+                    diff.kinds_support_magnitude_direction(),
+                    crate::SupportMagnitudeDirection::Low,
+                    "singleton-support diff must land on the Low \
+                     bucket via the SingularSupport corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_gap_implies_kinds_support_magnitude_direction_is_high_pointwise() {
+        // Subsumption pin: `kinds_singular_gap() ⇒
+        // kinds_support_magnitude_direction() ==
+        // SupportMagnitudeDirection::High` on the cardinality-`>= 3`
+        // axis. Direct pin of the class-side `SingularGap` → `High`
+        // fold one altitude down.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular_gap() {
+                assert_eq!(
+                    diff.kinds_support_magnitude_direction(),
+                    crate::SupportMagnitudeDirection::High,
+                    "singular-gap diff must land on the High \
+                     bucket via the SingularGap corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_full_cover_implies_kinds_support_magnitude_direction_is_high_pointwise() {
+        // Subsumption pin: `kinds_full_cover() ⇒
+        // kinds_support_magnitude_direction() ==
+        // SupportMagnitudeDirection::High`. Direct pin of the class-
+        // side `FullCover` → `High` fold one altitude down.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_full_cover() {
+                assert_eq!(
+                    diff.kinds_support_magnitude_direction(),
+                    crate::SupportMagnitudeDirection::High,
+                    "full-cover diff must land on the High bucket \
+                     via the SupportCardinalityClass::FullCover corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_support_magnitude_direction_total_classification_partitions_every_fixture_pointwise() {
+        // Total-classification pin: every diff lands on exactly one of
+        // the three SupportMagnitudeDirection variants (Low,
+        // StrictInterior, High) — SupportMagnitudeDirection::ALL.
+        // Direct pin of the class-side three-bucket-partition law one
+        // altitude down.
+        for diff in dominant_kind_fixtures() {
+            let bucket = diff.kinds_support_magnitude_direction();
+            let matches: usize = crate::SupportMagnitudeDirection::ALL
+                .iter()
+                .filter(|&&v| v == bucket)
+                .count();
+            assert_eq!(
+                matches, 1,
+                "every diff must land on exactly one \
+                 SupportMagnitudeDirection variant (bucket={bucket:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_support_magnitude_direction_agrees_with_distinct_cells_pattern_match() {
+        // Parity against a hand-rolled `distinct_cells` pattern
+        // match: read the support cardinality and classify by the
+        // same three-way `if` chain the class-side projection folds
+        // into (Low on `0` or `1`, High on `axis_cardinality` or
+        // `axis_cardinality - 1`, StrictInterior on the strict
+        // interior). Catches any future drift where either
+        // implementation stops projecting through the same
+        // `distinct_cells` primitive.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_support_magnitude_direction();
+            let hist = diff.kind_histogram();
+            let support = hist.distinct_cells();
+            let cardinality = crate::axis_cardinality::<DiffLineKind>();
+            let hand_rolled = if support <= 1 {
+                crate::SupportMagnitudeDirection::Low
+            } else if support + 1 >= cardinality {
+                crate::SupportMagnitudeDirection::High
+            } else {
+                crate::SupportMagnitudeDirection::StrictInterior
+            };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn kinds_support_magnitude_direction_cardinality_3_axis_never_reaches_strict_interior() {
+        // Cardinality-3 signature pin: on the three-cell
+        // [`DiffLineKind`] axis, the `StrictInterior` bucket is
+        // *vacuously unreachable* — the underlying
+        // `SupportCardinalityClass::StrictPartialCover` corner is
+        // itself vacuous on cardinality-`<= 3` axes (the strict support
+        // interval `[2, 1]` is empty). Every diff lands on one of the
+        // two inhabited buckets (`Low` or `High`) — the *transposed*
+        // two-bucket profile of the sibling
+        // `kinds_support_boundary_distance` classifier's `{Boundary,
+        // Singular}` profile on the same axis, pinning the
+        // orthogonal-axis split of the four non-interior corners.
+        // Structural signature of the diff altitude in the 5-column
+        // grid to be closed on this projection.
+        for diff in dominant_kind_fixtures() {
+            let bucket = diff.kinds_support_magnitude_direction();
+            assert_ne!(
+                bucket,
+                crate::SupportMagnitudeDirection::StrictInterior,
+                "cardinality-3 DiffLineKind axis leaves the \
+                 StrictInterior bucket vacuously unreachable",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_support_magnitude_direction_cardinality_3_axis_only_inhabits_low_and_high() {
+        // Cardinality-3 degeneracy pin — the classifier only inhabits
+        // `Low` and `High` on this axis. Direct mirror of the
+        // sibling `kinds_support_boundary_distance` classifier's
+        // `{Boundary, Singular}` degeneracy on the same axis under
+        // the orthogonal-axis fold of the four non-interior corners.
+        for diff in dominant_kind_fixtures() {
+            let bucket = diff.kinds_support_magnitude_direction();
+            assert!(
+                matches!(
+                    bucket,
+                    crate::SupportMagnitudeDirection::Low | crate::SupportMagnitudeDirection::High,
+                ),
+                "cardinality-3 DiffLineKind axis inhabits only \
+                 {{Low, High}} — got {bucket:?}",
             );
         }
     }
