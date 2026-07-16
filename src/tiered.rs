@@ -9725,6 +9725,170 @@ impl ConfigDiff {
     pub fn kinds_support_cardinality_class(&self) -> crate::SupportCardinalityClass {
         self.kind_histogram().support_cardinality_class()
     }
+
+    /// The **closed distance-from-boundary bucket** of this diff's
+    /// [`DiffLineKind`] histogram on the diff altitude — a single
+    /// [`crate::SupportBoundaryDistance`] variant naming the bucket
+    /// the diff lands on across the three-cell partition of the
+    /// [`crate::SupportCardinalityClass`] surface. Routes through
+    /// [`crate::AxisHistogram::support_boundary_distance`] one altitude
+    /// down — the closed-classifier projection that fuses the two
+    /// boundary corners ([`crate::SupportCardinalityClass::Empty`] +
+    /// [`crate::SupportCardinalityClass::FullCover`]) into the
+    /// [`crate::SupportBoundaryDistance::Boundary`] bucket, the two
+    /// singular near-boundary corners
+    /// ([`crate::SupportCardinalityClass::SingularSupport`] +
+    /// [`crate::SupportCardinalityClass::SingularGap`]) into the
+    /// [`crate::SupportBoundaryDistance::Singular`] bucket, and the
+    /// strict interior [`crate::SupportCardinalityClass::StrictPartialCover`]
+    /// into the [`crate::SupportBoundaryDistance::StrictInterior`]
+    /// bucket. Equivalently: reads
+    /// [`Self::kinds_support_cardinality_class`] one seam over and
+    /// projects through the class-side
+    /// [`crate::SupportCardinalityClass::support_boundary_distance`]
+    /// three-bucket variant-tag projection — both routings are
+    /// pointwise equal.
+    ///
+    /// The **distance-from-boundary classifier peer** of the fused
+    /// `(kinds_boundary, kinds_singular, kinds_strict_partial_cover)`
+    /// three-boolean compound-cover grid on the diff altitude — the
+    /// natural typed classifier every operator-facing *"how far from
+    /// the support-cardinality boundary did this diff land?"* summary
+    /// reads off at one method call, pattern-matched exhaustively at
+    /// the consumer site so the compiler enforces branch coverage
+    /// over the three buckets
+    /// ([`crate::SupportBoundaryDistance::Boundary`],
+    /// [`crate::SupportBoundaryDistance::Singular`],
+    /// [`crate::SupportBoundaryDistance::StrictInterior`]). Before
+    /// this lift, every such consumer composed a three-way `if`
+    /// ladder over the class-side leg-predicate trio
+    /// (`if class.is_boundary() { … } else if class.is_singular()
+    /// { … } else { … }` — three method calls with ordering-mattering
+    /// dispatch, silently dropping a leg on any future variant
+    /// insertion) or open-coded a five-way `match` on
+    /// [`crate::SupportCardinalityClass`] variants folding
+    /// `Empty | FullCover`, `SingularSupport | SingularGap`, and
+    /// `StrictPartialCover` in every site. Collapsed to one method
+    /// call returning a closed three-variant enum whose exhaustiveness
+    /// the compiler enforces uniformly.
+    ///
+    /// The diff-altitude distance-from-boundary classifier peer that
+    /// **seeds the "support-boundary-distance across altitudes"
+    /// projection** — the natural next classifier row after the just-
+    /// closed [`Self::kinds_support_cardinality_class`] projection.
+    /// Where the support-cardinality-class classifier fuses the five-
+    /// primitive coverage-support boolean algebra into ONE variant on
+    /// the five-corner support-cardinality surface, this classifier
+    /// projects that same surface *coarser* through the three-bucket
+    /// distance-from-boundary quotient — collapsing the two boundary
+    /// corners onto [`crate::SupportBoundaryDistance::Boundary`], the
+    /// two singular near-boundary corners onto
+    /// [`crate::SupportBoundaryDistance::Singular`], and the strict
+    /// interior onto [`crate::SupportBoundaryDistance::StrictInterior`].
+    /// The natural next lifts climb to the tier altitude
+    /// (`ProvenanceMap::tiers_support_boundary_distance` over
+    /// [`Self::tier_histogram`]) and sideways along the chain
+    /// altitude's three sub-axes
+    /// (`ConfigSourceChain::layer_kinds_support_boundary_distance`,
+    /// `ConfigSourceChain::file_formats_support_boundary_distance`,
+    /// `ConfigSourceChain::env_prefix_kinds_support_boundary_distance`
+    /// over the corresponding chain histograms). Once climbed and
+    /// closed at every altitude / sub-axis in the same five-step
+    /// trajectory the eleven prior boolean projections plus the two
+    /// closed classifier rows (modality-class, support-cardinality-
+    /// class) closed, the substrate closes the full distance-from-
+    /// boundary classifier surface at every altitude / sub-axis of
+    /// the 5-column grid.
+    ///
+    /// **Total classification.** Every diff lands on exactly one of
+    /// the three [`crate::SupportBoundaryDistance`] variants — the
+    /// classification is total and disjoint by construction over
+    /// [`crate::SupportBoundaryDistance::ALL`]. Direct pin of the
+    /// class-side three-bucket-partition law one altitude down.
+    ///
+    /// **Cardinality-`3` reachability at the diff altitude.**
+    /// [`DiffLineKind`] carries three cells, so
+    /// `kinds_support_boundary_distance()` reads witnesses on TWO of
+    /// the three variants — [`crate::SupportBoundaryDistance::Boundary`]
+    /// on the empty diff (via the [`crate::SupportCardinalityClass::Empty`]
+    /// corner) and on every uniform three-kind cover (via the
+    /// [`crate::SupportCardinalityClass::FullCover`] corner), and
+    /// [`crate::SupportBoundaryDistance::Singular`] on every singleton-
+    /// support diff (via [`crate::SupportCardinalityClass::SingularSupport`])
+    /// and on every two-kind partial-cover diff (via
+    /// [`crate::SupportCardinalityClass::SingularGap`]). The strict-
+    /// interior variant [`crate::SupportBoundaryDistance::StrictInterior`]
+    /// is **vacuously unreachable** on the cardinality-`3` axis —
+    /// the underlying [`crate::SupportCardinalityClass::StrictPartialCover`]
+    /// corner is itself vacuous on cardinality-`<= 3` axes (the
+    /// strict support interval `[2, cardinality - 2] = [2, 1]` is
+    /// empty), matching the shared vacuous-strict-interior convention
+    /// with [`Self::kinds_strict_partial_cover`] one seam over.
+    ///
+    /// # Invariants
+    ///
+    /// - `kinds_support_boundary_distance() ==
+    ///   kind_histogram().support_boundary_distance()` — the routing
+    ///   equivalence one altitude down; both project the same variant
+    ///   off the same primitive.
+    /// - `kinds_support_boundary_distance() ==
+    ///   kinds_support_cardinality_class().support_boundary_distance()`
+    ///   — the *class-side* routing equivalence: reading the support-
+    ///   cardinality classifier one seam over and projecting through
+    ///   the class-side three-bucket variant-tag projection is
+    ///   pointwise equal to reading the histogram-side classifier
+    ///   directly. Pins the composition through the diff altitude so
+    ///   consumers holding either classifier reach the other without
+    ///   re-routing through the originating histogram.
+    /// - `kinds_support_boundary_distance().is_boundary() ==
+    ///   (!kinds_any_observed() || kinds_full_cover())` — the
+    ///   boundary-bucket peer of the union of the two boundary
+    ///   corners on the diff altitude.
+    /// - `kinds_support_boundary_distance().is_singular() ==
+    ///   (kinds_singular_support() || kinds_singular_gap())` — the
+    ///   singular-bucket peer of the union of the two singular near-
+    ///   boundary corners on the diff altitude.
+    /// - `kinds_support_boundary_distance().is_strict_interior() ==
+    ///   kinds_strict_partial_cover()` — the strict-interior-bucket
+    ///   peer of the strict-partial-cover boolean on the diff
+    ///   altitude. Both read `false` uniformly on the cardinality-`3`
+    ///   [`DiffLineKind`] axis (the strict interior is vacuously
+    ///   empty), matching the shared vacuous-strict-interior
+    ///   convention.
+    /// - `kinds_full_cover() ⇒ kinds_support_boundary_distance() ==
+    ///   SupportBoundaryDistance::Boundary` — every full-cover diff
+    ///   lands on the boundary bucket via the
+    ///   [`crate::SupportCardinalityClass::FullCover`] corner.
+    /// - `!kinds_any_observed() ⇒ kinds_support_boundary_distance() ==
+    ///   SupportBoundaryDistance::Boundary` — the empty diff lands on
+    ///   the boundary bucket via the
+    ///   [`crate::SupportCardinalityClass::Empty`] corner.
+    /// - `kinds_singular_support() ⇒ kinds_support_boundary_distance()
+    ///   == SupportBoundaryDistance::Singular` — every singleton-
+    ///   support diff lands on the singular near-boundary bucket.
+    /// - `kinds_singular_gap() ⇒ kinds_support_boundary_distance() ==
+    ///   SupportBoundaryDistance::Singular` — every singular-gap diff
+    ///   lands on the singular near-boundary bucket (reachable on the
+    ///   cardinality-`3` axis where `axis_cardinality - 1 == 2`).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the
+    /// distinct-cells scan). Both are `O(n)` in practice since the
+    /// diff-cell axis carries a fixed three-cell cardinality; the
+    /// returned [`crate::SupportBoundaryDistance`] fits in a `u8`
+    /// discriminant, so the classifier reads off the same fused
+    /// distinct-cells scalar the support-cardinality classifier
+    /// reads and projects through one closed three-way `match` on
+    /// the class-side variant tag — no allocation, no per-cell
+    /// branching after the support cardinality is built. Strictly
+    /// tighter than the three-way `if` ladder over the class-side
+    /// leg-predicate trio the consumer would otherwise write.
+    #[must_use]
+    pub fn kinds_support_boundary_distance(&self) -> crate::SupportBoundaryDistance {
+        self.kind_histogram().support_boundary_distance()
+    }
 }
 
 #[cfg(test)]
@@ -18412,6 +18576,324 @@ mod tests {
             let via_class = class.support_boundary_distance();
             let via_histogram = diff.kind_histogram().support_boundary_distance();
             assert_eq!(via_class, via_histogram);
+        }
+    }
+
+    // ── ConfigDiff::kinds_support_boundary_distance — distance-from-boundary classifier on the diff altitude ──
+
+    #[test]
+    fn kinds_support_boundary_distance_matches_kind_histogram_support_boundary_distance_pointwise()
+    {
+        // Routing pin: `kinds_support_boundary_distance` routes through
+        // `kind_histogram().support_boundary_distance()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Diff-
+        // altitude support-boundary-distance classifier seed of the new
+        // "support-boundary-distance across altitudes" projection — the
+        // natural next classifier row on top of the closed support-
+        // cardinality-class classifier row.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().support_boundary_distance();
+            assert_eq!(diff.kinds_support_boundary_distance(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kinds_support_boundary_distance_matches_class_side_projection_pointwise() {
+        // Class-side routing pin: `kinds_support_boundary_distance()`
+        // agrees with the composition of `kinds_support_cardinality_class()`
+        // and the class-side `SupportCardinalityClass::support_boundary_distance`
+        // three-bucket variant-tag projection. Pins the composition
+        // through the diff altitude so consumers holding either classifier
+        // reach the other without re-routing through the originating
+        // histogram.
+        for diff in dominant_kind_fixtures() {
+            let via_class = diff
+                .kinds_support_cardinality_class()
+                .support_boundary_distance();
+            assert_eq!(diff.kinds_support_boundary_distance(), via_class);
+        }
+    }
+
+    #[test]
+    fn kinds_support_boundary_distance_empty_diff_is_boundary_variant() {
+        // Empty-diff distance-from-boundary classifier: the empty diff
+        // has no observed cells, so `distinct_cells` reads `0` and the
+        // support-cardinality classifier lands on
+        // `SupportCardinalityClass::Empty`, which the class-side
+        // projection folds into `SupportBoundaryDistance::Boundary`.
+        // Matches `AxisHistogram::support_boundary_distance` reading
+        // Boundary on the empty histogram one altitude down.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert_eq!(
+            empty.kinds_support_boundary_distance(),
+            crate::SupportBoundaryDistance::Boundary,
+        );
+        assert!(!empty.kinds_any_observed());
+    }
+
+    #[test]
+    fn kinds_support_boundary_distance_singleton_support_is_singular_variant() {
+        // Singleton-support pin: a diff with lines only of a single
+        // kind has `distinct_cells` reading `1`, so the support-
+        // cardinality classifier lands on
+        // `SupportCardinalityClass::SingularSupport`, which the class-
+        // side projection folds into
+        // `SupportBoundaryDistance::Singular`. Direct witness of the
+        // subsumption `kinds_singular_support ⇒
+        // kinds_support_boundary_distance == Singular`.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Added("a1".into()), DiffLine::Added("a2".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 1);
+        assert!(diff.kinds_singular_support());
+        assert_eq!(
+            diff.kinds_support_boundary_distance(),
+            crate::SupportBoundaryDistance::Singular,
+        );
+    }
+
+    #[test]
+    fn kinds_support_boundary_distance_two_kind_partial_cover_is_singular_variant() {
+        // Two-kind partial-cover pin: a diff of one `Removed` + one
+        // `Added` observes two of the three cells (support `2 = 3 - 1`),
+        // so `distinct_cells` reads `axis_cardinality - 1` and the
+        // support-cardinality classifier lands on
+        // `SupportCardinalityClass::SingularGap`, which the class-side
+        // projection folds into `SupportBoundaryDistance::Singular` on
+        // the cardinality-3 [`DiffLineKind`] axis. Witness of the
+        // subsumption `kinds_singular_gap ⇒
+        // kinds_support_boundary_distance == Singular`.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 2);
+        assert!(diff.kinds_singular_gap());
+        assert_eq!(
+            diff.kinds_support_boundary_distance(),
+            crate::SupportBoundaryDistance::Singular,
+        );
+    }
+
+    #[test]
+    fn kinds_support_boundary_distance_uniform_three_kind_cover_is_boundary_variant() {
+        // Uniform axis-cover pin: a diff observing every cell of
+        // DiffLineKind at least once has `distinct_cells` reading
+        // `axis_cardinality::<DiffLineKind>() == 3`, so the support-
+        // cardinality classifier lands on
+        // `SupportCardinalityClass::FullCover`, which the class-side
+        // projection folds into `SupportBoundaryDistance::Boundary` —
+        // the top boundary corner of the support-cardinality interval.
+        // Witness of the subsumption `kinds_full_cover ⇒
+        // kinds_support_boundary_distance == Boundary`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kinds_full_cover());
+        assert_eq!(
+            diff.kinds_support_boundary_distance(),
+            crate::SupportBoundaryDistance::Boundary,
+        );
+    }
+
+    #[test]
+    fn kinds_support_boundary_distance_is_boundary_agrees_with_empty_or_full_cover_pointwise() {
+        // Boundary-bucket peer-equivalence pin:
+        // `kinds_support_boundary_distance().is_boundary() ==
+        // (!kinds_any_observed() || kinds_full_cover())`. The boundary
+        // bucket coincides with the union of the two boundary corners
+        // (`Empty` and `FullCover`) on the diff altitude.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kinds_support_boundary_distance().is_boundary(),
+                !diff.kinds_any_observed() || diff.kinds_full_cover(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_support_boundary_distance_is_singular_agrees_with_singular_support_or_singular_gap_pointwise()
+     {
+        // Singular-bucket peer-equivalence pin:
+        // `kinds_support_boundary_distance().is_singular() ==
+        // (kinds_singular_support() || kinds_singular_gap())`. The
+        // singular near-boundary bucket coincides with the union of
+        // the two singular corners on the diff altitude.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kinds_support_boundary_distance().is_singular(),
+                diff.kinds_singular_support() || diff.kinds_singular_gap(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_support_boundary_distance_is_strict_interior_agrees_with_kinds_strict_partial_cover_pointwise()
+     {
+        // Strict-interior-bucket peer-equivalence pin. On the
+        // cardinality-3 [`DiffLineKind`] axis the strict interior is
+        // *vacuously empty* (support interval `[2, 1]`), so both sides
+        // read `false` uniformly across every fixture — pinned as the
+        // vacuous-strict-interior shared convention with
+        // `kinds_strict_partial_cover` one seam over.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kinds_support_boundary_distance().is_strict_interior(),
+                diff.kinds_strict_partial_cover(),
+            );
+            assert!(
+                !diff.kinds_support_boundary_distance().is_strict_interior(),
+                "cardinality-3 DiffLineKind axis: StrictInterior \
+                 variant is vacuously unreachable",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_empty_implies_kinds_support_boundary_distance_is_boundary_pointwise() {
+        // Subsumption pin: `!kinds_any_observed() ⇒
+        // kinds_support_boundary_distance() ==
+        // SupportBoundaryDistance::Boundary`. Direct pin of the class-
+        // side `Empty` → `Boundary` fold one altitude down.
+        for diff in dominant_kind_fixtures() {
+            if !diff.kinds_any_observed() {
+                assert_eq!(
+                    diff.kinds_support_boundary_distance(),
+                    crate::SupportBoundaryDistance::Boundary,
+                    "empty diff must land on the Boundary bucket via \
+                     the SupportCardinalityClass::Empty corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_full_cover_implies_kinds_support_boundary_distance_is_boundary_pointwise() {
+        // Subsumption pin: `kinds_full_cover() ⇒
+        // kinds_support_boundary_distance() ==
+        // SupportBoundaryDistance::Boundary`. Direct pin of the class-
+        // side `FullCover` → `Boundary` fold one altitude down.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_full_cover() {
+                assert_eq!(
+                    diff.kinds_support_boundary_distance(),
+                    crate::SupportBoundaryDistance::Boundary,
+                    "full-cover diff must land on the Boundary bucket \
+                     via the SupportCardinalityClass::FullCover corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_support_implies_kinds_support_boundary_distance_is_singular_pointwise() {
+        // Subsumption pin: `kinds_singular_support() ⇒
+        // kinds_support_boundary_distance() ==
+        // SupportBoundaryDistance::Singular`. Direct pin of the class-
+        // side `SingularSupport` → `Singular` fold one altitude down.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular_support() {
+                assert_eq!(
+                    diff.kinds_support_boundary_distance(),
+                    crate::SupportBoundaryDistance::Singular,
+                    "singleton-support diff must land on the Singular \
+                     bucket via the SingularSupport corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_gap_implies_kinds_support_boundary_distance_is_singular_pointwise() {
+        // Subsumption pin: `kinds_singular_gap() ⇒
+        // kinds_support_boundary_distance() ==
+        // SupportBoundaryDistance::Singular` on the cardinality-`>= 3`
+        // axis. Direct pin of the class-side `SingularGap` →
+        // `Singular` fold one altitude down.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular_gap() {
+                assert_eq!(
+                    diff.kinds_support_boundary_distance(),
+                    crate::SupportBoundaryDistance::Singular,
+                    "singular-gap diff must land on the Singular \
+                     bucket via the SingularGap corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_support_boundary_distance_total_classification_partitions_every_fixture_pointwise() {
+        // Total-classification pin: every diff lands on exactly one of
+        // the three SupportBoundaryDistance variants (Boundary,
+        // Singular, StrictInterior) — SupportBoundaryDistance::ALL.
+        // Direct pin of the class-side three-bucket-partition law one
+        // altitude down.
+        for diff in dominant_kind_fixtures() {
+            let bucket = diff.kinds_support_boundary_distance();
+            let matches: usize = crate::SupportBoundaryDistance::ALL
+                .iter()
+                .filter(|&&v| v == bucket)
+                .count();
+            assert_eq!(
+                matches, 1,
+                "every diff must land on exactly one \
+                 SupportBoundaryDistance variant (bucket={bucket:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_support_boundary_distance_agrees_with_distinct_cells_pattern_match() {
+        // Parity against a hand-rolled `distinct_cells` pattern match:
+        // read the support cardinality and classify by the same three-
+        // way `if` chain the class-side projection folds into (Boundary
+        // on `0` or `axis_cardinality`, Singular on `1` or
+        // `axis_cardinality - 1`, StrictInterior on the strict
+        // interior). Catches any future drift where either
+        // implementation stops projecting through the same
+        // `distinct_cells` primitive.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_support_boundary_distance();
+            let hist = diff.kind_histogram();
+            let support = hist.distinct_cells();
+            let cardinality = crate::axis_cardinality::<DiffLineKind>();
+            let hand_rolled = if support == 0 || support == cardinality {
+                crate::SupportBoundaryDistance::Boundary
+            } else if support == 1 || support + 1 == cardinality {
+                crate::SupportBoundaryDistance::Singular
+            } else {
+                crate::SupportBoundaryDistance::StrictInterior
+            };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn kinds_support_boundary_distance_cardinality_3_axis_never_reaches_strict_interior() {
+        // Cardinality-3 signature pin: on the three-cell
+        // [`DiffLineKind`] axis, the `StrictInterior` bucket is
+        // *vacuously unreachable* — the underlying
+        // `SupportCardinalityClass::StrictPartialCover` corner is
+        // itself vacuous on cardinality-`<= 3` axes (the strict support
+        // interval `[2, 1]` is empty). Every diff lands on one of the
+        // two inhabited buckets (`Boundary` or `Singular`). Structural
+        // signature of the diff altitude in the 5-column grid to be
+        // closed on this projection.
+        for diff in dominant_kind_fixtures() {
+            let bucket = diff.kinds_support_boundary_distance();
+            assert_ne!(
+                bucket,
+                crate::SupportBoundaryDistance::StrictInterior,
+                "cardinality-3 DiffLineKind axis leaves the \
+                 StrictInterior bucket vacuously unreachable",
+            );
         }
     }
 
