@@ -4739,6 +4739,182 @@ impl ProvenanceMap {
     pub fn tiers_modality_class(&self) -> crate::ModalityClass {
         self.tier_histogram().modality_class()
     }
+
+    /// Returns the **closed support-cardinality corner** for this fold's
+    /// [`ConfigTierKind`] histogram — a single
+    /// [`crate::SupportCardinalityClass`] variant naming the corner the
+    /// fold lands on across the five-cell partition of the
+    /// `[0, axis_cardinality::<ConfigTierKind>()]` support-cardinality
+    /// interval. Routes through
+    /// [`crate::AxisHistogram::support_cardinality_class`] one altitude
+    /// down: the closed-classifier projection that fuses the five
+    /// histogram-surface boolean predicates
+    /// ([`crate::AxisHistogram::is_empty`],
+    /// [`crate::AxisHistogram::has_singular_support`],
+    /// [`crate::AxisHistogram::has_strict_partial_cover`],
+    /// [`crate::AxisHistogram::has_singular_gap`],
+    /// [`crate::AxisHistogram::is_full_cover`]) into ONE typed variant
+    /// tag on the five-corner [`crate::SupportCardinalityClass`]
+    /// classifier at the tier altitude, with the cardinality-2 dual-
+    /// singular collapse baked into the branching priority (bottom-
+    /// boundary-first).
+    ///
+    /// The tier-altitude support-cardinality-classifier peer that
+    /// **climbs the "support-cardinality-class across altitudes"
+    /// projection** from the diff altitude — the second altitude of the
+    /// five-step lift trajectory that the ten prior boolean projections
+    /// and the just-closed modality-class classifier row already closed
+    /// across the fully-closed 5-column grid. This climb lifts the
+    /// diff-altitude seed
+    /// [`ConfigDiff::kinds_support_cardinality_class`] one altitude up
+    /// on the same fused five-corner variant tag surface. The natural
+    /// next lifts fan sideways along the chain altitude's three sub-
+    /// axes ([`crate::ConfigSourceChain::layer_kinds_support_cardinality_class`],
+    /// [`crate::ConfigSourceChain::file_formats_support_cardinality_class`],
+    /// [`crate::ConfigSourceChain::env_prefix_kinds_support_cardinality_class`]
+    /// over the corresponding chain histograms), mirroring the four-
+    /// step chain trajectory the ten prior boolean projections plus the
+    /// modality-class classifier row closed. Once climbed and closed at
+    /// every altitude / sub-axis in the same five-step trajectory, the
+    /// substrate closes the full support-cardinality-class classifier
+    /// surface at every altitude / sub-axis of the 5-column grid —
+    /// every named seam a consumer reaches for on the coverage-support
+    /// classifier has one typed routing through the shared
+    /// [`crate::AxisHistogram::support_cardinality_class`] primitive
+    /// one altitude down.
+    ///
+    /// **Total classification.** Every fold lands on exactly one of the
+    /// five [`crate::SupportCardinalityClass`] variants — the
+    /// classification is total and disjoint by construction over
+    /// [`crate::SupportCardinalityClass::ALL`]. Direct pin of the
+    /// histogram-side total-partition law one altitude down.
+    ///
+    /// **Cardinality-`4` reachability at the tier altitude — the
+    /// strict-interior corner becomes REACHABLE.** [`ConfigTierKind`]
+    /// carries four cells, so `tiers_support_cardinality_class()` reads
+    /// witnesses on **all five** variants:
+    /// [`crate::SupportCardinalityClass::Empty`] on the empty map;
+    /// [`crate::SupportCardinalityClass::SingularSupport`] on every
+    /// singleton-support fold (support cardinality `1`);
+    /// [`crate::SupportCardinalityClass::StrictPartialCover`] on every
+    /// two-tier partial-cover fold (support cardinality `2`, the
+    /// singleton strict interior `[2, cardinality - 2] = [2, 2]`);
+    /// [`crate::SupportCardinalityClass::SingularGap`] on every three-
+    /// tier partial-cover fold (support cardinality
+    /// `3 = cardinality - 1`); and
+    /// [`crate::SupportCardinalityClass::FullCover`] on every uniform
+    /// four-tier cover (support cardinality `4`). Strict advance over
+    /// the diff altitude on the same support-cardinality-classifier
+    /// surface: the strict-interior variant
+    /// [`crate::SupportCardinalityClass::StrictPartialCover`] is
+    /// **reachable** on the cardinality-`4` tier axis (the two-tier
+    /// partial cover is the singleton witness), whereas it was
+    /// *vacuously unreachable* on the cardinality-`3` diff altitude
+    /// (the strict interval `[2, cardinality - 2] = [2, 1]` was empty).
+    /// The tier-altitude support-cardinality-classifier row is
+    /// reachability-complete at the climb — every classifier corner
+    /// carries at least one witness.
+    ///
+    /// **Empty-map convention** — returns
+    /// [`crate::SupportCardinalityClass::Empty`] on the empty map: the
+    /// empty histogram has zero observed cells, so `distinct_cells`
+    /// reads `0` and the classifier lands on the empty-boundary corner.
+    /// Matches [`crate::AxisHistogram::support_cardinality_class`]'s
+    /// empty-histogram convention one altitude down. Peer of
+    /// [`ConfigDiff::kinds_support_cardinality_class`]'s empty-diff
+    /// `Empty` polarity on the diff altitude in the same projection.
+    ///
+    /// **Singleton-support convention** — returns
+    /// [`crate::SupportCardinalityClass::SingularSupport`] on every
+    /// fold whose observed support is a single [`ConfigTierKind`]
+    /// cell: one observed cell means `distinct_cells` reads `1` and
+    /// the classifier lands on the bottom singular-boundary corner.
+    /// Direct pin of the histogram-side subsumption
+    /// `has_singular_support ⇒ support_cardinality_class ==
+    /// SingularSupport` one altitude down, and peer of the diff-
+    /// altitude subsumption pinned by
+    /// [`ConfigDiff::kinds_support_cardinality_class`].
+    ///
+    /// **Uniform four-tier axis-cover convention** — returns
+    /// [`crate::SupportCardinalityClass::FullCover`] on every fold
+    /// observing every cell of [`ConfigTierKind`] at least once: four
+    /// observed cells means `distinct_cells` reads `4` and the
+    /// classifier lands on the full-cover corner. Peer of the
+    /// histogram-side uniform-cover convention one altitude down.
+    ///
+    /// # Invariants
+    ///
+    /// - `tiers_support_cardinality_class() ==
+    ///   tier_histogram().support_cardinality_class()` — both project
+    ///   the same variant off the same primitive; the named seam is
+    ///   the cube-native routing of the histogram surface.
+    /// - `tiers_support_cardinality_class().is_empty() ==
+    ///   !tiers_any_observed()` — the empty-variant peer of the tier-
+    ///   altitude "any observed" predicate; the classifier's empty-
+    ///   boundary variant coincides with the empty-map row of the
+    ///   coverage-support boolean grid.
+    /// - `tiers_support_cardinality_class().is_singular_support() ==
+    ///   tiers_singular_support()` — the singleton-support peer of the
+    ///   tier-altitude boolean on cardinality-`>= 3` axes (the full
+    ///   [`ConfigTierKind`] axis). Both read `false` on the empty map.
+    /// - `tiers_support_cardinality_class().is_singular_gap() ==
+    ///   tiers_singular_gap()` — the singular-gap peer of the tier-
+    ///   altitude boolean on cardinality-`>= 3` axes. Both read `false`
+    ///   on the empty map.
+    /// - `tiers_support_cardinality_class().is_full_cover() ==
+    ///   tiers_full_cover()` — the full-cover peer of the tier-altitude
+    ///   boolean.
+    /// - `tiers_support_cardinality_class().is_strict_partial_cover() ==
+    ///   tiers_strict_partial_cover()` — the strict-interior peer of
+    ///   the tier-altitude boolean. On the cardinality-`4`
+    ///   [`ConfigTierKind`] axis both sides are **reachable** on the
+    ///   two-tier partial-cover witness, strictly advancing on the
+    ///   diff-altitude peer where the strict interior was vacuously
+    ///   empty.
+    /// - `tiers_support_cardinality_class().is_partial_cover() ==
+    ///   tiers_partial_cover()` — the compound-partial-cover peer via
+    ///   the class-side [`crate::SupportCardinalityClass::is_partial_cover`]
+    ///   projection; both read the "some but not all observed" middle
+    ///   leg of the coverage trichotomy.
+    /// - `tiers_singular_support() ⇒ tiers_support_cardinality_class() ==
+    ///   SupportCardinalityClass::SingularSupport` — every singleton-
+    ///   support fold lands on the bottom singular-boundary corner.
+    ///   Direct pin of the histogram-side subsumption one altitude
+    ///   down.
+    /// - `tiers_singular_gap() ⇒ tiers_support_cardinality_class() ==
+    ///   SupportCardinalityClass::SingularGap` — every singular-gap
+    ///   fold (support cardinality `3 = cardinality - 1`) lands on the
+    ///   top singular-boundary corner.
+    /// - `tiers_full_cover() ⇒ tiers_support_cardinality_class() ==
+    ///   SupportCardinalityClass::FullCover` — every full-cover fold
+    ///   lands on the full-cover corner.
+    /// - `tiers_strict_partial_cover() ⇒
+    ///   tiers_support_cardinality_class() ==
+    ///   SupportCardinalityClass::StrictPartialCover` — every strict-
+    ///   interior fold (support cardinality `2` on the cardinality-`4`
+    ///   axis) lands on the strict-interior corner. Reachable on the
+    ///   cardinality-`4` tier axis (the two-tier partial-cover witness)
+    ///   and *strict advance* over the diff-altitude peer, which was
+    ///   vacuously unreachable on the cardinality-`3` diff axis.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigTierKind>()` (the
+    /// distinct-cells scan). Both are `O(n)` in practice since the tier
+    /// axis carries a fixed four-cell cardinality; the returned
+    /// [`crate::SupportCardinalityClass`] fits in a `u8` discriminant,
+    /// so the classifier reads off one four-way `if` chain over the
+    /// fused distinct-cells scalar — no allocation, no per-cell
+    /// branching after the support cardinality is built. Strictly
+    /// tighter than the five-way `if` ladder over the five histogram-
+    /// surface boolean predicates the consumer would otherwise write
+    /// (five separate short-circuiting scans, or one fused distinct-
+    /// cells scan plus the cardinality-2 collapse disambiguation).
+    #[must_use]
+    pub fn tiers_support_cardinality_class(&self) -> crate::SupportCardinalityClass {
+        self.tier_histogram().support_cardinality_class()
+    }
 }
 
 /// Zero-allocation `(&[String], &Provenance)` stream over the sorted
@@ -28044,6 +28220,503 @@ mod progressive_tests {
                 _ => crate::ModalityClass::TiedModalTiedAntimodal,
             };
             assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::tiers_support_cardinality_class — support-cardinality classifier climb on the tier altitude ──
+    //
+    // Tier-altitude climb of the support-cardinality-classifier row
+    // seeded on the diff altitude by
+    // ConfigDiff::kinds_support_cardinality_class. The five-corner
+    // SupportCardinalityClass variant tag fuses the five coverage-
+    // support boolean predicates (tiers_any_observed inverse,
+    // tiers_singular_support, tiers_strict_partial_cover,
+    // tiers_singular_gap, tiers_full_cover) plus the empty-map
+    // boundary into one exhaustively-matched classifier surface. Second
+    // altitude of the five-step lift trajectory the ten prior boolean
+    // projections and the just-closed modality-class classifier row
+    // already closed. The cardinality-`4` tier axis carries witnesses
+    // on **every one** of the five classifier corners (Empty,
+    // SingularSupport, StrictPartialCover, SingularGap, FullCover) —
+    // strict advance over the cardinality-`3` diff altitude where the
+    // StrictPartialCover variant was vacuously unreachable. ──
+
+    #[test]
+    fn tiers_support_cardinality_class_matches_tier_histogram_support_cardinality_class_pointwise()
+    {
+        // Routing pin: `tiers_support_cardinality_class` routes through
+        // `tier_histogram().support_cardinality_class()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Tier-
+        // altitude support-cardinality-classifier climb of the
+        // "support-cardinality-class across altitudes" projection
+        // seeded on the diff altitude by
+        // `kinds_support_cardinality_class_matches_kind_histogram_support_cardinality_class_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().support_cardinality_class();
+            assert_eq!(map.tiers_support_cardinality_class(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn tiers_support_cardinality_class_empty_map_is_empty_variant() {
+        // Empty-map support-cardinality classifier: the empty map has
+        // no observed cells, so `distinct_cells` reads `0` and the
+        // classifier lands on SupportCardinalityClass::Empty. Matches
+        // `AxisHistogram::support_cardinality_class` reading Empty on
+        // the empty histogram one altitude down. Peer of
+        // `kinds_support_cardinality_class_empty_diff_is_empty_variant`
+        // on the diff altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert_eq!(
+            empty.tiers_support_cardinality_class(),
+            crate::SupportCardinalityClass::Empty,
+        );
+        assert!(!empty.tiers_any_observed());
+    }
+
+    #[test]
+    fn tiers_support_cardinality_class_singleton_support_is_singular_support_variant() {
+        // Singleton-support pin: every leaf lands on the same tier, so
+        // `distinct_cells` reads `1` and the classifier lands on
+        // SupportCardinalityClass::SingularSupport. Direct witness of
+        // the subsumption `tiers_singular_support ⇒
+        // tiers_support_cardinality_class == SingularSupport`. Peer of
+        // `kinds_support_cardinality_class_singleton_support_is_singular_support_variant`
+        // on the diff altitude.
+        let m: ProvenanceMap = ["a", "b", "c", "d"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 1);
+        assert!(m.tiers_singular_support());
+        assert_eq!(
+            m.tiers_support_cardinality_class(),
+            crate::SupportCardinalityClass::SingularSupport,
+        );
+    }
+
+    #[test]
+    fn tiers_support_cardinality_class_two_tier_partial_cover_is_strict_partial_cover_variant() {
+        // Cardinality-`4` strict-interior reachability pin: a fold
+        // observing exactly two tiers (`Bare` + `Default`) has two
+        // observed cells AND two unobserved cells (`Discovered` and
+        // `Custom`) on the four-cell ConfigTierKind axis —
+        // `distinct_cells` reads `2` and the classifier lands on
+        // SupportCardinalityClass::StrictPartialCover, the singleton
+        // witness of the strict interval `[2, cardinality - 2] =
+        // [2, 2]`. **Strict advance** over the cardinality-`3` diff
+        // altitude on the same projection, where the strict-interior
+        // variant was *vacuously unreachable* (the strict interval
+        // `[2, 1]` was empty). This test isolates the newly-reachable
+        // classifier corner that distinguishes the tier-altitude climb
+        // from the diff-altitude seed. Direct witness of the
+        // subsumption `tiers_strict_partial_cover ⇒
+        // tiers_support_cardinality_class == StrictPartialCover`
+        // pinned as an implication one law over.
+        let m: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 2);
+        assert_eq!(m.absent_tiers().len(), 2);
+        assert!(m.tiers_strict_partial_cover());
+        assert_eq!(
+            m.tiers_support_cardinality_class(),
+            crate::SupportCardinalityClass::StrictPartialCover,
+        );
+    }
+
+    #[test]
+    fn tiers_support_cardinality_class_three_tier_partial_cover_is_singular_gap_variant() {
+        // Three-tier partial-cover pin: a fold observing exactly three
+        // tiers (`Bare` + `Discovered` + `Default`) has three observed
+        // cells and one unobserved cell (`Custom`) on the four-cell
+        // ConfigTierKind axis — `distinct_cells` reads
+        // `3 = cardinality - 1` and the classifier lands on
+        // SupportCardinalityClass::SingularGap. Direct witness of the
+        // subsumption `tiers_singular_gap ⇒
+        // tiers_support_cardinality_class == SingularGap` on the tier
+        // altitude. Cardinality-`4` witness of the top singular-
+        // boundary variant that on the cardinality-`3` diff altitude
+        // fired on the two-kind partial-cover fixture (support `2 =
+        // 3 - 1`).
+        let m: ProvenanceMap = [
+            ("b", ConfigTierKind::Bare),
+            ("i", ConfigTierKind::Discovered),
+            ("d", ConfigTierKind::Default),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        assert_eq!(m.contributing_tiers().len(), 3);
+        assert_eq!(m.absent_tiers().len(), 1);
+        assert!(m.tiers_singular_gap());
+        assert_eq!(
+            m.tiers_support_cardinality_class(),
+            crate::SupportCardinalityClass::SingularGap,
+        );
+    }
+
+    #[test]
+    fn tiers_support_cardinality_class_uniform_four_tier_cover_is_full_cover_variant() {
+        // Uniform axis-cover pin: a fold observing every cell of
+        // ConfigTierKind at least once has `distinct_cells` reading
+        // `axis_cardinality::<ConfigTierKind>() == 4`, so the
+        // classifier lands on SupportCardinalityClass::FullCover. Peer
+        // of the histogram-side uniform-cover convention one altitude
+        // down. Cardinality-`4` counterpart of the cardinality-`3`
+        // diff-altitude uniform-cover pin
+        // `kinds_support_cardinality_class_uniform_three_kind_cover_is_full_cover_variant`.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(m.tiers_full_cover());
+        assert_eq!(
+            m.tiers_support_cardinality_class(),
+            crate::SupportCardinalityClass::FullCover,
+        );
+    }
+
+    #[test]
+    fn tiers_support_cardinality_class_is_empty_agrees_with_not_tiers_any_observed_pointwise() {
+        // Empty-variant peer-equivalence pin:
+        // `tiers_support_cardinality_class().is_empty() ==
+        // !tiers_any_observed()`. The classifier's empty-boundary
+        // variant coincides with the empty-map row of the coverage-
+        // support boolean grid. Peer of
+        // `kinds_support_cardinality_class_is_empty_agrees_with_not_kinds_any_observed_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.tiers_support_cardinality_class().is_empty(),
+                !map.tiers_any_observed(),
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_support_cardinality_class_is_singular_support_agrees_with_tiers_singular_support_pointwise()
+     {
+        // Singular-support peer-equivalence pin on the cardinality-`4`
+        // axis: `tiers_support_cardinality_class().is_singular_support()
+        // == tiers_singular_support()`. Holds pointwise on cardinality-
+        // `>= 3` axes (the ConfigTierKind axis); the cardinality-2
+        // dual-singular collapse does not apply. Peer of
+        // `kinds_support_cardinality_class_is_singular_support_agrees_with_kinds_singular_support_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.tiers_support_cardinality_class().is_singular_support(),
+                map.tiers_singular_support(),
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_support_cardinality_class_is_singular_gap_agrees_with_tiers_singular_gap_pointwise() {
+        // Singular-gap peer-equivalence pin on the cardinality-`4`
+        // axis: `tiers_support_cardinality_class().is_singular_gap() ==
+        // tiers_singular_gap()`. Holds pointwise on cardinality-`>= 3`
+        // axes; the cardinality-2 dual-singular collapse does not
+        // apply. Peer of
+        // `kinds_support_cardinality_class_is_singular_gap_agrees_with_kinds_singular_gap_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.tiers_support_cardinality_class().is_singular_gap(),
+                map.tiers_singular_gap(),
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_support_cardinality_class_is_full_cover_agrees_with_tiers_full_cover_pointwise() {
+        // Full-cover peer-equivalence pin:
+        // `tiers_support_cardinality_class().is_full_cover() ==
+        // tiers_full_cover()`. Holds pointwise on every axis. Peer of
+        // `kinds_support_cardinality_class_is_full_cover_agrees_with_kinds_full_cover_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.tiers_support_cardinality_class().is_full_cover(),
+                map.tiers_full_cover(),
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_support_cardinality_class_is_strict_partial_cover_agrees_with_tiers_strict_partial_cover_pointwise()
+     {
+        // Strict-partial-cover peer-equivalence pin on the cardinality-
+        // `4` axis: `tiers_support_cardinality_class().is_strict_partial_cover()
+        // == tiers_strict_partial_cover()`. **Strict advance** over the
+        // diff-altitude peer: the cardinality-`4` ConfigTierKind axis
+        // has a non-vacuous strict interior `[2, cardinality - 2] =
+        // [2, 2]` — the two-tier partial-cover fold is the singleton
+        // witness — so both sides can read `true` (unlike the
+        // cardinality-`3` DiffLineKind axis where both sides read
+        // `false` uniformly). Peer of
+        // `kinds_support_cardinality_class_is_strict_partial_cover_agrees_with_kinds_strict_partial_cover_pointwise`
+        // on the diff altitude, without the vacuous-strict-interior
+        // claim.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.tiers_support_cardinality_class()
+                    .is_strict_partial_cover(),
+                map.tiers_strict_partial_cover(),
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_support_cardinality_class_is_partial_cover_agrees_with_tiers_partial_cover_pointwise()
+    {
+        // Compound-partial-cover peer-equivalence pin via the class-
+        // side `SupportCardinalityClass::is_partial_cover` projection:
+        // `tiers_support_cardinality_class().is_partial_cover() ==
+        // tiers_partial_cover()`. Cross-surface bridge between the
+        // typed classifier and the tier-altitude compound-boolean peer
+        // of the coverage trichotomy's middle leg. Peer of
+        // `kinds_support_cardinality_class_is_partial_cover_agrees_with_kinds_partial_cover_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.tiers_support_cardinality_class().is_partial_cover(),
+                map.tiers_partial_cover(),
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_singular_support_implies_tiers_support_cardinality_class_is_singular_support_pointwise()
+     {
+        // Subsumption pin: `tiers_singular_support() ⇒
+        // tiers_support_cardinality_class() ==
+        // SupportCardinalityClass::SingularSupport` always on the
+        // cardinality-`>= 3` axis. Direct pin of the histogram-side
+        // subsumption one altitude down. Peer of
+        // `kinds_singular_support_implies_kinds_support_cardinality_class_is_singular_support_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_singular_support() {
+                assert_eq!(
+                    map.tiers_support_cardinality_class(),
+                    crate::SupportCardinalityClass::SingularSupport,
+                    "singular-support map must land on the \
+                     SingularSupport classifier corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_singular_gap_implies_tiers_support_cardinality_class_is_singular_gap_pointwise() {
+        // Subsumption pin: `tiers_singular_gap() ⇒
+        // tiers_support_cardinality_class() ==
+        // SupportCardinalityClass::SingularGap` always on the
+        // cardinality-`>= 3` axis. Direct pin of the histogram-side
+        // subsumption one altitude down. Peer of
+        // `kinds_singular_gap_implies_kinds_support_cardinality_class_is_singular_gap_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_singular_gap() {
+                assert_eq!(
+                    map.tiers_support_cardinality_class(),
+                    crate::SupportCardinalityClass::SingularGap,
+                    "singular-gap map must land on the SingularGap \
+                     classifier corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_full_cover_implies_tiers_support_cardinality_class_is_full_cover_pointwise() {
+        // Subsumption pin: `tiers_full_cover() ⇒
+        // tiers_support_cardinality_class() ==
+        // SupportCardinalityClass::FullCover` always. Direct pin of the
+        // histogram-side subsumption one altitude down. Peer of
+        // `kinds_full_cover_implies_kinds_support_cardinality_class_is_full_cover_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_full_cover() {
+                assert_eq!(
+                    map.tiers_support_cardinality_class(),
+                    crate::SupportCardinalityClass::FullCover,
+                    "full-cover map must land on the FullCover \
+                     classifier corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_strict_partial_cover_implies_tiers_support_cardinality_class_is_strict_partial_cover_pointwise()
+     {
+        // **Strict-advance subsumption pin** — REACHABLE at the tier
+        // altitude on the cardinality-`4` ConfigTierKind axis, whereas
+        // vacuously unreachable at the diff altitude on the
+        // cardinality-`3` DiffLineKind axis:
+        // `tiers_strict_partial_cover() ⇒
+        // tiers_support_cardinality_class() ==
+        // SupportCardinalityClass::StrictPartialCover`. The two-tier
+        // partial-cover fold is the singleton strict-interior witness
+        // that fires this subsumption; a subsumption vacuously true on
+        // the diff altitude becomes an inhabited constraint on the
+        // tier altitude. Direct pin of the histogram-side subsumption
+        // one altitude down.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_strict_partial_cover() {
+                assert_eq!(
+                    map.tiers_support_cardinality_class(),
+                    crate::SupportCardinalityClass::StrictPartialCover,
+                    "strict-partial-cover map must land on the \
+                     StrictPartialCover classifier corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_support_cardinality_class_total_classification_partitions_every_fixture_pointwise() {
+        // Total-classification pin: every fold lands on exactly one of
+        // the five SupportCardinalityClass variants (Empty,
+        // SingularSupport, StrictPartialCover, SingularGap, FullCover)
+        // — SupportCardinalityClass::ALL. Direct pin of the histogram-
+        // side total-partition law one altitude down. Peer of
+        // `kinds_support_cardinality_class_total_classification_partitions_every_fixture_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let class = map.tiers_support_cardinality_class();
+            let matches: usize = crate::SupportCardinalityClass::ALL
+                .iter()
+                .filter(|&&v| v == class)
+                .count();
+            assert_eq!(
+                matches, 1,
+                "every map must land on exactly one \
+                 SupportCardinalityClass variant (class={class:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn tiers_support_cardinality_class_agrees_with_distinct_cells_pattern_match() {
+        // Parity against the exact hand-rolled `distinct_cells` pattern
+        // match this climb replaces: read the support cardinality and
+        // classify by the same four-way `if` chain (with the cardinality-
+        // 2 collapse baked into the ordering priority) the histogram-
+        // side classifier lands on. Catches any future drift where
+        // either implementation stops projecting through the same
+        // `distinct_cells` primitive. Peer of
+        // `kinds_support_cardinality_class_agrees_with_distinct_cells_pattern_match`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tiers_support_cardinality_class();
+            let hist = map.tier_histogram();
+            let support = hist.distinct_cells();
+            let cardinality = crate::axis_cardinality::<ConfigTierKind>();
+            let hand_rolled = if support == 0 {
+                crate::SupportCardinalityClass::Empty
+            } else if support == cardinality {
+                crate::SupportCardinalityClass::FullCover
+            } else if support == 1 {
+                crate::SupportCardinalityClass::SingularSupport
+            } else if support + 1 == cardinality {
+                crate::SupportCardinalityClass::SingularGap
+            } else {
+                crate::SupportCardinalityClass::StrictPartialCover
+            };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn tiers_support_cardinality_class_bridges_support_boundary_distance_pointwise() {
+        // Cross-classifier bridge pin: the support-cardinality-class
+        // classifier and the support-boundary-distance classifier one
+        // altitude down agree pointwise through the class-side
+        // `SupportCardinalityClass::support_boundary_distance()`
+        // projection — the histogram-side
+        // `support_boundary_distance()` equals the class-side
+        // projection of the class-side classifier. Pins the composition
+        // through the tier altitude so consumers holding either
+        // classifier reach the other without re-routing through the
+        // originating histogram. Peer of
+        // `kinds_support_cardinality_class_bridges_support_boundary_distance_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let class = map.tiers_support_cardinality_class();
+            let via_class = class.support_boundary_distance();
+            let via_histogram = map.tier_histogram().support_boundary_distance();
+            assert_eq!(via_class, via_histogram);
         }
     }
 
