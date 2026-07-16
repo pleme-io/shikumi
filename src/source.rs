@@ -16244,6 +16244,310 @@ pub trait ConfigSourceChain {
     {
         self.env_prefix_kind_histogram().support_boundary_distance()
     }
+
+    /// Returns the closed magnitude-direction bucket variant this
+    /// chain's observed [`EnvMetadataTagKind`] histogram lands on the
+    /// chain env-prefix sub-axis — the three-cell partition of the
+    /// [`crate::SupportCardinalityClass`] surface. Routes through
+    /// [`crate::AxisHistogram::support_magnitude_direction`] one altitude
+    /// down — the closed-classifier projection that fuses the two low-
+    /// support corners ([`crate::SupportCardinalityClass::Empty`] +
+    /// [`crate::SupportCardinalityClass::SingularSupport`]) into the
+    /// [`crate::SupportMagnitudeDirection::Low`] bucket, the two high-
+    /// support corners ([`crate::SupportCardinalityClass::SingularGap`] +
+    /// [`crate::SupportCardinalityClass::FullCover`]) into the
+    /// [`crate::SupportMagnitudeDirection::High`] bucket, and the strict
+    /// interior [`crate::SupportCardinalityClass::StrictPartialCover`]
+    /// into the [`crate::SupportMagnitudeDirection::StrictInterior`]
+    /// bucket. Equivalently: reads
+    /// [`Self::env_prefix_kinds_support_cardinality_class`] one seam
+    /// over and projects through the class-side
+    /// [`crate::SupportCardinalityClass::support_magnitude_direction`]
+    /// three-bucket variant-tag projection — both routings are
+    /// pointwise equal.
+    ///
+    /// The chain-altitude env-prefix sub-axis magnitude-direction
+    /// classifier peer that **closes the "support-magnitude-direction
+    /// across altitudes" projection** at the fifth and final altitude /
+    /// sub-axis of the fully-closed 5-column grid. Seeded on the diff
+    /// altitude by [`crate::ConfigDiff::kinds_support_magnitude_direction`],
+    /// climbed to the tier altitude by
+    /// [`crate::ProvenanceMap::tiers_support_magnitude_direction`], lifted
+    /// sideways to the first chain-altitude sub-axis by
+    /// [`Self::layer_kinds_support_magnitude_direction`], lifted sideways
+    /// to the second chain-altitude sub-axis by
+    /// [`Self::file_formats_support_magnitude_direction`], and now lifted
+    /// sideways to the third and final chain-altitude sub-axis —
+    /// closing the four-step lift trajectory the eleven prior boolean
+    /// projections plus the three closed classifier rows (modality-class,
+    /// support-cardinality-class, support-boundary-distance) followed to
+    /// closure across the fully-closed 5-column grid. Mirror peer of the
+    /// just-closed sibling [`Self::env_prefix_kinds_support_boundary_distance`]
+    /// classifier row on the orthogonal three-bucket quotient of the
+    /// same five-corner support-cardinality surface — both share the
+    /// strict-interior middle leg. With this lift the "support-
+    /// magnitude-direction across altitudes" projection carries one
+    /// named cube-native seam at every one of the five altitudes / sub-
+    /// axes (diff, tier, and all three chain sub-axes) of the fully-
+    /// closed grid.
+    ///
+    /// **Total classification.** Every chain lands on exactly one of
+    /// the three [`crate::SupportMagnitudeDirection`] variants — the
+    /// classification is total and disjoint by construction over
+    /// [`crate::SupportMagnitudeDirection::ALL`]. Direct pin of the
+    /// class-side three-bucket-partition law one altitude down.
+    ///
+    /// **Cardinality-`2` reachability at the env-prefix sub-axis —
+    /// the MOST DEGENERATE sub-axis of the closed 5-column grid on
+    /// magnitude-direction-classifier reachability: only two of the
+    /// three buckets are inhabited.** [`EnvMetadataTagKind`] carries
+    /// two cells, so `env_prefix_kinds_support_magnitude_direction()`
+    /// reads witnesses on only two of the three variants:
+    /// [`crate::SupportMagnitudeDirection::Low`] on the empty chain
+    /// *and* on every non-empty chain projecting to an empty env-prefix
+    /// histogram (via [`crate::SupportCardinalityClass::Empty`], the
+    /// partial-function-projection witness) *and* on every singleton-
+    /// support chain (via [`crate::SupportCardinalityClass::SingularSupport`]
+    /// — absorbing every simultaneously-firing `singular_gap` chain by
+    /// the class-side bottom-boundary-first tie-break at the
+    /// cardinality-`2` dual-singular coincidence);
+    /// [`crate::SupportMagnitudeDirection::High`] on every uniform
+    /// two-kind cover (via [`crate::SupportCardinalityClass::FullCover`]).
+    /// The strict-interior bucket [`crate::SupportMagnitudeDirection::StrictInterior`]
+    /// is **vacuously unreachable** on the cardinality-`2` axis — the
+    /// underlying strict-partial-cover corner is itself vacuous (the
+    /// strict interval `[2, cardinality - 2] = [2, 0]` is empty), so
+    /// no chain over [`EnvMetadataTagKind`] can inhabit the strict-
+    /// interior bucket. Structural signature of the env-prefix sub-axis
+    /// in the 5-column grid on the magnitude-direction classifier
+    /// surface — unique to the cardinality-`2` sub-axis; the
+    /// cardinality-`3` sister layer-kind sub-axis and cardinality-`3`
+    /// diff altitude match this two-bucket profile (also vacuous
+    /// strict-interior), while the cardinality-`4` sister file-format
+    /// sub-axis and cardinality-`4` tier altitude reach witnesses on
+    /// all three buckets (adding `StrictInterior` via the two-cell
+    /// partial-cover fold).
+    ///
+    /// **Cardinality-`2` singular-pair splitting under the magnitude-
+    /// direction quotient — the row's most conspicuous divergence from
+    /// the sibling [`Self::env_prefix_kinds_support_boundary_distance`]
+    /// row at the same sub-axis.** Under the boundary-distance quotient
+    /// both singular corners (`SingularSupport` + `SingularGap`) fold
+    /// into the same `Singular` near-boundary bucket, so the projection
+    /// is COARSER at the singular pair than the coverage-support
+    /// classifier — the class-side dual-singular collapse is invisible
+    /// downstream. Under the magnitude-direction quotient the two
+    /// singular corners fold into DIFFERENT buckets (`SingularSupport →
+    /// Low`, `SingularGap → High`), so the projection is NOT coarser at
+    /// the singular pair — the class-side dual-singular collapse
+    /// surfaces as a distinctive cardinality-`2` subsumption
+    /// transposition: `env_prefix_kinds_singular_gap() ⇒
+    /// env_prefix_kinds_support_magnitude_direction() ==
+    /// SupportMagnitudeDirection::Low` on the cardinality-`2` sub-axis
+    /// (NOT `High` as on cardinality-`>= 3` sister axes). The singular-
+    /// gap chain lands on the bottom singular-boundary corner
+    /// `SingularSupport` by the class-side bottom-boundary-first tie-
+    /// break at support `1 = axis_cardinality - 1`, which the class-
+    /// side projection folds into `Low` — the same bucket the singleton-
+    /// support chain lands on, NOT the `High` bucket the singular-gap
+    /// corner would target on any cardinality-`>= 3` axis. Signature
+    /// divergence unique to the cardinality-`2` env-prefix sub-axis
+    /// under the magnitude-direction quotient — the reason the general
+    /// peer-equivalence law `is_high() == (singular_gap() ||
+    /// full_cover())` (holding on every cardinality-`>= 3` sister
+    /// altitude / sub-axis) FAILS on this sub-axis at the collapse
+    /// point and tightens to `is_high() == full_cover()` via the
+    /// excision-based [`Self::env_prefix_kinds_high_support`] seam.
+    ///
+    /// **Empty-chain / empty-env-prefix-histogram convention** —
+    /// returns [`crate::SupportMagnitudeDirection::Low`] on the empty
+    /// chain and on every non-empty chain whose env-prefix histogram is
+    /// empty (no [`ConfigSource::Env`] entry): the underlying support-
+    /// cardinality classifier lands on the empty-boundary corner
+    /// ([`crate::SupportCardinalityClass::Empty`]), which the class-
+    /// side projection folds into
+    /// [`crate::SupportMagnitudeDirection::Low`]. Matches
+    /// [`crate::AxisHistogram::support_magnitude_direction`]'s empty-
+    /// histogram convention one altitude down. Peer of
+    /// [`Self::env_prefix_kinds_any_observed`] inverse: the classifier's
+    /// low-bucket empty branch coincides with the empty-env-prefix-
+    /// histogram row. Sister of the same partial-function-projection
+    /// divergence at the file-format sub-axis pinned at
+    /// [`Self::file_formats_support_magnitude_direction`] — the two
+    /// chain-altitude sub-axes on partial-function projections (file-
+    /// format via unrecognized extensions, env-prefix via `Defaults`/
+    /// `File` layers) both carry the two-branch empty semantics through
+    /// the shared histogram-side convention. No analog at the sister
+    /// layer-kind sub-axis (where every layer projects to a `Some`
+    /// cell) or at the tier / diff altitudes (whose axes are total on
+    /// the observed universe). Diverges from the sibling
+    /// [`Self::env_prefix_kinds_support_boundary_distance`] row, which
+    /// folds the empty corner into the `Boundary` bucket together with
+    /// full-cover — under the orthogonal magnitude-direction quotient
+    /// the empty corner splits off into the low bucket while full-
+    /// cover climbs into the high bucket.
+    ///
+    /// **Singleton-support convention** — returns
+    /// [`crate::SupportMagnitudeDirection::Low`] on every chain whose
+    /// observed support is a single [`EnvMetadataTagKind`] cell
+    /// (prefixed-only or bare-only): the underlying support-cardinality
+    /// classifier lands on the bottom singular-boundary corner
+    /// ([`crate::SupportCardinalityClass::SingularSupport`]), which the
+    /// class-side projection folds into
+    /// [`crate::SupportMagnitudeDirection::Low`]. Direct pin of the
+    /// composed subsumption `has_singular_support ⇒
+    /// support_magnitude_direction == Low` one altitude down, and peer
+    /// of the diff-altitude, tier-altitude, chain layer-kind sub-axis,
+    /// and chain file-format sub-axis subsumptions. On the cardinality-
+    /// `2` env-prefix axis this bucket also absorbs every chain firing
+    /// [`Self::env_prefix_kinds_singular_gap`] — the dual-singular
+    /// collapse baked into the underlying class-side tie-break flows
+    /// through unchanged and splits the singular pair against the
+    /// sibling [`Self::env_prefix_kinds_support_boundary_distance`]
+    /// row (where both singular corners share the `Singular` bucket).
+    ///
+    /// **Uniform two-kind axis-cover convention** — returns
+    /// [`crate::SupportMagnitudeDirection::High`] on every chain
+    /// observing both [`EnvMetadataTagKind`] cells at least once: the
+    /// underlying support-cardinality classifier lands on the full-
+    /// cover corner ([`crate::SupportCardinalityClass::FullCover`]),
+    /// which the class-side projection folds into
+    /// [`crate::SupportMagnitudeDirection::High`] — the top high-
+    /// support corner of the support-cardinality interval. Peer of the
+    /// histogram-side uniform-cover convention one altitude down.
+    ///
+    /// # Invariants
+    ///
+    /// - `env_prefix_kinds_support_magnitude_direction() ==
+    ///   env_prefix_kind_histogram().support_magnitude_direction()` —
+    ///   the routing equivalence one altitude down; both project the
+    ///   same variant off the same primitive.
+    /// - `env_prefix_kinds_support_magnitude_direction() ==
+    ///   env_prefix_kinds_support_cardinality_class().support_magnitude_direction()`
+    ///   — the *class-side* routing equivalence: reading the support-
+    ///   cardinality classifier one seam over and projecting through
+    ///   the class-side three-bucket variant-tag projection is
+    ///   pointwise equal to reading the histogram-side classifier
+    ///   directly. Pins the composition through the chain env-prefix
+    ///   sub-axis so consumers holding either classifier reach the
+    ///   other without re-routing through the originating histogram.
+    /// - `env_prefix_kinds_support_magnitude_direction().is_low() ==
+    ///   env_prefix_kinds_low_support()` — the low-bucket peer of the
+    ///   excision-based low-support boolean on the chain env-prefix
+    ///   sub-axis. Holds pointwise even at the cardinality-`2` dual-
+    ///   singular collapse point because both surfaces name the same
+    ///   `support <= 1` predicate through the shared low-support
+    ///   scan; equivalent to the general peer-equivalence law
+    ///   `is_low() == (!any_observed() || singular_support())` on
+    ///   this sub-axis.
+    /// - `env_prefix_kinds_support_magnitude_direction().is_high() ==
+    ///   env_prefix_kinds_high_support()` — the high-bucket peer of the
+    ///   excision-based high-support boolean on the chain env-prefix
+    ///   sub-axis. Holds pointwise even at the cardinality-`2` dual-
+    ///   singular collapse point because both surfaces name the same
+    ///   excision-based `support == cardinality` predicate through the
+    ///   shared high-support scan (the excision short-circuits the
+    ///   cardinality-`2` singular-gap disjunct that would otherwise
+    ///   fire at support `1`). Tightens on this sub-axis into the
+    ///   cardinality-`2`-specific equivalence `is_high() ==
+    ///   full_cover()` via the peer
+    ///   [`Self::env_prefix_kinds_high_support_equivalent_to_env_prefix_kinds_full_cover`]-
+    ///   style unique tightening — divergence from the general peer-
+    ///   equivalence law `is_high() == (singular_gap() ||
+    ///   full_cover())` that holds on every cardinality-`>= 3` sister
+    ///   altitude / sub-axis but FAILS on this cardinality-`2` sub-
+    ///   axis at the collapse point (LHS `false`, RHS `true` at the
+    ///   singleton-support chain where `singular_gap()` fires but the
+    ///   class-side folds to `SingularSupport → Low`).
+    /// - `env_prefix_kinds_support_magnitude_direction().is_strict_interior()
+    ///   == env_prefix_kinds_strict_partial_cover()` — the strict-
+    ///   interior-bucket peer of the strict-partial-cover boolean on
+    ///   the chain env-prefix sub-axis. Both sides read `false`
+    ///   uniformly on the cardinality-`2` [`EnvMetadataTagKind`] axis
+    ///   (the strict interior `[2, 0]` is vacuously empty), matching
+    ///   the shared vacuous-strict-interior convention with the
+    ///   cardinality-`3` sister layer-kind sub-axis and cardinality-`3`
+    ///   diff-altitude peers. Reachability strictly advances on the
+    ///   cardinality-`4` sister file-format sub-axis and cardinality-`4`
+    ///   tier altitude where the peers read witnesses on the strict-
+    ///   interior bucket. Coincides pointwise with
+    ///   [`Self::env_prefix_kinds_support_boundary_distance`]`().is_strict_interior()`
+    ///   — the shared middle leg with the sibling classifier row (both
+    ///   vacuous on this cardinality-`2` sub-axis).
+    /// - `env_prefix_kinds_full_cover() ⇒
+    ///   env_prefix_kinds_support_magnitude_direction() ==
+    ///   SupportMagnitudeDirection::High` — every full-cover chain
+    ///   lands on the high bucket via the
+    ///   [`crate::SupportCardinalityClass::FullCover`] corner.
+    /// - `!env_prefix_kinds_any_observed() ⇒
+    ///   env_prefix_kinds_support_magnitude_direction() ==
+    ///   SupportMagnitudeDirection::Low` — the empty env-prefix
+    ///   histogram lands on the low bucket via the
+    ///   [`crate::SupportCardinalityClass::Empty`] corner. Fires on
+    ///   both the empty chain and every no-env-layers non-empty chain
+    ///   (the partial-function-projection witness).
+    /// - `env_prefix_kinds_singular_support() ⇒
+    ///   env_prefix_kinds_support_magnitude_direction() ==
+    ///   SupportMagnitudeDirection::Low` — every singleton-support
+    ///   chain lands on the low bucket via the
+    ///   [`crate::SupportCardinalityClass::SingularSupport`] corner.
+    /// - `env_prefix_kinds_singular_gap() ⇒
+    ///   env_prefix_kinds_support_magnitude_direction() ==
+    ///   SupportMagnitudeDirection::Low` on the cardinality-`2` env-
+    ///   prefix axis via the class-side collapse: the singular-gap
+    ///   chain lands on `SingularSupport` (the dual-singular tie-break
+    ///   routes support-`1` chains to the bottom corner, not the top),
+    ///   which the class-side projection folds into `Low` — NOT `High`
+    ///   as on cardinality-`>= 3` sister axes. The magnitude-direction
+    ///   projection is NOT blind to this class-level transposition
+    ///   (unlike the sibling boundary-distance projection, where both
+    ///   `SingularSupport` and `SingularGap` fold into the shared
+    ///   `Singular` bucket): the two singular corners fold into
+    ///   different buckets, so the class-side transposition surfaces
+    ///   as a distinctive cardinality-`2` divergence from the
+    ///   `singular_gap ⇒ High` subsumption pinned on every cardinality-
+    ///   `>= 3` sister altitude / sub-axis. The row's most
+    ///   conspicuous divergence from every sibling altitude / sub-axis
+    ///   in the "support-magnitude-direction across altitudes"
+    ///   projection.
+    /// - `env_prefix_kinds_strict_partial_cover() ⇒
+    ///   env_prefix_kinds_support_magnitude_direction() ==
+    ///   SupportMagnitudeDirection::StrictInterior` — vacuously true
+    ///   on the cardinality-`2` axis (the premise never fires because
+    ///   the strict interval `[2, 0]` is empty).
+    /// - `env_prefix_kinds_support_magnitude_direction() ∈
+    ///   { SupportMagnitudeDirection::Low,
+    ///     SupportMagnitudeDirection::High }` always on the
+    ///   cardinality-`2` env-prefix axis — the strict-interior bucket
+    ///   `StrictInterior` (vacuous) carries no witness. Cardinality-
+    ///   `2` degeneracy pin unique to the env-prefix sub-axis in the
+    ///   5-column grid on the magnitude-direction classifier surface,
+    ///   matching the cardinality-`3` sister layer-kind sub-axis and
+    ///   cardinality-`3` diff-altitude two-bucket profile through the
+    ///   shared vacuous-strict-interior convention.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::EnvMetadataTagKind>()`
+    /// (the distinct-cells scan). Both are `O(n)` in practice since the
+    /// env-prefix axis carries a fixed two-cell cardinality; the
+    /// returned [`crate::SupportMagnitudeDirection`] fits in a `u8`
+    /// discriminant, so the classifier reads off the same fused
+    /// distinct-cells scalar the support-cardinality classifier reads
+    /// and projects through one closed three-way `match` on the class-
+    /// side variant tag — no allocation, no per-cell branching after
+    /// the support cardinality is built. Strictly tighter than the
+    /// three-way `if` ladder over the class-side leg-predicate trio the
+    /// consumer would otherwise write.
+    #[must_use]
+    fn env_prefix_kinds_support_magnitude_direction(&self) -> crate::SupportMagnitudeDirection
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram()
+            .support_magnitude_direction()
+    }
 }
 
 impl ConfigSourceChain for [ConfigSource] {
@@ -49588,6 +49892,834 @@ mod tests {
                  StrictInterior (vacuous strict interior) \
                  (bucket={bucket:?})",
             );
+        }
+    }
+
+    // ---- ConfigSourceChain::env_prefix_kinds_support_magnitude_direction —
+    //      magnitude-direction classifier lift sideways to the chain env-
+    //      prefix sub-axis, CLOSING the "support-magnitude-direction
+    //      across altitudes" projection at the fifth and final altitude /
+    //      sub-axis of the fully-closed 5-column grid ----
+    //
+    // Chain-altitude env-prefix sub-axis lift of the magnitude-direction
+    // classifier row seeded on the diff altitude by
+    // ConfigDiff::kinds_support_magnitude_direction, climbed to the tier
+    // altitude by ProvenanceMap::tiers_support_magnitude_direction, and
+    // lifted sideways along the layer-kind and file-format chain sub-axes
+    // by ConfigSourceChain::layer_kinds_support_magnitude_direction /
+    // ConfigSourceChain::file_formats_support_magnitude_direction. The
+    // three-bucket SupportMagnitudeDirection variant tag fuses the two
+    // low-support corners (Empty + SingularSupport) into Low, the two
+    // high-support corners (SingularGap + FullCover) into High, and the
+    // strict interior (StrictPartialCover) into StrictInterior. Third and
+    // final chain-altitude sub-axis of the four-step lift trajectory the
+    // eleven prior boolean projections plus the three closed classifier
+    // rows (modality-class, support-cardinality-class, support-boundary-
+    // distance) closed — with this lift the projection carries one named
+    // cube-native seam at every one of the five altitudes / sub-axes of
+    // the fully-closed grid. The cardinality-`2` env-prefix sub-axis is
+    // the MOST DEGENERATE sub-axis in the closed grid on magnitude-
+    // direction-classifier reachability: only two of the three buckets
+    // are inhabited (Low, High); the StrictInterior bucket is vacuously
+    // unreachable (the underlying strict-partial-cover corner is itself
+    // vacuous — the strict interval [2, 0] is empty), matching the
+    // cardinality-`3` sister layer-kind sub-axis and cardinality-`3` diff-
+    // altitude two-bucket profile through the shared vacuous-strict-
+    // interior convention. Mirror peer of the just-closed sibling
+    // env_prefix_kinds_support_boundary_distance row — but SPLITS the
+    // singular pair against the sibling classifier: under the boundary-
+    // distance quotient both SingularSupport and SingularGap fold into
+    // the shared Singular bucket, making the projection COARSER at the
+    // singular pair; under the magnitude-direction quotient the two
+    // singular corners fold into DIFFERENT buckets (SingularSupport →
+    // Low, SingularGap → High), so the cardinality-`2` dual-singular
+    // collapse surfaces as a distinctive subsumption transposition
+    // `singular_gap ⇒ Low` unique to this sub-axis under this quotient. ──
+
+    #[test]
+    fn env_prefix_kinds_support_magnitude_direction_matches_env_prefix_kind_histogram_support_magnitude_direction_pointwise()
+     {
+        // Routing pin: `env_prefix_kinds_support_magnitude_direction`
+        // routes through
+        // `env_prefix_kind_histogram().support_magnitude_direction()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared cube-native primitive.
+        // Chain env-prefix sub-axis magnitude-direction-classifier lift
+        // of the "support-magnitude-direction across altitudes"
+        // projection, peer of
+        // `file_formats_support_magnitude_direction_matches_file_format_histogram_support_magnitude_direction_pointwise`
+        // and
+        // `layer_kinds_support_magnitude_direction_matches_layer_kind_histogram_support_magnitude_direction_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_support_magnitude_direction_matches_tier_histogram_support_magnitude_direction_pointwise`
+        // on the tier altitude, and
+        // `kinds_support_magnitude_direction_matches_kind_histogram_support_magnitude_direction_pointwise`
+        // on the diff altitude — closing the projection across every
+        // altitude / sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice
+                .env_prefix_kind_histogram()
+                .support_magnitude_direction();
+            assert_eq!(
+                slice.env_prefix_kinds_support_magnitude_direction(),
+                via_histogram,
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_magnitude_direction_matches_class_side_projection_pointwise() {
+        // Class-side routing pin:
+        // `env_prefix_kinds_support_magnitude_direction()` agrees with
+        // the composition of `env_prefix_kinds_support_cardinality_class()`
+        // and the class-side
+        // `SupportCardinalityClass::support_magnitude_direction`
+        // three-bucket variant-tag projection. Pins the composition
+        // through the chain env-prefix sub-axis so consumers holding
+        // either classifier reach the other without re-routing through
+        // the originating histogram. Peer of
+        // `file_formats_support_magnitude_direction_matches_class_side_projection_pointwise`
+        // and
+        // `layer_kinds_support_magnitude_direction_matches_class_side_projection_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_support_magnitude_direction_matches_class_side_projection_pointwise`
+        // on the tier altitude, and
+        // `kinds_support_magnitude_direction_matches_class_side_projection_pointwise`
+        // on the diff altitude — closing the class-side routing bridge
+        // across every altitude / sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_class = slice
+                .env_prefix_kinds_support_cardinality_class()
+                .support_magnitude_direction();
+            assert_eq!(
+                slice.env_prefix_kinds_support_magnitude_direction(),
+                via_class,
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_magnitude_direction_empty_chain_is_low_variant() {
+        // Empty-chain magnitude-direction classifier: the empty chain
+        // observes zero cells, so the underlying support-cardinality
+        // classifier lands on `SupportCardinalityClass::Empty`, which
+        // the class-side projection folds into
+        // `SupportMagnitudeDirection::Low`. Matches
+        // `AxisHistogram::support_magnitude_direction` reading Low on
+        // the empty histogram one altitude down. Peer of
+        // `file_formats_support_magnitude_direction_empty_chain_is_low_variant`
+        // and
+        // `layer_kinds_support_magnitude_direction_empty_chain_is_low_variant`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_support_magnitude_direction_empty_map_is_low_variant`
+        // on the tier altitude, and
+        // `kinds_support_magnitude_direction_empty_diff_is_low_variant`
+        // on the diff altitude. Diverges from the sibling
+        // `env_prefix_kinds_support_boundary_distance_empty_chain_is_boundary_variant`:
+        // under the orthogonal magnitude-direction quotient the empty
+        // corner folds into Low, not Boundary.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert_eq!(
+            empty.env_prefix_kinds_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::Low,
+        );
+        assert!(!empty.env_prefix_kinds_any_observed());
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_magnitude_direction_no_env_layers_is_low_variant() {
+        // Partial-function-projection pin: a non-empty chain with no
+        // env layers (only Defaults / File entries, each projecting to
+        // `None` through `ConfigSource::env_prefix_kind`) projects to
+        // the empty env-prefix histogram, so the underlying support-
+        // cardinality classifier lands on `SupportCardinalityClass::Empty`,
+        // and the class-side projection folds that into
+        // `SupportMagnitudeDirection::Low`. Distinct from
+        // `env_prefix_kinds_support_magnitude_direction_empty_chain_is_low_variant`
+        // in that the chain is non-empty at the layer level but empty
+        // at the env-prefix sub-axis after the partial-function
+        // projection. Sister of
+        // `file_formats_support_magnitude_direction_no_recognized_files_is_low_variant`
+        // — the two chain-altitude sub-axes on partial-function
+        // projections both carry the two-branch empty semantics through
+        // the shared histogram-side convention. No analog at the sister
+        // layer-kind sub-axis (where every layer projects to a `Some`
+        // cell) or at the tier / diff altitudes (whose axes are total
+        // on the observed universe). Mirror peer of the sibling
+        // `env_prefix_kinds_support_boundary_distance_no_env_layers_is_boundary_variant`
+        // on the orthogonal three-bucket quotient of the same shared
+        // `SupportCardinalityClass::Empty` corner.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(!slice.env_prefix_kinds_any_observed());
+        assert_eq!(
+            slice.env_prefix_kinds_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::Low,
+        );
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_magnitude_direction_singleton_support_prefixed_only_is_low_variant()
+    {
+        // Prefixed-only singleton-support pin: every env layer carries
+        // a non-empty prefix, so the lone observed cell is `Prefixed`
+        // and the underlying support-cardinality classifier lands on
+        // `SupportCardinalityClass::SingularSupport`, which the class-
+        // side projection folds into `SupportMagnitudeDirection::Low`.
+        // Direct witness of the subsumption
+        // `env_prefix_kinds_singular_support ⇒
+        // env_prefix_kinds_support_magnitude_direction == Low`. Peer of
+        // `file_formats_support_magnitude_direction_singleton_support_is_low_variant`
+        // and
+        // `layer_kinds_support_magnitude_direction_singleton_support_is_low_variant`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_support_magnitude_direction_singleton_support_is_low_variant`
+        // on the tier altitude, and
+        // `kinds_support_magnitude_direction_singleton_support_is_low_variant`
+        // on the diff altitude. Splits away from the sibling
+        // `env_prefix_kinds_support_boundary_distance` row where the
+        // same singleton-support fixture lands on the `Singular` near-
+        // boundary bucket together with singular-gap — under the
+        // orthogonal magnitude-direction quotient the singleton-
+        // support corner folds into Low, not Singular.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert_eq!(
+            slice.env_prefix_kinds_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::Low,
+        );
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_magnitude_direction_singleton_support_bare_only_is_low_variant() {
+        // Bare-only singleton-support pin: every env layer carries the
+        // empty prefix, so the lone observed cell is `Bare` and the
+        // underlying support-cardinality classifier lands on
+        // `SupportCardinalityClass::SingularSupport`, which the class-
+        // side projection folds into `SupportMagnitudeDirection::Low`.
+        // Mirror image of the prefixed-only pin above on the sister
+        // `Bare` cell of the cardinality-`2` env-prefix axis. Also
+        // witnesses the DISTINCTIVE cardinality-`2` splitting of the
+        // singular pair under the magnitude-direction quotient:
+        // `env_prefix_kinds_singular_gap()` fires simultaneously with
+        // `env_prefix_kinds_singular_support()` on the cardinality-`2`
+        // axis (support `1` and support `axis_cardinality - 1`
+        // coincide), the class-side bottom-boundary-first tie-break
+        // routes to `SingularSupport`, and the class-side projection
+        // folds that into `Low` — NOT `High` as the class-side
+        // `SingularGap → High` fold on cardinality-`>= 3` sister axes
+        // would target. Unlike the sibling boundary-distance
+        // projection (blind to the class-level tie-break because both
+        // `SingularSupport` and `SingularGap` fold into `Singular`),
+        // the magnitude-direction projection SPLITS the singular pair
+        // (`SingularSupport → Low`, `SingularGap → High`), so the
+        // cardinality-`2` collapse surfaces as a distinctive
+        // subsumption transposition.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert!(
+            slice.env_prefix_kinds_singular_gap(),
+            "cardinality-2 dual-singular coincidence: both bottom and \
+             top singular-boundary booleans fire on the same chain",
+        );
+        assert_eq!(
+            slice.env_prefix_kinds_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::Low,
+        );
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_magnitude_direction_uniform_two_kind_cover_is_high_variant() {
+        // Uniform axis-cover pin: a chain observing every cell of
+        // EnvMetadataTagKind at least once has the underlying support-
+        // cardinality classifier landing on
+        // `SupportCardinalityClass::FullCover`, which the class-side
+        // projection folds into `SupportMagnitudeDirection::High` —
+        // the top high-support corner of the support-cardinality
+        // interval. Peer of the histogram-side uniform-cover
+        // convention one altitude down. Cardinality-`2` counterpart
+        // diverging from the cardinality-`3` sister-sub-axis peer
+        // `layer_kinds_support_magnitude_direction_uniform_three_kind_cover_is_high_variant`
+        // (three-cell cover), the cardinality-`4` sister-sub-axis peer
+        // `file_formats_support_magnitude_direction_uniform_four_format_cover_is_high_variant`
+        // (four-cell cover), the cardinality-`4` tier-altitude peer
+        // `tiers_support_magnitude_direction_uniform_four_tier_cover_is_high_variant`,
+        // and the cardinality-`3` diff-altitude peer. Diverges from
+        // the sibling
+        // `env_prefix_kinds_support_boundary_distance_uniform_two_kind_cover_is_boundary_variant`,
+        // which folds the full-cover corner into the `Boundary` bucket
+        // together with empty — under the orthogonal magnitude-
+        // direction quotient the full-cover corner splits off into the
+        // high bucket while the empty corner drops into the low bucket.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.env_prefix_kinds_full_cover());
+        assert_eq!(
+            slice.env_prefix_kinds_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::High,
+        );
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_magnitude_direction_is_low_agrees_with_env_prefix_kinds_low_support_pointwise()
+     {
+        // Low-bucket peer-equivalence pin against the excision-based
+        // low-support boolean:
+        // `env_prefix_kinds_support_magnitude_direction().is_low() ==
+        // env_prefix_kinds_low_support()`. Both surfaces name the same
+        // `support <= 1` predicate through the shared low-support
+        // scan; holds pointwise even at the cardinality-`2` dual-
+        // singular collapse point because the low bucket coincides
+        // with the union of `Empty` and `SingularSupport` on the
+        // class-side and the low-support scan reads that same union
+        // on the histogram side. Equivalent to the general peer-
+        // equivalence law `is_low() == (!any_observed() ||
+        // singular_support())` on this sub-axis via the low-support
+        // boolean's defining-union-of-low-boundaries form. Peer of
+        // `file_formats_support_magnitude_direction_is_low_agrees_with_empty_or_singular_support_pointwise`
+        // and
+        // `layer_kinds_support_magnitude_direction_is_low_agrees_with_empty_or_singular_support_pointwise`
+        // on the sister sub-axes of the same chain altitude.
+        // Orthogonal-axis peer of the sibling
+        // `env_prefix_kinds_support_boundary_distance_is_boundary_agrees_with_empty_or_full_cover_pointwise`
+        // on the same five-corner surface — both bucket the two
+        // orthogonal three-bucket quotients around the shared
+        // StrictPartialCover middle leg.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice
+                    .env_prefix_kinds_support_magnitude_direction()
+                    .is_low(),
+                slice.env_prefix_kinds_low_support(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_magnitude_direction_is_high_agrees_with_env_prefix_kinds_high_support_pointwise()
+     {
+        // High-bucket peer-equivalence pin against the excision-based
+        // high-support boolean:
+        // `env_prefix_kinds_support_magnitude_direction().is_high() ==
+        // env_prefix_kinds_high_support()`. Both surfaces name the
+        // same excision-based `support == cardinality` predicate
+        // through the shared high-support scan — the excision short-
+        // circuits the cardinality-`2` singular-gap disjunct that
+        // would otherwise fire at support `1`. Holds pointwise even
+        // at the cardinality-`2` dual-singular collapse point.
+        // **DIVERGES from the general peer-equivalence law `is_high()
+        // == (singular_gap() || full_cover())`** that holds on every
+        // cardinality-`>= 3` sister altitude / sub-axis: on the
+        // cardinality-`2` env-prefix sub-axis, the LHS reads `false`
+        // at every singleton-support chain (class-side folds to
+        // `SingularSupport → Low`) while the naive RHS reads `true`
+        // (because `singular_gap()` fires simultaneously at the dual-
+        // singular coincidence). The excision-based
+        // `env_prefix_kinds_high_support` seam TIGHTENS the naive
+        // disjunction into the equivalence `high_support ⇔
+        // full_cover` on the cardinality-`2` axis (pinned by
+        // `env_prefix_kinds_high_support_equivalent_to_env_prefix_kinds_full_cover_pointwise`)
+        // and lines up pointwise with the class-side `is_high` peer
+        // — the reason both surfaces converge on the same
+        // cardinality-`2`-correct answer.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice
+                    .env_prefix_kinds_support_magnitude_direction()
+                    .is_high(),
+                slice.env_prefix_kinds_high_support(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_magnitude_direction_is_high_agrees_with_env_prefix_kinds_full_cover_on_cardinality_two_axis_pointwise()
+     {
+        // Cardinality-`2` tightening pin — divergence from the
+        // cardinality-`>= 3` sister-axis peer equivalence:
+        // `env_prefix_kinds_support_magnitude_direction().is_high() ==
+        // env_prefix_kinds_full_cover()` on every fixture. On the two-
+        // cell env-prefix axis the excision-based high-support corner
+        // exactly tracks the full-cover corner — the cardinality-`2`
+        // singular-gap disjunct is excised by the class-side
+        // bottom-boundary-first tie-break (support-`1` chains route
+        // to `SingularSupport → Low`, not `SingularGap → High`), so
+        // the high bucket becomes reachable only via the `FullCover`
+        // corner. Symmetric peer of the sibling
+        // `env_prefix_kinds_high_support_equivalent_to_env_prefix_kinds_full_cover_pointwise`
+        // on the excision-based high-support boolean; both surfaces
+        // reduce to the full-cover / not-full-cover partition on the
+        // two-cell axis. Cross-sub-axis divergence from
+        // `layer_kinds_full_cover_implies_layer_kinds_support_magnitude_direction_is_high_pointwise`
+        // and
+        // `file_formats_full_cover_implies_file_formats_support_magnitude_direction_is_high_pointwise`:
+        // the same equivalence does not lift to the cardinality-`3`
+        // layer-kind sub-axis (two-kind partial covers would sit on
+        // the `high ∧ !full_cover` middle interval if `singular_gap`
+        // fired without `singular_support`) or the cardinality-`4`
+        // file-format sub-axis (three-format partial covers sit on
+        // the same middle interval); the tightening is unique to the
+        // cardinality-`2` env-prefix sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice
+                .env_prefix_kinds_support_magnitude_direction()
+                .is_high();
+            let via_full = slice.env_prefix_kinds_full_cover();
+            assert_eq!(
+                via_seam, via_full,
+                "env_prefix_kinds_support_magnitude_direction().is_high() \
+                 ({via_seam}) must equal env_prefix_kinds_full_cover \
+                 ({via_full}) on the two-cell axis",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_magnitude_direction_is_strict_interior_agrees_with_env_prefix_kinds_strict_partial_cover_pointwise()
+     {
+        // Strict-interior-bucket peer-equivalence pin on the
+        // cardinality-`2` axis:
+        // `env_prefix_kinds_support_magnitude_direction().is_strict_interior()
+        // == env_prefix_kinds_strict_partial_cover()`. Both sides read
+        // `false` uniformly on the cardinality-`2` EnvMetadataTagKind
+        // axis — the strict interior `[2, cardinality - 2] = [2, 0]`
+        // is empty, so the strict-interior bucket is vacuously
+        // unreachable. Matches the shared vacuous-strict-interior
+        // convention with the cardinality-`3` sister layer-kind sub-
+        // axis peer
+        // `layer_kinds_support_magnitude_direction_is_strict_interior_agrees_with_layer_kinds_strict_partial_cover_pointwise`
+        // and cardinality-`3` diff-altitude peer. Reachability
+        // strictly advances on the cardinality-`4` file-format sub-
+        // axis and cardinality-`4` tier altitude where the peers read
+        // witnesses on the strict-interior bucket via the two-cell
+        // partial-cover fold.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice
+                    .env_prefix_kinds_support_magnitude_direction()
+                    .is_strict_interior(),
+                slice.env_prefix_kinds_strict_partial_cover(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_magnitude_direction_strict_interior_bridges_env_prefix_kinds_support_boundary_distance_strict_interior_pointwise()
+     {
+        // Shared-middle-leg pin — structural link between the two
+        // orthogonal ternary partitions of the coverage-support
+        // surface on the chain env-prefix sub-axis:
+        // `env_prefix_kinds_support_magnitude_direction().is_strict_interior()
+        // ==
+        // env_prefix_kinds_support_boundary_distance().is_strict_interior()`
+        // pointwise. Both project through the same underlying
+        // `SupportCardinalityClass::StrictPartialCover` corner — the
+        // shared middle leg of the two ternary partitions. On the
+        // cardinality-`2` env-prefix sub-axis both sides read `false`
+        // uniformly — the reachability-vacuous counterpart of the
+        // cardinality-`4` file-format sub-axis peer
+        // `file_formats_support_magnitude_direction_strict_interior_bridges_file_formats_support_boundary_distance_strict_interior_pointwise`
+        // where both sides read `true` at the two-format partial-
+        // cover witness. Matches the vacuous cardinality-`3` sister
+        // layer-kind sub-axis and cardinality-`3` diff-altitude
+        // shared-middle-leg pins.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice
+                    .env_prefix_kinds_support_magnitude_direction()
+                    .is_strict_interior(),
+                slice
+                    .env_prefix_kinds_support_boundary_distance()
+                    .is_strict_interior(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_empty_implies_env_prefix_kinds_support_magnitude_direction_is_low_pointwise()
+     {
+        // Subsumption pin: `!env_prefix_kinds_any_observed() ⇒
+        // env_prefix_kinds_support_magnitude_direction() ==
+        // SupportMagnitudeDirection::Low`. Direct pin of the class-
+        // side `Empty` → `Low` fold one altitude down. Fires on both
+        // the empty chain and every no-env-layers non-empty chain
+        // (the partial-function-projection witness). Peer of
+        // `file_formats_empty_implies_file_formats_support_magnitude_direction_is_low_pointwise`
+        // and
+        // `layer_kinds_empty_implies_layer_kinds_support_magnitude_direction_is_low_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_empty_implies_tiers_support_magnitude_direction_is_low_pointwise`
+        // on the tier altitude, and
+        // `kinds_empty_implies_kinds_support_magnitude_direction_is_low_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.env_prefix_kinds_any_observed() {
+                assert_eq!(
+                    slice.env_prefix_kinds_support_magnitude_direction(),
+                    crate::SupportMagnitudeDirection::Low,
+                    "empty env-prefix histogram must land on the Low \
+                     bucket via the SupportCardinalityClass::Empty \
+                     corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_implies_env_prefix_kinds_support_magnitude_direction_is_high_pointwise()
+     {
+        // Subsumption pin: `env_prefix_kinds_full_cover() ⇒
+        // env_prefix_kinds_support_magnitude_direction() ==
+        // SupportMagnitudeDirection::High`. Direct pin of the class-
+        // side `FullCover` → `High` fold one altitude down. Peer of
+        // `file_formats_full_cover_implies_file_formats_support_magnitude_direction_is_high_pointwise`
+        // and
+        // `layer_kinds_full_cover_implies_layer_kinds_support_magnitude_direction_is_high_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_full_cover_implies_tiers_support_magnitude_direction_is_high_pointwise`
+        // on the tier altitude, and
+        // `kinds_full_cover_implies_kinds_support_magnitude_direction_is_high_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_full_cover() {
+                assert_eq!(
+                    slice.env_prefix_kinds_support_magnitude_direction(),
+                    crate::SupportMagnitudeDirection::High,
+                    "full-cover chain must land on the High bucket via \
+                     the SupportCardinalityClass::FullCover corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_implies_env_prefix_kinds_support_magnitude_direction_is_low_pointwise()
+     {
+        // Subsumption pin: `env_prefix_kinds_singular_support() ⇒
+        // env_prefix_kinds_support_magnitude_direction() ==
+        // SupportMagnitudeDirection::Low`. Direct pin of the class-
+        // side `SingularSupport` → `Low` fold one altitude down. Peer
+        // of
+        // `file_formats_singular_support_implies_file_formats_support_magnitude_direction_is_low_pointwise`
+        // and
+        // `layer_kinds_singular_support_implies_layer_kinds_support_magnitude_direction_is_low_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_singular_support_implies_tiers_support_magnitude_direction_is_low_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_support_implies_kinds_support_magnitude_direction_is_low_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular_support() {
+                assert_eq!(
+                    slice.env_prefix_kinds_support_magnitude_direction(),
+                    crate::SupportMagnitudeDirection::Low,
+                    "singleton-support chain must land on the Low \
+                     bucket via the SingularSupport corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_implies_env_prefix_kinds_support_magnitude_direction_is_low_pointwise()
+     {
+        // **Unique cardinality-`2` subsumption transposition** — the
+        // row's most conspicuous divergence from the sibling
+        // subsumption at every cardinality-`>= 3` altitude / sub-
+        // axis: `env_prefix_kinds_singular_gap() ⇒
+        // env_prefix_kinds_support_magnitude_direction() ==
+        // SupportMagnitudeDirection::Low` (NOT `High` as at every
+        // cardinality-`>= 3` sister altitude / sub-axis). The
+        // singular-gap chain lands on the bottom singular-boundary
+        // corner `SingularSupport` by the class-side bottom-boundary-
+        // first tie-break at support `1 = axis_cardinality - 1`
+        // (pinned by
+        // `env_prefix_kinds_singular_gap_implies_env_prefix_kinds_support_cardinality_class_is_singular_support_pointwise`),
+        // which the class-side projection folds into `Low` — NOT
+        // `High` as the class-side `SingularGap → High` fold on
+        // cardinality-`>= 3` sister axes would target. **Distinguishes
+        // this classifier row from the sibling
+        // `env_prefix_kinds_support_boundary_distance` row** at the
+        // same sub-axis: the boundary-distance projection is blind to
+        // the class-level tie-break (both `SingularSupport` and
+        // `SingularGap` fold into the shared `Singular` bucket,
+        // pinned by
+        // `env_prefix_kinds_singular_gap_implies_env_prefix_kinds_support_boundary_distance_is_singular_pointwise`
+        // which RESTORES uniformity of the row across every altitude
+        // / sub-axis under the coarser three-bucket quotient), while
+        // the magnitude-direction projection SPLITS the singular pair
+        // (`SingularSupport → Low`, `SingularGap → High`), so the
+        // class-side transposition surfaces as a distinctive
+        // divergence from the `singular_gap ⇒ High` subsumption
+        // pinned on every cardinality-`>= 3` sister altitude / sub-
+        // axis. The magnitude-direction quotient is NOT COARSER at
+        // the singular pair — the unique cardinality-`2` divergence
+        // signature under this quotient.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular_gap() {
+                assert_eq!(
+                    slice.env_prefix_kinds_support_magnitude_direction(),
+                    crate::SupportMagnitudeDirection::Low,
+                    "singular-gap chain must land on the Low bucket on \
+                     the cardinality-2 axis — the class-side tie-break \
+                     routes to SingularSupport, which folds to Low \
+                     under the magnitude-direction projection (NOT to \
+                     High as the SingularGap corner would on cardinality-\
+                     >= 3 sister axes)",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_strict_partial_cover_vacuously_implies_env_prefix_kinds_support_magnitude_direction_is_strict_interior_pointwise()
+     {
+        // Vacuous-strict-interior subsumption pin — vacuously true on
+        // the cardinality-`2` EnvMetadataTagKind axis:
+        // `env_prefix_kinds_strict_partial_cover() ⇒
+        // env_prefix_kinds_support_magnitude_direction() ==
+        // SupportMagnitudeDirection::StrictInterior`. The premise
+        // never fires on the cardinality-`2` env-prefix sub-axis (the
+        // strict interval `[2, 0]` is empty), so the subsumption is
+        // vacuously true. Matches the shared vacuous-strict-interior
+        // convention with the cardinality-`3` sister layer-kind sub-
+        // axis peer
+        // `layer_kinds_strict_partial_cover_vacuously_implies_layer_kinds_support_magnitude_direction_is_strict_interior_pointwise`
+        // and cardinality-`3` diff-altitude peer; reachability
+        // strictly advances on the cardinality-`4` file-format sub-
+        // axis and cardinality-`4` tier altitude where the subsumption
+        // becomes an inhabited constraint at the two-cell partial-
+        // cover witness.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                !slice.env_prefix_kinds_strict_partial_cover(),
+                "cardinality-2 env-prefix sub-axis has vacuous strict \
+                 interior — no fixture should fire the strict-partial-\
+                 cover boolean",
+            );
+            if slice.env_prefix_kinds_strict_partial_cover() {
+                assert_eq!(
+                    slice.env_prefix_kinds_support_magnitude_direction(),
+                    crate::SupportMagnitudeDirection::StrictInterior,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_magnitude_direction_total_classification_partitions_every_fixture_pointwise()
+     {
+        // Total-classification pin: every chain lands on exactly one
+        // of the three SupportMagnitudeDirection variants (Low,
+        // StrictInterior, High) — SupportMagnitudeDirection::ALL.
+        // Direct pin of the class-side three-bucket-partition law one
+        // altitude down. Peer of
+        // `file_formats_support_magnitude_direction_total_classification_partitions_every_fixture_pointwise`
+        // and
+        // `layer_kinds_support_magnitude_direction_total_classification_partitions_every_fixture_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_support_magnitude_direction_total_classification_partitions_every_fixture_pointwise`
+        // on the tier altitude, and
+        // `kinds_support_magnitude_direction_total_classification_partitions_every_fixture_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let bucket = slice.env_prefix_kinds_support_magnitude_direction();
+            let matches: usize = crate::SupportMagnitudeDirection::ALL
+                .iter()
+                .filter(|&&v| v == bucket)
+                .count();
+            assert_eq!(
+                matches, 1,
+                "every chain must land on exactly one \
+                 SupportMagnitudeDirection variant (bucket={bucket:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_magnitude_direction_agrees_with_distinct_cells_pattern_match() {
+        // Parity against a hand-rolled `distinct_cells` pattern match:
+        // read the support cardinality and classify by the same
+        // three-way `if` chain the class-side projection folds into
+        // (Low on support `<= 1`, High on support `+ 1 >=
+        // axis_cardinality`, StrictInterior on the strict interior).
+        // Catches any future drift where either implementation stops
+        // projecting through the same `distinct_cells` primitive. Peer
+        // of
+        // `file_formats_support_magnitude_direction_agrees_with_distinct_cells_pattern_match`
+        // and
+        // `layer_kinds_support_magnitude_direction_agrees_with_distinct_cells_pattern_match`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_support_magnitude_direction_agrees_with_distinct_cells_pattern_match`
+        // on the tier altitude, and
+        // `kinds_support_magnitude_direction_agrees_with_distinct_cells_pattern_match`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_support_magnitude_direction();
+            let hist = slice.env_prefix_kind_histogram();
+            let support = hist.distinct_cells();
+            let cardinality = crate::axis_cardinality::<crate::EnvMetadataTagKind>();
+            let hand_rolled = if support <= 1 {
+                crate::SupportMagnitudeDirection::Low
+            } else if support + 1 >= cardinality {
+                crate::SupportMagnitudeDirection::High
+            } else {
+                crate::SupportMagnitudeDirection::StrictInterior
+            };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_magnitude_direction_cardinality_2_axis_never_reaches_strict_interior()
+     {
+        // **Cardinality-`2` strict-interior vacuous-unreachability
+        // signature pin** — the direct mirror of the cardinality-`3`
+        // sister layer-kind sub-axis signature pin
+        // `layer_kinds_support_magnitude_direction_cardinality_3_axis_never_reaches_strict_interior`
+        // and the cardinality-`3` diff-altitude signature pin
+        // `kinds_support_magnitude_direction_cardinality_3_axis_never_reaches_strict_interior`.
+        // On the two-cell EnvMetadataTagKind axis, the
+        // `StrictInterior` bucket is **vacuously unreachable**: the
+        // underlying strict-partial-cover corner is itself vacuous
+        // (the strict interval `[2, cardinality - 2] = [2, 0]` is
+        // empty), so no chain over EnvMetadataTagKind can inhabit it.
+        // Structural signature of the chain env-prefix sub-axis in
+        // the 5-column grid closed on this projection — the direct
+        // dual of the cardinality-`4` tier-altitude signature pin
+        // `tiers_support_magnitude_direction_cardinality_4_axis_reaches_strict_interior_variant`
+        // and the cardinality-`4` file-format sub-axis signature pin
+        // `file_formats_support_magnitude_direction_cardinality_4_axis_reaches_strict_interior_variant`.
+        // Covers every fixture in the reused set; a future refactor
+        // that accidentally routes a cardinality-`2` chain to the
+        // strict-interior bucket fails visibly.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_ne!(
+                slice.env_prefix_kinds_support_magnitude_direction(),
+                crate::SupportMagnitudeDirection::StrictInterior,
+                "cardinality-2 EnvMetadataTagKind axis has vacuous strict \
+                 interior — no chain must land on the StrictInterior \
+                 bucket",
+            );
+        }
+        // Also cover the empty-chain edge specifically.
+        let empty: [ConfigSource; 0] = [];
+        assert_ne!(
+            empty.env_prefix_kinds_support_magnitude_direction(),
+            crate::SupportMagnitudeDirection::StrictInterior,
+        );
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_magnitude_direction_only_inhabits_two_variants_on_cardinality_two_axis_pointwise()
+     {
+        // Cardinality-`2` degeneracy pin: on the cardinality-`2` env-
+        // prefix axis, only two of the three magnitude-direction
+        // buckets carry witnesses — `Low` and `High`. The strict-
+        // interior bucket `StrictInterior` is vacuously unreachable
+        // (the underlying strict-partial-cover corner is itself
+        // vacuous — the strict interval `[2, 0]` is empty), so
+        // `env_prefix_kinds_support_magnitude_direction()` always
+        // lands on one of the two degenerate buckets `Low` or `High`.
+        // Structural signature of the env-prefix sub-axis in the 5-
+        // column grid on the magnitude-direction classifier surface
+        // — matching the cardinality-`3` sister layer-kind sub-axis
+        // and cardinality-`3` diff-altitude two-bucket profile
+        // through the shared vacuous-strict-interior convention; the
+        // cardinality-`4` sister file-format sub-axis and cardinality-
+        // `4` tier altitude carry witnesses on all three buckets
+        // (adding `StrictInterior` via the two-cell partial-cover
+        // fold). Peer of the sibling
+        // `env_prefix_kinds_support_boundary_distance_only_inhabits_two_variants_on_cardinality_two_axis_pointwise`
+        // on the orthogonal three-bucket quotient of the same shared
+        // five-corner surface at the same env-prefix sub-axis — both
+        // classifiers land on exactly two of their three buckets on
+        // the cardinality-`2` axis under the shared vacuous-strict-
+        // interior convention, but SPLIT the singular pair against
+        // each other (boundary-distance folds both singular corners
+        // into `Singular`; magnitude-direction folds `SingularSupport
+        // → Low` and `SingularGap → High`, with the cardinality-`2`
+        // dual-singular collapse routing the SingularGap chain to
+        // `SingularSupport → Low` instead).
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let bucket = slice.env_prefix_kinds_support_magnitude_direction();
+            assert!(
+                matches!(
+                    bucket,
+                    crate::SupportMagnitudeDirection::Low | crate::SupportMagnitudeDirection::High,
+                ),
+                "cardinality-2 env-prefix axis must not inhabit \
+                 StrictInterior (vacuous strict interior) \
+                 (bucket={bucket:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_cardinality_class_bridges_support_magnitude_direction_pointwise() {
+        // Cross-classifier bridge pin: the support-cardinality-class
+        // classifier and the support-magnitude-direction classifier
+        // one altitude down agree pointwise through the class-side
+        // `SupportCardinalityClass::support_magnitude_direction()`
+        // projection — the histogram-side
+        // `support_magnitude_direction()` equals the class-side
+        // projection of the class-side classifier. Pins the
+        // composition through the chain env-prefix sub-axis so
+        // consumers holding either classifier reach the other without
+        // re-routing through the originating histogram. Peer of
+        // `file_formats_support_cardinality_class_bridges_support_magnitude_direction_pointwise`
+        // and
+        // `layer_kinds_support_cardinality_class_bridges_support_magnitude_direction_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_support_cardinality_class_bridges_support_magnitude_direction_pointwise`
+        // on the tier altitude, and
+        // `kinds_support_cardinality_class_bridges_support_magnitude_direction_pointwise`
+        // on the diff altitude — closing the cross-classifier bridge
+        // across every altitude / sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let class = slice.env_prefix_kinds_support_cardinality_class();
+            let via_class = class.support_magnitude_direction();
+            let via_histogram = slice
+                .env_prefix_kind_histogram()
+                .support_magnitude_direction();
+            assert_eq!(via_class, via_histogram);
         }
     }
 
