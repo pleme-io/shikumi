@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "cargo_lock_sha256": "562780d10d8a9e978a995980fea47f5f6fad965000377c0641c25face481949e",
+  "cargo_lock_sha256": "67c6321744cecd2192ca8030ffd69760283936da03b33089181eb76dd767eb87",
   "target_resolves": {
     "base": {
       "arc-swap-1.9.2": {
@@ -1165,7 +1165,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.296": {
+      "shikumi-0.1.297": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -1464,7 +1464,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "tokio-1.52.3": {
+      "tokio-1.52.4": {
         "runtime_dependencies": [
           {
             "name": "pin_project_lite",
@@ -4097,7 +4097,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.296": {
+    "shikumi-0.1.297": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
@@ -4121,7 +4121,7 @@
       "edition": "2021",
       "proc_macro": true
     },
-    "tokio-1.52.3": {
+    "tokio-1.52.4": {
       "edition": "2021"
     },
     "tokio-macros-2.7.0": {
