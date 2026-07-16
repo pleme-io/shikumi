@@ -9365,6 +9365,190 @@ impl ConfigDiff {
     pub fn kinds_modality_class(&self) -> crate::ModalityClass {
         self.kind_histogram().modality_class()
     }
+
+    /// The **closed support-cardinality corner** of this diff's
+    /// [`DiffLineKind`] histogram on the diff altitude — a single
+    /// [`crate::SupportCardinalityClass`] variant naming the corner
+    /// the diff lands on across the five-cell partition of the
+    /// `[0, axis_cardinality::<DiffLineKind>()]` support-cardinality
+    /// interval. Routes through
+    /// [`crate::AxisHistogram::support_cardinality_class`] one altitude
+    /// down: the closed-classifier projection that fuses the five
+    /// histogram-surface boolean predicates
+    /// ([`crate::AxisHistogram::is_empty`],
+    /// [`crate::AxisHistogram::has_singular_support`],
+    /// [`crate::AxisHistogram::has_strict_partial_cover`],
+    /// [`crate::AxisHistogram::has_singular_gap`],
+    /// [`crate::AxisHistogram::is_full_cover`]) into ONE typed variant
+    /// tag, with the cardinality-2 dual-singular collapse baked into
+    /// the branching priority (bottom-boundary-first).
+    ///
+    /// The **support-cardinality-class classifier peer** of the fused
+    /// `(kinds_any_observed, kinds_singular_support,
+    /// kinds_strict_partial_cover, kinds_singular_gap,
+    /// kinds_full_cover)` five-boolean coverage-support grid on the
+    /// diff altitude — the natural typed classifier every operator-
+    /// facing *"which corner of the support-cardinality interval did
+    /// this diff land on?"* summary reads off at one method call,
+    /// pattern-matched exhaustively at the consumer site so the
+    /// compiler enforces branch coverage over the five variants
+    /// ([`crate::SupportCardinalityClass::Empty`],
+    /// [`crate::SupportCardinalityClass::SingularSupport`],
+    /// [`crate::SupportCardinalityClass::StrictPartialCover`],
+    /// [`crate::SupportCardinalityClass::SingularGap`],
+    /// [`crate::SupportCardinalityClass::FullCover`]). Before this
+    /// lift, every such consumer composed a five-way `if` ladder
+    /// (`if diff.is_empty_diff() { … } else if
+    /// diff.kinds_singular_support() { … } else if
+    /// diff.kinds_strict_partial_cover() { … } else if
+    /// diff.kinds_singular_gap() { … } else { … }` — five method
+    /// calls per shape, manually ordered to disambiguate the
+    /// cardinality-2 collapse where `has_singular_support` and
+    /// `has_singular_gap` both fire on the same shape, silently
+    /// dropping a corner if a future branch was added without
+    /// updating every site). Collapsed to one method call returning a
+    /// closed enum whose variants are disjoint by construction.
+    ///
+    /// The diff-altitude support-cardinality-class classifier peer
+    /// that **seeds the "support-cardinality-class across altitudes"
+    /// projection** — the natural next classifier row after the just-
+    /// closed [`Self::kinds_modality_class`] projection. Where the
+    /// modality-class classifier fuses the four-primitive
+    /// multiplicity boolean algebra plus the empty-histogram boundary
+    /// into one variant on the modal / antimodal surface, this
+    /// classifier fuses the five-primitive coverage-support boolean
+    /// algebra (`is_empty`, `has_singular_support`,
+    /// `has_strict_partial_cover`, `has_singular_gap`, `is_full_cover`)
+    /// into one variant on the *orthogonal* support-cardinality
+    /// surface. Together the two classifiers name the two closed-
+    /// classifier projections on the histogram: modal / antimodal
+    /// shape via [`Self::kinds_modality_class`] and support-
+    /// cardinality corner via [`Self::kinds_support_cardinality_class`].
+    /// The natural next lifts climb to the tier altitude
+    /// (`ProvenanceMap::tiers_support_cardinality_class` over
+    /// [`Self::tier_histogram`]) and sideways along the chain
+    /// altitude's three sub-axes
+    /// (`ConfigSourceChain::layer_kinds_support_cardinality_class`,
+    /// `ConfigSourceChain::file_formats_support_cardinality_class`,
+    /// `ConfigSourceChain::env_prefix_kinds_support_cardinality_class`
+    /// over the corresponding chain histograms). Once climbed and
+    /// closed at every altitude / sub-axis in the same five-step
+    /// trajectory the ten prior boolean projections plus the modality-
+    /// class classifier row closed, the substrate closes the full
+    /// support-cardinality-class classifier surface at every altitude
+    /// / sub-axis of the 5-column grid.
+    ///
+    /// **Total classification.** Every diff lands on exactly one of
+    /// the five [`crate::SupportCardinalityClass`] variants — the
+    /// classification is total and disjoint by construction over
+    /// [`crate::SupportCardinalityClass::ALL`]. Direct pin of the
+    /// histogram-side total-partition law one altitude down.
+    ///
+    /// **Cardinality-`3` reachability at the diff altitude.**
+    /// [`DiffLineKind`] carries three cells, so
+    /// `kinds_support_cardinality_class()` reads witnesses on four of
+    /// the five variants — [`crate::SupportCardinalityClass::Empty`]
+    /// on the empty diff, [`crate::SupportCardinalityClass::SingularSupport`]
+    /// on every singleton-support diff (support cardinality `1`),
+    /// [`crate::SupportCardinalityClass::SingularGap`] on every two-
+    /// kind partial-cover diff (support cardinality `2 = 3 - 1`), and
+    /// [`crate::SupportCardinalityClass::FullCover`] on every uniform
+    /// three-kind cover (support cardinality `3`). The strict-interior
+    /// variant [`crate::SupportCardinalityClass::StrictPartialCover`]
+    /// is **vacuously unreachable** on the cardinality-`3` axis — the
+    /// strict interval `[2, cardinality - 2] = [2, 1]` is empty, so
+    /// no diff lands on the strict-interior corner. Matches the
+    /// vacuous-strict-interior convention shared with
+    /// [`Self::kinds_strict_partial_cover`] one seam over.
+    ///
+    /// **Empty-diff convention** — returns
+    /// [`crate::SupportCardinalityClass::Empty`] on the empty diff:
+    /// zero observed cells, so `distinct_cells()` reads `0` and the
+    /// classifier lands on the empty-boundary corner. Matches
+    /// [`crate::AxisHistogram::support_cardinality_class`]'s empty-
+    /// histogram convention one altitude down.
+    ///
+    /// **Singleton-support convention** — returns
+    /// [`crate::SupportCardinalityClass::SingularSupport`] on every
+    /// diff whose observed support is a single [`DiffLineKind`]: one
+    /// observed cell means `distinct_cells()` reads `1` and the
+    /// classifier lands on the bottom singular-boundary corner.
+    /// Direct pin of the histogram-side subsumption
+    /// `has_singular_support ⇒ support_cardinality_class ==
+    /// SingularSupport` one altitude down.
+    ///
+    /// **Uniform three-kind axis-cover convention** — returns
+    /// [`crate::SupportCardinalityClass::FullCover`] on every diff
+    /// observing every cell of [`DiffLineKind`] at least once: three
+    /// observed cells means `distinct_cells()` reads `3` and the
+    /// classifier lands on the full-cover corner.
+    ///
+    /// # Invariants
+    ///
+    /// - `kinds_support_cardinality_class() ==
+    ///   kind_histogram().support_cardinality_class()` — both project
+    ///   the same variant off the same primitive; the named seam is
+    ///   the cube-native routing of the histogram surface.
+    /// - `kinds_support_cardinality_class().is_empty() ==
+    ///   !kinds_any_observed()` — the empty-variant peer of the diff-
+    ///   altitude "any observed" predicate; the classifier's empty-
+    ///   boundary variant coincides with the empty-diff row of the
+    ///   coverage-support boolean grid.
+    /// - `kinds_support_cardinality_class().is_singular_support() ==
+    ///   kinds_singular_support()` — the singleton-support peer of
+    ///   the diff-altitude boolean on cardinality-`>= 3` axes (the
+    ///   full [`DiffLineKind`] axis). Both read `false` on the empty
+    ///   diff.
+    /// - `kinds_support_cardinality_class().is_singular_gap() ==
+    ///   kinds_singular_gap()` — the singular-gap peer of the diff-
+    ///   altitude boolean on cardinality-`>= 3` axes. Both read
+    ///   `false` on the empty diff.
+    /// - `kinds_support_cardinality_class().is_full_cover() ==
+    ///   kinds_full_cover()` — the full-cover peer of the diff-
+    ///   altitude boolean.
+    /// - `kinds_support_cardinality_class().is_strict_partial_cover() ==
+    ///   kinds_strict_partial_cover()` — the strict-interior peer of
+    ///   the diff-altitude boolean. Both read `false` uniformly on
+    ///   the cardinality-`3` [`DiffLineKind`] axis (the strict
+    ///   interior is vacuously empty), matching the shared
+    ///   vacuous-strict-interior convention.
+    /// - `kinds_support_cardinality_class().is_partial_cover() ==
+    ///   kinds_partial_cover()` — the compound-partial-cover peer via
+    ///   the class-side [`crate::SupportCardinalityClass::is_partial_cover`]
+    ///   projection; both read the "some but not all observed" middle
+    ///   leg of the coverage trichotomy.
+    /// - `kinds_singular_support() ⇒ kinds_support_cardinality_class() ==
+    ///   SupportCardinalityClass::SingularSupport` — every singleton-
+    ///   support diff lands on the bottom singular-boundary corner.
+    ///   Direct pin of the histogram-side subsumption one altitude
+    ///   down.
+    /// - `kinds_full_cover() ⇒ kinds_support_cardinality_class() ==
+    ///   SupportCardinalityClass::FullCover` — every full-cover diff
+    ///   lands on the full-cover corner.
+    /// - `kinds_singular_gap() ⇒ kinds_support_cardinality_class() ==
+    ///   SupportCardinalityClass::SingularGap` — every singular-gap
+    ///   diff lands on the top singular-boundary corner (reachable on
+    ///   the cardinality-`3` axis where `axis_cardinality - 1 == 2`).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the
+    /// distinct-cells scan). Both are `O(n)` in practice since the
+    /// diff-cell axis carries a fixed three-cell cardinality; the
+    /// returned [`crate::SupportCardinalityClass`] fits in a `u8`
+    /// discriminant, so the classifier reads off one four-way `if`
+    /// chain over the fused distinct-cells scalar — no allocation, no
+    /// per-cell branching after the support cardinality is built.
+    /// Strictly tighter than the five-way `if` ladder over the five
+    /// histogram-surface boolean predicates the consumer would
+    /// otherwise write (five separate short-circuiting scans, or one
+    /// fused distinct-cells scan plus the cardinality-2 collapse
+    /// disambiguation).
+    #[must_use]
+    pub fn kinds_support_cardinality_class(&self) -> crate::SupportCardinalityClass {
+        self.kind_histogram().support_cardinality_class()
+    }
 }
 
 #[cfg(test)]
@@ -17731,6 +17915,327 @@ mod tests {
                 _ => crate::ModalityClass::TiedModalTiedAntimodal,
             };
             assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ConfigDiff::kinds_support_cardinality_class — support-cardinality classifier on the diff altitude ──
+
+    #[test]
+    fn kinds_support_cardinality_class_matches_kind_histogram_support_cardinality_class_pointwise()
+    {
+        // Routing pin: `kinds_support_cardinality_class` routes through
+        // `kind_histogram().support_cardinality_class()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Diff-
+        // altitude support-cardinality-class classifier seed of the new
+        // "support-cardinality-class across altitudes" projection — the
+        // natural next classifier row on top of the closed modality-
+        // class classifier row.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().support_cardinality_class();
+            assert_eq!(diff.kinds_support_cardinality_class(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kinds_support_cardinality_class_empty_diff_is_empty_variant() {
+        // Empty-diff support-cardinality classifier: the empty diff has
+        // no observed cells, so `distinct_cells` reads `0` and the
+        // classifier lands on SupportCardinalityClass::Empty. Matches
+        // `AxisHistogram::support_cardinality_class` reading Empty on
+        // the empty histogram one altitude down.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert_eq!(
+            empty.kinds_support_cardinality_class(),
+            crate::SupportCardinalityClass::Empty,
+        );
+        assert!(!empty.kinds_any_observed());
+    }
+
+    #[test]
+    fn kinds_support_cardinality_class_singleton_support_is_singular_support_variant() {
+        // Singleton-support pin: a diff with lines only of a single
+        // kind has `distinct_cells` reading `1`, so the classifier
+        // lands on SupportCardinalityClass::SingularSupport. Direct
+        // witness of the subsumption `kinds_singular_support ⇒
+        // kinds_support_cardinality_class == SingularSupport`.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Added("a1".into()), DiffLine::Added("a2".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 1);
+        assert!(diff.kinds_singular_support());
+        assert_eq!(
+            diff.kinds_support_cardinality_class(),
+            crate::SupportCardinalityClass::SingularSupport,
+        );
+    }
+
+    #[test]
+    fn kinds_support_cardinality_class_two_kind_partial_cover_is_singular_gap_variant() {
+        // Two-kind partial-cover pin: a diff of one `Removed` + one
+        // `Added` observes two of the three cells (support `2 = 3 - 1`),
+        // so `distinct_cells` reads `axis_cardinality - 1` and the
+        // classifier lands on SupportCardinalityClass::SingularGap on
+        // the cardinality-3 [`DiffLineKind`] axis.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert_eq!(diff.present_kinds().len(), 2);
+        assert!(diff.kinds_singular_gap());
+        assert_eq!(
+            diff.kinds_support_cardinality_class(),
+            crate::SupportCardinalityClass::SingularGap,
+        );
+    }
+
+    #[test]
+    fn kinds_support_cardinality_class_uniform_three_kind_cover_is_full_cover_variant() {
+        // Uniform axis-cover pin: a diff observing every cell of
+        // DiffLineKind at least once has `distinct_cells` reading
+        // `axis_cardinality::<DiffLineKind>() == 3`, so the classifier
+        // lands on SupportCardinalityClass::FullCover. Peer of the
+        // histogram-side uniform-cover convention one altitude down.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kinds_full_cover());
+        assert_eq!(
+            diff.kinds_support_cardinality_class(),
+            crate::SupportCardinalityClass::FullCover,
+        );
+    }
+
+    #[test]
+    fn kinds_support_cardinality_class_is_empty_agrees_with_not_kinds_any_observed_pointwise() {
+        // Empty-variant peer-equivalence pin:
+        // `kinds_support_cardinality_class().is_empty() ==
+        // !kinds_any_observed()`. The classifier's empty-boundary
+        // variant coincides with the empty-diff row of the coverage-
+        // support boolean grid.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kinds_support_cardinality_class().is_empty(),
+                !diff.kinds_any_observed(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_support_cardinality_class_is_singular_support_agrees_with_kinds_singular_support_pointwise()
+     {
+        // Singular-support peer-equivalence pin on the cardinality-3
+        // axis: `kinds_support_cardinality_class().is_singular_support()
+        // == kinds_singular_support()`. Holds pointwise on cardinality-
+        // `>= 3` axes (the [`DiffLineKind`] axis); the cardinality-2
+        // dual-singular collapse does not apply.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kinds_support_cardinality_class().is_singular_support(),
+                diff.kinds_singular_support(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_support_cardinality_class_is_singular_gap_agrees_with_kinds_singular_gap_pointwise() {
+        // Singular-gap peer-equivalence pin on the cardinality-3 axis:
+        // `kinds_support_cardinality_class().is_singular_gap() ==
+        // kinds_singular_gap()`. Holds pointwise on cardinality-`>= 3`
+        // axes; the cardinality-2 dual-singular collapse does not
+        // apply.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kinds_support_cardinality_class().is_singular_gap(),
+                diff.kinds_singular_gap(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_support_cardinality_class_is_full_cover_agrees_with_kinds_full_cover_pointwise() {
+        // Full-cover peer-equivalence pin:
+        // `kinds_support_cardinality_class().is_full_cover() ==
+        // kinds_full_cover()`. Holds pointwise on every axis.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kinds_support_cardinality_class().is_full_cover(),
+                diff.kinds_full_cover(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_support_cardinality_class_is_strict_partial_cover_agrees_with_kinds_strict_partial_cover_pointwise()
+     {
+        // Strict-partial-cover peer-equivalence pin. On the cardinality-
+        // 3 [`DiffLineKind`] axis the strict interior is *vacuously
+        // empty* (support interval `[2, 1]`), so both sides read
+        // `false` uniformly across every fixture — pinned as the
+        // vacuous-strict-interior shared convention with
+        // `kinds_strict_partial_cover` one seam over.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kinds_support_cardinality_class()
+                    .is_strict_partial_cover(),
+                diff.kinds_strict_partial_cover(),
+            );
+            assert!(
+                !diff
+                    .kinds_support_cardinality_class()
+                    .is_strict_partial_cover(),
+                "cardinality-3 DiffLineKind axis: StrictPartialCover \
+                 variant is vacuously unreachable",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_support_cardinality_class_is_partial_cover_agrees_with_kinds_partial_cover_pointwise()
+    {
+        // Compound-partial-cover peer-equivalence pin via the class-
+        // side `SupportCardinalityClass::is_partial_cover` projection:
+        // `kinds_support_cardinality_class().is_partial_cover() ==
+        // kinds_partial_cover()`. Cross-surface bridge between the
+        // typed classifier and the diff-altitude compound-boolean peer
+        // of the coverage trichotomy's middle leg.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kinds_support_cardinality_class().is_partial_cover(),
+                diff.kinds_partial_cover(),
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_singular_support_implies_kinds_support_cardinality_class_is_singular_support_pointwise()
+     {
+        // Subsumption pin: `kinds_singular_support() ⇒
+        // kinds_support_cardinality_class() ==
+        // SupportCardinalityClass::SingularSupport` always on the
+        // cardinality-`>= 3` axis. Direct pin of the histogram-side
+        // subsumption one altitude down.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular_support() {
+                assert_eq!(
+                    diff.kinds_support_cardinality_class(),
+                    crate::SupportCardinalityClass::SingularSupport,
+                    "singular-support diff must land on the \
+                     SingularSupport classifier corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_gap_implies_kinds_support_cardinality_class_is_singular_gap_pointwise() {
+        // Subsumption pin: `kinds_singular_gap() ⇒
+        // kinds_support_cardinality_class() ==
+        // SupportCardinalityClass::SingularGap` always on the
+        // cardinality-`>= 3` axis. Direct pin of the histogram-side
+        // subsumption one altitude down.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular_gap() {
+                assert_eq!(
+                    diff.kinds_support_cardinality_class(),
+                    crate::SupportCardinalityClass::SingularGap,
+                    "singular-gap diff must land on the SingularGap \
+                     classifier corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_full_cover_implies_kinds_support_cardinality_class_is_full_cover_pointwise() {
+        // Subsumption pin: `kinds_full_cover() ⇒
+        // kinds_support_cardinality_class() ==
+        // SupportCardinalityClass::FullCover` always. Direct pin of the
+        // histogram-side subsumption one altitude down.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_full_cover() {
+                assert_eq!(
+                    diff.kinds_support_cardinality_class(),
+                    crate::SupportCardinalityClass::FullCover,
+                    "full-cover diff must land on the FullCover \
+                     classifier corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_support_cardinality_class_total_classification_partitions_every_fixture_pointwise() {
+        // Total-classification pin: every diff lands on exactly one of
+        // the five SupportCardinalityClass variants (Empty,
+        // SingularSupport, StrictPartialCover, SingularGap, FullCover)
+        // — SupportCardinalityClass::ALL. Direct pin of the histogram-
+        // side total-partition law one altitude down.
+        for diff in dominant_kind_fixtures() {
+            let class = diff.kinds_support_cardinality_class();
+            let matches: usize = crate::SupportCardinalityClass::ALL
+                .iter()
+                .filter(|&&v| v == class)
+                .count();
+            assert_eq!(
+                matches, 1,
+                "every diff must land on exactly one \
+                 SupportCardinalityClass variant (class={class:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn kinds_support_cardinality_class_agrees_with_distinct_cells_pattern_match() {
+        // Parity against the exact hand-rolled `distinct_cells` pattern
+        // match this lift replaces: read the support cardinality and
+        // classify by the same four-way `if` chain (with the cardinality-
+        // 2 collapse baked into the ordering priority) the histogram-
+        // side classifier lands on. Catches any future drift where
+        // either implementation stops projecting through the same
+        // `distinct_cells` primitive.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kinds_support_cardinality_class();
+            let hist = diff.kind_histogram();
+            let support = hist.distinct_cells();
+            let cardinality = crate::axis_cardinality::<DiffLineKind>();
+            let hand_rolled = if support == 0 {
+                crate::SupportCardinalityClass::Empty
+            } else if support == cardinality {
+                crate::SupportCardinalityClass::FullCover
+            } else if support == 1 {
+                crate::SupportCardinalityClass::SingularSupport
+            } else if support + 1 == cardinality {
+                crate::SupportCardinalityClass::SingularGap
+            } else {
+                crate::SupportCardinalityClass::StrictPartialCover
+            };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn kinds_support_cardinality_class_bridges_support_boundary_distance_pointwise() {
+        // Cross-classifier bridge pin: the support-cardinality-class
+        // classifier and the support-boundary-distance classifier one
+        // altitude down agree pointwise through the class-side
+        // `SupportCardinalityClass::support_boundary_distance()`
+        // projection — the histogram-side
+        // `support_boundary_distance()` equals the class-side
+        // projection of the class-side classifier. Pins the composition
+        // through the diff altitude so consumers holding either
+        // classifier reach the other without re-routing through the
+        // originating histogram.
+        for diff in dominant_kind_fixtures() {
+            let class = diff.kinds_support_cardinality_class();
+            let via_class = class.support_boundary_distance();
+            let via_histogram = diff.kind_histogram().support_boundary_distance();
+            assert_eq!(via_class, via_histogram);
         }
     }
 
