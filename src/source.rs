@@ -14848,6 +14848,258 @@ pub trait ConfigSourceChain {
     {
         self.env_prefix_kind_histogram().modality_class()
     }
+
+    /// Returns the closed support-cardinality corner variant for this
+    /// chain's observed [`EnvMetadataTagKind`] histogram — the
+    /// **coverage-support classifier** on the env-prefix sub-axis of
+    /// the chain altitude, the fused five-corner variant tag that
+    /// discriminates every support-cardinality landing on the closed
+    /// interval `[0, axis_cardinality::<EnvMetadataTagKind>()]`
+    /// (empty, singular-support, strict-interior, singular-gap,
+    /// full-cover) at one method call. Routes through
+    /// [`crate::AxisHistogram::support_cardinality_class`] one altitude
+    /// down: the closed-classifier projection that fuses the five
+    /// histogram-surface boolean predicates
+    /// ([`Self::env_prefix_kinds_any_observed`] inverse,
+    /// [`Self::env_prefix_kinds_singular_support`],
+    /// [`Self::env_prefix_kinds_strict_partial_cover`],
+    /// [`Self::env_prefix_kinds_singular_gap`],
+    /// [`Self::env_prefix_kinds_full_cover`]) into ONE typed variant tag
+    /// on the five-corner [`crate::SupportCardinalityClass`] classifier,
+    /// with the cardinality-2 dual-singular collapse baked into the
+    /// branching priority (bottom-boundary-first).
+    ///
+    /// The chain-altitude env-prefix sub-axis coverage-support
+    /// classifier peer that **closes the "support-cardinality-class
+    /// across altitudes" projection** at the fifth and final altitude /
+    /// sub-axis of the fully-closed 5-column grid. Seeded on the diff
+    /// altitude by [`crate::ConfigDiff::kinds_support_cardinality_class`],
+    /// climbed to the tier altitude by
+    /// [`crate::ProvenanceMap::tiers_support_cardinality_class`], lifted
+    /// sideways to the first chain-altitude sub-axis by
+    /// [`Self::layer_kinds_support_cardinality_class`], lifted sideways
+    /// to the second chain-altitude sub-axis by
+    /// [`Self::file_formats_support_cardinality_class`], and now lifted
+    /// sideways to the third and final chain-altitude sub-axis — closing
+    /// the four-step lift trajectory that the eleven prior boolean
+    /// projections plus the closed modality-class classifier row
+    /// followed to closure across the fully-closed 5-column grid.
+    /// Coverage-support classifier row on top of the closed five-
+    /// primitive coverage-support boolean algebra
+    /// ([`Self::env_prefix_kinds_any_observed`],
+    /// [`Self::env_prefix_kinds_singular_support`],
+    /// [`Self::env_prefix_kinds_strict_partial_cover`],
+    /// [`Self::env_prefix_kinds_singular_gap`],
+    /// [`Self::env_prefix_kinds_full_cover`]) at the chain env-prefix
+    /// sub-axis — with this lift the "support-cardinality-class across
+    /// altitudes" projection carries one named cube-native seam at
+    /// every one of the five altitudes / sub-axes (diff, tier, and all
+    /// three chain sub-axes) of the fully-closed grid.
+    ///
+    /// **Total classification.** Every chain lands on exactly one of
+    /// the five [`crate::SupportCardinalityClass`] variants — the
+    /// classification is total and disjoint by construction over
+    /// [`crate::SupportCardinalityClass::ALL`]. Direct pin of the
+    /// histogram-side total-partition law one altitude down.
+    ///
+    /// **Cardinality-`2` reachability at the env-prefix sub-axis —
+    /// only three of the five classifier corners are inhabited (the
+    /// most degenerate sub-axis of the closed 5-column grid on
+    /// coverage-support-classifier reachability).**
+    /// [`EnvMetadataTagKind`] carries two cells, so
+    /// `env_prefix_kinds_support_cardinality_class()` reads witnesses
+    /// on three of the five variants:
+    /// [`crate::SupportCardinalityClass::Empty`] on the empty chain
+    /// *and* on every non-empty chain projecting to an empty env-prefix
+    /// histogram (support `0`, the partial-function-projection
+    /// witness);
+    /// [`crate::SupportCardinalityClass::SingularSupport`] on every
+    /// singleton-support chain (support `1 = cardinality - 1`);
+    /// [`crate::SupportCardinalityClass::FullCover`] on every uniform
+    /// two-kind cover (support `2`). The strict-interior variant
+    /// [`crate::SupportCardinalityClass::StrictPartialCover`] is
+    /// **vacuously unreachable** on the cardinality-`2` axis — the
+    /// strict interval `[2, cardinality - 2] = [2, 0]` is empty. The
+    /// top singular-boundary variant
+    /// [`crate::SupportCardinalityClass::SingularGap`] is
+    /// **collapsed onto the bottom** by the classifier's bottom-
+    /// boundary-first tie-break — at support `1` on the cardinality-2
+    /// axis both `has_singular_support` and `has_singular_gap` fire
+    /// simultaneously (support `1` and support `axis_cardinality - 1`
+    /// coincide at the unique two-cell coincidence pinned on
+    /// [`Self::env_prefix_kinds_singular_gap`]), so the classifier's
+    /// branching priority routes support `1` to `SingularSupport`,
+    /// leaving `SingularGap` uninhabited on this sub-axis.
+    /// Structural signature of the env-prefix sub-axis in the 5-column
+    /// grid — unique to the cardinality-`2` sub-axis; the
+    /// cardinality-`3` sister layer-kind sub-axis and cardinality-`3`
+    /// diff altitude carry the top singular-boundary `SingularGap`
+    /// corner non-vacuously (the two-cell partial-cover witness), and
+    /// the cardinality-`4` file-format sub-axis and cardinality-`4`
+    /// tier altitude carry both the `SingularGap` corner and the
+    /// strict-interior `StrictPartialCover` corner non-vacuously.
+    ///
+    /// **Empty-chain / empty-env-prefix-histogram convention** —
+    /// returns [`crate::SupportCardinalityClass::Empty`] on the empty
+    /// chain and on every non-empty chain whose env-prefix histogram
+    /// is empty (no [`ConfigSource::Env`] entry). Peer of
+    /// [`Self::env_prefix_kinds_any_observed`] inverse: the
+    /// classifier's empty-boundary variant coincides with the empty-
+    /// env-prefix-histogram row of the coverage-support boolean grid.
+    /// Sister of the same partial-function-projection divergence at
+    /// the file-format sub-axis pinned at
+    /// [`Self::file_formats_support_cardinality_class`] — the two
+    /// chain-altitude sub-axes on partial-function projections
+    /// (file-format via unrecognized extensions, env-prefix via
+    /// `Defaults`/`File` layers) both carry the two-branch empty
+    /// semantics through the shared histogram-side convention. No
+    /// analog at the sister layer-kind sub-axis (where every layer
+    /// projects to a `Some` cell) or at the tier / diff altitudes
+    /// (whose axes are total on the observed universe).
+    ///
+    /// **Singleton-support convention** — returns
+    /// [`crate::SupportCardinalityClass::SingularSupport`] on every
+    /// chain whose observed support is a single [`EnvMetadataTagKind`]
+    /// cell (prefixed-only or bare-only): one observed cell means
+    /// `distinct_cells` reads `1` and the classifier lands on the
+    /// bottom singular-boundary corner. Direct pin of the histogram-
+    /// side subsumption `has_singular_support ⇒
+    /// support_cardinality_class == SingularSupport` one altitude down,
+    /// and peer of the diff-altitude, tier-altitude, chain layer-kind
+    /// sub-axis, and chain file-format sub-axis subsumptions pinned by
+    /// [`crate::ConfigDiff::kinds_support_cardinality_class`],
+    /// [`crate::ProvenanceMap::tiers_support_cardinality_class`],
+    /// [`Self::layer_kinds_support_cardinality_class`], and
+    /// [`Self::file_formats_support_cardinality_class`]. On the
+    /// cardinality-`2` env-prefix axis this variant also absorbs every
+    /// chain firing [`Self::env_prefix_kinds_singular_gap`] — the dual-
+    /// singular collapse.
+    ///
+    /// **Uniform two-kind axis-cover convention** — returns
+    /// [`crate::SupportCardinalityClass::FullCover`] on every chain
+    /// observing both [`EnvMetadataTagKind`] cells at least once: two
+    /// observed cells means `distinct_cells` reads `2 = axis_cardinality`
+    /// and the classifier lands on the full-cover corner. Peer of the
+    /// histogram-side uniform-cover convention one altitude down.
+    ///
+    /// # Invariants
+    ///
+    /// - `env_prefix_kinds_support_cardinality_class() ==
+    ///   env_prefix_kind_histogram().support_cardinality_class()` —
+    ///   both project the same variant off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `env_prefix_kinds_support_cardinality_class().is_empty() ==
+    ///   !env_prefix_kinds_any_observed()` — the empty-variant peer of
+    ///   the chain env-prefix sub-axis "any observed" predicate; the
+    ///   classifier's empty-boundary variant coincides with the empty-
+    ///   env-prefix-histogram row of the coverage-support boolean grid
+    ///   (fires on both the empty chain and every no-env-layers non-
+    ///   empty chain).
+    /// - `env_prefix_kinds_support_cardinality_class().is_singular_support()
+    ///   == env_prefix_kinds_singular_support()` — the singleton-
+    ///   support peer of the chain env-prefix sub-axis boolean; on the
+    ///   cardinality-`2` axis the classifier's bottom-boundary-first
+    ///   tie-break routes every singular-support chain to
+    ///   `SingularSupport`, so the peer-equivalence holds pointwise
+    ///   even though the sibling `has_singular_gap` also fires on the
+    ///   same chain.
+    /// - `env_prefix_kinds_support_cardinality_class().is_full_cover()
+    ///   == env_prefix_kinds_full_cover()` — the full-cover peer of the
+    ///   chain env-prefix sub-axis boolean.
+    /// - `env_prefix_kinds_support_cardinality_class().is_strict_partial_cover()
+    ///   == env_prefix_kinds_strict_partial_cover()` — the strict-
+    ///   interior peer of the chain env-prefix sub-axis boolean. Both
+    ///   read `false` uniformly on the cardinality-`2`
+    ///   [`EnvMetadataTagKind`] axis (the strict interior `[2, 0]` is
+    ///   vacuously empty), matching the shared vacuous-strict-interior
+    ///   convention.
+    /// - `env_prefix_kinds_support_cardinality_class().is_partial_cover()
+    ///   == env_prefix_kinds_partial_cover()` — the compound-partial-
+    ///   cover peer via the class-side
+    ///   [`crate::SupportCardinalityClass::is_partial_cover`]
+    ///   projection; both read the "some but not all observed" middle
+    ///   leg of the coverage trichotomy. On the cardinality-`2` axis
+    ///   the middle leg collapses onto the single `SingularSupport`
+    ///   variant — the two boundary corners of the coverage
+    ///   trichotomy `Empty` / `FullCover` bracket exactly one middle
+    ///   variant.
+    /// - `env_prefix_kinds_support_cardinality_class().is_singular_gap()
+    ///   == false` uniformly on the cardinality-`2` env-prefix axis —
+    ///   the top singular-boundary variant `SingularGap` is
+    ///   **collapsed onto** the bottom singular-boundary variant
+    ///   `SingularSupport` by the classifier's bottom-boundary-first
+    ///   tie-break. Direct evidence of the cardinality-2 dual-singular
+    ///   collapse: at support `1` both `has_singular_support` and
+    ///   `has_singular_gap` fire simultaneously (support `1` and
+    ///   support `axis_cardinality - 1` coincide), and the branching
+    ///   priority routes the classifier to `SingularSupport`.
+    ///   **Diverges from** the histogram-side `singular_gap` boolean
+    ///   at every singular-support chain — the peer-equivalence law
+    ///   `is_singular_gap() == singular_gap()` that holds on
+    ///   cardinality-`>= 3` sister axes FAILS on this cardinality-`2`
+    ///   axis at the collapse point. Unique to the env-prefix sub-axis
+    ///   in the 5-column grid.
+    /// - `env_prefix_kinds_singular_support() ⇒
+    ///   env_prefix_kinds_support_cardinality_class() ==
+    ///   SupportCardinalityClass::SingularSupport` — every singleton-
+    ///   support chain lands on the bottom singular-boundary corner.
+    ///   Direct pin of the histogram-side subsumption one altitude
+    ///   down.
+    /// - `env_prefix_kinds_singular_gap() ⇒
+    ///   env_prefix_kinds_support_cardinality_class() ==
+    ///   SupportCardinalityClass::SingularSupport` on the cardinality-
+    ///   `2` env-prefix axis — the singular-gap chain (support `1 =
+    ///   axis_cardinality - 1`) collapses onto the bottom singular-
+    ///   boundary corner by the dual-singular tie-break, **not** onto
+    ///   the top `SingularGap` corner as on cardinality-`>= 3` sister
+    ///   axes. Unique cardinality-`2` subsumption transposition on the
+    ///   env-prefix sub-axis — the row's most conspicuous divergence
+    ///   from every sibling altitude / sub-axis in the projection.
+    /// - `env_prefix_kinds_full_cover() ⇒
+    ///   env_prefix_kinds_support_cardinality_class() ==
+    ///   SupportCardinalityClass::FullCover` — every full-cover chain
+    ///   lands on the full-cover corner.
+    /// - `env_prefix_kinds_strict_partial_cover() ⇒
+    ///   env_prefix_kinds_support_cardinality_class() ==
+    ///   SupportCardinalityClass::StrictPartialCover` — vacuously true
+    ///   on the cardinality-`2` axis (the premise never fires because
+    ///   the strict interval `[2, 0]` is empty).
+    /// - `env_prefix_kinds_support_cardinality_class() ∈
+    ///   { SupportCardinalityClass::Empty,
+    ///     SupportCardinalityClass::SingularSupport,
+    ///     SupportCardinalityClass::FullCover }` always on the
+    ///   cardinality-`2` env-prefix axis — the top singular-boundary
+    ///   corner `SingularGap` (collapsed) and the strict-interior
+    ///   corner `StrictPartialCover` (vacuous) both carry no witness.
+    ///   Cardinality-`2` degeneracy pin unique to the env-prefix sub-
+    ///   axis in the 5-column grid, matching the shape of the sibling
+    ///   modality-class classifier degeneracy pinned at
+    ///   [`Self::env_prefix_kinds_modality_class`] on the orthogonal
+    ///   modality-quotient surface at the same sub-axis (three of the
+    ///   five modality-class corners inhabited on the same
+    ///   cardinality-`2` axis).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::EnvMetadataTagKind>()`
+    /// (the distinct-cells scan). Both are `O(n)` in practice since the
+    /// env-prefix axis carries a fixed two-cell cardinality; the
+    /// returned [`crate::SupportCardinalityClass`] fits in a `u8`
+    /// discriminant, so the classifier reads off one four-way `if`
+    /// chain over the fused distinct-cells scalar — no allocation, no
+    /// per-cell branching after the support cardinality is built.
+    /// Strictly tighter than the five-way `if` ladder over the five
+    /// histogram-surface boolean predicates the consumer would
+    /// otherwise write, and the compiler enforces exhaustive `match`
+    /// coverage over the returned variant tag at every consumer site.
+    #[must_use]
+    fn env_prefix_kinds_support_cardinality_class(&self) -> crate::SupportCardinalityClass
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().support_cardinality_class()
+    }
 }
 
 impl ConfigSourceChain for [ConfigSource] {
@@ -44545,6 +44797,695 @@ mod tests {
                 _ => crate::ModalityClass::TiedModalTiedAntimodal,
             };
             assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::env_prefix_kinds_support_cardinality_class —
+    //      coverage-support classifier lift sideways to the chain env-
+    //      prefix sub-axis, CLOSING the "support-cardinality-class across
+    //      altitudes" projection at the fifth and final altitude / sub-
+    //      axis of the fully-closed 5-column grid ----
+    //
+    // Chain-altitude env-prefix sub-axis lift of the support-cardinality-
+    // classifier row seeded on the diff altitude by
+    // ConfigDiff::kinds_support_cardinality_class, climbed to the tier
+    // altitude by ProvenanceMap::tiers_support_cardinality_class, and
+    // lifted sideways along the layer-kind and file-format chain sub-
+    // axes by ConfigSourceChain::layer_kinds_support_cardinality_class /
+    // ConfigSourceChain::file_formats_support_cardinality_class. The
+    // five-corner SupportCardinalityClass variant tag fuses the five
+    // coverage-support boolean predicates (env_prefix_kinds_any_observed
+    // inverse, env_prefix_kinds_singular_support,
+    // env_prefix_kinds_strict_partial_cover, env_prefix_kinds_singular_gap,
+    // env_prefix_kinds_full_cover) plus the empty-histogram boundary
+    // into ONE exhaustively-matched classifier surface. Third and final
+    // chain-altitude sub-axis of the four-step lift trajectory the
+    // eleven prior boolean projections plus the modality-class
+    // classifier row closed — with this lift the projection carries one
+    // named cube-native seam at every one of the five altitudes / sub-
+    // axes of the fully-closed grid. The cardinality-`2` env-prefix sub-
+    // axis is the MOST DEGENERATE sub-axis in the closed grid: only
+    // three of the five classifier corners are inhabited (Empty,
+    // SingularSupport, FullCover); the strict-interior corner
+    // StrictPartialCover is vacuously unreachable (strict interval [2, 0]
+    // is empty), and the top singular-boundary corner SingularGap is
+    // collapsed onto the bottom by the classifier's bottom-boundary-
+    // first tie-break at the unique cardinality-2 dual-singular
+    // coincidence pinned on ConfigSourceChain::env_prefix_kinds_singular_gap.
+    // ──
+
+    #[test]
+    fn env_prefix_kinds_support_cardinality_class_matches_env_prefix_kind_histogram_support_cardinality_class_pointwise()
+     {
+        // Routing pin: `env_prefix_kinds_support_cardinality_class`
+        // routes through
+        // `env_prefix_kind_histogram().support_cardinality_class()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared cube-native primitive.
+        // Chain env-prefix sub-axis coverage-support-classifier lift of
+        // the "support-cardinality-class across altitudes" projection,
+        // peer of
+        // `file_formats_support_cardinality_class_matches_file_format_histogram_support_cardinality_class_pointwise`
+        // and
+        // `layer_kinds_support_cardinality_class_matches_layer_kind_histogram_support_cardinality_class_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_support_cardinality_class_matches_tier_histogram_support_cardinality_class_pointwise`
+        // on the tier altitude, and
+        // `kinds_support_cardinality_class_matches_kind_histogram_support_cardinality_class_pointwise`
+        // on the diff altitude — closing the projection across every
+        // altitude / sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice
+                .env_prefix_kind_histogram()
+                .support_cardinality_class();
+            assert_eq!(
+                slice.env_prefix_kinds_support_cardinality_class(),
+                via_histogram,
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_cardinality_class_empty_chain_is_empty_variant() {
+        // Empty-chain coverage-support classifier: the empty chain
+        // observes zero cells, so `distinct_cells` reads `0` and the
+        // classifier lands on SupportCardinalityClass::Empty. Matches
+        // `AxisHistogram::support_cardinality_class` reading Empty on
+        // the empty histogram one altitude down. Peer of
+        // `file_formats_support_cardinality_class_empty_chain_is_empty_variant`
+        // and
+        // `layer_kinds_support_cardinality_class_empty_chain_is_empty_variant`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_support_cardinality_class_empty_map_is_empty_variant`
+        // on the tier altitude, and
+        // `kinds_support_cardinality_class_empty_diff_is_empty_variant`
+        // on the diff altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert_eq!(
+            empty.env_prefix_kinds_support_cardinality_class(),
+            crate::SupportCardinalityClass::Empty,
+        );
+        assert!(!empty.env_prefix_kinds_any_observed());
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_cardinality_class_no_env_layers_is_empty_variant() {
+        // Partial-function-projection pin: a non-empty chain with no
+        // env layers (only Defaults / File entries, each projecting to
+        // `None` through `ConfigSource::env_prefix_kind`) projects to
+        // the empty env-prefix histogram, so `distinct_cells` reads
+        // `0` and the classifier lands on
+        // SupportCardinalityClass::Empty. Distinct from
+        // `env_prefix_kinds_support_cardinality_class_empty_chain_is_empty_variant`
+        // in that the chain is non-empty at the layer level but empty
+        // at the env-prefix sub-axis after the partial-function
+        // projection. Sister of
+        // `file_formats_support_cardinality_class_no_recognized_files_is_empty_variant`
+        // — the two chain-altitude sub-axes on partial-function
+        // projections both carry the two-branch empty semantics through
+        // the shared histogram-side convention. No analog at the sister
+        // layer-kind sub-axis (where every layer projects to a `Some`
+        // cell) or at the tier / diff altitudes (whose axes are total
+        // on the observed universe).
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(!slice.env_prefix_kinds_any_observed());
+        assert_eq!(
+            slice.env_prefix_kinds_support_cardinality_class(),
+            crate::SupportCardinalityClass::Empty,
+        );
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_cardinality_class_singleton_support_prefixed_only_is_singular_support_variant()
+     {
+        // Prefixed-only singleton-support pin: every env layer carries
+        // a non-empty prefix, so the lone observed cell is `Prefixed`
+        // and `distinct_cells` reads `1` — the classifier lands on
+        // SupportCardinalityClass::SingularSupport. Direct witness of
+        // the subsumption `env_prefix_kinds_singular_support ⇒
+        // env_prefix_kinds_support_cardinality_class ==
+        // SingularSupport`. Peer of
+        // `file_formats_support_cardinality_class_singleton_support_is_singular_support_variant`
+        // and
+        // `layer_kinds_support_cardinality_class_singleton_support_is_singular_support_variant`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_support_cardinality_class_singleton_support_is_singular_support_variant`
+        // on the tier altitude, and
+        // `kinds_support_cardinality_class_singleton_support_is_singular_support_variant`
+        // on the diff altitude.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert_eq!(
+            slice.env_prefix_kinds_support_cardinality_class(),
+            crate::SupportCardinalityClass::SingularSupport,
+        );
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_cardinality_class_singleton_support_bare_only_is_singular_support_variant()
+     {
+        // Bare-only singleton-support pin: every env layer carries the
+        // empty prefix, so the lone observed cell is `Bare` and
+        // `distinct_cells` reads `1` — the classifier lands on
+        // SupportCardinalityClass::SingularSupport. Mirror image of
+        // the prefixed-only pin above on the sister `Bare` cell of the
+        // cardinality-`2` env-prefix axis. Also witnesses the dual-
+        // singular collapse: `env_prefix_kinds_singular_gap()` fires
+        // simultaneously with `env_prefix_kinds_singular_support()`
+        // on the cardinality-`2` axis (support `1` and support `axis
+        // cardinality - 1` coincide), and the classifier's bottom-
+        // boundary-first tie-break routes to `SingularSupport` (not
+        // `SingularGap`).
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert!(slice.env_prefix_kinds_singular_support());
+        assert!(
+            slice.env_prefix_kinds_singular_gap(),
+            "cardinality-2 dual-singular coincidence: both bottom and \
+             top singular-boundary booleans fire on the same chain",
+        );
+        assert_eq!(
+            slice.env_prefix_kinds_support_cardinality_class(),
+            crate::SupportCardinalityClass::SingularSupport,
+        );
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_cardinality_class_uniform_two_kind_cover_is_full_cover_variant() {
+        // Uniform axis-cover pin: a chain observing every cell of
+        // EnvMetadataTagKind at least once has `distinct_cells`
+        // reading `axis_cardinality::<crate::EnvMetadataTagKind>() ==
+        // 2`, so the classifier lands on
+        // SupportCardinalityClass::FullCover. Peer of the histogram-
+        // side uniform-cover convention one altitude down.
+        // Cardinality-`2` counterpart diverging from the cardinality-
+        // `3` sister-sub-axis peer
+        // `layer_kinds_support_cardinality_class_uniform_three_kind_cover_is_full_cover_variant`
+        // (three-cell cover), the cardinality-`4` sister-sub-axis peer
+        // `file_formats_support_cardinality_class_uniform_four_format_cover_is_full_cover_variant`
+        // (four-cell cover), the cardinality-`4` tier-altitude peer
+        // `tiers_support_cardinality_class_uniform_four_tier_cover_is_full_cover_variant`,
+        // and the cardinality-`3` diff-altitude peer.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.env_prefix_kinds_full_cover());
+        assert_eq!(
+            slice.env_prefix_kinds_support_cardinality_class(),
+            crate::SupportCardinalityClass::FullCover,
+        );
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_cardinality_class_is_empty_agrees_with_not_env_prefix_kinds_any_observed_pointwise()
+     {
+        // Empty-variant peer-equivalence pin:
+        // `env_prefix_kinds_support_cardinality_class().is_empty() ==
+        // !env_prefix_kinds_any_observed()`. The classifier's empty-
+        // boundary variant coincides with the empty-env-prefix-
+        // histogram row of the coverage-support boolean grid. Fires
+        // on both the empty chain and every no-env-layers non-empty
+        // chain (the partial-function-projection witness). Peer of
+        // `file_formats_support_cardinality_class_is_empty_agrees_with_not_file_formats_any_observed_pointwise`
+        // and
+        // `layer_kinds_support_cardinality_class_is_empty_agrees_with_not_layer_kinds_any_observed_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_support_cardinality_class_is_empty_agrees_with_not_tiers_any_observed_pointwise`
+        // on the tier altitude, and
+        // `kinds_support_cardinality_class_is_empty_agrees_with_not_kinds_any_observed_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice
+                    .env_prefix_kinds_support_cardinality_class()
+                    .is_empty(),
+                !slice.env_prefix_kinds_any_observed(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_cardinality_class_is_singular_support_agrees_with_env_prefix_kinds_singular_support_pointwise()
+     {
+        // Singular-support peer-equivalence pin — HOLDS on the
+        // cardinality-`2` axis despite the dual-singular collapse:
+        // `env_prefix_kinds_support_cardinality_class().is_singular_support()
+        // == env_prefix_kinds_singular_support()`. At support `1` both
+        // `has_singular_support` and `has_singular_gap` fire, but the
+        // classifier's bottom-boundary-first tie-break routes to
+        // `SingularSupport`, so the class-side `is_singular_support`
+        // still matches the histogram-side `singular_support` boolean
+        // pointwise. Contrast with the sibling
+        // `is_singular_gap` peer-equivalence law that FAILS on this
+        // sub-axis at the collapse point (see
+        // `env_prefix_kinds_support_cardinality_class_is_singular_gap_is_false_uniformly_on_cardinality_two_axis_pointwise`).
+        // Peer of
+        // `file_formats_support_cardinality_class_is_singular_support_agrees_with_file_formats_singular_support_pointwise`
+        // and
+        // `layer_kinds_support_cardinality_class_is_singular_support_agrees_with_layer_kinds_singular_support_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_support_cardinality_class_is_singular_support_agrees_with_tiers_singular_support_pointwise`
+        // on the tier altitude, and
+        // `kinds_support_cardinality_class_is_singular_support_agrees_with_kinds_singular_support_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice
+                    .env_prefix_kinds_support_cardinality_class()
+                    .is_singular_support(),
+                slice.env_prefix_kinds_singular_support(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_cardinality_class_is_full_cover_agrees_with_env_prefix_kinds_full_cover_pointwise()
+     {
+        // Full-cover peer-equivalence pin:
+        // `env_prefix_kinds_support_cardinality_class().is_full_cover()
+        // == env_prefix_kinds_full_cover()`. Holds pointwise on every
+        // axis. Peer of
+        // `file_formats_support_cardinality_class_is_full_cover_agrees_with_file_formats_full_cover_pointwise`
+        // and
+        // `layer_kinds_support_cardinality_class_is_full_cover_agrees_with_layer_kinds_full_cover_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_support_cardinality_class_is_full_cover_agrees_with_tiers_full_cover_pointwise`
+        // on the tier altitude, and
+        // `kinds_support_cardinality_class_is_full_cover_agrees_with_kinds_full_cover_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice
+                    .env_prefix_kinds_support_cardinality_class()
+                    .is_full_cover(),
+                slice.env_prefix_kinds_full_cover(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_cardinality_class_is_strict_partial_cover_agrees_with_env_prefix_kinds_strict_partial_cover_pointwise()
+     {
+        // Strict-partial-cover peer-equivalence pin on the cardinality-
+        // `2` axis:
+        // `env_prefix_kinds_support_cardinality_class().is_strict_partial_cover()
+        // == env_prefix_kinds_strict_partial_cover()`. Both sides read
+        // `false` uniformly on the cardinality-`2` EnvMetadataTagKind
+        // axis — the strict interior `[2, cardinality - 2] = [2, 0]`
+        // is empty, so the strict-interior variant is vacuously
+        // unreachable. Matches the shared vacuous-strict-interior
+        // convention with the sister
+        // `layer_kinds_support_cardinality_class_is_strict_partial_cover_agrees_with_layer_kinds_strict_partial_cover_pointwise`
+        // on the cardinality-`3` layer-kind sub-axis and the
+        // cardinality-`3` diff altitude. Reachability strictly
+        // advances on the cardinality-`4` file-format sub-axis and
+        // cardinality-`4` tier altitude where the peers read
+        // witnesses on the strict-interior corner.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice
+                    .env_prefix_kinds_support_cardinality_class()
+                    .is_strict_partial_cover(),
+                slice.env_prefix_kinds_strict_partial_cover(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_cardinality_class_is_partial_cover_agrees_with_env_prefix_kinds_partial_cover_pointwise()
+     {
+        // Compound-partial-cover peer-equivalence pin via the class-
+        // side `SupportCardinalityClass::is_partial_cover` projection:
+        // `env_prefix_kinds_support_cardinality_class().is_partial_cover()
+        // == env_prefix_kinds_partial_cover()`. Cross-surface bridge
+        // between the typed classifier and the chain env-prefix sub-
+        // axis compound-boolean peer of the coverage trichotomy's
+        // middle leg. On the cardinality-`2` axis the middle leg
+        // collapses onto the single `SingularSupport` variant — the
+        // two boundary corners of the coverage trichotomy `Empty` /
+        // `FullCover` bracket exactly one middle variant. Peer of
+        // `file_formats_support_cardinality_class_is_partial_cover_agrees_with_file_formats_partial_cover_pointwise`
+        // and
+        // `layer_kinds_support_cardinality_class_is_partial_cover_agrees_with_layer_kinds_partial_cover_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_support_cardinality_class_is_partial_cover_agrees_with_tiers_partial_cover_pointwise`
+        // on the tier altitude, and
+        // `kinds_support_cardinality_class_is_partial_cover_agrees_with_kinds_partial_cover_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice
+                    .env_prefix_kinds_support_cardinality_class()
+                    .is_partial_cover(),
+                slice.env_prefix_kinds_partial_cover(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_cardinality_class_is_singular_gap_is_false_uniformly_on_cardinality_two_axis_pointwise()
+     {
+        // Cardinality-`2` dual-singular collapse pin — the row's most
+        // conspicuous divergence from every sibling altitude / sub-
+        // axis in the "support-cardinality-class across altitudes"
+        // projection:
+        // `env_prefix_kinds_support_cardinality_class().is_singular_gap()
+        // == false` uniformly on every chain. The classifier never
+        // lands on the `SingularGap` variant at the cardinality-`2`
+        // env-prefix sub-axis: at support `1` both `has_singular_support`
+        // and `has_singular_gap` fire simultaneously (support `1` and
+        // support `axis_cardinality - 1` coincide at the unique
+        // cardinality-2 dual-singular coincidence), and the
+        // classifier's bottom-boundary-first tie-break routes to
+        // `SingularSupport`. Direct evidence that the class-side
+        // `is_singular_gap` DIVERGES from the histogram-side
+        // `env_prefix_kinds_singular_gap()` boolean at every
+        // singleton-support chain — the peer-equivalence law
+        // `is_singular_gap() == singular_gap()` that holds on every
+        // cardinality-`>= 3` sister altitude / sub-axis FAILS on this
+        // cardinality-`2` sub-axis at the collapse point. Structural
+        // signature of the env-prefix sub-axis in the 5-column grid,
+        // unique to the cardinality-`2` sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                !slice
+                    .env_prefix_kinds_support_cardinality_class()
+                    .is_singular_gap(),
+                "cardinality-2 env-prefix axis must never land on the \
+                 SingularGap variant — bottom-boundary-first tie-break \
+                 routes support-1 chains to SingularSupport",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_gap_implies_env_prefix_kinds_support_cardinality_class_is_singular_support_pointwise()
+     {
+        // Unique cardinality-`2` subsumption transposition on the env-
+        // prefix sub-axis — the row's most distinctive divergence from
+        // the sibling subsumption at every cardinality-`>= 3` altitude /
+        // sub-axis: `env_prefix_kinds_singular_gap() ⇒
+        // env_prefix_kinds_support_cardinality_class() ==
+        // SupportCardinalityClass::SingularSupport` (NOT `SingularGap`
+        // as on the cardinality-`>= 3` sister axes). Direct evidence of
+        // the dual-singular collapse: the singular-gap chain (support
+        // `1 = axis_cardinality - 1`) collapses onto the bottom
+        // singular-boundary corner by the classifier's bottom-
+        // boundary-first tie-break, since at support `1` on the
+        // cardinality-`2` axis both `has_singular_support` and
+        // `has_singular_gap` fire simultaneously. Contrast with the
+        // sibling
+        // `layer_kinds_singular_gap_implies_layer_kinds_support_cardinality_class_is_singular_gap_pointwise`
+        // on the cardinality-`3` layer-kind sub-axis,
+        // `file_formats_singular_gap_implies_file_formats_support_cardinality_class_is_singular_gap_pointwise`
+        // on the cardinality-`4` file-format sub-axis,
+        // `tiers_singular_gap_implies_tiers_support_cardinality_class_is_singular_gap_pointwise`
+        // on the cardinality-`4` tier altitude, and
+        // `kinds_singular_gap_implies_kinds_support_cardinality_class_is_singular_gap_pointwise`
+        // on the cardinality-`3` diff altitude — all of which land on
+        // `SingularGap`, NOT `SingularSupport`. Structural signature of
+        // the env-prefix sub-axis in the 5-column grid.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular_gap() {
+                assert_eq!(
+                    slice.env_prefix_kinds_support_cardinality_class(),
+                    crate::SupportCardinalityClass::SingularSupport,
+                    "cardinality-2 dual-singular collapse: singular-gap \
+                     chain must land on SingularSupport (not SingularGap) \
+                     by the bottom-boundary-first tie-break",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_singular_support_implies_env_prefix_kinds_support_cardinality_class_is_singular_support_pointwise()
+     {
+        // Subsumption pin: `env_prefix_kinds_singular_support() ⇒
+        // env_prefix_kinds_support_cardinality_class() ==
+        // SupportCardinalityClass::SingularSupport` always. Direct pin
+        // of the histogram-side subsumption one altitude down. Peer of
+        // `file_formats_singular_support_implies_file_formats_support_cardinality_class_is_singular_support_pointwise`
+        // and
+        // `layer_kinds_singular_support_implies_layer_kinds_support_cardinality_class_is_singular_support_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_singular_support_implies_tiers_support_cardinality_class_is_singular_support_pointwise`
+        // on the tier altitude, and
+        // `kinds_singular_support_implies_kinds_support_cardinality_class_is_singular_support_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_singular_support() {
+                assert_eq!(
+                    slice.env_prefix_kinds_support_cardinality_class(),
+                    crate::SupportCardinalityClass::SingularSupport,
+                    "singular-support chain must land on the \
+                     SingularSupport classifier corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_full_cover_implies_env_prefix_kinds_support_cardinality_class_is_full_cover_pointwise()
+     {
+        // Subsumption pin: `env_prefix_kinds_full_cover() ⇒
+        // env_prefix_kinds_support_cardinality_class() ==
+        // SupportCardinalityClass::FullCover` always. Direct pin of
+        // the histogram-side subsumption one altitude down. Peer of
+        // `file_formats_full_cover_implies_file_formats_support_cardinality_class_is_full_cover_pointwise`
+        // and
+        // `layer_kinds_full_cover_implies_layer_kinds_support_cardinality_class_is_full_cover_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_full_cover_implies_tiers_support_cardinality_class_is_full_cover_pointwise`
+        // on the tier altitude, and
+        // `kinds_full_cover_implies_kinds_support_cardinality_class_is_full_cover_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kinds_full_cover() {
+                assert_eq!(
+                    slice.env_prefix_kinds_support_cardinality_class(),
+                    crate::SupportCardinalityClass::FullCover,
+                    "full-cover chain must land on the FullCover \
+                     classifier corner",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_strict_partial_cover_vacuously_implies_env_prefix_kinds_support_cardinality_class_is_strict_partial_cover_pointwise()
+     {
+        // Vacuous-strict-interior subsumption pin — vacuously true on
+        // the cardinality-`2` EnvMetadataTagKind axis:
+        // `env_prefix_kinds_strict_partial_cover() ⇒
+        // env_prefix_kinds_support_cardinality_class() ==
+        // SupportCardinalityClass::StrictPartialCover`. The premise
+        // never fires on the cardinality-`2` env-prefix sub-axis (the
+        // strict interval `[2, 0]` is empty), so the subsumption is
+        // vacuously true. Matches the shared vacuous-strict-interior
+        // convention with the cardinality-`3` sister layer-kind
+        // sub-axis peer
+        // `layer_kinds_strict_partial_cover_vacuously_implies_layer_kinds_support_cardinality_class_is_strict_partial_cover_pointwise`
+        // and cardinality-`3` diff-altitude peer; reachability
+        // strictly advances on the cardinality-`4` file-format sub-
+        // axis and cardinality-`4` tier altitude where the
+        // subsumption becomes an inhabited constraint at the two-cell
+        // partial-cover witness.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                !slice.env_prefix_kinds_strict_partial_cover(),
+                "cardinality-2 env-prefix sub-axis has vacuous strict \
+                 interior — no fixture should fire the strict-partial-\
+                 cover boolean",
+            );
+            if slice.env_prefix_kinds_strict_partial_cover() {
+                assert_eq!(
+                    slice.env_prefix_kinds_support_cardinality_class(),
+                    crate::SupportCardinalityClass::StrictPartialCover,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_cardinality_class_only_inhabits_three_variants_on_cardinality_two_axis_pointwise()
+     {
+        // Cardinality-`2` degeneracy pin: on the cardinality-`2` env-
+        // prefix axis, only three of the five classifier corners
+        // carry witnesses — `Empty`, `SingularSupport`, and
+        // `FullCover`. The strict-interior corner `StrictPartialCover`
+        // is vacuously unreachable (strict interval `[2, 0]` is
+        // empty), and the top singular-boundary corner `SingularGap`
+        // is collapsed onto the bottom `SingularSupport` by the
+        // classifier's bottom-boundary-first tie-break at the unique
+        // cardinality-`2` dual-singular coincidence. So
+        // `env_prefix_kinds_support_cardinality_class()` always lands
+        // on one of the three degenerate corners `Empty`,
+        // `SingularSupport`, `FullCover`. Structural signature of the
+        // env-prefix sub-axis in the 5-column grid — unique to the
+        // cardinality-`2` sub-axis on the coverage-support classifier
+        // surface; the cardinality-`3` sister layer-kind sub-axis and
+        // cardinality-`3` diff altitude carry witnesses on four of
+        // the five corners (adding `SingularGap`), and the
+        // cardinality-`4` sister file-format sub-axis and
+        // cardinality-`4` tier altitude carry witnesses on all five
+        // corners (adding `StrictPartialCover` in addition). Peer of
+        // the sibling
+        // `env_prefix_kinds_modality_class_only_inhabits_three_variants_on_cardinality_two_axis_pointwise`
+        // on the orthogonal modality-quotient surface at the same
+        // env-prefix sub-axis — both classifiers land on exactly three
+        // of the five corners on the cardinality-`2` axis, though
+        // the specific corners differ (`Empty`,
+        // `StrictModalStrictAntimodal`, `TiedModalTiedAntimodal` for
+        // modality; `Empty`, `SingularSupport`, `FullCover` for
+        // coverage-support).
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let class = slice.env_prefix_kinds_support_cardinality_class();
+            assert!(
+                matches!(
+                    class,
+                    crate::SupportCardinalityClass::Empty
+                        | crate::SupportCardinalityClass::SingularSupport
+                        | crate::SupportCardinalityClass::FullCover,
+                ),
+                "cardinality-2 env-prefix axis must not inhabit \
+                 SingularGap (collapsed onto SingularSupport) or \
+                 StrictPartialCover (vacuous strict interior) \
+                 (class={class:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_cardinality_class_total_classification_partitions_every_fixture_pointwise()
+     {
+        // Total-classification pin: every chain lands on exactly one
+        // of the five SupportCardinalityClass variants (Empty,
+        // SingularSupport, StrictPartialCover, SingularGap, FullCover)
+        // — SupportCardinalityClass::ALL. Direct pin of the histogram-
+        // side total-partition law one altitude down. Peer of
+        // `file_formats_support_cardinality_class_total_classification_partitions_every_fixture_pointwise`
+        // and
+        // `layer_kinds_support_cardinality_class_total_classification_partitions_every_fixture_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_support_cardinality_class_total_classification_partitions_every_fixture_pointwise`
+        // on the tier altitude, and
+        // `kinds_support_cardinality_class_total_classification_partitions_every_fixture_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let class = slice.env_prefix_kinds_support_cardinality_class();
+            let matches: usize = crate::SupportCardinalityClass::ALL
+                .iter()
+                .filter(|&&v| v == class)
+                .count();
+            assert_eq!(
+                matches, 1,
+                "every chain must land on exactly one \
+                 SupportCardinalityClass variant (class={class:?})",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_cardinality_class_agrees_with_distinct_cells_pattern_match() {
+        // Parity against the exact hand-rolled `distinct_cells`
+        // pattern match this lift replaces: read the support
+        // cardinality and classify by the same four-way `if` chain
+        // (with the cardinality-2 collapse baked into the ordering
+        // priority) the histogram-side classifier lands on. Catches
+        // any future drift where either implementation stops
+        // projecting through the same `distinct_cells` primitive.
+        // Peer of
+        // `file_formats_support_cardinality_class_agrees_with_distinct_cells_pattern_match`
+        // and
+        // `layer_kinds_support_cardinality_class_agrees_with_distinct_cells_pattern_match`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_support_cardinality_class_agrees_with_distinct_cells_pattern_match`
+        // on the tier altitude, and
+        // `kinds_support_cardinality_class_agrees_with_distinct_cells_pattern_match`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kinds_support_cardinality_class();
+            let hist = slice.env_prefix_kind_histogram();
+            let support = hist.distinct_cells();
+            let cardinality = crate::axis_cardinality::<crate::EnvMetadataTagKind>();
+            let hand_rolled = if support == 0 {
+                crate::SupportCardinalityClass::Empty
+            } else if support == cardinality {
+                crate::SupportCardinalityClass::FullCover
+            } else if support == 1 {
+                crate::SupportCardinalityClass::SingularSupport
+            } else if support + 1 == cardinality {
+                crate::SupportCardinalityClass::SingularGap
+            } else {
+                crate::SupportCardinalityClass::StrictPartialCover
+            };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kinds_support_cardinality_class_bridges_support_boundary_distance_pointwise() {
+        // Cross-classifier bridge pin: the support-cardinality-class
+        // classifier and the support-boundary-distance classifier one
+        // altitude down agree pointwise through the class-side
+        // `SupportCardinalityClass::support_boundary_distance()`
+        // projection — the histogram-side `support_boundary_distance()`
+        // equals the class-side projection of the class-side
+        // classifier. Pins the composition through the chain env-
+        // prefix sub-axis so consumers holding either classifier
+        // reach the other without re-routing through the originating
+        // histogram. Peer of
+        // `file_formats_support_cardinality_class_bridges_support_boundary_distance_pointwise`
+        // and
+        // `layer_kinds_support_cardinality_class_bridges_support_boundary_distance_pointwise`
+        // on the sister sub-axes of the same chain altitude,
+        // `tiers_support_cardinality_class_bridges_support_boundary_distance_pointwise`
+        // on the tier altitude, and
+        // `kinds_support_cardinality_class_bridges_support_boundary_distance_pointwise`
+        // on the diff altitude — closing the cross-classifier bridge
+        // across every altitude / sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let class = slice.env_prefix_kinds_support_cardinality_class();
+            let via_class = class.support_boundary_distance();
+            let via_histogram = slice
+                .env_prefix_kind_histogram()
+                .support_boundary_distance();
+            assert_eq!(via_class, via_histogram);
         }
     }
 
