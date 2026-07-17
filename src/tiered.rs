@@ -2234,6 +2234,200 @@ impl ProvenanceMap {
         self.tier_histogram().modality_amplitude()
     }
 
+    /// The **modality-shape sum of tier counts** — the sum of the modal
+    /// and antimodal [`ConfigTierKind`] level-set cardinalities on this
+    /// resolved fold. Equal to
+    /// `self.peak_tier_multiplicity() + self.trough_tier_multiplicity()`
+    /// by construction, routed through [`Self::tier_histogram`]:
+    /// [`crate::AxisHistogram::modality_degree_sum`] reads the same
+    /// scalar off the fixed-cardinality counts vector in one pass.
+    /// Returns `0` exactly on the empty map; returns `2` on every
+    /// non-empty fold whose peak and trough tiers are each uniquely
+    /// held (including every singleton-support fold and every
+    /// strictly-ordered four-tier shape); returns
+    /// `2 * contributing_tiers_count()` exactly on every balanced fold
+    /// (both level sets walk the full observed support).
+    ///
+    /// The **scalar-sum peer** on the multiplicity surface — the
+    /// additive dual of [`Self::tier_modality_amplitude`] on the same
+    /// surface at the tier altitude. Where
+    /// [`Self::tier_modality_amplitude`] fuses the extremal-
+    /// multiplicity pair `(peak_tier_multiplicity,
+    /// trough_tier_multiplicity)` into
+    /// `peak.abs_diff(trough)` — the asymmetry-magnitude scalar —
+    /// `tier_modality_degree_sum` fuses the same pair into
+    /// `peak + trough` — the combined extremal cardinality scalar. The
+    /// sum is overflow-safe on [`ProvenanceMap`] since both summands are
+    /// bounded above by `crate::axis_cardinality::<ConfigTierKind>() ==
+    /// 4`, giving a hard ceiling of `8` on the sum scalar. Together
+    /// with [`Self::tier_modality_amplitude`], the pair
+    /// `(tier_modality_degree_sum, tier_modality_amplitude)` recovers
+    /// the *unordered* multiplicity pair
+    /// `{peak_tier_multiplicity, trough_tier_multiplicity}` under the
+    /// invertible transform `max(peak, trough) = (sum + amplitude) / 2,
+    /// min(peak, trough) = (sum - amplitude) / 2` (integer division
+    /// exact since both share parity — both `usize` sums / abs-diffs
+    /// whose sum equals `2 * max(peak, trough)`). The peak-versus-
+    /// trough *labelling* itself requires the fused
+    /// [`Self::tier_histogram`]-side `modality_degree` pair — the
+    /// additive-side scalar sees no signed direction.
+    ///
+    /// The natural typed primitive for fleet dashboards, attestation
+    /// manifests, and alerting policies asking *"how much of the
+    /// observed tier support sits at either extreme?"*: the fleet
+    /// dashboard headline *"tier extremal sum 8: uniform-count over all
+    /// four tiers — the whole support is doubly-extremal"* (where `8`
+    /// is this scalar at its structural ceiling), the attestation
+    /// manifest recording the combined extremal cardinality of a
+    /// resolved fold by tier, the alerting policy reading *"tier
+    /// extremal sum = 2"* to classify folds where both extremes are
+    /// uniquely held (either singleton support or strictly-ordered).
+    /// Before this lift, every such consumer re-derived the projection
+    /// inline as `map.peak_tier_multiplicity() +
+    /// map.trough_tier_multiplicity()` — two method calls plus an
+    /// addition, each site walking the counts vector twice where the
+    /// shared [`crate::AxisHistogram::modality_degree`] primitive fuses
+    /// both into a single walk.
+    ///
+    /// The tier-altitude scalar-sum peer that **climbs the "modality-
+    /// degree-sum across altitudes" projection** from the diff
+    /// altitude — the natural scalar sister of the two closed
+    /// tier-multiplicity scalars ([`Self::peak_tier_multiplicity`] and
+    /// [`Self::trough_tier_multiplicity`], both surfaced at this
+    /// altitude) on every altitude of the fully-closed cube. Lifts
+    /// the diff-altitude seed
+    /// [`ConfigDiff::kind_modality_degree_sum`] one altitude up. The
+    /// chain altitude's three sub-axes
+    /// (`ConfigSourceChain::layer_kind_modality_degree_sum`,
+    /// `file_format_modality_degree_sum`,
+    /// `env_prefix_kind_modality_degree_sum` over the corresponding
+    /// chain histograms) close the projection at every chain sub-
+    /// axis, following the trajectory the sibling amplitude / peak-
+    /// multiplicity / trough-multiplicity projections just walked.
+    /// Parallels the fully-closed "modality-amplitude across
+    /// altitudes" projection climbed on the same altitude by
+    /// [`Self::tier_modality_amplitude`] one seam over — this climb
+    /// carries the additive-side dual of the same extremal-
+    /// multiplicity pair.
+    ///
+    /// **Cardinality-`4` reachability at the tier altitude — one
+    /// strict advance over the diff altitude.** [`ConfigTierKind`]
+    /// carries four cells, so `tier_modality_degree_sum()` ranges
+    /// over `{0} ∪ (2..=8)` (`0` exactly on the empty map, `1`
+    /// unreachable on the non-empty lower bound, then `2..=8`
+    /// reachable on non-empty folds), one strict advance over the
+    /// cardinality-`3` diff altitude's `{0} ∪ (2..=6)` range on the
+    /// same surface. The tight upper bound promotes from
+    /// `2 * axis_cardinality::<DiffLineKind>() == 6` at the diff
+    /// altitude to `2 * axis_cardinality::<ConfigTierKind>() == 8`
+    /// at the tier altitude, witnessed on the uniform-full-cover
+    /// four-tier shape.
+    ///
+    /// **Empty-map convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::modality_degree_sum`] empty convention
+    /// one altitude down and the [`Self::peak_tier_multiplicity`] /
+    /// [`Self::trough_tier_multiplicity`] empty conventions on the
+    /// same altitude. The scalar quadruple `(peak_tier_multiplicity,
+    /// trough_tier_multiplicity, tier_modality_amplitude,
+    /// tier_modality_degree_sum)` reads uniformly `(0, 0, 0, 0)` on
+    /// the empty map — the vacuous-nothing boundary lifted from the
+    /// empty support.
+    ///
+    /// **Non-empty lower-bound convention** — returns `>= 2` on every
+    /// non-empty fold: every non-empty support has at least one
+    /// observed tier at the peak and at least one observed tier at
+    /// the trough (they may coincide as the same tier on the
+    /// singleton-support case), so both multiplicities are `>= 1` and
+    /// the sum is `>= 2`. The value `1` is unreachable — no fold
+    /// carries a combined extremal cardinality of exactly `1`. The
+    /// additive-side signature of the "vacuous-versus-populated"
+    /// boundary on the tier-altitude multiplicity surface.
+    ///
+    /// **Balanced-fold convention** — returns `2 *
+    /// contributing_tiers_count()` on every balanced fold (every
+    /// observed tier contributed the same nonzero count):
+    /// `tiers_balanced() ⇒ peak_tier_multiplicity() ==
+    /// trough_tier_multiplicity() == contributing_tiers_count()`, so
+    /// the sum reaches its structural upper bound relative to the
+    /// support cardinality. Rewrites the balanced-tier-counts
+    /// predicate as an arithmetic equality on the closed multiplicity
+    /// surface. Empty (`0`), singleton (`2`), two-tier balanced
+    /// (`4`), three-tier balanced (`6`), full four-tier balanced
+    /// (`8`).
+    ///
+    /// **Strictly-ordered convention** — returns `2` on every
+    /// strictly-ordered four-cell fold (four distinct positive
+    /// counts, e.g. `Bare=1, Default=2, Custom=3, Discovered=4`):
+    /// both multiplicities are `1`, so the sum reads `2` even though
+    /// the shape is *not* balanced. This shape witnesses the
+    /// *both-extremes-uniquely-held branch* of the "sum equals 2"
+    /// configuration on a non-empty non-singleton fold at the tier
+    /// altitude — a strict advance over the diff altitude's three-
+    /// cell strictly-ordered witness on the same additive surface.
+    ///
+    /// # Invariants
+    ///
+    /// - `tier_modality_degree_sum() ==
+    ///   tier_histogram().modality_degree_sum()` — both project the
+    ///   same scalar off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `tier_modality_degree_sum() ==
+    ///   peak_tier_multiplicity() + trough_tier_multiplicity()` — the
+    ///   defining equivalence on the multiplicity-scalar pair at the
+    ///   tier altitude. Overflow-safe since both summands are bounded
+    ///   above by `crate::axis_cardinality::<ConfigTierKind>() == 4`.
+    /// - `tier_modality_degree_sum() == 0` iff the map is empty — the
+    ///   vacuous-nothing boundary on the additive side. Dual to
+    ///   `tier_modality_amplitude() == 0`'s much larger inhabited
+    ///   region (which fires on empty, singleton, uniform-count, and
+    ///   every strictly-ordered shape).
+    /// - `tier_modality_degree_sum() >= 2` on every non-empty map —
+    ///   both multiplicities are `>= 1` on any non-empty support.
+    /// - `tier_modality_degree_sum() == 2` on a non-empty map iff
+    ///   `peak_tier_multiplicity() == 1 &&
+    ///   trough_tier_multiplicity() == 1` — the "both extremes
+    ///   uniquely held" configuration.
+    /// - `tiers_balanced() ⇔ tier_modality_degree_sum() ==
+    ///   2 * contributing_tiers_count()` — the balanced-tier-counts
+    ///   predicate rewritten as an arithmetic equality on the closed
+    ///   multiplicity surface at its structural upper bound.
+    /// - `tier_modality_degree_sum() <= 2 * contributing_tiers_count()`
+    ///   always — both level sets are subsets of the observed
+    ///   support, so their sum is bounded above by twice the support
+    ///   size.
+    /// - `tier_modality_degree_sum() <=
+    ///   2 * crate::axis_cardinality::<ConfigTierKind>()` always —
+    ///   bounded above by `8` on the four-cell tier axis.
+    /// - `tier_modality_degree_sum() % 2 ==
+    ///   tier_modality_amplitude() % 2` — the sum and abs-diff of two
+    ///   `usize` share parity, so the pair `(sum, amplitude)`
+    ///   recovers the *unordered* pair
+    ///   `{peak_tier_mult, trough_tier_mult}` under the invertible
+    ///   transform `max(peak, trough) = (sum + amp) / 2,
+    ///   min(peak, trough) = (sum - amp) / 2` with exact integer
+    ///   division. The peak-versus-trough labelling itself requires
+    ///   the fused `modality_degree` pair.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigTierKind>()` (the
+    /// fused peak + trough scan through
+    /// [`crate::AxisHistogram::modality_degree`]). Both are `O(n)` in
+    /// practice since the tier axis carries a fixed four-cell
+    /// cardinality; the returned `usize` reads one scalar. Halves the
+    /// cost of the previous inline
+    /// `map.peak_tier_multiplicity() + map.trough_tier_multiplicity()`
+    /// idiom (which walked the counts vector twice — once for the
+    /// peak multiplicity, once for the trough multiplicity — where
+    /// [`crate::AxisHistogram::modality_degree_sum`] fuses both into
+    /// a single walk through
+    /// [`crate::AxisHistogram::modality_degree`]).
+    #[must_use]
+    pub fn tier_modality_degree_sum(&self) -> usize {
+        self.tier_histogram().modality_degree_sum()
+    }
+
     /// The **balanced-tier-counts boolean predicate** at the tier altitude —
     /// `true` exactly when every observed [`ConfigTierKind`] contributed the
     /// same number of leaves. The typed boolean peer of `tier_spread() == 0`
@@ -7917,9 +8111,10 @@ impl ConfigDiff {
     /// degree-sum across altitudes" projection** — the additive
     /// symmetric closure of the already-fully-closed 5-altitude
     /// peak-multiplicity / trough-multiplicity / modality-amplitude
-    /// projections. The next natural climbs walk the same trajectory:
-    /// tier altitude (`ProvenanceMap::tier_modality_degree_sum` over
-    /// `tier_histogram`) and the chain altitude's three sub-axes
+    /// projections. The tier-altitude climb already landed at
+    /// [`crate::ProvenanceMap::tier_modality_degree_sum`] (over
+    /// `tier_histogram`); the next natural lifts fan sideways along
+    /// the chain altitude's three sub-axes
     /// (`ConfigSourceChain::layer_kind_modality_degree_sum`,
     /// `file_format_modality_degree_sum`,
     /// `env_prefix_kind_modality_degree_sum` over the corresponding
@@ -31575,6 +31770,519 @@ mod progressive_tests {
                 Some(m) => hist.iter().filter(|(_, c)| *c == m).count(),
             };
             let hand_rolled = peak_mult.abs_diff(trough_mult);
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::tier_modality_degree_sum — modality-shape sum
+    //    scalar seam on the tier altitude, climbing
+    //    AxisHistogram::modality_degree_sum and lifting the "modality-
+    //    degree-sum across altitudes" projection from the diff altitude
+    //    (kind_modality_degree_sum). Scalar-sum peer of the fully-
+    //    closed (peak_tier_multiplicity, trough_tier_multiplicity)
+    //    multiplicity-scalar pair, fusing them into a single sum
+    //    scalar reading off the combined extremal cardinality.
+    //    Additive-side dual of tier_modality_amplitude on the same
+    //    surface. Cardinality-`4` ConfigTierKind axis: sum ranges over
+    //    `{0} ∪ (2..=8)`, one strict advance over the cardinality-`3`
+    //    diff axis's `{0} ∪ (2..=6)` on the same surface. ──
+
+    #[test]
+    fn tier_modality_degree_sum_matches_tier_histogram_modality_degree_sum_pointwise() {
+        // Routing pin: `tier_modality_degree_sum` routes through
+        // `tier_histogram().modality_degree_sum()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Tier-
+        // altitude scalar-sum climb of the "modality-degree-sum
+        // across altitudes" projection seeded by
+        // `kind_modality_degree_sum_matches_kind_histogram_modality_degree_sum_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().modality_degree_sum();
+            assert_eq!(map.tier_modality_degree_sum(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn tier_modality_degree_sum_equals_peak_mult_plus_trough_mult() {
+        // Defining-equivalence law: `tier_modality_degree_sum` equals
+        // `peak_tier_multiplicity() + trough_tier_multiplicity()` on
+        // every fixture. Overflow-safe since both summands are bounded
+        // above by `axis_cardinality::<ConfigTierKind>() == 4`. Both
+        // routings read the same scalar off the same primitive. Peer
+        // of `kind_modality_degree_sum_equals_peak_mult_plus_trough_mult`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_pair = map.peak_tier_multiplicity() + map.trough_tier_multiplicity();
+            assert_eq!(map.tier_modality_degree_sum(), via_pair);
+        }
+    }
+
+    #[test]
+    fn tier_modality_degree_sum_empty_map_is_zero() {
+        // Empty-map convention: no observed cells, both multiplicities
+        // read `0`, so the sum reads `0`. Matches the
+        // AxisHistogram::modality_degree_sum empty convention one
+        // altitude down. The `(peak_tier_multiplicity,
+        // trough_tier_multiplicity, tier_modality_amplitude,
+        // tier_modality_degree_sum)` quadruple reads uniformly
+        // `(0, 0, 0, 0)` on the empty map. Peer of
+        // `kind_modality_degree_sum_empty_diff_is_zero` on the diff
+        // altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert_eq!(empty.peak_tier_multiplicity(), 0);
+        assert_eq!(empty.trough_tier_multiplicity(), 0);
+        assert_eq!(empty.tier_modality_amplitude(), 0);
+        assert_eq!(empty.tier_modality_degree_sum(), 0);
+    }
+
+    #[test]
+    fn tier_modality_degree_sum_singleton_support_is_two() {
+        // Singleton-support pin: every leaf lands on the same tier, so
+        // that one tier is simultaneously the unique peak and the
+        // unique trough. Both multiplicities read `1`, so the sum
+        // reads `2` — the additive-side minimal-nonempty boundary
+        // witness of the "both extremes uniquely held" configuration
+        // at the tier altitude. Peer of
+        // `kind_modality_degree_sum_singleton_support_is_two` on the
+        // diff altitude.
+        let m: ProvenanceMap = ["a", "b", "c", "d"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert!(m.tiers_singular_support());
+        assert_eq!(m.peak_tier_multiplicity(), 1);
+        assert_eq!(m.trough_tier_multiplicity(), 1);
+        assert_eq!(m.tier_modality_degree_sum(), 2);
+    }
+
+    #[test]
+    fn tier_modality_degree_sum_two_tier_tie_is_four() {
+        // Two-tier-tied pin: `Bare + Default` both at count `1`, both
+        // tied at both the peak and the trough (they coincide on the
+        // uniform-count shape). Both multiplicities read `2`, so the
+        // sum reads `4` — the balanced two-cell case at
+        // `2 * contributing_tiers_count() = 2 * 2 = 4`. Peer of
+        // `kind_modality_degree_sum_two_kind_tie_is_four` on the diff
+        // altitude.
+        let m: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        assert_eq!(m.peak_tier_multiplicity(), 2);
+        assert_eq!(m.trough_tier_multiplicity(), 2);
+        assert_eq!(m.tier_modality_degree_sum(), 4);
+        assert!(m.tiers_balanced());
+        assert_eq!(
+            m.tier_modality_degree_sum(),
+            2 * m.contributing_tiers_count()
+        );
+    }
+
+    #[test]
+    fn tier_modality_degree_sum_uniform_full_cover_is_eight() {
+        // Uniform full-cover pin: every ConfigTierKind cell contributes
+        // exactly one leaf, so all four cells tie at both the peak and
+        // the trough. Both multiplicities read `4` (= axis cardinality),
+        // so the sum reads `8` — the balanced full-cover case at the
+        // tight upper bound `2 * contributing_tiers_count() = 2 * 4 =
+        // 8 = 2 * axis_cardinality::<ConfigTierKind>()`. Strict advance
+        // over the cardinality-`3` diff altitude, where full-cover sum
+        // caps at `6`. Also witnesses `tiers_balanced() ⇔ sum ==
+        // 2 * contributing_tiers_count()`.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(m.tiers_full_cover());
+        assert!(m.tiers_balanced());
+        assert_eq!(m.peak_tier_multiplicity(), 4);
+        assert_eq!(m.trough_tier_multiplicity(), 4);
+        assert_eq!(m.tier_modality_degree_sum(), 8);
+        assert_eq!(
+            m.tier_modality_degree_sum(),
+            2 * m.contributing_tiers_count()
+        );
+        assert_eq!(
+            m.tier_modality_degree_sum(),
+            2 * crate::axis_cardinality::<ConfigTierKind>()
+        );
+    }
+
+    #[test]
+    fn tier_modality_degree_sum_strictly_ordered_fixture_is_two_without_singleton() {
+        // Strictly-ordered four-cell pin: four distinct positive counts
+        // (`Bare=1, Default=2, Custom=3, Discovered=4`). Both peak and
+        // trough are uniquely held (peak_mult=1, trough_mult=1), so
+        // the sum reads `2` — matching every singleton-support fold's
+        // sum. This fixture witnesses the "both extremes uniquely
+        // held" configuration on a non-empty non-singleton fold at the
+        // tier altitude: the value `sum == 2` on non-empty folds does
+        // NOT imply singleton support. Strict advance over the diff-
+        // altitude gap-witness (three-cell strictly-ordered): here we
+        // exercise the full four-cell strict order that the
+        // cardinality-`4` tier axis makes reachable.
+        let mut leaves: Vec<(Vec<String>, Provenance)> = Vec::new();
+        for (i, t) in [
+            ConfigTierKind::Bare,
+            ConfigTierKind::Default,
+            ConfigTierKind::Custom,
+            ConfigTierKind::Discovered,
+        ]
+        .iter()
+        .enumerate()
+        {
+            let count = i + 1;
+            for j in 0..count {
+                leaves.push((
+                    vec![format!("{}-{}", t.as_str(), j)],
+                    Provenance::computed(*t),
+                ));
+            }
+        }
+        let m: ProvenanceMap = leaves.into_iter().collect();
+        assert!(m.tiers_full_cover());
+        assert!(!m.tiers_singular_support());
+        assert_eq!(m.peak_tier_multiplicity(), 1);
+        assert_eq!(m.trough_tier_multiplicity(), 1);
+        assert_eq!(m.tier_modality_degree_sum(), 2);
+        assert_eq!(m.contributing_tiers_count(), 4);
+    }
+
+    #[test]
+    fn tier_modality_degree_sum_heavy_tail_fixture_is_four() {
+        // Heavy-tail four-cell pin: `Bare ×2, Default ×1, Custom ×1,
+        // Discovered ×1` → peak_count=2 (unique at Bare), trough_count=1
+        // (tied at Default + Custom + Discovered). peak_mult=1,
+        // trough_mult=3, so the sum reads `1 + 3 = 4`. Strict advance
+        // over `kind_modality_degree_sum_heavy_tail_fixture_is_three`
+        // on the diff altitude (which reads `3` on its heavy-tail
+        // three-cell fixture); the four-cell axis makes reachable a
+        // larger trough_mult, so the sum climbs by one.
+        let m: ProvenanceMap = [
+            ("b1", ConfigTierKind::Bare),
+            ("b2", ConfigTierKind::Bare),
+            ("d", ConfigTierKind::Default),
+            ("c", ConfigTierKind::Custom),
+            ("x", ConfigTierKind::Discovered),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        assert!(m.tiers_full_cover());
+        assert_eq!(m.peak_tier_multiplicity(), 1);
+        assert_eq!(m.trough_tier_multiplicity(), 3);
+        assert_eq!(m.tier_modality_degree_sum(), 4);
+    }
+
+    #[test]
+    fn tier_modality_degree_sum_right_skew_fixture_is_four() {
+        // Right-skew four-cell pin: `Bare ×2, Default ×2, Custom ×2,
+        // Discovered ×1` → peak_count=2 (tied at Bare + Default +
+        // Custom), trough_count=1 (unique at Discovered). peak_mult=3,
+        // trough_mult=1, so the sum reads `3 + 1 = 4`. Mirror of the
+        // heavy-tail four-cell pin above — both read `4` on the
+        // additive side (the sum sees no signed direction), together
+        // pinning the signed-symmetry closure of the sum surface at
+        // the tier altitude. Strict advance over
+        // `kind_modality_degree_sum_right_skew_fixture_is_three` on
+        // the diff altitude.
+        let m: ProvenanceMap = [
+            ("b1", ConfigTierKind::Bare),
+            ("b2", ConfigTierKind::Bare),
+            ("d1", ConfigTierKind::Default),
+            ("d2", ConfigTierKind::Default),
+            ("c1", ConfigTierKind::Custom),
+            ("c2", ConfigTierKind::Custom),
+            ("x", ConfigTierKind::Discovered),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        assert!(m.tiers_full_cover());
+        assert_eq!(m.peak_tier_multiplicity(), 3);
+        assert_eq!(m.trough_tier_multiplicity(), 1);
+        assert_eq!(m.tier_modality_degree_sum(), 4);
+    }
+
+    #[test]
+    fn tier_modality_degree_sum_tiers_balanced_iff_two_times_contributing() {
+        // Structural equivalence: `tiers_balanced() ⇔
+        // tier_modality_degree_sum() == 2 * contributing_tiers_count()`
+        // on every fixture. The balanced-tier-counts predicate
+        // rewritten as an arithmetic equality on the closed
+        // multiplicity surface at its structural upper bound. Peer of
+        // `kind_modality_degree_sum_kinds_balanced_iff_two_times_present`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let balanced = map.tiers_balanced();
+            let sum_at_ceiling =
+                map.tier_modality_degree_sum() == 2 * map.contributing_tiers_count();
+            assert_eq!(
+                balanced,
+                sum_at_ceiling,
+                "tiers_balanced ({balanced}) must agree with \
+                 tier_modality_degree_sum ({s}) == 2 * contributing_tiers_count \
+                 ({twice}) for map with len={n}",
+                s = map.tier_modality_degree_sum(),
+                twice = 2 * map.contributing_tiers_count(),
+                n = map.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_modality_degree_sum_zero_iff_empty() {
+        // Vacuous-nothing boundary: `tier_modality_degree_sum() == 0`
+        // iff the map is empty on every fixture. Dual to
+        // `tier_modality_amplitude() == 0`'s much larger inhabited
+        // region (which fires on empty, singleton, uniform-count, and
+        // every strictly-ordered shape at the tier altitude). Peer of
+        // `kind_modality_degree_sum_zero_iff_empty` on the diff
+        // altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sum_zero = map.tier_modality_degree_sum() == 0;
+            let is_empty = map.is_empty();
+            assert_eq!(
+                sum_zero,
+                is_empty,
+                "tier_modality_degree_sum == 0 iff is_empty for map \
+                 with len={n}",
+                n = map.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_modality_degree_sum_non_empty_bounded_below_by_two() {
+        // Non-empty lower bound: every non-empty map has
+        // `tier_modality_degree_sum() >= 2`. The additive-side
+        // signature of the "vacuous-versus-populated" boundary on the
+        // tier-altitude multiplicity surface — the value `1` is
+        // unreachable. Peer of
+        // `kind_modality_degree_sum_non_empty_bounded_below_by_two` on
+        // the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.is_empty() {
+                continue;
+            }
+            assert!(
+                map.tier_modality_degree_sum() >= 2,
+                "non-empty tier_modality_degree_sum ({s}) must be >= 2 \
+                 for map with len={n}",
+                s = map.tier_modality_degree_sum(),
+                n = map.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_modality_degree_sum_bounded_above_by_twice_contributing_tiers_count() {
+        // Support bound: both level sets are subsets of the observed
+        // support, so their sum is bounded above by twice the support
+        // size on every fixture. Empty map: 0 <= 0. Singleton support:
+        // 2 <= 2. Two-tied balanced: 4 <= 4. Uniform four-tier cover:
+        // 8 <= 8. Heavy-tail four-tier: 4 <= 8. Peer of
+        // `kind_modality_degree_sum_bounded_above_by_twice_present_kinds_count`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(
+                map.tier_modality_degree_sum() <= 2 * map.contributing_tiers_count(),
+                "tier_modality_degree_sum ({s}) must not exceed \
+                 2 * contributing_tiers_count ({twice})",
+                s = map.tier_modality_degree_sum(),
+                twice = 2 * map.contributing_tiers_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_modality_degree_sum_bounded_by_twice_axis_cardinality() {
+        // Structural bound: `tier_modality_degree_sum() <=
+        // 2 * axis_cardinality::<ConfigTierKind>()` (= 8) on every
+        // fixture. Composition of `<= 2 * contributing_tiers_count()`
+        // with `contributing_tiers_count() <=
+        // axis_cardinality::<ConfigTierKind>()`. Peer of
+        // `kind_modality_degree_sum_bounded_by_twice_axis_cardinality`
+        // on the diff altitude, promoted from `2 * 3 = 6` to
+        // `2 * 4 = 8`.
+        let card = crate::axis_cardinality::<ConfigTierKind>();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(
+                map.tier_modality_degree_sum() <= 2 * card,
+                "tier_modality_degree_sum ({s}) must not exceed \
+                 2 * axis cardinality ({twice})",
+                s = map.tier_modality_degree_sum(),
+                twice = 2 * card,
+            );
+        }
+    }
+
+    #[test]
+    fn tier_modality_degree_sum_agrees_with_modality_degree_component_sum() {
+        // Fused-pair pin: `tier_modality_degree_sum` equals the sum of
+        // the `(peak_mult, trough_mult)` components read off the fused
+        // `modality_degree` pair. Both routings agree pointwise; the
+        // named seam is the routing through the pair projection into a
+        // single sum scalar. Peer of
+        // `kind_modality_degree_sum_agrees_with_modality_degree_component_sum`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (peak_mult, trough_mult) = map.tier_histogram().modality_degree();
+            assert_eq!(
+                map.tier_modality_degree_sum(),
+                peak_mult + trough_mult,
+                "tier_modality_degree_sum must equal modality_degree \
+                 component sum on map with len={n}",
+                n = map.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_modality_degree_sum_and_amplitude_share_parity() {
+        // Parity pin: tier_modality_degree_sum and
+        // tier_modality_amplitude share parity on every fixture. The
+        // pair (sum, amplitude) carries the same information as the
+        // pair (peak_mult, trough_mult) under the invertible transform
+        // max(peak, trough) = (sum + amp) / 2, min(peak, trough) =
+        // (sum - amp) / 2 with exact integer division. Pinned across
+        // the fixture set. Peer of
+        // `kind_modality_degree_sum_and_amplitude_share_parity` on
+        // the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sum = map.tier_modality_degree_sum();
+            let amp = map.tier_modality_amplitude();
+            assert_eq!(
+                sum % 2,
+                amp % 2,
+                "tier_modality_degree_sum ({sum}) and \
+                 tier_modality_amplitude ({amp}) must share parity for \
+                 map with len={n}",
+                n = map.len(),
+            );
+            // Invertible-transform round-trip on the *unordered*
+            // multiplicity pair: `(sum + amp) / 2 == max(peak, trough)`
+            // and `(sum - amp) / 2 == min(peak, trough)`. The additive
+            // side sees no signed direction, so peak/trough labelling
+            // itself requires the fused pair.
+            let peak_mult = map.peak_tier_multiplicity();
+            let trough_mult = map.trough_tier_multiplicity();
+            let recovered_max = (sum + amp) / 2;
+            let recovered_min = (sum - amp) / 2;
+            assert_eq!(recovered_max, peak_mult.max(trough_mult));
+            assert_eq!(recovered_min, peak_mult.min(trough_mult));
+        }
+    }
+
+    #[test]
+    fn tier_modality_degree_sum_two_iff_both_extremes_uniquely_held_on_non_empty() {
+        // Both-extremes-uniquely-held predicate: on every non-empty
+        // fixture, `tier_modality_degree_sum() == 2` iff
+        // `peak_tier_multiplicity() == 1 &&
+        // trough_tier_multiplicity() == 1` — the sum reaches its
+        // non-empty lower bound of `2` exactly when both extremal
+        // level sets are singletons. Fires on every singleton-support
+        // shape and every strictly-ordered non-uniform shape where
+        // both extremes are uniquely held. Peer of
+        // `kind_modality_degree_sum_two_iff_both_extremes_uniquely_held_on_non_empty`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.is_empty() {
+                continue;
+            }
+            let sum_two = map.tier_modality_degree_sum() == 2;
+            let both_unique =
+                map.peak_tier_multiplicity() == 1 && map.trough_tier_multiplicity() == 1;
+            assert_eq!(
+                sum_two,
+                both_unique,
+                "tier_modality_degree_sum == 2 iff (peak_mult == 1 && \
+                 trough_mult == 1) on non-empty map with len={n}",
+                n = map.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_modality_degree_sum_agrees_with_open_coded_sum_walk() {
+        // Parity against the exact hand-rolled peak/trough multiplicity
+        // walk this lift surfaces at a named seam: walk every cell of
+        // the histogram, find the maximum count, count how many cells
+        // carry it (peak multiplicity); restrict to nonzero cells,
+        // find the minimum positive count, count how many cells carry
+        // it (trough multiplicity); take the sum. Empty histogram
+        // yields both counts `0`, so the sum reads `0`. Peer of the
+        // diff-altitude open-coded walks combined at this altitude
+        // into a single sum pin.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tier_modality_degree_sum();
+            let hist = map.tier_histogram();
+            let max = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let peak_mult = if max == 0 {
+                0
+            } else {
+                hist.iter().filter(|(_, c)| *c == max).count()
+            };
+            let min_positive = hist.iter().map(|(_, c)| c).filter(|c| *c > 0).min();
+            let trough_mult = match min_positive {
+                None => 0,
+                Some(m) => hist.iter().filter(|(_, c)| *c == m).count(),
+            };
+            let hand_rolled = peak_mult + trough_mult;
             assert_eq!(via_seam, hand_rolled);
         }
     }
