@@ -7162,6 +7162,166 @@ impl ConfigDiff {
         self.kind_histogram().peak_multiplicity()
     }
 
+    /// The **antimodal-multiplicity of diff kinds** — the number of
+    /// [`DiffLineKind`] cells that hold the trough (positive-min) line
+    /// count on this diff. Equal to `1` on every strictly-antimodally-
+    /// unique diff (a unique recessive kind, singleton-support included),
+    /// `>= 2` on every antimodally-tied diff (two or more observed kinds
+    /// sharing the minimum positive count), and `0` exactly on the empty
+    /// diff (no observed cells, no trough). Routes through
+    /// [`Self::kind_histogram`]:
+    /// [`crate::AxisHistogram::trough_multiplicity`] reads the same
+    /// scalar off the fixed-cardinality counts vector in one pass.
+    ///
+    /// The **scalar-antimodality peer** of the two closed boolean
+    /// predicates that project this multiplicity through equality
+    /// thresholds — [`Self::kinds_strictly_antimodally_unique`]
+    /// (`trough_multiplicity() == 1`) and [`Self::kinds_antimodally_tied`]
+    /// (`trough_multiplicity() >= 2`) — surfacing the underlying `usize`
+    /// scalar those predicates project through comparison. Consumers
+    /// previously re-derived the projection inline as
+    /// `diff.kind_histogram().trough_multiplicity()` (one method call
+    /// at every consumer site, pulling in the histogram temporary at
+    /// each site) or reconstructed it from the fused
+    /// `(peak_multiplicity, trough_multiplicity)` pair via
+    /// `diff.kind_histogram().modality_degree().1` (a pair-component
+    /// projection that pays for the first scan on the modal side
+    /// consumers on the antimodal side never use). Before this lift,
+    /// the natural typed primitive for CLI `config-diff` summaries,
+    /// attestation manifests, and alerting policies asking *"how many
+    /// diff kinds are tied at the trough?"* had no named seam — the
+    /// summary line *"2 kinds tied at trough count 1: Removed and
+    /// Added both fired once as the runt"* (where 2 is this scalar),
+    /// the attestation manifest recording the antimodal-multiplicity
+    /// of the rendered diff, and the alerting policy reading *"trough-
+    /// kind multiplicity = 2"* to flag a rebuild window where the
+    /// recessive cell is ambiguous — all fanned out through the
+    /// underlying primitive at every call site instead of a single
+    /// named surface method.
+    ///
+    /// The diff-altitude scalar-antimodality peer that **seeds the
+    /// "trough-multiplicity across altitudes" projection** — the
+    /// natural scalar sister of the antimodally-tied / strictly-
+    /// antimodally-unique boolean pair on every altitude of the fully-
+    /// closed cube. The next natural lifts climb to the tier altitude
+    /// (`ProvenanceMap::trough_tier_multiplicity` over
+    /// [`Self::tier_histogram`] on the tier altitude) and sideways
+    /// along the chain altitude's three sub-axes
+    /// (`layer_kind_trough_multiplicity`,
+    /// `file_format_trough_multiplicity`,
+    /// `env_prefix_kind_trough_multiplicity` over the corresponding
+    /// chain histograms). The pattern is the same at every altitude /
+    /// sub-axis: surface the
+    /// [`crate::AxisHistogram::trough_multiplicity`] scalar directly at
+    /// the local histogram altitude, routing through the shared
+    /// primitive one seam down instead of every consumer pulling the
+    /// histogram temporary. Parallels the just-closed "peak-
+    /// multiplicity across altitudes" projection seeded on the same
+    /// altitude by [`Self::peak_kind_multiplicity`] — this lift is the
+    /// antimodal peer, closing the `(peak_multiplicity,
+    /// trough_multiplicity)` modality-degree pair at the diff altitude
+    /// with both scalars named as separate seams instead of a fused
+    /// pair-projection.
+    ///
+    /// **Empty-diff convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::trough_multiplicity`] empty convention
+    /// one altitude down; the empty diff has no observed cells, so no
+    /// cell holds the trough count. The scalar-count / scalar-
+    /// multiplicity pair `(trough_kind_count, trough_kind_multiplicity)`
+    /// reads uniformly `(0, 0)` on the empty diff, alongside the
+    /// `(peak_kind_count, peak_kind_multiplicity)` pair one seam over
+    /// and the `(peak_kind_count, trough_kind_count, kind_spread)`
+    /// dispersion triple's uniform `(0, 0, 0)` reading. The empty diff
+    /// sits on the `0` singular boundary of the multiplicity scalar —
+    /// strictly below the `1` singleton-support boundary and the
+    /// `>= 2` antimodally-tied boundary that partition the non-empty
+    /// support.
+    ///
+    /// **Singleton-support convention** — returns `1` on every diff
+    /// whose observed support is a single [`DiffLineKind`]: the sole
+    /// observed kind is simultaneously the unique peak *and* the unique
+    /// trough (peak count = trough count = line count, both
+    /// multiplicities = 1). The singleton-support diff is therefore
+    /// strictly-antimodally-unique — pointwise equivalent to
+    /// [`Self::kinds_strictly_antimodally_unique`] reading `true` on the
+    /// same input, via the `trough_multiplicity() == 1` threshold.
+    ///
+    /// **Uniform per-kind convention** — returns
+    /// `crate::axis_cardinality::<DiffLineKind>()` = `3` on every
+    /// uniform full-cover diff (all three [`DiffLineKind`] cells at the
+    /// same nonzero count) — the maximum reachable value on the three-
+    /// cell diff-kind axis. Every observed cell is tied at the trough
+    /// (and simultaneously at the peak, since they coincide on the
+    /// uniform-count shape), so the multiplicity walks the full support.
+    ///
+    /// # Invariants
+    ///
+    /// - `trough_kind_multiplicity() == kind_histogram().trough_multiplicity()`
+    ///   — both project the same scalar off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `trough_kind_multiplicity() == kind_histogram().modality_degree().1`
+    ///   — the antimodal component of the fused
+    ///   `(peak_multiplicity, trough_multiplicity)` pair.
+    /// - `trough_kind_multiplicity() == 0` ⇔ `self.lines.is_empty()` —
+    ///   the empty-diff / empty-histogram boundary. Peer to the
+    ///   `trough_kind_count() == 0` boundary on the count side, both
+    ///   witnessed by the same emptiness of the observed support.
+    /// - `trough_kind_multiplicity() >= 1` whenever `!self.lines.is_empty()`
+    ///   — every non-empty diff has at least one cell at the trough
+    ///   (the recessive cell witnesses one member of the antimodal
+    ///   level set).
+    /// - `trough_kind_multiplicity() <=
+    ///   crate::axis_cardinality::<DiffLineKind>()` always — bounded
+    ///   above by the axis cardinality `3` on the three-cell diff-kind
+    ///   axis. Lifted from the trait-uniform `trough_multiplicity() <=
+    ///   axis_cardinality::<A>()` law on [`crate::AxisHistogram`].
+    /// - `trough_kind_multiplicity() <= present_kinds_count()` always —
+    ///   the antimodal set is a subset of the observed support, so its
+    ///   size is bounded by the support size.
+    /// - `trough_kind_multiplicity() == 1` ⇔
+    ///   `self.kinds_strictly_antimodally_unique()` — the
+    ///   `trough_multiplicity == 1` boundary on the scalar side, the
+    ///   strict-antimodal-uniqueness boundary on the boolean side. Peer
+    ///   of the [`Self::kinds_strictly_antimodally_unique`] routing that
+    ///   this scalar surfaces.
+    /// - `trough_kind_multiplicity() >= 2` ⇔ `self.kinds_antimodally_tied()`
+    ///   — the `trough_multiplicity >= 2` boundary on the scalar side,
+    ///   the antimodal-tie boundary on the boolean side. Peer of the
+    ///   [`Self::kinds_antimodally_tied`] routing that this scalar
+    ///   surfaces.
+    /// - `trough_kind_multiplicity() == peak_kind_multiplicity()`
+    ///   whenever `kinds_balanced()` — on every balanced diff (empty
+    ///   included) the peak and trough coincide, so both multiplicities
+    ///   read off the same shared level set. The uniform-count structural
+    ///   equality lifted from
+    ///   `is_uniform_count() ⇒ trough_multiplicity() ==
+    ///   peak_multiplicity() == distinct_cells()` on
+    ///   [`crate::AxisHistogram`].
+    /// - `trough_kind_multiplicity() == present_kinds_count()` whenever
+    ///   `kinds_balanced() && !self.lines.is_empty()` — every observed
+    ///   kind ties at the trough on a balanced non-empty diff (peak and
+    ///   trough coincide, both walk the full support).
+    /// - `trough_kind_multiplicity() == 3` ⇒ `kinds_full_cover()` — the
+    ///   only way for all three cells to tie at the trough is for every
+    ///   cell to be observed at a shared positive count (the uniform
+    ///   full-cover degenerate).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (the trough +
+    /// multiplicity scan). Both are `O(n)` in practice since the diff-
+    /// cell axis carries a fixed three-cell cardinality; the returned
+    /// `usize` reads one scalar. Fuses the two-scan
+    /// `.modality_degree().1` idiom (which walks the counts vector
+    /// twice — once for the peak consumers on the antimodal side never
+    /// use, once for the trough multiplicity) into a single-scan
+    /// projection through the shared primitive.
+    #[must_use]
+    pub fn trough_kind_multiplicity(&self) -> usize {
+        self.kind_histogram().trough_multiplicity()
+    }
+
     /// The **balanced-diff-kinds boolean predicate** at the diff altitude —
     /// `true` exactly when every observed [`DiffLineKind`] contributed the
     /// same number of lines. The typed boolean peer of `kind_spread() == 0`
@@ -14355,6 +14515,338 @@ mod tests {
         };
         assert_eq!(diff.peak_kind_count(), 2);
         assert_eq!(diff.peak_kind_multiplicity(), 1);
+    }
+
+    // ── ConfigDiff::trough_kind_multiplicity — antimodal-multiplicity scalar
+    //    seam on the diff altitude, lifting AxisHistogram::trough_multiplicity
+    //    and seeding the "trough-multiplicity across altitudes" projection ──
+
+    #[test]
+    fn trough_kind_multiplicity_matches_kind_histogram_trough_multiplicity_pointwise() {
+        // Routing pin: `trough_kind_multiplicity` routes through
+        // `kind_histogram().trough_multiplicity()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Diff-altitude
+        // scalar-antimodality seed of the "trough-multiplicity across
+        // altitudes" projection.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().trough_multiplicity();
+            assert_eq!(diff.trough_kind_multiplicity(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn trough_kind_multiplicity_agrees_with_modality_degree_second_component() {
+        // Fused-pair pin: `trough_kind_multiplicity` equals the
+        // antimodal component of the fused
+        // `(peak_multiplicity, trough_multiplicity)` pair on every
+        // fixture. The scalar-antimodality peer of the pair-projection
+        // form; both routings agree pointwise since both read the same
+        // underlying primitive.
+        for diff in dominant_kind_fixtures() {
+            let (_peak_mult, trough_mult) = diff.kind_histogram().modality_degree();
+            assert_eq!(diff.trough_kind_multiplicity(), trough_mult);
+        }
+    }
+
+    #[test]
+    fn trough_kind_multiplicity_empty_diff_is_zero() {
+        // Empty-diff convention: no observed cells, no trough, so the
+        // multiplicity reads `0`. Matches the
+        // AxisHistogram::trough_multiplicity empty convention one
+        // altitude down. Peer of `trough_kind_count_empty_diff_is_zero`
+        // on the count side; the paired
+        // `(trough_kind_count, trough_kind_multiplicity)` scalar reads
+        // uniformly `(0, 0)` on the empty diff.
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.trough_kind_count(), 0);
+        assert_eq!(empty.trough_kind_multiplicity(), 0);
+        assert!(empty.lines.is_empty());
+    }
+
+    #[test]
+    fn trough_kind_multiplicity_singleton_support_is_one() {
+        // Singleton-support pin: every line lands on the same kind, so
+        // that one kind is simultaneously the unique peak and unique
+        // trough — trough multiplicity reads `1`. The strictly-
+        // antimodally-unique boundary on the singleton-support side;
+        // peer of `kinds_strictly_antimodally_unique` reading `true`
+        // via the `trough_multiplicity == 1` threshold.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Removed("r3".into()),
+            ],
+        };
+        assert_eq!(diff.present_kinds_count(), 1);
+        assert_eq!(diff.trough_kind_multiplicity(), 1);
+        assert!(diff.kinds_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn trough_kind_multiplicity_two_kind_tie_is_two() {
+        // Two-kind-tied pin: `Removed + Added` both at count `1`, both
+        // tied at the trough (and simultaneously at the peak, since
+        // they coincide on the uniform-count shape). Multiplicity
+        // reads `2` — the antimodally-tied boundary at the smallest
+        // non-trivial tied support. Peer of `kinds_antimodally_tied`
+        // reading `true` via the `trough_multiplicity >= 2` threshold.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.trough_kind_multiplicity(), 2);
+        assert!(diff.kinds_antimodally_tied());
+        assert!(!diff.kinds_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn trough_kind_multiplicity_uniform_full_cover_is_three() {
+        // Uniform full-cover pin: every observed kind contributes the
+        // same nonzero count, so all three cells tie at the trough
+        // (and simultaneously at the peak). Multiplicity reads `3` =
+        // axis cardinality of DiffLineKind — the maximum reachable
+        // value on the three-cell diff-kind axis. The uniform-cover
+        // degenerate closes the upper end of the multiplicity scalar
+        // range 0..=3.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kinds_full_cover());
+        assert_eq!(diff.trough_kind_multiplicity(), 3);
+        assert_eq!(
+            diff.trough_kind_multiplicity(),
+            crate::axis_cardinality::<DiffLineKind>()
+        );
+    }
+
+    #[test]
+    fn trough_kind_multiplicity_strictly_ordered_fixture_is_one() {
+        // Strictly-ordered pin: three distinct positive counts
+        // (Context=3, Added=2, Removed=1). One cell holds the trough,
+        // so multiplicity reads `1`. The strictly-ordered case pins the
+        // strictly-antimodally-unique boundary when every count is
+        // distinct.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.trough_kind_multiplicity(), 1);
+        assert!(diff.kinds_strictly_antimodally_unique());
+    }
+
+    #[test]
+    fn trough_kind_multiplicity_is_zero_iff_diff_is_empty() {
+        // Emptiness boundary: `trough_kind_multiplicity() == 0` iff
+        // the diff has no lines. Peer of `trough_kind_count == 0 iff
+        // empty` on the count side; both scalars sit on the same
+        // emptiness of the observed support.
+        for diff in dominant_kind_fixtures() {
+            let zero = diff.trough_kind_multiplicity() == 0;
+            let is_empty = diff.lines.is_empty();
+            assert_eq!(
+                zero,
+                is_empty,
+                "trough_kind_multiplicity == 0 must agree with lines.is_empty() \
+                 for diff with trough_mult={m}, lines_len={n}",
+                m = diff.trough_kind_multiplicity(),
+                n = diff.lines.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_kind_multiplicity_bounded_by_axis_cardinality() {
+        // Structural bound: `trough_kind_multiplicity() <=
+        // axis_cardinality::<DiffLineKind>()` (= 3) on every fixture.
+        // Lifted from the trait-uniform `trough_multiplicity() <=
+        // axis_cardinality::<A>()` law on AxisHistogram. Equality
+        // holds exactly on the uniform full-cover shape.
+        let card = crate::axis_cardinality::<DiffLineKind>();
+        for diff in dominant_kind_fixtures() {
+            assert!(
+                diff.trough_kind_multiplicity() <= card,
+                "trough_kind_multiplicity ({m}) must not exceed axis cardinality ({card})",
+                m = diff.trough_kind_multiplicity(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_kind_multiplicity_bounded_above_by_present_kinds_count() {
+        // Support bound: the antimodal set is a subset of the observed
+        // support, so `trough_kind_multiplicity() <= present_kinds_count()`
+        // on every fixture. Empty diff: 0 <= 0. Singleton support:
+        // 1 <= 1. Two-tied: 2 <= 2. Uniform three-kind cover: 3 <= 3.
+        // Skewed three-cell fixture: 1 <= 3.
+        for diff in dominant_kind_fixtures() {
+            assert!(
+                diff.trough_kind_multiplicity() <= diff.present_kinds_count(),
+                "trough_kind_multiplicity ({m}) must not exceed present_kinds_count ({p})",
+                m = diff.trough_kind_multiplicity(),
+                p = diff.present_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_kind_multiplicity_eq_one_iff_kinds_strictly_antimodally_unique() {
+        // Strictly-antimodally-unique boundary: the boolean predicate
+        // `kinds_strictly_antimodally_unique()` reads exactly the
+        // `trough_multiplicity() == 1` threshold on the underlying
+        // scalar this seam surfaces. Empty diff: 0 == 1 is false — both
+        // sides agree on the `false` empty-diff convention.
+        for diff in dominant_kind_fixtures() {
+            let mult_one = diff.trough_kind_multiplicity() == 1;
+            let strict = diff.kinds_strictly_antimodally_unique();
+            assert_eq!(
+                mult_one,
+                strict,
+                "trough_kind_multiplicity == 1 must agree with \
+                 kinds_strictly_antimodally_unique for diff with trough_mult={m}, \
+                 lines_len={n}",
+                m = diff.trough_kind_multiplicity(),
+                n = diff.lines.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_kind_multiplicity_ge_two_iff_kinds_antimodally_tied() {
+        // Antimodally-tied boundary: the boolean predicate
+        // `kinds_antimodally_tied()` reads exactly the
+        // `trough_multiplicity() >= 2` threshold on the underlying
+        // scalar. Empty diff: 0 >= 2 is false — both sides agree on
+        // the `false` empty-diff convention.
+        for diff in dominant_kind_fixtures() {
+            let mult_ge_two = diff.trough_kind_multiplicity() >= 2;
+            let tied = diff.kinds_antimodally_tied();
+            assert_eq!(
+                mult_ge_two,
+                tied,
+                "trough_kind_multiplicity >= 2 must agree with \
+                 kinds_antimodally_tied for diff with trough_mult={m}, \
+                 lines_len={n}",
+                m = diff.trough_kind_multiplicity(),
+                n = diff.lines.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_kind_multiplicity_equals_peak_kind_multiplicity_on_balanced_diffs() {
+        // Uniform-count coincidence: on every balanced diff (empty
+        // included, vacuous uniformity) the peak and trough level sets
+        // coincide, so both multiplicities read off the same set. The
+        // `is_uniform_count ⇒ trough_multiplicity == peak_multiplicity`
+        // law lifted from AxisHistogram to the diff altitude — the
+        // structural equality between the modal and antimodal level
+        // sets on the uniform-count shape.
+        for diff in dominant_kind_fixtures() {
+            if !diff.kinds_balanced() {
+                continue;
+            }
+            assert_eq!(
+                diff.trough_kind_multiplicity(),
+                diff.peak_kind_multiplicity(),
+                "balanced diff: trough_kind_multiplicity must equal \
+                 peak_kind_multiplicity (peak and trough coincide on \
+                 uniform-count shape)",
+            );
+        }
+    }
+
+    #[test]
+    fn trough_kind_multiplicity_balanced_nonempty_equals_present_kinds_count() {
+        // Uniform-cover shape: on every balanced non-empty diff, every
+        // observed cell ties at the trough — multiplicity coincides
+        // with the observed support size. The `kinds_balanced ∧
+        // !is_empty ⇒ trough_kind_multiplicity == present_kinds_count`
+        // invariant.
+        for diff in dominant_kind_fixtures() {
+            if diff.lines.is_empty() || !diff.kinds_balanced() {
+                continue;
+            }
+            assert_eq!(
+                diff.trough_kind_multiplicity(),
+                diff.present_kinds_count(),
+                "balanced non-empty diff: trough_kind_multiplicity must equal \
+                 present_kinds_count",
+            );
+        }
+    }
+
+    #[test]
+    fn trough_kind_multiplicity_ge_one_iff_diff_is_nonempty() {
+        // Non-emptiness boundary: every non-empty diff has at least
+        // one cell at the trough (the recessive cell witnesses one
+        // member of the antimodal level set). The
+        // `trough_kind_multiplicity >= 1 ⇔ !lines.is_empty()` law —
+        // the strict complement of the
+        // `trough_kind_multiplicity == 0 ⇔ lines.is_empty()` boundary
+        // pinned above.
+        for diff in dominant_kind_fixtures() {
+            let ge_one = diff.trough_kind_multiplicity() >= 1;
+            let non_empty = !diff.lines.is_empty();
+            assert_eq!(
+                ge_one,
+                non_empty,
+                "trough_kind_multiplicity >= 1 must agree with !lines.is_empty() \
+                 for diff with trough_mult={m}, lines_len={n}",
+                m = diff.trough_kind_multiplicity(),
+                n = diff.lines.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_kind_multiplicity_three_implies_full_cover() {
+        // Full-cover implication: `trough_kind_multiplicity == 3` (=
+        // axis cardinality) implies every cell is observed at a shared
+        // positive count — the uniform full-cover degenerate. The
+        // strict-uniqueness of the upper-boundary multiplicity value.
+        for diff in dominant_kind_fixtures() {
+            if diff.trough_kind_multiplicity() == crate::axis_cardinality::<DiffLineKind>() {
+                assert!(
+                    diff.kinds_full_cover(),
+                    "trough_kind_multiplicity == axis_cardinality must imply \
+                     kinds_full_cover for diff with lines_len={n}",
+                    n = diff.lines.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn trough_kind_multiplicity_added_dominated_fixture_is_one() {
+        // Direct positional pin: a diff of 2 Added + 1 Context has
+        // Added dominant at 2 (unique), Context at 1 (unique trough).
+        // Trough multiplicity reads `1` — the strictly-antimodally-
+        // unique shape. Peer of
+        // `trough_kind_count_added_dominated_fixture_is_one` (if
+        // present) on the count side of the recessive pair.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.trough_kind_multiplicity(), 1);
     }
 
     // ── ConfigDiff::kinds_balanced — balanced-diff-kinds boolean predicate on
