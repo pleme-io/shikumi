@@ -5962,6 +5962,141 @@ impl ProvenanceMap {
     pub fn tiers_support_magnitude_direction(&self) -> crate::SupportMagnitudeDirection {
         self.tier_histogram().support_magnitude_direction()
     }
+
+    /// The **uniformly-observed-count boolean** on this resolved fold's
+    /// [`ConfigTierKind`] histogram at the tier altitude — `true`
+    /// exactly when every observed cell of the histogram carries the
+    /// same observation count. Routes through
+    /// [`crate::AxisHistogram::is_uniform_count`] one altitude down —
+    /// the short-circuiting single-pass scan over the fixed-cardinality
+    /// counts vector reading `spread() == 0` off one predicate, strictly
+    /// tighter than either of the documented scalar-side surface forms
+    /// one seam over.
+    ///
+    /// The **cube-native uniform-count named seam** at the tier
+    /// altitude — synonym of the historically-named
+    /// [`Self::tiers_balanced`] under the cube-native
+    /// [`crate::AxisHistogram::is_uniform_count`] alias. Both project
+    /// the same predicate off the same primitive; the tier-altitude
+    /// seam pair mirrors the diff-altitude pair
+    /// [`ConfigDiff::kinds_balanced`] / [`ConfigDiff::kinds_uniform_count`]
+    /// one altitude down. Every operator-facing *"was every observed
+    /// tier observed equally on this resolved fold?"* summary now reads
+    /// off one named boolean call under the cube-native uniform-count
+    /// name, alongside the existing balanced-tier-counts name — the
+    /// substrate now names the same predicate in both operator dialects
+    /// at the tier altitude without pushing consumers to choose one
+    /// name over the other at every call site.
+    ///
+    /// **Empty-map convention** — returns `true`: the empty map has no
+    /// observed cells, so the uniformity predicate reads vacuously
+    /// (matching the class-side [`crate::AxisHistogram::is_uniform_count`]
+    /// empty convention one altitude down — the shared vacuous-
+    /// uniformity boundary on the empty histogram, peer of
+    /// [`Self::tiers_balanced`]'s `true`-side vacuous witness).
+    ///
+    /// **Singleton-support convention** — returns `true`: a fold with a
+    /// single observed tier carries only one nonzero count, so
+    /// uniformity is trivial. Direct pin of the histogram-side
+    /// subsumption `has_singular_support ⇒ is_uniform_count` one
+    /// altitude down. Peer of [`Self::tiers_singular_support`]'s
+    /// `true`-side subsumption into [`Self::tiers_balanced`].
+    ///
+    /// **Uniform per-tier convention** — returns `true` on every fold
+    /// whose per-tier counts coincide (each observed [`ConfigTierKind`]
+    /// contributing the same nonzero count), including the
+    /// k-tier-observed-once-each shape and the uniform full-cover shape
+    /// over all four [`ConfigTierKind`] cells. Simultaneous witness for
+    /// `(tiers_full_cover, tiers_uniform_count) == (true, true)` — the
+    /// top uniform-cover corner of the (coverage, uniformity) boolean
+    /// pair on the tier altitude.
+    ///
+    /// **Climbs the "uniform-count across altitudes" projection** to
+    /// the tier altitude — the natural next lift after the diff-altitude
+    /// seed [`ConfigDiff::kinds_uniform_count`]. The next natural
+    /// sideways lifts fan along the chain altitude's three sub-axes
+    /// (`ConfigSourceChain::layer_kinds_uniform_count`,
+    /// `ConfigSourceChain::file_formats_uniform_count`,
+    /// `ConfigSourceChain::env_prefix_kinds_uniform_count` over the
+    /// corresponding chain histograms). Once climbed and closed at every
+    /// altitude / sub-axis in the same five-step trajectory the eleven
+    /// prior boolean projections plus the four closed classifier rows
+    /// closed, the substrate closes the uniform-count boolean row at
+    /// every altitude / sub-axis of the 5-column grid.
+    ///
+    /// **Cardinality-`4` reachability at the tier altitude — uniform-
+    /// count carries witnesses on every support cardinality.**
+    /// [`ConfigTierKind`] carries four cells, so `tiers_uniform_count`
+    /// reads `true` on the empty map (support `0`, vacuous), on every
+    /// singleton-support fold (support `1`, trivial), on every balanced
+    /// two-tier partial-cover fold (support `2` with matched nonzero
+    /// counts), on every balanced three-tier partial-cover fold
+    /// (support `3` with all three cells at the same count), and on
+    /// every uniform four-tier cover (support `4` with all four cells
+    /// at the same count); and reads `false` on every skewed partial-
+    /// cover fold and on every skewed full-cover fold — the orthogonal
+    /// *shape* boundary slicing every support cardinality into a uniform
+    /// half and a skewed half (except supports `0` and `1` which land
+    /// entirely on the uniform side vacuously). One strict advance over
+    /// the cardinality-`3` diff altitude's three-uniform-band witness
+    /// set (supports `0` / `1` / `2` / `3`), adding the
+    /// four-uniform-band `support == 4` witness at the tier altitude.
+    ///
+    /// # Invariants
+    ///
+    /// - `tiers_uniform_count() == tier_histogram().is_uniform_count()`
+    ///   — the routing equivalence one altitude down; both project the
+    ///   same boolean off the same primitive.
+    /// - `tiers_uniform_count() == tiers_balanced()` — the alias-side
+    ///   equivalence: the cube-native uniform-count name and the
+    ///   balanced-tier-counts name project the same predicate off the
+    ///   same primitive. Both routings are pointwise equal on every
+    ///   fixture.
+    /// - `tiers_uniform_count() == (tier_spread() == 0)` — the fused-
+    ///   scalar form on the peak-minus-trough scalar peer one altitude
+    ///   down; the defining equivalence collapsed to one equality on
+    ///   the scalar-difference surface.
+    /// - `tiers_uniform_count() == (peak_tier_count() ==
+    ///   trough_tier_count())` — the structural form on the underlying
+    ///   scalar pair (before the pair is fused into `tier_spread`),
+    ///   reading off one equality on the scalar-pair surface.
+    /// - `tiers_uniform_count() == (dominant_tier() == recessive_tier())`
+    ///   — the modal-pair form; both branches agree on the empty map
+    ///   (`None == None`), on every singleton-support fold
+    ///   (`Some(t) == Some(t)`), on every uniform per-tier fold
+    ///   (`Some(first_tier) == Some(first_tier)` after declaration-order
+    ///   tie-break), and on every skewed fold (both sides read `false`).
+    /// - `!tiers_any_observed() ⇒ tiers_uniform_count()` — vacuous
+    ///   uniformity on the empty map; contrapositively,
+    ///   `!tiers_uniform_count() ⇒ tiers_any_observed()` (a skewed fold
+    ///   has at least two distinct positive counts, so the support is
+    ///   non-empty).
+    /// - `tiers_singular_support() ⇒ tiers_uniform_count()` — a
+    ///   single-observed-tier fold is vacuously uniform-counted (only
+    ///   one count in the support to compare to itself); the converse
+    ///   fails on the empty map, on every uniform axis-cover, and on
+    ///   every balanced multi-tier partial cover — one-way implication.
+    /// - `contributing_tiers().len() <= 1 ⇒ tiers_uniform_count()` —
+    ///   every fold with support size 0 or 1 is trivially uniform-
+    ///   counted; contrapositively, `!tiers_uniform_count() ⇒
+    ///   contributing_tiers().len() >= 2` (a skewed fold observes at
+    ///   least two distinct tiers with differing counts).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<ConfigTierKind>()` (the short-
+    /// circuiting nonzero scan). Both are `O(n)` in practice since the
+    /// tier axis carries a fixed four-cell cardinality; the returned
+    /// `bool` fits in a single byte, and the scan short-circuits on the
+    /// second distinct nonzero count — no allocation, no per-cell
+    /// branching after the histogram is built. Strictly tighter than
+    /// the two-full-scan `peak_tier_count()` / `trough_tier_count()`
+    /// fusion the scalar-spread form pays for on skewed inputs.
+    #[must_use]
+    pub fn tiers_uniform_count(&self) -> bool {
+        self.tier_histogram().is_uniform_count()
+    }
 }
 
 /// Zero-allocation `(&[String], &Provenance)` stream over the sorted
@@ -35896,6 +36031,317 @@ mod progressive_tests {
              StrictInterior bucket via the two-tier partial-cover \
              singleton strict-interior witness",
         );
+    }
+
+    // ── ProvenanceMap::tiers_uniform_count — uniformly-observed-count
+    //    boolean predicate on the tier altitude, climbing the "uniform-
+    //    count across altitudes" projection from the diff-altitude seed
+    //    `ConfigDiff::kinds_uniform_count` ──
+
+    #[test]
+    fn tiers_uniform_count_matches_tier_histogram_is_uniform_count_pointwise() {
+        // The routing pin: `tiers_uniform_count` routes through
+        // `tier_histogram().is_uniform_count()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Tier-altitude
+        // peer of `kinds_uniform_count_matches_kind_histogram_is_uniform_count_pointwise`
+        // on the diff altitude in the "uniform-count across altitudes"
+        // projection.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().is_uniform_count();
+            assert_eq!(map.tiers_uniform_count(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn tiers_uniform_count_matches_tiers_balanced_pointwise() {
+        // The alias-side equivalence: the cube-native uniform-count
+        // name and the balanced-tier-counts name project the same
+        // predicate off the same primitive. Both routings are
+        // pointwise equal on every fixture. Pins the synonym seam
+        // pair `tiers_balanced` / `tiers_uniform_count` at the tier
+        // altitude, mirroring the diff-altitude pair
+        // `kinds_balanced` / `kinds_uniform_count`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.tiers_uniform_count(), map.tiers_balanced());
+        }
+    }
+
+    #[test]
+    fn tiers_uniform_count_matches_tier_spread_zero_scalar_form_pointwise() {
+        // Scalar-form pin: `tiers_uniform_count` agrees with the
+        // `tier_spread() == 0` fused-difference form on the peak-
+        // minus-trough scalar peer one altitude down. Pins the
+        // defining equivalence with the fused-scalar surface,
+        // collapsed to one equality on the scalar-difference form.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_spread = map.tier_spread() == 0;
+            assert_eq!(map.tiers_uniform_count(), via_spread);
+        }
+    }
+
+    #[test]
+    fn tiers_uniform_count_matches_peak_equals_trough_structural_form_pointwise() {
+        // Structural-form pin: `tiers_uniform_count` agrees with
+        // `peak_tier_count() == trough_tier_count()` on the underlying
+        // scalar pair one altitude down (before the pair is fused into
+        // `tier_spread`). Pins the defining equivalence on the scalar-
+        // pair surface.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_pair = map.peak_tier_count() == map.trough_tier_count();
+            assert_eq!(map.tiers_uniform_count(), via_pair);
+        }
+    }
+
+    #[test]
+    fn tiers_uniform_count_matches_modal_pair_equality_pointwise() {
+        // The modal-pair form: `tiers_uniform_count() ==
+        // (dominant_tier() == recessive_tier())` on every fixture —
+        // including the empty map (`None == None`), every singleton-
+        // support fold (`Some(t) == Some(t)`), every uniform per-tier
+        // fold (`Some(first) == Some(first)` after declaration-order
+        // tie-break), and every skewed fold (both sides read `false`).
+        // Lifted from the trait-uniform `is_uniform_count() ==
+        // (dominant_cell() == recessive_cell())` law on AxisHistogram.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let modal_pair_equal = map.dominant_tier() == map.recessive_tier();
+            assert_eq!(map.tiers_uniform_count(), modal_pair_equal);
+        }
+    }
+
+    #[test]
+    fn tiers_uniform_count_empty_map_is_true() {
+        // Empty-map polarity pin: the empty map has no observed cells,
+        // so the uniformity predicate reads vacuously `true` — the
+        // shared vacuous-uniformity boundary on the empty histogram.
+        // Direct pin of the histogram-side `is_empty ⇒
+        // is_uniform_count` empty convention one altitude down. Peer
+        // of `kinds_uniform_count_empty_diff_is_true`.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert!(empty.tiers_uniform_count());
+        assert!(!empty.tiers_any_observed());
+    }
+
+    #[test]
+    fn tiers_uniform_count_singleton_support_is_true() {
+        // Singleton-support polarity pin: every leaf lands on the same
+        // tier, so the one observed tier's count is both peak and
+        // trough of the support — trivially uniform. Direct witness of
+        // the subsumption `tiers_singular_support ⇒
+        // tiers_uniform_count`. Peer of
+        // `kinds_uniform_count_singleton_support_is_true`.
+        let m: ProvenanceMap = ["a", "b", "c", "d"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 1);
+        assert!(m.tiers_singular_support());
+        assert!(m.tiers_uniform_count());
+    }
+
+    #[test]
+    fn tiers_uniform_count_balanced_two_tier_partial_cover_is_true() {
+        // Balanced-two-tier-partial-cover polarity pin: a fold with one
+        // leaf on Bare and one leaf on Default observes two cells with
+        // count `1` each; the two nonzero cells share the same count,
+        // so `tiers_uniform_count` reads `true`. Witness that
+        // uniformity is *not* implied by full coverage: balanced
+        // partial cover with matched counts is uniform too. Peer of
+        // `kinds_uniform_count_balanced_two_kind_partial_cover_is_true`.
+        let m: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(!m.tiers_full_cover());
+        assert!(m.tiers_uniform_count());
+    }
+
+    #[test]
+    fn tiers_uniform_count_uniform_four_tier_cover_is_true() {
+        // Uniform-axis-cover polarity pin: a fold observing every cell
+        // of ConfigTierKind exactly once has all four nonzero counts
+        // at `1`. Simultaneous witness for `(tiers_full_cover,
+        // tiers_uniform_count) == (true, true)` — the top uniform-
+        // cover corner of the (coverage, uniformity) boolean pair on
+        // the tier altitude. Peer of
+        // `kinds_uniform_count_uniform_three_kind_cover_is_true` at the
+        // cardinality-`4` tier altitude — one strict advance over the
+        // cardinality-`3` diff altitude in the "uniform-count across
+        // altitudes" projection.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(m.tier_histogram().is_full_cover());
+        assert!(m.tiers_full_cover());
+        assert!(m.tiers_uniform_count());
+    }
+
+    #[test]
+    fn tiers_uniform_count_prog_fixture_is_false() {
+        // Direct pin: the Prog fold attributes 4 leaves as
+        // {Bare:1, Discovered:1, Default:2, Custom:0}. Peak == 2 lands
+        // on Default; trough over support == 1 on {Bare, Discovered}.
+        // Spread == 1, so `tiers_uniform_count` reads `false`. Peer of
+        // `tiers_balanced_prog_fixture_is_false` at the synonym seam.
+        // Direct scalar-shape pin against the concrete Prog fixture.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().tier_spread(), 1);
+        assert!(!r.provenance().tiers_uniform_count());
+    }
+
+    #[test]
+    fn tiers_uniform_count_skewed_four_cell_fixture_is_false() {
+        // Skewed-full-cover polarity pin: a strictly-ordered four-cell
+        // fold with Bare=1, Discovered=2, Default=3, Custom=4 — peak
+        // 4, trough 1, spread 3 — reads `false`. Every count distinct,
+        // no tie-breaking on either side of the modal-count pair.
+        // Cardinality-`4` witness one strict advance over the
+        // cardinality-`3` diff-altitude skewed-three-cell fixture in
+        // `kinds_uniform_count_skewed_partial_cover_is_false`.
+        let m: ProvenanceMap = [
+            ("b", ConfigTierKind::Bare),
+            ("d1", ConfigTierKind::Discovered),
+            ("d2", ConfigTierKind::Discovered),
+            ("e1", ConfigTierKind::Default),
+            ("e2", ConfigTierKind::Default),
+            ("e3", ConfigTierKind::Default),
+            ("c1", ConfigTierKind::Custom),
+            ("c2", ConfigTierKind::Custom),
+            ("c3", ConfigTierKind::Custom),
+            ("c4", ConfigTierKind::Custom),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        assert_eq!(m.peak_tier_count(), 4);
+        assert_eq!(m.trough_tier_count(), 1);
+        assert!(m.tiers_full_cover());
+        assert!(!m.tiers_uniform_count());
+    }
+
+    #[test]
+    fn tiers_uniform_count_empty_implies_uniform_count_pointwise() {
+        // Subsumption pin: `!tiers_any_observed() ⇒
+        // tiers_uniform_count()` on every fixture. Vacuous uniformity
+        // on the empty map, matching the histogram-side `is_empty ⇒
+        // is_uniform_count` law one altitude down.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if !map.tiers_any_observed() {
+                assert!(
+                    map.tiers_uniform_count(),
+                    "empty map must land on the uniform-count boundary vacuously",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_uniform_count_singleton_support_implies_uniform_count_pointwise() {
+        // Subsumption pin: `tiers_singular_support() ⇒
+        // tiers_uniform_count()` on every fixture. A single observed
+        // tier carries only one nonzero count to compare to itself.
+        // Matches the histogram-side `has_singular_support ⇒
+        // is_uniform_count` law one altitude down.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.tiers_singular_support() {
+                assert!(
+                    map.tiers_uniform_count(),
+                    "singleton-support map must land on the uniform-count boundary vacuously",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_uniform_count_false_implies_at_least_two_contributing_tiers_pointwise() {
+        // Contrapositive subsumption pin: a skewed fold has at least
+        // two distinct positive counts, so its support has at least
+        // two observed tiers. Lifted from the trait-uniform
+        // `!is_uniform_count() ⇒ distinct_cells() >= 2` law on
+        // AxisHistogram. Peer of
+        // `not_kinds_uniform_count_implies_kinds_any_observed_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if !map.tiers_uniform_count() {
+                assert!(
+                    map.contributing_tiers().len() >= 2,
+                    "non-uniform-count map must observe >= 2 contributing tiers (was {})",
+                    map.contributing_tiers().len(),
+                );
+                assert!(
+                    map.tiers_any_observed(),
+                    "non-uniform-count map must be non-empty",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tiers_uniform_count_agrees_with_hand_rolled_positive_counts_all_equal_pointwise() {
+        // Parity against the exact hand-rolled positive-counts-all-
+        // equal walk this climb replaces: scan the tier histogram's
+        // per-cell counts vector, filter to the positive counts, and
+        // check every positive count equals the first. Catches any
+        // future drift where either implementation stops projecting
+        // through the same distinct-positive-counts primitive. Peer of
+        // `kinds_uniform_count_agrees_with_hand_rolled_positive_counts_all_equal_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let hist = map.tier_histogram();
+            let mut positives = ConfigTierKind::ALL
+                .iter()
+                .map(|&k| hist.count(k))
+                .filter(|&c| c > 0);
+            let hand_rolled = match positives.next() {
+                None => true,
+                Some(first) => positives.all(|c| c == first),
+            };
+            assert_eq!(map.tiers_uniform_count(), hand_rolled);
+        }
     }
 
     // ── Nested per-leaf attribution ──
