@@ -2168,15 +2168,15 @@ pub trait ConfigSourceChain {
     /// sideways** from the tier altitude
     /// ([`crate::ProvenanceMap::tier_modality_degree_sum`]) to the
     /// first chain-altitude sub-axis, seeded on the diff altitude by
-    /// [`crate::ConfigDiff::kind_modality_degree_sum`]. The two
-    /// remaining chain-altitude sub-axes
-    /// (`file_format_modality_degree_sum` over
-    /// [`Self::file_format_histogram`],
-    /// `env_prefix_kind_modality_degree_sum` over
-    /// [`Self::env_prefix_kind_histogram`]) are the natural next
-    /// sideways lifts, mirroring the four-step chain trajectory the
+    /// [`crate::ConfigDiff::kind_modality_degree_sum`]. Lifted sideways
+    /// to the second chain-altitude sub-axis by
+    /// [`Self::file_format_modality_degree_sum`] over
+    /// [`Self::file_format_histogram`]; the last chain-altitude sub-
+    /// axis (`env_prefix_kind_modality_degree_sum` over
+    /// [`Self::env_prefix_kind_histogram`]) is the natural next
+    /// sideways lift, mirroring the four-step chain trajectory the
     /// sibling amplitude / peak- / trough-multiplicity projections
-    /// already walked. Parallels the "modality-amplitude across
+    /// already closed. Parallels the "modality-amplitude across
     /// altitudes" projection lifted to the same sub-axis by
     /// [`Self::layer_kind_modality_amplitude`] one seam over — this
     /// lift carries the additive-side dual of the same extremal-
@@ -7762,6 +7762,226 @@ pub trait ConfigSourceChain {
         Self: AsRef<[ConfigSource]>,
     {
         self.file_format_histogram().modality_amplitude()
+    }
+
+    /// The **modality-shape degree-sum of file-format counts** on the
+    /// file-format sub-axis of the chain altitude — the sum of the modal
+    /// and antimodal [`crate::discovery::Format`] level-set cardinalities
+    /// on this chain. Equal to
+    /// `self.file_format_peak_multiplicity() + self.file_format_trough_multiplicity()`
+    /// by construction, routed through [`Self::file_format_histogram`]:
+    /// [`crate::AxisHistogram::modality_degree_sum`] reads the same
+    /// scalar off the fixed-cardinality counts vector in one pass.
+    /// Overflow-safe on the chain file-format sub-axis: both summands
+    /// are bounded above by
+    /// `crate::axis_cardinality::<crate::discovery::Format>() == 4`,
+    /// giving a hard ceiling of `8` on the sum scalar.
+    ///
+    /// The **scalar-sum peer** on the multiplicity surface — the
+    /// additive dual of [`Self::file_format_modality_amplitude`] on the
+    /// same surface at the same sub-axis. Where
+    /// [`Self::file_format_modality_amplitude`] fuses the extremal-
+    /// multiplicity pair `(file_format_peak_multiplicity,
+    /// file_format_trough_multiplicity)` into
+    /// `peak.abs_diff(trough)` — the asymmetry-magnitude scalar —
+    /// `file_format_modality_degree_sum` fuses the same pair into
+    /// `peak + trough` — the combined extremal cardinality scalar.
+    /// Together with [`Self::file_format_modality_amplitude`], the pair
+    /// `(file_format_modality_degree_sum,
+    /// file_format_modality_amplitude)` recovers the *unordered*
+    /// multiplicity pair `{file_format_peak_multiplicity,
+    /// file_format_trough_multiplicity}` under the invertible transform
+    /// `max(peak, trough) = (sum + amplitude) / 2,
+    /// min(peak, trough) = (sum - amplitude) / 2` (integer division
+    /// exact since both share parity — both `usize` sums / abs-diffs
+    /// whose sum equals `2 * max(peak, trough)`). The peak-versus-
+    /// trough *labelling* itself requires the fused
+    /// [`Self::file_format_histogram`]-side `modality_degree` pair —
+    /// the additive-side scalar sees no signed direction.
+    ///
+    /// The natural typed primitive for per-format dashboards,
+    /// attestation manifests, and alerting policies asking *"how much
+    /// of the observed file-format support sits at either extreme?"*:
+    /// the CLI `config-show` headline *"chain extremal sum 8: uniform-
+    /// count over all four file formats — the whole recognized support
+    /// is doubly-extremal"* (where `8` is this scalar at its structural
+    /// ceiling on the cardinality-`4` axis), attestation manifests
+    /// recording the combined extremal cardinality of a chain by file
+    /// format, the alerting policy reading *"file-format extremal sum
+    /// = 2"* to classify chains where both extremes are uniquely held
+    /// (either singleton support or strictly-ordered). Before this
+    /// lift, every such consumer re-derived the projection inline as
+    /// `chain.file_format_peak_multiplicity() +
+    /// chain.file_format_trough_multiplicity()` — two method calls
+    /// plus an addition, each site walking the counts vector twice
+    /// where the shared [`crate::AxisHistogram::modality_degree`]
+    /// primitive fuses both into a single walk.
+    ///
+    /// The chain-altitude file-format sub-axis scalar-sum peer that
+    /// **lifts the "modality-degree-sum across altitudes" projection
+    /// sideways** from the layer-kind sub-axis of the same chain
+    /// altitude ([`Self::layer_kind_modality_degree_sum`]) to the
+    /// second chain-altitude sub-axis, matching the tier-altitude
+    /// climb ([`crate::ProvenanceMap::tier_modality_degree_sum`]) and
+    /// the diff-altitude seed
+    /// ([`crate::ConfigDiff::kind_modality_degree_sum`]). The last
+    /// remaining chain-altitude sub-axis
+    /// (`env_prefix_kind_modality_degree_sum` over
+    /// [`Self::env_prefix_kind_histogram`]) is the natural next
+    /// sideways lift, closing the projection at every chain sub-axis.
+    /// Parallels the "modality-amplitude across altitudes" projection
+    /// lifted to the same sub-axis by
+    /// [`Self::file_format_modality_amplitude`] one seam over — this
+    /// lift carries the additive-side dual of the same extremal-
+    /// multiplicity pair.
+    ///
+    /// **Cardinality-`4` reachability at the file-format sub-axis —
+    /// matches the tier altitude.** [`crate::discovery::Format`] carries
+    /// four cells, so `file_format_modality_degree_sum()` ranges over
+    /// `{0} ∪ (2..=8)` (`0` on every empty-histogram chain, `1`
+    /// unreachable on the non-empty lower bound, then `2..=8` reachable
+    /// on non-empty-histogram chains), matching the cardinality-`4`
+    /// tier-altitude peer's reachability signature on the same surface
+    /// — one strict advance over the sister layer-kind sub-axis's
+    /// `{0} ∪ (2..=6)` ceiling on the cardinality-`3` axis. The tight
+    /// upper bound reads
+    /// `2 * axis_cardinality::<crate::discovery::Format>() == 8`,
+    /// witnessed on the uniform-full-cover four-format shape.
+    ///
+    /// **Empty-histogram convention** — returns `0` on every chain
+    /// whose file-format histogram is empty, matching the
+    /// [`crate::AxisHistogram::modality_degree_sum`] empty convention
+    /// one altitude down and the
+    /// [`Self::file_format_peak_multiplicity`] /
+    /// [`Self::file_format_trough_multiplicity`] empty conventions on
+    /// the same altitude. The scalar quadruple
+    /// `(file_format_peak_multiplicity,
+    /// file_format_trough_multiplicity,
+    /// file_format_modality_amplitude,
+    /// file_format_modality_degree_sum)` reads uniformly `(0, 0, 0, 0)`
+    /// on every empty-histogram chain — the vacuous-nothing boundary
+    /// lifted from the empty support. **Cross-sub-axis divergence**
+    /// from [`Self::layer_kind_modality_degree_sum`], whose `0` on the
+    /// empty-boundary side coincides with `self.as_ref().is_empty()`
+    /// alone: on the file-format sub-axis, a non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::Env`] /
+    /// unrecognized-extension [`ConfigSource::File`] entries reads `0`
+    /// as well, because those entries project to [`None`] through
+    /// [`ConfigSource::file_format`].
+    ///
+    /// **Non-empty-histogram lower-bound convention** — returns `>= 2`
+    /// on every chain whose file-format histogram is non-empty: every
+    /// non-empty histogram has at least one observed cell at the peak
+    /// and at least one at the trough (they may coincide as the same
+    /// cell on the singleton-support case), so both multiplicities are
+    /// `>= 1` and the sum is `>= 2`. The value `1` is unreachable — no
+    /// chain carries a combined extremal cardinality of exactly `1`.
+    /// The additive-side signature of the "vacuous-versus-populated"
+    /// boundary on the file-format sub-axis's multiplicity surface,
+    /// keyed on histogram-emptiness rather than chain-emptiness (the
+    /// cross-sub-axis divergence from [`Self::layer_kind_modality_degree_sum`]).
+    ///
+    /// **Balanced-chain convention** — returns `2 *
+    /// present_file_formats_count()` on every balanced chain (every
+    /// observed file format contributed the same nonzero count):
+    /// `file_formats_balanced() ⇒ file_format_peak_multiplicity() ==
+    /// file_format_trough_multiplicity() ==
+    /// present_file_formats_count()`, so the sum reaches its structural
+    /// upper bound relative to the support cardinality. Rewrites the
+    /// balanced-file-formats predicate as an arithmetic equality on the
+    /// closed multiplicity surface. Empty-histogram (`0`), singleton
+    /// (`2`), two-format balanced (`4`), three-format balanced (`6`),
+    /// full four-format balanced (`8`).
+    ///
+    /// **Both-extremes-uniquely-held convention** — returns `2` on a
+    /// non-empty-histogram chain iff both extremal level sets are
+    /// singletons (`peak_mult == 1 && trough_mult == 1`). Fires on
+    /// every singleton-support chain and on every strictly-ordered
+    /// non-uniform shape where both extremes are uniquely held.
+    ///
+    /// # Invariants
+    ///
+    /// - `file_format_modality_degree_sum() ==
+    ///   file_format_histogram().modality_degree_sum()` — both project
+    ///   the same scalar off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `file_format_modality_degree_sum() ==
+    ///   file_format_peak_multiplicity() +
+    ///   file_format_trough_multiplicity()` — the defining equivalence
+    ///   on the multiplicity-scalar pair at the file-format sub-axis.
+    ///   Overflow-safe since both summands are bounded above by
+    ///   `crate::axis_cardinality::<crate::discovery::Format>() == 4`.
+    /// - `file_format_modality_degree_sum() ==
+    ///   { let (p, t) = file_format_histogram().modality_degree();
+    ///     p + t }` — the fused-pair form on the modality-degree
+    ///   surface. Both routings read the same scalar off the same
+    ///   primitive.
+    /// - `file_format_modality_degree_sum() == 0` on every empty-
+    ///   histogram chain (empty chain OR non-empty chain of only
+    ///   Defaults / Env / unrecognized-extension File layers) — the
+    ///   vacuous-nothing boundary on the additive side. The
+    ///   `(file_format_peak_multiplicity,
+    ///   file_format_trough_multiplicity,
+    ///   file_format_modality_amplitude,
+    ///   file_format_modality_degree_sum)` quadruple reads uniformly
+    ///   `(0, 0, 0, 0)` on every empty-histogram chain.
+    /// - `file_format_modality_degree_sum() == 0 ⇔
+    ///   file_format_histogram().is_empty()` — the vacuous-nothing
+    ///   boundary rewritten as a histogram-emptiness predicate. Cross-
+    ///   sub-axis divergence from
+    ///   [`Self::layer_kind_modality_degree_sum`], where the analogous
+    ///   equivalence reads on `self.as_ref().is_empty()`.
+    /// - `file_format_modality_degree_sum() >= 2` on every chain whose
+    ///   file-format histogram is non-empty — both multiplicities are
+    ///   `>= 1` on any non-empty support.
+    /// - `file_format_modality_degree_sum() == 2` on a non-empty-
+    ///   histogram chain iff `file_format_peak_multiplicity() == 1 &&
+    ///   file_format_trough_multiplicity() == 1` — the "both extremes
+    ///   uniquely held" configuration.
+    /// - `file_formats_balanced() ⇔ file_format_modality_degree_sum() ==
+    ///   2 * present_file_formats_count()` — the balanced-file-formats
+    ///   predicate rewritten as an arithmetic equality on the closed
+    ///   multiplicity surface at its structural upper bound.
+    /// - `file_format_modality_degree_sum() <=
+    ///   2 * present_file_formats_count()` always — both level sets
+    ///   are subsets of the observed support, so their sum is bounded
+    ///   above by twice the support size.
+    /// - `file_format_modality_degree_sum() <=
+    ///   2 * crate::axis_cardinality::<crate::discovery::Format>()`
+    ///   always — bounded above by `8` on the four-cell file-format
+    ///   axis.
+    /// - `file_format_modality_degree_sum() % 2 ==
+    ///   file_format_modality_amplitude() % 2` — the sum and abs-diff
+    ///   of two `usize` share parity, so the pair `(sum, amplitude)`
+    ///   recovers the *unordered* pair
+    ///   `{file_format_peak_mult, file_format_trough_mult}` under the
+    ///   invertible transform `max(peak, trough) = (sum + amp) / 2,
+    ///   min(peak, trough) = (sum - amp) / 2` with exact integer
+    ///   division. The peak-versus-trough labelling itself requires
+    ///   the fused `modality_degree` pair.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the fused peak + trough scan through
+    /// [`crate::AxisHistogram::modality_degree`]). Both are `O(n)` in
+    /// practice since the file-format axis carries a fixed four-cell
+    /// cardinality; the returned `usize` reads one scalar. Halves the
+    /// cost of the previous inline
+    /// `chain.file_format_peak_multiplicity() +
+    /// chain.file_format_trough_multiplicity()` idiom (which walked
+    /// the counts vector twice — once for the peak multiplicity, once
+    /// for the trough multiplicity — where
+    /// [`crate::AxisHistogram::modality_degree_sum`] fuses both into a
+    /// single walk through
+    /// [`crate::AxisHistogram::modality_degree`]).
+    #[must_use]
+    fn file_format_modality_degree_sum(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().modality_degree_sum()
     }
 
     /// The **balanced-file-formats boolean predicate** on the file-format
@@ -41419,6 +41639,558 @@ mod tests {
                 Some(m) => hist.iter().filter(|(_, c)| *c == m).count(),
             };
             let hand_rolled = peak_mult.abs_diff(trough_mult);
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::file_format_modality_degree_sum — modality-
+    //      shape sum scalar seam on the file-format sub-axis of the
+    //      chain altitude, lifting the "modality-degree-sum across
+    //      altitudes" projection sideways from the layer-kind sub-axis
+    //      (layer_kind_modality_degree_sum) to the second chain-
+    //      altitude sub-axis, matching the tier-altitude climb
+    //      (tier_modality_degree_sum) and the diff-altitude seed
+    //      (kind_modality_degree_sum). Scalar-sum peer of the fully-
+    //      closed (file_format_peak_multiplicity,
+    //      file_format_trough_multiplicity) multiplicity-scalar pair on
+    //      the same sub-axis, fusing them into a single sum scalar
+    //      reading off the combined extremal cardinality. Additive-
+    //      side dual of file_format_modality_amplitude on the same
+    //      surface. Cardinality-`4` Format axis: sum ranges over
+    //      `{0} ∪ (2..=8)`, matching the cardinality-`4` tier-altitude
+    //      peer's reachability signature on the same surface — one
+    //      strict advance over the sister layer-kind sub-axis's
+    //      `{0} ∪ (2..=6)` ceiling on the cardinality-`3` axis. ----
+
+    #[test]
+    fn file_format_modality_degree_sum_matches_file_format_histogram_modality_degree_sum_pointwise()
+    {
+        // Routing pin: `file_format_modality_degree_sum` routes through
+        // `file_format_histogram().modality_degree_sum()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. File-
+        // format sub-axis sideways lift of the "modality-degree-sum
+        // across altitudes" projection lifted at the layer-kind sub-
+        // axis by
+        // `layer_kind_modality_degree_sum_matches_layer_kind_histogram_modality_degree_sum_pointwise`,
+        // climbed to the tier altitude by
+        // `tier_modality_degree_sum_matches_tier_histogram_modality_degree_sum_pointwise`,
+        // and seeded on the diff altitude by
+        // `kind_modality_degree_sum_matches_kind_histogram_modality_degree_sum_pointwise`.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.file_format_histogram().modality_degree_sum();
+            assert_eq!(slice.file_format_modality_degree_sum(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn file_format_modality_degree_sum_equals_peak_mult_plus_trough_mult() {
+        // Defining-equivalence law: `file_format_modality_degree_sum`
+        // equals `file_format_peak_multiplicity() +
+        // file_format_trough_multiplicity()` on every fixture.
+        // Overflow-safe since both summands are bounded above by
+        // `axis_cardinality::<Format>() == 4`. Both routings read the
+        // same scalar off the same primitive. Peer of
+        // `layer_kind_modality_degree_sum_equals_peak_mult_plus_trough_mult`
+        // on the sister sub-axis and
+        // `tier_modality_degree_sum_equals_peak_mult_plus_trough_mult`
+        // on the tier altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_pair =
+                slice.file_format_peak_multiplicity() + slice.file_format_trough_multiplicity();
+            assert_eq!(slice.file_format_modality_degree_sum(), via_pair);
+        }
+    }
+
+    #[test]
+    fn file_format_modality_degree_sum_agrees_with_modality_degree_component_sum() {
+        // Fused-pair pin: `file_format_modality_degree_sum` equals the
+        // sum of the `(peak_mult, trough_mult)` components read off the
+        // fused `modality_degree` pair. Both routings agree pointwise;
+        // the named seam is the routing through the pair projection
+        // into a single sum scalar. Peer of
+        // `layer_kind_modality_degree_sum_agrees_with_modality_degree_component_sum`
+        // on the sister sub-axis and
+        // `tier_modality_degree_sum_agrees_with_modality_degree_component_sum`
+        // on the tier altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let (peak_mult, trough_mult) = slice.file_format_histogram().modality_degree();
+            assert_eq!(
+                slice.file_format_modality_degree_sum(),
+                peak_mult + trough_mult,
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_modality_degree_sum_empty_chain_is_zero() {
+        // Empty-chain convention: no observed cells, both multiplicities
+        // read `0`, so the sum reads `0`. Matches the
+        // AxisHistogram::modality_degree_sum empty convention one
+        // altitude down. The `(file_format_peak_multiplicity,
+        // file_format_trough_multiplicity,
+        // file_format_modality_amplitude,
+        // file_format_modality_degree_sum)` quadruple reads uniformly
+        // `(0, 0, 0, 0)` on the empty chain. Peer of
+        // `layer_kind_modality_degree_sum_empty_chain_is_zero` on the
+        // sister sub-axis and
+        // `tier_modality_degree_sum_empty_map_is_zero` on the tier
+        // altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert_eq!(empty.file_format_peak_multiplicity(), 0);
+        assert_eq!(empty.file_format_trough_multiplicity(), 0);
+        assert_eq!(empty.file_format_modality_amplitude(), 0);
+        assert_eq!(empty.file_format_modality_degree_sum(), 0);
+    }
+
+    #[test]
+    fn file_format_modality_degree_sum_no_recognized_files_is_zero() {
+        // **Cross-sub-axis divergence pin.** The file-format sub-axis
+        // reads the sum off the empty-histogram side even on non-empty
+        // chains — a chain of only Defaults / Env / unrecognized-
+        // extension File layers is non-empty but has no `Some`
+        // file_format projection, so the histogram is empty and
+        // `file_format_modality_degree_sum` reads `0`. Distinguishing
+        // pin against the layer-kind sub-axis
+        // `layer_kind_modality_degree_sum_zero_iff_empty`, whose `0`
+        // boundary reads on `chain.is_empty()` alone: on those same
+        // chains, `layer_kind_modality_degree_sum` reads `>= 2`
+        // (whatever the layer-kind histogram's modality shape carries)
+        // while `file_format_modality_degree_sum` reads `0` universally.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(!slice.is_empty(), "fixture must be non-empty");
+            assert!(
+                slice.file_format_histogram().is_empty(),
+                "fixture must have empty file-format histogram",
+            );
+            assert_eq!(slice.file_format_peak_multiplicity(), 0);
+            assert_eq!(slice.file_format_trough_multiplicity(), 0);
+            assert_eq!(slice.file_format_modality_degree_sum(), 0);
+        }
+    }
+
+    #[test]
+    fn file_format_modality_degree_sum_singleton_support_is_two() {
+        // Singleton-support pin: every recognized file layer lands on
+        // the same format (three `.toml` layers here), so that one
+        // format is simultaneously the unique peak and the unique
+        // trough. Both multiplicities read `1`, so the sum reads `2` —
+        // the additive-side minimal-nonempty-histogram boundary
+        // witness of the "both extremes uniquely held" configuration
+        // at the file-format sub-axis. Peer of
+        // `layer_kind_modality_degree_sum_singleton_support_is_two` on
+        // the sister sub-axis and
+        // `tier_modality_degree_sum_singleton_support_is_two` on the
+        // tier altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 1);
+        assert_eq!(slice.file_format_peak_multiplicity(), 1);
+        assert_eq!(slice.file_format_trough_multiplicity(), 1);
+        assert_eq!(slice.file_format_modality_degree_sum(), 2);
+    }
+
+    #[test]
+    fn file_format_modality_degree_sum_sample_chain_is_two() {
+        // Sample-chain pin: two `.yaml` file layers + one Env layer.
+        // `Yaml` is the sole observed format at count `2` (Env layers
+        // do not contribute to the file-format histogram), so the
+        // singleton-support degenerate is triggered. peak_mult=1,
+        // trough_mult=1, so the sum reads `1 + 1 = 2`. Peer of
+        // `layer_kind_modality_degree_sum_sample_chain_is_two` on the
+        // sister sub-axis on the same named fixture (though the
+        // shape triggering the `2` there is a strictly-ordered two-
+        // cell chain — File uniquely at the peak, Env uniquely at the
+        // trough — whereas here it is the singleton-support degenerate).
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.file_format_peak_multiplicity(), 1);
+        assert_eq!(slice.file_format_trough_multiplicity(), 1);
+        assert_eq!(slice.file_format_modality_degree_sum(), 2);
+    }
+
+    #[test]
+    fn file_format_modality_degree_sum_two_format_balanced_tie_is_four() {
+        // Two-format balanced-tie pin: one `.yaml` + one `.toml` —
+        // both observed at count `1`. peak_mult=2 (tied at count `1`),
+        // trough_mult=2 (also tied at count `1`, coinciding on the
+        // uniform-count shape). Sum reads `2 + 2 = 4` — the balanced
+        // two-cell partial-cover case at
+        // `2 * present_file_formats_count() = 2 * 2 = 4`. Peer of
+        // `layer_kind_modality_degree_sum_two_kind_balanced_tie_is_four`
+        // on the sister sub-axis and
+        // `tier_modality_degree_sum_two_tier_tie_is_four` on the tier
+        // altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.file_format_peak_multiplicity(), 2);
+        assert_eq!(slice.file_format_trough_multiplicity(), 2);
+        assert_eq!(slice.file_format_modality_degree_sum(), 4);
+        assert!(slice.file_formats_balanced());
+        assert_eq!(
+            slice.file_format_modality_degree_sum(),
+            2 * slice.present_file_formats_count(),
+        );
+    }
+
+    #[test]
+    fn file_format_modality_degree_sum_uniform_full_cover_is_eight() {
+        // Uniform full-cover pin: every Format cell contributes
+        // exactly one layer, so all four cells tie at both the peak
+        // and the trough. Both multiplicities read `4` (= axis
+        // cardinality), so the sum reads `8` — the balanced full-cover
+        // case at the tight upper bound
+        // `2 * present_file_formats_count() = 2 * 4 = 8 = 2 *
+        // axis_cardinality::<Format>()`. Peer of
+        // `tier_modality_degree_sum_uniform_full_cover_is_eight` on
+        // the tier altitude at the same cardinality-`4` axis. The
+        // sister layer-kind sub-axis
+        // (`layer_kind_modality_degree_sum_uniform_full_cover_is_six`)
+        // caps at `6` on its cardinality-`3` uniform-cover shape — one
+        // strict advance in favour of this sub-axis. Also witnesses
+        // `file_formats_balanced() ⇔ sum == 2 *
+        // present_file_formats_count()`.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.file_formats_full_cover());
+        assert!(slice.file_formats_balanced());
+        assert_eq!(slice.file_format_peak_multiplicity(), 4);
+        assert_eq!(slice.file_format_trough_multiplicity(), 4);
+        assert_eq!(slice.file_format_modality_degree_sum(), 8);
+        assert_eq!(
+            slice.file_format_modality_degree_sum(),
+            2 * slice.present_file_formats_count(),
+        );
+        assert_eq!(
+            slice.file_format_modality_degree_sum(),
+            2 * crate::axis_cardinality::<crate::discovery::Format>(),
+        );
+    }
+
+    #[test]
+    fn file_format_modality_degree_sum_four_cell_heavy_tail_is_four() {
+        // Four-cell heavy-tail full-cover pin: `Yaml ×2 + Toml ×1 +
+        // Lisp ×1 + Nix ×1` — histogram `(Yaml=2, Toml=1, Lisp=1,
+        // Nix=1)`. peak_count=2 (unique at Yaml), trough_count=1
+        // (tied at Toml, Lisp, Nix). peak_mult=1, trough_mult=3. Sum
+        // reads `1 + 3 = 4` — the additive-side ceiling on the
+        // cardinality-`4` heavy-tail shape, the strict advance over
+        // the sister layer-kind sub-axis's `3` on the smaller
+        // cardinality-`3` heavy-tail shape. Direct peer of
+        // `tier_modality_degree_sum_heavy_tail_fixture_is_four` on
+        // the tier altitude on the same shape family.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.lisp")),
+            ConfigSource::File(PathBuf::from("/e.nix")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.file_formats_full_cover());
+        assert_eq!(slice.file_format_peak_multiplicity(), 1);
+        assert_eq!(slice.file_format_trough_multiplicity(), 3);
+        assert_eq!(slice.file_format_modality_degree_sum(), 4);
+    }
+
+    #[test]
+    fn file_format_modality_degree_sum_four_cell_right_skew_is_four() {
+        // Four-cell right-skew full-cover pin: `Yaml ×2 + Toml ×2 +
+        // Lisp ×2 + Nix ×1` — histogram `(Yaml=2, Toml=2, Lisp=2,
+        // Nix=1)`. peak_count=2 (tied at Yaml, Toml, Lisp),
+        // trough_count=1 (unique at Nix). peak_mult=3, trough_mult=1.
+        // Sum reads `3 + 1 = 4` — the mirror of the heavy-tail shape
+        // one seam over on the additive side (the sum sees no signed
+        // direction), together pinning the signed-symmetry closure of
+        // the sum surface at the file-format sub-axis. Direct peer of
+        // `tier_modality_degree_sum_right_skew_fixture_is_four` on
+        // the tier altitude on the same shape family.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.toml")),
+            ConfigSource::File(PathBuf::from("/e.lisp")),
+            ConfigSource::File(PathBuf::from("/f.lisp")),
+            ConfigSource::File(PathBuf::from("/g.nix")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.file_formats_full_cover());
+        assert_eq!(slice.file_format_peak_multiplicity(), 3);
+        assert_eq!(slice.file_format_trough_multiplicity(), 1);
+        assert_eq!(slice.file_format_modality_degree_sum(), 4);
+    }
+
+    #[test]
+    fn file_format_modality_degree_sum_file_formats_balanced_iff_two_times_present() {
+        // Structural equivalence: `file_formats_balanced() ⇔
+        // file_format_modality_degree_sum() == 2 *
+        // present_file_formats_count()` on every fixture. The balanced-
+        // file-formats predicate rewritten as an arithmetic equality
+        // on the closed multiplicity surface at its structural upper
+        // bound. Peer of
+        // `layer_kind_modality_degree_sum_layer_kinds_balanced_iff_two_times_present`
+        // on the sister sub-axis and
+        // `tier_modality_degree_sum_tiers_balanced_iff_two_times_contributing`
+        // on the tier altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let balanced = slice.file_formats_balanced();
+            let sum_at_ceiling =
+                slice.file_format_modality_degree_sum() == 2 * slice.present_file_formats_count();
+            assert_eq!(
+                balanced,
+                sum_at_ceiling,
+                "file_formats_balanced ({balanced}) must agree with \
+                 file_format_modality_degree_sum ({s}) == 2 * \
+                 present_file_formats_count ({twice}) for chain with \
+                 len={n}",
+                s = slice.file_format_modality_degree_sum(),
+                twice = 2 * slice.present_file_formats_count(),
+                n = slice.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_modality_degree_sum_zero_iff_histogram_empty() {
+        // Vacuous-nothing boundary keyed on histogram-emptiness (NOT
+        // chain-emptiness — cross-sub-axis divergence from
+        // `layer_kind_modality_degree_sum_zero_iff_empty`):
+        // `file_format_modality_degree_sum() == 0` iff the file-format
+        // histogram is empty (empty chain OR non-empty chain of only
+        // Defaults / Env / unrecognized-extension File layers) on
+        // every fixture. Dual to `file_format_modality_amplitude() ==
+        // 0`'s much larger inhabited region (which fires additionally
+        // on singleton-support, uniform-count, and every strictly-
+        // ordered file-format shape).
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let sum_zero = slice.file_format_modality_degree_sum() == 0;
+            let hist_empty = slice.file_format_histogram().is_empty();
+            assert_eq!(
+                sum_zero,
+                hist_empty,
+                "file_format_modality_degree_sum == 0 iff \
+                 file_format_histogram is empty for chain with len={n}",
+                n = slice.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_modality_degree_sum_non_empty_histogram_bounded_below_by_two() {
+        // Non-empty-histogram lower bound: every chain whose file-
+        // format histogram is non-empty has
+        // `file_format_modality_degree_sum() >= 2`. The additive-side
+        // signature of the "vacuous-versus-populated" boundary on the
+        // file-format sub-axis's multiplicity surface — the value `1`
+        // is unreachable. Cross-sub-axis divergence from
+        // `layer_kind_modality_degree_sum_non_empty_bounded_below_by_two`,
+        // where the lower bound reads on `!chain.is_empty()` instead
+        // of `!file_format_histogram().is_empty()`. Peer of
+        // `tier_modality_degree_sum_non_empty_bounded_below_by_two`
+        // on the tier altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_format_histogram().is_empty() {
+                continue;
+            }
+            assert!(
+                slice.file_format_modality_degree_sum() >= 2,
+                "non-empty-histogram file_format_modality_degree_sum \
+                 ({s}) must be >= 2 for chain with len={n}",
+                s = slice.file_format_modality_degree_sum(),
+                n = slice.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_modality_degree_sum_bounded_above_by_twice_present_file_formats_count() {
+        // Support bound: both level sets are subsets of the observed
+        // support, so their sum is bounded above by twice the support
+        // size on every fixture. Empty-histogram chain: 0 <= 0.
+        // Singleton support: 2 <= 2. Two-tied balanced: 4 <= 4. Heavy-
+        // tail four-cell: 4 <= 8. Uniform full-cover: 8 <= 8. Peer of
+        // `layer_kind_modality_degree_sum_bounded_above_by_twice_present_layer_kinds_count`
+        // on the sister sub-axis and
+        // `tier_modality_degree_sum_bounded_above_by_twice_contributing_tiers_count`
+        // on the tier altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.file_format_modality_degree_sum() <= 2 * slice.present_file_formats_count(),
+                "file_format_modality_degree_sum ({s}) must not \
+                 exceed 2 * present_file_formats_count ({twice})",
+                s = slice.file_format_modality_degree_sum(),
+                twice = 2 * slice.present_file_formats_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_modality_degree_sum_bounded_by_twice_axis_cardinality() {
+        // Structural bound: `file_format_modality_degree_sum() <=
+        // 2 * axis_cardinality::<Format>()` (= 8) on every fixture.
+        // Composition of `<= 2 * present_file_formats_count()` with
+        // `present_file_formats_count() <= axis_cardinality::<Format>()`.
+        // Peer of
+        // `layer_kind_modality_degree_sum_bounded_by_twice_axis_cardinality`
+        // (bounded by `2 * 3 = 6` on the sister sub-axis) and
+        // `tier_modality_degree_sum_bounded_by_twice_axis_cardinality`
+        // on the tier altitude at the same cardinality-`4` axis.
+        let card = crate::axis_cardinality::<crate::discovery::Format>();
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.file_format_modality_degree_sum() <= 2 * card,
+                "file_format_modality_degree_sum ({s}) must not exceed \
+                 2 * axis cardinality ({twice})",
+                s = slice.file_format_modality_degree_sum(),
+                twice = 2 * card,
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_modality_degree_sum_and_amplitude_share_parity() {
+        // Parity pin: file_format_modality_degree_sum and
+        // file_format_modality_amplitude share parity on every
+        // fixture. The pair (sum, amplitude) carries the same
+        // information as the pair (peak_mult, trough_mult) under the
+        // invertible transform max(peak, trough) = (sum + amp) / 2,
+        // min(peak, trough) = (sum - amp) / 2 with exact integer
+        // division. Pinned across the fixture set. Peer of
+        // `layer_kind_modality_degree_sum_and_amplitude_share_parity`
+        // on the sister sub-axis and
+        // `tier_modality_degree_sum_and_amplitude_share_parity` on the
+        // tier altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let sum = slice.file_format_modality_degree_sum();
+            let amp = slice.file_format_modality_amplitude();
+            assert_eq!(
+                sum % 2,
+                amp % 2,
+                "file_format_modality_degree_sum ({sum}) and \
+                 file_format_modality_amplitude ({amp}) must share \
+                 parity for chain with len={n}",
+                n = slice.len(),
+            );
+            // Invertible-transform round-trip on the *unordered*
+            // multiplicity pair: `(sum + amp) / 2 == max(peak, trough)`
+            // and `(sum - amp) / 2 == min(peak, trough)`. The additive
+            // side sees no signed direction, so peak/trough labelling
+            // itself requires the fused pair.
+            let peak_mult = slice.file_format_peak_multiplicity();
+            let trough_mult = slice.file_format_trough_multiplicity();
+            let recovered_max = (sum + amp) / 2;
+            let recovered_min = (sum - amp) / 2;
+            assert_eq!(recovered_max, peak_mult.max(trough_mult));
+            assert_eq!(recovered_min, peak_mult.min(trough_mult));
+        }
+    }
+
+    #[test]
+    fn file_format_modality_degree_sum_two_iff_both_extremes_uniquely_held_on_non_empty_histogram()
+    {
+        // Both-extremes-uniquely-held predicate: on every fixture
+        // whose file-format histogram is non-empty,
+        // `file_format_modality_degree_sum() == 2` iff
+        // `file_format_peak_multiplicity() == 1 &&
+        // file_format_trough_multiplicity() == 1` — the sum reaches
+        // its non-empty-histogram lower bound of `2` exactly when both
+        // extremal level sets are singletons. Fires on every
+        // singleton-support chain and every strictly-ordered non-
+        // uniform file-format shape where both extremes are uniquely
+        // held. Peer of
+        // `layer_kind_modality_degree_sum_two_iff_both_extremes_uniquely_held_on_non_empty`
+        // on the sister sub-axis (keyed on `!chain.is_empty()`
+        // instead) and
+        // `tier_modality_degree_sum_two_iff_both_extremes_uniquely_held_on_non_empty`
+        // on the tier altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_format_histogram().is_empty() {
+                continue;
+            }
+            let sum_two = slice.file_format_modality_degree_sum() == 2;
+            let both_unique = slice.file_format_peak_multiplicity() == 1
+                && slice.file_format_trough_multiplicity() == 1;
+            assert_eq!(
+                sum_two,
+                both_unique,
+                "file_format_modality_degree_sum == 2 iff \
+                 (peak_mult == 1 && trough_mult == 1) on non-empty-\
+                 histogram chain with len={n}",
+                n = slice.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_modality_degree_sum_agrees_with_open_coded_sum_walk() {
+        // Parity against the exact hand-rolled peak/trough
+        // multiplicity walk this lift surfaces at a named seam: walk
+        // every cell of the histogram, find the maximum count, count
+        // how many cells carry it (peak multiplicity); restrict to
+        // nonzero cells, find the minimum positive count, count how
+        // many cells carry it (trough multiplicity); take the sum.
+        // Empty histogram yields both counts `0`, so the sum reads
+        // `0`. Peer of
+        // `layer_kind_modality_degree_sum_agrees_with_open_coded_sum_walk`
+        // on the sister sub-axis and
+        // `tier_modality_degree_sum_agrees_with_open_coded_sum_walk`
+        // on the tier altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_format_modality_degree_sum();
+            let hist = slice.file_format_histogram();
+            let max = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let peak_mult = if max == 0 {
+                0
+            } else {
+                hist.iter().filter(|(_, c)| *c == max).count()
+            };
+            let min_positive = hist.iter().map(|(_, c)| c).filter(|c| *c > 0).min();
+            let trough_mult = match min_positive {
+                None => 0,
+                Some(m) => hist.iter().filter(|(_, c)| *c == m).count(),
+            };
+            let hand_rolled = peak_mult + trough_mult;
             assert_eq!(via_seam, hand_rolled);
         }
     }
