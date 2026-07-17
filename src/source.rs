@@ -1567,6 +1567,171 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().spread()
     }
 
+    /// The number of [`ConfigSourceKind`] cells tied at the peak leaf
+    /// count on the layer-kind sub-axis of the chain altitude — the
+    /// **modal-multiplicity scalar** peer of the modally-tied /
+    /// strictly-modally-unique boolean pair one seam over, surfacing at
+    /// this sub-axis the underlying `usize` those predicates project
+    /// through comparison thresholds. Reads `1` on every strictly-
+    /// modally-unique chain (a unique dominant layer kind, singleton-
+    /// support included), `>= 2` on every modally-tied chain (two or
+    /// more layer kinds sharing the peak count), and `0` exactly on the
+    /// empty chain (no observed cell, no peak). Routes through
+    /// [`Self::layer_kind_histogram`]:
+    /// [`crate::AxisHistogram::peak_multiplicity`] reads the same scalar
+    /// off the fixed-cardinality counts vector in one pass.
+    ///
+    /// The **scalar-modality peer** of the two closed boolean predicates
+    /// that project this multiplicity through equality thresholds —
+    /// [`Self::layer_kinds_strictly_modally_unique`]
+    /// (`peak_multiplicity() == 1`) and [`Self::layer_kinds_modally_tied`]
+    /// (`peak_multiplicity() >= 2`) — surfacing the underlying `usize`
+    /// scalar those predicates project through comparison. Consumers
+    /// previously re-derived the projection inline as
+    /// `chain.layer_kind_histogram().peak_multiplicity()` (one method
+    /// call at every consumer site, pulling in the histogram temporary
+    /// at each site) or reconstructed it from the fused
+    /// `(peak_multiplicity, trough_multiplicity)` pair via
+    /// `chain.layer_kind_histogram().modality_degree().0` (a pair-
+    /// component projection that pays for the second scan on the trough
+    /// side consumers on the modal side never use). Before this lift,
+    /// the natural typed primitive for chain-shape dashboards,
+    /// attestation manifests, and alerting policies asking *"how many
+    /// layer kinds are tied at the peak?"* had no named seam — the CLI
+    /// `config-show` headline *"2 layer kinds tied at peak count 3:
+    /// uniform partial cover"* (where 2 is this scalar), the attestation
+    /// manifest recording the modal-multiplicity of the recipe, and the
+    /// alerting policy reading *"peak layer-kind multiplicity = 2"* to
+    /// flag a recipe where the dominant layer kind is ambiguous — all
+    /// fanned out through the underlying primitive at every call site
+    /// instead of a single named surface method.
+    ///
+    /// The chain-altitude layer-kind sub-axis scalar-modality peer that
+    /// **lifts the "peak-multiplicity across altitudes" projection
+    /// sideways** from the tier altitude
+    /// ([`crate::ProvenanceMap::peak_tier_multiplicity`]) to the first
+    /// chain-altitude sub-axis, seeded on the diff altitude by
+    /// [`crate::ConfigDiff::peak_kind_multiplicity`]. The two remaining
+    /// chain-altitude sub-axes (`file_format_peak_multiplicity` over
+    /// [`Self::file_format_histogram`], `env_prefix_kind_peak_multiplicity`
+    /// over [`Self::env_prefix_kind_histogram`]) are the natural next
+    /// sideways lifts, mirroring the four-step lift trajectory of the
+    /// sibling `spread` scalar and the four already-closed boolean-
+    /// predicate rows (`modally_tied`, `antimodally_tied`,
+    /// `strictly_modally_unique`, `strictly_antimodally_unique`) across
+    /// the same 5-altitude grid. The pattern is the same at every
+    /// altitude / sub-axis: surface the
+    /// [`crate::AxisHistogram::peak_multiplicity`] scalar directly at
+    /// the local histogram altitude, routing through the shared
+    /// primitive one seam down instead of every consumer pulling the
+    /// histogram temporary.
+    ///
+    /// **Cardinality-`3` reachability at the layer-kind sub-axis.**
+    /// [`ConfigSourceKind`] carries three cells, so
+    /// `layer_kind_peak_multiplicity()` reads `0` on the empty chain,
+    /// `1` on every singleton-support / strictly-modally-unique chain,
+    /// `2` on every two-cell tied-peak chain (e.g. one-`Defaults` +
+    /// one-`File` tied at count `1`), and `3` on every uniform three-
+    /// kind cover chain (all three [`ConfigSourceKind`] cells at the
+    /// same nonzero count). Matches the diff-altitude peer on the same
+    /// cardinality-`3` [`crate::DiffLineKind`] axis in reachability;
+    /// the tier altitude (cardinality-`4` [`crate::ConfigTierKind`]
+    /// axis) additionally reaches multiplicity `4` on the uniform four-
+    /// tier cover — a shape this sub-axis cannot inhabit.
+    ///
+    /// **Empty-chain convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::peak_multiplicity`] empty convention one
+    /// altitude down; the empty chain has no observed cells, so no cell
+    /// holds the peak count. The scalar-count / scalar-multiplicity pair
+    /// `(peak_layer_kind_count, layer_kind_peak_multiplicity)` reads
+    /// uniformly `(0, 0)` on the empty chain, alongside the paired
+    /// `(peak_layer_kind_count, trough_layer_kind_count,
+    /// layer_kind_spread)` triple's uniform `(0, 0, 0)` reading. The
+    /// empty chain sits on the `0` singular boundary of the multiplicity
+    /// scalar — strictly below the `1` singleton-support boundary and
+    /// the `>= 2` modally-tied boundary that partition the non-empty
+    /// support.
+    ///
+    /// **Singleton-support convention** — returns `1` on every chain
+    /// whose observed support is a single [`ConfigSourceKind`] cell:
+    /// the sole observed kind is the unique peak (peak count = layer
+    /// count, multiplicity = `1`). The singleton-support chain is
+    /// therefore strictly-modally-unique — pointwise equivalent to
+    /// [`Self::layer_kinds_strictly_modally_unique`] reading `true` on
+    /// the same input, via the `peak_multiplicity() == 1` threshold.
+    ///
+    /// **Uniform per-kind convention** — returns
+    /// `crate::axis_cardinality::<ConfigSourceKind>()` = `3` on every
+    /// uniform three-kind cover chain (all three [`ConfigSourceKind`]
+    /// cells at the same nonzero count) — the maximum reachable value
+    /// on the three-cell layer-kind axis. Every observed cell is tied
+    /// at the peak, so the multiplicity walks the full support.
+    ///
+    /// # Invariants
+    ///
+    /// - `layer_kind_peak_multiplicity() ==
+    ///   layer_kind_histogram().peak_multiplicity()` — both project the
+    ///   same scalar off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `layer_kind_peak_multiplicity() ==
+    ///   layer_kind_histogram().modality_degree().0` — the modal
+    ///   component of the fused
+    ///   `(peak_multiplicity, trough_multiplicity)` pair.
+    /// - `layer_kind_peak_multiplicity() == 0` ⇔
+    ///   `self.as_ref().is_empty()` — the empty-chain / empty-histogram
+    ///   boundary. Peer to the `peak_layer_kind_count() == 0` boundary
+    ///   on the count side, both witnessed by the same emptiness of the
+    ///   observed support.
+    /// - `layer_kind_peak_multiplicity() >= 1` whenever
+    ///   `!self.as_ref().is_empty()` — every non-empty chain has at
+    ///   least one cell at the peak.
+    /// - `layer_kind_peak_multiplicity() <=
+    ///   crate::axis_cardinality::<ConfigSourceKind>()` always —
+    ///   bounded above by the axis cardinality `3` on the three-cell
+    ///   layer-kind axis. Lifted from the trait-uniform
+    ///   `peak_multiplicity() <= axis_cardinality::<A>()` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `layer_kind_peak_multiplicity() <= present_layer_kinds_count()`
+    ///   always — the modal set is a subset of the observed support, so
+    ///   its size is bounded by the support size.
+    /// - `layer_kind_peak_multiplicity() == 1` ⇔
+    ///   `layer_kinds_strictly_modally_unique()` — the
+    ///   `peak_multiplicity == 1` boundary on the scalar side, the
+    ///   strict-modal-uniqueness boundary on the boolean side. Peer of
+    ///   the [`Self::layer_kinds_strictly_modally_unique`] routing that
+    ///   this scalar surfaces.
+    /// - `layer_kind_peak_multiplicity() >= 2` ⇔
+    ///   `layer_kinds_modally_tied()` — the `peak_multiplicity >= 2`
+    ///   boundary on the scalar side, the modal-tie boundary on the
+    ///   boolean side. Peer of the [`Self::layer_kinds_modally_tied`]
+    ///   routing that this scalar surfaces.
+    /// - `layer_kind_peak_multiplicity() == present_layer_kinds_count()`
+    ///   whenever `layer_kinds_balanced() && !self.as_ref().is_empty()`
+    ///   — every observed layer kind ties at the peak on a balanced
+    ///   non-empty chain.
+    /// - `layer_kind_peak_multiplicity() == 3` ⇒ `layer_kinds_full_cover()`
+    ///   — the only way for all three cells to tie at the peak is for
+    ///   every cell to be observed at a shared positive count.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the
+    /// peak-plus-multiplicity scan). Both are `O(n)` in practice since
+    /// the layer-kind axis carries a fixed three-cell cardinality; the
+    /// returned `usize` reads one scalar. Fuses the two-scan
+    /// `.modality_degree().0` idiom (which walks the counts vector
+    /// twice — once for the peak, once for the trough multiplicity
+    /// consumers on the modal side never use) into a single-scan
+    /// projection through the shared primitive.
+    #[must_use]
+    fn layer_kind_peak_multiplicity(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().peak_multiplicity()
+    }
+
     /// The **balanced-layer-kinds boolean predicate** on the layer-kind
     /// sub-axis of the chain altitude — `true` exactly when every observed
     /// [`ConfigSourceKind`] contributed the same number of layers. The
@@ -28009,6 +28174,374 @@ mod tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak - trough);
+        }
+    }
+
+    // ---- ConfigSourceChain::layer_kind_peak_multiplicity — scalar-modality
+    //      peer on the layer-kind sub-axis of the chain altitude, lifting
+    //      AxisHistogram::peak_multiplicity and surfacing the underlying
+    //      `usize` the two modality-boolean rows
+    //      (layer_kinds_modally_tied, layer_kinds_strictly_modally_unique)
+    //      project through comparison. Sideways lift of the "peak-
+    //      multiplicity across altitudes" projection from the tier
+    //      altitude to the first chain sub-axis ----
+
+    #[test]
+    fn layer_kind_peak_multiplicity_matches_layer_kind_histogram_peak_multiplicity_pointwise() {
+        // Routing pin: `layer_kind_peak_multiplicity` routes through
+        // `layer_kind_histogram().peak_multiplicity()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Layer-kind sub-axis
+        // sideways lift of the "peak-multiplicity across altitudes"
+        // projection seeded by
+        // `peak_kind_multiplicity_matches_kind_histogram_peak_multiplicity_pointwise`
+        // on the diff altitude and climbed by
+        // `peak_tier_multiplicity_matches_tier_histogram_peak_multiplicity_pointwise`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.layer_kind_histogram().peak_multiplicity();
+            assert_eq!(slice.layer_kind_peak_multiplicity(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_multiplicity_agrees_with_modality_degree_first_component() {
+        // Fused-pair pin: `layer_kind_peak_multiplicity` equals the
+        // modal component of the fused
+        // `(peak_multiplicity, trough_multiplicity)` pair on every
+        // fixture. The scalar-modality peer of the pair-projection form;
+        // both routings agree pointwise since both read the same
+        // underlying primitive. Peer of
+        // `peak_kind_multiplicity_agrees_with_modality_degree_first_component`
+        // on the diff altitude and
+        // `peak_tier_multiplicity_agrees_with_modality_degree_first_component`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let (peak_mult, _trough_mult) = slice.layer_kind_histogram().modality_degree();
+            assert_eq!(slice.layer_kind_peak_multiplicity(), peak_mult);
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_multiplicity_empty_chain_is_zero() {
+        // Empty-chain convention: no observed cells, no peak, so the
+        // multiplicity reads `0`. Matches AxisHistogram::peak_multiplicity's
+        // empty convention one altitude down. Peer of
+        // `peak_layer_kind_count == 0 on empty` on the count side; the
+        // paired `(peak_layer_kind_count, layer_kind_peak_multiplicity)`
+        // scalar reads uniformly `(0, 0)` on the empty chain. Peer of
+        // `peak_kind_multiplicity_empty_diff_is_zero` on the diff
+        // altitude and `peak_tier_multiplicity_empty_map_is_zero` on the
+        // tier altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.as_ref().is_empty());
+        assert_eq!(empty.peak_layer_kind_count(), 0);
+        assert_eq!(empty.layer_kind_peak_multiplicity(), 0);
+    }
+
+    #[test]
+    fn layer_kind_peak_multiplicity_singleton_support_is_one() {
+        // Singleton-support pin: every layer lands on the same kind, so
+        // that one kind is the unique peak — multiplicity reads `1`.
+        // The strictly-modally-unique boundary on the singleton-support
+        // side; peer of `layer_kinds_strictly_modally_unique` reading
+        // `true` via the `peak_multiplicity == 1` threshold. Peer of
+        // `peak_kind_multiplicity_singleton_support_is_one` on the diff
+        // altitude and `peak_tier_multiplicity_singleton_support_is_one`
+        // on the tier altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 1);
+        assert_eq!(slice.layer_kind_peak_multiplicity(), 1);
+        assert!(slice.layer_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn layer_kind_peak_multiplicity_two_kind_tie_is_two() {
+        // Two-kind-tied pin: `Defaults + File` both at count `1`, both
+        // tied at the peak. Multiplicity reads `2` — the modally-tied
+        // boundary at the smallest non-trivial tied support. Peer of
+        // `layer_kinds_modally_tied` reading `true` via the
+        // `peak_multiplicity >= 2` threshold. Peer of
+        // `peak_kind_multiplicity_two_kind_tie_is_two` on the diff
+        // altitude and `peak_tier_multiplicity_two_tier_tie_is_two` on
+        // the tier altitude.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_layer_kind_count(), 1);
+        assert_eq!(slice.layer_kind_peak_multiplicity(), 2);
+        assert!(slice.layer_kinds_modally_tied());
+        assert!(!slice.layer_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn layer_kind_peak_multiplicity_uniform_full_cover_is_three() {
+        // Uniform full-cover pin: every observed kind contributes the
+        // same nonzero count, so all three cells tie at the peak.
+        // Multiplicity reads `3` = axis cardinality of ConfigSourceKind
+        // — the maximum reachable value on the three-cell layer-kind
+        // axis. The uniform-cover degenerate closes the upper end of
+        // the multiplicity scalar range 0..=3. Peer of
+        // `peak_kind_multiplicity_uniform_full_cover_is_three` on the
+        // diff altitude on the same cardinality-`3` axis.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kinds_full_cover());
+        assert_eq!(slice.layer_kind_peak_multiplicity(), 3);
+        assert_eq!(
+            slice.layer_kind_peak_multiplicity(),
+            crate::axis_cardinality::<ConfigSourceKind>()
+        );
+    }
+
+    #[test]
+    fn layer_kind_peak_multiplicity_sample_chain_is_one() {
+        // Direct pin against `sample_chain()`: two File layers + one Env
+        // layer. File dominant at 2, Env recessive at 1 — the peak is
+        // uniquely held by File, multiplicity reads `1`. Reads the
+        // paired `(peak_layer_kind_count, layer_kind_peak_multiplicity)`
+        // scalar as `(2, 1)`. Peer of
+        // `layer_kind_spread_sample_chain_is_one` on the dispersion
+        // sibling scalar.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_layer_kind_count(), 2);
+        assert_eq!(slice.layer_kind_peak_multiplicity(), 1);
+        assert!(slice.layer_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn layer_kind_peak_multiplicity_is_zero_iff_chain_is_empty() {
+        // Emptiness boundary: `layer_kind_peak_multiplicity() == 0` iff
+        // the chain is empty. Peer of `peak_layer_kind_count == 0 iff
+        // is_empty` on the count side; both scalars sit on the same
+        // emptiness of the observed support. Peer of
+        // `peak_kind_multiplicity_is_zero_iff_diff_is_empty` on the diff
+        // altitude and `peak_tier_multiplicity_is_zero_iff_map_is_empty`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let zero = slice.layer_kind_peak_multiplicity() == 0;
+            let is_empty = slice.is_empty();
+            assert_eq!(
+                zero,
+                is_empty,
+                "layer_kind_peak_multiplicity == 0 must agree with \
+                 chain.is_empty() (peak_mult={m}, len={n})",
+                m = slice.layer_kind_peak_multiplicity(),
+                n = slice.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_multiplicity_ge_one_iff_chain_is_nonempty() {
+        // Non-emptiness boundary: every non-empty chain has at least
+        // one cell at the peak. The `layer_kind_peak_multiplicity >= 1
+        // ⇔ !is_empty` law — the strict complement of the
+        // `layer_kind_peak_multiplicity == 0 ⇔ is_empty` boundary pinned
+        // above. Peer of
+        // `peak_kind_multiplicity_ge_one_iff_diff_is_nonempty` on the
+        // diff altitude and
+        // `peak_tier_multiplicity_ge_one_iff_map_is_nonempty` on the
+        // tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let ge_one = slice.layer_kind_peak_multiplicity() >= 1;
+            let non_empty = !slice.is_empty();
+            assert_eq!(
+                ge_one,
+                non_empty,
+                "layer_kind_peak_multiplicity >= 1 must agree with \
+                 !chain.is_empty() (peak_mult={m}, len={n})",
+                m = slice.layer_kind_peak_multiplicity(),
+                n = slice.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_multiplicity_bounded_by_axis_cardinality() {
+        // Structural bound: `layer_kind_peak_multiplicity() <=
+        // axis_cardinality::<ConfigSourceKind>()` (= 3) on every
+        // fixture. Lifted from the trait-uniform `peak_multiplicity() <=
+        // axis_cardinality::<A>()` law on AxisHistogram. Equality holds
+        // exactly on the uniform full-cover shape. Peer of
+        // `peak_kind_multiplicity_bounded_by_axis_cardinality` on the
+        // diff altitude on the same cardinality-`3` axis and
+        // `peak_tier_multiplicity_bounded_by_axis_cardinality` on the
+        // tier altitude at cardinality `4`.
+        let card = crate::axis_cardinality::<ConfigSourceKind>();
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.layer_kind_peak_multiplicity() <= card,
+                "layer_kind_peak_multiplicity ({m}) must not exceed axis cardinality ({card})",
+                m = slice.layer_kind_peak_multiplicity(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_multiplicity_bounded_above_by_present_layer_kinds_count() {
+        // Support bound: the modal set is a subset of the observed
+        // support, so `layer_kind_peak_multiplicity() <=
+        // present_layer_kinds_count()` on every fixture. Empty chain:
+        // 0 <= 0. Singleton support: 1 <= 1. Two-tied: 2 <= 2. Uniform
+        // three-kind cover: 3 <= 3. Peer of
+        // `peak_kind_multiplicity_bounded_above_by_present_kinds_count`
+        // on the diff altitude and
+        // `peak_tier_multiplicity_bounded_above_by_contributing_tiers_count`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.layer_kind_peak_multiplicity() <= slice.present_layer_kinds_count(),
+                "layer_kind_peak_multiplicity ({m}) must not exceed \
+                 present_layer_kinds_count ({p})",
+                m = slice.layer_kind_peak_multiplicity(),
+                p = slice.present_layer_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_multiplicity_eq_one_iff_layer_kinds_strictly_modally_unique() {
+        // Strictly-modally-unique boundary: the boolean predicate
+        // `layer_kinds_strictly_modally_unique()` reads exactly the
+        // `peak_multiplicity() == 1` threshold on the underlying scalar
+        // this seam surfaces. Empty chain: `0 == 1` is false — both
+        // sides agree on the `false` empty-chain convention. Peer of
+        // `peak_kind_multiplicity_eq_one_iff_kinds_strictly_modally_unique`
+        // on the diff altitude and
+        // `peak_tier_multiplicity_eq_one_iff_tiers_strictly_modally_unique`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let mult_one = slice.layer_kind_peak_multiplicity() == 1;
+            let strict = slice.layer_kinds_strictly_modally_unique();
+            assert_eq!(
+                mult_one,
+                strict,
+                "layer_kind_peak_multiplicity == 1 must agree with \
+                 layer_kinds_strictly_modally_unique (peak_mult={m}, len={n})",
+                m = slice.layer_kind_peak_multiplicity(),
+                n = slice.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_multiplicity_ge_two_iff_layer_kinds_modally_tied() {
+        // Modally-tied boundary: the boolean predicate
+        // `layer_kinds_modally_tied()` reads exactly the
+        // `peak_multiplicity() >= 2` threshold on the underlying scalar.
+        // Empty chain: `0 >= 2` is false — both sides agree on the
+        // `false` empty-chain convention. Peer of
+        // `peak_kind_multiplicity_ge_two_iff_kinds_modally_tied` on the
+        // diff altitude and
+        // `peak_tier_multiplicity_ge_two_iff_tiers_modally_tied` on the
+        // tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let mult_ge_two = slice.layer_kind_peak_multiplicity() >= 2;
+            let tied = slice.layer_kinds_modally_tied();
+            assert_eq!(
+                mult_ge_two,
+                tied,
+                "layer_kind_peak_multiplicity >= 2 must agree with \
+                 layer_kinds_modally_tied (peak_mult={m}, len={n})",
+                m = slice.layer_kind_peak_multiplicity(),
+                n = slice.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_multiplicity_balanced_nonempty_equals_present_layer_kinds_count() {
+        // Uniform-cover shape: on every balanced non-empty chain, every
+        // observed cell ties at the peak — multiplicity coincides with
+        // the observed support size. The `layer_kinds_balanced ∧
+        // !is_empty ⇒ layer_kind_peak_multiplicity ==
+        // present_layer_kinds_count` invariant. Peer of
+        // `peak_kind_multiplicity_balanced_nonempty_equals_present_kinds_count`
+        // on the diff altitude and
+        // `peak_tier_multiplicity_balanced_nonempty_equals_contributing_tiers_count`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.is_empty() || !slice.layer_kinds_balanced() {
+                continue;
+            }
+            assert_eq!(
+                slice.layer_kind_peak_multiplicity(),
+                slice.present_layer_kinds_count(),
+                "balanced non-empty chain: layer_kind_peak_multiplicity \
+                 must equal present_layer_kinds_count",
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_multiplicity_three_implies_layer_kinds_full_cover() {
+        // Full-cover implication: `layer_kind_peak_multiplicity == 3`
+        // (= axis cardinality) implies every cell is observed at a
+        // shared positive count — the uniform full-cover degenerate.
+        // The strict-uniqueness of the upper-boundary multiplicity
+        // value. Peer of
+        // `peak_kind_multiplicity_three_implies_full_cover` on the diff
+        // altitude on the same cardinality-`3` axis and
+        // `peak_tier_multiplicity_four_implies_tiers_full_cover` on the
+        // tier altitude at cardinality `4`.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.layer_kind_peak_multiplicity() == crate::axis_cardinality::<ConfigSourceKind>()
+            {
+                assert!(
+                    slice.layer_kinds_full_cover(),
+                    "layer_kind_peak_multiplicity == axis_cardinality must \
+                     imply layer_kinds_full_cover (len={n})",
+                    n = slice.len(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_multiplicity_agrees_with_open_coded_peak_multiplicity_walk() {
+        // Parity against the exact hand-rolled peak-multiplicity walk
+        // this lift surfaces at a named seam: walk every cell of the
+        // histogram and count how many carry the maximum observed
+        // count; the multiplicity scalar reads that count. Empty
+        // histogram has max `0` and no cells above zero, so
+        // multiplicity reads `0`. Peer of
+        // `peak_tier_multiplicity_agrees_with_open_coded_peak_multiplicity_walk`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kind_peak_multiplicity();
+            let hist = slice.layer_kind_histogram();
+            let max = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let hand_rolled = if max == 0 {
+                0
+            } else {
+                hist.iter().filter(|(_, c)| *c == max).count()
+            };
+            assert_eq!(via_seam, hand_rolled);
         }
     }
 
