@@ -2041,6 +2041,197 @@ impl ProvenanceMap {
         self.tier_histogram().trough_multiplicity()
     }
 
+    /// The **modality-shape amplitude of tier counts** — the absolute
+    /// difference between the modal and antimodal [`ConfigTierKind`]
+    /// level-set cardinalities on this resolved fold. Equal to
+    /// `self.peak_tier_multiplicity().abs_diff(self.trough_tier_multiplicity())`
+    /// by construction, routed through [`Self::tier_histogram`]:
+    /// [`crate::AxisHistogram::modality_amplitude`] reads the same
+    /// scalar off the fixed-cardinality counts vector in one pass.
+    /// Returns `0` exactly when the modal and antimodal level sets
+    /// share cardinality — including the empty map (`0.abs_diff(0)`),
+    /// every singleton-support fold (`1.abs_diff(1)`), every balanced
+    /// fold (both level sets walk the full observed support), and
+    /// every strictly-ordered four-cell shape (both level sets are
+    /// singletons, `1.abs_diff(1)`).
+    ///
+    /// The **scalar-amplitude peer** on the multiplicity surface —
+    /// the structural dual of [`Self::tier_spread`] on the count
+    /// surface at the tier altitude. Where [`Self::tier_spread`]
+    /// fuses the extremal-count pair `(peak_tier_count,
+    /// trough_tier_count)` into `peak_tier_count - trough_tier_count`
+    /// (underflow-safe since `peak_tier_count >= trough_tier_count`
+    /// always), `tier_modality_amplitude` fuses the extremal-
+    /// multiplicity pair `(peak_tier_multiplicity,
+    /// trough_tier_multiplicity)` into
+    /// `peak_tier_multiplicity.abs_diff(trough_tier_multiplicity)`.
+    /// The `abs_diff` operation is required (unlike the count-side
+    /// subtraction) because neither multiplicity dominates the other
+    /// structurally — a right-skewed fold (many tiers tied at the
+    /// peak, one uniquely at the trough) has `peak_mult >
+    /// trough_mult`, whereas a heavy-tail fold (one uniquely at the
+    /// peak, many tied at the trough) has `peak_mult < trough_mult`.
+    /// The unsigned-diff form reads the *magnitude* of the
+    /// cardinality gap without committing to a signed direction.
+    ///
+    /// The natural typed primitive for fleet dashboards, attestation
+    /// manifests, and alerting policies asking *"how symmetric is
+    /// the modality-shape of this resolved fold between its peak and
+    /// trough tiers?"*: the fleet dashboard headline *"tier amplitude
+    /// 2: 3 tiers tied at peak, 1 alone at trough"* (where `2` is
+    /// this scalar), the attestation manifest recording the modality-
+    /// amplitude of the resolved fold between two rebuild windows,
+    /// the alerting policy reading *"tier amplitude = 3"* to flag a
+    /// rebuild window where the modality distribution is sharply
+    /// asymmetric. Before this lift, every such consumer re-derived
+    /// the projection inline as
+    /// `map.peak_tier_multiplicity().abs_diff(map.trough_tier_multiplicity())`
+    /// — two method calls plus an `abs_diff`, each site having to
+    /// reason independently about the *non-directional* nature of the
+    /// difference (which the count-side `tier_spread` didn't need to
+    /// reason about, since `peak_count >= trough_count` is structural).
+    ///
+    /// The tier-altitude scalar-amplitude peer that **climbs the
+    /// "modality-amplitude across altitudes" projection** from the
+    /// diff altitude — the natural scalar sister of the two closed
+    /// tier-multiplicity scalars ([`Self::peak_tier_multiplicity`]
+    /// and [`Self::trough_tier_multiplicity`], both surfaced at this
+    /// altitude) on every altitude of the fully-closed cube. Lifts
+    /// the diff-altitude seed [`ConfigDiff::kind_modality_amplitude`]
+    /// one altitude up. The next natural lifts fan sideways along the
+    /// chain altitude's three sub-axes
+    /// (`layer_kind_modality_amplitude`,
+    /// `file_format_modality_amplitude`,
+    /// `env_prefix_kind_modality_amplitude` over the corresponding
+    /// chain histograms). The pattern is the same at every altitude
+    /// / sub-axis: fuse the (`peak_multiplicity`,
+    /// `trough_multiplicity`) extremal-multiplicity pair into a
+    /// single amplitude scalar named at the surface, routed through
+    /// the shared [`crate::AxisHistogram::modality_amplitude`]
+    /// primitive one altitude down. Parallels the "spread across
+    /// altitudes" projection climbed on the same altitude by
+    /// [`Self::tier_spread`] (the count-surface dispersion peer of
+    /// this multiplicity-surface amplitude) and the fully-closed peak
+    /// / trough multiplicity scalar projections
+    /// ([`Self::peak_tier_multiplicity`],
+    /// [`Self::trough_tier_multiplicity`]) — this lift widens the
+    /// closed scalar modality algebra at the tier altitude by
+    /// surfacing the *symmetry-gap* scalar the two closed multiplicity
+    /// scalars project through absolute-difference.
+    ///
+    /// **Cardinality-`4` reachability at the tier altitude — the
+    /// modality-amplitude scalar carries witnesses across more
+    /// support cardinalities.** [`ConfigTierKind`] carries four
+    /// cells, so `tier_modality_amplitude()` reads `0` on every
+    /// amplitude-zero shape (empty / singleton / balanced /
+    /// strictly-ordered four-cell) and up to `3` on the maximally-
+    /// asymmetric shape where one cell holds the peak count and
+    /// three cells tie at the trough (or vice-versa). Strict advance
+    /// over the diff altitude on the same amplitude surface: the
+    /// maximum reachable amplitude promotes from `2` on the
+    /// cardinality-`3` diff axis to `3` on the cardinality-`4` tier
+    /// axis.
+    ///
+    /// **Empty-map convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::modality_amplitude`] empty convention
+    /// one altitude down and the [`Self::peak_tier_multiplicity`] /
+    /// [`Self::trough_tier_multiplicity`] empty conventions on the
+    /// same altitude. The scalar-multiplicity triple
+    /// `(peak_tier_multiplicity, trough_tier_multiplicity,
+    /// tier_modality_amplitude)` reads uniformly `(0, 0, 0)` on the
+    /// empty map — the vacuous-balance boundary lifted from the empty
+    /// support.
+    ///
+    /// **Singleton-support convention** — returns `0` on every fold
+    /// whose observed support is a single [`ConfigTierKind`] cell:
+    /// the sole observed cell is simultaneously the unique peak and
+    /// the unique trough (both multiplicities read `1`, so the
+    /// absolute difference reads `0`). Every singleton-support fold
+    /// sits on the amplitude-zero boundary — the modality-symmetric
+    /// singleton case.
+    ///
+    /// **Balanced-fold convention** — returns `0` on every balanced
+    /// fold (every observed tier contributed the same nonzero count):
+    /// `is_uniform_count() ⇒ peak_multiplicity() ==
+    /// trough_multiplicity() == distinct_cells()`, so the amplitude
+    /// reads `0`. Every balanced fold sits on the amplitude-zero
+    /// boundary — the modality-symmetric balanced case.
+    ///
+    /// **Strictly-ordered convention** — returns `0` on every
+    /// strictly-ordered four-cell fold (four distinct positive
+    /// counts, e.g. `Bare=1, Default=2, Custom=3, Discovered=4`):
+    /// both multiplicities are `1` (one unique cell at the peak, one
+    /// unique cell at the trough), so the amplitude reads `0` even
+    /// though the shape is *not* balanced. The predicate
+    /// `tier_modality_amplitude() == 0` is therefore strictly weaker
+    /// than [`Self::tiers_balanced`] — this shape witnesses the gap
+    /// between the two amplitude-zero boundaries at the tier
+    /// altitude, promoting the corresponding gap on the diff altitude
+    /// from the strictly-ordered three-cell shape to the strictly-
+    /// ordered four-cell shape.
+    ///
+    /// # Invariants
+    ///
+    /// - `tier_modality_amplitude() == tier_histogram().modality_amplitude()`
+    ///   — both project the same scalar off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram
+    ///   surface.
+    /// - `tier_modality_amplitude() ==
+    ///   peak_tier_multiplicity().abs_diff(trough_tier_multiplicity())`
+    ///   — the defining equivalence on the multiplicity-scalar pair
+    ///   at the tier altitude. The `abs_diff` form is required
+    ///   because `peak_mult` and `trough_mult` can go either way
+    ///   (unlike `peak_count >= trough_count`).
+    /// - `tier_modality_amplitude() == 0` on the empty map — the
+    ///   vacuous-balance boundary. The `(peak_tier_multiplicity,
+    ///   trough_tier_multiplicity, tier_modality_amplitude)` triple
+    ///   reads uniformly `(0, 0, 0)` on the empty map.
+    /// - `tier_modality_amplitude() == 0` on every singleton-support
+    ///   fold — the sole observed cell is both the unique peak and
+    ///   the unique trough, so both multiplicities read `1` and the
+    ///   amplitude reads `0`.
+    /// - `tiers_balanced() ⇒ tier_modality_amplitude() == 0` — the
+    ///   uniform-count shape witnesses the amplitude-zero boundary
+    ///   on the strong side. The converse fails on every strictly-
+    ///   ordered four-cell shape where both multiplicities happen to
+    ///   be `1` without matching counts.
+    /// - `tier_modality_amplitude() == 0 ⇔
+    ///   peak_tier_multiplicity() == trough_tier_multiplicity()` —
+    ///   the typed *modality-symmetric* predicate on the multiplicity
+    ///   surface at the tier altitude. The modal and antimodal level
+    ///   sets share cardinality (though not necessarily membership).
+    /// - `tier_modality_amplitude() <= contributing_tiers_count()`
+    ///   always — both level sets are subsets of the observed
+    ///   support, so their absolute difference is bounded by the
+    ///   support size. Lifted from the trait-uniform
+    ///   `modality_amplitude() <= distinct_cells()` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `tier_modality_amplitude() <=
+    ///   crate::axis_cardinality::<ConfigTierKind>()` always —
+    ///   bounded above by the axis cardinality `4` on the four-cell
+    ///   tier axis. Composition of the above with
+    ///   `contributing_tiers_count() <=
+    ///   crate::axis_cardinality::<ConfigTierKind>()`.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigTierKind>()` (the
+    /// fused peak + trough scan through
+    /// [`crate::AxisHistogram::modality_degree`]). Both are `O(n)` in
+    /// practice since the tier axis carries a fixed four-cell
+    /// cardinality; the returned `usize` reads one scalar. Halves the
+    /// cost of the previous inline
+    /// `map.peak_tier_multiplicity().abs_diff(map.trough_tier_multiplicity())`
+    /// idiom (which walked the counts vector twice — once for the
+    /// peak multiplicity, once for the trough multiplicity — where
+    /// [`crate::AxisHistogram::modality_amplitude`] fuses both into a
+    /// single walk through [`crate::AxisHistogram::modality_degree`]).
+    #[must_use]
+    pub fn tier_modality_amplitude(&self) -> usize {
+        self.tier_histogram().modality_amplitude()
+    }
+
     /// The **balanced-tier-counts boolean predicate** at the tier altitude —
     /// `true` exactly when every observed [`ConfigTierKind`] contributed the
     /// same number of leaves. The typed boolean peer of `tier_spread() == 0`
@@ -30391,6 +30582,463 @@ mod progressive_tests {
                 None => 0,
                 Some(m) => hist.iter().filter(|(_, c)| *c == m).count(),
             };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::tier_modality_amplitude — modality-shape amplitude
+    //    scalar seam on the tier altitude, climbing
+    //    AxisHistogram::modality_amplitude and lifting the "modality-
+    //    amplitude across altitudes" projection from the diff altitude
+    //    (kind_modality_amplitude). Scalar-amplitude peer of the fully-
+    //    closed (peak_tier_multiplicity, trough_tier_multiplicity)
+    //    multiplicity-scalar pair, fusing them into a single amplitude
+    //    scalar reading off the modality-shape asymmetry. Cardinality-`4`
+    //    ConfigTierKind axis: amplitude ranges over 0..=3, one strict
+    //    advance over the cardinality-`3` diff axis's 0..=2 range on the
+    //    same surface. ──
+
+    #[test]
+    fn tier_modality_amplitude_matches_tier_histogram_modality_amplitude_pointwise() {
+        // Routing pin: `tier_modality_amplitude` routes through
+        // `tier_histogram().modality_amplitude()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Tier-
+        // altitude scalar-amplitude climb of the "modality-amplitude
+        // across altitudes" projection seeded by
+        // `kind_modality_amplitude_matches_kind_histogram_modality_amplitude_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().modality_amplitude();
+            assert_eq!(map.tier_modality_amplitude(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn tier_modality_amplitude_equals_peak_mult_abs_diff_trough_mult() {
+        // Defining-equivalence law: `tier_modality_amplitude` equals
+        // `peak_tier_multiplicity().abs_diff(trough_tier_multiplicity())`
+        // on every fixture. The `abs_diff` form is required because
+        // `peak_mult` and `trough_mult` can go either way (unlike the
+        // count-side `peak_count >= trough_count`). Both routings read
+        // the same scalar off the same primitive. Peer of
+        // `kind_modality_amplitude_equals_peak_mult_abs_diff_trough_mult`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_pair = map
+                .peak_tier_multiplicity()
+                .abs_diff(map.trough_tier_multiplicity());
+            assert_eq!(map.tier_modality_amplitude(), via_pair);
+        }
+    }
+
+    #[test]
+    fn tier_modality_amplitude_empty_map_is_zero() {
+        // Empty-map convention: no observed cells, both multiplicities
+        // read `0`, so the amplitude reads `0.abs_diff(0) == 0`.
+        // Matches the AxisHistogram::modality_amplitude empty convention
+        // one altitude down. The `(peak_tier_multiplicity,
+        // trough_tier_multiplicity, tier_modality_amplitude)` triple
+        // reads uniformly `(0, 0, 0)` on the empty map. Peer of
+        // `kind_modality_amplitude_empty_diff_is_zero` on the diff
+        // altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert_eq!(empty.peak_tier_multiplicity(), 0);
+        assert_eq!(empty.trough_tier_multiplicity(), 0);
+        assert_eq!(empty.tier_modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn tier_modality_amplitude_singleton_support_is_zero() {
+        // Singleton-support pin: every leaf lands on the same tier, so
+        // that one tier is simultaneously the unique peak and the
+        // unique trough. Both multiplicities read `1`, so the amplitude
+        // reads `0` — the modality-symmetric singleton case. Peer of
+        // `kind_modality_amplitude_singleton_support_is_zero` on the
+        // diff altitude.
+        let m: ProvenanceMap = ["a", "b", "c", "d"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert!(m.tiers_singular_support());
+        assert_eq!(m.peak_tier_multiplicity(), 1);
+        assert_eq!(m.trough_tier_multiplicity(), 1);
+        assert_eq!(m.tier_modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn tier_modality_amplitude_two_tier_tie_is_zero() {
+        // Two-tier-tied pin: `Bare + Default` both at count `1`, both
+        // tied at both the peak and the trough (they coincide on the
+        // uniform-count shape). Both multiplicities read `2`, so the
+        // amplitude reads `0` — the balanced two-cell case. Peer of
+        // `kind_modality_amplitude_two_kind_tie_is_zero` on the diff
+        // altitude.
+        let m: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        assert_eq!(m.peak_tier_multiplicity(), 2);
+        assert_eq!(m.trough_tier_multiplicity(), 2);
+        assert_eq!(m.tier_modality_amplitude(), 0);
+        assert!(m.tiers_balanced());
+    }
+
+    #[test]
+    fn tier_modality_amplitude_uniform_full_cover_is_zero() {
+        // Uniform full-cover pin: every ConfigTierKind cell contributes
+        // exactly one leaf, so all four cells tie at both the peak and
+        // the trough. Both multiplicities read `4` (= axis cardinality),
+        // so the amplitude reads `0` — the balanced full-cover case at
+        // the strong side of the amplitude-zero boundary. Strict advance
+        // over the cardinality-`3` diff altitude, where full-cover
+        // multiplicities cap at `3`.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(m.tiers_full_cover());
+        assert!(m.tiers_balanced());
+        assert_eq!(m.peak_tier_multiplicity(), 4);
+        assert_eq!(m.trough_tier_multiplicity(), 4);
+        assert_eq!(m.tier_modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn tier_modality_amplitude_strictly_ordered_fixture_is_zero_without_balanced() {
+        // Strictly-ordered four-cell pin: four distinct positive counts
+        // (`Bare=1, Default=2, Custom=3, Discovered=4`). Both peak and
+        // trough are uniquely held (peak_mult=1, trough_mult=1), so the
+        // amplitude reads `0` even though the shape is *not* balanced.
+        // This fixture witnesses the gap between
+        // `tier_modality_amplitude() == 0` and `tiers_balanced()`: the
+        // amplitude-zero boundary is strictly weaker than the balanced-
+        // boundary at the tier altitude. Strict advance over the diff-
+        // altitude gap-witness (three-cell strictly-ordered): here we
+        // exercise the full four-cell strict order that the cardinality-
+        // `4` tier axis makes reachable.
+        let mut leaves: Vec<(Vec<String>, Provenance)> = Vec::new();
+        for (i, t) in [
+            ConfigTierKind::Bare,
+            ConfigTierKind::Default,
+            ConfigTierKind::Custom,
+            ConfigTierKind::Discovered,
+        ]
+        .iter()
+        .enumerate()
+        {
+            let count = i + 1;
+            for j in 0..count {
+                leaves.push((
+                    vec![format!("{}-{}", t.as_str(), j)],
+                    Provenance::computed(*t),
+                ));
+            }
+        }
+        let m: ProvenanceMap = leaves.into_iter().collect();
+        assert!(m.tiers_full_cover());
+        assert_eq!(m.peak_tier_multiplicity(), 1);
+        assert_eq!(m.trough_tier_multiplicity(), 1);
+        assert_eq!(m.tier_modality_amplitude(), 0);
+        assert!(
+            !m.tiers_balanced(),
+            "strictly-ordered (1, 2, 3, 4) must NOT be balanced — the shape \
+             witnesses the gap between tier_modality_amplitude() == 0 and \
+             tiers_balanced()"
+        );
+    }
+
+    #[test]
+    fn tier_modality_amplitude_heavy_tail_fixture_is_two() {
+        // Heavy-tail four-cell pin: `Bare ×2, Default ×1, Custom ×1,
+        // Discovered ×1` → peak_count=2 (unique at Bare), trough_count=1
+        // (tied at Default + Custom + Discovered). peak_mult=1,
+        // trough_mult=3, so the amplitude reads `|1 - 3| = 2`. Pinned
+        // as a heavy-tail shape reaching the `2` amplitude value only
+        // available on the cardinality-`4` tier axis (the diff altitude
+        // caps at `1` on its heavy-tail fixture). Strict advance over
+        // `kind_modality_amplitude_heavy_tail_fixture_is_one` on the
+        // diff altitude — the boundary witness of the peak_mult <
+        // trough_mult branch of `abs_diff` promoted to a two-magnitude
+        // gap.
+        let m: ProvenanceMap = [
+            ("b1", ConfigTierKind::Bare),
+            ("b2", ConfigTierKind::Bare),
+            ("d", ConfigTierKind::Default),
+            ("c", ConfigTierKind::Custom),
+            ("x", ConfigTierKind::Discovered),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        assert!(m.tiers_full_cover());
+        assert_eq!(m.peak_tier_multiplicity(), 1);
+        assert_eq!(m.trough_tier_multiplicity(), 3);
+        assert_eq!(m.tier_modality_amplitude(), 2);
+    }
+
+    #[test]
+    fn tier_modality_amplitude_right_skew_fixture_is_two() {
+        // Right-skew four-cell pin: `Bare ×2, Default ×2, Custom ×2,
+        // Discovered ×1` → peak_count=2 (tied at Bare + Default +
+        // Custom), trough_count=1 (unique at Discovered). peak_mult=3,
+        // trough_mult=1, so the amplitude reads `|3 - 1| = 2`. Pinned
+        // as the mirror of the heavy-tail shape one seam over — the
+        // boundary witness of the peak_mult > trough_mult branch of
+        // `abs_diff`. Together with the heavy-tail fixture, this pin
+        // proves the amplitude reads the same scalar on both signed
+        // branches. Strict advance over
+        // `kind_modality_amplitude_right_skew_fixture_is_one` on the
+        // diff altitude — the two-magnitude gap available only on the
+        // cardinality-`4` tier axis.
+        let m: ProvenanceMap = [
+            ("b1", ConfigTierKind::Bare),
+            ("b2", ConfigTierKind::Bare),
+            ("d1", ConfigTierKind::Default),
+            ("d2", ConfigTierKind::Default),
+            ("c1", ConfigTierKind::Custom),
+            ("c2", ConfigTierKind::Custom),
+            ("x", ConfigTierKind::Discovered),
+        ]
+        .into_iter()
+        .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+        .collect();
+        assert!(m.tiers_full_cover());
+        assert_eq!(m.peak_tier_multiplicity(), 3);
+        assert_eq!(m.trough_tier_multiplicity(), 1);
+        assert_eq!(m.tier_modality_amplitude(), 2);
+    }
+
+    #[test]
+    fn tier_modality_amplitude_max_asymmetric_fixture_is_three() {
+        // Maximally-asymmetric pin: `Bare ×2, Default ×1, Custom ×1,
+        // Discovered ×1` — but this reads amplitude = 2, not 3. To
+        // reach amplitude = 3 on the cardinality-`4` axis we need one
+        // extremum to walk the full support (cardinality 4) while the
+        // other holds a singleton. That requires a strictly-uniform
+        // partial-cover shape... but a uniform full-cover has peak =
+        // trough = 4, giving amplitude 0. The maximum reachable
+        // amplitude is bounded by `card - 1 = 3` and is reached when
+        // one level set walks 4 cells and the other walks 1. Since a
+        // 4-tier tied peak means the shape is uniform-count (both
+        // level sets walk 4), no shape reaches amplitude = 3 on this
+        // axis — the maximum-reachable is `card - 2 = 2`, witnessed by
+        // the heavy-tail and right-skew fixtures above. Pin the
+        // structural bound: no fixture in this test suite reads > 2.
+        // This pins the honest reachable maximum on the tier altitude
+        // — a strict advance over the diff altitude's max of `1` — and
+        // documents why amplitude = 3 is structurally unreachable on
+        // the ConfigTierKind axis without external shapes.
+        for m in [
+            // Heavy-tail (2, 1, 1, 1): amplitude 2.
+            [
+                ("b1", ConfigTierKind::Bare),
+                ("b2", ConfigTierKind::Bare),
+                ("d", ConfigTierKind::Default),
+                ("c", ConfigTierKind::Custom),
+                ("x", ConfigTierKind::Discovered),
+            ]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect::<ProvenanceMap>(),
+            // Right-skew (2, 2, 2, 1): amplitude 2.
+            [
+                ("b1", ConfigTierKind::Bare),
+                ("b2", ConfigTierKind::Bare),
+                ("d1", ConfigTierKind::Default),
+                ("d2", ConfigTierKind::Default),
+                ("c1", ConfigTierKind::Custom),
+                ("c2", ConfigTierKind::Custom),
+                ("x", ConfigTierKind::Discovered),
+            ]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect::<ProvenanceMap>(),
+        ] {
+            assert!(
+                m.tier_modality_amplitude() <= 2,
+                "tier_modality_amplitude ({a}) exceeds observed reachable \
+                 maximum on the cardinality-4 tier axis with these fixtures",
+                a = m.tier_modality_amplitude(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_modality_amplitude_tiers_balanced_implies_zero() {
+        // Structural implication: `tiers_balanced() ⇒
+        // tier_modality_amplitude() == 0` on every fixture. The
+        // uniform-count shape witnesses the amplitude-zero boundary
+        // on the strong side (peak and trough level sets coincide,
+        // both walk the full support). The converse fails on every
+        // strictly-ordered shape where both multiplicities happen to
+        // be `1` without matching counts (pinned separately above).
+        // Peer of `kind_modality_amplitude_kinds_balanced_implies_zero`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if !map.tiers_balanced() {
+                continue;
+            }
+            assert_eq!(
+                map.tier_modality_amplitude(),
+                0,
+                "tiers_balanced ⇒ tier_modality_amplitude == 0 for map \
+                 with len={n}",
+                n = map.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_modality_amplitude_bounded_above_by_contributing_tiers_count() {
+        // Support bound: both level sets are subsets of the observed
+        // support, so their absolute difference is bounded by the
+        // support size on every fixture. Empty map: 0 <= 0. Singleton
+        // support: 0 <= 1. Two-tied balanced: 0 <= 2. Uniform four-
+        // tier cover: 0 <= 4. Heavy-tail four-tier: 2 <= 4. Peer of
+        // `kind_modality_amplitude_bounded_above_by_present_kinds_count`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(
+                map.tier_modality_amplitude() <= map.contributing_tiers_count(),
+                "tier_modality_amplitude ({a}) must not exceed \
+                 contributing_tiers_count ({p})",
+                a = map.tier_modality_amplitude(),
+                p = map.contributing_tiers_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_modality_amplitude_bounded_by_axis_cardinality() {
+        // Structural bound: `tier_modality_amplitude() <=
+        // axis_cardinality::<ConfigTierKind>()` (= 4) on every fixture.
+        // Composition of `<=contributing_tiers_count()` with
+        // `contributing_tiers_count() <=
+        // axis_cardinality::<ConfigTierKind>()`. Peer of
+        // `kind_modality_amplitude_bounded_by_axis_cardinality` on the
+        // diff altitude, promoted from cardinality `3` to `4`.
+        let card = crate::axis_cardinality::<ConfigTierKind>();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(
+                map.tier_modality_amplitude() <= card,
+                "tier_modality_amplitude ({a}) must not exceed axis \
+                 cardinality ({card})",
+                a = map.tier_modality_amplitude(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_modality_amplitude_agrees_with_modality_degree_component_abs_diff() {
+        // Fused-pair pin: `tier_modality_amplitude` equals the
+        // `abs_diff` of the `(peak_mult, trough_mult)` components read
+        // off the fused `modality_degree` pair. Both routings agree
+        // pointwise; the named seam is the routing through the pair
+        // projection into a single `abs_diff` scalar. Peer of
+        // `kind_modality_amplitude_agrees_with_modality_degree_component_abs_diff`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (peak_mult, trough_mult) = map.tier_histogram().modality_degree();
+            assert_eq!(
+                map.tier_modality_amplitude(),
+                peak_mult.abs_diff(trough_mult),
+                "tier_modality_amplitude must equal modality_degree \
+                 component abs_diff on map with len={n}",
+                n = map.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_modality_amplitude_zero_iff_peak_mult_equals_trough_mult() {
+        // Structural-symmetry predicate: `tier_modality_amplitude() ==
+        // 0` iff `peak_tier_multiplicity() == trough_tier_multiplicity()`
+        // on every fixture. The typed *modality-symmetric* predicate on
+        // the multiplicity surface — the modal and antimodal level sets
+        // share cardinality (though not necessarily membership). Peer
+        // of `kind_modality_amplitude_zero_iff_peak_mult_equals_trough_mult`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let amplitude_zero = map.tier_modality_amplitude() == 0;
+            let mults_equal = map.peak_tier_multiplicity() == map.trough_tier_multiplicity();
+            assert_eq!(
+                amplitude_zero,
+                mults_equal,
+                "tier_modality_amplitude == 0 iff peak_tier_multiplicity == \
+                 trough_tier_multiplicity for map with len={n}",
+                n = map.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_modality_amplitude_agrees_with_open_coded_abs_diff_walk() {
+        // Parity against the exact hand-rolled peak/trough multiplicity
+        // walk this lift surfaces at a named seam: walk every cell of
+        // the histogram, find the maximum count, count how many cells
+        // carry it (peak multiplicity); restrict to nonzero cells,
+        // find the minimum positive count, count how many cells carry
+        // it (trough multiplicity); take the absolute difference.
+        // Empty histogram yields both counts `0`, so amplitude reads
+        // `0`. Peer of the diff-altitude open-coded walks combined at
+        // this altitude into a single amplitude pin.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tier_modality_amplitude();
+            let hist = map.tier_histogram();
+            let max = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let peak_mult = if max == 0 {
+                0
+            } else {
+                hist.iter().filter(|(_, c)| *c == max).count()
+            };
+            let min_positive = hist.iter().map(|(_, c)| c).filter(|c| *c > 0).min();
+            let trough_mult = match min_positive {
+                None => 0,
+                Some(m) => hist.iter().filter(|(_, c)| *c == m).count(),
+            };
+            let hand_rolled = peak_mult.abs_diff(trough_mult);
             assert_eq!(via_seam, hand_rolled);
         }
     }
