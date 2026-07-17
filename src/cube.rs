@@ -4065,6 +4065,145 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         (peak_mult, trough_mult)
     }
 
+    /// The **modality-shape amplitude** — the absolute difference between
+    /// the modal and antimodal level-set cardinalities of this histogram.
+    /// Equal to `self.peak_multiplicity().abs_diff(self.trough_multiplicity())`
+    /// by construction, reading the fused-pair *cardinality gap* off the
+    /// closed multiplicity surface as one `usize` scalar. Returns `0`
+    /// exactly when the modal and antimodal level sets share cardinality —
+    /// including the empty histogram (`0.abs_diff(0)`), every singleton-
+    /// support histogram (`1.abs_diff(1)`), every uniform-count histogram
+    /// (peak and trough level sets both walk the full support), and every
+    /// strictly-ordered shape where both peak and trough are uniquely held
+    /// (e.g. a three-cell histogram with counts `(3, 2, 1)` — one cell at
+    /// the peak, one at the trough, `1.abs_diff(1) == 0`).
+    ///
+    /// The **scalar-amplitude peer** on the histogram's multiplicity
+    /// surface — the structural dual of [`Self::spread`] on the count
+    /// surface. Where [`Self::spread`] fuses the extremal-count pair
+    /// `(peak_count, trough_count)` into `peak_count - trough_count`
+    /// (underflow-safe since `peak_count >= trough_count` always),
+    /// `modality_amplitude` fuses the extremal-multiplicity pair
+    /// `(peak_multiplicity, trough_multiplicity)` into
+    /// `peak_multiplicity.abs_diff(trough_multiplicity)`. The `abs_diff`
+    /// operation is required (unlike the count-side subtraction) because
+    /// neither multiplicity dominates the other structurally — a right-
+    /// skewed shape (many cells sharing the peak, one at the trough) has
+    /// `peak_mult > trough_mult`, whereas a heavy-tail shape (one cell
+    /// at the peak, many at the trough) has `peak_mult < trough_mult`.
+    /// The unsigned-diff form reads the *magnitude* of the cardinality
+    /// gap without committing to a signed direction.
+    ///
+    /// The natural typed primitive for the *"how symmetric is the
+    /// modality-shape between the peak and trough level sets?"* question
+    /// every reload-window diagnostic, attestation manifest, and dashboard
+    /// cell asks: the `AxisHistogram<crate::ShikumiErrorKind>` reload-
+    /// summary line (`"modality amplitude 2: Parse alone at peak, Io /
+    /// Watch tied at trough"` — reading the shape-asymmetry scalar off one
+    /// primitive instead of composing `peak_multiplicity() -
+    /// trough_multiplicity()` at the risk of underflow), the
+    /// [`crate::ConfigSourceChain::layer_kind_histogram`] rebuild-summary
+    /// (`"chain amplitude 0: peak/trough level sets balanced"` vs.
+    /// `"chain amplitude 1: dominant format uniquely held, two file-format
+    /// runts tied"`), the `AxisHistogram<crate::DiffLineKind>` diff-
+    /// summary (`"kind amplitude 1: Removed uniquely dominant, Added /
+    /// Context tied at trough"`). Before this lift, every such consumer
+    /// re-derived the projection inline as
+    /// `hist.peak_multiplicity().abs_diff(hist.trough_multiplicity())` —
+    /// two method calls plus an `abs_diff`, each site having to reason
+    /// independently about the *non-directional* nature of the difference
+    /// (which the count-side `spread` didn't need to). The lift names the
+    /// scalar at one site, routing through the closed multiplicity
+    /// surface.
+    ///
+    /// **Empty-histogram convention** — returns `0`, matching the
+    /// [`Self::peak_multiplicity`] / [`Self::trough_multiplicity`] empty
+    /// conventions (`(0, 0).abs_diff(...)` on either component reads `0`)
+    /// and the [`Self::spread`] empty convention on the count surface. The
+    /// scalar-multiplicity triple `(peak_multiplicity, trough_multiplicity,
+    /// modality_amplitude)` reads uniformly `(0, 0, 0)` on the empty
+    /// histogram — the vacuous-balance boundary lifted from the empty
+    /// support.
+    ///
+    /// **Structural-symmetry predicate.** `modality_amplitude() == 0` is
+    /// the typed *modality-symmetric* predicate on the multiplicity
+    /// surface — the modal and antimodal level sets share cardinality
+    /// (though not necessarily membership). Pointwise equivalent to
+    /// `peak_multiplicity() == trough_multiplicity()` on the underlying
+    /// scalar pair and to `modality_degree().0 == modality_degree().1` on
+    /// the fused pair. Strictly weaker than [`Self::is_uniform_count`]:
+    /// every uniform-count histogram is modality-symmetric (both level
+    /// sets equal the full support), but a strictly-ordered (3, 2, 1)
+    /// shape is modality-symmetric (both level sets are singletons)
+    /// without being uniform-count. The predicate sits between the
+    /// pointwise-membership form (`dominant_cell() == recessive_cell()`
+    /// — cell coincidence) and the uniform-count form
+    /// ([`Self::is_uniform_count`] — value coincidence): shape-cardinality
+    /// coincidence.
+    ///
+    /// # Invariants
+    ///
+    /// - `modality_amplitude() ==
+    ///   peak_multiplicity().abs_diff(trough_multiplicity())` — the
+    ///   defining equivalence on the multiplicity-scalar pair. The named
+    ///   seam is the cube-native routing of the two extremal-multiplicity
+    ///   scalars into their absolute-difference.
+    /// - `modality_amplitude() ==
+    ///   { let (p, t) = modality_degree(); p.abs_diff(t) }` — the fused-
+    ///   pair form on the modality-degree surface. Both routings read the
+    ///   same scalar off the same primitive.
+    /// - `modality_amplitude() == 0` on the empty histogram — the
+    ///   vacuous-balance boundary. The `(peak_multiplicity,
+    ///   trough_multiplicity, modality_amplitude)` triple reads
+    ///   uniformly `(0, 0, 0)` on empty.
+    /// - `modality_amplitude() == 0` on every singleton-support
+    ///   histogram — the sole observed cell sits at both the peak and
+    ///   the trough (both multiplicities read `1`, so the amplitude
+    ///   reads `0`).
+    /// - `modality_amplitude() == 0` on every uniform-count histogram —
+    ///   `is_uniform_count() ⇒ peak_multiplicity() ==
+    ///   trough_multiplicity() == distinct_cells()`, so the amplitude
+    ///   reads `0`. The converse fails on every strictly-ordered shape
+    ///   where the two multiplicity singletons coincide without matching
+    ///   counts.
+    /// - `modality_amplitude() <= distinct_cells()` always — both level
+    ///   sets are subsets of the observed support, so their cardinalities
+    ///   are each bounded by `distinct_cells()`, and the absolute
+    ///   difference of two values in `0..=k` is bounded by `k`. Tighter:
+    ///   on every non-empty histogram, `peak_multiplicity() >= 1` and
+    ///   `trough_multiplicity() >= 1`, so the amplitude is bounded by
+    ///   `distinct_cells() - 1`.
+    /// - `modality_amplitude() <= axis_cardinality::<A>()` always —
+    ///   composition of the above with `distinct_cells() <=
+    ///   axis_cardinality::<A>()`.
+    /// - `is_uniform_count() ⇒ modality_amplitude() == 0` — the
+    ///   uniform-count shape witnesses the amplitude-zero boundary on
+    ///   the strong side.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The four trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_modality_amplitude_empty_is_zero_*`,
+    /// `axis_histogram_modality_amplitude_singleton_is_zero_*`,
+    /// `axis_histogram_modality_amplitude_axis_cover_is_zero_*`,
+    /// `axis_histogram_modality_amplitude_equals_open_coded_abs_diff_*`).
+    ///
+    /// Peer to [`Self::spread`] (the *count-surface* dispersion scalar),
+    /// [`Self::peak_multiplicity`] (the *modal* multiplicity scalar),
+    /// [`Self::trough_multiplicity`] (the *antimodal* multiplicity
+    /// scalar), and [`Self::modality_degree`] (the fused pair): the
+    /// histogram's dispersion surface now carries the natural pair
+    /// `(spread, modality_amplitude)` — count-side dispersion peer of
+    /// multiplicity-side amplitude. Every operator-facing summary reads
+    /// off one method call each, and the *modality-symmetry* predicate
+    /// `modality_amplitude() == 0` reads off a single equality on the
+    /// closed multiplicity surface.
+    #[must_use]
+    pub fn modality_amplitude(&self) -> usize {
+        let (peak_mult, trough_mult) = self.modality_degree();
+        peak_mult.abs_diff(trough_mult)
+    }
+
     /// `true` exactly when the histogram's *modal* level set has
     /// cardinality one — exactly one observed cell sits at the peak.
     /// The **strict modal uniqueness** predicate on the histogram's
@@ -34878,6 +35017,380 @@ mod tests {
                 "trough_mult {trough_mult} must be <= distinct_cells {support} on input \
                  of length {}",
                 input.len(),
+            );
+        }
+    }
+
+    // ---- AxisHistogram::modality_amplitude trait-uniform laws ----
+    //
+    // Four trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // `modality_amplitude` projection's contract holds uniformly
+    // without per-axis test duplication: empty → 0; singleton → 0 on
+    // every cell K (both modal and antimodal singletons coincide);
+    // uniform axis-cover → 0 (both level sets equal the full axis);
+    // pointwise equal to the open-coded
+    // `peak_multiplicity().abs_diff(trough_multiplicity())` form.
+    // Concrete strict-skew, heavy-tail, uniform-sub-cover, and bound
+    // pins follow below on [`DiffLineKind`].
+
+    fn assert_modality_amplitude_empty_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.modality_amplitude(),
+            0,
+            "empty histogram modality_amplitude must be 0 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_modality_amplitude_singleton_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has modality_amplitude = 0 — the
+        // sole observed cell is simultaneously the unique peak and
+        // the unique trough (both multiplicities read 1, so the
+        // absolute difference reads 0). Pinned uniformly across every
+        // closed-axis implementor.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.modality_amplitude(),
+                0,
+                "singleton modality_amplitude must be 0 for observed cell \
+                 {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_modality_amplitude_axis_cover_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once produces a uniform
+        // histogram (every cell at 1, peak == trough == 1); both modal
+        // and antimodal level sets equal the entire axis, so both
+        // multiplicities equal axis_cardinality and the absolute
+        // difference reads 0. The strong-uniform-count witness of the
+        // amplitude-zero boundary.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            hist.modality_amplitude(),
+            0,
+            "uniform axis-cover histogram modality_amplitude must be 0 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_modality_amplitude_equals_open_coded_abs_diff<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Defining-equivalence law: modality_amplitude() is pointwise
+        // equal to peak_multiplicity().abs_diff(trough_multiplicity())
+        // on every histogram shape — empty, singleton, full axis cover,
+        // and (where the axis has at least two variants) a strict two-
+        // cell sub-cover with unequal counts that exercises both tied-
+        // trough (one) and unique-peak (one) branches. Reached across
+        // every implementor through the macro.
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.modality_amplitude(),
+            empty
+                .peak_multiplicity()
+                .abs_diff(empty.trough_multiplicity()),
+            "modality_amplitude must equal peak_mult.abs_diff(trough_mult) \
+             on empty histogram for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.modality_amplitude(),
+                singleton
+                    .peak_multiplicity()
+                    .abs_diff(singleton.trough_multiplicity()),
+                "modality_amplitude must equal peak_mult.abs_diff(trough_mult) \
+                 on singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.modality_amplitude(),
+            cover
+                .peak_multiplicity()
+                .abs_diff(cover.trough_multiplicity()),
+            "modality_amplitude must equal peak_mult.abs_diff(trough_mult) \
+             on uniform axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        // Skewed shape: bump the first cell twice past the second cell
+        // (when the axis has at least two variants) to drive a strict
+        // peak/trough split. On a singleton axis, the loop body
+        // collapses to the singleton case above.
+        let mut variants = axis_iter::<A>();
+        if let (Some(first), Some(second)) = (variants.next(), variants.next()) {
+            let mut skewed = AxisHistogram::<A>::empty();
+            skewed.observe(first);
+            skewed.observe(first);
+            skewed.observe(second);
+            assert_eq!(
+                skewed.modality_amplitude(),
+                skewed
+                    .peak_multiplicity()
+                    .abs_diff(skewed.trough_multiplicity()),
+                "modality_amplitude must equal peak_mult.abs_diff(trough_mult) \
+                 on skewed shape ({first:?} ×2, {second:?} ×1) for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_modality_amplitude_empty_is_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_amplitude_empty_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_amplitude_singleton_is_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_amplitude_singleton_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_amplitude_axis_cover_is_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_amplitude_axis_cover_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_amplitude_equals_open_coded_abs_diff_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_amplitude_equals_open_coded_abs_diff::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_amplitude_agrees_with_modality_degree_component_abs_diff() {
+        // Fused-pair pin: modality_amplitude equals the abs_diff of the
+        // (peak_mult, trough_mult) components read off the fused
+        // modality_degree pair. Both routings must agree pointwise; the
+        // named seam is the routing through the pair projection into a
+        // single abs_diff scalar.
+        let inputs: [&[DiffLineKind]; 6] = [
+            &[],
+            &[DiffLineKind::Added],
+            // heavy-tail (1, 2): one dominant, two tied at trough
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+            // right-skew (2, 1): two tied at peak, one at trough
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+                DiffLineKind::Context,
+            ],
+            // strictly-ordered (1, 1)
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+            // uniform (3, 3)
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let (peak_mult, trough_mult) = hist.modality_degree();
+            assert_eq!(
+                hist.modality_amplitude(),
+                peak_mult.abs_diff(trough_mult),
+                "modality_amplitude must equal peak_mult.abs_diff(trough_mult) \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_modality_amplitude_heavy_tail_and_right_skew_are_symmetric() {
+        // Heavy-tail (peak_mult=1, trough_mult=2) and right-skew
+        // (peak_mult=2, trough_mult=1) both read amplitude 1 — the
+        // magnitude reads off the cardinality gap without committing
+        // to a signed direction. Pinned on the smallest shape that
+        // separates the two sides of the abs_diff, so a future
+        // regression that swaps the operands to a saturating (rather
+        // than absolute) subtraction surfaces here.
+        // Heavy-tail: Added ×2, Removed ×1, Context ×1 →
+        // peak_count=2, trough_count=1, peak_mult=1, trough_mult=2.
+        let heavy_tail: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(heavy_tail.peak_multiplicity(), 1);
+        assert_eq!(heavy_tail.trough_multiplicity(), 2);
+        assert_eq!(heavy_tail.modality_amplitude(), 1);
+
+        // Right-skew: Added ×2, Removed ×2, Context ×1 →
+        // peak_mult=2, trough_mult=1.
+        let right_skew: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(right_skew.peak_multiplicity(), 2);
+        assert_eq!(right_skew.trough_multiplicity(), 1);
+        assert_eq!(right_skew.modality_amplitude(), 1);
+    }
+
+    #[test]
+    fn axis_histogram_modality_amplitude_strictly_ordered_is_zero_without_uniform_count() {
+        // Strictly-ordered (3, 2, 1) shape: peak_mult=1, trough_mult=1
+        // (both singletons), so amplitude=0 even though the shape is
+        // not uniform-count. The predicate `modality_amplitude() == 0`
+        // is strictly weaker than `is_uniform_count()` — this shape
+        // witnesses the gap between the two.
+        let strict: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(strict.peak_multiplicity(), 1);
+        assert_eq!(strict.trough_multiplicity(), 1);
+        assert_eq!(strict.modality_amplitude(), 0);
+        assert!(
+            !strict.is_uniform_count(),
+            "strictly-ordered (3, 2, 1) must NOT be uniform-count — the shape \
+             separates modality_amplitude() == 0 from is_uniform_count()"
+        );
+    }
+
+    #[test]
+    fn axis_histogram_modality_amplitude_uniform_count_implies_zero() {
+        // Structural implication: is_uniform_count() ⇒
+        // modality_amplitude() == 0. Pinned on every uniform-count
+        // fixture in the canonical mix (empty, singleton, uniform
+        // axis-cover, k-cell balanced sub-cover).
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_uniform_count());
+        assert_eq!(empty.modality_amplitude(), 0);
+
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert!(singleton.is_uniform_count());
+        assert_eq!(singleton.modality_amplitude(), 0);
+
+        let cover: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        assert!(cover.is_uniform_count());
+        assert_eq!(cover.modality_amplitude(), 0);
+
+        let two_each: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert!(two_each.is_uniform_count());
+        assert_eq!(two_each.modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn axis_histogram_modality_amplitude_is_bounded_above_by_distinct_cells() {
+        // Structural bound: modality_amplitude <= distinct_cells on
+        // every fixture. Both level sets are subsets of the observed
+        // support, so their absolute difference is bounded by the
+        // support size. Pinned across a mix of shapes so both zero-
+        // and positive-amplitude cases witness the bound.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let support = hist.distinct_cells();
+            assert!(
+                hist.modality_amplitude() <= support,
+                "modality_amplitude {a} must be <= distinct_cells {support} on \
+                 input of length {n}",
+                a = hist.modality_amplitude(),
+                n = input.len(),
+            );
+            assert!(
+                hist.modality_amplitude() <= axis_cardinality::<DiffLineKind>(),
+                "modality_amplitude {a} must be <= axis_cardinality {c} on \
+                 input of length {n}",
+                a = hist.modality_amplitude(),
+                c = axis_cardinality::<DiffLineKind>(),
+                n = input.len(),
             );
         }
     }

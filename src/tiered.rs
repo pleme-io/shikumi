@@ -7501,6 +7501,166 @@ impl ConfigDiff {
         self.kind_histogram().trough_multiplicity()
     }
 
+    /// The **modality-shape amplitude of diff kinds** — the absolute
+    /// difference between the modal and antimodal [`DiffLineKind`] level-
+    /// set cardinalities on this diff. Equal to
+    /// `self.peak_kind_multiplicity().abs_diff(self.trough_kind_multiplicity())`
+    /// by construction, routed through [`Self::kind_histogram`]:
+    /// [`crate::AxisHistogram::modality_amplitude`] reads the same scalar
+    /// off the fixed-cardinality counts vector in one pass. Returns `0`
+    /// exactly when the modal and antimodal level sets share cardinality
+    /// — including the empty diff (`0.abs_diff(0)`), every singleton-
+    /// support diff (`1.abs_diff(1)`), every balanced diff (both level
+    /// sets walk the full observed support), and every strictly-ordered
+    /// three-cell shape (both level sets are singletons, `1.abs_diff(1)`).
+    ///
+    /// The **scalar-amplitude peer** on the multiplicity surface — the
+    /// structural dual of [`Self::kind_spread`] on the count surface at
+    /// the diff altitude. Where [`Self::kind_spread`] fuses the extremal-
+    /// count pair `(peak_kind_count, trough_kind_count)` into
+    /// `peak_kind_count - trough_kind_count` (underflow-safe since
+    /// `peak_kind_count >= trough_kind_count` always),
+    /// `kind_modality_amplitude` fuses the extremal-multiplicity pair
+    /// `(peak_kind_multiplicity, trough_kind_multiplicity)` into
+    /// `peak_kind_multiplicity.abs_diff(trough_kind_multiplicity)`. The
+    /// `abs_diff` operation is required (unlike the count-side
+    /// subtraction) because neither multiplicity dominates the other
+    /// structurally — a right-skewed diff (many kinds tied at the peak,
+    /// one uniquely at the trough) has `peak_mult > trough_mult`, whereas
+    /// a heavy-tail diff (one uniquely at the peak, many tied at the
+    /// trough) has `peak_mult < trough_mult`. The unsigned-diff form
+    /// reads the *magnitude* of the cardinality gap without committing
+    /// to a signed direction.
+    ///
+    /// The natural typed primitive for CLI `config-diff` summaries,
+    /// attestation manifests, and alerting policies asking *"how
+    /// symmetric is the modality-shape of this diff between its peak
+    /// and trough kinds?"*: the summary line *"kind amplitude 1:
+    /// Added / Context tied at peak, Removed alone at trough"* (where
+    /// `1` is this scalar), the attestation manifest recording the
+    /// modality-amplitude of the rendered diff between two rebuild
+    /// windows, the alerting policy reading *"kind amplitude = 2"* to
+    /// flag a rebuild window where the modality distribution is sharply
+    /// asymmetric. Before this lift, every such consumer re-derived the
+    /// projection inline as
+    /// `diff.peak_kind_multiplicity().abs_diff(diff.trough_kind_multiplicity())`
+    /// — two method calls plus an `abs_diff`, each site having to reason
+    /// independently about the *non-directional* nature of the difference
+    /// (which the count-side `kind_spread` didn't need to reason about,
+    /// since `peak_count >= trough_count` is structural).
+    ///
+    /// The diff-altitude scalar-amplitude peer that **seeds the
+    /// "modality-amplitude across altitudes" projection** — the modality-
+    /// shape symmetry scalar sister of the two closed multiplicity
+    /// scalars ([`Self::peak_kind_multiplicity`] and
+    /// [`Self::trough_kind_multiplicity`], both already surfaced at this
+    /// altitude) on every altitude of the fully-closed cube. The next
+    /// natural lifts climb to the tier altitude
+    /// (`ProvenanceMap::tier_modality_amplitude` over [`Self::tier_histogram`]
+    /// on the tier altitude) and sideways along the chain altitude's
+    /// three sub-axes (`layer_kind_modality_amplitude`,
+    /// `file_format_modality_amplitude`,
+    /// `env_prefix_kind_modality_amplitude` over the corresponding chain
+    /// histograms). The pattern is the same at every altitude / sub-
+    /// axis: fuse the (`peak_multiplicity`, `trough_multiplicity`)
+    /// extremal-multiplicity pair into a single amplitude scalar named
+    /// at the surface, routed through the shared
+    /// [`crate::AxisHistogram::modality_amplitude`] primitive one altitude
+    /// down. Parallels the "spread across altitudes" projection seeded on
+    /// the same altitude by [`Self::kind_spread`] (the count-surface
+    /// dispersion peer of this multiplicity-surface amplitude) and the
+    /// fully-closed peak / trough multiplicity scalar projections
+    /// ([`Self::peak_kind_multiplicity`], [`Self::trough_kind_multiplicity`])
+    /// — this lift widens the closed scalar modality algebra at the diff
+    /// altitude by surfacing the *symmetry-gap* scalar the two closed
+    /// multiplicity scalars project through absolute-difference.
+    ///
+    /// **Empty-diff convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::modality_amplitude`] empty convention one
+    /// altitude down and the [`Self::peak_kind_multiplicity`] /
+    /// [`Self::trough_kind_multiplicity`] empty conventions on the same
+    /// altitude. The scalar-multiplicity triple `(peak_kind_multiplicity,
+    /// trough_kind_multiplicity, kind_modality_amplitude)` reads
+    /// uniformly `(0, 0, 0)` on the empty diff — the vacuous-balance
+    /// boundary lifted from the empty support.
+    ///
+    /// **Singleton-support convention** — returns `0` on every diff whose
+    /// observed support is a single [`DiffLineKind`]: the sole observed
+    /// kind is simultaneously the unique peak and the unique trough
+    /// (both multiplicities read `1`, so the absolute difference reads
+    /// `0`). Every singleton-support diff sits on the amplitude-zero
+    /// boundary — the modality-symmetric singleton case.
+    ///
+    /// **Balanced-diff convention** — returns `0` on every balanced diff
+    /// (every observed kind contributed the same nonzero count):
+    /// `is_uniform_count() ⇒ peak_multiplicity() == trough_multiplicity()
+    /// == distinct_cells()`, so the amplitude reads `0`. Every balanced
+    /// diff sits on the amplitude-zero boundary — the modality-symmetric
+    /// balanced case.
+    ///
+    /// **Strictly-ordered convention** — returns `0` on every strictly-
+    /// ordered three-cell diff (three distinct positive counts, e.g.
+    /// `Removed=1, Added=2, Context=3`): both multiplicities are `1`
+    /// (one unique cell at the peak, one unique cell at the trough), so
+    /// the amplitude reads `0` even though the shape is *not* balanced.
+    /// The predicate `kind_modality_amplitude() == 0` is therefore
+    /// strictly weaker than [`Self::kinds_balanced`] — this shape
+    /// witnesses the gap between the two amplitude-zero boundaries at
+    /// the diff altitude.
+    ///
+    /// # Invariants
+    ///
+    /// - `kind_modality_amplitude() == kind_histogram().modality_amplitude()`
+    ///   — both project the same scalar off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `kind_modality_amplitude() ==
+    ///   peak_kind_multiplicity().abs_diff(trough_kind_multiplicity())`
+    ///   — the defining equivalence on the multiplicity-scalar pair at
+    ///   the diff altitude. The `abs_diff` form is required because
+    ///   `peak_mult` and `trough_mult` can go either way (unlike
+    ///   `peak_count >= trough_count`).
+    /// - `kind_modality_amplitude() == 0` on the empty diff — the
+    ///   vacuous-balance boundary. The `(peak_kind_multiplicity,
+    ///   trough_kind_multiplicity, kind_modality_amplitude)` triple
+    ///   reads uniformly `(0, 0, 0)` on the empty diff.
+    /// - `kind_modality_amplitude() == 0` on every singleton-support
+    ///   diff — the sole observed kind is both the unique peak and the
+    ///   unique trough, so both multiplicities read `1` and the
+    ///   amplitude reads `0`.
+    /// - `kinds_balanced() ⇒ kind_modality_amplitude() == 0` — the
+    ///   uniform-count shape witnesses the amplitude-zero boundary on
+    ///   the strong side. The converse fails on every strictly-ordered
+    ///   three-cell shape where both multiplicities happen to be `1`
+    ///   without matching counts.
+    /// - `kind_modality_amplitude() <= present_kinds_count()` always —
+    ///   both level sets are subsets of the observed support, so their
+    ///   absolute difference is bounded by the support size. Lifted from
+    ///   the trait-uniform `modality_amplitude() <= distinct_cells()`
+    ///   law on [`crate::AxisHistogram`].
+    /// - `kind_modality_amplitude() <=
+    ///   crate::axis_cardinality::<DiffLineKind>()` always — bounded
+    ///   above by the axis cardinality `3` on the three-cell diff-kind
+    ///   axis. Composition of the above with `present_kinds_count() <=
+    ///   crate::axis_cardinality::<DiffLineKind>()`.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (the fused peak +
+    /// trough scan through [`crate::AxisHistogram::modality_degree`]).
+    /// Both are `O(n)` in practice since the diff-cell axis carries a
+    /// fixed three-cell cardinality; the returned `usize` reads one
+    /// scalar. Halves the cost of the previous inline
+    /// `diff.peak_kind_multiplicity().abs_diff(diff.trough_kind_multiplicity())`
+    /// idiom (which walked the counts vector twice — once for the peak
+    /// multiplicity, once for the trough multiplicity — where
+    /// [`crate::AxisHistogram::modality_amplitude`] fuses both into a
+    /// single walk through [`crate::AxisHistogram::modality_degree`]).
+    #[must_use]
+    pub fn kind_modality_amplitude(&self) -> usize {
+        self.kind_histogram().modality_amplitude()
+    }
+
     /// The **balanced-diff-kinds boolean predicate** at the diff altitude —
     /// `true` exactly when every observed [`DiffLineKind`] contributed the
     /// same number of lines. The typed boolean peer of `kind_spread() == 0`
@@ -15026,6 +15186,304 @@ mod tests {
         };
         assert_eq!(diff.trough_kind_count(), 1);
         assert_eq!(diff.trough_kind_multiplicity(), 1);
+    }
+
+    // ── ConfigDiff::kind_modality_amplitude — modality-shape amplitude scalar on
+    //    the diff altitude, lifting AxisHistogram::modality_amplitude from the
+    //    histogram surface and seeding the "modality-amplitude across altitudes"
+    //    projection ──
+
+    #[test]
+    fn kind_modality_amplitude_matches_kind_histogram_modality_amplitude_pointwise() {
+        // Routing pin: `kind_modality_amplitude` routes through
+        // `kind_histogram().modality_amplitude()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Diff-altitude seed
+        // of the "modality-amplitude across altitudes" projection.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().modality_amplitude();
+            assert_eq!(diff.kind_modality_amplitude(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kind_modality_amplitude_equals_peak_mult_abs_diff_trough_mult() {
+        // Defining-equivalence law: `kind_modality_amplitude` equals
+        // `peak_kind_multiplicity().abs_diff(trough_kind_multiplicity())`
+        // on every fixture. The `abs_diff` form is required because
+        // `peak_mult` and `trough_mult` can go either way (unlike the
+        // count-side `peak_count >= trough_count`). Both routings read
+        // the same scalar off the same primitive.
+        for diff in dominant_kind_fixtures() {
+            let via_pair = diff
+                .peak_kind_multiplicity()
+                .abs_diff(diff.trough_kind_multiplicity());
+            assert_eq!(diff.kind_modality_amplitude(), via_pair);
+        }
+    }
+
+    #[test]
+    fn kind_modality_amplitude_empty_diff_is_zero() {
+        // Empty-diff convention: no observed cells, both multiplicities
+        // read `0`, so the amplitude reads `0.abs_diff(0) == 0`.
+        // Matches the AxisHistogram::modality_amplitude empty convention
+        // one altitude down. The `(peak_kind_multiplicity,
+        // trough_kind_multiplicity, kind_modality_amplitude)` triple
+        // reads uniformly `(0, 0, 0)` on the empty diff.
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.peak_kind_multiplicity(), 0);
+        assert_eq!(empty.trough_kind_multiplicity(), 0);
+        assert_eq!(empty.kind_modality_amplitude(), 0);
+        assert!(empty.lines.is_empty());
+    }
+
+    #[test]
+    fn kind_modality_amplitude_singleton_support_is_zero() {
+        // Singleton-support pin: every line lands on the same kind, so
+        // that one kind is simultaneously the unique peak and the
+        // unique trough. Both multiplicities read `1`, so the amplitude
+        // reads `0`. The modality-symmetric singleton case.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Removed("r3".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_multiplicity(), 1);
+        assert_eq!(diff.trough_kind_multiplicity(), 1);
+        assert_eq!(diff.kind_modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn kind_modality_amplitude_two_kind_tie_is_zero() {
+        // Two-kind-tied pin: `Removed + Added` both at count `1`, both
+        // tied at both the peak and the trough (they coincide on the
+        // uniform-count shape). Both multiplicities read `2`, so the
+        // amplitude reads `0` — the balanced two-cell case.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert_eq!(diff.peak_kind_multiplicity(), 2);
+        assert_eq!(diff.trough_kind_multiplicity(), 2);
+        assert_eq!(diff.kind_modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn kind_modality_amplitude_uniform_full_cover_is_zero() {
+        // Uniform full-cover pin: every observed kind contributes the
+        // same nonzero count, so all three cells tie at both the peak
+        // and the trough. Both multiplicities read `3`, so the
+        // amplitude reads `0` — the balanced full-cover case at
+        // the strong side of the amplitude-zero boundary.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_multiplicity(), 3);
+        assert_eq!(diff.trough_kind_multiplicity(), 3);
+        assert_eq!(diff.kind_modality_amplitude(), 0);
+        assert!(diff.kinds_balanced());
+    }
+
+    #[test]
+    fn kind_modality_amplitude_strictly_ordered_fixture_is_zero_without_balanced() {
+        // Strictly-ordered pin: three distinct positive counts
+        // (Context=3, Added=2, Removed=1). Both peak and trough are
+        // uniquely held (peak_mult=1, trough_mult=1), so the amplitude
+        // reads `0` even though the shape is *not* balanced. This
+        // fixture witnesses the gap between `kind_modality_amplitude()
+        // == 0` and `kinds_balanced()`: the amplitude-zero boundary
+        // is strictly weaker than the balanced-boundary at the diff
+        // altitude.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_multiplicity(), 1);
+        assert_eq!(diff.trough_kind_multiplicity(), 1);
+        assert_eq!(diff.kind_modality_amplitude(), 0);
+        assert!(
+            !diff.kinds_balanced(),
+            "strictly-ordered (3, 2, 1) must NOT be balanced — the shape \
+             witnesses the gap between kind_modality_amplitude() == 0 and \
+             kinds_balanced()"
+        );
+    }
+
+    #[test]
+    fn kind_modality_amplitude_heavy_tail_fixture_is_one() {
+        // Heavy-tail pin: one dominant kind, two kinds tied at the
+        // trough. Added ×2, Removed ×1, Context ×1 → peak_count=2
+        // (unique at Added), trough_count=1 (tied at Removed and
+        // Context). peak_mult=1, trough_mult=2, so the amplitude
+        // reads `|1 - 2| = 1`. Pinned on the smallest heavy-tail shape
+        // where the amplitude reads a positive value — the boundary
+        // witness of the peak_mult < trough_mult branch of `abs_diff`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Removed("r".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_multiplicity(), 1);
+        assert_eq!(diff.trough_kind_multiplicity(), 2);
+        assert_eq!(diff.kind_modality_amplitude(), 1);
+    }
+
+    #[test]
+    fn kind_modality_amplitude_right_skew_fixture_is_one() {
+        // Right-skew pin: two kinds tied at the peak, one at the
+        // trough. Added ×2, Removed ×2, Context ×1 → peak_count=2
+        // (tied at Added and Removed), trough_count=1 (unique at
+        // Context). peak_mult=2, trough_mult=1, so the amplitude
+        // reads `|2 - 1| = 1`. Pinned as the mirror of the heavy-tail
+        // shape one seam over — the boundary witness of the
+        // peak_mult > trough_mult branch of `abs_diff`. Together with
+        // the heavy-tail fixture, this pin proves the amplitude reads
+        // the same scalar on both signed branches.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_multiplicity(), 2);
+        assert_eq!(diff.trough_kind_multiplicity(), 1);
+        assert_eq!(diff.kind_modality_amplitude(), 1);
+    }
+
+    #[test]
+    fn kind_modality_amplitude_added_dominated_fixture_is_zero() {
+        // Added-dominated pin: 2 Added + 1 Context → peak_mult=1
+        // (unique Added), trough_mult=1 (unique Context). Amplitude
+        // reads `0` — the strictly-ordered two-cell fixture where
+        // both extremes are uniquely held. Peer of the strictly-
+        // ordered three-cell fixture pinned above.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_multiplicity(), 1);
+        assert_eq!(diff.trough_kind_multiplicity(), 1);
+        assert_eq!(diff.kind_modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn kind_modality_amplitude_kinds_balanced_implies_zero() {
+        // Structural implication: `kinds_balanced() ⇒
+        // kind_modality_amplitude() == 0` on every fixture. The
+        // uniform-count shape witnesses the amplitude-zero boundary
+        // on the strong side (peak and trough level sets coincide,
+        // both walk the full support). The converse fails on every
+        // strictly-ordered shape where both multiplicities happen to
+        // be `1` without matching counts (pinned separately above).
+        for diff in dominant_kind_fixtures() {
+            if !diff.kinds_balanced() {
+                continue;
+            }
+            assert_eq!(
+                diff.kind_modality_amplitude(),
+                0,
+                "kinds_balanced ⇒ kind_modality_amplitude == 0 for diff \
+                 with lines_len={n}",
+                n = diff.lines.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_modality_amplitude_bounded_above_by_present_kinds_count() {
+        // Support bound: both level sets are subsets of the observed
+        // support, so their absolute difference is bounded by the
+        // support size on every fixture. Empty diff: 0 <= 0.
+        // Singleton support: 0 <= 1. Two-tied balanced: 0 <= 2.
+        // Uniform three-kind cover: 0 <= 3. Heavy-tail three-kind:
+        // 1 <= 3.
+        for diff in dominant_kind_fixtures() {
+            assert!(
+                diff.kind_modality_amplitude() <= diff.present_kinds_count(),
+                "kind_modality_amplitude ({a}) must not exceed \
+                 present_kinds_count ({p})",
+                a = diff.kind_modality_amplitude(),
+                p = diff.present_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_modality_amplitude_bounded_by_axis_cardinality() {
+        // Structural bound: `kind_modality_amplitude() <=
+        // axis_cardinality::<DiffLineKind>()` (= 3) on every fixture.
+        // Composition of `<=present_kinds_count()` with
+        // `present_kinds_count() <= axis_cardinality::<DiffLineKind>()`.
+        let card = crate::axis_cardinality::<DiffLineKind>();
+        for diff in dominant_kind_fixtures() {
+            assert!(
+                diff.kind_modality_amplitude() <= card,
+                "kind_modality_amplitude ({a}) must not exceed axis \
+                 cardinality ({card})",
+                a = diff.kind_modality_amplitude(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_modality_amplitude_agrees_with_modality_degree_component_abs_diff() {
+        // Fused-pair pin: `kind_modality_amplitude` equals the
+        // `abs_diff` of the `(peak_mult, trough_mult)` components read
+        // off the fused `modality_degree` pair. Both routings agree
+        // pointwise; the named seam is the routing through the pair
+        // projection into a single `abs_diff` scalar.
+        for diff in dominant_kind_fixtures() {
+            let (peak_mult, trough_mult) = diff.kind_histogram().modality_degree();
+            assert_eq!(
+                diff.kind_modality_amplitude(),
+                peak_mult.abs_diff(trough_mult),
+                "kind_modality_amplitude must equal modality_degree \
+                 component abs_diff on diff with lines_len={n}",
+                n = diff.lines.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_modality_amplitude_zero_iff_peak_mult_equals_trough_mult() {
+        // Structural-symmetry predicate: `kind_modality_amplitude() ==
+        // 0` iff `peak_kind_multiplicity() == trough_kind_multiplicity()`
+        // on every fixture. The typed *modality-symmetric* predicate on
+        // the multiplicity surface — the modal and antimodal level sets
+        // share cardinality (though not necessarily membership).
+        for diff in dominant_kind_fixtures() {
+            let amplitude_zero = diff.kind_modality_amplitude() == 0;
+            let mults_equal = diff.peak_kind_multiplicity() == diff.trough_kind_multiplicity();
+            assert_eq!(
+                amplitude_zero,
+                mults_equal,
+                "kind_modality_amplitude == 0 iff \
+                 peak_kind_multiplicity == trough_kind_multiplicity for diff \
+                 with lines_len={n}",
+                n = diff.lines.len(),
+            );
+        }
     }
 
     // ── ConfigDiff::kinds_balanced — balanced-diff-kinds boolean predicate on
