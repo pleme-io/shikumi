@@ -1910,7 +1910,8 @@ impl ProvenanceMap {
     /// fully-closed cube. Lifts the diff-altitude seed
     /// [`ConfigDiff::trough_kind_multiplicity`] one altitude up. The
     /// next natural lifts fan sideways along the chain altitude's three
-    /// sub-axes (`layer_kind_trough_multiplicity`,
+    /// sub-axes ([`crate::ConfigSourceChain::layer_kind_trough_multiplicity`]
+    /// over [`crate::ConfigSourceChain::layer_kind_histogram`],
     /// `file_format_trough_multiplicity`,
     /// `env_prefix_kind_trough_multiplicity` over the corresponding
     /// chain histograms) — the same 5-altitude closure pattern the
