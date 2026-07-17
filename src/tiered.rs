@@ -1746,10 +1746,12 @@ impl ProvenanceMap {
     /// fully-closed cube. Lifts the diff-altitude seed
     /// [`ConfigDiff::peak_kind_multiplicity`] one altitude up. The next
     /// natural lifts fan sideways along the chain altitude's three
-    /// sub-axes ([`crate::ConfigSourceChain::layer_kind_peak_multiplicity`],
-    /// [`crate::ConfigSourceChain::file_format_peak_multiplicity`],
-    /// [`crate::ConfigSourceChain::env_prefix_kind_peak_multiplicity`]
-    /// over the corresponding chain histograms). The pattern is the
+    /// sub-axes — [`crate::ConfigSourceChain::layer_kind_peak_multiplicity`]
+    /// and [`crate::ConfigSourceChain::file_format_peak_multiplicity`]
+    /// already surface the projection at the first two chain sub-axes;
+    /// `env_prefix_kind_peak_multiplicity` over
+    /// [`crate::ConfigSourceChain::env_prefix_kind_histogram`] closes
+    /// the remaining sub-axis. The pattern is the
     /// same at every altitude / sub-axis: surface the
     /// [`crate::AxisHistogram::peak_multiplicity`] scalar directly at
     /// the local histogram altitude, routing through the shared
@@ -7058,10 +7060,13 @@ impl ConfigDiff {
     /// next natural lifts climb to the tier altitude
     /// (`ProvenanceMap::peak_tier_multiplicity` over
     /// [`Self::tier_histogram`] on the tier altitude) and sideways
-    /// along the chain altitude's three sub-axes
-    /// (`layer_kind_peak_multiplicity`, `file_format_peak_multiplicity`,
-    /// `env_prefix_kind_peak_multiplicity` over the corresponding chain
-    /// histograms). The pattern is the same at every altitude / sub-
+    /// along the chain altitude's three sub-axes —
+    /// [`crate::ConfigSourceChain::layer_kind_peak_multiplicity`] and
+    /// [`crate::ConfigSourceChain::file_format_peak_multiplicity`]
+    /// already surface the projection at the first two chain sub-axes;
+    /// `env_prefix_kind_peak_multiplicity` over
+    /// [`crate::ConfigSourceChain::env_prefix_kind_histogram`] closes
+    /// the remaining sub-axis. The pattern is the same at every altitude / sub-
     /// axis: surface the [`crate::AxisHistogram::peak_multiplicity`]
     /// scalar directly at the local histogram altitude, routing through
     /// the shared primitive one seam down instead of every consumer

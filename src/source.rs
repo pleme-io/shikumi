@@ -1611,11 +1611,13 @@ pub trait ConfigSourceChain {
     /// sideways** from the tier altitude
     /// ([`crate::ProvenanceMap::peak_tier_multiplicity`]) to the first
     /// chain-altitude sub-axis, seeded on the diff altitude by
-    /// [`crate::ConfigDiff::peak_kind_multiplicity`]. The two remaining
-    /// chain-altitude sub-axes (`file_format_peak_multiplicity` over
-    /// [`Self::file_format_histogram`], `env_prefix_kind_peak_multiplicity`
-    /// over [`Self::env_prefix_kind_histogram`]) are the natural next
-    /// sideways lifts, mirroring the four-step lift trajectory of the
+    /// [`crate::ConfigDiff::peak_kind_multiplicity`]. The file-format
+    /// sub-axis peer [`Self::file_format_peak_multiplicity`] over
+    /// [`Self::file_format_histogram`] extends the projection sideways
+    /// to the second chain sub-axis; the last remaining chain-altitude
+    /// sub-axis (`env_prefix_kind_peak_multiplicity` over
+    /// [`Self::env_prefix_kind_histogram`]) is the natural next
+    /// sideways lift, mirroring the four-step lift trajectory of the
     /// sibling `spread` scalar and the four already-closed boolean-
     /// predicate rows (`modally_tied`, `antimodally_tied`,
     /// `strictly_modally_unique`, `strictly_antimodally_unique`) across
@@ -6569,6 +6571,199 @@ pub trait ConfigSourceChain {
         Self: AsRef<[ConfigSource]>,
     {
         self.file_format_histogram().spread()
+    }
+
+    /// The number of [`crate::discovery::Format`] cells tied at the peak
+    /// recognized-extension file-layer count on the file-format sub-axis
+    /// of the chain altitude — the **modal-multiplicity scalar** peer of
+    /// the modally-tied / strictly-modally-unique boolean pair one seam
+    /// over, surfacing at this sub-axis the underlying `usize` those
+    /// predicates project through comparison thresholds. Reads `1` on
+    /// every strictly-modally-unique chain (a unique dominant file
+    /// format, singleton-support included), `>= 2` on every modally-tied
+    /// chain (two or more formats sharing the peak count), and `0`
+    /// exactly on every chain whose file-format histogram is empty (an
+    /// empty chain, OR a non-empty chain of only [`ConfigSource::Defaults`]
+    /// / [`ConfigSource::Env`] / unrecognized-extension
+    /// [`ConfigSource::File`] entries). Routes through
+    /// [`Self::file_format_histogram`]:
+    /// [`crate::AxisHistogram::peak_multiplicity`] reads the same scalar
+    /// off the fixed-cardinality counts vector in one pass.
+    ///
+    /// The **scalar-modality peer** of the two closed boolean predicates
+    /// that project this multiplicity through equality thresholds —
+    /// [`Self::file_formats_strictly_modally_unique`]
+    /// (`peak_multiplicity() == 1`) and [`Self::file_formats_modally_tied`]
+    /// (`peak_multiplicity() >= 2`) — surfacing the underlying `usize`
+    /// scalar those predicates project through comparison. Consumers
+    /// previously re-derived the projection inline as
+    /// `chain.file_format_histogram().peak_multiplicity()` (one method
+    /// call at every consumer site, pulling in the histogram temporary
+    /// at each site) or reconstructed it from the fused
+    /// `(peak_multiplicity, trough_multiplicity)` pair via
+    /// `chain.file_format_histogram().modality_degree().0` (a pair-
+    /// component projection that pays for the second scan on the trough
+    /// side consumers on the modal side never use). Before this lift,
+    /// the natural typed primitive for chain-shape dashboards,
+    /// attestation manifests, and alerting policies asking *"how many
+    /// file formats are tied at the peak?"* had no named seam — the CLI
+    /// `config-show` headline *"3 file formats tied at peak count 1:
+    /// uniform partial cover"* (where 3 is this scalar), the attestation
+    /// manifest recording the modal-multiplicity of the recipe by
+    /// format, and the alerting policy reading *"peak file-format
+    /// multiplicity = 2"* to flag a recipe where the dominant file
+    /// format is ambiguous — all fanned out through the underlying
+    /// primitive at every call site instead of a single named surface
+    /// method.
+    ///
+    /// The chain-altitude file-format sub-axis scalar-modality peer that
+    /// **lifts the "peak-multiplicity across altitudes" projection
+    /// sideways** from the layer-kind sub-axis of the same chain
+    /// altitude ([`Self::layer_kind_peak_multiplicity`]) to the second
+    /// chain-altitude sub-axis, matching the tier-altitude climb
+    /// ([`crate::ProvenanceMap::peak_tier_multiplicity`]) and the diff-
+    /// altitude seed ([`crate::ConfigDiff::peak_kind_multiplicity`]).
+    /// The last remaining chain-altitude sub-axis
+    /// (`env_prefix_kind_peak_multiplicity` over
+    /// [`Self::env_prefix_kind_histogram`]) is the natural next sideways
+    /// lift, mirroring the four-step lift trajectory of the sibling
+    /// `spread` scalar and the four already-closed boolean-predicate
+    /// rows (`modally_tied`, `antimodally_tied`, `strictly_modally_unique`,
+    /// `strictly_antimodally_unique`) across the same 5-altitude grid.
+    /// The pattern is the same at every altitude / sub-axis: surface
+    /// the [`crate::AxisHistogram::peak_multiplicity`] scalar directly
+    /// at the local histogram altitude, routing through the shared
+    /// primitive one seam down instead of every consumer pulling the
+    /// histogram temporary.
+    ///
+    /// **Cardinality-`4` reachability at the file-format sub-axis — the
+    /// modal-multiplicity scalar carries witnesses across more support
+    /// cardinalities than the sister layer-kind sub-axis.**
+    /// [`crate::discovery::Format`] carries four cells, so
+    /// `file_format_peak_multiplicity()` reads `0` on the empty-histogram
+    /// chain (empty chain OR no-recognized-files non-empty chain), `1`
+    /// on every singleton-support / strictly-modally-unique chain, `2`
+    /// on every two-cell tied-peak chain (e.g. one-`.yaml`+one-`.toml`
+    /// tied at count `1`), `3` on every three-cell tied-peak partial-
+    /// cover chain (e.g. one-`.yaml`+one-`.toml`+one-`.lisp` all tied
+    /// at count `1` — a support-`3` witness unavailable at the
+    /// cardinality-`3` layer-kind sub-axis and diff altitude), and `4`
+    /// on every uniform four-format cover chain (all four
+    /// [`crate::discovery::Format`] cells at the same nonzero count).
+    /// Matches the tier-altitude peer on the cardinality-`4`
+    /// [`crate::ConfigTierKind`] axis in reachability — the additional
+    /// support-`3` tied-peak witness is *reachable* here alongside the
+    /// support-`4` full-cover degenerate, a strict advance over both
+    /// the sister layer-kind sub-axis and the diff altitude.
+    ///
+    /// **Empty-histogram convention** — returns `0` on every chain
+    /// whose file-format histogram is empty, matching the
+    /// [`crate::AxisHistogram::peak_multiplicity`] empty convention one
+    /// altitude down; an empty histogram has no observed cells, so no
+    /// cell holds the peak count. The scalar-count / scalar-multiplicity
+    /// pair `(peak_file_format_count, file_format_peak_multiplicity)`
+    /// reads uniformly `(0, 0)` on every empty-histogram chain,
+    /// alongside the paired `(peak_file_format_count,
+    /// trough_file_format_count, file_format_spread)` triple's uniform
+    /// `(0, 0, 0)` reading. Cross-sub-axis divergence from
+    /// [`Self::layer_kind_peak_multiplicity`], whose `0` boundary
+    /// coincides with `self.as_ref().is_empty()`: on the file-format
+    /// sub-axis, a non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::Env`] /
+    /// unrecognized-extension [`ConfigSource::File`] layers reads `0`
+    /// as well, because those entries project to [`None`] through
+    /// [`ConfigSource::file_format`].
+    ///
+    /// **Singleton-support convention** — returns `1` on every chain
+    /// whose observed file-format support is a single
+    /// [`crate::discovery::Format`] cell: the sole observed cell stands
+    /// alone at its own peak (peak count = histogram total, multiplicity
+    /// = `1`). The singleton-support chain is therefore strictly-modally-
+    /// unique — pointwise equivalent to
+    /// [`Self::file_formats_strictly_modally_unique`] reading `true` on
+    /// the same input, via the `peak_multiplicity() == 1` threshold. The
+    /// `sample_chain()` fixture (two `.yaml` file layers + one Env
+    /// layer, `{Yaml}` file-format support with count `2`) is a witness
+    /// on this side — reads `1`.
+    ///
+    /// **Uniform per-format convention** — returns
+    /// `crate::axis_cardinality::<crate::discovery::Format>()` = `4` on
+    /// every uniform four-format cover chain (all four
+    /// [`crate::discovery::Format`] cells at the same nonzero count) —
+    /// the maximum reachable value on the four-cell file-format axis.
+    /// Every observed cell is tied at the peak, so the multiplicity
+    /// walks the full support.
+    ///
+    /// # Invariants
+    ///
+    /// - `file_format_peak_multiplicity() ==
+    ///   file_format_histogram().peak_multiplicity()` — both project
+    ///   the same scalar off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `file_format_peak_multiplicity() ==
+    ///   file_format_histogram().modality_degree().0` — the modal
+    ///   component of the fused
+    ///   `(peak_multiplicity, trough_multiplicity)` pair.
+    /// - `file_format_peak_multiplicity() == 0` ⇔
+    ///   `file_format_histogram().is_empty()` — the empty-histogram
+    ///   boundary. Peer to the `peak_file_format_count() == 0` boundary
+    ///   on the count side, both witnessed by the same emptiness of the
+    ///   observed file-format support. Cross-sub-axis divergence from
+    ///   [`Self::layer_kind_peak_multiplicity`], whose `0` boundary
+    ///   reads on `self.as_ref().is_empty()` — the file-format sub-axis
+    ///   carries the stricter histogram-empty boundary because a non-
+    ///   empty chain of only Defaults / Env / unrecognized-extension
+    ///   File entries projects to an empty file-format histogram.
+    /// - `file_format_peak_multiplicity() >= 1` whenever
+    ///   `!file_format_histogram().is_empty()` — every non-empty file-
+    ///   format histogram has at least one cell at the peak.
+    /// - `file_format_peak_multiplicity() <=
+    ///   crate::axis_cardinality::<crate::discovery::Format>()` always —
+    ///   bounded above by the axis cardinality `4` on the four-cell
+    ///   file-format axis. Lifted from the trait-uniform
+    ///   `peak_multiplicity() <= axis_cardinality::<A>()` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `file_format_peak_multiplicity() <= present_file_formats_count()`
+    ///   always — the modal set is a subset of the observed support, so
+    ///   its size is bounded by the support size.
+    /// - `file_format_peak_multiplicity() == 1` ⇔
+    ///   `file_formats_strictly_modally_unique()` — the
+    ///   `peak_multiplicity == 1` boundary on the scalar side, the
+    ///   strict-modal-uniqueness boundary on the boolean side. Peer of
+    ///   the [`Self::file_formats_strictly_modally_unique`] routing
+    ///   that this scalar surfaces.
+    /// - `file_format_peak_multiplicity() >= 2` ⇔
+    ///   `file_formats_modally_tied()` — the `peak_multiplicity >= 2`
+    ///   boundary on the scalar side, the modal-tie boundary on the
+    ///   boolean side. Peer of the [`Self::file_formats_modally_tied`]
+    ///   routing that this scalar surfaces.
+    /// - `file_format_peak_multiplicity() == present_file_formats_count()`
+    ///   whenever `file_formats_balanced() &&
+    ///   !file_format_histogram().is_empty()` — every observed file
+    ///   format ties at the peak on a balanced non-empty-histogram
+    ///   chain.
+    /// - `file_format_peak_multiplicity() == 4` ⇒
+    ///   `file_formats_full_cover()` — the only way for all four cells
+    ///   to tie at the peak is for every cell to be observed at a
+    ///   shared positive count.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the peak-plus-multiplicity scan). Both are `O(n)` in practice
+    /// since the file-format axis carries a fixed four-cell cardinality;
+    /// the returned `usize` reads one scalar. Fuses the two-scan
+    /// `.modality_degree().0` idiom (which walks the counts vector
+    /// twice — once for the peak, once for the trough multiplicity
+    /// consumers on the modal side never use) into a single-scan
+    /// projection through the shared primitive.
+    #[must_use]
+    fn file_format_peak_multiplicity(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().peak_multiplicity()
     }
 
     /// The **balanced-file-formats boolean predicate** on the file-format
@@ -36735,6 +36930,447 @@ mod tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak - trough);
+        }
+    }
+
+    // ---- ConfigSourceChain::file_format_peak_multiplicity — scalar-modality
+    //      peer on the file-format sub-axis of the chain altitude, lifting
+    //      AxisHistogram::peak_multiplicity and surfacing the underlying
+    //      `usize` the two modality-boolean rows
+    //      (file_formats_modally_tied, file_formats_strictly_modally_unique)
+    //      project through comparison. Sideways lift of the "peak-
+    //      multiplicity across altitudes" projection from the layer-kind
+    //      sub-axis to the second chain sub-axis ----
+
+    #[test]
+    fn file_format_peak_multiplicity_matches_file_format_histogram_peak_multiplicity_pointwise() {
+        // Routing pin: `file_format_peak_multiplicity` routes through
+        // `file_format_histogram().peak_multiplicity()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops projecting
+        // through the shared cube-native primitive. File-format sub-axis
+        // sideways lift of the "peak-multiplicity across altitudes"
+        // projection from the layer-kind sub-axis peer
+        // `layer_kind_peak_multiplicity_matches_layer_kind_histogram_peak_multiplicity_pointwise`
+        // matching the tier-altitude climb
+        // `peak_tier_multiplicity_matches_tier_histogram_peak_multiplicity_pointwise`
+        // and the diff-altitude seed
+        // `peak_kind_multiplicity_matches_kind_histogram_peak_multiplicity_pointwise`.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.file_format_histogram().peak_multiplicity();
+            assert_eq!(slice.file_format_peak_multiplicity(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn file_format_peak_multiplicity_agrees_with_modality_degree_first_component() {
+        // Fused-pair pin: `file_format_peak_multiplicity` equals the
+        // modal component of the fused
+        // `(peak_multiplicity, trough_multiplicity)` pair on every
+        // fixture. The scalar-modality peer of the pair-projection form;
+        // both routings agree pointwise since both read the same
+        // underlying primitive. Peer of
+        // `layer_kind_peak_multiplicity_agrees_with_modality_degree_first_component`
+        // on the sister sub-axis and
+        // `peak_tier_multiplicity_agrees_with_modality_degree_first_component`
+        // on the tier altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let (peak_mult, _trough_mult) = slice.file_format_histogram().modality_degree();
+            assert_eq!(slice.file_format_peak_multiplicity(), peak_mult);
+        }
+    }
+
+    #[test]
+    fn file_format_peak_multiplicity_empty_chain_is_zero() {
+        // Empty-chain convention: no observed cells on the file-format
+        // sub-axis, so the multiplicity reads `0`. Matches
+        // AxisHistogram::peak_multiplicity's empty convention one
+        // altitude down. Peer of `peak_file_format_count == 0 on empty`
+        // on the count side; the paired
+        // `(peak_file_format_count, file_format_peak_multiplicity)`
+        // scalar reads uniformly `(0, 0)` on the empty chain.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.as_ref().is_empty());
+        assert_eq!(empty.peak_file_format_count(), 0);
+        assert_eq!(empty.file_format_peak_multiplicity(), 0);
+    }
+
+    #[test]
+    fn file_format_peak_multiplicity_no_recognized_files_is_zero() {
+        // The non-empty-chain / empty-histogram boundary the file-format
+        // sub-axis pins that the layer-kind sub-axis does *not*. A chain
+        // of only `Defaults` / `Env` / unrecognized-extension `File`
+        // layers is non-empty but has no `Some` file_format projection,
+        // so the histogram is empty and `file_format_peak_multiplicity`
+        // reads `0`. Distinguishing pin against the layer-kind sub-axis
+        // `layer_kind_peak_multiplicity` idiom: on those same chains,
+        // `layer_kind_peak_multiplicity` reads a nonzero multiplicity
+        // (the layer-kind histogram is non-empty) while
+        // `file_format_peak_multiplicity` reads zero — cross-sub-axis
+        // divergence at the empty-boundary.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(!slice.is_empty(), "fixture must be non-empty");
+            assert!(
+                slice.file_format_histogram().is_empty(),
+                "fixture must have empty file-format histogram",
+            );
+            assert_eq!(slice.file_format_peak_multiplicity(), 0);
+        }
+    }
+
+    #[test]
+    fn file_format_peak_multiplicity_singleton_support_is_one() {
+        // Singleton-support pin: every recognized file layer lands on
+        // the same format, so that one format is the unique peak —
+        // multiplicity reads `1`. The strictly-modally-unique boundary
+        // on the singleton-support side; peer of
+        // `file_formats_strictly_modally_unique` reading `true` via the
+        // `peak_multiplicity == 1` threshold. Peer of
+        // `layer_kind_peak_multiplicity_singleton_support_is_one` on
+        // the sister sub-axis and
+        // `peak_tier_multiplicity_singleton_support_is_one` on the tier
+        // altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 1);
+        assert_eq!(slice.file_format_peak_multiplicity(), 1);
+        assert!(slice.file_formats_strictly_modally_unique());
+    }
+
+    #[test]
+    fn file_format_peak_multiplicity_two_format_tie_is_two() {
+        // Two-format-tied pin: one `.yaml` + one `.toml`, both at count
+        // `1`, both tied at the peak. Multiplicity reads `2` — the
+        // modally-tied boundary at the smallest non-trivial tied
+        // support on the cardinality-`4` `Format` axis. Peer of
+        // `file_formats_modally_tied` reading `true` via the
+        // `peak_multiplicity >= 2` threshold. Peer of
+        // `layer_kind_peak_multiplicity_two_kind_tie_is_two` on the
+        // sister sub-axis and
+        // `peak_tier_multiplicity_two_tier_tie_is_two` on the tier
+        // altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_file_format_count(), 1);
+        assert_eq!(slice.file_format_peak_multiplicity(), 2);
+        assert!(slice.file_formats_modally_tied());
+        assert!(!slice.file_formats_strictly_modally_unique());
+    }
+
+    #[test]
+    fn file_format_peak_multiplicity_three_format_tie_is_three() {
+        // Three-format-tied pin: one `.yaml` + one `.toml` + one
+        // `.lisp`, all three at count `1`, all three tied at the peak.
+        // Multiplicity reads `3` — a support-`3` tied-peak witness
+        // *reachable* on the cardinality-`4` `Format` axis but not on
+        // the cardinality-`3` layer-kind sub-axis / diff altitude
+        // (whose axis cardinality caps the multiplicity at `3` only
+        // via the full-cover degenerate). Matches
+        // `peak_tier_multiplicity_three_tier_tie_is_three` on the tier
+        // altitude at the same cardinality-`4` reachability.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 3);
+        assert_eq!(slice.peak_file_format_count(), 1);
+        assert_eq!(slice.file_format_peak_multiplicity(), 3);
+        assert!(slice.file_formats_modally_tied());
+    }
+
+    #[test]
+    fn file_format_peak_multiplicity_uniform_full_cover_is_four() {
+        // Uniform full-cover pin: every observed format contributes
+        // the same nonzero count, so all four cells tie at the peak.
+        // Multiplicity reads `4` = axis cardinality of `Format` — the
+        // maximum reachable value on the four-cell file-format axis.
+        // The uniform-cover degenerate closes the upper end of the
+        // multiplicity scalar range 0..=4. Peer of
+        // `peak_tier_multiplicity_uniform_full_cover_is_four` on the
+        // tier altitude on the same cardinality-`4` axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.file_formats_full_cover());
+        assert_eq!(slice.file_format_peak_multiplicity(), 4);
+        assert_eq!(
+            slice.file_format_peak_multiplicity(),
+            crate::axis_cardinality::<crate::discovery::Format>()
+        );
+    }
+
+    #[test]
+    fn file_format_peak_multiplicity_sample_chain_is_one() {
+        // Direct pin against `sample_chain()`: two `.yaml` file layers +
+        // one Env layer. Yaml is the sole observed format (Env layers
+        // don't contribute to the file-format histogram), so it stands
+        // alone at its own peak — multiplicity reads `1`. Reads the
+        // paired `(peak_file_format_count, file_format_peak_multiplicity)`
+        // scalar as `(2, 1)`. Cross-sub-axis divergence pin against
+        // `layer_kind_peak_multiplicity_sample_chain_is_one`: on the
+        // same `sample_chain()` fixture, the layer-kind sub-axis reads
+        // multiplicity `1` (File dominant at 2) while the file-format
+        // sub-axis reads multiplicity `1` also — both singleton-support
+        // on their respective sub-axes. The scalar peer of the
+        // singleton-support degenerate.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_file_format_count(), 2);
+        assert_eq!(slice.file_format_peak_multiplicity(), 1);
+        assert!(slice.file_formats_strictly_modally_unique());
+    }
+
+    #[test]
+    fn file_format_peak_multiplicity_is_zero_iff_file_format_histogram_is_empty() {
+        // Emptiness boundary: `file_format_peak_multiplicity() == 0`
+        // iff the file-format histogram is empty. Peer of
+        // `peak_file_format_count == 0 iff file_format_histogram is
+        // empty` on the count side; both scalars sit on the same
+        // emptiness of the observed file-format support. Cross-sub-
+        // axis divergence pin against
+        // `layer_kind_peak_multiplicity_is_zero_iff_chain_is_empty`:
+        // on the layer-kind sub-axis the `0` boundary coincides with
+        // `chain.is_empty()`; on the file-format sub-axis it coincides
+        // with the histogram-empty boundary — the stricter of the two.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let zero = slice.file_format_peak_multiplicity() == 0;
+            let hist_empty = slice.file_format_histogram().is_empty();
+            assert_eq!(
+                zero,
+                hist_empty,
+                "file_format_peak_multiplicity == 0 must agree with \
+                 file_format_histogram().is_empty() (peak_mult={m}, hist_empty={e})",
+                m = slice.file_format_peak_multiplicity(),
+                e = hist_empty,
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_peak_multiplicity_ge_one_iff_file_format_histogram_is_nonempty() {
+        // Non-emptiness boundary: every chain with a non-empty file-
+        // format histogram has at least one cell at the peak. The
+        // strict complement of the emptiness-boundary pinned above.
+        // Peer of `layer_kind_peak_multiplicity_ge_one_iff_chain_is_nonempty`
+        // on the sister sub-axis and
+        // `peak_tier_multiplicity_ge_one_iff_map_is_nonempty` on the
+        // tier altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let ge_one = slice.file_format_peak_multiplicity() >= 1;
+            let hist_nonempty = !slice.file_format_histogram().is_empty();
+            assert_eq!(
+                ge_one,
+                hist_nonempty,
+                "file_format_peak_multiplicity >= 1 must agree with \
+                 !file_format_histogram().is_empty() (peak_mult={m})",
+                m = slice.file_format_peak_multiplicity(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_peak_multiplicity_bounded_by_axis_cardinality() {
+        // Structural bound: `file_format_peak_multiplicity() <=
+        // axis_cardinality::<crate::discovery::Format>()` (= 4) on
+        // every fixture. Lifted from the trait-uniform
+        // `peak_multiplicity() <= axis_cardinality::<A>()` law on
+        // AxisHistogram. Equality holds exactly on the uniform full-
+        // cover shape. Peer of
+        // `layer_kind_peak_multiplicity_bounded_by_axis_cardinality`
+        // on the sister sub-axis on cardinality `3` and
+        // `peak_tier_multiplicity_bounded_by_axis_cardinality` on the
+        // tier altitude at cardinality `4`.
+        let card = crate::axis_cardinality::<crate::discovery::Format>();
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.file_format_peak_multiplicity() <= card,
+                "file_format_peak_multiplicity ({m}) must not exceed axis cardinality ({card})",
+                m = slice.file_format_peak_multiplicity(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_peak_multiplicity_bounded_above_by_present_file_formats_count() {
+        // Support bound: the modal set is a subset of the observed
+        // support, so `file_format_peak_multiplicity() <=
+        // present_file_formats_count()` on every fixture. Empty-
+        // histogram: 0 <= 0. Singleton support: 1 <= 1. Two-tied: 2 <= 2.
+        // Three-tied: 3 <= 3. Uniform four-format cover: 4 <= 4.
+        // Peer of `layer_kind_peak_multiplicity_bounded_above_by_present_layer_kinds_count`
+        // on the sister sub-axis and
+        // `peak_tier_multiplicity_bounded_above_by_contributing_tiers_count`
+        // on the tier altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.file_format_peak_multiplicity() <= slice.present_file_formats_count(),
+                "file_format_peak_multiplicity ({m}) must not exceed \
+                 present_file_formats_count ({p})",
+                m = slice.file_format_peak_multiplicity(),
+                p = slice.present_file_formats_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_peak_multiplicity_eq_one_iff_file_formats_strictly_modally_unique() {
+        // Strictly-modally-unique boundary: the boolean predicate
+        // `file_formats_strictly_modally_unique()` reads exactly the
+        // `peak_multiplicity() == 1` threshold on the underlying scalar
+        // this seam surfaces. Empty-histogram: `0 == 1` is false —
+        // both sides agree on the `false` empty-histogram convention.
+        // Peer of `layer_kind_peak_multiplicity_eq_one_iff_layer_kinds_strictly_modally_unique`
+        // on the sister sub-axis and
+        // `peak_tier_multiplicity_eq_one_iff_tiers_strictly_modally_unique`
+        // on the tier altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let mult_one = slice.file_format_peak_multiplicity() == 1;
+            let strict = slice.file_formats_strictly_modally_unique();
+            assert_eq!(
+                mult_one,
+                strict,
+                "file_format_peak_multiplicity == 1 must agree with \
+                 file_formats_strictly_modally_unique (peak_mult={m})",
+                m = slice.file_format_peak_multiplicity(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_peak_multiplicity_ge_two_iff_file_formats_modally_tied() {
+        // Modally-tied boundary: the boolean predicate
+        // `file_formats_modally_tied()` reads exactly the
+        // `peak_multiplicity() >= 2` threshold on the underlying
+        // scalar. Empty-histogram: `0 >= 2` is false — both sides
+        // agree on the `false` empty-histogram convention. Peer of
+        // `layer_kind_peak_multiplicity_ge_two_iff_layer_kinds_modally_tied`
+        // on the sister sub-axis and
+        // `peak_tier_multiplicity_ge_two_iff_tiers_modally_tied` on
+        // the tier altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let mult_ge_two = slice.file_format_peak_multiplicity() >= 2;
+            let tied = slice.file_formats_modally_tied();
+            assert_eq!(
+                mult_ge_two,
+                tied,
+                "file_format_peak_multiplicity >= 2 must agree with \
+                 file_formats_modally_tied (peak_mult={m})",
+                m = slice.file_format_peak_multiplicity(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_peak_multiplicity_balanced_nonempty_equals_present_file_formats_count() {
+        // Uniform-cover shape: on every balanced non-empty-histogram
+        // chain, every observed cell ties at the peak — multiplicity
+        // coincides with the observed support size. The
+        // `file_formats_balanced ∧ !file_format_histogram().is_empty() ⇒
+        // file_format_peak_multiplicity == present_file_formats_count`
+        // invariant. Cross-sub-axis divergence from
+        // `layer_kind_peak_multiplicity_balanced_nonempty_equals_present_layer_kinds_count`:
+        // the layer-kind version quantifies over `!chain.is_empty()`,
+        // but the file-format version must quantify over
+        // `!file_format_histogram().is_empty()` to exclude the no-
+        // recognized-files chains whose empty histogram is trivially
+        // balanced.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_format_histogram().is_empty() || !slice.file_formats_balanced() {
+                continue;
+            }
+            assert_eq!(
+                slice.file_format_peak_multiplicity(),
+                slice.present_file_formats_count(),
+                "balanced non-empty-histogram chain: file_format_peak_multiplicity \
+                 must equal present_file_formats_count",
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_peak_multiplicity_four_implies_file_formats_full_cover() {
+        // Full-cover implication: `file_format_peak_multiplicity == 4`
+        // (= axis cardinality) implies every cell is observed at a
+        // shared positive count — the uniform full-cover degenerate.
+        // The strict-uniqueness of the upper-boundary multiplicity
+        // value. Peer of
+        // `layer_kind_peak_multiplicity_three_implies_layer_kinds_full_cover`
+        // on the sister sub-axis on cardinality `3` and
+        // `peak_tier_multiplicity_four_implies_tiers_full_cover` on
+        // the tier altitude at the same cardinality `4`.
+        let card = crate::axis_cardinality::<crate::discovery::Format>();
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if slice.file_format_peak_multiplicity() == card {
+                assert!(
+                    slice.file_formats_full_cover(),
+                    "file_format_peak_multiplicity == axis_cardinality must \
+                     imply file_formats_full_cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_format_peak_multiplicity_agrees_with_open_coded_peak_multiplicity_walk() {
+        // Parity against the exact hand-rolled peak-multiplicity walk
+        // this lift surfaces at a named seam: walk every cell of the
+        // histogram and count how many carry the maximum observed
+        // count; the multiplicity scalar reads that count. Empty
+        // histogram has max `0` and no cells above zero, so
+        // multiplicity reads `0`. Peer of
+        // `layer_kind_peak_multiplicity_agrees_with_open_coded_peak_multiplicity_walk`
+        // on the sister sub-axis and
+        // `peak_tier_multiplicity_agrees_with_open_coded_peak_multiplicity_walk`
+        // on the tier altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_format_peak_multiplicity();
+            let hist = slice.file_format_histogram();
+            let max = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let hand_rolled = if max == 0 {
+                0
+            } else {
+                hist.iter().filter(|(_, c)| *c == max).count()
+            };
+            assert_eq!(via_seam, hand_rolled);
         }
     }
 
