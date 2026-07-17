@@ -2298,12 +2298,13 @@ impl ProvenanceMap {
     /// the diff-altitude seed
     /// [`ConfigDiff::kind_modality_degree_sum`] one altitude up. The
     /// chain altitude's three sub-axes
-    /// (`ConfigSourceChain::layer_kind_modality_degree_sum`,
-    /// `file_format_modality_degree_sum`,
-    /// `env_prefix_kind_modality_degree_sum` over the corresponding
-    /// chain histograms) close the projection at every chain sub-
-    /// axis, following the trajectory the sibling amplitude / peak-
-    /// multiplicity / trough-multiplicity projections just walked.
+    /// ([`ConfigSourceChain::layer_kind_modality_degree_sum`],
+    /// [`ConfigSourceChain::file_format_modality_degree_sum`],
+    /// [`ConfigSourceChain::env_prefix_kind_modality_degree_sum`] over
+    /// the corresponding chain histograms) fully close the projection
+    /// at every chain sub-axis, matching the trajectory the sibling
+    /// amplitude / peak-multiplicity / trough-multiplicity projections
+    /// already walked to full closure on the same 5-altitude grid.
     /// Parallels the fully-closed "modality-amplitude across
     /// altitudes" projection climbed on the same altitude by
     /// [`Self::tier_modality_amplitude`] one seam over — this climb
@@ -8111,18 +8112,22 @@ impl ConfigDiff {
     /// degree-sum across altitudes" projection** — the additive
     /// symmetric closure of the already-fully-closed 5-altitude
     /// peak-multiplicity / trough-multiplicity / modality-amplitude
-    /// projections. The tier-altitude climb already landed at
+    /// projections. The tier-altitude climb landed at
     /// [`crate::ProvenanceMap::tier_modality_degree_sum`] (over
-    /// `tier_histogram`); the next natural lifts fan sideways along
-    /// the chain altitude's three sub-axes
-    /// (`ConfigSourceChain::layer_kind_modality_degree_sum`,
-    /// `file_format_modality_degree_sum`,
-    /// `env_prefix_kind_modality_degree_sum` over the corresponding
-    /// chain histograms). Parallels the fully-closed "modality-
-    /// amplitude across altitudes" projection seeded on the same
-    /// altitude by [`Self::kind_modality_amplitude`] one seam over —
-    /// this seed opens the additive-side dual of the same
-    /// extremal-multiplicity pair.
+    /// `tier_histogram`); the chain altitude's three sub-axes
+    /// ([`ConfigSourceChain::layer_kind_modality_degree_sum`],
+    /// [`ConfigSourceChain::file_format_modality_degree_sum`],
+    /// [`ConfigSourceChain::env_prefix_kind_modality_degree_sum`] over
+    /// the corresponding chain histograms) fully close the projection
+    /// at every chain sub-axis — the "modality-degree-sum across
+    /// altitudes" projection is now fully closed at every altitude /
+    /// sub-axis of the 5-altitude cube, matching the fully-closed
+    /// sibling amplitude / peak-multiplicity / trough-multiplicity
+    /// projections. Parallels the fully-closed "modality-amplitude
+    /// across altitudes" projection seeded on the same altitude by
+    /// [`Self::kind_modality_amplitude`] one seam over — this seed
+    /// opens the additive-side dual of the same extremal-multiplicity
+    /// pair.
     ///
     /// **Empty-diff convention** — returns `0`, matching the
     /// [`crate::AxisHistogram::modality_degree_sum`] empty convention

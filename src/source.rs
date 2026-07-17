@@ -2171,12 +2171,14 @@ pub trait ConfigSourceChain {
     /// [`crate::ConfigDiff::kind_modality_degree_sum`]. Lifted sideways
     /// to the second chain-altitude sub-axis by
     /// [`Self::file_format_modality_degree_sum`] over
-    /// [`Self::file_format_histogram`]; the last chain-altitude sub-
-    /// axis (`env_prefix_kind_modality_degree_sum` over
-    /// [`Self::env_prefix_kind_histogram`]) is the natural next
-    /// sideways lift, mirroring the four-step chain trajectory the
-    /// sibling amplitude / peak- / trough-multiplicity projections
-    /// already closed. Parallels the "modality-amplitude across
+    /// [`Self::file_format_histogram`], and CLOSED at the last chain-
+    /// altitude sub-axis by
+    /// [`Self::env_prefix_kind_modality_degree_sum`] over
+    /// [`Self::env_prefix_kind_histogram`] — the "modality-degree-sum
+    /// across altitudes" projection is now fully closed at every
+    /// altitude / sub-axis of the 5-altitude cube, matching the
+    /// fully-closed sibling amplitude / peak- / trough-multiplicity
+    /// projections. Parallels the "modality-amplitude across
     /// altitudes" projection lifted to the same sub-axis by
     /// [`Self::layer_kind_modality_amplitude`] one seam over — this
     /// lift carries the additive-side dual of the same extremal-
@@ -7824,16 +7826,18 @@ pub trait ConfigSourceChain {
     /// second chain-altitude sub-axis, matching the tier-altitude
     /// climb ([`crate::ProvenanceMap::tier_modality_degree_sum`]) and
     /// the diff-altitude seed
-    /// ([`crate::ConfigDiff::kind_modality_degree_sum`]). The last
-    /// remaining chain-altitude sub-axis
-    /// (`env_prefix_kind_modality_degree_sum` over
-    /// [`Self::env_prefix_kind_histogram`]) is the natural next
-    /// sideways lift, closing the projection at every chain sub-axis.
-    /// Parallels the "modality-amplitude across altitudes" projection
-    /// lifted to the same sub-axis by
-    /// [`Self::file_format_modality_amplitude`] one seam over — this
-    /// lift carries the additive-side dual of the same extremal-
-    /// multiplicity pair.
+    /// ([`crate::ConfigDiff::kind_modality_degree_sum`]). CLOSED at
+    /// the last remaining chain-altitude sub-axis by
+    /// [`Self::env_prefix_kind_modality_degree_sum`] over
+    /// [`Self::env_prefix_kind_histogram`] — the "modality-degree-sum
+    /// across altitudes" projection is now fully closed at every
+    /// altitude / sub-axis of the 5-altitude cube, matching the fully-
+    /// closed sibling amplitude / peak-multiplicity /
+    /// trough-multiplicity projections. Parallels the "modality-
+    /// amplitude across altitudes" projection lifted to the same sub-
+    /// axis by [`Self::file_format_modality_amplitude`] one seam over
+    /// — this lift carries the additive-side dual of the same
+    /// extremal-multiplicity pair.
     ///
     /// **Cardinality-`4` reachability at the file-format sub-axis —
     /// matches the tier altitude.** [`crate::discovery::Format`] carries
@@ -14146,6 +14150,283 @@ pub trait ConfigSourceChain {
         Self: AsRef<[ConfigSource]>,
     {
         self.env_prefix_kind_histogram().modality_amplitude()
+    }
+
+    /// The **modality-shape combined extremal cardinality** on the env-
+    /// prefix-presence sub-axis of the chain altitude — the sum of the
+    /// modal and antimodal [`EnvMetadataTagKind`] level-set cardinalities
+    /// on this chain. Equal to
+    /// `self.env_prefix_kind_peak_multiplicity() + self.env_prefix_kind_trough_multiplicity()`
+    /// by construction, routed through
+    /// [`Self::env_prefix_kind_histogram`]:
+    /// [`crate::AxisHistogram::modality_degree_sum`] reads the same
+    /// scalar off the fixed-cardinality counts vector in one pass.
+    /// Returns `0` on every empty-histogram chain (`0 + 0`; both the
+    /// empty chain AND the non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::File`] layers),
+    /// `2` on every singleton-support chain (`1 + 1`, the unique cell
+    /// is both peak and trough), `2` on every strictly-modally-unique
+    /// bare-majority or prefixed-majority chain (`1 + 1`, one cell
+    /// uniquely at the peak and the other uniquely at the trough), and
+    /// `4` on every uniform two-kind cover (`2 + 2`, both cells tied at
+    /// the peak and at the trough).
+    ///
+    /// The **scalar-sum peer** on the multiplicity surface — the
+    /// additive dual of [`Self::env_prefix_kind_modality_amplitude`] on
+    /// the same surface at the same sub-axis. Where
+    /// [`Self::env_prefix_kind_modality_amplitude`] fuses the extremal-
+    /// multiplicity pair `(env_prefix_kind_peak_multiplicity,
+    /// env_prefix_kind_trough_multiplicity)` into
+    /// `peak.abs_diff(trough)` — the asymmetry-magnitude scalar
+    /// (identically `0` on this two-cell sub-axis) —
+    /// `env_prefix_kind_modality_degree_sum` fuses the same pair into
+    /// `peak + trough` — the combined extremal cardinality scalar.
+    /// Together with [`Self::env_prefix_kind_modality_amplitude`], the
+    /// pair `(env_prefix_kind_modality_degree_sum,
+    /// env_prefix_kind_modality_amplitude)` recovers the *unordered*
+    /// multiplicity pair `{env_prefix_kind_peak_multiplicity,
+    /// env_prefix_kind_trough_multiplicity}` under the invertible
+    /// transform `max(peak, trough) = (sum + amplitude) / 2,
+    /// min(peak, trough) = (sum - amplitude) / 2` (integer division
+    /// exact since both share parity — both `usize` sums / abs-diffs
+    /// whose sum equals `2 * max(peak, trough)`; on this two-cell
+    /// sub-axis the amplitude branch reads `0` identically, so the
+    /// unordered pair collapses to `(sum / 2, sum / 2)` — both
+    /// multiplicities agree on every reachable shape). The peak-versus-
+    /// trough *labelling* itself requires the fused
+    /// [`Self::env_prefix_kind_histogram`]-side `modality_degree` pair
+    /// — the additive-side scalar sees no signed direction.
+    ///
+    /// The chain-altitude env-prefix sub-axis scalar-sum peer that
+    /// **closes the "modality-degree-sum across altitudes" projection**
+    /// at the last remaining chain-altitude sub-axis — fully closes the
+    /// 5-altitude grid, following the layer-kind sub-axis sideways lift
+    /// ([`Self::layer_kind_modality_degree_sum`]) and the file-format
+    /// sub-axis sideways lift
+    /// ([`Self::file_format_modality_degree_sum`]), matching the tier-
+    /// altitude climb
+    /// ([`crate::ProvenanceMap::tier_modality_degree_sum`]) and the
+    /// diff-altitude seed
+    /// ([`crate::ConfigDiff::kind_modality_degree_sum`]). Sister of the
+    /// modal-multiplicity and antimodal-multiplicity peers at the same
+    /// env-prefix sub-axis ([`Self::env_prefix_kind_peak_multiplicity`],
+    /// [`Self::env_prefix_kind_trough_multiplicity`]) — the two closed
+    /// scalar-multiplicity components this sum fuses through addition
+    /// into a single scalar. With this closer the scalar-sum row of the
+    /// modality algebra is fully surfaced at named seams at every
+    /// altitude / sub-axis of the 5-altitude cube, closing the
+    /// "modality-degree-sum across altitudes" projection alongside the
+    /// fully-closed `peak_multiplicity`, `trough_multiplicity`,
+    /// `modality_amplitude`, `modally_tied`, `antimodally_tied`,
+    /// `strictly_modally_unique`, and `strictly_antimodally_unique`
+    /// rows already spanning the same 5-altitude grid. The pattern is
+    /// the same at every altitude / sub-axis: fuse the
+    /// (`peak_multiplicity`, `trough_multiplicity`) extremal-
+    /// multiplicity pair into a single sum scalar named at the surface,
+    /// routed through the shared
+    /// [`crate::AxisHistogram::modality_degree_sum`] primitive one
+    /// altitude down. Widens the closed scalar modality algebra at the
+    /// env-prefix sub-axis by surfacing the *combined-cardinality*
+    /// scalar the two closed peak / trough multiplicity scalars project
+    /// through addition — the natural pair
+    /// `(env_prefix_kind_modality_amplitude,
+    /// env_prefix_kind_modality_degree_sum)` on the env-prefix sub-
+    /// axis's multiplicity surface now reads off one method call each.
+    ///
+    /// **Cardinality-`2` reachability at the env-prefix sub-axis — the
+    /// narrowest reachability profile in the projection.**
+    /// [`EnvMetadataTagKind`] carries two cells, so
+    /// `env_prefix_kind_modality_degree_sum()` ranges over `{0, 2, 4}`
+    /// (`0` on every empty-histogram chain, `2` on every singleton-
+    /// support / strictly-modally-unique chain, `4` on every uniform
+    /// two-kind cover). The value `1` is unreachable on the non-empty-
+    /// histogram lower bound, `3` is unreachable (would require
+    /// multiplicities `(1, 2)` or `(2, 1)` — the same shape the
+    /// amplitude reachability collapse rules out on this two-cell axis),
+    /// and every count `>= 5` is unreachable (bounded above by
+    /// `2 * axis_cardinality::<EnvMetadataTagKind>() == 4`). Strictly
+    /// the narrowest reachability profile in the projection — the
+    /// cardinality-`3` layer-kind sub-axis and diff altitude reach `6`
+    /// on the uniform three-kind cover, and the cardinality-`4` file-
+    /// format sub-axis and tier altitude reach `8` on the uniform four-
+    /// cell cover. The tight upper bound reads
+    /// `2 * axis_cardinality::<EnvMetadataTagKind>() == 4`, witnessed on
+    /// the uniform two-kind cover.
+    ///
+    /// **Cardinality-`2` reachability-parity signature.** On this two-
+    /// cell sub-axis the sum is *identically even* on every reachable
+    /// shape — the amplitude collapses to `0` (from
+    /// [`Self::env_prefix_kind_modality_amplitude`]), and
+    /// `sum % 2 == amplitude % 2 == 0` always. A cross-sub-axis
+    /// divergence from the sister cardinality-`3` layer-kind and
+    /// cardinality-`4` file-format sub-axes, where the strictly-ordered
+    /// three-cell / four-cell shapes witness odd sums (`peak_mult == 1`
+    /// tied with `trough_mult == 2`, sum `3`). Together with
+    /// [`Self::env_prefix_kind_modality_amplitude`] the invertible
+    /// transform recovers the pair `(peak_mult, trough_mult)` as
+    /// `(sum / 2, sum / 2)` on every reachable shape — the peak /
+    /// trough labelling is fully collapsed on the sum surface at this
+    /// sub-axis.
+    ///
+    /// **Empty-histogram convention** — returns `0` on every chain
+    /// whose env-prefix-presence histogram is empty, matching the
+    /// [`crate::AxisHistogram::modality_degree_sum`] empty convention
+    /// one altitude down and the
+    /// [`Self::env_prefix_kind_peak_multiplicity`] /
+    /// [`Self::env_prefix_kind_trough_multiplicity`] empty conventions
+    /// on the same altitude. The scalar quadruple
+    /// `(env_prefix_kind_peak_multiplicity,
+    /// env_prefix_kind_trough_multiplicity,
+    /// env_prefix_kind_modality_amplitude,
+    /// env_prefix_kind_modality_degree_sum)` reads uniformly
+    /// `(0, 0, 0, 0)` on every empty-histogram chain — the vacuous-
+    /// nothing boundary lifted from the empty support. **Cross-sub-axis
+    /// divergence** from [`Self::layer_kind_modality_degree_sum`],
+    /// whose `0` on the empty-boundary side coincides with
+    /// `self.as_ref().is_empty()` alone: on the env-prefix sub-axis, a
+    /// non-empty chain of only [`ConfigSource::Defaults`] /
+    /// [`ConfigSource::File`] entries reads `0` as well, because those
+    /// entries project to [`None`] through
+    /// [`ConfigSource::env_prefix_kind`]. Matches
+    /// [`Self::file_format_modality_degree_sum`] on the same histogram-
+    /// empty routing — every non-empty chain whose sub-axis histogram
+    /// is empty reads `0` at the sub-axis on both peers.
+    ///
+    /// **Non-empty-histogram lower-bound convention** — returns `>= 2`
+    /// on every chain whose env-prefix-presence histogram is non-empty:
+    /// every non-empty histogram has at least one observed cell at the
+    /// peak and at least one at the trough (they may coincide as the
+    /// same cell on the singleton-support case), so both multiplicities
+    /// are `>= 1` and the sum is `>= 2`. The value `1` is unreachable
+    /// — no chain carries a combined extremal cardinality of exactly
+    /// `1`. The additive-side signature of the "vacuous-versus-
+    /// populated" boundary on the env-prefix sub-axis's multiplicity
+    /// surface, keyed on histogram-emptiness rather than chain-
+    /// emptiness (the cross-sub-axis divergence from
+    /// [`Self::layer_kind_modality_degree_sum`]).
+    ///
+    /// **Balanced-chain convention** — returns `2 *
+    /// present_env_prefix_kinds_count()` on every balanced chain (every
+    /// observed env-prefix kind contributed the same nonzero count):
+    /// `env_prefix_kinds_balanced() ⇒ env_prefix_kind_peak_multiplicity()
+    /// == env_prefix_kind_trough_multiplicity() ==
+    /// present_env_prefix_kinds_count()`, so the sum reaches its
+    /// structural upper bound relative to the support cardinality.
+    /// Rewrites the balanced-env-prefix-kinds predicate as an
+    /// arithmetic equality on the closed multiplicity surface. Empty-
+    /// histogram (`0 == 2 * 0`), singleton (`2 == 2 * 1`), uniform two-
+    /// kind cover (`4 == 2 * 2`) — the reachable range is exhaustively
+    /// covered by these three shapes on this two-cell sub-axis.
+    ///
+    /// **Both-extremes-uniquely-held convention** — returns `2` on a
+    /// non-empty-histogram chain iff both extremal level sets are
+    /// singletons (`peak_mult == 1 && trough_mult == 1`). On this
+    /// cardinality-`2` sub-axis this fires on every singleton-support
+    /// chain (unique cell is both peak and trough) *and* on every
+    /// strictly-modally-unique chain (bare-majority or prefixed-
+    /// majority — one cell uniquely at the peak, the other uniquely at
+    /// the trough). Widens the analogous condition on the sister
+    /// cardinality-`3` and cardinality-`4` sub-axes to include the
+    /// strictly-modally-unique corner as well — a cross-sub-axis
+    /// broadening from the cardinality-`2` reachability collapse.
+    ///
+    /// # Invariants
+    ///
+    /// - `env_prefix_kind_modality_degree_sum() ==
+    ///   env_prefix_kind_histogram().modality_degree_sum()` — both
+    ///   project the same scalar off the same primitive; the named
+    ///   seam is the cube-native routing of the histogram surface.
+    /// - `env_prefix_kind_modality_degree_sum() ==
+    ///   env_prefix_kind_peak_multiplicity() +
+    ///   env_prefix_kind_trough_multiplicity()` — the defining
+    ///   equivalence on the multiplicity-scalar pair at the env-prefix
+    ///   sub-axis. Overflow-safe since both summands are bounded above
+    ///   by `crate::axis_cardinality::<EnvMetadataTagKind>() == 2`.
+    /// - `env_prefix_kind_modality_degree_sum() ==
+    ///   { let (p, t) = env_prefix_kind_histogram().modality_degree();
+    ///     p + t }` — the fused-pair form on the modality-degree
+    ///   surface. Both routings read the same scalar off the same
+    ///   primitive.
+    /// - `env_prefix_kind_modality_degree_sum() == 0` on every empty-
+    ///   histogram chain (empty chain OR non-empty chain of only
+    ///   Defaults / File layers) — the vacuous-nothing boundary on the
+    ///   additive side. The `(env_prefix_kind_peak_multiplicity,
+    ///   env_prefix_kind_trough_multiplicity,
+    ///   env_prefix_kind_modality_amplitude,
+    ///   env_prefix_kind_modality_degree_sum)` quadruple reads
+    ///   uniformly `(0, 0, 0, 0)` on every empty-histogram chain.
+    /// - `env_prefix_kind_modality_degree_sum() == 0 ⇔
+    ///   env_prefix_kind_histogram().is_empty()` — the vacuous-nothing
+    ///   boundary rewritten as a histogram-emptiness predicate. Cross-
+    ///   sub-axis divergence from
+    ///   [`Self::layer_kind_modality_degree_sum`], where the analogous
+    ///   equivalence reads on `self.as_ref().is_empty()`.
+    /// - `env_prefix_kind_modality_degree_sum() >= 2` on every chain
+    ///   whose env-prefix-presence histogram is non-empty — both
+    ///   multiplicities are `>= 1` on any non-empty support.
+    /// - `env_prefix_kind_modality_degree_sum() == 2` on a non-empty-
+    ///   histogram chain iff `env_prefix_kind_peak_multiplicity() == 1
+    ///   && env_prefix_kind_trough_multiplicity() == 1` — the "both
+    ///   extremes uniquely held" configuration. On this cardinality-`2`
+    ///   sub-axis this fires on every singleton-support AND on every
+    ///   strictly-modally-unique chain — a cross-sub-axis broadening
+    ///   from the cardinality-`2` reachability collapse.
+    /// - `env_prefix_kinds_balanced() ⇔
+    ///   env_prefix_kind_modality_degree_sum() ==
+    ///   2 * present_env_prefix_kinds_count()` — the balanced-env-
+    ///   prefix-kinds predicate rewritten as an arithmetic equality on
+    ///   the closed multiplicity surface at its structural upper bound.
+    /// - `env_prefix_kind_modality_degree_sum() <=
+    ///   2 * present_env_prefix_kinds_count()` always — both level sets
+    ///   are subsets of the observed support, so their sum is bounded
+    ///   above by twice the support size.
+    /// - `env_prefix_kind_modality_degree_sum() <=
+    ///   2 * crate::axis_cardinality::<EnvMetadataTagKind>()` always —
+    ///   bounded above by `4` on the two-cell env-prefix axis.
+    /// - `env_prefix_kind_modality_degree_sum() % 2 == 0` on every
+    ///   fixture — the cardinality-`2` reachability-parity signature.
+    ///   Composition of the trait-uniform
+    ///   `modality_degree_sum() % 2 == modality_amplitude() % 2` law
+    ///   with the sub-axis-specific
+    ///   `env_prefix_kind_modality_amplitude() == 0` reachability
+    ///   collapse. Cross-sub-axis divergence pin against the sister
+    ///   cardinality-`3` layer-kind and cardinality-`4` file-format
+    ///   sub-axes where the strictly-ordered shapes witness odd sums.
+    /// - `env_prefix_kind_modality_degree_sum() % 2 ==
+    ///   env_prefix_kind_modality_amplitude() % 2` — the sum and abs-
+    ///   diff of two `usize` share parity, so the pair
+    ///   `(sum, amplitude)` recovers the *unordered* pair
+    ///   `{env_prefix_kind_peak_mult, env_prefix_kind_trough_mult}`
+    ///   under the invertible transform
+    ///   `max(peak, trough) = (sum + amp) / 2,
+    ///   min(peak, trough) = (sum - amp) / 2` with exact integer
+    ///   division. The peak-versus-trough labelling itself requires the
+    ///   fused `modality_degree` pair. On this cardinality-`2` sub-axis
+    ///   both branches collapse to `sum / 2` since the amplitude
+    ///   collapses to `0`.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<EnvMetadataTagKind>()` (the
+    /// fused peak + trough scan through
+    /// [`crate::AxisHistogram::modality_degree`]). Both are `O(n)` in
+    /// practice since the env-prefix axis carries a fixed two-cell
+    /// cardinality; the returned `usize` reads one scalar. Halves the
+    /// cost of the previous inline
+    /// `chain.env_prefix_kind_peak_multiplicity() +
+    /// chain.env_prefix_kind_trough_multiplicity()` idiom (which walked
+    /// the counts vector twice — once for the peak multiplicity, once
+    /// for the trough multiplicity — where
+    /// [`crate::AxisHistogram::modality_degree_sum`] fuses both into a
+    /// single walk through
+    /// [`crate::AxisHistogram::modality_degree`]).
+    #[must_use]
+    fn env_prefix_kind_modality_degree_sum(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().modality_degree_sum()
     }
 
     /// The **balanced-env-prefix-kinds boolean predicate** on the env-
@@ -64134,6 +64415,708 @@ mod tests {
                 Some(m) => hist.iter().filter(|(_, c)| *c == m).count(),
             };
             let hand_rolled = peak_mult.abs_diff(trough_mult);
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ConfigSourceChain::env_prefix_kind_modality_degree_sum —
+    //    modality-shape sum scalar seam on the env-prefix sub-axis of
+    //    the chain altitude, CLOSING the "modality-degree-sum across
+    //    altitudes" projection at the last remaining chain-altitude
+    //    sub-axis. Scalar-sum peer of the fully-closed
+    //    (env_prefix_kind_peak_multiplicity,
+    //    env_prefix_kind_trough_multiplicity) multiplicity-scalar pair
+    //    on the same sub-axis, fusing them into a single sum scalar
+    //    reading off the combined extremal cardinality. Additive-side
+    //    dual of env_prefix_kind_modality_amplitude on the same
+    //    surface. Cardinality-`2` env-prefix axis: the sum range
+    //    collapses to `{0, 2, 4}` alone — two strict retreats from the
+    //    sister file-format sub-axis's / tier altitude's `{0} ∪ (2..=8)`
+    //    ceiling on the cardinality-`4` axis, and one strict retreat
+    //    from the sister layer-kind sub-axis's / diff altitude's `{0} ∪
+    //    (2..=6)` ceiling on the cardinality-`3` axis. Every reachable
+    //    shape reads sum in `{0, 2, 4}` — the sum surface has parity
+    //    identically `0` on this sub-axis, composing the trait-uniform
+    //    parity law with the amplitude reachability collapse.
+    //    ──
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_matches_env_prefix_kind_histogram_modality_degree_sum_pointwise()
+     {
+        // Routing pin: `env_prefix_kind_modality_degree_sum` routes
+        // through `env_prefix_kind_histogram().modality_degree_sum()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared cube-native primitive.
+        // Env-prefix sub-axis closer of the "modality-degree-sum across
+        // altitudes" projection, peer of
+        // `file_format_modality_degree_sum_matches_file_format_histogram_modality_degree_sum_pointwise`
+        // and
+        // `layer_kind_modality_degree_sum_matches_layer_kind_histogram_modality_degree_sum_pointwise`
+        // on the sister sub-axes;
+        // `tier_modality_degree_sum_matches_tier_histogram_modality_degree_sum_pointwise`
+        // on the tier altitude; and
+        // `kind_modality_degree_sum_matches_kind_histogram_modality_degree_sum_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.env_prefix_kind_histogram().modality_degree_sum();
+            assert_eq!(slice.env_prefix_kind_modality_degree_sum(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_equals_peak_mult_plus_trough_mult() {
+        // Defining-equivalence law:
+        // `env_prefix_kind_modality_degree_sum` equals
+        // `env_prefix_kind_peak_multiplicity() +
+        // env_prefix_kind_trough_multiplicity()` on every fixture.
+        // Overflow-safe since both summands are bounded above by
+        // `axis_cardinality::<EnvMetadataTagKind>() == 2`. Both
+        // routings read the same scalar off the same primitive. Peer of
+        // `file_format_modality_degree_sum_equals_peak_mult_plus_trough_mult`
+        // and
+        // `layer_kind_modality_degree_sum_equals_peak_mult_plus_trough_mult`
+        // on the sister sub-axes and
+        // `tier_modality_degree_sum_equals_peak_mult_plus_trough_mult`
+        // on the tier altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_pair = slice.env_prefix_kind_peak_multiplicity()
+                + slice.env_prefix_kind_trough_multiplicity();
+            assert_eq!(slice.env_prefix_kind_modality_degree_sum(), via_pair);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_agrees_with_modality_degree_component_sum() {
+        // Fused-pair pin: `env_prefix_kind_modality_degree_sum` equals
+        // the sum of the `(peak_mult, trough_mult)` components read off
+        // the fused `modality_degree` pair. Both routings agree
+        // pointwise; the named seam is the routing through the pair
+        // projection into a single sum scalar. Peer of
+        // `file_format_modality_degree_sum_agrees_with_modality_degree_component_sum`
+        // and
+        // `layer_kind_modality_degree_sum_agrees_with_modality_degree_component_sum`
+        // on the sister sub-axes and
+        // `tier_modality_degree_sum_agrees_with_modality_degree_component_sum`
+        // on the tier altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let (peak_mult, trough_mult) = slice.env_prefix_kind_histogram().modality_degree();
+            assert_eq!(
+                slice.env_prefix_kind_modality_degree_sum(),
+                peak_mult + trough_mult,
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_empty_chain_is_zero() {
+        // Empty-chain convention: no observed cells, both
+        // multiplicities read `0`, so the sum reads `0`. Matches the
+        // AxisHistogram::modality_degree_sum empty convention one
+        // altitude down. The `(env_prefix_kind_peak_multiplicity,
+        // env_prefix_kind_trough_multiplicity,
+        // env_prefix_kind_modality_amplitude,
+        // env_prefix_kind_modality_degree_sum)` quadruple reads
+        // uniformly `(0, 0, 0, 0)` on the empty chain. Peer of
+        // `file_format_modality_degree_sum_empty_chain_is_zero` and
+        // `layer_kind_modality_degree_sum_empty_chain_is_zero` on the
+        // sister sub-axes and
+        // `tier_modality_degree_sum_empty_map_is_zero` on the tier
+        // altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert_eq!(empty.env_prefix_kind_peak_multiplicity(), 0);
+        assert_eq!(empty.env_prefix_kind_trough_multiplicity(), 0);
+        assert_eq!(empty.env_prefix_kind_modality_amplitude(), 0);
+        assert_eq!(empty.env_prefix_kind_modality_degree_sum(), 0);
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_no_env_layers_is_zero() {
+        // **Cross-sub-axis divergence pin.** The env-prefix sub-axis
+        // reads the sum off the empty-histogram side even on non-empty
+        // chains — a chain of only Defaults / File layers is non-empty
+        // but has no `Some` env_prefix_kind projection, so the
+        // histogram is empty and `env_prefix_kind_modality_degree_sum`
+        // reads `0`. Distinguishing pin against the layer-kind sub-axis
+        // `layer_kind_modality_degree_sum_zero_iff_empty`, whose `0`
+        // boundary reads on `chain.is_empty()` alone: on those same
+        // chains, `layer_kind_modality_degree_sum` reads `>= 2`
+        // (whatever the layer-kind histogram's modality shape carries)
+        // while `env_prefix_kind_modality_degree_sum` reads `0`
+        // universally. Matches
+        // `file_format_modality_degree_sum_no_recognized_files_is_zero`
+        // on the same histogram-empty routing.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.lisp")),
+                ConfigSource::File(PathBuf::from("/b.nix")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(!slice.is_empty(), "fixture must be non-empty");
+            assert!(
+                slice.env_prefix_kind_histogram().is_empty(),
+                "fixture must have empty env-prefix histogram",
+            );
+            assert_eq!(slice.env_prefix_kind_peak_multiplicity(), 0);
+            assert_eq!(slice.env_prefix_kind_trough_multiplicity(), 0);
+            assert_eq!(slice.env_prefix_kind_modality_degree_sum(), 0);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_singleton_support_prefixed_is_two() {
+        // Singleton-support pin (prefixed-only): every env layer
+        // carries a non-empty prefix, so Prefixed is the sole observed
+        // cell — simultaneously the unique peak and the unique trough.
+        // Both multiplicities read `1`, so the sum reads `1 + 1 = 2` —
+        // the additive-side minimal-nonempty-histogram boundary
+        // witness of the "both extremes uniquely held" configuration
+        // at the env-prefix sub-axis. Peer of
+        // `file_format_modality_degree_sum_singleton_support_is_two`
+        // and `layer_kind_modality_degree_sum_singleton_support_is_two`
+        // on the sister sub-axes and
+        // `tier_modality_degree_sum_singleton_support_is_two` on the
+        // tier altitude.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Env("SHIKUMI_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert_eq!(slice.env_prefix_kind_peak_multiplicity(), 1);
+        assert_eq!(slice.env_prefix_kind_trough_multiplicity(), 1);
+        assert_eq!(slice.env_prefix_kind_modality_degree_sum(), 2);
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_singleton_support_bare_is_two() {
+        // Singleton-support pin (bare-only): every env layer carries
+        // the empty prefix, so Bare is the sole observed cell — the
+        // unique peak and unique trough, both multiplicities `1`, sum
+        // `2`. The bare-only sister of the prefixed-only singleton
+        // case above — both read `2`, partitioning the singleton-
+        // support region into the two per-cell shapes on this two-cell
+        // sub-axis.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert_eq!(slice.env_prefix_kind_peak_multiplicity(), 1);
+        assert_eq!(slice.env_prefix_kind_trough_multiplicity(), 1);
+        assert_eq!(slice.env_prefix_kind_modality_degree_sum(), 2);
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_sample_chain_is_two() {
+        // Sample-chain pin: two `.yaml` file layers + one prefixed Env
+        // layer. Prefixed is the sole observed env-prefix cell (Bare
+        // has count 0), singleton-support degenerate. peak_mult=1,
+        // trough_mult=1, so the sum reads `1 + 1 = 2` — the additive-
+        // side minimal-nonempty-histogram boundary. Peer of
+        // `file_format_modality_degree_sum_sample_chain_is_two` and
+        // `layer_kind_modality_degree_sum_sample_chain_is_two` on the
+        // sister sub-axes on the same named fixture.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.env_prefix_kind_peak_multiplicity(), 1);
+        assert_eq!(slice.env_prefix_kind_trough_multiplicity(), 1);
+        assert_eq!(slice.env_prefix_kind_modality_degree_sum(), 2);
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_uniform_two_kind_cover_is_four() {
+        // Uniform two-kind-cover pin: one bare + one prefixed, both
+        // tied at count `1`. peak_mult=2 (tied at the shared count),
+        // trough_mult=2 (also tied at the shared count, coinciding on
+        // the uniform-count shape). Sum reads `2 + 2 = 4` — the
+        // balanced full-cover case at
+        // `2 * present_env_prefix_kinds_count() = 2 * 2 = 4 = 2 *
+        // axis_cardinality::<EnvMetadataTagKind>()`, saturating the
+        // structural upper bound. Peer of
+        // `file_format_modality_degree_sum_uniform_full_cover_is_eight`
+        // (which reaches `8` on its cardinality-`4` uniform-cover
+        // shape) and
+        // `layer_kind_modality_degree_sum_uniform_full_cover_is_six`
+        // (which reaches `6` on its cardinality-`3` uniform-cover
+        // shape) on the sister sub-axes at strictly wider
+        // cardinalities. Also witnesses
+        // `env_prefix_kinds_balanced() ⇔ sum == 2 *
+        // present_env_prefix_kinds_count()`.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.env_prefix_kinds_full_cover());
+        assert!(slice.env_prefix_kinds_balanced());
+        assert_eq!(slice.env_prefix_kind_peak_multiplicity(), 2);
+        assert_eq!(slice.env_prefix_kind_trough_multiplicity(), 2);
+        assert_eq!(slice.env_prefix_kind_modality_degree_sum(), 4);
+        assert_eq!(
+            slice.env_prefix_kind_modality_degree_sum(),
+            2 * slice.present_env_prefix_kinds_count(),
+        );
+        assert_eq!(
+            slice.env_prefix_kind_modality_degree_sum(),
+            2 * crate::axis_cardinality::<EnvMetadataTagKind>(),
+        );
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_uniform_two_kind_cover_at_count_two_is_four() {
+        // Uniform two-kind-cover at a higher shared count: two bare +
+        // two prefixed, both cells at count `2`. peak_mult=2,
+        // trough_mult=2, sum `4` — the sum scalar reads the number of
+        // tied cells at the extreme, not the shared count itself, so
+        // the balanced full-cover shape sits on the sum-at-ceiling
+        // boundary at every shared count. Peer of
+        // `env_prefix_kind_modality_amplitude_uniform_two_kind_cover_at_count_two_is_zero`
+        // on the sister amplitude scalar at the same shape.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.env_prefix_kinds_full_cover());
+        assert!(slice.env_prefix_kinds_balanced());
+        assert_eq!(slice.env_prefix_kind_peak_multiplicity(), 2);
+        assert_eq!(slice.env_prefix_kind_trough_multiplicity(), 2);
+        assert_eq!(slice.env_prefix_kind_modality_degree_sum(), 4);
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_bare_majority_is_two() {
+        // **Cardinality-`2` reachability-broadening pin.** Skewed two-
+        // cell chain: three bare env layers + one prefixed. Bare is
+        // uniquely dominant at count `3`, Prefixed is uniquely
+        // recessive at count `1`. peak_mult=1 (unique modal cell),
+        // trough_mult=1 (unique antimodal cell). Sum reads `1 + 1 = 2`
+        // — the strictly-modally-unique / strictly-antimodally-unique
+        // corner on this cardinality-`2` axis. **Cross-sub-axis
+        // broadening**: on the sister cardinality-`3` layer-kind and
+        // cardinality-`4` file-format sub-axes, `sum == 2` fires ONLY
+        // on singleton-support chains (and on strictly-ordered non-
+        // uniform shapes where both extremes are uniquely held on
+        // stricter axes); on this two-cell axis, `sum == 2` additionally
+        // fires on every strictly-modally-unique chain because the
+        // reachability collapse rules out `sum == 3`. Witnesses the
+        // reachability collapse on the *non-uniform-count* side of the
+        // profile.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 2);
+        assert!(!slice.env_prefix_kinds_balanced());
+        assert_eq!(slice.env_prefix_kind_peak_multiplicity(), 1);
+        assert_eq!(slice.env_prefix_kind_trough_multiplicity(), 1);
+        assert_eq!(slice.env_prefix_kind_modality_degree_sum(), 2);
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_prefixed_majority_is_two() {
+        // Mirror of the bare-majority case: three prefixed + one bare.
+        // Prefixed is uniquely dominant at count `3`, Bare is uniquely
+        // recessive at count `1`. peak_mult=1, trough_mult=1, sum `2`.
+        // Together with the bare-majority pin, both halves of the
+        // strictly-modally-unique region on this two-cell axis witness
+        // the sum-at-2 reachability broadening.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Env("SHIKUMI_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 2);
+        assert!(!slice.env_prefix_kinds_balanced());
+        assert_eq!(slice.env_prefix_kind_peak_multiplicity(), 1);
+        assert_eq!(slice.env_prefix_kind_trough_multiplicity(), 1);
+        assert_eq!(slice.env_prefix_kind_modality_degree_sum(), 2);
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_env_prefix_kinds_balanced_iff_two_times_present() {
+        // Structural equivalence: `env_prefix_kinds_balanced() ⇔
+        // env_prefix_kind_modality_degree_sum() == 2 *
+        // present_env_prefix_kinds_count()` on every fixture. The
+        // balanced-env-prefix-kinds predicate rewritten as an
+        // arithmetic equality on the closed multiplicity surface at
+        // its structural upper bound. Peer of
+        // `file_format_modality_degree_sum_file_formats_balanced_iff_two_times_present`
+        // and
+        // `layer_kind_modality_degree_sum_layer_kinds_balanced_iff_two_times_present`
+        // on the sister sub-axes and
+        // `tier_modality_degree_sum_tiers_balanced_iff_two_times_contributing`
+        // on the tier altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let balanced = slice.env_prefix_kinds_balanced();
+            let sum_at_ceiling = slice.env_prefix_kind_modality_degree_sum()
+                == 2 * slice.present_env_prefix_kinds_count();
+            assert_eq!(
+                balanced,
+                sum_at_ceiling,
+                "env_prefix_kinds_balanced ({balanced}) must agree with \
+                 env_prefix_kind_modality_degree_sum ({s}) == 2 * \
+                 present_env_prefix_kinds_count ({twice}) for chain with \
+                 len={n}",
+                s = slice.env_prefix_kind_modality_degree_sum(),
+                twice = 2 * slice.present_env_prefix_kinds_count(),
+                n = slice.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_zero_iff_histogram_empty() {
+        // Vacuous-nothing boundary keyed on histogram-emptiness (NOT
+        // chain-emptiness — cross-sub-axis divergence from
+        // `layer_kind_modality_degree_sum_zero_iff_empty`):
+        // `env_prefix_kind_modality_degree_sum() == 0` iff the env-
+        // prefix histogram is empty (empty chain OR non-empty chain of
+        // only Defaults / File layers) on every fixture. Peer of
+        // `file_format_modality_degree_sum_zero_iff_histogram_empty` on
+        // the sister sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let sum_zero = slice.env_prefix_kind_modality_degree_sum() == 0;
+            let hist_empty = slice.env_prefix_kind_histogram().is_empty();
+            assert_eq!(
+                sum_zero,
+                hist_empty,
+                "env_prefix_kind_modality_degree_sum == 0 iff \
+                 env_prefix_kind_histogram is empty for chain with len={n}",
+                n = slice.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_non_empty_histogram_bounded_below_by_two() {
+        // Non-empty-histogram lower bound: every chain whose env-
+        // prefix histogram is non-empty has
+        // `env_prefix_kind_modality_degree_sum() >= 2`. The additive-
+        // side signature of the "vacuous-versus-populated" boundary on
+        // the env-prefix sub-axis's multiplicity surface — the value
+        // `1` is unreachable. Cross-sub-axis divergence from
+        // `layer_kind_modality_degree_sum_non_empty_bounded_below_by_two`,
+        // where the lower bound reads on `!chain.is_empty()` instead
+        // of `!env_prefix_kind_histogram().is_empty()`. Peer of
+        // `file_format_modality_degree_sum_non_empty_histogram_bounded_below_by_two`
+        // on the sister sub-axis and
+        // `tier_modality_degree_sum_non_empty_bounded_below_by_two` on
+        // the tier altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kind_histogram().is_empty() {
+                continue;
+            }
+            assert!(
+                slice.env_prefix_kind_modality_degree_sum() >= 2,
+                "non-empty-histogram env_prefix_kind_modality_degree_sum \
+                 ({s}) must be >= 2 for chain with len={n}",
+                s = slice.env_prefix_kind_modality_degree_sum(),
+                n = slice.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_bounded_above_by_twice_present_env_prefix_kinds_count() {
+        // Support bound: both level sets are subsets of the observed
+        // support, so their sum is bounded above by twice the support
+        // size on every fixture. Empty-histogram chain: 0 <= 0.
+        // Singleton support: 2 <= 2. Uniform two-kind cover: 4 <= 4.
+        // Bare-majority / prefixed-majority: 2 <= 4. Peer of
+        // `layer_kind_modality_degree_sum_bounded_above_by_twice_present_layer_kinds_count`
+        // and
+        // `file_format_modality_degree_sum_bounded_above_by_twice_present_file_formats_count`
+        // on the sister sub-axes and
+        // `tier_modality_degree_sum_bounded_above_by_twice_contributing_tiers_count`
+        // on the tier altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.env_prefix_kind_modality_degree_sum()
+                    <= 2 * slice.present_env_prefix_kinds_count(),
+                "env_prefix_kind_modality_degree_sum ({s}) must not \
+                 exceed 2 * present_env_prefix_kinds_count ({twice})",
+                s = slice.env_prefix_kind_modality_degree_sum(),
+                twice = 2 * slice.present_env_prefix_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_bounded_by_twice_axis_cardinality() {
+        // Structural bound: `env_prefix_kind_modality_degree_sum() <=
+        // 2 * axis_cardinality::<EnvMetadataTagKind>()` (= 4) on every
+        // fixture. Composition of `<= 2 *
+        // present_env_prefix_kinds_count()` with
+        // `present_env_prefix_kinds_count() <=
+        // axis_cardinality::<EnvMetadataTagKind>()`. Peer of
+        // `file_format_modality_degree_sum_bounded_by_twice_axis_cardinality`
+        // (bounded by `8` on the sister sub-axis at cardinality `4`),
+        // `layer_kind_modality_degree_sum_bounded_by_twice_axis_cardinality`
+        // (bounded by `6` on the sister sub-axis at cardinality `3`),
+        // and
+        // `tier_modality_degree_sum_bounded_by_twice_axis_cardinality`
+        // on the tier altitude at cardinality `4`.
+        let card = crate::axis_cardinality::<EnvMetadataTagKind>();
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.env_prefix_kind_modality_degree_sum() <= 2 * card,
+                "env_prefix_kind_modality_degree_sum ({s}) must not exceed \
+                 2 * axis cardinality ({twice})",
+                s = slice.env_prefix_kind_modality_degree_sum(),
+                twice = 2 * card,
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_and_amplitude_share_parity() {
+        // Parity pin: env_prefix_kind_modality_degree_sum and
+        // env_prefix_kind_modality_amplitude share parity on every
+        // fixture. The pair (sum, amplitude) carries the same
+        // information as the pair (peak_mult, trough_mult) under the
+        // invertible transform max(peak, trough) = (sum + amp) / 2,
+        // min(peak, trough) = (sum - amp) / 2 with exact integer
+        // division. On this cardinality-`2` sub-axis the amplitude
+        // collapses to `0` identically, so both branches recover `sum
+        // / 2` — the peak-versus-trough labelling is fully collapsed.
+        // Pinned across the fixture set. Peer of
+        // `layer_kind_modality_degree_sum_and_amplitude_share_parity`
+        // and
+        // `file_format_modality_degree_sum_and_amplitude_share_parity`
+        // on the sister sub-axes and
+        // `tier_modality_degree_sum_and_amplitude_share_parity` on the
+        // tier altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let sum = slice.env_prefix_kind_modality_degree_sum();
+            let amp = slice.env_prefix_kind_modality_amplitude();
+            assert_eq!(
+                sum % 2,
+                amp % 2,
+                "env_prefix_kind_modality_degree_sum ({sum}) and \
+                 env_prefix_kind_modality_amplitude ({amp}) must share \
+                 parity for chain with len={n}",
+                n = slice.len(),
+            );
+            // Invertible-transform round-trip on the *unordered*
+            // multiplicity pair: `(sum + amp) / 2 == max(peak, trough)`
+            // and `(sum - amp) / 2 == min(peak, trough)`. The additive
+            // side sees no signed direction, so peak/trough labelling
+            // itself requires the fused pair.
+            let peak_mult = slice.env_prefix_kind_peak_multiplicity();
+            let trough_mult = slice.env_prefix_kind_trough_multiplicity();
+            let recovered_max = (sum + amp) / 2;
+            let recovered_min = (sum - amp) / 2;
+            assert_eq!(recovered_max, peak_mult.max(trough_mult));
+            assert_eq!(recovered_min, peak_mult.min(trough_mult));
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_two_iff_both_extremes_uniquely_held_on_non_empty_histogram()
+     {
+        // Both-extremes-uniquely-held predicate: on every fixture
+        // whose env-prefix histogram is non-empty,
+        // `env_prefix_kind_modality_degree_sum() == 2` iff
+        // `env_prefix_kind_peak_multiplicity() == 1 &&
+        // env_prefix_kind_trough_multiplicity() == 1` — the sum
+        // reaches its non-empty-histogram lower bound of `2` exactly
+        // when both extremal level sets are singletons. On this
+        // cardinality-`2` sub-axis this fires on every singleton-
+        // support chain AND on every strictly-modally-unique chain
+        // (bare-majority or prefixed-majority) — a cross-sub-axis
+        // broadening from the sister cardinality-`3` layer-kind and
+        // cardinality-`4` file-format sub-axes where the same predicate
+        // fires on singleton-support only (or on strictly-ordered non-
+        // uniform shapes on the wider axes). Peer of
+        // `layer_kind_modality_degree_sum_two_iff_both_extremes_uniquely_held_on_non_empty`
+        // (keyed on `!chain.is_empty()` instead) and
+        // `file_format_modality_degree_sum_two_iff_both_extremes_uniquely_held_on_non_empty_histogram`
+        // on the sister sub-axes and
+        // `tier_modality_degree_sum_two_iff_both_extremes_uniquely_held_on_non_empty`
+        // on the tier altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kind_histogram().is_empty() {
+                continue;
+            }
+            let sum_two = slice.env_prefix_kind_modality_degree_sum() == 2;
+            let both_unique = slice.env_prefix_kind_peak_multiplicity() == 1
+                && slice.env_prefix_kind_trough_multiplicity() == 1;
+            assert_eq!(
+                sum_two,
+                both_unique,
+                "env_prefix_kind_modality_degree_sum == 2 iff \
+                 (peak_mult == 1 && trough_mult == 1) on non-empty-\
+                 histogram chain with len={n}",
+                n = slice.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_cardinality_2_reachability_parity_is_zero() {
+        // **Cardinality-`2` reachability-parity signature** on the
+        // env-prefix sub-axis: `env_prefix_kind_modality_degree_sum()
+        // % 2 == 0` on every fixture — the sum is identically even on
+        // every reachable shape. Composition of the trait-uniform
+        // `modality_degree_sum() % 2 == modality_amplitude() % 2` law
+        // with the sub-axis-specific
+        // `env_prefix_kind_modality_amplitude() == 0` reachability
+        // collapse. Cross-sub-axis divergence pin against the sister
+        // cardinality-`3` layer-kind and cardinality-`4` file-format
+        // sub-axes where the strictly-ordered shapes witness odd sums
+        // (e.g. `peak_mult == 1` tied with `trough_mult == 2`, sum
+        // `3`). A future refactor that accidentally routes a
+        // cardinality-`2` chain to an odd sum fails visibly.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let sum = slice.env_prefix_kind_modality_degree_sum();
+            assert_eq!(
+                sum % 2,
+                0,
+                "cardinality-2 env-prefix sub-axis reachability-parity: \
+                 every reachable shape must read an even sum (got {sum} \
+                 on chain len={n})",
+                n = slice.len(),
+            );
+        }
+        // Explicit witnesses on every corner of the reachability
+        // profile: empty chain (0), singleton-support bare (2),
+        // singleton-support prefixed (2), uniform two-kind cover (4),
+        // strictly-modally-unique bare-majority (2), strictly-
+        // modally-unique prefixed-majority (2). All read even.
+        let corners: [(Vec<ConfigSource>, usize); 6] = [
+            (Vec::new(), 0),
+            (vec![ConfigSource::Env(String::new())], 2),
+            (vec![ConfigSource::Env("APP_".to_owned())], 2),
+            (
+                vec![
+                    ConfigSource::Env(String::new()),
+                    ConfigSource::Env("APP_".to_owned()),
+                ],
+                4,
+            ),
+            (
+                vec![
+                    ConfigSource::Env(String::new()),
+                    ConfigSource::Env(String::new()),
+                    ConfigSource::Env("APP_".to_owned()),
+                ],
+                2,
+            ),
+            (
+                vec![
+                    ConfigSource::Env("APP_".to_owned()),
+                    ConfigSource::Env("TOBIRA_".to_owned()),
+                    ConfigSource::Env(String::new()),
+                ],
+                2,
+            ),
+        ];
+        for (corner, expected_sum) in &corners {
+            assert_eq!(
+                corner.as_slice().env_prefix_kind_modality_degree_sum(),
+                *expected_sum,
+            );
+            assert_eq!(
+                corner.as_slice().env_prefix_kind_modality_degree_sum() % 2,
+                0,
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_reachability_range_is_subset_of_zero_two_four() {
+        // **Cardinality-`2` reachability-range pin** on the env-
+        // prefix sub-axis: `env_prefix_kind_modality_degree_sum()`
+        // ranges over `{0, 2, 4}` alone across the fixture set — the
+        // narrowest reachability profile in the projection. Composition
+        // of the non-empty-histogram lower bound (`>= 2`), the twice-
+        // axis-cardinality upper bound (`<= 4`), and the reachability-
+        // parity signature (`% 2 == 0`), which collectively rule out
+        // `1` and `3`. Cross-sub-axis divergence pin against the sister
+        // cardinality-`3` layer-kind sub-axis's `{0} ∪ (2..=6)` and
+        // cardinality-`4` file-format sub-axis's `{0} ∪ (2..=8)`
+        // ranges — this sub-axis reaches strictly fewer values on the
+        // sum surface. A future refactor that reintroduces `sum == 1`
+        // or `sum == 3` fails visibly.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let sum = slice.env_prefix_kind_modality_degree_sum();
+            assert!(
+                sum == 0 || sum == 2 || sum == 4,
+                "cardinality-2 env-prefix sub-axis reachability-range: \
+                 every reachable shape must read sum in {{0, 2, 4}} \
+                 (got {sum} on chain len={n})",
+                n = slice.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_modality_degree_sum_agrees_with_open_coded_sum_walk() {
+        // Parity against the exact hand-rolled peak/trough
+        // multiplicity walk this closer surfaces at a named seam: walk
+        // every cell of the histogram, find the maximum count, count
+        // how many cells carry it (peak multiplicity); restrict to
+        // nonzero cells, find the minimum positive count, count how
+        // many cells carry it (trough multiplicity); take the sum.
+        // Empty histogram yields both counts `0`, so the sum reads
+        // `0`. Peer of
+        // `file_format_modality_degree_sum_agrees_with_open_coded_sum_walk`
+        // and
+        // `layer_kind_modality_degree_sum_agrees_with_open_coded_sum_walk`
+        // on the sister sub-axes and
+        // `tier_modality_degree_sum_agrees_with_open_coded_sum_walk`
+        // on the tier altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kind_modality_degree_sum();
+            let hist = slice.env_prefix_kind_histogram();
+            let max = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let peak_mult = if max == 0 {
+                0
+            } else {
+                hist.iter().filter(|(_, c)| *c == max).count()
+            };
+            let min_positive = hist.iter().map(|(_, c)| c).filter(|c| *c > 0).min();
+            let trough_mult = match min_positive {
+                None => 0,
+                Some(m) => hist.iter().filter(|(_, c)| *c == m).count(),
+            };
+            let hand_rolled = peak_mult + trough_mult;
             assert_eq!(via_seam, hand_rolled);
         }
     }
