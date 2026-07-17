@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "cargo_lock_sha256": "bc096b3ecef1d8b1642de681755ebf92b6c20abb703592529372da808f23a0fc",
+  "cargo_lock_sha256": "c0100b31ea659d533c9e62ef9ce0df3a3d8fe65d8bd22e02c16ce08ded07496b",
   "target_resolves": {
     "base": {
       "arc-swap-1.9.2": {
@@ -1165,7 +1165,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.312": {
+      "shikumi-0.1.313": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -1464,7 +1464,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "tokio-1.52.4": {
+      "tokio-1.53.0": {
         "runtime_dependencies": [
           {
             "name": "pin_project_lite",
@@ -1478,7 +1478,7 @@
           },
           {
             "name": "tokio_macros",
-            "package_key": "tokio-macros-2.7.0",
+            "package_key": "tokio-macros-2.7.1",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1495,7 +1495,7 @@
           "tokio-macros"
         ]
       },
-      "tokio-macros-2.7.0": {
+      "tokio-macros-2.7.1": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -4097,7 +4097,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.312": {
+    "shikumi-0.1.313": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
@@ -4121,10 +4121,10 @@
       "edition": "2021",
       "proc_macro": true
     },
-    "tokio-1.52.4": {
+    "tokio-1.53.0": {
       "edition": "2021"
     },
-    "tokio-macros-2.7.0": {
+    "tokio-macros-2.7.1": {
       "edition": "2021",
       "proc_macro": true
     },
