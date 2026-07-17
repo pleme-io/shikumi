@@ -1615,13 +1615,13 @@ pub trait ConfigSourceChain {
     /// sub-axis peer [`Self::file_format_peak_multiplicity`] over
     /// [`Self::file_format_histogram`] extends the projection sideways
     /// to the second chain sub-axis; the last remaining chain-altitude
-    /// sub-axis (`env_prefix_kind_peak_multiplicity` over
-    /// [`Self::env_prefix_kind_histogram`]) is the natural next
-    /// sideways lift, mirroring the four-step lift trajectory of the
-    /// sibling `spread` scalar and the four already-closed boolean-
-    /// predicate rows (`modally_tied`, `antimodally_tied`,
-    /// `strictly_modally_unique`, `strictly_antimodally_unique`) across
-    /// the same 5-altitude grid. The pattern is the same at every
+    /// sub-axis ([`Self::env_prefix_kind_peak_multiplicity`] over
+    /// [`Self::env_prefix_kind_histogram`]) closes the projection at
+    /// the last chain-altitude sub-axis, fully closing the 5-altitude
+    /// grid mirrored by the sibling `spread` scalar and the four
+    /// already-closed boolean-predicate rows (`modally_tied`,
+    /// `antimodally_tied`, `strictly_modally_unique`,
+    /// `strictly_antimodally_unique`) across the same grid. The pattern is the same at every
     /// altitude / sub-axis: surface the
     /// [`crate::AxisHistogram::peak_multiplicity`] scalar directly at
     /// the local histogram altitude, routing through the shared
@@ -6624,12 +6624,13 @@ pub trait ConfigSourceChain {
     /// ([`crate::ProvenanceMap::peak_tier_multiplicity`]) and the diff-
     /// altitude seed ([`crate::ConfigDiff::peak_kind_multiplicity`]).
     /// The last remaining chain-altitude sub-axis
-    /// (`env_prefix_kind_peak_multiplicity` over
-    /// [`Self::env_prefix_kind_histogram`]) is the natural next sideways
-    /// lift, mirroring the four-step lift trajectory of the sibling
-    /// `spread` scalar and the four already-closed boolean-predicate
-    /// rows (`modally_tied`, `antimodally_tied`, `strictly_modally_unique`,
-    /// `strictly_antimodally_unique`) across the same 5-altitude grid.
+    /// ([`Self::env_prefix_kind_peak_multiplicity`] over
+    /// [`Self::env_prefix_kind_histogram`]) closes the projection at
+    /// the last chain-altitude sub-axis, fully closing the 5-altitude
+    /// grid mirrored by the sibling `spread` scalar and the four
+    /// already-closed boolean-predicate rows (`modally_tied`,
+    /// `antimodally_tied`, `strictly_modally_unique`,
+    /// `strictly_antimodally_unique`) across the same grid.
     /// The pattern is the same at every altitude / sub-axis: surface
     /// the [`crate::AxisHistogram::peak_multiplicity`] scalar directly
     /// at the local histogram altitude, routing through the shared
@@ -12233,6 +12234,223 @@ pub trait ConfigSourceChain {
         Self: AsRef<[ConfigSource]>,
     {
         self.env_prefix_kind_histogram().spread()
+    }
+
+    /// The number of [`EnvMetadataTagKind`] cells tied at the peak leaf
+    /// count on the env-prefix-presence sub-axis of the chain altitude —
+    /// the **modal-multiplicity scalar** peer of the modally-tied /
+    /// strictly-modally-unique boolean pair one seam over, surfacing at
+    /// this sub-axis the underlying `usize` those predicates project
+    /// through comparison thresholds. Reads `1` on every strictly-
+    /// modally-unique chain (a unique dominant env-prefix kind,
+    /// singleton-support included), `2` on every modally-tied chain
+    /// (both bare and prefixed env layers fired at the same peak count),
+    /// and `0` exactly on every chain whose env-prefix-presence
+    /// histogram is empty (an empty chain, OR a non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::File`] entries).
+    /// Routes through [`Self::env_prefix_kind_histogram`]:
+    /// [`crate::AxisHistogram::peak_multiplicity`] reads the same scalar
+    /// off the fixed-cardinality counts vector in one pass.
+    ///
+    /// The **scalar-modality peer** of the two closed boolean predicates
+    /// that project this multiplicity through equality thresholds —
+    /// [`Self::env_prefix_kinds_strictly_modally_unique`]
+    /// (`peak_multiplicity() == 1`) and [`Self::env_prefix_kinds_modally_tied`]
+    /// (`peak_multiplicity() >= 2`) — surfacing the underlying `usize`
+    /// scalar those predicates project through comparison. Consumers
+    /// previously re-derived the projection inline as
+    /// `chain.env_prefix_kind_histogram().peak_multiplicity()` (one
+    /// method call at every consumer site, pulling in the histogram
+    /// temporary at each site) or reconstructed it from the fused
+    /// `(peak_multiplicity, trough_multiplicity)` pair via
+    /// `chain.env_prefix_kind_histogram().modality_degree().0` (a pair-
+    /// component projection that pays for the second scan on the trough
+    /// side consumers on the modal side never use). Before this lift,
+    /// the natural typed primitive for chain-shape dashboards,
+    /// attestation manifests, and alerting policies asking *"how many
+    /// env-prefix kinds are tied at the peak?"* had no named seam — the
+    /// CLI `config-show` headline *"2 env-prefix kinds tied at peak
+    /// count 3: uniform full cover"* (where 2 is this scalar), the
+    /// attestation manifest recording the modal-multiplicity of the
+    /// recipe by env-prefix, and the alerting policy reading *"peak
+    /// env-prefix multiplicity = 2"* to flag a recipe where the
+    /// dominant env-prefix is ambiguous — all fanned out through the
+    /// underlying primitive at every call site instead of a single
+    /// named surface method.
+    ///
+    /// The chain-altitude env-prefix sub-axis scalar-modality peer that
+    /// **closes the "peak-multiplicity across altitudes" projection**
+    /// at the last remaining chain-altitude sub-axis, following the
+    /// layer-kind sub-axis sideways lift
+    /// ([`Self::layer_kind_peak_multiplicity`]) and the file-format
+    /// sub-axis sideways lift ([`Self::file_format_peak_multiplicity`]),
+    /// matching the tier-altitude climb
+    /// ([`crate::ProvenanceMap::peak_tier_multiplicity`]) and the diff-
+    /// altitude seed ([`crate::ConfigDiff::peak_kind_multiplicity`]).
+    /// With this closer the 5-altitude grid of the projection is fully
+    /// closed — mirroring the fully-closed lift trajectories of the
+    /// sibling `spread` scalar and the four sibling boolean-predicate
+    /// rows (`modally_tied`, `antimodally_tied`,
+    /// `strictly_modally_unique`, `strictly_antimodally_unique`) that
+    /// already span the same 5-altitude grid. The pattern is the same
+    /// at every altitude / sub-axis: surface the
+    /// [`crate::AxisHistogram::peak_multiplicity`] scalar directly at
+    /// the local histogram altitude, routing through the shared
+    /// primitive one seam down instead of every consumer pulling the
+    /// histogram temporary.
+    ///
+    /// **Cardinality-`2` reachability at the env-prefix sub-axis — the
+    /// smallest sub-axis in the chain surface.** [`EnvMetadataTagKind`]
+    /// carries two cells, so `env_prefix_kind_peak_multiplicity()`
+    /// reads `0` on the empty-histogram chain (empty chain OR no-env-
+    /// layers non-empty chain), `1` on every singleton-support /
+    /// strictly-modally-unique chain (bare-only, prefixed-only, or
+    /// mixed with unique majority), and `2` on every uniform-cover
+    /// chain (both cells at the same nonzero count) — the upper
+    /// boundary coincides with the axis cardinality, so on this
+    /// two-cell sub-axis `>= 2` and `== 2` and `== axis_cardinality`
+    /// all coincide, and the modally-tied boundary IS the full-cover
+    /// boundary. Strictly the narrowest reachability profile in the
+    /// projection — the cardinality-`3` layer-kind sub-axis reaches
+    /// multiplicity `3`, the cardinality-`4` file-format sub-axis and
+    /// tier altitude reach multiplicity `4`, and the cardinality-`3`
+    /// diff altitude reaches multiplicity `3`. On this sub-axis the
+    /// scalar range collapses to `{0, 1, 2}` — one value narrower than
+    /// the sister layer-kind sub-axis and two values narrower than
+    /// the file-format sub-axis / tier altitude.
+    ///
+    /// **Empty-histogram convention** — returns `0` on every chain
+    /// whose env-prefix-presence histogram is empty, matching the
+    /// [`crate::AxisHistogram::peak_multiplicity`] empty convention one
+    /// altitude down; an empty histogram has no observed cells, so no
+    /// cell holds the peak count. The scalar-count / scalar-multiplicity
+    /// pair `(peak_env_prefix_kind_count, env_prefix_kind_peak_multiplicity)`
+    /// reads uniformly `(0, 0)` on every empty-histogram chain,
+    /// alongside the paired `(peak_env_prefix_kind_count,
+    /// trough_env_prefix_kind_count, env_prefix_kind_spread)` triple's
+    /// uniform `(0, 0, 0)` reading. Cross-sub-axis divergence from
+    /// [`Self::layer_kind_peak_multiplicity`], whose `0` boundary
+    /// coincides with `self.as_ref().is_empty()`: on the env-prefix
+    /// sub-axis, a non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::File`] layers reads
+    /// `0` as well, because those entries project to [`None`] through
+    /// [`ConfigSource::env_prefix_kind`]. Matches
+    /// [`Self::file_format_peak_multiplicity`] on the same empty-
+    /// histogram routing — every non-empty chain whose sub-axis
+    /// histogram is empty reads `0` at the sub-axis on both peers.
+    /// Unlike the file-format sub-axis, the empty-histogram condition
+    /// on the env-prefix sub-axis is exactly the layer-kind
+    /// `count(ConfigSourceKind::Env) == 0` condition: every `Env`
+    /// entry projects to a `Some` cell regardless of prefix value, so
+    /// no `Env` entry is silently dropped by the projection.
+    ///
+    /// **Singleton-support convention** — returns `1` on every chain
+    /// whose observed env-prefix-presence support is a single
+    /// [`EnvMetadataTagKind`] cell: the sole observed cell stands
+    /// alone at its own peak (peak count = histogram total, multiplicity
+    /// = `1`). The singleton-support chain is therefore strictly-
+    /// modally-unique — pointwise equivalent to
+    /// [`Self::env_prefix_kinds_strictly_modally_unique`] reading
+    /// `true` on the same input, via the `peak_multiplicity() == 1`
+    /// threshold. Every prefixed-only chain (all env layers carry
+    /// non-empty prefixes) and every bare-only chain (all env layers
+    /// carry the empty prefix) are witnesses on this side — both
+    /// read `1`. The `sample_chain()` fixture (two `.yaml` file
+    /// layers + one prefixed Env layer, `{Prefixed}` env-prefix
+    /// support with count `1`) is a witness — reads `1`.
+    ///
+    /// **Uniform per-kind convention** — returns
+    /// `crate::axis_cardinality::<EnvMetadataTagKind>()` = `2` on
+    /// every uniform two-kind cover chain (both
+    /// [`EnvMetadataTagKind`] cells at the same nonzero count) — the
+    /// maximum reachable value on the two-cell env-prefix axis. Every
+    /// observed cell is tied at the peak, so the multiplicity walks
+    /// the full support. On this two-cell sub-axis, the modally-tied
+    /// boundary (multiplicity `>= 2`) is *identical* to the full-cover
+    /// balanced boundary — a cross-sub-axis narrowing from the sister
+    /// cardinality-`3` layer-kind sub-axis and cardinality-`4` file-
+    /// format sub-axis, where those boundaries are strictly separated
+    /// by intermediate values.
+    ///
+    /// # Invariants
+    ///
+    /// - `env_prefix_kind_peak_multiplicity() ==
+    ///   env_prefix_kind_histogram().peak_multiplicity()` — both project
+    ///   the same scalar off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `env_prefix_kind_peak_multiplicity() ==
+    ///   env_prefix_kind_histogram().modality_degree().0` — the modal
+    ///   component of the fused
+    ///   `(peak_multiplicity, trough_multiplicity)` pair.
+    /// - `env_prefix_kind_peak_multiplicity() == 0` ⇔
+    ///   `env_prefix_kind_histogram().is_empty()` — the empty-histogram
+    ///   boundary. Peer to the `peak_env_prefix_kind_count() == 0`
+    ///   boundary on the count side, both witnessed by the same
+    ///   emptiness of the observed env-prefix support. Cross-sub-axis
+    ///   divergence from [`Self::layer_kind_peak_multiplicity`], whose
+    ///   `0` boundary reads on `self.as_ref().is_empty()` — the env-
+    ///   prefix sub-axis carries the stricter histogram-empty boundary
+    ///   because a non-empty chain of only Defaults / File entries
+    ///   projects to an empty env-prefix histogram. Matches
+    ///   [`Self::file_format_peak_multiplicity`] on the same
+    ///   histogram-empty routing.
+    /// - `env_prefix_kind_peak_multiplicity() >= 1` whenever
+    ///   `!env_prefix_kind_histogram().is_empty()` — every non-empty
+    ///   env-prefix histogram has at least one cell at the peak.
+    /// - `env_prefix_kind_peak_multiplicity() <=
+    ///   crate::axis_cardinality::<EnvMetadataTagKind>()` always —
+    ///   bounded above by the axis cardinality `2` on the two-cell
+    ///   env-prefix axis. Lifted from the trait-uniform
+    ///   `peak_multiplicity() <= axis_cardinality::<A>()` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `env_prefix_kind_peak_multiplicity() <=
+    ///   present_env_prefix_kinds_count()` always — the modal set is a
+    ///   subset of the observed support, so its size is bounded by the
+    ///   support size.
+    /// - `env_prefix_kind_peak_multiplicity() == 1` ⇔
+    ///   `env_prefix_kinds_strictly_modally_unique()` — the
+    ///   `peak_multiplicity == 1` boundary on the scalar side, the
+    ///   strict-modal-uniqueness boundary on the boolean side. Peer of
+    ///   the [`Self::env_prefix_kinds_strictly_modally_unique`] routing
+    ///   that this scalar surfaces.
+    /// - `env_prefix_kind_peak_multiplicity() >= 2` ⇔
+    ///   `env_prefix_kinds_modally_tied()` — the `peak_multiplicity >= 2`
+    ///   boundary on the scalar side, the modal-tie boundary on the
+    ///   boolean side. Peer of the [`Self::env_prefix_kinds_modally_tied`]
+    ///   routing that this scalar surfaces. On this cardinality-`2`
+    ///   sub-axis, the `>= 2` boundary coincides with the `== 2`
+    ///   boundary and with the axis-cardinality upper bound — the
+    ///   narrowest possible modally-tied region in the projection.
+    /// - `env_prefix_kind_peak_multiplicity() ==
+    ///   present_env_prefix_kinds_count()` whenever
+    ///   `env_prefix_kinds_balanced() &&
+    ///   !env_prefix_kind_histogram().is_empty()` — every observed env-
+    ///   prefix kind ties at the peak on a balanced non-empty-histogram
+    ///   chain.
+    /// - `env_prefix_kind_peak_multiplicity() == 2` ⇒
+    ///   `env_prefix_kinds_full_cover()` — the only way for both cells
+    ///   to tie at the peak is for every cell to be observed at a
+    ///   shared positive count. On this two-cell sub-axis the
+    ///   implication is a full biconditional together with
+    ///   `env_prefix_kinds_balanced()`.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<EnvMetadataTagKind>()` (the
+    /// peak-plus-multiplicity scan). Both are `O(n)` in practice since
+    /// the env-prefix-presence axis carries a fixed two-cell cardinality;
+    /// the returned `usize` reads one scalar. Fuses the two-scan
+    /// `.modality_degree().0` idiom (which walks the counts vector
+    /// twice — once for the peak, once for the trough multiplicity
+    /// consumers on the modal side never use) into a single-scan
+    /// projection through the shared primitive.
+    #[must_use]
+    fn env_prefix_kind_peak_multiplicity(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().peak_multiplicity()
     }
 
     /// The **balanced-env-prefix-kinds boolean predicate** on the env-
@@ -57740,6 +57958,495 @@ mod tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak - trough);
+        }
+    }
+
+    // ---- ConfigSourceChain::env_prefix_kind_peak_multiplicity —
+    //      modal-multiplicity scalar on the env-prefix-presence sub-axis
+    //      of the chain altitude, surfacing the underlying `usize` the
+    //      two closed boolean predicates on the same sub-axis
+    //      (env_prefix_kinds_modally_tied,
+    //      env_prefix_kinds_strictly_modally_unique) project through
+    //      comparison. Closes the "peak-multiplicity across altitudes"
+    //      projection at the last remaining chain-altitude sub-axis,
+    //      fully closing the 5-altitude grid ----
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_matches_env_prefix_kind_histogram_peak_multiplicity_pointwise()
+     {
+        // Routing pin: `env_prefix_kind_peak_multiplicity` routes
+        // through `env_prefix_kind_histogram().peak_multiplicity()`, so
+        // the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared cube-native primitive.
+        // Env-prefix sub-axis peer of
+        // `file_format_peak_multiplicity_matches_file_format_histogram_peak_multiplicity_pointwise`
+        // and
+        // `layer_kind_peak_multiplicity_matches_layer_kind_histogram_peak_multiplicity_pointwise`
+        // on the sister sub-axes;
+        // `peak_tier_multiplicity_matches_tier_histogram_peak_multiplicity_pointwise`
+        // on the tier altitude; and
+        // `peak_kind_multiplicity_matches_kind_histogram_peak_multiplicity_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.env_prefix_kind_histogram().peak_multiplicity();
+            assert_eq!(slice.env_prefix_kind_peak_multiplicity(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_agrees_with_modality_degree_first_component() {
+        // Fused-pair pin: `env_prefix_kind_peak_multiplicity` equals
+        // the modal component of the fused
+        // `(peak_multiplicity, trough_multiplicity)` pair on every
+        // fixture. The scalar-modality peer of the pair-projection
+        // form; both routings agree pointwise since both read the same
+        // underlying primitive. Peer of
+        // `file_format_peak_multiplicity_agrees_with_modality_degree_first_component`
+        // and
+        // `layer_kind_peak_multiplicity_agrees_with_modality_degree_first_component`
+        // on the sister sub-axes and
+        // `peak_tier_multiplicity_agrees_with_modality_degree_first_component`
+        // on the tier altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let (peak_mult, _trough_mult) = slice.env_prefix_kind_histogram().modality_degree();
+            assert_eq!(slice.env_prefix_kind_peak_multiplicity(), peak_mult);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_empty_chain_is_zero() {
+        // Empty-chain convention: no observed cells on the env-prefix-
+        // presence sub-axis, so the multiplicity reads `0`. Matches
+        // AxisHistogram::peak_multiplicity's empty convention one
+        // altitude down. Peer of `peak_env_prefix_kind_count == 0 on
+        // empty` on the count side; the paired
+        // `(peak_env_prefix_kind_count, env_prefix_kind_peak_multiplicity)`
+        // scalar reads uniformly `(0, 0)` on the empty chain.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.as_ref().is_empty());
+        assert_eq!(empty.peak_env_prefix_kind_count(), 0);
+        assert_eq!(empty.env_prefix_kind_peak_multiplicity(), 0);
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_no_env_layers_is_zero() {
+        // The non-empty-chain / empty-histogram boundary the env-
+        // prefix-presence sub-axis pins that the layer-kind sub-axis
+        // does *not*. A chain of only `Defaults` / `File` layers is
+        // non-empty but has no `Some` env_prefix_kind projection, so
+        // the histogram is empty and
+        // `env_prefix_kind_peak_multiplicity` reads `0`. Distinguishing
+        // pin against the layer-kind sub-axis
+        // `layer_kind_peak_multiplicity` idiom: on those same chains,
+        // `layer_kind_peak_multiplicity` reads a nonzero multiplicity
+        // (the layer-kind histogram is non-empty) while
+        // `env_prefix_kind_peak_multiplicity` reads zero — cross-sub-
+        // axis divergence at the empty-boundary. Matches
+        // `file_format_peak_multiplicity_no_recognized_files_is_zero`
+        // on the same histogram-empty routing.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.lisp")),
+                ConfigSource::File(PathBuf::from("/b.nix")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            let slice = chain.as_slice();
+            assert!(!slice.is_empty(), "fixture must be non-empty");
+            assert!(
+                slice.env_prefix_kind_histogram().is_empty(),
+                "fixture must have empty env-prefix-kind histogram",
+            );
+            assert_eq!(slice.env_prefix_kind_peak_multiplicity(), 0);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_singleton_support_prefixed_is_one() {
+        // Singleton-support pin (prefixed-only): every env layer
+        // carries a non-empty prefix, so Prefixed is the sole
+        // observed cell — multiplicity reads `1`. The strictly-
+        // modally-unique boundary on the singleton-support side; peer
+        // of `env_prefix_kinds_strictly_modally_unique` reading `true`
+        // via the `peak_multiplicity == 1` threshold. Peer of
+        // `file_format_peak_multiplicity_singleton_support_is_one` and
+        // `layer_kind_peak_multiplicity_singleton_support_is_one` on
+        // the sister sub-axes.
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Env("SHIKUMI_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert_eq!(slice.env_prefix_kind_peak_multiplicity(), 1);
+        assert!(slice.env_prefix_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_singleton_support_bare_is_one() {
+        // Singleton-support pin (bare-only): every env layer carries
+        // the empty prefix, so Bare is the sole observed cell —
+        // multiplicity reads `1`. The strictly-modally-unique
+        // boundary on the singleton-support side; peer of
+        // `env_prefix_kinds_strictly_modally_unique` reading `true`
+        // via the `peak_multiplicity == 1` threshold. The bare-only
+        // sister of the prefixed-only singleton case above — both
+        // read `1`, partitioning the singleton-support region into
+        // the two per-cell shapes.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert_eq!(slice.env_prefix_kind_peak_multiplicity(), 1);
+        assert!(slice.env_prefix_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_uniform_two_kind_cover_is_two() {
+        // Uniform two-kind-cover pin: one bare + one prefixed, both
+        // tied at count `1`. Both cells at the shared peak, so
+        // multiplicity reads `2` = axis cardinality of
+        // `EnvMetadataTagKind` — the maximum reachable value on the
+        // two-cell env-prefix axis. Peer of
+        // `file_format_peak_multiplicity_uniform_full_cover_is_four`
+        // on the sister sub-axis at cardinality `4` and
+        // `layer_kind_peak_multiplicity_uniform_full_cover_is_three`
+        // on the sister sub-axis at cardinality `3` — this sub-axis
+        // closes the upper boundary at the narrowest cardinality in
+        // the projection.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.env_prefix_kinds_full_cover());
+        assert_eq!(slice.env_prefix_kind_peak_multiplicity(), 2);
+        assert_eq!(
+            slice.env_prefix_kind_peak_multiplicity(),
+            crate::axis_cardinality::<EnvMetadataTagKind>()
+        );
+        assert!(slice.env_prefix_kinds_modally_tied());
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_uniform_two_kind_cover_at_count_two_is_two() {
+        // Uniform two-kind-cover at a higher shared count: two bare
+        // + two prefixed, both cells at count `2`. Multiplicity still
+        // reads `2` (both cells tied at the peak) even at a shared
+        // count strictly greater than `1` — the multiplicity scalar
+        // reads the number of tied cells, not the peak count itself.
+        // Distinguishing pin against a mis-implementation that
+        // conflates the multiplicity with the peak count.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.env_prefix_kinds_full_cover());
+        assert_eq!(slice.peak_env_prefix_kind_count(), 2);
+        assert_eq!(slice.env_prefix_kind_peak_multiplicity(), 2);
+        assert!(slice.env_prefix_kinds_modally_tied());
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_bare_majority_is_one() {
+        // Skewed two-cell chain: three bare env layers + one prefixed.
+        // Bare is uniquely dominant at count `3`, Prefixed is at count
+        // `1`. Multiplicity reads `1` — the modal set contains only
+        // the unique peak-holder. Peer of
+        // `env_prefix_kinds_strictly_modally_unique` reading `true`
+        // via the `peak_multiplicity == 1` threshold on a non-
+        // singleton-support witness.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 2);
+        assert_eq!(slice.peak_env_prefix_kind_count(), 3);
+        assert_eq!(slice.env_prefix_kind_peak_multiplicity(), 1);
+        assert!(slice.env_prefix_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_sample_chain_is_one() {
+        // Direct pin against `sample_chain()`: two `.yaml` file layers
+        // + one Env layer with prefix `"APP_"`. Prefixed is the sole
+        // observed env-prefix cell (Bare has count 0), so multiplicity
+        // reads `1` — the singleton-support degenerate. Reads the
+        // paired `(peak_env_prefix_kind_count,
+        // env_prefix_kind_peak_multiplicity)` scalar as `(1, 1)`.
+        // Peer of `file_format_peak_multiplicity_sample_chain_is_one`
+        // on the sister sub-axis on the same fixture.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_env_prefix_kind_count(), 1);
+        assert_eq!(slice.env_prefix_kind_peak_multiplicity(), 1);
+        assert!(slice.env_prefix_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_is_zero_iff_env_prefix_kind_histogram_is_empty() {
+        // Emptiness boundary: `env_prefix_kind_peak_multiplicity() == 0`
+        // iff the env-prefix-presence histogram is empty. Peer of
+        // `peak_env_prefix_kind_count == 0 iff env_prefix_kind_histogram
+        // is empty` on the count side; both scalars sit on the same
+        // emptiness of the observed env-prefix support. Cross-sub-
+        // axis divergence pin against
+        // `layer_kind_peak_multiplicity_is_zero_iff_chain_is_empty`:
+        // on the layer-kind sub-axis the `0` boundary coincides with
+        // `chain.is_empty()`; on the env-prefix sub-axis it coincides
+        // with the histogram-empty boundary — the stricter of the two.
+        // Matches
+        // `file_format_peak_multiplicity_is_zero_iff_file_format_histogram_is_empty`
+        // on the sister sub-axis on the same histogram-empty routing.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let zero = slice.env_prefix_kind_peak_multiplicity() == 0;
+            let hist_empty = slice.env_prefix_kind_histogram().is_empty();
+            assert_eq!(
+                zero,
+                hist_empty,
+                "env_prefix_kind_peak_multiplicity == 0 must agree with \
+                 env_prefix_kind_histogram().is_empty() (peak_mult={m}, hist_empty={e})",
+                m = slice.env_prefix_kind_peak_multiplicity(),
+                e = hist_empty,
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_ge_one_iff_env_prefix_kind_histogram_is_nonempty() {
+        // Non-emptiness boundary: every chain with a non-empty env-
+        // prefix histogram has at least one cell at the peak. The
+        // strict complement of the emptiness-boundary pinned above.
+        // Peer of
+        // `layer_kind_peak_multiplicity_ge_one_iff_chain_is_nonempty`
+        // on the sister sub-axis,
+        // `file_format_peak_multiplicity_ge_one_iff_file_format_histogram_is_nonempty`
+        // on the sister sub-axis, and
+        // `peak_tier_multiplicity_ge_one_iff_map_is_nonempty` on the
+        // tier altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let ge_one = slice.env_prefix_kind_peak_multiplicity() >= 1;
+            let hist_nonempty = !slice.env_prefix_kind_histogram().is_empty();
+            assert_eq!(
+                ge_one,
+                hist_nonempty,
+                "env_prefix_kind_peak_multiplicity >= 1 must agree with \
+                 !env_prefix_kind_histogram().is_empty() (peak_mult={m})",
+                m = slice.env_prefix_kind_peak_multiplicity(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_bounded_by_axis_cardinality() {
+        // Structural bound: `env_prefix_kind_peak_multiplicity() <=
+        // axis_cardinality::<EnvMetadataTagKind>()` (= 2) on every
+        // fixture. Lifted from the trait-uniform
+        // `peak_multiplicity() <= axis_cardinality::<A>()` law on
+        // AxisHistogram. Equality holds exactly on the uniform two-
+        // kind cover shape. Peer of
+        // `layer_kind_peak_multiplicity_bounded_by_axis_cardinality`
+        // (cardinality `3`),
+        // `file_format_peak_multiplicity_bounded_by_axis_cardinality`
+        // (cardinality `4`), and
+        // `peak_tier_multiplicity_bounded_by_axis_cardinality`
+        // (cardinality `4`) — this sub-axis is the narrowest.
+        let card = crate::axis_cardinality::<EnvMetadataTagKind>();
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.env_prefix_kind_peak_multiplicity() <= card,
+                "env_prefix_kind_peak_multiplicity ({m}) must not exceed \
+                 axis cardinality ({card})",
+                m = slice.env_prefix_kind_peak_multiplicity(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_bounded_above_by_present_env_prefix_kinds_count() {
+        // Support bound: the modal set is a subset of the observed
+        // support, so `env_prefix_kind_peak_multiplicity() <=
+        // present_env_prefix_kinds_count()` on every fixture. Empty-
+        // histogram: 0 <= 0. Singleton support: 1 <= 1. Full-cover
+        // (both cells observed): peak multiplicity `<= 2 = support
+        // size`. Peer of
+        // `layer_kind_peak_multiplicity_bounded_above_by_present_layer_kinds_count`,
+        // `file_format_peak_multiplicity_bounded_above_by_present_file_formats_count`,
+        // and
+        // `peak_tier_multiplicity_bounded_above_by_contributing_tiers_count`.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.env_prefix_kind_peak_multiplicity() <= slice.present_env_prefix_kinds_count(),
+                "env_prefix_kind_peak_multiplicity ({m}) must not exceed \
+                 present_env_prefix_kinds_count ({p})",
+                m = slice.env_prefix_kind_peak_multiplicity(),
+                p = slice.present_env_prefix_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_eq_one_iff_env_prefix_kinds_strictly_modally_unique() {
+        // Strictly-modally-unique boundary: the boolean predicate
+        // `env_prefix_kinds_strictly_modally_unique()` reads exactly
+        // the `peak_multiplicity() == 1` threshold on the underlying
+        // scalar this seam surfaces. Empty-histogram: `0 == 1` is
+        // false — both sides agree on the `false` empty-histogram
+        // convention. Peer of
+        // `layer_kind_peak_multiplicity_eq_one_iff_layer_kinds_strictly_modally_unique`,
+        // `file_format_peak_multiplicity_eq_one_iff_file_formats_strictly_modally_unique`,
+        // and
+        // `peak_tier_multiplicity_eq_one_iff_tiers_strictly_modally_unique`.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let mult_one = slice.env_prefix_kind_peak_multiplicity() == 1;
+            let strict = slice.env_prefix_kinds_strictly_modally_unique();
+            assert_eq!(
+                mult_one,
+                strict,
+                "env_prefix_kind_peak_multiplicity == 1 must agree with \
+                 env_prefix_kinds_strictly_modally_unique (peak_mult={m})",
+                m = slice.env_prefix_kind_peak_multiplicity(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_ge_two_iff_env_prefix_kinds_modally_tied() {
+        // Modally-tied boundary: the boolean predicate
+        // `env_prefix_kinds_modally_tied()` reads exactly the
+        // `peak_multiplicity() >= 2` threshold on the underlying
+        // scalar. Empty-histogram: `0 >= 2` is false — both sides
+        // agree on the `false` empty-histogram convention. On this
+        // cardinality-`2` sub-axis, the `>= 2` boundary coincides
+        // with the `== 2` boundary and with the axis-cardinality
+        // upper bound — the narrowest possible modally-tied region
+        // in the projection. Peer of
+        // `layer_kind_peak_multiplicity_ge_two_iff_layer_kinds_modally_tied`,
+        // `file_format_peak_multiplicity_ge_two_iff_file_formats_modally_tied`,
+        // and `peak_tier_multiplicity_ge_two_iff_tiers_modally_tied`.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let mult_ge_two = slice.env_prefix_kind_peak_multiplicity() >= 2;
+            let tied = slice.env_prefix_kinds_modally_tied();
+            assert_eq!(
+                mult_ge_two,
+                tied,
+                "env_prefix_kind_peak_multiplicity >= 2 must agree with \
+                 env_prefix_kinds_modally_tied (peak_mult={m})",
+                m = slice.env_prefix_kind_peak_multiplicity(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_balanced_nonempty_equals_present_env_prefix_kinds_count() {
+        // Uniform-cover shape: on every balanced non-empty-histogram
+        // chain, every observed cell ties at the peak — multiplicity
+        // coincides with the observed support size. The
+        // `env_prefix_kinds_balanced ∧
+        // !env_prefix_kind_histogram().is_empty() ⇒
+        // env_prefix_kind_peak_multiplicity ==
+        // present_env_prefix_kinds_count` invariant. Cross-sub-axis
+        // parity with
+        // `file_format_peak_multiplicity_balanced_nonempty_equals_present_file_formats_count`:
+        // both env-prefix and file-format versions quantify over
+        // `!<sub_axis_histogram>().is_empty()` (rather than
+        // `!chain.is_empty()` as the layer-kind version does) to
+        // exclude the no-env-layers / no-recognized-files chains
+        // whose empty histogram is trivially balanced.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kind_histogram().is_empty() || !slice.env_prefix_kinds_balanced() {
+                continue;
+            }
+            assert_eq!(
+                slice.env_prefix_kind_peak_multiplicity(),
+                slice.present_env_prefix_kinds_count(),
+                "balanced non-empty-histogram chain: \
+                 env_prefix_kind_peak_multiplicity must equal \
+                 present_env_prefix_kinds_count",
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_two_implies_env_prefix_kinds_full_cover() {
+        // Full-cover implication: `env_prefix_kind_peak_multiplicity
+        // == 2` (= axis cardinality) implies every cell is observed
+        // at a shared positive count — the uniform full-cover
+        // degenerate. The strict-uniqueness of the upper-boundary
+        // multiplicity value on the cardinality-`2` env-prefix axis.
+        // On this sub-axis the implication is *tight*: modally-tied
+        // (`>= 2`) coincides with the full-cover boundary because the
+        // axis cardinality is only `2`. Peer of
+        // `layer_kind_peak_multiplicity_three_implies_layer_kinds_full_cover`
+        // (cardinality `3`),
+        // `file_format_peak_multiplicity_four_implies_file_formats_full_cover`
+        // (cardinality `4`), and
+        // `peak_tier_multiplicity_four_implies_tiers_full_cover`
+        // (cardinality `4`).
+        let card = crate::axis_cardinality::<EnvMetadataTagKind>();
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if slice.env_prefix_kind_peak_multiplicity() == card {
+                assert!(
+                    slice.env_prefix_kinds_full_cover(),
+                    "env_prefix_kind_peak_multiplicity == axis_cardinality \
+                     must imply env_prefix_kinds_full_cover",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_multiplicity_agrees_with_open_coded_peak_multiplicity_walk() {
+        // Parity against the exact hand-rolled peak-multiplicity walk
+        // this lift surfaces at a named seam: walk every cell of the
+        // histogram and count how many carry the maximum observed
+        // count; the multiplicity scalar reads that count. Empty
+        // histogram has max `0` and no cells above zero, so
+        // multiplicity reads `0`. Peer of
+        // `layer_kind_peak_multiplicity_agrees_with_open_coded_peak_multiplicity_walk`,
+        // `file_format_peak_multiplicity_agrees_with_open_coded_peak_multiplicity_walk`,
+        // and
+        // `peak_tier_multiplicity_agrees_with_open_coded_peak_multiplicity_walk`.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kind_peak_multiplicity();
+            let hist = slice.env_prefix_kind_histogram();
+            let max = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let hand_rolled = if max == 0 {
+                0
+            } else {
+                hist.iter().filter(|(_, c)| *c == max).count()
+            };
+            assert_eq!(via_seam, hand_rolled);
         }
     }
 
