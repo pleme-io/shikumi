@@ -7615,7 +7615,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.313";
+        version = "0.1.314";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -8002,8 +8002,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "995975f2a38f70e10b828057a66c3a644651c59f";
-          sha256 = "1ajmxgrmj76j6aa0365wx3a18fzi3xhzcc8z6iyi1w58br76clpa";
+          rev = "601b78023fcbce43ae2d905bf4f037434e2e1186";
+          sha256 = "0c3ansby1dwcfyvkz8d1i09ac6vwq6b23rqcrhz0lq2qghywvd22";
         };
         libName = "tatara_lisp";
         authors = [
@@ -8044,8 +8044,8 @@ rec {
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/tatara";
-          rev = "995975f2a38f70e10b828057a66c3a644651c59f";
-          sha256 = "1ajmxgrmj76j6aa0365wx3a18fzi3xhzcc8z6iyi1w58br76clpa";
+          rev = "601b78023fcbce43ae2d905bf4f037434e2e1186";
+          sha256 = "0c3ansby1dwcfyvkz8d1i09ac6vwq6b23rqcrhz0lq2qghywvd22";
         };
         procMacro = true;
         libName = "tatara_lisp_derive";
@@ -8344,9 +8344,9 @@ rec {
       };
       "tokio" = rec {
         crateName = "tokio";
-        version = "1.52.4";
+        version = "1.53.0";
         edition = "2021";
-        sha256 = "1brral4sw3wddni8c3hrshy9dplpc4cac3nhv9iwcbzhwfxsyzri";
+        sha256 = "1vpzc93iaiaqk90jh54vqji8fawiiksk4cwh8qyns1xy5pavr26r";
         authors = [
           "Tokio Contributors <team@tokio.rs>"
         ];
@@ -8460,9 +8460,9 @@ rec {
       };
       "tokio-macros" = rec {
         crateName = "tokio-macros";
-        version = "2.7.0";
+        version = "2.7.1";
         edition = "2021";
-        sha256 = "15m4f37mdafs0gg36sh0rskm1i768lb7zmp8bw67kaxr3avnqniq";
+        sha256 = "1fj2h3gysqzwqchyhcyyvslwdj7qjgyzlc20d6sajwqf949sya33";
         procMacro = true;
         libName = "tokio_macros";
         authors = [
