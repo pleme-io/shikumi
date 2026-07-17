@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "cargo_lock_sha256": "50d4f4e87010aa3d65165cf50adba567c18fe3c7f69ac6adc9e8b752777dd08f",
+  "cargo_lock_sha256": "855c4874b1f436d36f538a2070d507f536cea6802979532ee9818e171345ac89",
   "target_resolves": {
     "base": {
       "arc-swap-1.9.2": {
@@ -305,7 +305,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-macros-0.1.19-82cd91cb08026be0a758cfde3cd7ba96301b3c1c": {
+      "gen-macros-0.1.19-b196846b7d90cb0c581bba0222a3e2914144986b": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -344,11 +344,11 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-platform-0.1.19-82cd91cb08026be0a758cfde3cd7ba96301b3c1c": {
+      "gen-platform-0.1.19-b196846b7d90cb0c581bba0222a3e2914144986b": {
         "runtime_dependencies": [
           {
             "name": "gen_macros",
-            "package_key": "gen-macros-0.1.19-82cd91cb08026be0a758cfde3cd7ba96301b3c1c",
+            "package_key": "gen-macros-0.1.19-b196846b7d90cb0c581bba0222a3e2914144986b",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -358,7 +358,7 @@
           },
           {
             "name": "gen_types",
-            "package_key": "gen-types-0.1.19-82cd91cb08026be0a758cfde3cd7ba96301b3c1c",
+            "package_key": "gen-types-0.1.19-b196846b7d90cb0c581bba0222a3e2914144986b",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -412,7 +412,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-types-0.1.19-82cd91cb08026be0a758cfde3cd7ba96301b3c1c": {
+      "gen-types-0.1.19-b196846b7d90cb0c581bba0222a3e2914144986b": {
         "runtime_dependencies": [
           {
             "name": "blake3",
@@ -1165,7 +1165,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.315": {
+      "shikumi-0.1.316": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -1203,7 +1203,7 @@
           },
           {
             "name": "gen_platform",
-            "package_key": "gen-platform-0.1.19-82cd91cb08026be0a758cfde3cd7ba96301b3c1c",
+            "package_key": "gen-platform-0.1.19-b196846b7d90cb0c581bba0222a3e2914144986b",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1213,7 +1213,7 @@
           },
           {
             "name": "gen_types",
-            "package_key": "gen-types-0.1.19-82cd91cb08026be0a758cfde3cd7ba96301b3c1c",
+            "package_key": "gen-types-0.1.19-b196846b7d90cb0c581bba0222a3e2914144986b",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -3964,14 +3964,14 @@
     "find-msvc-tools-0.1.9": {
       "edition": "2018"
     },
-    "gen-macros-0.1.19-82cd91cb08026be0a758cfde3cd7ba96301b3c1c": {
+    "gen-macros-0.1.19-b196846b7d90cb0c581bba0222a3e2914144986b": {
       "edition": "2024",
       "proc_macro": true
     },
-    "gen-platform-0.1.19-82cd91cb08026be0a758cfde3cd7ba96301b3c1c": {
+    "gen-platform-0.1.19-b196846b7d90cb0c581bba0222a3e2914144986b": {
       "edition": "2024"
     },
-    "gen-types-0.1.19-82cd91cb08026be0a758cfde3cd7ba96301b3c1c": {
+    "gen-types-0.1.19-b196846b7d90cb0c581bba0222a3e2914144986b": {
       "edition": "2024"
     },
     "getrandom-0.4.3": {
@@ -4097,7 +4097,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.315": {
+    "shikumi-0.1.316": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
@@ -4188,9 +4188,9 @@
     }
   },
   "git_nar_sha256": {
-    "gen-macros-0.1.19-82cd91cb08026be0a758cfde3cd7ba96301b3c1c": "sha256-tdS0q/N2ol3W2bOvOxro/VKjeqCxhaRYU56rvnFFz+w=",
-    "gen-platform-0.1.19-82cd91cb08026be0a758cfde3cd7ba96301b3c1c": "sha256-tdS0q/N2ol3W2bOvOxro/VKjeqCxhaRYU56rvnFFz+w=",
-    "gen-types-0.1.19-82cd91cb08026be0a758cfde3cd7ba96301b3c1c": "sha256-tdS0q/N2ol3W2bOvOxro/VKjeqCxhaRYU56rvnFFz+w="
+    "gen-macros-0.1.19-b196846b7d90cb0c581bba0222a3e2914144986b": "sha256-EQLdClUXHoYCgqXKD7koDDBFFnL31IS0NGpmzRa/nr4=",
+    "gen-platform-0.1.19-b196846b7d90cb0c581bba0222a3e2914144986b": "sha256-EQLdClUXHoYCgqXKD7koDDBFFnL31IS0NGpmzRa/nr4=",
+    "gen-types-0.1.19-b196846b7d90cb0c581bba0222a3e2914144986b": "sha256-EQLdClUXHoYCgqXKD7koDDBFFnL31IS0NGpmzRa/nr4="
   },
   "flake_metadata": {}
 }
