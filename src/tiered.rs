@@ -1913,10 +1913,10 @@ impl ProvenanceMap {
     /// sub-axes ([`crate::ConfigSourceChain::layer_kind_trough_multiplicity`]
     /// over [`crate::ConfigSourceChain::layer_kind_histogram`],
     /// [`crate::ConfigSourceChain::file_format_trough_multiplicity`],
-    /// `env_prefix_kind_trough_multiplicity` over the corresponding
-    /// chain histograms) — the same 5-altitude closure pattern the
-    /// just-fully-closed sibling "peak-multiplicity across altitudes"
-    /// projection carries. The pattern is the same at every altitude /
+    /// [`crate::ConfigSourceChain::env_prefix_kind_trough_multiplicity`]
+    /// over the corresponding chain histograms) — the same 5-altitude
+    /// closure pattern the just-fully-closed sibling "peak-multiplicity
+    /// across altitudes" projection carries. The pattern is the same at every altitude /
     /// sub-axis: surface the
     /// [`crate::AxisHistogram::trough_multiplicity`] scalar directly at
     /// the local histogram altitude, routing through the shared
@@ -7386,10 +7386,10 @@ impl ConfigDiff {
     /// ([`crate::ProvenanceMap::trough_tier_multiplicity`] over
     /// [`crate::ProvenanceMap::tier_histogram`] on the tier altitude)
     /// and sideways along the chain altitude's three sub-axes
-    /// (`layer_kind_trough_multiplicity`,
-    /// `file_format_trough_multiplicity`,
-    /// `env_prefix_kind_trough_multiplicity` over the corresponding
-    /// chain histograms). The pattern is the same at every altitude /
+    /// ([`crate::ConfigSourceChain::layer_kind_trough_multiplicity`],
+    /// [`crate::ConfigSourceChain::file_format_trough_multiplicity`],
+    /// [`crate::ConfigSourceChain::env_prefix_kind_trough_multiplicity`]
+    /// over the corresponding chain histograms). The pattern is the same at every altitude /
     /// sub-axis: surface the
     /// [`crate::AxisHistogram::trough_multiplicity`] scalar directly at
     /// the local histogram altitude, routing through the shared
