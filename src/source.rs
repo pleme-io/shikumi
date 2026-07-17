@@ -1918,6 +1918,197 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().trough_multiplicity()
     }
 
+    /// The **modality-shape amplitude of layer-kind counts** on the
+    /// layer-kind sub-axis of the chain altitude — the absolute
+    /// difference between the modal and antimodal [`ConfigSourceKind`]
+    /// level-set cardinalities on this chain. Equal to
+    /// `self.layer_kind_peak_multiplicity().abs_diff(self.layer_kind_trough_multiplicity())`
+    /// by construction, routed through [`Self::layer_kind_histogram`]:
+    /// [`crate::AxisHistogram::modality_amplitude`] reads the same
+    /// scalar off the fixed-cardinality counts vector in one pass.
+    /// Returns `0` exactly when the modal and antimodal level sets
+    /// share cardinality — including the empty chain
+    /// (`0.abs_diff(0)`), every singleton-support chain
+    /// (`1.abs_diff(1)`), every balanced chain (both level sets walk
+    /// the full observed support), and every strictly-ordered three-
+    /// cell chain (both level sets are singletons, `1.abs_diff(1)`).
+    ///
+    /// The **scalar-amplitude peer** on the multiplicity surface — the
+    /// structural dual of [`Self::layer_kind_spread`] on the count
+    /// surface at the same layer-kind sub-axis. Where
+    /// [`Self::layer_kind_spread`] fuses the extremal-count pair
+    /// `(peak_layer_kind_count, trough_layer_kind_count)` into
+    /// `peak - trough` (underflow-safe since `peak_count >=
+    /// trough_count` structurally), `layer_kind_modality_amplitude`
+    /// fuses the extremal-multiplicity pair
+    /// `(layer_kind_peak_multiplicity, layer_kind_trough_multiplicity)`
+    /// into
+    /// `layer_kind_peak_multiplicity.abs_diff(layer_kind_trough_multiplicity)`.
+    /// The `abs_diff` operation is required (unlike the count-side
+    /// subtraction) because neither multiplicity dominates the other
+    /// structurally — a right-skewed chain (two kinds tied at the
+    /// peak, one uniquely at the trough) has `peak_mult > trough_mult`,
+    /// whereas a heavy-tail chain (one uniquely at the peak, two tied
+    /// at the trough) has `peak_mult < trough_mult`. The unsigned-diff
+    /// form reads the *magnitude* of the cardinality gap without
+    /// committing to a signed direction.
+    ///
+    /// The chain-altitude layer-kind sub-axis scalar-amplitude peer
+    /// that **lifts the "modality-amplitude across altitudes"
+    /// projection sideways** from the tier altitude
+    /// ([`crate::ProvenanceMap::tier_modality_amplitude`]) to the first
+    /// chain-altitude sub-axis, seeded on the diff altitude by
+    /// [`crate::ConfigDiff::kind_modality_amplitude`]. The two
+    /// remaining chain-altitude sub-axes are the natural next sideways
+    /// lifts ([`Self::file_format_modality_amplitude`] over
+    /// [`Self::file_format_histogram`],
+    /// [`Self::env_prefix_kind_modality_amplitude`] over
+    /// [`Self::env_prefix_kind_histogram`]), mirroring the four-step
+    /// chain trajectory the sibling peak- / trough-multiplicity
+    /// scalar projections already closed. The pattern is the same at
+    /// every altitude / sub-axis: fuse the (`peak_multiplicity`,
+    /// `trough_multiplicity`) extremal-multiplicity pair into a single
+    /// amplitude scalar named at the surface, routed through the
+    /// shared [`crate::AxisHistogram::modality_amplitude`] primitive
+    /// one altitude down. Widens the closed scalar modality algebra at
+    /// the layer-kind sub-axis by surfacing the *symmetry-gap* scalar
+    /// the two closed peak / trough multiplicity scalars project
+    /// through absolute-difference — the natural pair
+    /// `(layer_kind_spread, layer_kind_modality_amplitude)` on the
+    /// layer-kind sub-axis's dispersion surface now reads off one
+    /// method call each.
+    ///
+    /// **Cardinality-`3` reachability at the layer-kind sub-axis.**
+    /// [`ConfigSourceKind`] carries three cells, so
+    /// `layer_kind_modality_amplitude()` ranges over `0..=1` —
+    /// matching the cardinality-`3` diff-altitude peer's reachability
+    /// on the same amplitude surface. Amplitude `0` witnesses the
+    /// empty chain / singleton-support / balanced / strictly-ordered
+    /// three-cell shapes (all sitting on the amplitude-zero boundary
+    /// — the modality-symmetric side). Amplitude `1` witnesses the
+    /// heavy-tail three-cell shape (one dominant kind, two kinds tied
+    /// at the trough — `peak_mult=1, trough_mult=2`) and the right-
+    /// skew three-cell shape (two kinds tied at the peak, one at the
+    /// trough — `peak_mult=2, trough_mult=1`). Amplitude `2` is
+    /// **vacuously unreachable** on the cardinality-`3` axis: reaching
+    /// `2` would require one multiplicity `1` and the other `3`
+    /// (spanning three cells), but three cells tied at any level
+    /// forces the shape into uniform-count where both multiplicities
+    /// equal `3` and the amplitude reads `0`. The tier altitude
+    /// (cardinality-`4` [`crate::ConfigTierKind`] axis) additionally
+    /// reaches amplitude `2` on its heavy-tail and right-skew four-
+    /// cell shapes.
+    ///
+    /// **Structural-symmetry predicate.**
+    /// `layer_kind_modality_amplitude() == 0` is the typed *modality-
+    /// symmetric* predicate on the multiplicity surface at the layer-
+    /// kind sub-axis — the modal and antimodal level sets share
+    /// cardinality (though not necessarily membership). Pointwise
+    /// equivalent to
+    /// `layer_kind_peak_multiplicity() ==
+    /// layer_kind_trough_multiplicity()` on the underlying scalar
+    /// pair. Strictly weaker than [`Self::layer_kinds_balanced`]:
+    /// every balanced chain is modality-symmetric (both level sets
+    /// equal the full observed support), but a strictly-ordered three-
+    /// cell chain (`Defaults=1, Env=2, File=3`) is modality-symmetric
+    /// (both level sets are singletons) without being balanced. The
+    /// predicate sits between the pointwise-membership form
+    /// (`dominant_layer_kind() == recessive_layer_kind()` — cell
+    /// coincidence) and the uniform-count form (value coincidence):
+    /// shape-cardinality coincidence.
+    ///
+    /// **Empty-chain convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::modality_amplitude`] empty convention
+    /// one altitude down and the [`Self::layer_kind_peak_multiplicity`]
+    /// / [`Self::layer_kind_trough_multiplicity`] empty conventions on
+    /// the same altitude. The scalar-multiplicity triple
+    /// `(layer_kind_peak_multiplicity, layer_kind_trough_multiplicity,
+    /// layer_kind_modality_amplitude)` reads uniformly `(0, 0, 0)` on
+    /// the empty chain — the vacuous-balance boundary lifted from the
+    /// empty support.
+    ///
+    /// # Invariants
+    ///
+    /// - `layer_kind_modality_amplitude() ==
+    ///   layer_kind_histogram().modality_amplitude()` — both project
+    ///   the same scalar off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `layer_kind_modality_amplitude() ==
+    ///   layer_kind_peak_multiplicity().abs_diff(layer_kind_trough_multiplicity())`
+    ///   — the defining equivalence on the multiplicity-scalar pair at
+    ///   the layer-kind sub-axis. The `abs_diff` form is required
+    ///   because `peak_mult` and `trough_mult` can go either way
+    ///   (unlike `peak_count >= trough_count`).
+    /// - `layer_kind_modality_amplitude() ==
+    ///   { let (p, t) = layer_kind_histogram().modality_degree();
+    ///     p.abs_diff(t) }` — the fused-pair form on the modality-
+    ///   degree surface. Both routings read the same scalar off the
+    ///   same primitive.
+    /// - `layer_kind_modality_amplitude() == 0` on the empty chain —
+    ///   the vacuous-balance boundary. The
+    ///   `(layer_kind_peak_multiplicity, layer_kind_trough_multiplicity,
+    ///   layer_kind_modality_amplitude)` triple reads uniformly
+    ///   `(0, 0, 0)` on the empty chain.
+    /// - `layer_kind_modality_amplitude() == 0` on every singleton-
+    ///   support chain — the sole observed cell is both the unique
+    ///   peak and the unique trough, so both multiplicities read `1`
+    ///   and the amplitude reads `0`.
+    /// - `layer_kinds_balanced() ⇒ layer_kind_modality_amplitude() ==
+    ///   0` — the uniform-count shape witnesses the amplitude-zero
+    ///   boundary on the strong side. The converse fails on every
+    ///   strictly-ordered three-cell shape where both multiplicities
+    ///   happen to be `1` without matching counts.
+    /// - `layer_kind_modality_amplitude() == 0 ⇔
+    ///   layer_kind_peak_multiplicity() ==
+    ///   layer_kind_trough_multiplicity()` — the typed *modality-
+    ///   symmetric* predicate on the multiplicity surface at the
+    ///   layer-kind sub-axis. The modal and antimodal level sets share
+    ///   cardinality (though not necessarily membership).
+    /// - `layer_kind_modality_amplitude() <= present_layer_kinds_count()`
+    ///   always — both level sets are subsets of the observed support,
+    ///   so their absolute difference is bounded by the support size.
+    ///   Lifted from the trait-uniform
+    ///   `modality_amplitude() <= distinct_cells()` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `layer_kind_modality_amplitude() <=
+    ///   crate::axis_cardinality::<ConfigSourceKind>()` always —
+    ///   bounded above by the axis cardinality `3` on the three-cell
+    ///   layer-kind axis. Composition of the above with
+    ///   `present_layer_kinds_count() <=
+    ///   crate::axis_cardinality::<ConfigSourceKind>()`.
+    /// - `layer_kind_modality_amplitude() <= 1` on the cardinality-`3`
+    ///   axis — the reachability signature of the layer-kind sub-axis
+    ///   on the amplitude surface. Reaching amplitude `2` would
+    ///   require multiplicities `(1, 3)` or `(3, 1)`, but three cells
+    ///   tied at any level forces uniform-count where both
+    ///   multiplicities equal `3` and the amplitude reads `0`. Peer of
+    ///   the diff-altitude cardinality-`3` reachability signature on
+    ///   the same axis-cardinality; the tier altitude promotes the
+    ///   ceiling to `2` on the cardinality-`4` axis.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the
+    /// fused peak + trough scan through
+    /// [`crate::AxisHistogram::modality_degree`]). Both are `O(n)` in
+    /// practice since the layer-kind axis carries a fixed three-cell
+    /// cardinality; the returned `usize` reads one scalar. Halves the
+    /// cost of the previous inline
+    /// `chain.layer_kind_peak_multiplicity().abs_diff(chain.layer_kind_trough_multiplicity())`
+    /// idiom (which walked the counts vector twice — once for the
+    /// peak multiplicity, once for the trough multiplicity — where
+    /// [`crate::AxisHistogram::modality_amplitude`] fuses both into a
+    /// single walk through
+    /// [`crate::AxisHistogram::modality_degree`]).
+    #[must_use]
+    fn layer_kind_modality_amplitude(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().modality_amplitude()
+    }
+
     /// The **balanced-layer-kinds boolean predicate** on the layer-kind
     /// sub-axis of the chain altitude — `true` exactly when every observed
     /// [`ConfigSourceKind`] contributed the same number of layers. The
@@ -29996,6 +30187,416 @@ mod tests {
                 None => 0,
                 Some(m) => hist.iter().filter(|(_, c)| *c == m).count(),
             };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ConfigSourceChain::layer_kind_modality_amplitude — modality-
+    //    shape amplitude scalar seam on the layer-kind sub-axis of the
+    //    chain altitude, lifting the "modality-amplitude across
+    //    altitudes" projection sideways from the tier altitude
+    //    (tier_modality_amplitude) to the first chain-altitude sub-
+    //    axis. Scalar-amplitude peer of the fully-closed
+    //    (layer_kind_peak_multiplicity, layer_kind_trough_multiplicity)
+    //    multiplicity-scalar pair on the same sub-axis, fusing them
+    //    into a single amplitude scalar reading off the modality-shape
+    //    asymmetry. Cardinality-`3` ConfigSourceKind axis: amplitude
+    //    ranges over 0..=1, matching the cardinality-`3` diff-altitude
+    //    peer's reachability signature on the same amplitude surface.
+    //    ──
+
+    #[test]
+    fn layer_kind_modality_amplitude_matches_layer_kind_histogram_modality_amplitude_pointwise() {
+        // Routing pin: `layer_kind_modality_amplitude` routes through
+        // `layer_kind_histogram().modality_amplitude()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Chain
+        // layer-kind sub-axis scalar-amplitude lift of the "modality-
+        // amplitude across altitudes" projection climbed to the tier
+        // altitude by
+        // `tier_modality_amplitude_matches_tier_histogram_modality_amplitude_pointwise`
+        // and seeded on the diff altitude by
+        // `kind_modality_amplitude_matches_kind_histogram_modality_amplitude_pointwise`.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.layer_kind_histogram().modality_amplitude();
+            assert_eq!(slice.layer_kind_modality_amplitude(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn layer_kind_modality_amplitude_equals_peak_mult_abs_diff_trough_mult() {
+        // Defining-equivalence law: `layer_kind_modality_amplitude`
+        // equals
+        // `layer_kind_peak_multiplicity().abs_diff(layer_kind_trough_multiplicity())`
+        // on every fixture. The `abs_diff` form is required because
+        // `peak_mult` and `trough_mult` can go either way (unlike the
+        // count-side `peak_count >= trough_count`). Both routings read
+        // the same scalar off the same primitive. Peer of
+        // `tier_modality_amplitude_equals_peak_mult_abs_diff_trough_mult`
+        // on the tier altitude and
+        // `kind_modality_amplitude_equals_peak_mult_abs_diff_trough_mult`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_pair = slice
+                .layer_kind_peak_multiplicity()
+                .abs_diff(slice.layer_kind_trough_multiplicity());
+            assert_eq!(slice.layer_kind_modality_amplitude(), via_pair);
+        }
+    }
+
+    #[test]
+    fn layer_kind_modality_amplitude_agrees_with_modality_degree_component_abs_diff() {
+        // Fused-pair pin: `layer_kind_modality_amplitude` equals the
+        // `abs_diff` of the `(peak_mult, trough_mult)` components read
+        // off the fused `modality_degree` pair. Both routings agree
+        // pointwise; the named seam is the routing through the pair
+        // projection into a single `abs_diff` scalar. Peer of
+        // `tier_modality_amplitude_agrees_with_modality_degree_component_abs_diff`
+        // on the tier altitude and
+        // `kind_modality_amplitude_agrees_with_modality_degree_component_abs_diff`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let (peak_mult, trough_mult) = slice.layer_kind_histogram().modality_degree();
+            assert_eq!(
+                slice.layer_kind_modality_amplitude(),
+                peak_mult.abs_diff(trough_mult),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_modality_amplitude_empty_chain_is_zero() {
+        // Empty-chain convention: no observed cells, both
+        // multiplicities read `0`, so the amplitude reads
+        // `0.abs_diff(0) == 0`. Matches the
+        // AxisHistogram::modality_amplitude empty convention one
+        // altitude down. The `(layer_kind_peak_multiplicity,
+        // layer_kind_trough_multiplicity, layer_kind_modality_amplitude)`
+        // triple reads uniformly `(0, 0, 0)` on the empty chain. Peer
+        // of `tier_modality_amplitude_empty_map_is_zero` on the tier
+        // altitude and `kind_modality_amplitude_empty_diff_is_zero` on
+        // the diff altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert_eq!(empty.layer_kind_peak_multiplicity(), 0);
+        assert_eq!(empty.layer_kind_trough_multiplicity(), 0);
+        assert_eq!(empty.layer_kind_modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn layer_kind_modality_amplitude_singleton_support_is_zero() {
+        // Singleton-support pin: every layer lands on the same kind
+        // (three File layers here), so that one kind is simultaneously
+        // the unique peak and the unique trough. Both multiplicities
+        // read `1`, so the amplitude reads `0` — the modality-
+        // symmetric singleton case. Peer of
+        // `tier_modality_amplitude_singleton_support_is_zero` on the
+        // tier altitude and
+        // `kind_modality_amplitude_singleton_support_is_zero` on the
+        // diff altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kinds_singular_support());
+        assert_eq!(slice.layer_kind_peak_multiplicity(), 1);
+        assert_eq!(slice.layer_kind_trough_multiplicity(), 1);
+        assert_eq!(slice.layer_kind_modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn layer_kind_modality_amplitude_sample_chain_is_zero() {
+        // Sample-chain pin: two `File` + one `Env` → File count=2 is
+        // uniquely at the peak, Env count=1 is uniquely at the trough
+        // (Defaults count=0 does not participate in the trough as a
+        // nonzero cell). peak_mult=1, trough_mult=1, so the amplitude
+        // reads `|1 - 1| = 0` — the strictly-ordered two-cell shape
+        // where both extremes are uniquely held. Peer of
+        // `kind_modality_amplitude_added_dominated_fixture_is_zero` on
+        // the diff altitude on the same shape family.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.layer_kind_peak_multiplicity(), 1);
+        assert_eq!(slice.layer_kind_trough_multiplicity(), 1);
+        assert_eq!(slice.layer_kind_modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn layer_kind_modality_amplitude_two_kind_balanced_tie_is_zero() {
+        // Two-kind balanced-tie pin: `Defaults ×1 + File ×1` — both
+        // observed at count `1`. Peak_mult=2 (tied at count `1`),
+        // trough_mult=2 (also tied at count `1`, coinciding on the
+        // uniform-count shape). Amplitude reads `|2 - 2| = 0` — the
+        // balanced two-cell case. Peer of
+        // `tier_modality_amplitude_two_tier_tie_is_zero` on the tier
+        // altitude and `kind_modality_amplitude_two_kind_tie_is_zero`
+        // on the diff altitude.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.layer_kind_peak_multiplicity(), 2);
+        assert_eq!(slice.layer_kind_trough_multiplicity(), 2);
+        assert_eq!(slice.layer_kind_modality_amplitude(), 0);
+        assert!(slice.layer_kinds_balanced());
+    }
+
+    #[test]
+    fn layer_kind_modality_amplitude_uniform_full_cover_is_zero() {
+        // Uniform full-cover pin: every ConfigSourceKind cell
+        // contributes exactly one layer, so all three cells tie at
+        // both the peak and the trough. Both multiplicities read `3`
+        // (= axis cardinality), so the amplitude reads `0` — the
+        // balanced full-cover case at the strong side of the
+        // amplitude-zero boundary. Peer of
+        // `tier_modality_amplitude_uniform_full_cover_is_zero` on the
+        // tier altitude (which reaches multiplicity `4` on its
+        // cardinality-`4` uniform-cover shape).
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kinds_full_cover());
+        assert!(slice.layer_kinds_balanced());
+        assert_eq!(slice.layer_kind_peak_multiplicity(), 3);
+        assert_eq!(slice.layer_kind_trough_multiplicity(), 3);
+        assert_eq!(slice.layer_kind_modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn layer_kind_modality_amplitude_heavy_tail_fixture_is_one() {
+        // Heavy-tail three-cell pin: `File ×2 + Env ×1 + Defaults ×1`
+        // → peak_count=2 (unique at File), trough_count=1 (tied at Env
+        // and Defaults). peak_mult=1, trough_mult=2, so the amplitude
+        // reads `|1 - 2| = 1`. Pinned as the smallest heavy-tail shape
+        // where the amplitude reads a positive value on the
+        // cardinality-`3` layer-kind axis — the boundary witness of
+        // the `peak_mult < trough_mult` branch of `abs_diff`. Direct
+        // peer of `kind_modality_amplitude_heavy_tail_fixture_is_one`
+        // on the diff altitude on the same shape family.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Defaults,
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kinds_full_cover());
+        assert_eq!(slice.layer_kind_peak_multiplicity(), 1);
+        assert_eq!(slice.layer_kind_trough_multiplicity(), 2);
+        assert_eq!(slice.layer_kind_modality_amplitude(), 1);
+    }
+
+    #[test]
+    fn layer_kind_modality_amplitude_right_skew_fixture_is_one() {
+        // Right-skew three-cell pin: `File ×2 + Env ×2 + Defaults ×1`
+        // → peak_count=2 (tied at File and Env), trough_count=1
+        // (unique at Defaults). peak_mult=2, trough_mult=1, so the
+        // amplitude reads `|2 - 1| = 1`. Pinned as the mirror of the
+        // heavy-tail shape one seam over — the boundary witness of
+        // the `peak_mult > trough_mult` branch of `abs_diff`. Together
+        // with the heavy-tail fixture, this pin proves the amplitude
+        // reads the same scalar on both signed branches. Direct peer
+        // of `kind_modality_amplitude_right_skew_fixture_is_one` on
+        // the diff altitude on the same shape family.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Defaults,
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kinds_full_cover());
+        assert_eq!(slice.layer_kind_peak_multiplicity(), 2);
+        assert_eq!(slice.layer_kind_trough_multiplicity(), 1);
+        assert_eq!(slice.layer_kind_modality_amplitude(), 1);
+    }
+
+    #[test]
+    fn layer_kind_modality_amplitude_layer_kinds_balanced_implies_zero() {
+        // Structural implication: `layer_kinds_balanced() ⇒
+        // layer_kind_modality_amplitude() == 0` on every fixture. The
+        // uniform-count shape witnesses the amplitude-zero boundary
+        // on the strong side (peak and trough level sets coincide,
+        // both walk the full observed support). The converse fails on
+        // every strictly-ordered shape where both multiplicities
+        // happen to be `1` without matching counts (pinned by the
+        // sample-chain fixture above). Peer of
+        // `tier_modality_amplitude_tiers_balanced_implies_zero` on
+        // the tier altitude and
+        // `kind_modality_amplitude_kinds_balanced_implies_zero` on the
+        // diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.layer_kinds_balanced() {
+                continue;
+            }
+            assert_eq!(
+                slice.layer_kind_modality_amplitude(),
+                0,
+                "layer_kinds_balanced ⇒ layer_kind_modality_amplitude \
+                 == 0 for chain with len={n}",
+                n = slice.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_modality_amplitude_zero_iff_peak_mult_equals_trough_mult() {
+        // Structural-symmetry predicate:
+        // `layer_kind_modality_amplitude() == 0` iff
+        // `layer_kind_peak_multiplicity() ==
+        // layer_kind_trough_multiplicity()` on every fixture. The
+        // typed *modality-symmetric* predicate on the multiplicity
+        // surface at the layer-kind sub-axis — the modal and
+        // antimodal level sets share cardinality (though not
+        // necessarily membership). Peer of
+        // `tier_modality_amplitude_zero_iff_peak_mult_equals_trough_mult`
+        // on the tier altitude and
+        // `kind_modality_amplitude_zero_iff_peak_mult_equals_trough_mult`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let amplitude_zero = slice.layer_kind_modality_amplitude() == 0;
+            let mults_equal =
+                slice.layer_kind_peak_multiplicity() == slice.layer_kind_trough_multiplicity();
+            assert_eq!(amplitude_zero, mults_equal);
+        }
+    }
+
+    #[test]
+    fn layer_kind_modality_amplitude_bounded_above_by_present_layer_kinds_count() {
+        // Support bound: both level sets are subsets of the observed
+        // support, so their absolute difference is bounded by the
+        // support size on every fixture. Empty chain: 0 <= 0.
+        // Singleton support: 0 <= 1. Two-tied balanced: 0 <= 2.
+        // Heavy-tail three-cell: 1 <= 3. Uniform full-cover: 0 <= 3.
+        // Peer of `tier_modality_amplitude_bounded_above_by_contributing_tiers_count`
+        // on the tier altitude and
+        // `kind_modality_amplitude_bounded_above_by_present_kinds_count`
+        // on the diff altitude. Lifted from the trait-uniform
+        // `modality_amplitude() <= distinct_cells()` law on
+        // AxisHistogram one altitude down.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.layer_kind_modality_amplitude() <= slice.present_layer_kinds_count(),
+                "layer_kind_modality_amplitude ({a}) must not exceed \
+                 present_layer_kinds_count ({p})",
+                a = slice.layer_kind_modality_amplitude(),
+                p = slice.present_layer_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_modality_amplitude_bounded_by_axis_cardinality() {
+        // Structural bound: `layer_kind_modality_amplitude() <=
+        // axis_cardinality::<ConfigSourceKind>()` (= 3) on every
+        // fixture. Composition of `<= present_layer_kinds_count()`
+        // with `present_layer_kinds_count() <=
+        // axis_cardinality::<ConfigSourceKind>()`. Peer of
+        // `tier_modality_amplitude_bounded_by_axis_cardinality` on
+        // the tier altitude (promoted to cardinality `4`) and
+        // `kind_modality_amplitude_bounded_by_axis_cardinality` on
+        // the diff altitude at the same cardinality-`3` axis.
+        let card = crate::axis_cardinality::<ConfigSourceKind>();
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.layer_kind_modality_amplitude() <= card,
+                "layer_kind_modality_amplitude ({a}) must not exceed \
+                 axis cardinality ({card})",
+                a = slice.layer_kind_modality_amplitude(),
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_modality_amplitude_cardinality_3_axis_ceiling_is_one() {
+        // **Cardinality-`3` reachability-ceiling signature pin** on
+        // the layer-kind sub-axis: `layer_kind_modality_amplitude()
+        // <= 1` on every fixture. Reaching amplitude `2` would
+        // require multiplicities `(1, 3)` or `(3, 1)`, but three
+        // cells tied at any level forces the shape into uniform-
+        // count where both multiplicities equal `3` and the
+        // amplitude reads `0`. Structural signature of the layer-
+        // kind sub-axis on the amplitude surface — matches the
+        // cardinality-`3` diff-altitude peer's ceiling on the same
+        // axis-cardinality; the tier altitude (cardinality-`4`)
+        // promotes the ceiling to `2` on its heavy-tail / right-skew
+        // four-cell shapes. A future refactor that accidentally
+        // routes a cardinality-`3` chain to amplitude `2` or higher
+        // fails visibly.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.layer_kind_modality_amplitude() <= 1,
+                "cardinality-3 layer-kind sub-axis ceiling: no fixture \
+                 must exceed amplitude 1 (got {a} on chain len={n})",
+                a = slice.layer_kind_modality_amplitude(),
+                n = slice.len(),
+            );
+        }
+        // Also cover the heavy-tail and right-skew boundary witnesses
+        // reaching the ceiling exactly.
+        let heavy_tail = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Defaults,
+        ];
+        let right_skew = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Defaults,
+        ];
+        assert_eq!(heavy_tail.as_slice().layer_kind_modality_amplitude(), 1);
+        assert_eq!(right_skew.as_slice().layer_kind_modality_amplitude(), 1);
+    }
+
+    #[test]
+    fn layer_kind_modality_amplitude_agrees_with_open_coded_abs_diff_walk() {
+        // Parity against the exact hand-rolled peak/trough
+        // multiplicity walk this lift surfaces at a named seam: walk
+        // every cell of the histogram, find the maximum count, count
+        // how many cells carry it (peak multiplicity); restrict to
+        // nonzero cells, find the minimum positive count, count how
+        // many cells carry it (trough multiplicity); take the
+        // absolute difference. Empty histogram yields both counts
+        // `0`, so amplitude reads `0`. Peer of
+        // `tier_modality_amplitude_agrees_with_open_coded_abs_diff_walk`
+        // on the tier altitude and
+        // `kind_modality_amplitude_agrees_with_open_coded_abs_diff_walk`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kind_modality_amplitude();
+            let hist = slice.layer_kind_histogram();
+            let max = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let peak_mult = if max == 0 {
+                0
+            } else {
+                hist.iter().filter(|(_, c)| *c == max).count()
+            };
+            let min_positive = hist.iter().map(|(_, c)| c).filter(|c| *c > 0).min();
+            let trough_mult = match min_positive {
+                None => 0,
+                Some(m) => hist.iter().filter(|(_, c)| *c == m).count(),
+            };
+            let hand_rolled = peak_mult.abs_diff(trough_mult);
             assert_eq!(via_seam, hand_rolled);
         }
     }
