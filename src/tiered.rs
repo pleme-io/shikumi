@@ -10384,6 +10384,142 @@ impl ConfigDiff {
     pub fn kinds_support_magnitude_direction(&self) -> crate::SupportMagnitudeDirection {
         self.kind_histogram().support_magnitude_direction()
     }
+
+    /// The **uniformly-observed-count boolean** on this diff's
+    /// [`DiffLineKind`] histogram at the diff altitude — `true`
+    /// exactly when every observed cell of the histogram carries
+    /// the same observation count. Routes through
+    /// [`crate::AxisHistogram::is_uniform_count`] one altitude
+    /// down — the short-circuiting single-pass scan over the
+    /// fixed-cardinality counts vector reading `spread() == 0`
+    /// off one predicate, strictly tighter than either of the
+    /// documented scalar-side surface forms one seam over.
+    ///
+    /// The **uniformly-observed-count boolean peer** of the pair
+    /// `(kind_histogram().peak_count(),
+    /// kind_histogram().trough_count())` (or its fused-scalar
+    /// dual `kind_histogram().spread()`). Every operator-facing
+    /// *"was every observed diff kind observed equally on this
+    /// rebuild?"* summary now reads off one named boolean call
+    /// instead of an equality against a `usize` scalar or a
+    /// comparison between two `usize` scalars — collapsed to one
+    /// method call on the closed boolean surface of the diff
+    /// altitude.
+    ///
+    /// **Empty-diff convention** — returns `true`: the empty diff
+    /// has no observed cells to compare, so the uniformity
+    /// predicate reads vacuously (matching the class-side
+    /// [`crate::AxisHistogram::is_uniform_count`] empty
+    /// convention one altitude down — the shared vacuous-
+    /// uniformity boundary on the empty histogram).
+    ///
+    /// **Singleton-support convention** — returns `true`: a diff
+    /// of a single observed kind carries only one nonzero count,
+    /// so uniformity is trivial. Direct pin of the histogram-side
+    /// subsumption `has_singular_support ⇒ is_uniform_count` one
+    /// altitude down.
+    ///
+    /// **Balanced-partial-cover convention** — returns `true` on
+    /// every balanced two-kind diff (e.g. one `Removed` + one
+    /// `Added`); the two nonzero cells share the same count so
+    /// the uniformity predicate reads `true` on the strictly-
+    /// partial-cover corner too.
+    ///
+    /// **Uniform axis-cover convention** — returns `true` on
+    /// every uniform three-kind diff whose per-kind counts
+    /// coincide (e.g. one `Removed` + one `Added` + one
+    /// `Context`, or two-of-each). The simultaneous witness for
+    /// `(kinds_full_cover, kinds_uniform_count) == (true, true)`
+    /// — the top uniform-cover corner of the (coverage,
+    /// uniformity) boolean pair on the diff altitude.
+    ///
+    /// **Seeds the "uniform-count across altitudes" projection**
+    /// — a *new* fresh vertical opening the uniform-observed-
+    /// count boolean row at the diff altitude, mirroring the
+    /// same 5-column grid the ten prior boolean projections plus
+    /// the four closed classifier rows already closed. Where the
+    /// ten prior boolean projections fired on quotient corners
+    /// of the coverage-support × modality-multiplicity grid, this
+    /// row fires on the orthogonal *shape* axis — the *equal-
+    /// observed-count* boolean boundary independent of both
+    /// quotients (the histogram's boolean surface now carries the
+    /// natural emptiness / coverage / uniformity triple
+    /// `(kinds_any_observed, kinds_full_cover,
+    /// kinds_uniform_count)` — "did the diff see anything?",
+    /// "did the diff see every kind?", "did the diff see every
+    /// observed kind equally?" — each independently checkable in
+    /// one method call). The natural next lifts climb to the
+    /// tier altitude (`ProvenanceMap::tiers_uniform_count` over
+    /// [`Self::tier_histogram`]) and sideways along the chain
+    /// altitude's three sub-axes
+    /// (`ConfigSourceChain::layer_kinds_uniform_count`,
+    /// `ConfigSourceChain::file_formats_uniform_count`,
+    /// `ConfigSourceChain::env_prefix_kinds_uniform_count` over
+    /// the corresponding chain histograms). Once climbed and
+    /// closed at every altitude / sub-axis in the same five-step
+    /// trajectory the ten prior boolean projections plus the
+    /// four closed classifier rows closed, the substrate closes
+    /// the uniform-count boolean row at every altitude / sub-
+    /// axis of the 5-column grid.
+    ///
+    /// **Cardinality-`3` reachability at the diff altitude —
+    /// uniform-count carries witnesses on every support
+    /// cardinality.** [`DiffLineKind`] carries three cells, so
+    /// `kinds_uniform_count` reads `true` on the empty diff
+    /// (support `0`, vacuous), on every singleton-support diff
+    /// (support `1`, trivial), on every balanced two-kind
+    /// partial-cover diff (support `2` with matched nonzero
+    /// counts), and on every uniform three-kind cover (support
+    /// `3` with all three cells at the same count); and reads
+    /// `false` on every skewed partial-cover diff and on every
+    /// skewed full-cover diff — the orthogonal *shape* boundary
+    /// slicing every support cardinality into a uniform half and
+    /// a skewed half (except supports `0` and `1` which land
+    /// entirely on the uniform side vacuously).
+    ///
+    /// # Invariants
+    ///
+    /// - `kinds_uniform_count() ==
+    ///   kind_histogram().is_uniform_count()` — the routing
+    ///   equivalence one altitude down; both project the same
+    ///   boolean off the same primitive.
+    /// - `kinds_uniform_count() ==
+    ///   (kind_histogram().spread() == 0)` — the fused-scalar
+    ///   form on the peak-minus-trough scalar peer one altitude
+    ///   down; the defining equivalence collapsed to one equality
+    ///   on the scalar-difference surface.
+    /// - `kinds_uniform_count() ==
+    ///   (kind_histogram().peak_count() ==
+    ///   kind_histogram().trough_count())` — the structural
+    ///   form on the underlying scalar pair (before the pair is
+    ///   fused into `spread`), reading off one equality on the
+    ///   scalar-pair surface.
+    /// - `!kinds_any_observed() ⇒ kinds_uniform_count()` —
+    ///   vacuous uniformity on the empty diff; contrapositively,
+    ///   `!kinds_uniform_count() ⇒ kinds_any_observed()` (a
+    ///   skewed diff has at least two distinct positive counts,
+    ///   so the support is non-empty).
+    /// - `kinds_singular_support() ⇒ kinds_uniform_count()` — a
+    ///   single-observed-cell diff is vacuously uniform-counted
+    ///   (only one count in the support to compare to itself);
+    ///   the converse fails on the empty diff, on every uniform
+    ///   axis-cover, and on every balanced multi-kind partial
+    ///   cover — one-way implication.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram
+    /// build) and `k = crate::axis_cardinality::<DiffLineKind>()`
+    /// (the short-circuiting nonzero scan). Both are `O(n)` in
+    /// practice since the diff-cell axis carries a fixed three-
+    /// cell cardinality; the returned `bool` fits in a single
+    /// byte, and the scan short-circuits on the second distinct
+    /// nonzero count — no allocation, no per-cell branching after
+    /// the histogram is built.
+    #[must_use]
+    pub fn kinds_uniform_count(&self) -> bool {
+        self.kind_histogram().is_uniform_count()
+    }
 }
 
 #[cfg(test)]
@@ -19738,6 +19874,232 @@ mod tests {
                 "cardinality-3 DiffLineKind axis inhabits only \
                  {{Low, High}} — got {bucket:?}",
             );
+        }
+    }
+
+    #[test]
+    fn kinds_uniform_count_matches_kind_histogram_is_uniform_count_pointwise() {
+        // Routing pin: `kinds_uniform_count` routes through
+        // `kind_histogram().is_uniform_count()`, so the two seams
+        // must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation
+        // stops projecting through the shared cube-native
+        // primitive. Diff-altitude seed of the new "uniform-count
+        // across altitudes" projection — the natural next boolean
+        // row on the orthogonal shape axis, independent of the
+        // ten prior coverage-support + multiplicity boolean
+        // projections and the four closed classifier rows.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().is_uniform_count();
+            assert_eq!(diff.kinds_uniform_count(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kinds_uniform_count_matches_spread_zero_scalar_form_pointwise() {
+        // Scalar-form pin: `kinds_uniform_count` agrees with the
+        // `spread() == 0` fused-difference form on the peak-
+        // minus-trough scalar peer one altitude down. Pins the
+        // defining equivalence with the fused-scalar surface,
+        // collapsed to one equality on the scalar-difference
+        // form.
+        for diff in dominant_kind_fixtures() {
+            let via_spread = diff.kind_histogram().spread() == 0;
+            assert_eq!(diff.kinds_uniform_count(), via_spread);
+        }
+    }
+
+    #[test]
+    fn kinds_uniform_count_matches_peak_equals_trough_structural_form_pointwise() {
+        // Structural-form pin: `kinds_uniform_count` agrees with
+        // `peak_count() == trough_count()` on the underlying
+        // scalar pair one altitude down (before the pair is
+        // fused into `spread`). Pins the defining equivalence on
+        // the scalar-pair surface.
+        for diff in dominant_kind_fixtures() {
+            let hist = diff.kind_histogram();
+            let via_pair = hist.peak_count() == hist.trough_count();
+            assert_eq!(diff.kinds_uniform_count(), via_pair);
+        }
+    }
+
+    #[test]
+    fn kinds_uniform_count_empty_diff_is_true() {
+        // Empty-diff polarity pin: the empty diff has no observed
+        // cells, so the uniformity predicate reads vacuously
+        // `true` — the shared vacuous-uniformity boundary on
+        // the empty histogram. Direct pin of the histogram-side
+        // `is_empty ⇒ is_uniform_count` empty convention one
+        // altitude down.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert!(empty.kinds_uniform_count());
+        assert!(!empty.kinds_any_observed());
+    }
+
+    #[test]
+    fn kinds_uniform_count_singleton_support_is_true() {
+        // Singleton-support polarity pin: a diff of a single
+        // observed kind carries only one nonzero count, so
+        // uniformity is trivial. Direct witness of the
+        // subsumption `kinds_singular_support ⇒
+        // kinds_uniform_count`.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Added("a1".into()), DiffLine::Added("a2".into())],
+        };
+        assert!(diff.kinds_singular_support());
+        assert!(diff.kinds_uniform_count());
+    }
+
+    #[test]
+    fn kinds_uniform_count_balanced_two_kind_partial_cover_is_true() {
+        // Balanced-partial-cover polarity pin: a diff of one
+        // `Removed` + one `Added` observes two cells with count
+        // `1` each; the two nonzero cells share the same count,
+        // so `kinds_uniform_count` reads `true`. Witness that
+        // uniformity is *not* implied by full coverage: two-kind
+        // partial cover with matched counts is uniform too.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert!(!diff.kinds_full_cover());
+        assert!(diff.kinds_uniform_count());
+    }
+
+    #[test]
+    fn kinds_uniform_count_uniform_three_kind_cover_is_true() {
+        // Uniform-axis-cover polarity pin: a diff observing every
+        // cell of DiffLineKind exactly once has all three
+        // nonzero counts at `1`. Simultaneous witness for
+        // `(kinds_full_cover, kinds_uniform_count) == (true,
+        // true)` — the top uniform-cover corner of the
+        // (coverage, uniformity) boolean pair on the diff
+        // altitude.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kinds_full_cover());
+        assert!(diff.kinds_uniform_count());
+    }
+
+    #[test]
+    fn kinds_uniform_count_skewed_partial_cover_is_false() {
+        // Skewed-partial-cover polarity pin: a diff of two
+        // `Added` + one `Context` observes two cells with
+        // counts `2` and `1` respectively; the nonzero counts
+        // differ, so `kinds_uniform_count` reads `false`.
+        // Witness that uniformity is not implied by partial
+        // cover with equal support-cardinality — a diff can be
+        // partial-cover-`SingularGap` and still skewed.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(!diff.kinds_uniform_count());
+    }
+
+    #[test]
+    fn kinds_uniform_count_skewed_full_cover_is_false() {
+        // Skewed-full-cover polarity pin: a diff of three
+        // `Context` + one `Removed` observes two cells at
+        // counts `3` and `1` respectively — a partial cover
+        // with skewed counts. `kinds_uniform_count` reads
+        // `false`. Witness that skewed distributions land
+        // outside the uniform-count boundary regardless of
+        // support cardinality.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert!(!diff.kinds_uniform_count());
+    }
+
+    #[test]
+    fn kinds_empty_implies_kinds_uniform_count_pointwise() {
+        // Subsumption pin: `!kinds_any_observed() ⇒
+        // kinds_uniform_count()` on every fixture. Vacuous
+        // uniformity on the empty diff, matching the histogram-
+        // side `is_empty ⇒ is_uniform_count` law one altitude
+        // down.
+        for diff in dominant_kind_fixtures() {
+            if !diff.kinds_any_observed() {
+                assert!(
+                    diff.kinds_uniform_count(),
+                    "empty diff must land on the uniform-count \
+                     boundary vacuously",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_singular_support_implies_kinds_uniform_count_pointwise() {
+        // Subsumption pin: `kinds_singular_support() ⇒
+        // kinds_uniform_count()` on every fixture. A single
+        // observed kind carries only one nonzero count to
+        // compare to itself. Matches the histogram-side
+        // `has_singular_support ⇒ is_uniform_count` law one
+        // altitude down.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_singular_support() {
+                assert!(
+                    diff.kinds_uniform_count(),
+                    "singleton-support diff must land on the \
+                     uniform-count boundary vacuously",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn not_kinds_uniform_count_implies_kinds_any_observed_pointwise() {
+        // Contrapositive subsumption pin: a skewed diff has at
+        // least two distinct positive counts, so its support
+        // has at least two observed cells and is therefore
+        // non-empty. Direct contrapositive of the empty-
+        // implies-uniform subsumption pinned above.
+        for diff in dominant_kind_fixtures() {
+            if !diff.kinds_uniform_count() {
+                assert!(
+                    diff.kinds_any_observed(),
+                    "skewed diff must carry at least two \
+                     observed kinds and therefore be non-empty",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_uniform_count_agrees_with_hand_rolled_positive_counts_all_equal_pointwise() {
+        // Parity against the exact hand-rolled positive-counts-
+        // all-equal walk this lift replaces: scan the histogram's
+        // per-cell counts vector, filter to the positive counts,
+        // and check every positive count equals the first.
+        // Catches any future drift where either implementation
+        // stops projecting through the same distinct-positive-
+        // counts primitive.
+        for diff in dominant_kind_fixtures() {
+            let hist = diff.kind_histogram();
+            let mut positives = crate::DiffLineKind::ALL
+                .iter()
+                .map(|&k| hist.count(k))
+                .filter(|&c| c > 0);
+            let hand_rolled = match positives.next() {
+                None => true,
+                Some(first) => positives.all(|c| c == first),
+            };
+            assert_eq!(diff.kinds_uniform_count(), hand_rolled);
         }
     }
 
