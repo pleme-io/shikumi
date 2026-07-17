@@ -1,25 +1,11 @@
 {
   description = "Shikumi (仕組み) — config discovery, hot-reload, and ArcSwap store";
 
-  inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-25.11";
-    crate2nix.url = "github:nix-community/crate2nix";
-    fenix = {
-      url = "github:nix-community/fenix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    substrate = {
-      url = "github:pleme-io/substrate";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-  };
+  # substrate.rust.library dispatches over Cargo.gen.lock (the slim gen delta,
+  # reconstructed to the full BuildSpec in pure Nix) — no crate2nix, no Cargo.nix.
+  inputs.substrate.url = "github:pleme-io/substrate";
 
-  outputs =
-    { self, nixpkgs, crate2nix, fenix, substrate, ... }:
-    (import "${substrate}/lib/rust-library-flake.nix" {
-      inherit nixpkgs crate2nix fenix;
-    }) {
-      libraryName = "shikumi";
-      src = self;
-    };
+  outputs = { substrate, ... }: substrate.rust.library {
+    src = ./.;
+  };
 }
