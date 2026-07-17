@@ -4204,6 +4204,198 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         peak_mult.abs_diff(trough_mult)
     }
 
+    /// The **modality-shape sum** — the sum of the modal and antimodal
+    /// level-set cardinalities of this histogram. Equal to
+    /// `self.peak_multiplicity() + self.trough_multiplicity()` by
+    /// construction, reading the fused-pair *combined extremal
+    /// cardinality* off the closed multiplicity surface as one `usize`
+    /// scalar. Returns `0` exactly on the empty histogram; returns `2`
+    /// exactly on every non-empty shape where both extremes are
+    /// uniquely held (including every singleton-support shape); returns
+    /// `2 * distinct_cells` exactly on every uniform-count shape (both
+    /// level sets walk the full observed support).
+    ///
+    /// The **scalar-sum peer** on the histogram's multiplicity surface —
+    /// the additive dual of [`Self::modality_amplitude`] on the same
+    /// surface. Where [`Self::modality_amplitude`] fuses the extremal-
+    /// multiplicity pair `(peak_multiplicity, trough_multiplicity)` into
+    /// `peak_multiplicity.abs_diff(trough_multiplicity)` — the
+    /// *asymmetry-magnitude* scalar — `modality_degree_sum` fuses the
+    /// same pair into `peak_multiplicity + trough_multiplicity` — the
+    /// *combined extremal cardinality* scalar. The sum is overflow-safe
+    /// on every `AxisHistogram<A>`: both summands are bounded above by
+    /// [`Self::distinct_cells`] which is bounded above by
+    /// [`axis_cardinality::<A>`] — a compile-time-fixed `usize` — so the
+    /// sum is bounded above by `2 * axis_cardinality::<A>()` without
+    /// risk of overflow.
+    ///
+    /// The **modality-shape additive/subtractive fused pair.** Together
+    /// with [`Self::modality_amplitude`], `modality_degree_sum` closes
+    /// the additive-symmetric closure of the extremal-multiplicity pair:
+    /// the pair `(modality_degree_sum, modality_amplitude)` recovers
+    /// the *unordered* multiplicity pair
+    /// `{peak_multiplicity, trough_multiplicity}` under the invertible
+    /// transform `max(peak, trough) = (sum + amplitude) / 2, min(peak,
+    /// trough) = (sum - amplitude) / 2` (integer division exact since
+    /// `sum` and `amplitude` share parity — both `usize` sums / abs-
+    /// diffs, whose sum equals `2 * max(peak, trough)` and difference
+    /// equals `2 * min(peak, trough)`). The peak-versus-trough
+    /// *labelling* of the two multiplicities requires the fused
+    /// [`Self::modality_degree`] pair — the additive-side scalar sees
+    /// no signed direction. Every operator-facing summary now has
+    /// three fused scalar reads on the closed multiplicity surface —
+    /// asymmetry-magnitude, combined extremal cardinality, and the
+    /// underlying fused pair — one method call each.
+    ///
+    /// The natural typed primitive for the *"how much of the observed
+    /// support sits at either extreme?"* question every reload-window
+    /// diagnostic, attestation manifest, and dashboard cell asks: the
+    /// `AxisHistogram<crate::ShikumiErrorKind>` reload-summary line
+    /// (`"extremal sum 4: Parse alone at peak, Io / Watch tied at
+    /// trough (3 cells in the extremal union)"` — reading the total
+    /// extremal cardinality off one primitive instead of composing
+    /// `peak_multiplicity() + trough_multiplicity()` at every call
+    /// site), the
+    /// [`crate::ConfigSourceChain::layer_kind_histogram`] rebuild-
+    /// summary (`"chain extremal sum 6: uniform-count over all three
+    /// layer kinds — the whole support is doubly-extremal"` vs.
+    /// `"chain extremal sum 2: dominant format uniquely held, one
+    /// format uniquely rare"`), the `AxisHistogram<crate::DiffLineKind>`
+    /// diff-summary (`"kind extremal sum 3: Removed uniquely dominant,
+    /// Added / Context tied at trough"`). Before this lift, every such
+    /// consumer re-derived the projection inline as
+    /// `hist.peak_multiplicity() + hist.trough_multiplicity()` — two
+    /// method calls plus an addition, each site walking the counts
+    /// vector twice. The lift names the scalar at one site, routing
+    /// through the fused [`Self::modality_degree`] pair with a single
+    /// walk over the counts vector.
+    ///
+    /// **Empty-histogram convention** — returns `0`, matching the
+    /// [`Self::peak_multiplicity`] / [`Self::trough_multiplicity`] empty
+    /// conventions (`0 + 0 == 0`) and the [`Self::spread`] empty
+    /// convention on the count surface. The scalar-multiplicity
+    /// quadruple `(peak_multiplicity, trough_multiplicity,
+    /// modality_amplitude, modality_degree_sum)` reads uniformly
+    /// `(0, 0, 0, 0)` on the empty histogram — the vacuous-nothing
+    /// boundary lifted from the empty support.
+    ///
+    /// **Non-empty lower-bound convention** — returns `>= 2` on every
+    /// non-empty histogram: every non-empty support has at least one
+    /// observed cell at the peak and at least one observed cell at the
+    /// trough (they may coincide as the same cell on the singleton-
+    /// support case), so both multiplicities are `>= 1` and the sum is
+    /// `>= 2`. The value `1` is unreachable — no histogram carries an
+    /// extremal-cardinality sum of exactly `1`. This is the additive-
+    /// side signature of the "vacuous-versus-populated" boundary on the
+    /// multiplicity surface, dual to `modality_amplitude` reading `0`
+    /// on both the empty and the modality-symmetric-non-empty shapes.
+    ///
+    /// **Both-extremes-uniquely-held predicate.**
+    /// `modality_degree_sum() == 2` is on every non-empty histogram
+    /// pointwise equivalent to `peak_multiplicity() == 1 &&
+    /// trough_multiplicity() == 1` — the "both extremes uniquely held"
+    /// configuration. Fires on every singleton-support shape (the sole
+    /// observed cell is both the unique peak and the unique trough,
+    /// counted twice) and on every strictly-ordered non-uniform shape
+    /// where both extremes are uniquely held (e.g. `(3, 2, 1)` counts
+    /// where the peak and trough cells are distinct singletons). Peer
+    /// of [`Self::is_strictly_modally_unique`]
+    /// (`peak_multiplicity() == 1`) and
+    /// [`Self::is_strictly_antimodally_unique`]
+    /// (`trough_multiplicity() == 1`): the conjunction of the two
+    /// uniqueness predicates now reads off a single equality on the
+    /// sum scalar, without composing two boolean surface reads.
+    ///
+    /// **Uniform-count-witness predicate.** `modality_degree_sum() ==
+    /// 2 * distinct_cells()` is on every histogram pointwise equivalent
+    /// to [`Self::is_uniform_count`] — the uniform-count shape is
+    /// exactly where both level sets equal the full observed support,
+    /// so the sum reaches its structural upper bound relative to the
+    /// support cardinality. Rewrites the balanced-histogram predicate as
+    /// an arithmetic equality on the closed multiplicity surface,
+    /// without touching the count surface. On the empty histogram, both
+    /// sides read `0` (`2 * 0 == 0`); on every singleton support, both
+    /// sides read `2` (`2 * 1 == 2`); on every uniform axis-cover of a
+    /// `k`-cell axis, both sides read `2k` (`peak_mult == trough_mult
+    /// == k`).
+    ///
+    /// # Invariants
+    ///
+    /// - `modality_degree_sum() == peak_multiplicity() +
+    ///   trough_multiplicity()` — the defining equivalence on the
+    ///   multiplicity-scalar pair. The named seam is the cube-native
+    ///   routing of the two extremal-multiplicity scalars into their
+    ///   sum.
+    /// - `modality_degree_sum() == { let (p, t) = modality_degree();
+    ///   p + t }` — the fused-pair form on the modality-degree surface.
+    ///   Both routings read the same scalar off the same primitive.
+    /// - `modality_degree_sum() == 0` iff `is_empty()` — the vacuous-
+    ///   nothing boundary on the additive side, dual to
+    ///   `modality_amplitude() == 0`'s much larger inhabited region.
+    ///   The sum reads `0` on exactly one shape (the empty histogram);
+    ///   the amplitude reads `0` on every empty, singleton, uniform-
+    ///   count, and strictly-ordered shape.
+    /// - `modality_degree_sum() >= 2` on every non-empty histogram —
+    ///   both multiplicities are `>= 1` on any non-empty support.
+    /// - `modality_degree_sum() == 2` iff `is_empty() || (peak_mult ==
+    ///   1 && trough_mult == 1)` — the "both extremes uniquely held"
+    ///   configuration on any non-empty histogram. Combining with the
+    ///   preceding invariant, `modality_degree_sum() == 2` on a non-
+    ///   empty histogram is equivalent to
+    ///   `is_strictly_modally_unique() &&
+    ///   is_strictly_antimodally_unique()`.
+    /// - `modality_degree_sum() <= 2 * distinct_cells()` always — both
+    ///   level sets are subsets of the observed support, so their sum
+    ///   is bounded above by twice the support size. Tight upper bound
+    ///   witnessed by every uniform-count shape.
+    /// - `modality_degree_sum() <= 2 * axis_cardinality::<A>()` always —
+    ///   composition of the above with `distinct_cells() <=
+    ///   axis_cardinality::<A>()`.
+    /// - `is_uniform_count() ⇔ modality_degree_sum() == 2 *
+    ///   distinct_cells()` — the uniform-count shape is exactly where
+    ///   both level sets equal the full observed support. Rewrites the
+    ///   balanced-histogram predicate as an arithmetic equality on the
+    ///   closed multiplicity surface.
+    /// - `modality_degree_sum() ==
+    ///   2 * peak_multiplicity() - modality_amplitude()` when
+    ///   `peak_multiplicity() >= trough_multiplicity()`; symmetrically
+    ///   `modality_degree_sum() ==
+    ///   2 * trough_multiplicity() + modality_amplitude()` when the
+    ///   opposite side dominates. The additive-symmetric closure of the
+    ///   extremal-multiplicity pair.
+    /// - `modality_degree_sum() % 2 == modality_amplitude() % 2` — the
+    ///   sum and abs-diff of two `usize` share parity, so any consumer
+    ///   that peers at the low bit of either scalar sees the same
+    ///   information. Together with the sum + amplitude pair, the low
+    ///   bit is redundant across the pair — the pair's degree of freedom
+    ///   is effectively one scalar plus a parity-carrying auxiliary.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost. The four trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_modality_degree_sum_empty_is_zero_*`,
+    /// `axis_histogram_modality_degree_sum_singleton_is_two_*`,
+    /// `axis_histogram_modality_degree_sum_axis_cover_is_twice_axis_cardinality_*`,
+    /// `axis_histogram_modality_degree_sum_equals_open_coded_sum_*`).
+    ///
+    /// Peer to [`Self::modality_amplitude`] (the *asymmetry-magnitude*
+    /// scalar), [`Self::peak_multiplicity`] (the *modal* multiplicity
+    /// scalar), [`Self::trough_multiplicity`] (the *antimodal*
+    /// multiplicity scalar), and [`Self::modality_degree`] (the fused
+    /// pair): the histogram's multiplicity surface now carries the
+    /// additive-symmetric closure of the extremal-multiplicity pair —
+    /// abs-diff and sum, both named at the surface — so every operator-
+    /// facing summary reads off one method call each, and both the
+    /// modality-symmetric predicate (`modality_amplitude() == 0`) and
+    /// the both-extremes-uniquely-held predicate
+    /// (`modality_degree_sum() == 2`, or `!is_empty()` conjoint) read
+    /// off single equalities on the closed multiplicity surface.
+    #[must_use]
+    pub fn modality_degree_sum(&self) -> usize {
+        let (peak_mult, trough_mult) = self.modality_degree();
+        peak_mult + trough_mult
+    }
+
     /// `true` exactly when the histogram's *modal* level set has
     /// cardinality one — exactly one observed cell sits at the peak.
     /// The **strict modal uniqueness** predicate on the histogram's
@@ -35392,6 +35584,505 @@ mod tests {
                 c = axis_cardinality::<DiffLineKind>(),
                 n = input.len(),
             );
+        }
+    }
+
+    // ---- AxisHistogram::modality_degree_sum trait-uniform laws ----
+    //
+    // Four trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // `modality_degree_sum` projection's contract holds uniformly
+    // without per-axis test duplication: empty → 0 (both multiplicities
+    // read 0, sum 0); singleton → 2 on every cell K (the sole observed
+    // cell is both unique peak and unique trough, counted twice);
+    // uniform axis-cover → 2 * axis_cardinality (both level sets equal
+    // the full axis); pointwise equal to the open-coded
+    // `peak_multiplicity() + trough_multiplicity()` form. Concrete
+    // strict-skew, heavy-tail, uniform-sub-cover, and bound pins follow
+    // below on [`DiffLineKind`].
+
+    fn assert_modality_degree_sum_empty_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.modality_degree_sum(),
+            0,
+            "empty histogram modality_degree_sum must be 0 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_modality_degree_sum_singleton_is_two<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has modality_degree_sum = 2 — the
+        // sole observed cell is simultaneously the unique peak and the
+        // unique trough (both multiplicities read 1, so the sum reads
+        // 2). The additive-side minimal-nonempty boundary witness of
+        // the "both extremes uniquely held" configuration.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.modality_degree_sum(),
+                2,
+                "singleton modality_degree_sum must be 2 for observed cell \
+                 {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_modality_degree_sum_axis_cover_is_twice_axis_cardinality<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once produces a uniform-count
+        // histogram (every cell at 1, peak == trough == 1); both modal
+        // and antimodal level sets equal the entire axis, so both
+        // multiplicities equal axis_cardinality and the sum reads
+        // 2 * axis_cardinality. The tight upper-bound witness on the
+        // multiplicity sum surface, matching the balanced/uniform-count
+        // boundary at its structural upper bound.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        let card = axis_cardinality::<A>();
+        assert_eq!(
+            hist.modality_degree_sum(),
+            2 * card,
+            "uniform axis-cover histogram modality_degree_sum must be \
+             2 * axis_cardinality ({two_card}) on axis {}",
+            std::any::type_name::<A>(),
+            two_card = 2 * card,
+        );
+    }
+
+    fn assert_modality_degree_sum_equals_open_coded_sum<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Defining-equivalence law: modality_degree_sum() is pointwise
+        // equal to peak_multiplicity() + trough_multiplicity() on every
+        // histogram shape — empty, singleton, full axis cover, and
+        // (where the axis has at least two variants) a strict two-cell
+        // sub-cover with unequal counts that exercises both tied-
+        // trough (one) and unique-peak (one) branches. Reached across
+        // every implementor through the macro.
+        let empty = AxisHistogram::<A>::empty();
+        assert_eq!(
+            empty.modality_degree_sum(),
+            empty.peak_multiplicity() + empty.trough_multiplicity(),
+            "modality_degree_sum must equal peak_mult + trough_mult on \
+             empty histogram for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        for observed in axis_iter::<A>() {
+            let singleton: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                singleton.modality_degree_sum(),
+                singleton.peak_multiplicity() + singleton.trough_multiplicity(),
+                "modality_degree_sum must equal peak_mult + trough_mult on \
+                 singleton {observed:?} for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+
+        let cover: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            cover.modality_degree_sum(),
+            cover.peak_multiplicity() + cover.trough_multiplicity(),
+            "modality_degree_sum must equal peak_mult + trough_mult on \
+             uniform axis-cover for axis {}",
+            std::any::type_name::<A>(),
+        );
+
+        // Skewed shape: bump the first cell twice past the second cell
+        // (when the axis has at least two variants) to drive a strict
+        // peak/trough split. On a singleton axis, the loop body
+        // collapses to the singleton case above.
+        let mut variants = axis_iter::<A>();
+        if let (Some(first), Some(second)) = (variants.next(), variants.next()) {
+            let mut skewed = AxisHistogram::<A>::empty();
+            skewed.observe(first);
+            skewed.observe(first);
+            skewed.observe(second);
+            assert_eq!(
+                skewed.modality_degree_sum(),
+                skewed.peak_multiplicity() + skewed.trough_multiplicity(),
+                "modality_degree_sum must equal peak_mult + trough_mult on \
+                 skewed shape ({first:?} ×2, {second:?} ×1) for axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_sum_empty_is_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_degree_sum_empty_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_sum_singleton_is_two_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_degree_sum_singleton_is_two::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_sum_axis_cover_is_twice_axis_cardinality_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_degree_sum_axis_cover_is_twice_axis_cardinality::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_sum_equals_open_coded_sum_for_every_closed_axis_implementor()
+    {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_modality_degree_sum_equals_open_coded_sum::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_sum_agrees_with_modality_degree_component_sum() {
+        // Fused-pair pin: modality_degree_sum equals the sum of the
+        // (peak_mult, trough_mult) components read off the fused
+        // modality_degree pair. Both routings must agree pointwise; the
+        // named seam is the routing through the pair projection into a
+        // single sum scalar.
+        let inputs: [&[DiffLineKind]; 6] = [
+            &[],
+            &[DiffLineKind::Added],
+            // heavy-tail (1, 2): one dominant, two tied at trough → sum 3
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+            // right-skew (2, 1): two tied at peak, one at trough → sum 3
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+                DiffLineKind::Context,
+            ],
+            // strictly-ordered (1, 1) → sum 2
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+            // uniform (3, 3) → sum 6
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let (peak_mult, trough_mult) = hist.modality_degree();
+            assert_eq!(
+                hist.modality_degree_sum(),
+                peak_mult + trough_mult,
+                "modality_degree_sum must equal peak_mult + trough_mult \
+                 on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_sum_heavy_tail_and_right_skew_read_three() {
+        // Heavy-tail (peak_mult=1, trough_mult=2) and right-skew
+        // (peak_mult=2, trough_mult=1) both read sum 3 — the additive
+        // side sees no signed direction, so mirror shapes across the
+        // peak/trough axis collapse to the same sum scalar. Pinned as
+        // the peer of the analogous amplitude symmetry witness, so a
+        // future regression that swaps the operands to a saturating or
+        // subtracting form surfaces here.
+        let heavy_tail: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(heavy_tail.peak_multiplicity(), 1);
+        assert_eq!(heavy_tail.trough_multiplicity(), 2);
+        assert_eq!(heavy_tail.modality_degree_sum(), 3);
+
+        let right_skew: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(right_skew.peak_multiplicity(), 2);
+        assert_eq!(right_skew.trough_multiplicity(), 1);
+        assert_eq!(right_skew.modality_degree_sum(), 3);
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_sum_strictly_ordered_is_two_without_singleton() {
+        // Strictly-ordered (3, 2, 1) shape: peak_mult=1, trough_mult=1
+        // (both singletons), so sum=2 — matching every singleton-
+        // support shape's sum. The predicate `modality_degree_sum() ==
+        // 2` on a non-empty non-singleton diff is exactly the "both
+        // extremes uniquely held" configuration, which fires on this
+        // shape without the support having collapsed to a single cell.
+        let strict: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(strict.peak_multiplicity(), 1);
+        assert_eq!(strict.trough_multiplicity(), 1);
+        assert_eq!(strict.modality_degree_sum(), 2);
+        assert_eq!(strict.distinct_cells(), 3);
+        assert!(
+            !strict.has_singular_support(),
+            "strictly-ordered (3, 2, 1) must NOT be singleton-support — \
+             this shape witnesses `sum == 2` off the singleton case"
+        );
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_sum_uniform_count_is_twice_distinct_cells() {
+        // Structural equivalence: is_uniform_count() ⇔
+        // modality_degree_sum() == 2 * distinct_cells(). Pinned on every
+        // uniform-count fixture in the canonical mix (empty: 0 == 2*0,
+        // singleton: 2 == 2*1, uniform axis-cover: 2*card, k-cell
+        // balanced sub-cover: 2*k).
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert!(empty.is_uniform_count());
+        assert_eq!(empty.modality_degree_sum(), 2 * empty.distinct_cells());
+
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert!(singleton.is_uniform_count());
+        assert_eq!(
+            singleton.modality_degree_sum(),
+            2 * singleton.distinct_cells(),
+        );
+
+        let cover: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        assert!(cover.is_uniform_count());
+        assert_eq!(cover.modality_degree_sum(), 2 * cover.distinct_cells());
+
+        let two_each: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert!(two_each.is_uniform_count());
+        assert_eq!(
+            two_each.modality_degree_sum(),
+            2 * two_each.distinct_cells()
+        );
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_sum_non_empty_bounded_below_by_two() {
+        // Non-empty lower bound: every non-empty histogram has
+        // `modality_degree_sum() >= 2`. Pinned on every non-empty
+        // fixture. The additive-side signature of the "vacuous-versus-
+        // populated" boundary on the multiplicity surface — the value
+        // `1` is unreachable, no histogram carries an extremal-
+        // cardinality sum of exactly 1.
+        let inputs: [&[DiffLineKind]; 6] = [
+            &[DiffLineKind::Added],
+            &[DiffLineKind::Added, DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert!(!hist.is_empty());
+            assert!(
+                hist.modality_degree_sum() >= 2,
+                "non-empty modality_degree_sum ({s}) must be >= 2 on input \
+                 of length {n}",
+                s = hist.modality_degree_sum(),
+                n = input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_sum_is_bounded_above_by_twice_distinct_cells() {
+        // Structural bound: modality_degree_sum <= 2 * distinct_cells
+        // on every fixture. Both level sets are subsets of the observed
+        // support, so their sum is bounded above by twice the support
+        // size. Also pinned against 2 * axis_cardinality as the outer
+        // structural ceiling.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let support = hist.distinct_cells();
+            assert!(
+                hist.modality_degree_sum() <= 2 * support,
+                "modality_degree_sum {s} must be <= 2 * distinct_cells \
+                 ({twice}) on input of length {n}",
+                s = hist.modality_degree_sum(),
+                twice = 2 * support,
+                n = input.len(),
+            );
+            assert!(
+                hist.modality_degree_sum() <= 2 * axis_cardinality::<DiffLineKind>(),
+                "modality_degree_sum {s} must be <= 2 * axis_cardinality \
+                 ({twice}) on input of length {n}",
+                s = hist.modality_degree_sum(),
+                twice = 2 * axis_cardinality::<DiffLineKind>(),
+                n = input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_modality_degree_sum_and_amplitude_share_parity() {
+        // Parity pin: modality_degree_sum() and modality_amplitude()
+        // share the same low bit on every fixture. The sum and abs-
+        // diff of two `usize` share parity (`(a + b) mod 2 == (a - b)
+        // mod 2` since `2 * min(a, b)` is even), so together the pair
+        // `(sum, amplitude)` carries the same information as
+        // `(peak_mult, trough_mult)` under the invertible transform
+        // `peak = (sum + amp) / 2, trough = (sum - amp) / 2` with
+        // exact integer division. Pinned across a mix of shapes so both
+        // odd-sum (heavy-tail: 1+2=3, amplitude 1) and even-sum
+        // (uniform: 3+3=6, amplitude 0) cases witness the parity.
+        let inputs: [&[DiffLineKind]; 6] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+                DiffLineKind::Removed,
+                DiffLineKind::Context,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let sum = hist.modality_degree_sum();
+            let amp = hist.modality_amplitude();
+            assert_eq!(
+                sum % 2,
+                amp % 2,
+                "modality_degree_sum ({sum}) and modality_amplitude ({amp}) \
+                 must share parity on input of length {n}",
+                n = input.len(),
+            );
+            // Also pin the invertible-transform round-trip. The
+            // transform `(sum + amp) / 2 == max(peak, trough)` and
+            // `(sum - amp) / 2 == min(peak, trough)` recovers the
+            // *unordered* multiplicity pair — the additive side sees no
+            // signed direction, so the peak/trough labelling itself
+            // requires the fused pair. Both min and max are recovered
+            // exactly under integer division since sum and amplitude
+            // share parity (pinned above), so `2 * max` and `2 * min`
+            // are both even.
+            let peak_mult = hist.peak_multiplicity();
+            let trough_mult = hist.trough_multiplicity();
+            let recovered_max = (sum + amp) / 2;
+            let recovered_min = (sum - amp) / 2;
+            assert_eq!(recovered_max, peak_mult.max(trough_mult));
+            assert_eq!(recovered_min, peak_mult.min(trough_mult));
         }
     }
 

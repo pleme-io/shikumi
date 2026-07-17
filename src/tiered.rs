@@ -7860,6 +7860,174 @@ impl ConfigDiff {
         self.kind_histogram().modality_amplitude()
     }
 
+    /// The **modality-shape sum on [`DiffLineKind`]** — the sum of the
+    /// modal and antimodal level-set cardinalities of this diff's kind
+    /// histogram. Equal to
+    /// `self.peak_kind_multiplicity() + self.trough_kind_multiplicity()`
+    /// by construction, routed through [`Self::kind_histogram`]:
+    /// [`crate::AxisHistogram::modality_degree_sum`] reads the same
+    /// scalar off the fixed-cardinality counts vector in one pass.
+    /// Returns `0` exactly on the empty diff; returns `2` on every
+    /// non-empty diff whose peak and trough kinds are each uniquely
+    /// held (including every singleton-support diff and every strictly-
+    /// ordered three-kind shape); returns `2 * present_kinds_count()`
+    /// exactly on every balanced diff (both level sets walk the full
+    /// observed support).
+    ///
+    /// The **scalar-sum peer** on the multiplicity surface — the
+    /// additive dual of [`Self::kind_modality_amplitude`] on the same
+    /// surface at the diff altitude. Where
+    /// [`Self::kind_modality_amplitude`] fuses the extremal-multiplicity
+    /// pair `(peak_kind_multiplicity, trough_kind_multiplicity)` into
+    /// `peak.abs_diff(trough)` — the asymmetry-magnitude scalar —
+    /// `kind_modality_degree_sum` fuses the same pair into
+    /// `peak + trough` — the combined extremal cardinality scalar. The
+    /// sum is overflow-safe on `ConfigDiff` since both summands are
+    /// bounded above by `crate::axis_cardinality::<DiffLineKind>() == 3`.
+    /// Together with [`Self::kind_modality_amplitude`], the pair
+    /// `(kind_modality_degree_sum, kind_modality_amplitude)` recovers
+    /// the *unordered* multiplicity pair
+    /// `{peak_kind_multiplicity, trough_kind_multiplicity}` under the
+    /// invertible transform `max(peak, trough) = (sum + amplitude) / 2,
+    /// min(peak, trough) = (sum - amplitude) / 2` (integer division
+    /// exact since both share parity — both `usize` sums / abs-diffs
+    /// whose sum equals `2 * max(peak, trough)`). The peak-versus-
+    /// trough *labelling* itself requires the fused
+    /// [`Self::kind_histogram`]-side `modality_degree` pair — the
+    /// additive-side scalar sees no signed direction.
+    ///
+    /// The natural typed primitive for CLI `config-diff` summaries,
+    /// attestation manifests, and alerting policies asking *"how much
+    /// of the observed diff-kind support sits at either extreme?"*: the
+    /// summary line *"kind extremal sum 3: Removed uniquely dominant,
+    /// Added / Context tied at trough"* (where `3` is this scalar),
+    /// the attestation manifest recording the combined extremal
+    /// cardinality of the rendered diff between two rebuild windows,
+    /// the alerting policy reading *"kind extremal sum = 6"* to
+    /// classify balanced full-cover diff windows (uniform-count over
+    /// all three kinds — the whole support is doubly-extremal). Before
+    /// this lift, every such consumer re-derived the projection inline
+    /// as `diff.peak_kind_multiplicity() +
+    /// diff.trough_kind_multiplicity()` — two method calls plus an
+    /// addition, each site walking the counts vector twice where the
+    /// shared [`crate::AxisHistogram::modality_degree`] primitive fuses
+    /// both into a single walk.
+    ///
+    /// The diff-altitude scalar-sum peer that **seeds the "modality-
+    /// degree-sum across altitudes" projection** — the additive
+    /// symmetric closure of the already-fully-closed 5-altitude
+    /// peak-multiplicity / trough-multiplicity / modality-amplitude
+    /// projections. The next natural climbs walk the same trajectory:
+    /// tier altitude (`ProvenanceMap::tier_modality_degree_sum` over
+    /// `tier_histogram`) and the chain altitude's three sub-axes
+    /// (`ConfigSourceChain::layer_kind_modality_degree_sum`,
+    /// `file_format_modality_degree_sum`,
+    /// `env_prefix_kind_modality_degree_sum` over the corresponding
+    /// chain histograms). Parallels the fully-closed "modality-
+    /// amplitude across altitudes" projection seeded on the same
+    /// altitude by [`Self::kind_modality_amplitude`] one seam over —
+    /// this seed opens the additive-side dual of the same
+    /// extremal-multiplicity pair.
+    ///
+    /// **Empty-diff convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::modality_degree_sum`] empty convention
+    /// one altitude down and the [`Self::peak_kind_multiplicity`] /
+    /// [`Self::trough_kind_multiplicity`] empty conventions on the same
+    /// altitude. The quadruple `(peak_kind_multiplicity,
+    /// trough_kind_multiplicity, kind_modality_amplitude,
+    /// kind_modality_degree_sum)` reads uniformly `(0, 0, 0, 0)` on the
+    /// empty diff — the vacuous-nothing boundary lifted from the empty
+    /// support.
+    ///
+    /// **Non-empty lower-bound convention** — returns `>= 2` on every
+    /// non-empty diff: every non-empty support has at least one
+    /// observed kind at the peak and at least one observed kind at the
+    /// trough (they may coincide as the same kind on the singleton-
+    /// support case), so both multiplicities are `>= 1` and the sum is
+    /// `>= 2`. The value `1` is unreachable — no diff carries a
+    /// combined extremal cardinality of exactly `1`. The additive-side
+    /// signature of the "vacuous-versus-populated" boundary on the
+    /// diff-altitude multiplicity surface.
+    ///
+    /// **Balanced-diff convention** — returns `2 * present_kinds_count()`
+    /// on every balanced diff (every observed kind contributed the
+    /// same nonzero count): `kinds_balanced() ⇒
+    /// peak_kind_multiplicity() == trough_kind_multiplicity() ==
+    /// present_kinds_count()`, so the sum reaches its structural upper
+    /// bound relative to the support cardinality. Rewrites the
+    /// balanced-diff-kinds predicate as an arithmetic equality on the
+    /// closed multiplicity surface. Empty (`0`), singleton (`2`),
+    /// two-kind balanced (`4`), full three-kind balanced (`6`).
+    ///
+    /// **Strictly-ordered convention** — returns `2` on every strictly-
+    /// ordered three-cell diff (three distinct positive counts, e.g.
+    /// `Removed=1, Added=2, Context=3`): both multiplicities are `1`,
+    /// so the sum reads `2` even though the shape is *not* balanced.
+    /// This shape witnesses the *both-extremes-uniquely-held branch* of
+    /// the "sum equals 2" configuration on a non-empty non-singleton
+    /// diff — pinning the sum's failure to distinguish singleton
+    /// support from strictly-ordered non-uniform shapes at the diff
+    /// altitude.
+    ///
+    /// # Invariants
+    ///
+    /// - `kind_modality_degree_sum() ==
+    ///   kind_histogram().modality_degree_sum()` — both project the same
+    ///   scalar off the same primitive; the named seam is the cube-
+    ///   native routing of the histogram surface.
+    /// - `kind_modality_degree_sum() ==
+    ///   peak_kind_multiplicity() + trough_kind_multiplicity()` — the
+    ///   defining equivalence on the multiplicity-scalar pair at the
+    ///   diff altitude. Overflow-safe since both summands are bounded
+    ///   above by `crate::axis_cardinality::<DiffLineKind>() == 3`.
+    /// - `kind_modality_degree_sum() == 0` iff the diff is empty — the
+    ///   vacuous-nothing boundary on the additive side. Dual to
+    ///   `kind_modality_amplitude() == 0`'s much larger inhabited
+    ///   region (which fires on empty, singleton, uniform-count, and
+    ///   every strictly-ordered shape).
+    /// - `kind_modality_degree_sum() >= 2` on every non-empty diff —
+    ///   both multiplicities are `>= 1` on any non-empty support.
+    /// - `kind_modality_degree_sum() == 2` on a non-empty diff iff
+    ///   `peak_kind_multiplicity() == 1 &&
+    ///   trough_kind_multiplicity() == 1` — the "both extremes uniquely
+    ///   held" configuration.
+    /// - `kinds_balanced() ⇔ kind_modality_degree_sum() ==
+    ///   2 * present_kinds_count()` — the balanced-diff-kinds predicate
+    ///   rewritten as an arithmetic equality on the closed multiplicity
+    ///   surface. Rewrites the tight upper bound on the sum as a
+    ///   named boolean equivalence.
+    /// - `kind_modality_degree_sum() <= 2 * present_kinds_count()`
+    ///   always — both level sets are subsets of the observed support,
+    ///   so their sum is bounded above by twice the support size.
+    /// - `kind_modality_degree_sum() <=
+    ///   2 * crate::axis_cardinality::<DiffLineKind>()` always —
+    ///   bounded above by `6` on the three-cell diff-kind axis.
+    /// - `kind_modality_degree_sum() % 2 == kind_modality_amplitude() %
+    ///   2` — the sum and abs-diff of two `usize` share parity, so the
+    ///   pair `(sum, amplitude)` recovers the *unordered* pair
+    ///   `{peak_mult, trough_mult}` under the invertible transform
+    ///   `max(peak, trough) = (sum + amp) / 2, min(peak, trough) =
+    ///   (sum - amp) / 2` with exact integer division. The peak-versus-
+    ///   trough labelling itself requires the fused
+    ///   `modality_degree` pair.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (the fused peak +
+    /// trough scan through [`crate::AxisHistogram::modality_degree`]).
+    /// Both are `O(n)` in practice since the diff-cell axis carries a
+    /// fixed three-cell cardinality; the returned `usize` reads one
+    /// scalar. Halves the cost of the previous inline
+    /// `diff.peak_kind_multiplicity() + diff.trough_kind_multiplicity()`
+    /// idiom (which walked the counts vector twice), where
+    /// [`crate::AxisHistogram::modality_degree_sum`] fuses both into a
+    /// single walk through [`crate::AxisHistogram::modality_degree`].
+    #[must_use]
+    pub fn kind_modality_degree_sum(&self) -> usize {
+        self.kind_histogram().modality_degree_sum()
+    }
+
     /// The **balanced-diff-kinds boolean predicate** at the diff altitude —
     /// `true` exactly when every observed [`DiffLineKind`] contributed the
     /// same number of lines. The typed boolean peer of `kind_spread() == 0`
@@ -15680,6 +15848,366 @@ mod tests {
                 "kind_modality_amplitude == 0 iff \
                  peak_kind_multiplicity == trough_kind_multiplicity for diff \
                  with lines_len={n}",
+                n = diff.lines.len(),
+            );
+        }
+    }
+
+    // ── ConfigDiff::kind_modality_degree_sum — modality-shape sum scalar on
+    //    the diff altitude, lifting AxisHistogram::modality_degree_sum from the
+    //    histogram surface and seeding the "modality-degree-sum across altitudes"
+    //    projection ──
+
+    #[test]
+    fn kind_modality_degree_sum_matches_kind_histogram_modality_degree_sum_pointwise() {
+        // Routing pin: `kind_modality_degree_sum` routes through
+        // `kind_histogram().modality_degree_sum()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Diff-altitude seed
+        // of the "modality-degree-sum across altitudes" projection.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().modality_degree_sum();
+            assert_eq!(diff.kind_modality_degree_sum(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kind_modality_degree_sum_equals_peak_mult_plus_trough_mult() {
+        // Defining-equivalence law: `kind_modality_degree_sum` equals
+        // `peak_kind_multiplicity() + trough_kind_multiplicity()` on
+        // every fixture. Overflow-safe since both summands are bounded
+        // above by `axis_cardinality::<DiffLineKind>() == 3`. Both
+        // routings read the same scalar off the same primitive.
+        for diff in dominant_kind_fixtures() {
+            let via_pair = diff.peak_kind_multiplicity() + diff.trough_kind_multiplicity();
+            assert_eq!(diff.kind_modality_degree_sum(), via_pair);
+        }
+    }
+
+    #[test]
+    fn kind_modality_degree_sum_empty_diff_is_zero() {
+        // Empty-diff convention: no observed cells, both multiplicities
+        // read `0`, so the sum reads `0`. Matches the
+        // AxisHistogram::modality_degree_sum empty convention one
+        // altitude down. The `(peak_kind_multiplicity,
+        // trough_kind_multiplicity, kind_modality_amplitude,
+        // kind_modality_degree_sum)` quadruple reads uniformly
+        // `(0, 0, 0, 0)` on the empty diff.
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.peak_kind_multiplicity(), 0);
+        assert_eq!(empty.trough_kind_multiplicity(), 0);
+        assert_eq!(empty.kind_modality_amplitude(), 0);
+        assert_eq!(empty.kind_modality_degree_sum(), 0);
+        assert!(empty.lines.is_empty());
+    }
+
+    #[test]
+    fn kind_modality_degree_sum_singleton_support_is_two() {
+        // Singleton-support pin: every line lands on the same kind, so
+        // that one kind is simultaneously the unique peak and the
+        // unique trough. Both multiplicities read `1`, so the sum
+        // reads `2`. The additive-side minimal-nonempty boundary
+        // witness of the "both extremes uniquely held" configuration
+        // at the diff altitude.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Removed("r3".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_multiplicity(), 1);
+        assert_eq!(diff.trough_kind_multiplicity(), 1);
+        assert_eq!(diff.kind_modality_degree_sum(), 2);
+    }
+
+    #[test]
+    fn kind_modality_degree_sum_two_kind_tie_is_four() {
+        // Two-kind-tied pin: `Removed + Added` both at count `1`, both
+        // tied at both the peak and the trough (they coincide on the
+        // uniform-count shape). Both multiplicities read `2`, so the
+        // sum reads `4` — the balanced two-cell case at
+        // `2 * present_kinds_count() = 2 * 2 = 4`.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert_eq!(diff.peak_kind_multiplicity(), 2);
+        assert_eq!(diff.trough_kind_multiplicity(), 2);
+        assert_eq!(diff.kind_modality_degree_sum(), 4);
+        assert_eq!(
+            diff.kind_modality_degree_sum(),
+            2 * diff.present_kinds_count()
+        );
+    }
+
+    #[test]
+    fn kind_modality_degree_sum_uniform_full_cover_is_six() {
+        // Uniform full-cover pin: every observed kind contributes the
+        // same nonzero count, so all three cells tie at both the peak
+        // and the trough. Both multiplicities read `3`, so the sum
+        // reads `6` — the balanced full-cover case at the tight upper
+        // bound `2 * present_kinds_count() = 2 * 3 = 6 = 2 *
+        // axis_cardinality::<DiffLineKind>()`. Also witnesses
+        // `kinds_balanced() ⇔ sum == 2 * present_kinds_count()`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_multiplicity(), 3);
+        assert_eq!(diff.trough_kind_multiplicity(), 3);
+        assert_eq!(diff.kind_modality_degree_sum(), 6);
+        assert!(diff.kinds_balanced());
+        assert_eq!(
+            diff.kind_modality_degree_sum(),
+            2 * diff.present_kinds_count()
+        );
+    }
+
+    #[test]
+    fn kind_modality_degree_sum_strictly_ordered_fixture_is_two_without_singleton() {
+        // Strictly-ordered pin: three distinct positive counts
+        // (Context=3, Added=2, Removed=1). Both peak and trough are
+        // uniquely held (peak_mult=1, trough_mult=1), so the sum reads
+        // `2` — matching every singleton-support diff's sum. This
+        // fixture witnesses the "both extremes uniquely held"
+        // configuration on a non-empty non-singleton diff: the value
+        // `sum == 2` on non-empty diffs does NOT imply singleton
+        // support at the diff altitude.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_multiplicity(), 1);
+        assert_eq!(diff.trough_kind_multiplicity(), 1);
+        assert_eq!(diff.kind_modality_degree_sum(), 2);
+        assert_eq!(diff.present_kinds_count(), 3);
+    }
+
+    #[test]
+    fn kind_modality_degree_sum_heavy_tail_fixture_is_three() {
+        // Heavy-tail pin: one dominant kind, two kinds tied at the
+        // trough. Added ×2, Removed ×1, Context ×1 → peak_mult=1,
+        // trough_mult=2, so the sum reads `1 + 2 = 3`. Pinned on the
+        // smallest heavy-tail shape.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Removed("r".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_multiplicity(), 1);
+        assert_eq!(diff.trough_kind_multiplicity(), 2);
+        assert_eq!(diff.kind_modality_degree_sum(), 3);
+    }
+
+    #[test]
+    fn kind_modality_degree_sum_right_skew_fixture_is_three() {
+        // Right-skew pin: two kinds tied at the peak, one at the
+        // trough. Added ×2, Removed ×2, Context ×1 → peak_mult=2,
+        // trough_mult=1, so the sum reads `2 + 1 = 3`. Mirror of the
+        // heavy-tail pin above — both read `3` on the additive side
+        // (the sum sees no signed direction), together pinning the
+        // signed-symmetry closure of the sum surface at the diff
+        // altitude.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_multiplicity(), 2);
+        assert_eq!(diff.trough_kind_multiplicity(), 1);
+        assert_eq!(diff.kind_modality_degree_sum(), 3);
+    }
+
+    #[test]
+    fn kind_modality_degree_sum_kinds_balanced_iff_two_times_present() {
+        // Structural equivalence: `kinds_balanced() ⇔
+        // kind_modality_degree_sum() == 2 * present_kinds_count()` on
+        // every fixture. The balanced-diff-kinds predicate rewritten as
+        // an arithmetic equality on the closed multiplicity surface at
+        // its structural upper bound.
+        for diff in dominant_kind_fixtures() {
+            let balanced = diff.kinds_balanced();
+            let sum_at_ceiling = diff.kind_modality_degree_sum() == 2 * diff.present_kinds_count();
+            assert_eq!(
+                balanced,
+                sum_at_ceiling,
+                "kinds_balanced ({balanced}) must agree with \
+                 kind_modality_degree_sum ({s}) == 2 * present_kinds_count \
+                 ({twice}) for diff with lines_len={n}",
+                s = diff.kind_modality_degree_sum(),
+                twice = 2 * diff.present_kinds_count(),
+                n = diff.lines.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_modality_degree_sum_zero_iff_empty() {
+        // Vacuous-nothing boundary: `kind_modality_degree_sum() == 0`
+        // iff the diff is empty on every fixture. Dual to
+        // `kind_modality_amplitude() == 0`'s much larger inhabited
+        // region (which fires on empty, singleton, uniform-count, and
+        // every strictly-ordered shape at the diff altitude).
+        for diff in dominant_kind_fixtures() {
+            let sum_zero = diff.kind_modality_degree_sum() == 0;
+            let is_empty = diff.lines.is_empty();
+            assert_eq!(
+                sum_zero,
+                is_empty,
+                "kind_modality_degree_sum == 0 iff lines.is_empty() for \
+                 diff with lines_len={n}",
+                n = diff.lines.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_modality_degree_sum_non_empty_bounded_below_by_two() {
+        // Non-empty lower bound: every non-empty diff has
+        // `kind_modality_degree_sum() >= 2`. Pinned on every non-
+        // empty fixture. The additive-side signature of the "vacuous-
+        // versus-populated" boundary on the diff-altitude multiplicity
+        // surface — the value `1` is unreachable.
+        for diff in dominant_kind_fixtures() {
+            if diff.lines.is_empty() {
+                continue;
+            }
+            assert!(
+                diff.kind_modality_degree_sum() >= 2,
+                "non-empty kind_modality_degree_sum ({s}) must be >= 2 for \
+                 diff with lines_len={n}",
+                s = diff.kind_modality_degree_sum(),
+                n = diff.lines.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_modality_degree_sum_bounded_above_by_twice_present_kinds_count() {
+        // Support bound: both level sets are subsets of the observed
+        // support, so their sum is bounded above by twice the support
+        // size on every fixture. Empty diff: 0 <= 0. Singleton
+        // support: 2 <= 2. Two-tied balanced: 4 <= 4. Uniform three-
+        // kind cover: 6 <= 6. Heavy-tail three-kind: 3 <= 6.
+        for diff in dominant_kind_fixtures() {
+            assert!(
+                diff.kind_modality_degree_sum() <= 2 * diff.present_kinds_count(),
+                "kind_modality_degree_sum ({s}) must not exceed \
+                 2 * present_kinds_count ({twice})",
+                s = diff.kind_modality_degree_sum(),
+                twice = 2 * diff.present_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_modality_degree_sum_bounded_by_twice_axis_cardinality() {
+        // Structural bound: `kind_modality_degree_sum() <=
+        // 2 * axis_cardinality::<DiffLineKind>()` (= 6) on every
+        // fixture. Composition of `<= 2 * present_kinds_count()` with
+        // `present_kinds_count() <= axis_cardinality::<DiffLineKind>()`.
+        let card = crate::axis_cardinality::<DiffLineKind>();
+        for diff in dominant_kind_fixtures() {
+            assert!(
+                diff.kind_modality_degree_sum() <= 2 * card,
+                "kind_modality_degree_sum ({s}) must not exceed 2 * axis \
+                 cardinality ({twice})",
+                s = diff.kind_modality_degree_sum(),
+                twice = 2 * card,
+            );
+        }
+    }
+
+    #[test]
+    fn kind_modality_degree_sum_agrees_with_modality_degree_component_sum() {
+        // Fused-pair pin: `kind_modality_degree_sum` equals the sum of
+        // the `(peak_mult, trough_mult)` components read off the fused
+        // `modality_degree` pair. Both routings agree pointwise; the
+        // named seam is the routing through the pair projection into a
+        // single sum scalar.
+        for diff in dominant_kind_fixtures() {
+            let (peak_mult, trough_mult) = diff.kind_histogram().modality_degree();
+            assert_eq!(
+                diff.kind_modality_degree_sum(),
+                peak_mult + trough_mult,
+                "kind_modality_degree_sum must equal modality_degree \
+                 component sum on diff with lines_len={n}",
+                n = diff.lines.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_modality_degree_sum_and_amplitude_share_parity() {
+        // Parity pin: kind_modality_degree_sum and
+        // kind_modality_amplitude share parity on every fixture. The
+        // pair (sum, amplitude) carries the same information as the
+        // pair (peak_mult, trough_mult) under the invertible transform
+        // peak = (sum + amp) / 2, trough = (sum - amp) / 2 with exact
+        // integer division. Pinned across the fixture set.
+        for diff in dominant_kind_fixtures() {
+            let sum = diff.kind_modality_degree_sum();
+            let amp = diff.kind_modality_amplitude();
+            assert_eq!(
+                sum % 2,
+                amp % 2,
+                "kind_modality_degree_sum ({sum}) and kind_modality_amplitude \
+                 ({amp}) must share parity for diff with lines_len={n}",
+                n = diff.lines.len(),
+            );
+            // Invertible-transform round-trip on the *unordered*
+            // multiplicity pair: `(sum + amp) / 2 == max(peak, trough)`
+            // and `(sum - amp) / 2 == min(peak, trough)`. The additive
+            // side sees no signed direction, so peak/trough labelling
+            // itself requires the fused pair.
+            let peak_mult = diff.peak_kind_multiplicity();
+            let trough_mult = diff.trough_kind_multiplicity();
+            let recovered_max = (sum + amp) / 2;
+            let recovered_min = (sum - amp) / 2;
+            assert_eq!(recovered_max, peak_mult.max(trough_mult));
+            assert_eq!(recovered_min, peak_mult.min(trough_mult));
+        }
+    }
+
+    #[test]
+    fn kind_modality_degree_sum_two_iff_both_extremes_uniquely_held_on_non_empty() {
+        // Both-extremes-uniquely-held predicate: on every non-empty
+        // fixture, `kind_modality_degree_sum() == 2` iff
+        // `peak_kind_multiplicity() == 1 && trough_kind_multiplicity()
+        // == 1` — the sum reaches its non-empty lower bound of `2`
+        // exactly when both extremal level sets are singletons. Fires
+        // on every singleton-support shape and every strictly-ordered
+        // non-uniform shape where both extremes are uniquely held.
+        for diff in dominant_kind_fixtures() {
+            if diff.lines.is_empty() {
+                continue;
+            }
+            let sum_two = diff.kind_modality_degree_sum() == 2;
+            let both_unique =
+                diff.peak_kind_multiplicity() == 1 && diff.trough_kind_multiplicity() == 1;
+            assert_eq!(
+                sum_two,
+                both_unique,
+                "kind_modality_degree_sum == 2 iff \
+                 (peak_mult == 1 && trough_mult == 1) on non-empty diff with \
+                 lines_len={n}",
                 n = diff.lines.len(),
             );
         }
