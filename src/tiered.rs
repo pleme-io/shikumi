@@ -2098,12 +2098,14 @@ impl ProvenanceMap {
     /// and [`Self::trough_tier_multiplicity`], both surfaced at this
     /// altitude) on every altitude of the fully-closed cube. Lifts
     /// the diff-altitude seed [`ConfigDiff::kind_modality_amplitude`]
-    /// one altitude up. The next natural lifts fan sideways along the
-    /// chain altitude's three sub-axes
-    /// (`layer_kind_modality_amplitude`,
-    /// `file_format_modality_amplitude`,
-    /// `env_prefix_kind_modality_amplitude` over the corresponding
-    /// chain histograms). The pattern is the same at every altitude
+    /// one altitude up. The chain altitude's three sub-axes
+    /// ([`crate::ConfigSourceChain::layer_kind_modality_amplitude`],
+    /// [`crate::ConfigSourceChain::file_format_modality_amplitude`],
+    /// [`crate::ConfigSourceChain::env_prefix_kind_modality_amplitude`]
+    /// over the corresponding chain histograms) close the projection
+    /// at every chain sub-axis, fully closing the 5-altitude grid the
+    /// sibling peak- / trough-multiplicity scalar projections already
+    /// closed. The pattern is the same at every altitude
     /// / sub-axis: fuse the (`peak_multiplicity`,
     /// `trough_multiplicity`) extremal-multiplicity pair into a
     /// single amplitude scalar named at the surface, routed through
@@ -7745,14 +7747,20 @@ impl ConfigDiff {
     /// shape symmetry scalar sister of the two closed multiplicity
     /// scalars ([`Self::peak_kind_multiplicity`] and
     /// [`Self::trough_kind_multiplicity`], both already surfaced at this
-    /// altitude) on every altitude of the fully-closed cube. The next
-    /// natural lifts climb to the tier altitude
-    /// (`ProvenanceMap::tier_modality_amplitude` over [`Self::tier_histogram`]
-    /// on the tier altitude) and sideways along the chain altitude's
-    /// three sub-axes (`layer_kind_modality_amplitude`,
-    /// `file_format_modality_amplitude`,
-    /// `env_prefix_kind_modality_amplitude` over the corresponding chain
-    /// histograms). The pattern is the same at every altitude / sub-
+    /// altitude) on every altitude of the fully-closed cube. The tier-
+    /// altitude climb
+    /// ([`crate::ProvenanceMap::tier_modality_amplitude`] over
+    /// [`crate::ProvenanceMap::tier_histogram`]) and the chain
+    /// altitude's three sub-axes
+    /// ([`crate::ConfigSourceChain::layer_kind_modality_amplitude`],
+    /// [`crate::ConfigSourceChain::file_format_modality_amplitude`],
+    /// [`crate::ConfigSourceChain::env_prefix_kind_modality_amplitude`]
+    /// over the corresponding chain histograms) close the projection
+    /// at every altitude / sub-axis of the 5-altitude cube, matching
+    /// the fully-closed 5-altitude closure of the sibling peak- /
+    /// trough-multiplicity scalar projections
+    /// ([`Self::peak_kind_multiplicity`],
+    /// [`Self::trough_kind_multiplicity`]). The pattern is the same at every altitude / sub-
     /// axis: fuse the (`peak_multiplicity`, `trough_multiplicity`)
     /// extremal-multiplicity pair into a single amplitude scalar named
     /// at the surface, routed through the shared
