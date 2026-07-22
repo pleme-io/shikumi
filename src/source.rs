@@ -7998,6 +7998,168 @@ pub trait ConfigSourceChain {
         self.file_format_histogram().spread()
     }
 
+    /// The **joint-extremes-magnitude of file-format counts** — the sum
+    /// of the modal and anti-modal per-format recognized-extension file-
+    /// layer counts on the file-format sub-axis of the chain altitude.
+    /// Routes through [`crate::AxisHistogram::peak_trough_sum`] one
+    /// altitude down: the fused `peak_count() + trough_count()` addition
+    /// on the histogram surface, halving the cost of the inline
+    /// `peak_file_format_count() + trough_file_format_count()` idiom
+    /// which walked the counts vector twice.
+    ///
+    /// The **addition-form sibling** of the [`Self::file_format_spread`]
+    /// subtraction-form scalar on the same count surface at the same
+    /// sub-axis, closing the `(sum, difference)` pair of the extreme-
+    /// endpoint algebra at the file-format sub-axis of the chain
+    /// altitude. Together with [`Self::file_format_spread`], the pair
+    /// `(file_format_peak_trough_sum, file_format_spread)` reads off
+    /// `(peak_file_format_count, trough_file_format_count)` bijectively
+    /// through two halving-additions:
+    /// - `peak_file_format_count() == (file_format_peak_trough_sum() +
+    ///   file_format_spread()) / 2`
+    /// - `trough_file_format_count() == (file_format_peak_trough_sum() -
+    ///   file_format_spread()) / 2`
+    ///
+    /// Both divisions are exact — `file_format_peak_trough_sum ±
+    /// file_format_spread` is always even by construction, since
+    /// `(peak + trough) + (peak - trough) == 2 * peak` and
+    /// `(peak + trough) - (peak - trough) == 2 * trough`. The file-
+    /// format sub-axis of the chain altitude now carries `(peak,
+    /// trough)` in two orthogonal forms: as separate endpoints via
+    /// [`Self::peak_file_format_count`] / [`Self::trough_file_format_count`],
+    /// and as `(sum, difference)` via
+    /// [`Self::file_format_peak_trough_sum`] /
+    /// [`Self::file_format_spread`].
+    ///
+    /// The **chain-altitude joint-extremes-magnitude peer** at the file-
+    /// format sub-axis — the natural typed primitive for CLI headlines,
+    /// attestation manifests, and alerting policies asking *"how large
+    /// are the two extreme file formats together?"*: the `config-show`
+    /// summary line *"peak-plus-trough format load: 4 file layers (peak
+    /// Toml 3 + trough Yaml 1)"* (where 4 is this scalar), the
+    /// attestation manifest recording the joint extreme magnitude of a
+    /// resolved chain by format between two rebuild windows, the
+    /// alerting policy reading *"`file_format_peak_trough_sum` >=
+    /// threshold"* to gate a rebuild on the joint two-sided magnitude by
+    /// format. Before this lift, every such consumer re-derived the
+    /// projection inline as `chain.peak_file_format_count() +
+    /// chain.trough_file_format_count()` — two method calls plus an
+    /// addition at every site, each site walking the counts vector twice
+    /// with no named surface at this sub-axis for the joint scalar.
+    ///
+    /// The file-format sub-axis sideways lift of the "peak+trough sums
+    /// across altitudes" projection, seeded on the scalar altitude by
+    /// [`crate::AxisHistogram::peak_trough_sum`], lifted to the diff
+    /// altitude by [`crate::ConfigDiff::kind_peak_trough_sum`], climbed
+    /// to the tier altitude by
+    /// [`crate::ProvenanceMap::tier_peak_trough_sum`], and lifted
+    /// sideways to the layer-kind sub-axis of the same chain altitude by
+    /// [`Self::layer_kind_peak_trough_sum`] — the next natural lift fans
+    /// sideways to the last remaining chain sub-axis
+    /// (`env_prefix_kind_peak_trough_sum` over
+    /// [`Self::env_prefix_kind_histogram`]). Parallels the "spread across
+    /// altitudes" projection lifted to the same sub-axis by
+    /// [`Self::file_format_spread`] (the subtraction-form sibling on the
+    /// same closed-endpoint pair).
+    ///
+    /// **Empty-histogram convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::peak_trough_sum`] empty convention one
+    /// altitude down and the [`Self::peak_file_format_count`] /
+    /// [`Self::trough_file_format_count`] / [`Self::file_format_spread`]
+    /// empty conventions on the same sub-axis. The scalar-count
+    /// quadruple `(peak_file_format_count, trough_file_format_count,
+    /// file_format_spread, file_format_peak_trough_sum)` reads uniformly
+    /// `(0, 0, 0, 0)` on the empty histogram. Unlike
+    /// [`Self::layer_kind_peak_trough_sum`], the zero-boundary is NOT
+    /// `self.as_ref().is_empty()`: a non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::Env`] / unrecognized-
+    /// extension [`ConfigSource::File`] layers reads `0` as well,
+    /// because those entries project to [`None`] through
+    /// [`ConfigSource::file_format`]. Cross-sub-axis divergence from
+    /// [`Self::layer_kind_peak_trough_sum`] — the file-format sub-axis's
+    /// empty-boundary is the sub-axis histogram's `is_empty()`, not the
+    /// chain's.
+    ///
+    /// **Empty-boundary equivalence.** `file_format_peak_trough_sum() ==
+    /// 0` ⇔ `file_format_histogram().is_empty()` — both endpoints are
+    /// structurally `>= 1` on every histogram with non-empty support, so
+    /// their sum is zero exactly on the empty histogram. Contrapositively,
+    /// every chain with a non-empty file-format histogram has
+    /// `file_format_peak_trough_sum() >= 2` — the joint magnitude has a
+    /// structural non-empty floor of `2` at this sub-axis (both endpoints
+    /// contribute at least `1` on any non-empty histogram).
+    ///
+    /// # Invariants
+    ///
+    /// - `file_format_peak_trough_sum() ==
+    ///   file_format_histogram().peak_trough_sum()` — both project the
+    ///   same scalar off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `file_format_peak_trough_sum() == peak_file_format_count() +
+    ///   trough_file_format_count()` — the fused-pair identity of the
+    ///   joint-extremes-magnitude peer on the underlying scalar count
+    ///   pair.
+    /// - `file_format_peak_trough_sum() == 0` ⇔
+    ///   `file_format_histogram().is_empty()` — the empty-boundary
+    ///   equivalence peer to the two-endpoint surface. Cross-sub-axis
+    ///   divergence from [`Self::layer_kind_peak_trough_sum`]: the
+    ///   layer-kind sub-axis's zero-boundary is
+    ///   `self.as_ref().is_empty()` (chain-empty); this sub-axis's
+    ///   zero-boundary is `file_format_histogram().is_empty()`
+    ///   (histogram-empty), the stricter boundary — a non-empty chain of
+    ///   only `Defaults` / `Env` / unrecognized-extension `File` entries
+    ///   also reads `0`.
+    /// - `file_format_peak_trough_sum() >= 2` whenever
+    ///   `!file_format_histogram().is_empty()` — non-empty floor at this
+    ///   sub-axis: both endpoints are at least `1` on any non-empty
+    ///   histogram.
+    /// - `file_format_peak_trough_sum() >= file_format_spread()` always —
+    ///   `peak + trough >= peak - trough` reduces to `2 * trough >= 0`,
+    ///   always true. Equality holds iff `trough_file_format_count() ==
+    ///   0` — i.e. on every chain whose file-format histogram is empty,
+    ///   the sole shape with `trough == 0` at this sub-axis.
+    /// - `file_format_peak_trough_sum() <= 2 * peak_file_format_count()`
+    ///   always — `peak + trough <= 2 * peak` reduces to `trough <=
+    ///   peak`, the structural `trough <= peak` invariant. Equality
+    ///   holds iff [`Self::file_formats_uniform_count`] is `true` (peak
+    ///   equals trough — including the empty-histogram vacuous-uniformity
+    ///   case).
+    /// - `file_format_peak_trough_sum() <=
+    ///   2 * file_format_histogram().total()` always — composition of
+    ///   both endpoints being bounded above by the histogram total. The
+    ///   file-format sub-axis carries the tighter histogram-total bound
+    ///   than the chain-length bound (the histogram total is at most the
+    ///   count of `File` entries with recognized extensions, bounded by
+    ///   the chain length but not equal to it).
+    /// - `file_format_peak_trough_sum() + file_format_spread() == 2 *
+    ///   peak_file_format_count()` always — the peak-endpoint recovery
+    ///   identity through the `(sum, difference)` surface.
+    /// - `file_format_peak_trough_sum() - file_format_spread() == 2 *
+    ///   trough_file_format_count()` always — the trough-endpoint
+    ///   recovery identity (non-negative by the
+    ///   `file_format_peak_trough_sum >= file_format_spread` invariant).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the fused peak-and-trough scan through
+    /// [`crate::AxisHistogram::peak_trough_sum`]). Both are `O(n)` in
+    /// practice since the file-format axis carries a fixed four-cell
+    /// cardinality; the returned `usize` reads one scalar. Halves the
+    /// cost of the previous inline `chain.peak_file_format_count() +
+    /// chain.trough_file_format_count()` idiom (which walked the counts
+    /// vector twice — once for the max, once for the min-over-support),
+    /// where [`crate::AxisHistogram::peak_trough_sum`] routes both
+    /// through a single scalar read.
+    #[must_use]
+    fn file_format_peak_trough_sum(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().peak_trough_sum()
+    }
+
     /// The number of [`crate::discovery::Format`] cells tied at the peak
     /// recognized-extension file-layer count on the file-format sub-axis
     /// of the chain altitude — the **modal-multiplicity scalar** peer of
@@ -45050,6 +45212,394 @@ mod tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak - trough);
+        }
+    }
+
+    // ---- ConfigSourceChain::file_format_peak_trough_sum — joint-extremes-
+    //      magnitude peer on the file-format sub-axis of the chain altitude,
+    //      fusing peak_file_format_count and trough_file_format_count into
+    //      one joint-magnitude scalar and lifting the "peak+trough sums
+    //      across altitudes" projection sideways from the layer-kind sub-
+    //      axis to the second chain-altitude sub-axis — the addition-form
+    //      sibling of file_format_spread (subtraction-form) on the same
+    //      closed count-endpoint pair ----
+
+    #[test]
+    fn file_format_peak_trough_sum_matches_file_format_histogram_peak_trough_sum_pointwise() {
+        // Routing pin: `file_format_peak_trough_sum` routes through
+        // `file_format_histogram().peak_trough_sum()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Peer of
+        // `layer_kind_peak_trough_sum_matches_layer_kind_histogram_peak_trough_sum_pointwise`
+        // on the sister sub-axis and the addition-form sibling of
+        // `file_format_spread_matches_file_format_histogram_spread_pointwise`
+        // on the same sub-axis (subtraction-form sibling).
+        for chain in recessive_file_format_fixtures() {
+            let via_histogram = chain.as_slice().file_format_histogram().peak_trough_sum();
+            assert_eq!(
+                chain.as_slice().file_format_peak_trough_sum(),
+                via_histogram
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_peak_trough_sum_equals_peak_plus_trough_pointwise() {
+        // The fused-pair pin: `file_format_peak_trough_sum ==
+        // peak_file_format_count + trough_file_format_count` on every
+        // fixture. Peer of
+        // `layer_kind_peak_trough_sum_equals_peak_plus_trough_pointwise`
+        // on the sister sub-axis and the addition-form sibling of
+        // `file_format_spread_equals_peak_minus_trough_pointwise` on the
+        // same sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let peak = slice.peak_file_format_count();
+            let trough = slice.trough_file_format_count();
+            assert_eq!(slice.file_format_peak_trough_sum(), peak + trough);
+        }
+    }
+
+    #[test]
+    fn file_format_peak_trough_sum_sample_chain_is_four() {
+        // Direct pin against `sample_chain()`: two `.yaml` file layers +
+        // one Env layer. Yaml is the sole observed format (Env layers
+        // don't contribute to the file-format histogram), so peak ==
+        // trough == 2 and the joint sum is 4 — the singleton-support
+        // degenerate at count 2 through the seam. Reads the paired
+        // `(peak_file_format_count, trough_file_format_count,
+        // file_format_spread, file_format_peak_trough_sum)` quadruple as
+        // `(2, 2, 0, 4)`. Cross-sub-axis divergence pin against
+        // `layer_kind_peak_trough_sum_sample_chain_is_three`: on the same
+        // `sample_chain()` fixture, the layer-kind sub-axis reads the
+        // quadruple `(2, 1, 1, 3)` (File dominant, Env recessive) while
+        // the file-format sub-axis reads `(2, 2, 0, 4)` (only Yaml
+        // observed at count 2).
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_file_format_count(), 2);
+        assert_eq!(slice.trough_file_format_count(), 2);
+        assert_eq!(slice.file_format_spread(), 0);
+        assert_eq!(slice.file_format_peak_trough_sum(), 4);
+    }
+
+    #[test]
+    fn file_format_peak_trough_sum_toml_majority_is_four() {
+        // Direct pin against a toml-majority chain: three `.toml` file
+        // layers + one `.yaml` + one Env + one Defaults. Toml dominant
+        // at 3, Yaml recessive at 1 — the joint sum is 4. Reads the
+        // paired `(peak, trough, spread, sum)` quadruple as `(3, 1, 2,
+        // 4)`. Cross-verified against `hist.peak_trough_sum() == 4` at
+        // the same site.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_file_format_count(), 3);
+        assert_eq!(slice.trough_file_format_count(), 1);
+        assert_eq!(slice.file_format_spread(), 2);
+        assert_eq!(slice.file_format_peak_trough_sum(), 4);
+        assert_eq!(slice.file_format_histogram().peak_trough_sum(), 4);
+    }
+
+    #[test]
+    fn file_format_peak_trough_sum_empty_chain_is_zero() {
+        // An empty chain has no file layers and therefore zero joint
+        // magnitude — reads `0` per the AxisHistogram::peak_trough_sum
+        // empty convention one altitude down; the `(peak, trough,
+        // spread, sum)` quadruple reads `(0, 0, 0, 0)` uniformly on
+        // empty. Peer of `layer_kind_peak_trough_sum_empty_chain_is_zero`
+        // on the sister sub-axis.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.peak_file_format_count(), 0);
+        assert_eq!(empty.trough_file_format_count(), 0);
+        assert_eq!(empty.file_format_spread(), 0);
+        assert_eq!(empty.file_format_peak_trough_sum(), 0);
+    }
+
+    #[test]
+    fn file_format_peak_trough_sum_no_recognized_files_is_zero() {
+        // The non-empty-chain / empty-histogram boundary the file-format
+        // sub-axis pins that the layer-kind sub-axis does *not*. A chain
+        // of only `Defaults` / `Env` / unrecognized-extension `File`
+        // layers is non-empty but has no `Some` file_format projection,
+        // so the histogram is empty and `file_format_peak_trough_sum`
+        // reads zero — the vacuous-uniformity boundary reads through the
+        // seam. Distinguishing pin against the layer-kind sub-axis
+        // `layer_kind_peak_trough_sum` idiom: on those same chains,
+        // `layer_kind_peak_trough_sum` reads a nonzero joint magnitude
+        // (Defaults / Env / File layers still contribute to the layer-
+        // kind histogram) while `file_format_peak_trough_sum` reads
+        // zero. Cross-sub-axis divergence at the empty-boundary.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env(String::new()),
+                ConfigSource::Env("APP_".to_owned()),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a")),
+                ConfigSource::File(PathBuf::from("/b.unknown")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            assert!(!chain.is_empty(), "fixture must be non-empty");
+            assert!(
+                chain.as_slice().file_format_histogram().is_empty(),
+                "fixture must have empty file-format histogram",
+            );
+            assert_eq!(chain.as_slice().file_format_peak_trough_sum(), 0);
+        }
+    }
+
+    #[test]
+    fn file_format_peak_trough_sum_singleton_support_multi_layer_is_ten() {
+        // Direct pin at a 5-layer singleton-support Toml-only chain —
+        // present == {Toml}, peak == trough == 5, sum == 10. The
+        // scalar peer of the singleton-support cell degenerate at the
+        // joint-magnitude surface — the quadruple reads `(5, 5, 0, 10)`,
+        // distinct from the 3-layer singleton-support pin so any misread
+        // that reintroduces the `peak + trough` inline idiom as `peak`
+        // alone silently under-reports the joint magnitude on a fixture
+        // at a different peak. Peer of
+        // `layer_kind_peak_trough_sum_singleton_support_is_twice_len`
+        // on the sister sub-axis (which reaches `2 * len` on the layer-
+        // kind sub-axis for the same reason).
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.toml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.toml")),
+            ConfigSource::File(PathBuf::from("/d.toml")),
+            ConfigSource::File(PathBuf::from("/e.toml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_file_formats().len(), 1);
+        assert_eq!(slice.peak_file_format_count(), 5);
+        assert_eq!(slice.trough_file_format_count(), 5);
+        assert_eq!(slice.file_format_peak_trough_sum(), 10);
+        assert_eq!(
+            slice.file_format_peak_trough_sum(),
+            2 * slice.file_format_histogram().total(),
+        );
+    }
+
+    #[test]
+    fn file_format_peak_trough_sum_uniform_full_cover_equals_twice_shared_count() {
+        // Uniform full-cover pin: every observed format contributes the
+        // same nonzero count (one file layer per format here — a full-
+        // cover chain with uniform count 1 per cell), so peak == trough
+        // == 1 and the joint sum is 2 (== 2 * peak). The equality
+        // boundary of the `sum <= 2 * peak` invariant, witnessed against
+        // `file_formats_uniform_count`. Peer of
+        // `layer_kind_peak_trough_sum_uniform_cover_equals_twice_shared_count`
+        // on the sister sub-axis.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.file_format_histogram().is_full_cover());
+        assert!(slice.file_formats_uniform_count());
+        assert_eq!(slice.peak_file_format_count(), 1);
+        assert_eq!(slice.trough_file_format_count(), 1);
+        assert_eq!(slice.file_format_peak_trough_sum(), 2);
+        assert_eq!(
+            slice.file_format_peak_trough_sum(),
+            2 * slice.peak_file_format_count(),
+        );
+    }
+
+    #[test]
+    fn file_format_peak_trough_sum_zero_iff_histogram_is_empty() {
+        // Empty-boundary equivalence: `file_format_peak_trough_sum() == 0`
+        // iff `file_format_histogram().is_empty()`. Both endpoints are
+        // structurally `>= 1` on any non-empty histogram, so their sum is
+        // zero exactly on the empty histogram — the stricter empty-
+        // boundary than the sister layer-kind sub-axis's chain-empty
+        // boundary. Cross-sub-axis divergence pin against
+        // `layer_kind_peak_trough_sum_zero_iff_empty`: on the layer-kind
+        // sub-axis, `sum == 0` iff the chain is empty; on the file-format
+        // sub-axis, `sum == 0` iff the histogram is empty (a non-empty
+        // chain of only Defaults / Env / unrecognized-extension File
+        // entries also reads `0` here).
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let sum_zero = slice.file_format_peak_trough_sum() == 0;
+            let hist_empty = slice.file_format_histogram().is_empty();
+            assert_eq!(
+                sum_zero,
+                hist_empty,
+                "file_format_peak_trough_sum() == 0 iff \
+                 file_format_histogram().is_empty() \
+                 (sum={s}, hist_empty={e})",
+                s = slice.file_format_peak_trough_sum(),
+                e = hist_empty,
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_peak_trough_sum_nonempty_histogram_lower_bound_is_two() {
+        // Non-empty floor: every chain with a non-empty file-format
+        // histogram has `file_format_peak_trough_sum() >= 2` — both
+        // endpoints contribute at least `1` on any non-empty histogram.
+        // Cross-sub-axis divergence pin against
+        // `layer_kind_peak_trough_sum_nonempty_lower_bound_is_two`: the
+        // layer-kind sub-axis quantifier is `!self.as_ref().is_empty()`;
+        // this sub-axis quantifier is
+        // `!file_format_histogram().is_empty()`, the stricter boundary.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.file_format_histogram().is_empty() {
+                assert!(
+                    slice.file_format_peak_trough_sum() >= 2,
+                    "non-empty histogram must have sum >= 2 (sum={s})",
+                    s = slice.file_format_peak_trough_sum(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn file_format_peak_trough_sum_bounded_below_by_file_format_spread() {
+        // Companion invariant: `sum >= spread` always — `peak + trough
+        // >= peak - trough` reduces to `2 * trough >= 0`, always true.
+        // Equality holds iff `trough == 0` — i.e. iff
+        // `file_format_histogram().is_empty()` at this sub-axis (the
+        // sole shape with `trough == 0`, since every non-empty histogram
+        // has a support cell contributing at least `1`). Peer of
+        // `layer_kind_peak_trough_sum_bounded_below_by_layer_kind_spread`
+        // on the sister sub-axis, with a stricter equality-case
+        // boundary: layer-kind sub-axis equality holds on the chain-
+        // empty case; file-format sub-axis equality holds on the
+        // histogram-empty case (a strictly wider set of chains).
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert!(slice.file_format_peak_trough_sum() >= slice.file_format_spread());
+            let equality = slice.file_format_peak_trough_sum() == slice.file_format_spread();
+            assert_eq!(equality, slice.file_format_histogram().is_empty());
+        }
+    }
+
+    #[test]
+    fn file_format_peak_trough_sum_bounded_above_by_twice_peak() {
+        // Companion invariant: `sum <= 2 * peak` always — `peak + trough
+        // <= 2 * peak` reduces to `trough <= peak`, the structural
+        // `trough <= peak` invariant on `AxisHistogram`. Equality holds
+        // iff `file_formats_uniform_count` (peak equals trough,
+        // including the empty-histogram vacuous-uniformity case where
+        // both are zero). Peer of
+        // `layer_kind_peak_trough_sum_bounded_above_by_twice_peak` on
+        // the sister sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert!(slice.file_format_peak_trough_sum() <= 2 * slice.peak_file_format_count(),);
+            let equality =
+                slice.file_format_peak_trough_sum() == 2 * slice.peak_file_format_count();
+            assert_eq!(equality, slice.file_formats_uniform_count());
+        }
+    }
+
+    #[test]
+    fn file_format_peak_trough_sum_bounded_above_by_twice_histogram_total() {
+        // Composition bound: `sum <= 2 * file_format_histogram().total()`
+        // always — both endpoints are bounded above by the histogram
+        // total. Cross-sub-axis divergence from
+        // `layer_kind_peak_trough_sum_bounded_above_by_twice_len`: the
+        // layer-kind sub-axis's histogram total equals the chain length
+        // (every entry projects to one cell), so the layer-kind sub-
+        // axis composes to `2 * self.as_ref().len()`; the file-format
+        // sub-axis's histogram total is at most the count of `File`
+        // layers with recognized extensions (bounded by the chain length
+        // but not equal to it), so this sub-axis composes to `2 *
+        // file_format_histogram().total()` — the tighter bound.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let hist_total = slice.file_format_histogram().total();
+            assert!(
+                slice.file_format_peak_trough_sum() <= 2 * hist_total,
+                "file_format_peak_trough_sum()={s} must be <= 2 * \
+                 file_format_histogram().total()={t}",
+                s = slice.file_format_peak_trough_sum(),
+                t = hist_total,
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_peak_trough_sum_plus_spread_recovers_twice_peak() {
+        // Peak endpoint-recovery: `sum + spread == 2 * peak` — the
+        // `(sum, difference)` surface halves back to `peak` via one
+        // addition. Peer of
+        // `layer_kind_peak_trough_sum_plus_spread_recovers_twice_peak`
+        // on the sister sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let sum = slice.file_format_peak_trough_sum();
+            let spread = slice.file_format_spread();
+            let peak = slice.peak_file_format_count();
+            assert_eq!(sum + spread, 2 * peak);
+            assert_eq!((sum + spread) / 2, peak);
+        }
+    }
+
+    #[test]
+    fn file_format_peak_trough_sum_minus_spread_recovers_twice_trough() {
+        // Trough endpoint-recovery: `sum - spread == 2 * trough` — the
+        // `(sum, difference)` surface halves back to `trough` via one
+        // (underflow-safe) subtraction. Peer of
+        // `layer_kind_peak_trough_sum_minus_spread_recovers_twice_trough`
+        // on the sister sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let sum = slice.file_format_peak_trough_sum();
+            let spread = slice.file_format_spread();
+            let trough = slice.trough_file_format_count();
+            assert!(sum >= spread);
+            assert_eq!(sum - spread, 2 * trough);
+            assert_eq!((sum - spread) / 2, trough);
+        }
+    }
+
+    #[test]
+    fn file_format_peak_trough_sum_agrees_with_open_coded_max_plus_min_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0) + hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0)` walk this lift replaces
+        // — both the named seam and the hand-rolled max-plus-min-over-
+        // support must pointwise agree over every fixture. The
+        // `filter(|(_, c)| c > 0)` step on the min side is the load-
+        // bearing seam: the naive `.min()` over the full axis would
+        // silently pick zero-count absent cells on any non-full-cover
+        // chain, shadowing the trough-of-support the seam surfaces —
+        // and once the trough shadows to zero, the joint sum coincides
+        // with the peak alone, silently underreporting the joint
+        // magnitude. Peer of
+        // `layer_kind_peak_trough_sum_agrees_with_open_coded_max_plus_min_walk`
+        // on the sister sub-axis and the addition-form sibling of
+        // `file_format_spread_agrees_with_open_coded_max_minus_min_walk`
+        // on the same sub-axis.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.file_format_peak_trough_sum();
+            let hist = slice.file_format_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .map(|(_, c)| c)
+                .filter(|&c| c > 0)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(via_seam, peak + trough);
         }
     }
 
