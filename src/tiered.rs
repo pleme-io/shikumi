@@ -12650,6 +12650,181 @@ impl ConfigDiff {
     pub fn dominant_kind_observation(&self) -> Option<(DiffLineKind, usize)> {
         self.kind_histogram().dominant_observation()
     }
+
+    /// Fused `(recessive_kind, trough_kind_count)` anti-modal
+    /// `(cell, count)` pair off the closed anti-modal surface at the
+    /// diff altitude — the anti-modal [`DiffLineKind`] together with
+    /// the line count it contributed, in one `Option<(cell, count)>`
+    /// read.
+    ///
+    /// The **fused-pair peer** of [`Self::recessive_kind`] (which
+    /// carries the *cell* alone as `Option<DiffLineKind>`) and
+    /// [`Self::trough_kind_count`] (which carries the *count* alone
+    /// as `usize`) on the trough side — the natural upstream both
+    /// scalar halves project through via `.map(|(k, _)| k)` and
+    /// `.map_or(0, |(_, n)| n)` respectively. Defined as
+    /// `self.kind_histogram().recessive_observation()`, routed through
+    /// [`crate::AxisHistogram::recessive_observation`] one altitude
+    /// down — the fused single-pass argmin scan over the histogram's
+    /// nonzero support that names the anti-modal cell together with
+    /// the trough count simultaneously, halving the work of the two-
+    /// scan `(recessive_kind(), trough_kind_count())` fusion the
+    /// scalar-pair form pays for on every non-empty diff.
+    ///
+    /// **Seeds the "recessive-observation across altitudes"
+    /// projection** — a new fresh vertical opening the joint anti-
+    /// modal-observation fused-pair row at the diff altitude, mirroring
+    /// the same 5-column grid the just-closed `dominant_kind_observation`
+    /// modal-side sibling row already opened alongside the twelve
+    /// prior scalar / boolean projections plus the closed classifier
+    /// rows already closed. Where the two closed anti-modal-side
+    /// siblings ([`Self::recessive_kind`] carrying the *cell* alone
+    /// and [`Self::trough_kind_count`] carrying the *count* alone)
+    /// each surface one half of the anti-modal observation
+    /// independently at the cost of walking the histogram twice, this
+    /// row surfaces the *joint pair itself* as one `Option<(cell,
+    /// count)>` read. The natural next lifts climb to the tier
+    /// altitude (`ProvenanceMap::recessive_tier_observation` over
+    /// [`Self::tier_histogram`]) and sideways along the chain
+    /// altitude's three sub-axes
+    /// (`ConfigSourceChain::recessive_layer_kind_observation`,
+    /// `ConfigSourceChain::recessive_file_format_observation`,
+    /// `ConfigSourceChain::recessive_env_prefix_kind_observation` over
+    /// the corresponding chain histograms). Once climbed and closed
+    /// at every altitude / sub-axis in the same five-step trajectory
+    /// the just-closed `dominant_observation` fused-pair sibling and
+    /// the prior scalar / boolean projections closed, the substrate
+    /// closes the anti-modal `(cell, count)` fused-pair row at every
+    /// altitude / sub-axis of the 5-column grid alongside the closed
+    /// sibling `(recessive_cell, trough_count)` scalar halves and the
+    /// closed modal-side `(dominant_observation)` fused-pair peer,
+    /// closing the joint `(dominant, recessive) × (cell, count) ×
+    /// fused` 2×2×2 = 8-seam grid on the histogram surface at every
+    /// altitude / sub-axis.
+    ///
+    /// **Empty-diff convention** — returns `None`, matching the
+    /// [`crate::AxisHistogram::recessive_observation`] empty
+    /// convention one altitude down and the [`Self::recessive_kind`]
+    /// empty convention on the same altitude. The `Option<(cell,
+    /// count)>` projection reads `None` on every empty diff and
+    /// strictly `Some((k, n))` with `n >= 1` on every non-empty diff.
+    /// The `None`-boundary lifts from the empty support one altitude
+    /// down; the scalar count projection [`Self::trough_kind_count`]
+    /// reads `0` on the same boundary via `.map_or(0, |(_, n)| n)`.
+    ///
+    /// **Tie-breaking policy on the trough side** — declaration-order
+    /// first: on trough ties, the
+    /// [`crate::AxisHistogram::recessive_observation`] scan (a
+    /// running-min walk with `<`-only promotion — strict inequality,
+    /// not `<=`) keeps the *first* observed cell at that count in
+    /// [`crate::ClosedAxis::ALL`] declaration order (`Removed → Added
+    /// → Context`), matching the shared
+    /// [`crate::AxisHistogram::recessive_cell`] tie-breaking one
+    /// altitude down and [`Self::recessive_kind`] on the same
+    /// altitude. Every balanced two-kind diff `(Removed=1, Added=1)`
+    /// reads `Some((Removed, 1))`; every uniform three-kind cover
+    /// `(Removed=1, Added=1, Context=1)` reads `Some((Removed, 1))`;
+    /// the Context-dominated fixture `(Context=3, Removed=1)` reads
+    /// `Some((Removed, 1))` — the strictly-recessive cell at the
+    /// unique trough count. The `.0` component is deterministically
+    /// the first tied declaration-order cell — matching the
+    /// modal-side sibling [`Self::dominant_kind_observation`] on the
+    /// exact same declaration-order-first tie-break policy over the
+    /// same axis.
+    ///
+    /// **Coincidence-boundary with the modal-side sibling.**
+    /// [`Self::dominant_kind_observation`] and
+    /// [`Self::recessive_kind_observation`] coincide pointwise on
+    /// every diff where the modal and anti-modal cells share the
+    /// same count *and* the modal cell comes first in declaration
+    /// order at that shared count — the peak and trough coincide.
+    /// This holds on every empty diff (both `None`), every singleton-
+    /// support diff (both `Some((k, self.lines.len()))` at the sole
+    /// observed cell), and every uniform-count diff (both `Some((k,
+    /// shared_count))` at the first observed cell — the modal and
+    /// anti-modal level sets coincide because peak and trough are
+    /// equal, and the declaration-order tie-break is identical on
+    /// both sides). Peer of the histogram-side coincidence law:
+    /// [`crate::AxisHistogram::dominant_observation`] and
+    /// [`crate::AxisHistogram::recessive_observation`] coincide iff
+    /// the histogram is empty or uniform-count.
+    ///
+    /// # Invariants
+    ///
+    /// - `recessive_kind_observation() ==
+    ///   kind_histogram().recessive_observation()` — the routing
+    ///   equivalence one altitude down; both project the same fused
+    ///   pair off the same primitive.
+    /// - `recessive_kind_observation().is_none() ==
+    ///   self.lines.is_empty()` — the `None`-boundary equivalence:
+    ///   the pair is defined exactly when the diff has at least one
+    ///   line, matching [`Self::recessive_kind`] on the cell side.
+    /// - `recessive_kind_observation().map(|(k, _)| k) ==
+    ///   recessive_kind()` — the cell-side projection recovers
+    ///   [`Self::recessive_kind`] pointwise; both routings pick the
+    ///   same anti-modal cell off the same primitive.
+    /// - `recessive_kind_observation().map_or(0, |(_, n)| n) ==
+    ///   trough_kind_count()` — the count-side projection recovers
+    ///   [`Self::trough_kind_count`] pointwise; both routings read
+    ///   the same trough count off the same primitive. Empty case:
+    ///   `None.map_or(0, …) == 0 == trough_kind_count()`. Non-empty
+    ///   case: `Some((_, n)).map_or(0, …) == n == trough_kind_count()`.
+    /// - When `Some((k, n))`, `k` is a member of
+    ///   [`Self::present_kinds`] — the anti-modal cell is by
+    ///   definition observed. Peer to the cell-side
+    ///   [`Self::recessive_kind`] membership invariant.
+    /// - When `Some((k, n))`, `kind_histogram().count(k) == n` —
+    ///   the count component equals the observation count at the
+    ///   cell component. Peer to the cell/count consistency law on
+    ///   [`crate::AxisHistogram::recessive_observation`] one altitude
+    ///   down.
+    /// - When `Some((_, n))`, `n >= 1` — every non-empty support has
+    ///   at least one line at the anti-modal cell, so the count
+    ///   component is strictly positive.
+    /// - When `Some((_, n))`, `n <= peak_kind_count()` — the trough
+    ///   count is bounded above by the peak count. Equality holds
+    ///   iff the histogram is uniform-count (peak and trough
+    ///   coincide); the strict inequality holds on every strictly-
+    ///   unimodal support.
+    /// - `recessive_kind_observation()` on a uniform per-kind diff
+    ///   (one line per kind) equals `Some((DiffLineKind::Removed,
+    ///   1))` — declaration-order tie-breaking picks the first cell
+    ///   at the shared trough count `1`, matching the modal-side
+    ///   sibling on the same fixture (peak and trough coincide on
+    ///   uniform-count).
+    /// - `recessive_kind_observation()` on a singleton-support diff
+    ///   (every line on the same kind) equals `Some((k,
+    ///   self.lines.len()))` where `k` is the sole observed kind —
+    ///   the trough equals the total, matching the modal-side
+    ///   sibling on the same fixture (peak and trough coincide on
+    ///   singleton-support).
+    /// - `recessive_kind_observation() == dominant_kind_observation()`
+    ///   whenever the histogram is empty or uniform-count (peak and
+    ///   trough coincide with the same declaration-order tie-break).
+    ///   Strictly diverges on every strictly-unimodal support where
+    ///   peak > trough — the two projections then read different
+    ///   `(cell, count)` pairs at each end of the observation
+    ///   interval.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the fused
+    /// argmin scan through
+    /// [`crate::AxisHistogram::recessive_observation`]). Both are
+    /// `O(n)` in practice since the diff-cell axis carries a fixed
+    /// three-cell cardinality; the returned `Option<(DiffLineKind,
+    /// usize)>` fits in one enum + two scalars. Halves the cost of
+    /// the previous inline `(diff.recessive_kind(),
+    /// diff.trough_kind_count())` idiom (which walked the counts
+    /// vector twice — once to argmin the cell, once to read the
+    /// trough count back — where
+    /// [`crate::AxisHistogram::recessive_observation`] fuses both
+    /// into a single walk).
+    #[must_use]
+    pub fn recessive_kind_observation(&self) -> Option<(DiffLineKind, usize)> {
+        self.kind_histogram().recessive_observation()
+    }
 }
 
 #[cfg(test)]
@@ -24216,6 +24391,501 @@ mod tests {
             let count = obs.map_or(0, |(_, n)| n);
             assert_eq!(cell, diff.dominant_kind());
             assert_eq!(count, diff.peak_kind_count());
+        }
+    }
+
+    // ── recessive_kind_observation — the diff-altitude seed of the
+    //    "recessive-observation across altitudes" projection ─────────
+
+    #[test]
+    fn recessive_kind_observation_matches_kind_histogram_recessive_observation_pointwise() {
+        // Routing pin: `recessive_kind_observation` routes through
+        // `kind_histogram().recessive_observation()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native fused-pair
+        // primitive. Diff-altitude seed of the new "recessive-
+        // observation across altitudes" projection — the natural
+        // trough-side fused-pair upstream of the two closed sibling
+        // scalar-half rows (`recessive_kind` on the cell side and
+        // `trough_kind_count` on the count side) that both project
+        // through `.map(|(k, _)| k)` and `.map_or(0, |(_, n)| n)`
+        // respectively. Trough-side dual of the just-closed sibling
+        // `dominant_kind_observation` seed on the peak side of the
+        // same axis.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().recessive_observation();
+            assert_eq!(diff.recessive_kind_observation(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn recessive_kind_observation_matches_recessive_kind_and_trough_kind_count_scalar_pair_pointwise()
+     {
+        // Structural-form pin: `recessive_kind_observation` agrees
+        // with the open-coded `(recessive_kind(), trough_kind_count())`
+        // pair on every fixture — coerced through the `Option` shape
+        // via `.map(|k| (k, trough_kind_count()))`. Pins the defining
+        // equivalence on the underlying scalar-pair surface: both
+        // routings read the same anti-modal cell and the same trough
+        // count off the same primitive, so the fused-pair form is
+        // behaviorally indistinguishable from the two-call open-coded
+        // pair. Trough-side dual of the sibling
+        // `dominant_kind_observation_matches_dominant_kind_and_peak_kind_count_scalar_pair_pointwise`
+        // on the peak side of the same axis.
+        for diff in dominant_kind_fixtures() {
+            let via_pair = diff.recessive_kind().map(|k| (k, diff.trough_kind_count()));
+            assert_eq!(diff.recessive_kind_observation(), via_pair);
+        }
+    }
+
+    #[test]
+    fn recessive_kind_observation_cell_component_equals_recessive_kind_pointwise() {
+        // Cell-side sibling pin: `.map(|(k, _)| k) ==
+        // recessive_kind()` on every fixture. Pins the fused-pair
+        // primitive as the upstream of the sibling anti-modal-cell
+        // scalar, which reads the same value through the `.map`
+        // projection on the `Option` shape (via the shared
+        // `AxisHistogram::recessive_observation` walk one altitude
+        // down). Empty case: `None.map(…) == None ==
+        // recessive_kind()`. Non-empty case: `Some((k, _)).map(…) ==
+        // Some(k) == recessive_kind()`.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.recessive_kind_observation().map(|(k, _)| k);
+            assert_eq!(via_map, diff.recessive_kind());
+        }
+    }
+
+    #[test]
+    fn recessive_kind_observation_count_component_equals_trough_kind_count_pointwise() {
+        // Count-side sibling pin: `.map_or(0, |(_, n)| n) ==
+        // trough_kind_count()` on every fixture. Pins the fused-pair
+        // primitive as the upstream of the sibling trough-count
+        // scalar, which reads the same value through the `.map_or`
+        // projection on the `Option` shape (via the shared
+        // `AxisHistogram::recessive_observation` walk one altitude
+        // down). Empty case: `None.map_or(0, …) == 0 ==
+        // trough_kind_count()`. Non-empty case: `Some((_, n)).map_or(0,
+        // …) == n == trough_kind_count()`.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.recessive_kind_observation().map_or(0, |(_, n)| n);
+            assert_eq!(via_map, diff.trough_kind_count());
+        }
+    }
+
+    #[test]
+    fn recessive_kind_observation_empty_diff_is_none() {
+        // Empty-diff polarity pin: the empty diff has no observed
+        // cell, so the fused pair reads `None` — the vacuous-nothing
+        // boundary lifted from the empty support. The triple
+        // `(recessive_kind, trough_kind_count,
+        // recessive_kind_observation)` reads uniformly `(None, 0,
+        // None)` on the empty diff.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert_eq!(empty.recessive_kind_observation(), None);
+    }
+
+    #[test]
+    fn recessive_kind_observation_singleton_support_is_some_singleton() {
+        // Singleton-support polarity pin: a diff of two `Added` lines
+        // carries all `2` lines on `Added` and zero on the other
+        // cells; the fused pair reads `Some((Added, 2))` — the sole
+        // observed cell paired with the total line count. Witness of
+        // the singleton-support corner where `n == self.lines.len()`.
+        // Peer of the sibling
+        // `dominant_kind_observation_singleton_support_is_some_singleton`
+        // — peak and trough coincide on the singleton-support
+        // boundary because the sole observed cell is simultaneously
+        // the modal AND anti-modal cell.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Added("a1".into()), DiffLine::Added("a2".into())],
+        };
+        assert!(diff.kinds_singular_support());
+        assert_eq!(
+            diff.recessive_kind_observation(),
+            Some((DiffLineKind::Added, 2)),
+        );
+        // The peak / trough coincide on singleton-support: the
+        // modal-side and anti-modal-side fused-pair projections read
+        // the same value on this fixture.
+        assert_eq!(
+            diff.recessive_kind_observation(),
+            diff.dominant_kind_observation(),
+        );
+    }
+
+    #[test]
+    fn recessive_kind_observation_balanced_two_kind_is_some_removed_at_count_one() {
+        // Balanced-partial-cover polarity pin: a diff of one
+        // `Removed` + one `Added` observes cells at count `1` each;
+        // the trough is tied between two cells, and declaration-order
+        // tie-breaking picks the first observed cell — `Removed` —
+        // paired with the shared trough count `1`. Witness of the
+        // tie-breaking policy: the `.0` component is
+        // deterministically the first tied declaration-order cell.
+        // Peer of the sibling
+        // `dominant_kind_observation_balanced_two_kind_is_some_removed_at_count_one`
+        // — peak and trough coincide on the balanced two-kind
+        // boundary because both counts equal `1` (uniform-count).
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert!(diff.kinds_balanced());
+        assert_eq!(
+            diff.recessive_kind_observation(),
+            Some((DiffLineKind::Removed, 1)),
+        );
+        // The peak / trough coincide on uniform-count: the modal-side
+        // and anti-modal-side fused-pair projections read the same
+        // value on this fixture.
+        assert_eq!(
+            diff.recessive_kind_observation(),
+            diff.dominant_kind_observation(),
+        );
+    }
+
+    #[test]
+    fn recessive_kind_observation_uniform_three_kind_cover_is_some_removed_at_count_one() {
+        // Uniform-axis-cover polarity pin: a diff observing every
+        // cell of `DiffLineKind` exactly once has all three nonzero
+        // counts at `1`; the trough is tied between all three cells,
+        // and declaration-order tie-breaking picks `Removed` (the
+        // first cell in the axis) paired with the shared trough
+        // count `1`. Top-corner witness of the tie-breaking policy on
+        // the uniform full-cover shape. Peer of the sibling
+        // `dominant_kind_observation_uniform_three_kind_cover_is_some_removed_at_count_one`
+        // — peak and trough coincide on the uniform-count boundary
+        // because the modal and anti-modal level sets are identical
+        // (every observed cell sits at the shared peak AND trough).
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kinds_balanced());
+        assert!(diff.kinds_full_cover());
+        assert_eq!(
+            diff.recessive_kind_observation(),
+            Some((DiffLineKind::Removed, 1)),
+        );
+        // The peak / trough coincide on uniform-count full-cover: the
+        // modal-side and anti-modal-side fused-pair projections read
+        // the same value on this fixture.
+        assert_eq!(
+            diff.recessive_kind_observation(),
+            diff.dominant_kind_observation(),
+        );
+    }
+
+    #[test]
+    fn recessive_kind_observation_context_dominated_fixture_is_some_removed_at_one() {
+        // Context-dominated polarity pin: a diff of three `Context`
+        // + one `Removed` has `Removed` uniquely at the trough count
+        // `1`, so the fused pair reads `Some((Removed, 1))` — the
+        // strictly-recessive cell paired with its trough line count.
+        // Witness of the strictly-unimodal trough-side corner on the
+        // cardinality-`3` diff-kind axis. Sharp divergence from the
+        // modal-side sibling
+        // `dominant_kind_observation_context_dominated_fixture_is_some_context_at_three`
+        // (which reads `Some((Context, 3))` on the same fixture) —
+        // the two projections read OPPOSITE ends of the observation
+        // interval on the strictly-unimodal support (peak `Context=3`,
+        // trough `Removed=1`).
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(
+            diff.recessive_kind_observation(),
+            Some((DiffLineKind::Removed, 1)),
+        );
+        // Strict divergence witness: peak > trough on the strictly-
+        // unimodal support, so the two projections read different
+        // `(cell, count)` pairs at each end.
+        assert_ne!(
+            diff.recessive_kind_observation(),
+            diff.dominant_kind_observation(),
+        );
+    }
+
+    #[test]
+    fn recessive_kind_observation_none_iff_empty_pointwise() {
+        // None-boundary equivalence pin:
+        // `recessive_kind_observation().is_none()` iff the diff is
+        // empty. Direct pin of the histogram-side `is_empty ⇔
+        // recessive_observation.is_none()` equivalence one altitude
+        // down — the shared vacuous-nothing boundary on the empty
+        // support. Cross-pins with the parallel
+        // `recessive_kind_none_iff_empty` and
+        // `trough_kind_count_zero_iff_empty` scalar-half boundaries.
+        // Peer of the modal-side sibling
+        // `dominant_kind_observation_none_iff_empty_pointwise` — both
+        // fused-pair rows share the same empty-boundary equivalence
+        // (both project `None` iff the histogram is empty).
+        for diff in dominant_kind_fixtures() {
+            let is_none = diff.recessive_kind_observation().is_none();
+            assert_eq!(is_none, !diff.kinds_any_observed());
+        }
+    }
+
+    #[test]
+    fn recessive_kind_observation_is_some_iff_kinds_any_observed_pointwise() {
+        // Some-boundary equivalence pin (contrapositive of the None-
+        // boundary): `recessive_kind_observation().is_some()` iff the
+        // diff has at least one observed kind. Direct pin of the
+        // histogram-side `!is_empty ⇔ recessive_observation.is_some()`
+        // equivalence one altitude down. Peer of the modal-side
+        // sibling `dominant_kind_observation_is_some_iff_kinds_any_observed_pointwise`.
+        for diff in dominant_kind_fixtures() {
+            let is_some = diff.recessive_kind_observation().is_some();
+            assert_eq!(is_some, diff.kinds_any_observed());
+        }
+    }
+
+    #[test]
+    fn recessive_kind_observation_cell_component_is_present_kind_pointwise() {
+        // Present-support membership pin: when `Some((k, _))`, `k`
+        // is a member of `present_kinds()` — the anti-modal cell is
+        // by definition observed. Lifted from the histogram-side law
+        // `recessive_observation.map(|(k, _)| k) is nonzero-count`
+        // one altitude down. Peer of the modal-side sibling
+        // `dominant_kind_observation_cell_component_is_present_kind_pointwise`.
+        for diff in dominant_kind_fixtures() {
+            if let Some((k, _)) = diff.recessive_kind_observation() {
+                assert!(
+                    diff.present_kinds().contains(&k),
+                    "recessive cell {k:?} must be present in {:?}",
+                    diff.present_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_kind_observation_count_component_equals_histogram_count_at_cell_pointwise() {
+        // Cell/count consistency pin: when `Some((k, n))`, `n ==
+        // kind_histogram().count(k)` — the count component is the
+        // observation count at the cell component. Lifted from the
+        // histogram-side law `recessive_observation.map(|(k, n)| n
+        // == count(k))` one altitude down (the trough-count
+        // consistency law on `AxisHistogram::recessive_observation`).
+        // Peer of the modal-side sibling
+        // `dominant_kind_observation_count_component_equals_histogram_count_at_cell_pointwise`.
+        for diff in dominant_kind_fixtures() {
+            if let Some((k, n)) = diff.recessive_kind_observation() {
+                assert_eq!(n, diff.kind_histogram().count(k));
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_kind_observation_count_component_at_least_one_on_non_empty_pointwise() {
+        // Non-empty lower bound pin: when `Some((_, n))`, `n >= 1`
+        // — every non-empty support has at least one line at the
+        // anti-modal cell, so the count component is strictly
+        // positive. The `Some((_, 0))` shape is unreachable — every
+        // observed cell in a non-empty support carries at least one
+        // line by the `recessive_observation` scan's `c > 0` filter
+        // one altitude down. Peer of the modal-side sibling
+        // `dominant_kind_observation_count_component_at_least_one_on_non_empty_pointwise`.
+        for diff in dominant_kind_fixtures() {
+            if let Some((_, n)) = diff.recessive_kind_observation() {
+                assert!(n >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_kind_observation_count_component_bounded_above_by_peak_kind_count_pointwise() {
+        // Trough-≤-peak upper bound pin: when `Some((_, n))`, `n <=
+        // peak_kind_count()` — the trough count is bounded above by
+        // the peak count. Equality holds iff the histogram is
+        // uniform-count (peak and trough coincide); the strict
+        // inequality holds on every strictly-unimodal support. Direct
+        // pin of the histogram-side `trough_count() <= peak_count()`
+        // ordering one altitude down — the natural cross-projection
+        // ordering the fused-pair rows carry. Sharper upper bound
+        // than the modal-side peer `n <= self.lines.len()` at the
+        // dominant seam — the trough count is dominated by the peak,
+        // which is itself dominated by the total line count. Peer of
+        // the histogram-side law `recessive_observation.map(|(_, n)|
+        // n <= dominant_observation.map(|(_, n)| n))` one altitude
+        // down.
+        for diff in dominant_kind_fixtures() {
+            if let Some((_, n)) = diff.recessive_kind_observation() {
+                assert!(n <= diff.peak_kind_count());
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_kind_observation_count_component_bounded_by_lines_len_pointwise() {
+        // Total-line upper bound pin: when `Some((_, n))`, `n <=
+        // self.lines.len()` — the trough count is bounded above by
+        // the total line count (every kind contributes at most every
+        // line, and the others contribute zero). Equality holds when
+        // `present_kinds().len() == 1` on singleton-support (the
+        // trough equals the total on the sole observed cell); the
+        // strict inequality holds on every multi-kind support.
+        // Weaker upper bound than the sharper peak-count peer above
+        // — retained as a peer of the modal-side sibling
+        // `dominant_kind_observation_count_component_bounded_by_lines_len_pointwise`.
+        for diff in dominant_kind_fixtures() {
+            if let Some((_, n)) = diff.recessive_kind_observation() {
+                assert!(n <= diff.lines.len());
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_kind_observation_yields_declaration_first_on_ties_pointwise() {
+        // Declaration-order tie-breaking pin: on trough ties, the
+        // `.0` component is the *first* observed cell at that count
+        // in `DiffLineKind::ALL` declaration order (`Removed → Added
+        // → Context`). Cross-pins with the shared
+        // `AxisHistogram::recessive_observation` scan's running-min
+        // walk with `<`-only promotion (strict, not `<=`), which
+        // keeps the first-observed tied cell. Symmetric with the
+        // modal-side sibling
+        // `dominant_kind_observation_yields_declaration_first_on_ties_pointwise`
+        // — both scans share the same first-observed tie-break policy
+        // on the same axis.
+        for diff in dominant_kind_fixtures() {
+            if let Some((k_obs, n_obs)) = diff.recessive_kind_observation() {
+                // The first kind in ALL order whose count equals
+                // `n_obs` must equal `k_obs`.
+                let mut first_at_trough = None;
+                for cell in DiffLineKind::ALL {
+                    if diff.kind_histogram().count(*cell) == n_obs {
+                        first_at_trough = Some(*cell);
+                        break;
+                    }
+                }
+                assert_eq!(Some(k_obs), first_at_trough);
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_kind_observation_agrees_with_open_coded_argmin_walk_pointwise() {
+        // Parity against the exact hand-rolled open-coded fused
+        // (cell, count) argmin walk this lift replaces: scan the
+        // histogram's per-cell counts vector in declaration order,
+        // track the running min cell and count with `<`-only
+        // promotion (strict inequality — the first observed cell at
+        // the tied count is kept), excluding zero-count cells.
+        // Catches any future drift where either implementation stops
+        // projecting through the same fused (cell, count) argmin
+        // walk. Symmetric with the modal-side sibling
+        // `dominant_kind_observation_agrees_with_open_coded_argmax_walk_pointwise`
+        // — both projections are argextreme walks over the same
+        // histogram's nonzero support, differing only in the
+        // extremum direction (`>` for the peak vs `<` for the
+        // trough).
+        for diff in dominant_kind_fixtures() {
+            let hist = diff.kind_histogram();
+            let mut best: Option<(DiffLineKind, usize)> = None;
+            for cell in DiffLineKind::ALL {
+                let c = hist.count(*cell);
+                if c == 0 {
+                    continue;
+                }
+                best = match best {
+                    None => Some((*cell, c)),
+                    Some((_, best_n)) if c < best_n => Some((*cell, c)),
+                    other => other,
+                };
+            }
+            assert_eq!(diff.recessive_kind_observation(), best);
+        }
+    }
+
+    #[test]
+    fn recessive_kind_observation_map_pair_recovers_scalar_halves_pointwise() {
+        // Round-trip pin: `recessive_kind_observation()` fully
+        // determines the `(recessive_kind, trough_kind_count)`
+        // scalar pair pointwise via `.map` and `.map_or` — the fused-
+        // pair primitive is the upstream both scalar halves project
+        // through, and the pair `(recessive_kind, trough_kind_count)`
+        // recovers under the invertible projections `.map(|(k, _)|
+        // k)` (cell) and `.map_or(0, |(_, n)| n)` (count). Pins the
+        // fused-pair primitive as the natural upstream both scalar
+        // halves project through. Trough-side dual of the sibling
+        // `dominant_kind_observation_map_pair_recovers_scalar_halves_pointwise`
+        // on the peak side of the same axis.
+        for diff in dominant_kind_fixtures() {
+            let obs = diff.recessive_kind_observation();
+            let cell = obs.map(|(k, _)| k);
+            let count = obs.map_or(0, |(_, n)| n);
+            assert_eq!(cell, diff.recessive_kind());
+            assert_eq!(count, diff.trough_kind_count());
+        }
+    }
+
+    #[test]
+    fn recessive_kind_observation_coincides_with_dominant_kind_observation_on_uniform_count_or_empty_pointwise()
+     {
+        // Peak-trough coincidence pin: the modal-side and anti-
+        // modal-side fused-pair projections read the same value on
+        // every empty diff (both `None`) and every uniform-count diff
+        // (both `Some((k, shared_count))` at the first observed cell)
+        // — the peak and trough coincide because the observation
+        // interval collapses to a single value. On strictly-unimodal
+        // supports where peak > trough, the two projections read
+        // OPPOSITE ends of the interval and DIVERGE. Direct pin of
+        // the histogram-side coincidence law: `dominant_observation
+        // == recessive_observation` iff the histogram is empty or
+        // uniform-count.
+        for diff in dominant_kind_fixtures() {
+            let empty_or_uniform =
+                diff.lines.is_empty() || diff.kind_histogram().is_uniform_count();
+            if empty_or_uniform {
+                assert_eq!(
+                    diff.recessive_kind_observation(),
+                    diff.dominant_kind_observation(),
+                    "peak / trough must coincide on empty / uniform-count \
+                     support",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_kind_observation_diverges_from_dominant_kind_observation_on_strictly_unimodal_pointwise()
+     {
+        // Peak-trough divergence pin: on every strictly-unimodal
+        // support (peak > trough), the modal-side and anti-modal-
+        // side fused-pair projections read OPPOSITE ends of the
+        // observation interval — pointwise-distinct on both count
+        // components (peak count > trough count) and often on both
+        // cell components too (though the cells may coincide on
+        // singleton-support, which is excluded from this pin by the
+        // strict `is_strictly_unimodal` premise). Contrapositive of
+        // the coincidence pin above: the two fused-pair projections
+        // coincide iff the histogram is empty or uniform-count, so
+        // they diverge iff strictly-unimodal.
+        for diff in dominant_kind_fixtures() {
+            let strictly_unimodal =
+                !diff.lines.is_empty() && !diff.kind_histogram().is_uniform_count();
+            if strictly_unimodal {
+                let peak = diff.dominant_kind_observation();
+                let trough = diff.recessive_kind_observation();
+                let peak_count = peak.map_or(0, |(_, n)| n);
+                let trough_count = trough.map_or(0, |(_, n)| n);
+                assert!(
+                    peak_count > trough_count,
+                    "peak count ({peak_count}) must strictly exceed \
+                     trough count ({trough_count}) on strictly-unimodal \
+                     support",
+                );
+            }
         }
     }
 
