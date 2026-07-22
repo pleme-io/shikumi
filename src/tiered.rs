@@ -2578,6 +2578,155 @@ impl ProvenanceMap {
         self.tier_histogram().modality_degree()
     }
 
+    /// The **dominant tier observation** — the fused `(cell, count)`
+    /// pair on the peak side of this resolved fold's tier histogram: the
+    /// modal [`ConfigTierKind`] together with the leaf count it collected.
+    /// Returns `None` exactly when the map is empty (no observed cell);
+    /// otherwise returns `Some((t, n))` where `t ==
+    /// dominant_tier().unwrap()` and `n == peak_tier_count() >= 1`.
+    ///
+    /// Defined as `self.tier_histogram().dominant_observation()`, routed
+    /// through [`crate::AxisHistogram::dominant_observation`] one altitude
+    /// down — the fused single-pass argmax scan over the fixed-cardinality
+    /// counts vector that names the modal cell together with the count it
+    /// carries in one `Option<(A, usize)>` read, halving the work of the
+    /// two-scan `(dominant_tier(), peak_tier_count())` fusion the scalar-
+    /// pair form pays for on every non-empty fold.
+    ///
+    /// The natural typed primitive for fleet dashboards, attestation
+    /// manifests, and alerting policies asking *"which tier dominated
+    /// this resolved fold, and by how many leaves?"*: the fleet dashboard
+    /// headline *"Default owns 47 of 53 leaves"* (where `Some((Default,
+    /// 47))` is this pair), the attestation manifest recording the modal
+    /// `(cell, count)` pair of a resolved fold between two rebuild
+    /// windows, the alerting policy reading *"dominant tier observation
+    /// = Some((Discovered, 12))"* to gate a rebuild window on the modal
+    /// tier and its density simultaneously. Before this lift, every such
+    /// consumer re-derived the pair inline as `(map.dominant_tier(),
+    /// map.peak_tier_count())` — two method calls, each routing through
+    /// [`Self::tier_histogram`] and each scanning the counts vector
+    /// independently (once to argmax the cell, once to read the peak
+    /// count back), where the shared
+    /// [`crate::AxisHistogram::dominant_observation`] primitive fuses
+    /// both into one walk.
+    ///
+    /// The tier-altitude fused-pair peer that **climbs the "dominant-
+    /// observation across altitudes" projection** from the diff altitude
+    /// — the natural fused-pair upstream of the two closed tier-side
+    /// scalar-half rows ([`Self::dominant_tier`] carrying the *cell*
+    /// alone as `Option<ConfigTierKind>` and [`Self::peak_tier_count`]
+    /// carrying the *count* alone as `usize`) both project through via
+    /// `.map(|(t, _)| t)` and `.map_or(0, |(_, n)| n)` respectively.
+    /// Lifts the diff-altitude seed
+    /// [`ConfigDiff::dominant_kind_observation`] one altitude up. The
+    /// natural next lifts sideways along the chain altitude's three sub-
+    /// axes (`ConfigSourceChain::dominant_layer_kind_observation`,
+    /// `ConfigSourceChain::dominant_file_format_observation`,
+    /// `ConfigSourceChain::dominant_env_prefix_kind_observation` over
+    /// the corresponding chain histograms). Once closed at every chain
+    /// sub-axis in the same three-step trajectory the prior scalar /
+    /// boolean projections and the closed classifier rows closed, the
+    /// substrate closes the dominant-observation fused-pair row at every
+    /// altitude / sub-axis of the 5-column grid alongside the closed
+    /// sibling `(dominant_cell, peak_count)` scalar halves.
+    ///
+    /// **Cardinality-`4` reachability at the tier altitude — one strict
+    /// advance over the diff altitude.** [`ConfigTierKind`] carries four
+    /// cells, so `dominant_tier_observation()` reads `None` on the empty
+    /// map, `Some((Bare, n))` on every uniform per-tier full-cover fold
+    /// (declaration-order tie-breaking on the four-cell axis picks the
+    /// first cell), `Some((t, len()))` on every singleton-support fold
+    /// (the sole observed tier collects every leaf), and `Some((t, n))`
+    /// with `n < len()` and `n >= 1` on every multi-tier partial-cover
+    /// fold — witnesses on every corner of the tie-breaking policy on
+    /// the cardinality-`4` tier axis, one strict advance over the
+    /// cardinality-`3` diff altitude's reachable pairs on the same
+    /// surface (whose count component caps at `3` on a uniform full-
+    /// cover fixture, versus `4` here).
+    ///
+    /// **Empty-map convention** — returns `None`, matching the
+    /// [`crate::AxisHistogram::dominant_observation`] empty convention
+    /// one altitude down and the [`Self::dominant_tier`] empty
+    /// convention on the same altitude. The scalar count projection
+    /// [`Self::peak_tier_count`] reads `0` on the same boundary via
+    /// `.map_or(0, |(_, n)| n)`.
+    ///
+    /// **Tie-breaking policy on the peak side** — declaration-order
+    /// first: on peak ties, the
+    /// [`crate::AxisHistogram::dominant_observation`] scan (a running-
+    /// max walk with `>`-only promotion — strict inequality, not `>=`)
+    /// keeps the *first* observed cell at that count in
+    /// [`crate::ClosedAxis::ALL`] declaration order (`Bare → Default →
+    /// Custom → Discovered` for [`ConfigTierKind`]), matching the shared
+    /// [`crate::AxisHistogram::dominant_cell`] tie-breaking one altitude
+    /// down and [`Self::dominant_tier`] on the same altitude. Every
+    /// uniform-cover fold (each observed tier producing the same nonzero
+    /// leaf count) reads `Some((Bare, n))` — the first cell in
+    /// declaration order.
+    ///
+    /// # Invariants
+    ///
+    /// - `dominant_tier_observation() ==
+    ///   tier_histogram().dominant_observation()` — the routing
+    ///   equivalence one altitude down; both project the same fused
+    ///   pair off the same primitive.
+    /// - `dominant_tier_observation().is_none() == is_empty()` — the
+    ///   `None`-boundary equivalence: the pair is defined exactly when
+    ///   the map has at least one leaf, matching [`Self::dominant_tier`]
+    ///   on the cell side.
+    /// - `dominant_tier_observation().map(|(t, _)| t) == dominant_tier()`
+    ///   — the cell-side projection recovers [`Self::dominant_tier`]
+    ///   pointwise; both routings pick the same modal cell off the same
+    ///   primitive.
+    /// - `dominant_tier_observation().map_or(0, |(_, n)| n) ==
+    ///   peak_tier_count()` — the count-side projection recovers
+    ///   [`Self::peak_tier_count`] pointwise; both routings read the
+    ///   same peak count off the same primitive. Empty case:
+    ///   `None.map_or(0, …) == 0 == peak_tier_count()`. Non-empty case:
+    ///   `Some((_, n)).map_or(0, …) == n == peak_tier_count()`.
+    /// - When `Some((t, n))`, `t` is a member of
+    ///   [`Self::contributing_tiers`] — the modal cell is by definition
+    ///   observed. Peer to the cell-side [`Self::dominant_tier`]
+    ///   membership invariant.
+    /// - When `Some((t, n))`, `tier_histogram().count(t) == n` — the
+    ///   count component equals the observation count at the cell
+    ///   component. Peer to the cell/count consistency law on
+    ///   [`crate::AxisHistogram::dominant_observation`] one altitude
+    ///   down.
+    /// - When `Some((_, n))`, `n >= 1` — every non-empty support has at
+    ///   least one leaf at the modal tier, so the count component is
+    ///   strictly positive.
+    /// - When `Some((_, n))`, `n <= len()` — the peak count is bounded
+    ///   above by the total leaf count (every tier contributes at most
+    ///   every leaf, and the others contribute zero). Equality holds
+    ///   when `contributing_tiers_count() <= 1`.
+    /// - `dominant_tier_observation()` on a uniform per-tier full-cover
+    ///   fold (one leaf per tier) equals `Some((ConfigTierKind::Bare,
+    ///   1))` — declaration-order tie-breaking on the four-cell axis
+    ///   picks the first cell at the shared peak count `1`.
+    /// - `dominant_tier_observation()` on a singleton-support fold
+    ///   (every leaf on the same tier) equals `Some((t, len()))` where
+    ///   `t` is the sole observed tier — the peak equals the total.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<ConfigTierKind>()` (the fused
+    /// argmax scan through
+    /// [`crate::AxisHistogram::dominant_observation`]). Both are `O(n)`
+    /// in practice since the tier axis carries a fixed four-cell
+    /// cardinality; the returned `Option<(ConfigTierKind, usize)>` fits
+    /// in one enum + two scalars. Halves the cost of the previous inline
+    /// `(map.dominant_tier(), map.peak_tier_count())` idiom (which
+    /// walked the counts vector twice — once to argmax the cell, once
+    /// to read the peak count back — where
+    /// [`crate::AxisHistogram::dominant_observation`] fuses both into a
+    /// single walk).
+    #[must_use]
+    pub fn dominant_tier_observation(&self) -> Option<(ConfigTierKind, usize)> {
+        self.tier_histogram().dominant_observation()
+    }
+
     /// The **balanced-tier-counts boolean predicate** at the tier altitude —
     /// `true` exactly when every observed [`ConfigTierKind`] contributed the
     /// same number of leaves. The typed boolean peer of `tier_spread() == 0`
@@ -34064,6 +34213,455 @@ mod progressive_tests {
                 }
             }
             assert_eq!(map.tier_modality_degree(), (peak_mult, trough_mult));
+        }
+    }
+
+    // ── ProvenanceMap::dominant_tier_observation — modal-side fused
+    //    `(cell, count)` pair seam on the tier altitude, climbing
+    //    AxisHistogram::dominant_observation and lifting the "dominant-
+    //    observation across altitudes" projection from the diff altitude
+    //    (dominant_kind_observation). Fused-pair peer of the closed
+    //    (dominant_tier, peak_tier_count) modal-side scalar-half rows,
+    //    surfacing the pair itself as one Option<(cell, count)>-tuple
+    //    read. Joint upstream of dominant_tier (`.map(|(t, _)| t)`) and
+    //    peak_tier_count (`.map_or(0, |(_, n)| n)`). Cardinality-`4`
+    //    ConfigTierKind axis: reaches count `4` on singleton-support
+    //    full-count folds and the uniform full-cover `Some((Bare, 1))`
+    //    tie-breaking corner — one strict advance over the cardinality-
+    //    `3` diff axis's reachable pairs on the same surface (whose
+    //    count component caps at `3`). ──
+
+    #[test]
+    fn dominant_tier_observation_matches_tier_histogram_dominant_observation_pointwise() {
+        // Routing pin: `dominant_tier_observation` routes through
+        // `tier_histogram().dominant_observation()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops projecting
+        // through the shared cube-native fused-pair primitive. Tier-
+        // altitude climb of the "dominant-observation across altitudes"
+        // projection seeded by
+        // `dominant_kind_observation_matches_kind_histogram_dominant_observation_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().dominant_observation();
+            assert_eq!(map.dominant_tier_observation(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn dominant_tier_observation_matches_dominant_tier_and_peak_tier_count_scalar_pair_pointwise() {
+        // Structural-form pin: `dominant_tier_observation` agrees with
+        // the open-coded `(dominant_tier(), peak_tier_count())` pair on
+        // every fixture — coerced through the `Option` shape via
+        // `.map(|t| (t, peak_tier_count()))`. Pins the defining
+        // equivalence on the underlying scalar-pair surface: both
+        // routings read the same modal cell and the same peak count off
+        // the same primitive, so the fused-pair form is behaviorally
+        // indistinguishable from the two-call open-coded pair. Peer of
+        // `dominant_kind_observation_matches_dominant_kind_and_peak_kind_count_scalar_pair_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_pair = map.dominant_tier().map(|t| (t, map.peak_tier_count()));
+            assert_eq!(map.dominant_tier_observation(), via_pair);
+        }
+    }
+
+    #[test]
+    fn dominant_tier_observation_cell_component_equals_dominant_tier_pointwise() {
+        // Cell-side sibling pin: `.map(|(t, _)| t) == dominant_tier()`
+        // on every fixture. Pins the fused-pair primitive as the
+        // upstream of the sibling modal-cell scalar, which reads the
+        // same value through the `.map` projection on the `Option`
+        // shape (via the shared
+        // `AxisHistogram::dominant_observation` walk one altitude
+        // down). Empty case: `None.map(…) == None == dominant_tier()`.
+        // Non-empty case: `Some((t, _)).map(…) == Some(t) ==
+        // dominant_tier()`. Peer of
+        // `dominant_kind_observation_cell_component_equals_dominant_kind_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map.dominant_tier_observation().map(|(t, _)| t);
+            assert_eq!(via_map, map.dominant_tier());
+        }
+    }
+
+    #[test]
+    fn dominant_tier_observation_count_component_equals_peak_tier_count_pointwise() {
+        // Count-side sibling pin: `.map_or(0, |(_, n)| n) ==
+        // peak_tier_count()` on every fixture. Pins the fused-pair
+        // primitive as the upstream of the sibling peak-count scalar,
+        // which reads the same value through the `.map_or` projection
+        // on the `Option` shape (via the shared
+        // `AxisHistogram::dominant_observation` walk one altitude
+        // down). Empty case: `None.map_or(0, …) == 0 ==
+        // peak_tier_count()`. Non-empty case: `Some((_, n)).map_or(0,
+        // …) == n == peak_tier_count()`. Peer of
+        // `dominant_kind_observation_count_component_equals_peak_kind_count_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_map = map.dominant_tier_observation().map_or(0, |(_, n)| n);
+            assert_eq!(via_map, map.peak_tier_count());
+        }
+    }
+
+    #[test]
+    fn dominant_tier_observation_empty_map_is_none() {
+        // Empty-map polarity pin: the empty map has no observed cell,
+        // so the fused pair reads `None` — the vacuous-nothing boundary
+        // lifted from the empty support. The triple `(dominant_tier,
+        // peak_tier_count, dominant_tier_observation)` reads uniformly
+        // `(None, 0, None)` on the empty map. Peer of
+        // `dominant_kind_observation_empty_diff_is_none` on the diff
+        // altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert_eq!(empty.dominant_tier_observation(), None);
+    }
+
+    #[test]
+    fn dominant_tier_observation_singleton_support_is_some_singleton() {
+        // Singleton-support polarity pin: a fold with every leaf on
+        // `ConfigTierKind::Default` collects all four leaves on
+        // `Default` and zero on the other cells; the fused pair reads
+        // `Some((Default, 4))` — the sole observed cell paired with
+        // the total leaf count. Witness of the singleton-support
+        // corner where `n == len()`. Cardinality-`4` strict advance
+        // over the diff altitude's singleton-support witness (which
+        // ships two lines on `Added`), reaching a strictly larger
+        // count-component `4` on the same corner.
+        let m: ProvenanceMap = ["a", "b", "c", "d"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert!(m.tiers_singular_support());
+        assert_eq!(
+            m.dominant_tier_observation(),
+            Some((ConfigTierKind::Default, 4)),
+        );
+    }
+
+    #[test]
+    fn dominant_tier_observation_uniform_full_cover_is_some_bare_at_count_one() {
+        // Uniform-axis-cover polarity pin: a fold observing every cell
+        // of `ConfigTierKind` exactly once has all four nonzero counts
+        // at `1`; the peak is tied between all four cells, and
+        // declaration-order tie-breaking picks `Bare` (the first cell
+        // in the axis) paired with the shared peak count `1`. Top-
+        // corner witness of the tie-breaking policy on the uniform
+        // full-cover shape at the cardinality-`4` tier altitude —
+        // strict advance over the cardinality-`3` diff altitude's
+        // uniform full-cover witness (which reads `Some((Removed, 1))`
+        // on the three-cell axis).
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(m.tiers_balanced());
+        assert!(m.tiers_full_cover());
+        assert_eq!(
+            m.dominant_tier_observation(),
+            Some((ConfigTierKind::Bare, 1)),
+        );
+    }
+
+    #[test]
+    fn dominant_tier_observation_balanced_two_tier_is_some_bare_at_count_one() {
+        // Balanced-partial-cover polarity pin: a fold of one `Bare` +
+        // one `Default` leaf observes cells at count `1` each; the
+        // peak is tied between two cells, and declaration-order tie-
+        // breaking picks the first observed cell — `Bare` — paired
+        // with the shared peak count `1`. Witness of the tie-breaking
+        // policy at the two-cell balanced partial-cover shape: the
+        // `.0` component is deterministically the first tied
+        // declaration-order cell. Peer of
+        // `dominant_kind_observation_balanced_two_kind_is_some_removed_at_count_one`
+        // on the diff altitude.
+        let m: ProvenanceMap = [("b", ConfigTierKind::Bare), ("d", ConfigTierKind::Default)]
+            .into_iter()
+            .map(|(k, t)| (vec![k.to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(m.tiers_balanced());
+        assert!(!m.tiers_full_cover());
+        assert_eq!(
+            m.dominant_tier_observation(),
+            Some((ConfigTierKind::Bare, 1)),
+        );
+    }
+
+    #[test]
+    fn dominant_tier_observation_default_dominated_prog_fixture_is_some_default_at_two() {
+        // Default-dominated polarity pin: the `Prog` fixture attributes
+        // 4 leaves as `a→Discovered, b→Default, c→Bare, d→Default`, so
+        // `Default` is uniquely at the peak count `2` and the fused
+        // pair reads `Some((Default, 2))` — the modal cell paired with
+        // its dominant leaf count. Witness of the strictly-unimodal
+        // peak-side corner on the cardinality-`4` tier axis, matching
+        // the same fixture-shape as
+        // `dominant_tier_prog_fixture_is_default` on the cell-only
+        // sibling.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().dominant_tier_observation(),
+            Some((ConfigTierKind::Default, 2)),
+        );
+    }
+
+    #[test]
+    fn dominant_tier_observation_default_dominated_nested_fixture_is_some_default_at_two() {
+        // Default-dominated polarity pin (nested): the `Nested` fixture
+        // attributes 3 leaves as `win.w→Discovered, win.h→Default,
+        // theme→Default`, so `Default` is uniquely at the peak count
+        // `2` and the fused pair reads `Some((Default, 2))` — the modal
+        // cell reads through the seam whether the fixture is flat or
+        // nested. Peer of `dominant_tier_nested_fixture_is_default` on
+        // the cell-only sibling.
+        let r = Nested::resolve_progressive();
+        assert_eq!(
+            r.provenance().dominant_tier_observation(),
+            Some((ConfigTierKind::Default, 2)),
+        );
+    }
+
+    #[test]
+    fn dominant_tier_observation_none_iff_empty_pointwise() {
+        // None-boundary equivalence pin:
+        // `dominant_tier_observation().is_none()` iff the map is empty.
+        // Direct pin of the histogram-side `is_empty ⇔
+        // dominant_observation.is_none()` equivalence one altitude down
+        // — the shared vacuous-nothing boundary on the empty support.
+        // Cross-pins with the parallel
+        // `dominant_tier_is_some_iff_map_is_nonempty` and
+        // `peak_tier_count_zero_iff_empty` scalar-half boundaries. Peer
+        // of `dominant_kind_observation_none_iff_empty_pointwise` on
+        // the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let is_none = map.dominant_tier_observation().is_none();
+            assert_eq!(is_none, map.is_empty());
+        }
+    }
+
+    #[test]
+    fn dominant_tier_observation_is_some_iff_map_is_nonempty_pointwise() {
+        // Some-boundary equivalence pin (contrapositive of the None-
+        // boundary): `dominant_tier_observation().is_some()` iff the
+        // map has at least one leaf. Direct pin of the histogram-side
+        // `!is_empty ⇔ dominant_observation.is_some()` equivalence one
+        // altitude down. Peer of
+        // `dominant_kind_observation_is_some_iff_kinds_any_observed_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let is_some = map.dominant_tier_observation().is_some();
+            assert_eq!(is_some, !map.is_empty());
+        }
+    }
+
+    #[test]
+    fn dominant_tier_observation_cell_component_is_contributing_tier_pointwise() {
+        // Present-support membership pin: when `Some((t, _))`, `t` is a
+        // member of `contributing_tiers()` — the modal cell is by
+        // definition observed. Lifted from the histogram-side law
+        // `dominant_observation.map(|(t, _)| t) is nonzero-count` one
+        // altitude down. Peer of
+        // `dominant_kind_observation_cell_component_is_present_kind_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some((t, _)) = map.dominant_tier_observation() {
+                assert!(
+                    map.contributing_tiers().contains(&t),
+                    "dominant cell {t:?} must be present in {:?}",
+                    map.contributing_tiers(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn dominant_tier_observation_count_component_equals_histogram_count_at_cell_pointwise() {
+        // Cell/count consistency pin: when `Some((t, n))`, `n ==
+        // tier_histogram().count(t)` — the count component is the
+        // observation count at the cell component. Lifted from the
+        // histogram-side law `dominant_observation.map(|(t, n)| n ==
+        // count(t))` one altitude down (the peak-count consistency law
+        // on `AxisHistogram::dominant_observation`). Peer of
+        // `dominant_kind_observation_count_component_equals_histogram_count_at_cell_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some((t, n)) = map.dominant_tier_observation() {
+                assert_eq!(n, map.tier_histogram().count(t));
+            }
+        }
+    }
+
+    #[test]
+    fn dominant_tier_observation_count_component_at_least_one_on_non_empty_pointwise() {
+        // Non-empty lower bound pin: when `Some((_, n))`, `n >= 1` —
+        // every non-empty support has at least one leaf at the modal
+        // tier, so the count component is strictly positive. The
+        // `Some((_, 0))` shape is unreachable — every observed cell in
+        // a non-empty support carries at least one leaf by the
+        // `dominant_observation` scan's `c > 0` filter one altitude
+        // down. Peer of
+        // `dominant_kind_observation_count_component_at_least_one_on_non_empty_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some((_, n)) = map.dominant_tier_observation() {
+                assert!(n >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn dominant_tier_observation_count_component_bounded_by_len_pointwise() {
+        // Total-leaf upper bound pin: when `Some((_, n))`, `n <= len()`
+        // — the peak count is bounded above by the total leaf count
+        // (every tier contributes at most every leaf, and the others
+        // contribute zero). Equality holds when
+        // `contributing_tiers_count() <= 1`; the strict inequality
+        // holds on every multi-tier support. Peer of
+        // `dominant_kind_observation_count_component_bounded_by_lines_len_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some((_, n)) = map.dominant_tier_observation() {
+                assert!(n <= map.len());
+            }
+        }
+    }
+
+    #[test]
+    fn dominant_tier_observation_yields_declaration_first_on_ties_pointwise() {
+        // Declaration-order tie-breaking pin: on peak ties, the `.0`
+        // component is the *first* observed cell at that count in
+        // `ConfigTierKind::ALL` declaration order (`Bare → Default →
+        // Custom → Discovered`). Cross-pins with the shared
+        // `AxisHistogram::dominant_observation` scan's running-max walk
+        // with `>`-only promotion (strict, not `>=`), which keeps the
+        // first-observed tied cell. Peer of
+        // `dominant_kind_observation_yields_declaration_first_on_ties_pointwise`
+        // on the diff altitude, promoted from the cardinality-`3`
+        // DiffLineKind axis to the cardinality-`4` ConfigTierKind axis.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some((t_obs, n_obs)) = map.dominant_tier_observation() {
+                let mut first_at_peak = None;
+                for cell in ConfigTierKind::ALL {
+                    if map.tier_histogram().count(*cell) == n_obs {
+                        first_at_peak = Some(*cell);
+                        break;
+                    }
+                }
+                assert_eq!(Some(t_obs), first_at_peak);
+            }
+        }
+    }
+
+    #[test]
+    fn dominant_tier_observation_agrees_with_open_coded_argmax_walk_pointwise() {
+        // Parity against the exact hand-rolled open-coded fused (cell,
+        // count) argmax walk this lift replaces: scan the histogram's
+        // per-cell counts vector in declaration order, track the
+        // running max cell and count with `>`-only promotion (strict
+        // inequality — the first observed cell at the tied count is
+        // kept), excluding zero-count cells. Catches any future drift
+        // where either implementation stops projecting through the
+        // same fused (cell, count) argmax walk. Peer of
+        // `dominant_kind_observation_agrees_with_open_coded_argmax_walk_pointwise`
+        // on the diff altitude, promoted from the cardinality-`3`
+        // DiffLineKind axis to the cardinality-`4` ConfigTierKind axis.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let hist = map.tier_histogram();
+            let mut best: Option<(ConfigTierKind, usize)> = None;
+            for cell in ConfigTierKind::ALL {
+                let c = hist.count(*cell);
+                if c == 0 {
+                    continue;
+                }
+                best = match best {
+                    None => Some((*cell, c)),
+                    Some((_, best_n)) if c > best_n => Some((*cell, c)),
+                    other => other,
+                };
+            }
+            assert_eq!(map.dominant_tier_observation(), best);
+        }
+    }
+
+    #[test]
+    fn dominant_tier_observation_map_pair_recovers_scalar_halves_pointwise() {
+        // Round-trip pin: `dominant_tier_observation()` fully determines
+        // the `(dominant_tier, peak_tier_count)` scalar pair pointwise
+        // via `.map` and `.map_or` — the fused-pair primitive is the
+        // upstream both scalar halves project through, and the pair
+        // `(dominant_tier, peak_tier_count)` recovers under the
+        // invertible projections `.map(|(t, _)| t)` (cell) and
+        // `.map_or(0, |(_, n)| n)` (count). Pins the fused-pair
+        // primitive as the natural upstream both scalar halves project
+        // through. Peer of
+        // `dominant_kind_observation_map_pair_recovers_scalar_halves_pointwise`
+        // on the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let obs = map.dominant_tier_observation();
+            let cell = obs.map(|(t, _)| t);
+            let count = obs.map_or(0, |(_, n)| n);
+            assert_eq!(cell, map.dominant_tier());
+            assert_eq!(count, map.peak_tier_count());
         }
     }
 
