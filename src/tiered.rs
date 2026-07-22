@@ -12351,6 +12351,156 @@ impl ConfigDiff {
     pub fn kind_modality_degree(&self) -> (usize, usize) {
         self.kind_histogram().modality_degree()
     }
+
+    /// The **dominant kind observation** — the fused `(cell, count)`
+    /// pair on the peak side of the diff's kind histogram: the modal
+    /// [`DiffLineKind`] together with the line count it contributed.
+    /// Returns `None` exactly when the diff is empty (no observed
+    /// kind); otherwise returns `Some((k, n))` where `k ==
+    /// dominant_kind().unwrap()` and `n == peak_kind_count() >= 1`.
+    ///
+    /// Defined as `self.kind_histogram().dominant_observation()`,
+    /// routed through [`crate::AxisHistogram::dominant_observation`]
+    /// one altitude down — the fused single-pass argmax scan over the
+    /// nonzero support that names the modal cell together with the
+    /// count it carries in one `Option<(A, usize)>` read, halving the
+    /// work of the two-scan `(dominant_kind(), peak_kind_count())`
+    /// fusion the scalar-pair form pays for on every non-empty diff.
+    ///
+    /// The natural typed primitive for CLI `config-diff` summaries,
+    /// attestation manifests, and alerting policies asking *"which
+    /// kind dominated this diff, and by how many lines?"*: the
+    /// summary line *"Context lines dominate: 47 of 53"* (where
+    /// `Some((Context, 47))` is this pair), the attestation manifest
+    /// recording the modal `(cell, count)` pair of a rendered diff
+    /// between two rebuild windows, the alerting policy reading
+    /// *"dominant kind observation = Some((Removed, 12))"* to gate a
+    /// rebuild window on the modal kind and its density
+    /// simultaneously. Before this lift, every such consumer re-
+    /// derived the pair inline as `(diff.dominant_kind(),
+    /// diff.peak_kind_count())` — two method calls, each routing
+    /// through [`Self::kind_histogram`] and each scanning the counts
+    /// vector independently (once to argmax the cell, once to read
+    /// the peak count back), where the shared
+    /// [`crate::AxisHistogram::dominant_observation`] primitive fuses
+    /// both into one walk.
+    ///
+    /// The diff-altitude fused-pair peer that **seeds the "dominant
+    /// observation across altitudes" projection** — a *new* fresh
+    /// vertical opening the joint dominant-observation tuple row at
+    /// the diff altitude, mirroring the same 5-column grid the
+    /// prior scalar / boolean projections plus the closed classifier
+    /// rows already closed. Where the two closed modal-side siblings
+    /// ([`Self::dominant_kind`] carrying the *cell* alone as
+    /// `Option<DiffLineKind>` and [`Self::peak_kind_count`] carrying
+    /// the *count* alone as `usize`) each surface one half of the
+    /// modal observation independently at the cost of walking the
+    /// histogram twice, this row surfaces the *joint pair itself* as
+    /// one `Option<(DiffLineKind, usize)>` read — the natural
+    /// upstream both scalar halves project through, from which
+    /// [`Self::dominant_kind`] recovers via `.map(|(k, _)| k)` and
+    /// [`Self::peak_kind_count`] recovers via `.map_or(0, |(_, n)|
+    /// n)`. The natural next lifts climb to the tier altitude
+    /// (`ProvenanceMap::dominant_tier_observation` over
+    /// [`Self::tier_histogram`]) and sideways along the chain
+    /// altitude's three sub-axes
+    /// (`ConfigSourceChain::dominant_layer_kind_observation`,
+    /// `ConfigSourceChain::dominant_file_format_observation`,
+    /// `ConfigSourceChain::dominant_env_prefix_kind_observation` over
+    /// the corresponding chain histograms). Once climbed and closed
+    /// at every altitude / sub-axis in the same five-step trajectory
+    /// the prior scalar / boolean projections and the closed
+    /// classifier rows closed, the substrate closes the dominant-
+    /// observation fused-pair row at every altitude / sub-axis of the
+    /// 5-column grid alongside the closed sibling
+    /// `(dominant_cell, peak_count)` scalar halves.
+    ///
+    /// **Empty-diff convention** — returns `None`, matching the
+    /// [`crate::AxisHistogram::dominant_observation`] empty
+    /// convention one altitude down and the [`Self::dominant_kind`]
+    /// empty convention on the same altitude. The `Option<(cell,
+    /// count)>` projection reads `None` on every empty diff and
+    /// strictly `Some((k, n))` with `n >= 1` on every non-empty
+    /// diff. The `None`-boundary lifts from the empty support one
+    /// altitude down; the scalar count projection [`Self::peak_kind_count`]
+    /// reads `0` on the same boundary via `.map_or(0, |(_, n)| n)`.
+    ///
+    /// **Tie-breaking policy on the peak side** — declaration-order
+    /// first: on peak ties, the [`crate::AxisHistogram::dominant_observation`]
+    /// scan (a running-max walk with `>` promotion — strict
+    /// inequality, not `>=`) keeps the *first* observed cell at that
+    /// count in [`crate::ClosedAxis::ALL`] declaration order
+    /// (`Removed → Added → Context`), matching the shared
+    /// [`crate::AxisHistogram::dominant_cell`] tie-breaking one
+    /// altitude down and [`Self::dominant_kind`] on the same
+    /// altitude. Every balanced two-kind diff `(Removed=1, Added=1)`
+    /// reads `Some((Removed, 1))`; every balanced three-kind cover
+    /// `(Removed=1, Added=1, Context=1)` reads `Some((Removed, 1))`.
+    /// The `.0` component is deterministically the first tied
+    /// declaration-order cell.
+    ///
+    /// # Invariants
+    ///
+    /// - `dominant_kind_observation() ==
+    ///   kind_histogram().dominant_observation()` — the routing
+    ///   equivalence one altitude down; both project the same fused
+    ///   pair off the same primitive.
+    /// - `dominant_kind_observation().is_none() ==
+    ///   self.lines.is_empty()` — the `None`-boundary equivalence:
+    ///   the pair is defined exactly when the diff has at least one
+    ///   line, matching [`Self::dominant_kind`] on the cell side.
+    /// - `dominant_kind_observation().map(|(k, _)| k) ==
+    ///   dominant_kind()` — the cell-side projection recovers
+    ///   [`Self::dominant_kind`] pointwise; both routings pick the
+    ///   same modal cell off the same primitive.
+    /// - `dominant_kind_observation().map_or(0, |(_, n)| n) ==
+    ///   peak_kind_count()` — the count-side projection recovers
+    ///   [`Self::peak_kind_count`] pointwise; both routings read the
+    ///   same peak count off the same primitive. Empty case:
+    ///   `None.map_or(0, …) == 0 == peak_kind_count()`. Non-empty
+    ///   case: `Some((_, n)).map_or(0, …) == n == peak_kind_count()`.
+    /// - When `Some((k, n))`, `k` is a member of
+    ///   [`Self::present_kinds`] — the modal cell is by definition
+    ///   observed. Peer to the cell-side [`Self::dominant_kind`]
+    ///   membership invariant.
+    /// - When `Some((k, n))`, `kind_histogram().count(k) == n` —
+    ///   the count component equals the observation count at the
+    ///   cell component. Peer to the cell/count consistency law on
+    ///   [`crate::AxisHistogram::dominant_observation`] one altitude
+    ///   down.
+    /// - When `Some((_, n))`, `n >= 1` — every non-empty support has
+    ///   at least one line at the modal cell, so the count component
+    ///   is strictly positive.
+    /// - When `Some((_, n))`, `n <= self.lines.len()` — the peak
+    ///   count is bounded above by the total line count.
+    /// - `dominant_kind_observation()` on a uniform per-kind diff
+    ///   (one line per kind) equals `Some((DiffLineKind::Removed,
+    ///   1))` — declaration-order tie-breaking picks the first cell
+    ///   at the shared peak count `1`.
+    /// - `dominant_kind_observation()` on a singleton-support diff
+    ///   (every line on the same kind) equals `Some((k,
+    ///   self.lines.len()))` where `k` is the sole observed kind —
+    ///   the peak equals the total.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the fused
+    /// argmax scan through
+    /// [`crate::AxisHistogram::dominant_observation`]). Both are
+    /// `O(n)` in practice since the diff-cell axis carries a fixed
+    /// three-cell cardinality; the returned `Option<(DiffLineKind,
+    /// usize)>` fits in one enum + two scalars. Halves the cost of
+    /// the previous inline `(diff.dominant_kind(),
+    /// diff.peak_kind_count())` idiom (which walked the counts
+    /// vector twice — once to argmax the cell, once to read the peak
+    /// count back — where
+    /// [`crate::AxisHistogram::dominant_observation`] fuses both
+    /// into a single walk).
+    #[must_use]
+    pub fn dominant_kind_observation(&self) -> Option<(DiffLineKind, usize)> {
+        self.kind_histogram().dominant_observation()
+    }
 }
 
 #[cfg(test)]
@@ -23578,6 +23728,345 @@ mod tests {
                 }
             }
             assert_eq!(diff.kind_modality_degree(), (peak_mult, trough_mult));
+        }
+    }
+
+    // ── dominant_kind_observation — the diff-altitude seed of the
+    //    "dominant-observation across altitudes" projection ─────────
+
+    #[test]
+    fn dominant_kind_observation_matches_kind_histogram_dominant_observation_pointwise() {
+        // Routing pin: `dominant_kind_observation` routes through
+        // `kind_histogram().dominant_observation()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation
+        // stops projecting through the shared cube-native fused-
+        // pair primitive. Diff-altitude seed of the new "dominant-
+        // observation across altitudes" projection — the natural
+        // fused-pair upstream of the two closed sibling scalar-half
+        // rows (`dominant_kind` on the cell side and
+        // `peak_kind_count` on the count side) that both project
+        // through `.map(|(k, _)| k)` and `.map_or(0, |(_, n)| n)`
+        // respectively.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().dominant_observation();
+            assert_eq!(diff.dominant_kind_observation(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn dominant_kind_observation_matches_dominant_kind_and_peak_kind_count_scalar_pair_pointwise() {
+        // Structural-form pin: `dominant_kind_observation` agrees
+        // with the open-coded `(dominant_kind(), peak_kind_count())`
+        // pair on every fixture — coerced through the `Option`
+        // shape via `.map(|k| (k, peak_kind_count()))`. Pins the
+        // defining equivalence on the underlying scalar-pair
+        // surface: both routings read the same modal cell and the
+        // same peak count off the same primitive, so the fused-
+        // pair form is behaviorally indistinguishable from the
+        // two-call open-coded pair.
+        for diff in dominant_kind_fixtures() {
+            let via_pair = diff.dominant_kind().map(|k| (k, diff.peak_kind_count()));
+            assert_eq!(diff.dominant_kind_observation(), via_pair);
+        }
+    }
+
+    #[test]
+    fn dominant_kind_observation_cell_component_equals_dominant_kind_pointwise() {
+        // Cell-side sibling pin: `.map(|(k, _)| k) ==
+        // dominant_kind()` on every fixture. Pins the fused-pair
+        // primitive as the upstream of the sibling modal-cell
+        // scalar, which reads the same value through the `.map`
+        // projection on the `Option` shape (via the shared
+        // `AxisHistogram::dominant_observation` walk one altitude
+        // down). Empty case: `None.map(…) == None ==
+        // dominant_kind()`. Non-empty case: `Some((k, _)).map(…) ==
+        // Some(k) == dominant_kind()`.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.dominant_kind_observation().map(|(k, _)| k);
+            assert_eq!(via_map, diff.dominant_kind());
+        }
+    }
+
+    #[test]
+    fn dominant_kind_observation_count_component_equals_peak_kind_count_pointwise() {
+        // Count-side sibling pin: `.map_or(0, |(_, n)| n) ==
+        // peak_kind_count()` on every fixture. Pins the fused-pair
+        // primitive as the upstream of the sibling peak-count
+        // scalar, which reads the same value through the `.map_or`
+        // projection on the `Option` shape (via the shared
+        // `AxisHistogram::dominant_observation` walk one altitude
+        // down). Empty case: `None.map_or(0, …) == 0 ==
+        // peak_kind_count()`. Non-empty case: `Some((_,
+        // n)).map_or(0, …) == n == peak_kind_count()`.
+        for diff in dominant_kind_fixtures() {
+            let via_map = diff.dominant_kind_observation().map_or(0, |(_, n)| n);
+            assert_eq!(via_map, diff.peak_kind_count());
+        }
+    }
+
+    #[test]
+    fn dominant_kind_observation_empty_diff_is_none() {
+        // Empty-diff polarity pin: the empty diff has no observed
+        // cell, so the fused pair reads `None` — the vacuous-
+        // nothing boundary lifted from the empty support. The
+        // triple `(dominant_kind, peak_kind_count,
+        // dominant_kind_observation)` reads uniformly `(None, 0,
+        // None)` on the empty diff.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert_eq!(empty.dominant_kind_observation(), None);
+    }
+
+    #[test]
+    fn dominant_kind_observation_singleton_support_is_some_singleton() {
+        // Singleton-support polarity pin: a diff of two `Added`
+        // lines carries all `2` lines on `Added` and zero on the
+        // other cells; the fused pair reads `Some((Added, 2))` —
+        // the sole observed cell paired with the total line count.
+        // Witness of the singleton-support corner where `n ==
+        // self.lines.len()`.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Added("a1".into()), DiffLine::Added("a2".into())],
+        };
+        assert!(diff.kinds_singular_support());
+        assert_eq!(
+            diff.dominant_kind_observation(),
+            Some((DiffLineKind::Added, 2)),
+        );
+    }
+
+    #[test]
+    fn dominant_kind_observation_balanced_two_kind_is_some_removed_at_count_one() {
+        // Balanced-partial-cover polarity pin: a diff of one
+        // `Removed` + one `Added` observes cells at count `1` each;
+        // the peak is tied between two cells, and declaration-order
+        // tie-breaking picks the first observed cell — `Removed` —
+        // paired with the shared peak count `1`. Witness of the
+        // tie-breaking policy: the `.0` component is
+        // deterministically the first tied declaration-order cell.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert!(diff.kinds_balanced());
+        assert_eq!(
+            diff.dominant_kind_observation(),
+            Some((DiffLineKind::Removed, 1)),
+        );
+    }
+
+    #[test]
+    fn dominant_kind_observation_uniform_three_kind_cover_is_some_removed_at_count_one() {
+        // Uniform-axis-cover polarity pin: a diff observing every
+        // cell of `DiffLineKind` exactly once has all three
+        // nonzero counts at `1`; the peak is tied between all
+        // three cells, and declaration-order tie-breaking picks
+        // `Removed` (the first cell in the axis) paired with the
+        // shared peak count `1`. Top-corner witness of the tie-
+        // breaking policy on the uniform full-cover shape.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kinds_balanced());
+        assert!(diff.kinds_full_cover());
+        assert_eq!(
+            diff.dominant_kind_observation(),
+            Some((DiffLineKind::Removed, 1)),
+        );
+    }
+
+    #[test]
+    fn dominant_kind_observation_context_dominated_fixture_is_some_context_at_three() {
+        // Context-dominated polarity pin: a diff of three
+        // `Context` + one `Removed` has `Context` uniquely at the
+        // peak count `3`, so the fused pair reads `Some((Context,
+        // 3))` — the modal cell paired with its dominant line
+        // count. Witness of the strictly-unimodal peak-side
+        // corner on the cardinality-`3` diff-kind axis.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(
+            diff.dominant_kind_observation(),
+            Some((DiffLineKind::Context, 3)),
+        );
+    }
+
+    #[test]
+    fn dominant_kind_observation_none_iff_empty_pointwise() {
+        // None-boundary equivalence pin:
+        // `dominant_kind_observation().is_none()` iff the diff is
+        // empty. Direct pin of the histogram-side `is_empty ⇔
+        // dominant_observation.is_none()` equivalence one altitude
+        // down — the shared vacuous-nothing boundary on the empty
+        // support. Cross-pins with the parallel
+        // `dominant_kind_none_iff_empty` and
+        // `peak_kind_count_zero_iff_empty` scalar-half boundaries.
+        for diff in dominant_kind_fixtures() {
+            let is_none = diff.dominant_kind_observation().is_none();
+            assert_eq!(is_none, !diff.kinds_any_observed());
+        }
+    }
+
+    #[test]
+    fn dominant_kind_observation_is_some_iff_kinds_any_observed_pointwise() {
+        // Some-boundary equivalence pin (contrapositive of the
+        // None-boundary): `dominant_kind_observation().is_some()`
+        // iff the diff has at least one observed kind. Direct pin
+        // of the histogram-side `!is_empty ⇔
+        // dominant_observation.is_some()` equivalence one altitude
+        // down.
+        for diff in dominant_kind_fixtures() {
+            let is_some = diff.dominant_kind_observation().is_some();
+            assert_eq!(is_some, diff.kinds_any_observed());
+        }
+    }
+
+    #[test]
+    fn dominant_kind_observation_cell_component_is_present_kind_pointwise() {
+        // Present-support membership pin: when `Some((k, _))`, `k`
+        // is a member of `present_kinds()` — the modal cell is by
+        // definition observed. Lifted from the histogram-side law
+        // `dominant_observation.map(|(k, _)| k) is nonzero-count`
+        // one altitude down.
+        for diff in dominant_kind_fixtures() {
+            if let Some((k, _)) = diff.dominant_kind_observation() {
+                assert!(
+                    diff.present_kinds().contains(&k),
+                    "dominant cell {k:?} must be present in {:?}",
+                    diff.present_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn dominant_kind_observation_count_component_equals_histogram_count_at_cell_pointwise() {
+        // Cell/count consistency pin: when `Some((k, n))`, `n ==
+        // kind_histogram().count(k)` — the count component is the
+        // observation count at the cell component. Lifted from the
+        // histogram-side law
+        // `dominant_observation.map(|(k, n)| n == count(k))` one
+        // altitude down (the peak-count consistency law on
+        // `AxisHistogram::dominant_observation`).
+        for diff in dominant_kind_fixtures() {
+            if let Some((k, n)) = diff.dominant_kind_observation() {
+                assert_eq!(n, diff.kind_histogram().count(k));
+            }
+        }
+    }
+
+    #[test]
+    fn dominant_kind_observation_count_component_at_least_one_on_non_empty_pointwise() {
+        // Non-empty lower bound pin: when `Some((_, n))`, `n >= 1`
+        // — every non-empty support has at least one line at the
+        // modal cell, so the count component is strictly positive.
+        // The `Some((_, 0))` shape is unreachable — every observed
+        // cell in a non-empty support carries at least one line by
+        // the `dominant_observation` scan's `c > 0` filter one
+        // altitude down.
+        for diff in dominant_kind_fixtures() {
+            if let Some((_, n)) = diff.dominant_kind_observation() {
+                assert!(n >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn dominant_kind_observation_count_component_bounded_by_lines_len_pointwise() {
+        // Total-line upper bound pin: when `Some((_, n))`, `n <=
+        // self.lines.len()` — the peak count is bounded above by
+        // the total line count (every kind contributes at most
+        // every line, and the others contribute zero). Equality
+        // holds when `present_kinds().len() <= 1`; the strict
+        // inequality holds on every multi-kind support.
+        for diff in dominant_kind_fixtures() {
+            if let Some((_, n)) = diff.dominant_kind_observation() {
+                assert!(n <= diff.lines.len());
+            }
+        }
+    }
+
+    #[test]
+    fn dominant_kind_observation_yields_declaration_first_on_ties_pointwise() {
+        // Declaration-order tie-breaking pin: on peak ties, the
+        // `.0` component is the *first* observed cell at that count
+        // in `DiffLineKind::ALL` declaration order (`Removed →
+        // Added → Context`). Cross-pins with the shared
+        // `AxisHistogram::dominant_observation` scan's
+        // running-max walk with `>`-only promotion (strict, not
+        // `>=`), which keeps the first-observed tied cell.
+        for diff in dominant_kind_fixtures() {
+            if let Some((k_obs, n_obs)) = diff.dominant_kind_observation() {
+                // The first kind in ALL order whose count equals
+                // `n_obs` must equal `k_obs`.
+                let mut first_at_peak = None;
+                for cell in DiffLineKind::ALL {
+                    if diff.kind_histogram().count(*cell) == n_obs {
+                        first_at_peak = Some(*cell);
+                        break;
+                    }
+                }
+                assert_eq!(Some(k_obs), first_at_peak);
+            }
+        }
+    }
+
+    #[test]
+    fn dominant_kind_observation_agrees_with_open_coded_argmax_walk_pointwise() {
+        // Parity against the exact hand-rolled open-coded fused
+        // (cell, count) argmax walk this lift replaces: scan the
+        // histogram's per-cell counts vector in declaration order,
+        // track the running max cell and count with `>`-only
+        // promotion (strict inequality — the first observed cell
+        // at the tied count is kept), excluding zero-count cells.
+        // Catches any future drift where either implementation
+        // stops projecting through the same fused (cell, count)
+        // argmax walk.
+        for diff in dominant_kind_fixtures() {
+            let hist = diff.kind_histogram();
+            let mut best: Option<(DiffLineKind, usize)> = None;
+            for cell in DiffLineKind::ALL {
+                let c = hist.count(*cell);
+                if c == 0 {
+                    continue;
+                }
+                best = match best {
+                    None => Some((*cell, c)),
+                    Some((_, best_n)) if c > best_n => Some((*cell, c)),
+                    other => other,
+                };
+            }
+            assert_eq!(diff.dominant_kind_observation(), best);
+        }
+    }
+
+    #[test]
+    fn dominant_kind_observation_map_pair_recovers_scalar_halves_pointwise() {
+        // Round-trip pin: `dominant_kind_observation()` fully
+        // determines the `(dominant_kind, peak_kind_count)` scalar
+        // pair pointwise via `.map` and `.map_or` — the fused-pair
+        // primitive is the upstream both scalar halves project
+        // through, and the pair `(dominant_kind, peak_kind_count)`
+        // recovers under the invertible projections `.map(|(k, _)|
+        // k)` (cell) and `.map_or(0, |(_, n)| n)` (count). Pins
+        // the fused-pair primitive as the natural upstream both
+        // scalar halves project through.
+        for diff in dominant_kind_fixtures() {
+            let obs = diff.dominant_kind_observation();
+            let cell = obs.map(|(k, _)| k);
+            let count = obs.map_or(0, |(_, n)| n);
+            assert_eq!(cell, diff.dominant_kind());
+            assert_eq!(count, diff.peak_kind_count());
         }
     }
 
