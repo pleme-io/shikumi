@@ -12024,6 +12024,184 @@ impl ConfigDiff {
     pub fn kinds_uniform_count(&self) -> bool {
         self.kind_histogram().is_uniform_count()
     }
+
+    /// The **modality-degree pair on [`DiffLineKind`]** — the fused
+    /// `(peak_kind_multiplicity, trough_kind_multiplicity)` projection
+    /// on the diff's kind histogram at the diff altitude. Returns
+    /// `(0, 0)` exactly when the diff is empty; otherwise returns the
+    /// cardinality of the modal [`DiffLineKind`] level set in `.0` and
+    /// the cardinality of the antimodal [`DiffLineKind`] level set in
+    /// `.1`. Routes through [`crate::AxisHistogram::modality_degree`]
+    /// one altitude down — the fused single-pass scan over the fixed-
+    /// cardinality counts vector that tracks the running max +
+    /// reset-on-rise modal multiplicity and the running min (initialized
+    /// to `usize::MAX` so the first positive count promotes the
+    /// sentinel) + reset-on-fall antimodal multiplicity simultaneously,
+    /// halving the work of the two-scan
+    /// `(peak_kind_multiplicity(), trough_kind_multiplicity())` fusion
+    /// the scalar-pair form pays for on every non-empty diff.
+    ///
+    /// The **fused-pair peer** of the two closed multiplicity scalars
+    /// ([`Self::peak_kind_multiplicity`] and
+    /// [`Self::trough_kind_multiplicity`], both already surfaced at
+    /// this altitude) — the joint-projection dual of the two scalar
+    /// halves the sibling additive [`Self::kind_modality_degree_sum`]
+    /// and absolute-difference [`Self::kind_modality_amplitude`]
+    /// scalars project through as `.0 + .1` and `.0.abs_diff(.1)`
+    /// respectively. Where the two scalar siblings each read one
+    /// arithmetic fusion off the pair, the fused-pair primitive names
+    /// the *pair itself* as one scalar-tuple read — a *modality
+    /// summary* dashboard line, a *modality-degree* attestation cell,
+    /// or a *peer-tied* gate now reads off one method call rather than
+    /// two.
+    ///
+    /// The natural typed primitive for CLI `config-diff` summaries,
+    /// attestation manifests, and alerting policies asking *"how
+    /// multiply tied are both extremes of this diff's kind
+    /// distribution?"*: the summary line *"kind modality-degree
+    /// `(2, 1)`: Added / Context tied at peak, Removed alone at
+    /// trough"* (where `(2, 1)` is this pair), the attestation
+    /// manifest recording the joint modal / antimodal level-set
+    /// cardinalities of the rendered diff between two rebuild windows,
+    /// the alerting policy reading *"kind modality-degree `(3, 3)`"*
+    /// to classify balanced full-cover diffs (modal / antimodal
+    /// coincidence — the whole three-cell support sits at both level
+    /// sets). Before this lift, every such consumer re-derived the
+    /// projection inline as `(diff.peak_kind_multiplicity(),
+    /// diff.trough_kind_multiplicity())` — two method calls, each
+    /// walking the counts vector where the shared
+    /// [`crate::AxisHistogram::modality_degree`] primitive fuses both
+    /// into a single walk.
+    ///
+    /// The diff-altitude fused-pair peer that **seeds the "modality-
+    /// degree across altitudes" projection** — a *new* fresh vertical
+    /// opening the joint modality-degree tuple row at the diff
+    /// altitude, mirroring the same 5-column grid the eleven prior
+    /// scalar / boolean projections plus the four closed classifier
+    /// rows already closed. Where the two closed multiplicity scalars
+    /// ([`Self::peak_kind_multiplicity`] and
+    /// [`Self::trough_kind_multiplicity`]) each surface one extremal
+    /// level-set cardinality independently, and where the two closed
+    /// scalar siblings ([`Self::kind_modality_amplitude`] and
+    /// [`Self::kind_modality_degree_sum`]) each fuse the pair through
+    /// one arithmetic operation, this row surfaces the *joint pair
+    /// itself* as one scalar-tuple read — the natural upstream of the
+    /// two fused-scalar siblings, from which both project through
+    /// `.0 + .1` and `.0.abs_diff(.1)` respectively. The natural next
+    /// lifts climb to the tier altitude
+    /// (`ProvenanceMap::tier_modality_degree` over
+    /// [`Self::tier_histogram`]) and sideways along the chain
+    /// altitude's three sub-axes
+    /// (`ConfigSourceChain::layer_kind_modality_degree`,
+    /// `ConfigSourceChain::file_format_modality_degree`,
+    /// `ConfigSourceChain::env_prefix_kind_modality_degree` over the
+    /// corresponding chain histograms). Once climbed and closed at
+    /// every altitude / sub-axis in the same five-step trajectory the
+    /// prior scalar / boolean projections and the four closed
+    /// classifier rows closed, the substrate closes the modality-
+    /// degree fused-pair row at every altitude / sub-axis of the
+    /// 5-column grid alongside the closed sibling amplitude / degree-
+    /// sum scalar projections.
+    ///
+    /// **Empty-diff convention** — returns `(0, 0)`, matching the
+    /// [`crate::AxisHistogram::modality_degree`] empty convention one
+    /// altitude down and the [`Self::peak_kind_multiplicity`] /
+    /// [`Self::trough_kind_multiplicity`] empty conventions on the
+    /// same altitude. The tuple projection reads `(0, 0)` on every
+    /// empty diff and strictly `(k, l)` with `k >= 1` and `l >= 1` on
+    /// every non-empty diff.
+    ///
+    /// **Modality classifier corners** — the four qualitative shapes
+    /// of the fused pair on the cardinality-`3` diff-kind axis:
+    /// - `(1, 1)` — strictly unimodal AND strictly anti-unimodal:
+    ///   both the dominant and recessive [`DiffLineKind`] stand
+    ///   alone. Reached on every singleton-support diff (one cell
+    ///   uniquely holds both extremes) and on every support-`2` or
+    ///   support-`3` diff with distinct positive counts (e.g. the
+    ///   right-skew `(Added=2, Context=1)` — Added uniquely at peak,
+    ///   Context uniquely at trough — or the strictly-ordered
+    ///   `(Removed=1, Added=2, Context=3)`).
+    /// - `(k, 1)` with `k >= 2` — modally tied, anti-unimodal:
+    ///   the peak is shared by `k` kinds but the trough is uniquely
+    ///   held. Reached e.g. on `(Removed=2, Added=2, Context=1)` —
+    ///   Removed and Added tied at the peak count `2` and Context
+    ///   uniquely at the trough count `1`, giving `(2, 1)`.
+    /// - `(1, l)` with `l >= 2` — strictly unimodal, antimodally
+    ///   tied: the peak is uniquely held but the trough is shared by
+    ///   `l` kinds. Reached e.g. on the heavy-tail `(Context=3,
+    ///   Removed=1, Added=1)` — Context uniquely at the peak count
+    ///   `3` and Removed / Added tied at the trough count `1`,
+    ///   giving `(1, 2)`.
+    /// - `(k, k)` with `k == present_kinds_count()` — modal /
+    ///   antimodal coincidence: every observed kind sits at both
+    ///   level sets simultaneously ([`Self::kinds_balanced`] fires).
+    ///   Reached on the empty diff `(0, 0)`, every singleton-support
+    ///   diff `(1, 1)`, every balanced two-kind diff `(2, 2)`, and
+    ///   the uniform three-kind cover `(3, 3)`.
+    ///
+    /// # Invariants
+    ///
+    /// - `kind_modality_degree() == kind_histogram().modality_degree()`
+    ///   — the routing equivalence one altitude down; both project
+    ///   the same fused pair off the same primitive.
+    /// - `kind_modality_degree() == (peak_kind_multiplicity(),
+    ///   trough_kind_multiplicity())` — the defining equivalence on
+    ///   the underlying scalar pair at the diff altitude. Both
+    ///   routings read the same tuple off the same primitive.
+    /// - `kind_modality_degree().0 + kind_modality_degree().1 ==
+    ///   kind_modality_degree_sum()` — the additive-side fusion the
+    ///   sibling scalar reads as `peak + trough`.
+    /// - `kind_modality_degree().0.abs_diff(kind_modality_degree().1)
+    ///   == kind_modality_amplitude()` — the absolute-difference-side
+    ///   fusion the sibling scalar reads as `peak.abs_diff(trough)`.
+    ///   The `(sum, amplitude)` pair recovers the *unordered*
+    ///   multiplicity pair under the invertible transform
+    ///   `max = (sum + amp) / 2, min = (sum - amp) / 2` (exact
+    ///   integer division since both share parity).
+    /// - `kind_modality_degree() == (0, 0)` iff the diff is empty —
+    ///   the vacuous-nothing boundary lifted from the empty support.
+    /// - Both components are `>= 1` on every non-empty diff — every
+    ///   non-empty support has at least one observed kind at the
+    ///   peak and at least one observed kind at the trough (they
+    ///   may coincide as the same kind on the singleton-support
+    ///   case), so both multiplicities are `>= 1`.
+    /// - `kind_modality_degree().0 <= present_kinds_count()` and
+    ///   `kind_modality_degree().1 <= present_kinds_count()` always
+    ///   — both level sets are subsets of the observed support, so
+    ///   their cardinalities are each bounded by the support size.
+    /// - `kind_modality_degree().0 <=
+    ///   crate::axis_cardinality::<DiffLineKind>()` and
+    ///   `kind_modality_degree().1 <=
+    ///   crate::axis_cardinality::<DiffLineKind>()` always — both
+    ///   components bounded above by `3` on the three-cell diff-
+    ///   kind axis.
+    /// - `kinds_balanced() ⇒ kind_modality_degree().0 ==
+    ///   kind_modality_degree().1 == present_kinds_count()` — every
+    ///   balanced diff sits on the modal/antimodal coincidence
+    ///   corner; both level sets walk the full observed support and
+    ///   collapse to the same value.
+    /// - `kinds_singular_support() ⇒ kind_modality_degree() ==
+    ///   (1, 1)` — a single observed kind is the only member of
+    ///   both level sets.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the fused
+    /// peak + trough scan through
+    /// [`crate::AxisHistogram::modality_degree`]). Both are `O(n)` in
+    /// practice since the diff-cell axis carries a fixed three-cell
+    /// cardinality; the returned `(usize, usize)` fits in two
+    /// scalars. Halves the cost of the previous inline
+    /// `(diff.peak_kind_multiplicity(), diff.trough_kind_multiplicity())`
+    /// idiom (which walked the counts vector twice — once for the
+    /// peak multiplicity, once for the trough multiplicity — where
+    /// [`crate::AxisHistogram::modality_degree`] fuses both into a
+    /// single walk).
+    #[must_use]
+    pub fn kind_modality_degree(&self) -> (usize, usize) {
+        self.kind_histogram().modality_degree()
+    }
 }
 
 #[cfg(test)]
@@ -22891,6 +23069,366 @@ mod tests {
                 Some(first) => positives.all(|c| c == first),
             };
             assert_eq!(diff.kinds_uniform_count(), hand_rolled);
+        }
+    }
+
+    // ── kind_modality_degree — the diff-altitude seed of the
+    //    "modality-degree across altitudes" projection ─────────────
+
+    #[test]
+    fn kind_modality_degree_matches_kind_histogram_modality_degree_pointwise() {
+        // Routing pin: `kind_modality_degree` routes through
+        // `kind_histogram().modality_degree()`, so the two seams
+        // must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation
+        // stops projecting through the shared cube-native fused-
+        // pair primitive. Diff-altitude seed of the new "modality-
+        // degree across altitudes" projection — the natural fused-
+        // pair upstream of the two closed sibling scalar rows
+        // (`kind_modality_amplitude` and `kind_modality_degree_sum`)
+        // that both project through `.0.abs_diff(.1)` and `.0 + .1`
+        // respectively.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().modality_degree();
+            assert_eq!(diff.kind_modality_degree(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kind_modality_degree_matches_peak_trough_multiplicity_pair_pointwise() {
+        // Structural-form pin: `kind_modality_degree` agrees with
+        // the open-coded `(peak_kind_multiplicity(),
+        // trough_kind_multiplicity())` pair on every fixture. Pins
+        // the defining equivalence on the underlying scalar-pair
+        // surface — both routings read the same tuple off the same
+        // primitive, so the fused-pair form is behaviorally
+        // indistinguishable from the two-call open-coded pair.
+        for diff in dominant_kind_fixtures() {
+            let via_pair = (
+                diff.peak_kind_multiplicity(),
+                diff.trough_kind_multiplicity(),
+            );
+            assert_eq!(diff.kind_modality_degree(), via_pair);
+        }
+    }
+
+    #[test]
+    fn kind_modality_degree_component_sum_equals_kind_modality_degree_sum_pointwise() {
+        // Additive-sibling pin: `.0 + .1 == kind_modality_degree_sum()`
+        // on every fixture. Pins the fused-pair primitive as the
+        // upstream of the sibling additive scalar, which reads the
+        // same value through `peak + trough` (via the shared
+        // `AxisHistogram::modality_degree` walk one altitude down).
+        // Overflow-safe since both components are bounded above by
+        // `crate::axis_cardinality::<DiffLineKind>() == 3`.
+        for diff in dominant_kind_fixtures() {
+            let (peak, trough) = diff.kind_modality_degree();
+            assert_eq!(peak + trough, diff.kind_modality_degree_sum());
+        }
+    }
+
+    #[test]
+    fn kind_modality_degree_component_abs_diff_equals_kind_modality_amplitude_pointwise() {
+        // Abs-diff-sibling pin: `.0.abs_diff(.1) ==
+        // kind_modality_amplitude()` on every fixture. Pins the
+        // fused-pair primitive as the upstream of the sibling
+        // absolute-difference scalar, which reads the same value
+        // through `peak.abs_diff(trough)` (via the shared
+        // `AxisHistogram::modality_degree` walk one altitude down).
+        // The `abs_diff` form is required because neither
+        // multiplicity dominates the other structurally.
+        for diff in dominant_kind_fixtures() {
+            let (peak, trough) = diff.kind_modality_degree();
+            assert_eq!(peak.abs_diff(trough), diff.kind_modality_amplitude());
+        }
+    }
+
+    #[test]
+    fn kind_modality_degree_empty_diff_is_zero_pair() {
+        // Empty-diff polarity pin: the empty diff has no observed
+        // cells, so both multiplicities read `0` and the fused
+        // pair reads `(0, 0)` — the vacuous-nothing boundary
+        // lifted from the empty support. The quadruple
+        // `(peak_kind_multiplicity, trough_kind_multiplicity,
+        // kind_modality_amplitude, kind_modality_degree_sum)`
+        // reads uniformly `(0, 0, 0, 0)` on the empty diff, and
+        // the fused pair records the two scalar halves as `(0, 0)`.
+        let empty = ConfigDiff::default();
+        assert!(empty.lines.is_empty());
+        assert_eq!(empty.kind_modality_degree(), (0, 0));
+    }
+
+    #[test]
+    fn kind_modality_degree_singleton_support_is_one_pair() {
+        // Singleton-support polarity pin: a diff of a single
+        // observed kind carries only one nonzero count at count
+        // `n` — the sole observed cell sits at both the unique
+        // peak and the unique trough, so both multiplicities read
+        // `1` and the fused pair reads `(1, 1)` — the strictly-
+        // unimodal AND strictly-anti-unimodal corner of the
+        // modality classifier. Direct witness of the subsumption
+        // `kinds_singular_support ⇒ kind_modality_degree == (1, 1)`.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Added("a1".into()), DiffLine::Added("a2".into())],
+        };
+        assert!(diff.kinds_singular_support());
+        assert_eq!(diff.kind_modality_degree(), (1, 1));
+    }
+
+    #[test]
+    fn kind_modality_degree_balanced_two_kind_partial_cover_is_two_two_pair() {
+        // Balanced-partial-cover polarity pin: a diff of one
+        // `Removed` + one `Added` observes two cells with matched
+        // count `1` each; both cells are simultaneously at the
+        // peak and the trough (peak == trough == 1), so both
+        // multiplicities equal the two-cell support size — the
+        // fused pair reads `(2, 2)`. Witness of the modal /
+        // antimodal coincidence corner on the two-kind balanced
+        // partial-cover shape.
+        let diff = ConfigDiff {
+            lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+        };
+        assert!(diff.kinds_balanced());
+        assert!(!diff.kinds_full_cover());
+        assert_eq!(diff.kind_modality_degree(), (2, 2));
+    }
+
+    #[test]
+    fn kind_modality_degree_uniform_three_kind_cover_is_three_three_pair() {
+        // Uniform-axis-cover polarity pin: a diff observing every
+        // cell of DiffLineKind exactly once has all three nonzero
+        // counts at `1`; every cell is simultaneously at the peak
+        // and the trough, so both multiplicities equal the full
+        // axis cardinality — the fused pair reads `(3, 3)`. The
+        // top-corner witness of the modal / antimodal coincidence
+        // corner on the uniform full-cover shape.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kinds_balanced());
+        assert!(diff.kinds_full_cover());
+        assert_eq!(diff.kind_modality_degree(), (3, 3));
+    }
+
+    #[test]
+    fn kind_modality_degree_right_skew_two_kind_fixture_is_one_one_pair() {
+        // Right-skew polarity pin: a diff of two `Added` + one
+        // `Context` observes cells at counts `2` and `1`; each
+        // extreme is uniquely held (Added alone at peak count `2`,
+        // Context alone at trough count `1`), so both
+        // multiplicities read `1` — the fused pair reads `(1, 1)`.
+        // Witness of the strictly-unimodal AND strictly-anti-
+        // unimodal corner on a support-`2` skewed shape (both
+        // extremes uniquely held without matching counts —
+        // distinct from the singleton-support `(1, 1)` case).
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(!diff.kinds_balanced());
+        assert_eq!(diff.kind_modality_degree(), (1, 1));
+    }
+
+    #[test]
+    fn kind_modality_degree_heavy_tail_three_kind_fixture_is_one_two_pair() {
+        // Heavy-tail polarity pin: a diff of three `Context` +
+        // one `Removed` + one `Added` observes cells at counts
+        // `3`, `1`, `1`; the peak is uniquely held (Context alone
+        // at count `3`) but the trough is tied (Removed and Added
+        // both at count `1`), so `peak_mult == 1` and
+        // `trough_mult == 2` — the fused pair reads `(1, 2)`.
+        // Witness of the strictly-unimodal-antimodally-tied
+        // corner on the cardinality-`3` diff-kind axis.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+            ],
+        };
+        assert!(!diff.kinds_balanced());
+        assert!(diff.kinds_full_cover());
+        assert_eq!(diff.kind_modality_degree(), (1, 2));
+    }
+
+    #[test]
+    fn kind_modality_degree_left_skew_three_kind_fixture_is_two_one_pair() {
+        // Left-skew polarity pin: a diff of two `Removed` + two
+        // `Added` + one `Context` observes cells at counts `2`,
+        // `2`, `1`; the peak is tied (Removed and Added both at
+        // count `2`) but the trough is uniquely held (Context
+        // alone at count `1`), so `peak_mult == 2` and
+        // `trough_mult == 1` — the fused pair reads `(2, 1)`.
+        // Witness of the modally-tied-anti-unimodal corner on the
+        // cardinality-`3` diff-kind axis — the mirror of the
+        // heavy-tail witness above.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(!diff.kinds_balanced());
+        assert!(diff.kinds_full_cover());
+        assert_eq!(diff.kind_modality_degree(), (2, 1));
+    }
+
+    #[test]
+    fn kind_modality_degree_zero_pair_iff_empty_pointwise() {
+        // Empty-boundary equivalence pin: `kind_modality_degree()
+        // == (0, 0)` iff the diff is empty. Direct pin of the
+        // histogram-side `is_empty ⇔ modality_degree == (0, 0)`
+        // equivalence one altitude down — the shared vacuous-
+        // nothing boundary on the empty support.
+        for diff in dominant_kind_fixtures() {
+            let is_zero_pair = diff.kind_modality_degree() == (0, 0);
+            assert_eq!(is_zero_pair, !diff.kinds_any_observed());
+        }
+    }
+
+    #[test]
+    fn kind_modality_degree_components_bounded_by_present_kinds_count_pointwise() {
+        // Support-cardinality upper bound pin: both components
+        // are bounded above by the observed-support cardinality
+        // `present_kinds_count()` — both level sets are subsets
+        // of the observed support, so their cardinalities are
+        // each bounded by the support size. Lifted from the
+        // trait-uniform `modality_degree().0 <= distinct_cells()`
+        // / `.1 <= distinct_cells()` laws on
+        // `crate::AxisHistogram`.
+        for diff in dominant_kind_fixtures() {
+            let (peak, trough) = diff.kind_modality_degree();
+            let support = diff.present_kinds_count();
+            assert!(peak <= support);
+            assert!(trough <= support);
+        }
+    }
+
+    #[test]
+    fn kind_modality_degree_components_bounded_by_axis_cardinality_pointwise() {
+        // Axis-cardinality upper bound pin: both components are
+        // bounded above by `crate::axis_cardinality::<DiffLineKind>()`
+        // (== `3` on the three-cell diff-kind axis). Composition
+        // of the above with `present_kinds_count() <=
+        // crate::axis_cardinality::<DiffLineKind>()`.
+        let cardinality = crate::axis_cardinality::<DiffLineKind>();
+        for diff in dominant_kind_fixtures() {
+            let (peak, trough) = diff.kind_modality_degree();
+            assert!(peak <= cardinality);
+            assert!(trough <= cardinality);
+        }
+    }
+
+    #[test]
+    fn kind_modality_degree_components_at_least_one_on_non_empty_pointwise() {
+        // Non-empty lower bound pin: both components are `>= 1`
+        // on every non-empty diff — every non-empty support has
+        // at least one observed kind at the peak and at least
+        // one observed kind at the trough (they may coincide as
+        // the same kind on the singleton-support case). The
+        // (0, 0) pair is unreachable on any non-empty diff.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_any_observed() {
+                let (peak, trough) = diff.kind_modality_degree();
+                assert!(peak >= 1);
+                assert!(trough >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn kinds_balanced_implies_kind_modality_degree_components_equal_pointwise() {
+        // Balanced-subsumption pin: `kinds_balanced() ⇒
+        // kind_modality_degree().0 == kind_modality_degree().1 ==
+        // present_kinds_count()`. Every balanced diff sits on the
+        // modal/antimodal coincidence corner — both level sets
+        // walk the full observed support and collapse to the same
+        // value. Lifted from the histogram-side `is_uniform_count
+        // ⇒ modality_degree().0 == modality_degree().1 ==
+        // distinct_cells()` law one altitude down.
+        for diff in dominant_kind_fixtures() {
+            if diff.kinds_balanced() {
+                let (peak, trough) = diff.kind_modality_degree();
+                assert_eq!(peak, trough);
+                assert_eq!(peak, diff.present_kinds_count());
+            }
+        }
+    }
+
+    #[test]
+    fn kind_modality_degree_sum_amplitude_recovers_unordered_pair_pointwise() {
+        // Invertibility pin: the pair `(kind_modality_degree_sum,
+        // kind_modality_amplitude)` recovers the *unordered*
+        // multiplicity pair under the invertible transform
+        // `max(peak, trough) = (sum + amp) / 2, min(peak, trough)
+        // = (sum - amp) / 2` with exact integer division (both
+        // shares parity via `sum % 2 == amp % 2`). Pins the
+        // fused-pair primitive as the upstream both scalar
+        // siblings project through — the two arithmetic fusions
+        // together recover the *sorted* pair (though not the
+        // peak-versus-trough labelling itself, which requires the
+        // fused pair).
+        for diff in dominant_kind_fixtures() {
+            let (peak, trough) = diff.kind_modality_degree();
+            let sum = diff.kind_modality_degree_sum();
+            let amp = diff.kind_modality_amplitude();
+            assert_eq!(sum % 2, amp % 2, "sum and amp must share parity");
+            let hi = (sum + amp) / 2;
+            let lo = (sum - amp) / 2;
+            assert_eq!(hi, peak.max(trough));
+            assert_eq!(lo, peak.min(trough));
+        }
+    }
+
+    #[test]
+    fn kind_modality_degree_agrees_with_open_coded_peak_trough_walk_pointwise() {
+        // Parity against the exact hand-rolled open-coded pair
+        // walk this lift replaces: scan the histogram's per-cell
+        // counts vector, track the running max + reset-on-rise
+        // modal multiplicity and the running min (initialized to
+        // usize::MAX so the first positive count promotes the
+        // sentinel) + reset-on-fall antimodal multiplicity
+        // simultaneously, excluding zero-count cells. Catches any
+        // future drift where either implementation stops
+        // projecting through the same fused peak-trough
+        // multiplicity walk.
+        for diff in dominant_kind_fixtures() {
+            let hist = diff.kind_histogram();
+            let mut max = 0usize;
+            let mut peak_mult = 0usize;
+            let mut min = usize::MAX;
+            let mut trough_mult = 0usize;
+            for k in crate::DiffLineKind::ALL {
+                let c = hist.count(*k);
+                if c == 0 {
+                    continue;
+                }
+                if c > max {
+                    max = c;
+                    peak_mult = 1;
+                } else if c == max {
+                    peak_mult += 1;
+                }
+                if c < min {
+                    min = c;
+                    trough_mult = 1;
+                } else if c == min {
+                    trough_mult += 1;
+                }
+            }
+            assert_eq!(diff.kind_modality_degree(), (peak_mult, trough_mult));
         }
     }
 
