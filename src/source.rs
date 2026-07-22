@@ -1567,6 +1567,156 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().spread()
     }
 
+    /// The **joint-extremes-magnitude of layer-kind counts** — the sum of
+    /// the modal and anti-modal per-kind layer counts on the layer-kind
+    /// sub-axis of the chain altitude. Routes through
+    /// [`crate::AxisHistogram::peak_trough_sum`] one altitude down: the
+    /// fused `peak_count() + trough_count()` addition on the histogram
+    /// surface, halving the cost of the inline `peak_layer_kind_count() +
+    /// trough_layer_kind_count()` idiom which walked the counts vector
+    /// twice.
+    ///
+    /// The **addition-form sibling** of the [`Self::layer_kind_spread`]
+    /// subtraction-form scalar on the same count surface at the same sub-
+    /// axis, closing the `(sum, difference)` pair of the extreme-endpoint
+    /// algebra at the layer-kind sub-axis of the chain altitude. Together
+    /// with [`Self::layer_kind_spread`], the pair
+    /// `(layer_kind_peak_trough_sum, layer_kind_spread)` reads off
+    /// `(peak_layer_kind_count, trough_layer_kind_count)` bijectively
+    /// through two halving-additions:
+    /// - `peak_layer_kind_count() == (layer_kind_peak_trough_sum() +
+    ///   layer_kind_spread()) / 2`
+    /// - `trough_layer_kind_count() == (layer_kind_peak_trough_sum() -
+    ///   layer_kind_spread()) / 2`
+    ///
+    /// Both divisions are exact — `layer_kind_peak_trough_sum ±
+    /// layer_kind_spread` is always even by construction, since
+    /// `(peak + trough) + (peak - trough) == 2 * peak` and
+    /// `(peak + trough) - (peak - trough) == 2 * trough`. The layer-kind
+    /// sub-axis of the chain altitude now carries `(peak, trough)` in two
+    /// orthogonal forms: as separate endpoints via
+    /// [`Self::peak_layer_kind_count`] / [`Self::trough_layer_kind_count`],
+    /// and as `(sum, difference)` via [`Self::layer_kind_peak_trough_sum`]
+    /// / [`Self::layer_kind_spread`].
+    ///
+    /// The **chain-altitude joint-extremes-magnitude peer** at the layer-
+    /// kind sub-axis — the natural typed primitive for CLI headlines,
+    /// attestation manifests, and alerting policies asking *"how large
+    /// are the two extreme layer kinds together?"*: the `config-show`
+    /// summary line *"peak-plus-trough layer-kind load: 3 layers (peak
+    /// File 2 + trough Env 1)"* (where 3 is this scalar), the attestation
+    /// manifest recording the joint extreme magnitude of a resolved
+    /// chain by layer kind between two rebuild windows, the alerting
+    /// policy reading *"`layer_kind_peak_trough_sum` >= threshold"* to
+    /// gate a rebuild on the joint two-sided magnitude. Before this
+    /// lift, every such consumer re-derived the projection inline as
+    /// `chain.peak_layer_kind_count() + chain.trough_layer_kind_count()`
+    /// — two method calls plus an addition at every site, each site
+    /// walking the counts vector twice with no named surface at this
+    /// sub-axis for the joint scalar.
+    ///
+    /// The layer-kind sub-axis sideways lift of the "peak+trough sums
+    /// across altitudes" projection, seeded on the scalar altitude by
+    /// [`crate::AxisHistogram::peak_trough_sum`], lifted to the diff
+    /// altitude by [`crate::ConfigDiff::kind_peak_trough_sum`], and
+    /// climbed to the tier altitude by
+    /// [`crate::ProvenanceMap::tier_peak_trough_sum`] — the next natural
+    /// lifts fan sideways along the two remaining chain sub-axes
+    /// (`file_format_peak_trough_sum` over
+    /// [`Self::file_format_histogram`] and
+    /// `env_prefix_kind_peak_trough_sum` over
+    /// [`Self::env_prefix_kind_histogram`]). Parallels the "spread across
+    /// altitudes" projection lifted to the same sub-axis by
+    /// [`Self::layer_kind_spread`] (the subtraction-form sibling on the
+    /// same closed-endpoint pair).
+    ///
+    /// **Cardinality-`3` reachability at the layer-kind sub-axis —
+    /// matching the diff altitude, one strict retreat from the tier
+    /// altitude.** [`ConfigSourceKind`] carries three cells, so
+    /// `layer_kind_peak_trough_sum()` ranges over `{0} ∪ [2, 2 *
+    /// self.as_ref().len()]` (`0` exactly on the empty chain, `1`
+    /// unreachable on the non-empty lower bound, then `>= 2` reachable
+    /// on every non-empty chain up to `2 * self.as_ref().len()` on the
+    /// singleton-support case). The uniform-cover shape witnesses the
+    /// `2 * peak_layer_kind_count` equality boundary via
+    /// [`Self::layer_kinds_uniform_count`].
+    ///
+    /// **Empty-chain convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::peak_trough_sum`] empty convention one
+    /// altitude down and the [`Self::peak_layer_kind_count`] /
+    /// [`Self::trough_layer_kind_count`] / [`Self::layer_kind_spread`]
+    /// empty conventions on the same sub-axis. The scalar-count
+    /// quadruple `(peak_layer_kind_count, trough_layer_kind_count,
+    /// layer_kind_spread, layer_kind_peak_trough_sum)` reads uniformly
+    /// `(0, 0, 0, 0)` on the empty chain.
+    ///
+    /// **Empty-boundary equivalence.** `layer_kind_peak_trough_sum() ==
+    /// 0` ⇔ `self.as_ref().is_empty()` — both endpoints are structurally
+    /// `>= 1` on every non-empty chain, so their sum is zero exactly on
+    /// the empty chain. Contrapositively, every non-empty chain has
+    /// `layer_kind_peak_trough_sum() >= 2` — the joint magnitude has a
+    /// structural non-empty floor of `2` (both endpoints contribute at
+    /// least `1`).
+    ///
+    /// # Invariants
+    ///
+    /// - `layer_kind_peak_trough_sum() ==
+    ///   layer_kind_histogram().peak_trough_sum()` — both project the
+    ///   same scalar off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `layer_kind_peak_trough_sum() == peak_layer_kind_count() +
+    ///   trough_layer_kind_count()` — the fused-pair identity of the
+    ///   joint-extremes-magnitude peer on the underlying scalar count
+    ///   pair.
+    /// - `layer_kind_peak_trough_sum() == 0` ⇔ `self.as_ref().is_empty()`
+    ///   — the empty-boundary equivalence peer to the two-endpoint
+    ///   surface.
+    /// - `layer_kind_peak_trough_sum() >= 2` whenever
+    ///   `!self.as_ref().is_empty()` — non-empty floor: both endpoints
+    ///   are at least `1` on every non-empty chain.
+    /// - `layer_kind_peak_trough_sum() >= layer_kind_spread()` always —
+    ///   `peak + trough >= peak - trough` reduces to `2 * trough >= 0`,
+    ///   always true. Equality holds iff `trough_layer_kind_count() ==
+    ///   0` — i.e. on the empty chain, the sole shape with `trough ==
+    ///   0`.
+    /// - `layer_kind_peak_trough_sum() <= 2 * peak_layer_kind_count()`
+    ///   always — `peak + trough <= 2 * peak` reduces to `trough <=
+    ///   peak`, the structural `trough <= peak` invariant. Equality
+    ///   holds iff [`Self::layer_kinds_uniform_count`] is `true` (peak
+    ///   equals trough).
+    /// - `layer_kind_peak_trough_sum() <= 2 * self.as_ref().len()`
+    ///   always — composition of both endpoints being bounded above by
+    ///   `self.as_ref().len()`.
+    /// - `layer_kind_peak_trough_sum() + layer_kind_spread() == 2 *
+    ///   peak_layer_kind_count()` always — the peak-endpoint recovery
+    ///   identity through the `(sum, difference)` surface.
+    /// - `layer_kind_peak_trough_sum() - layer_kind_spread() == 2 *
+    ///   trough_layer_kind_count()` always — the trough-endpoint
+    ///   recovery identity (non-negative by the
+    ///   `layer_kind_peak_trough_sum >= layer_kind_spread` invariant).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the fused
+    /// peak-and-trough scan through
+    /// [`crate::AxisHistogram::peak_trough_sum`]). Both are `O(n)` in
+    /// practice since the layer-kind axis carries a fixed three-cell
+    /// cardinality; the returned `usize` reads one scalar. Halves the
+    /// cost of the previous inline
+    /// `chain.peak_layer_kind_count() + chain.trough_layer_kind_count()`
+    /// idiom (which walked the counts vector twice — once for the max,
+    /// once for the min-over-support), where
+    /// [`crate::AxisHistogram::peak_trough_sum`] routes both through a
+    /// single scalar read.
+    #[must_use]
+    fn layer_kind_peak_trough_sum(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().peak_trough_sum()
+    }
+
     /// The number of [`ConfigSourceKind`] cells tied at the peak leaf
     /// count on the layer-kind sub-axis of the chain altitude — the
     /// **modal-multiplicity scalar** peer of the modally-tied /
@@ -32919,6 +33069,288 @@ mod tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak - trough);
+        }
+    }
+
+    // ---- ConfigSourceChain::layer_kind_peak_trough_sum — joint-extremes-
+    //      magnitude scalar on the layer-kind sub-axis of the chain
+    //      altitude, fusing peak_layer_kind_count + trough_layer_kind_count
+    //      into one addition-form scalar. Sideways lift of the "peak+trough
+    //      sums across altitudes" projection from the tier altitude to the
+    //      first chain sub-axis — the addition-form sibling of
+    //      layer_kind_spread (subtraction-form) on the same closed
+    //      count-endpoint pair ----
+
+    #[test]
+    fn layer_kind_peak_trough_sum_matches_layer_kind_histogram_peak_trough_sum_pointwise() {
+        // Routing pin: `layer_kind_peak_trough_sum` routes through
+        // `layer_kind_histogram().peak_trough_sum()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Peer of
+        // `tier_peak_trough_sum_matches_tier_histogram_peak_trough_sum_pointwise`
+        // on the tier altitude one seam up and
+        // `layer_kind_spread_matches_layer_kind_histogram_spread_pointwise`
+        // on the same sub-axis (subtraction-form sibling).
+        for chain in recessive_layer_kind_fixtures() {
+            let via_histogram = chain.as_slice().layer_kind_histogram().peak_trough_sum();
+            assert_eq!(chain.as_slice().layer_kind_peak_trough_sum(), via_histogram,);
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_sum_equals_peak_plus_trough_pointwise() {
+        // The fused-pair pin: `layer_kind_peak_trough_sum ==
+        // peak_layer_kind_count + trough_layer_kind_count` on every
+        // fixture. Peer of `tier_peak_trough_sum_equals_peak_plus_trough_pointwise`
+        // on the tier altitude and the addition-form sibling of
+        // `layer_kind_spread_equals_peak_minus_trough_pointwise` on the
+        // same sub-axis.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let peak = slice.peak_layer_kind_count();
+            let trough = slice.trough_layer_kind_count();
+            assert_eq!(slice.layer_kind_peak_trough_sum(), peak + trough);
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_sum_sample_chain_is_three() {
+        // Direct pin against `sample_chain()`: two File layers + one Env
+        // layer. File dominant at 2, Env recessive at 1 — the joint sum
+        // is 3. Reads the paired `(peak_layer_kind_count,
+        // trough_layer_kind_count, layer_kind_spread,
+        // layer_kind_peak_trough_sum)` quadruple as `(2, 1, 1, 3)` —
+        // matching the tier-altitude peer `tier_peak_trough_sum` on the
+        // strictly-unimodal Prog fixture quadruple `(2, 1, 1, 3)`.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_layer_kind_count(), 2);
+        assert_eq!(slice.trough_layer_kind_count(), 1);
+        assert_eq!(slice.layer_kind_spread(), 1);
+        assert_eq!(slice.layer_kind_peak_trough_sum(), 3);
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_sum_env_majority_is_four() {
+        // Direct pin against an env-majority chain: three Env layers +
+        // one File + one Defaults. Env dominant at 3, Defaults recessive
+        // at 1 (declaration-order tie against File at 1) — the joint sum
+        // is 4. Reads the `(peak, trough, spread, sum)` quadruple as
+        // `(3, 1, 2, 4)`. Cross-verified against `hist.peak_trough_sum()
+        // == 4` at the same site.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_layer_kind_count(), 3);
+        assert_eq!(slice.trough_layer_kind_count(), 1);
+        assert_eq!(slice.layer_kind_spread(), 2);
+        assert_eq!(slice.layer_kind_peak_trough_sum(), 4);
+        assert_eq!(slice.layer_kind_histogram().peak_trough_sum(), 4);
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_sum_empty_chain_is_zero() {
+        // An empty chain has no layers and therefore zero joint magnitude
+        // — reads `0` per the AxisHistogram::peak_trough_sum empty
+        // convention one altitude down; the `(peak, trough, spread, sum)`
+        // quadruple reads `(0, 0, 0, 0)` uniformly on empty. Peer of
+        // `tier_peak_trough_sum_empty_map_is_zero` on the tier altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.peak_layer_kind_count(), 0);
+        assert_eq!(empty.trough_layer_kind_count(), 0);
+        assert_eq!(empty.layer_kind_spread(), 0);
+        assert_eq!(empty.layer_kind_peak_trough_sum(), 0);
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_sum_singleton_support_is_twice_len() {
+        // Singleton-support pin: every layer lands on the same kind, so
+        // peak == trough == len, and the joint sum is `2 * len`. Direct
+        // construction: three File layers. Peer of
+        // `tier_peak_trough_sum_singleton_support_is_twice_len` on the
+        // tier altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 1);
+        assert_eq!(slice.layer_kind_peak_trough_sum(), 6);
+        assert_eq!(slice.layer_kind_peak_trough_sum(), 2 * slice.as_ref().len(),);
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_sum_uniform_cover_equals_twice_shared_count() {
+        // Uniform-cover pin: every observed kind contributes the same
+        // nonzero count (two layers each here — a full-cover chain with
+        // uniform count 2 per cell), so peak == trough == 2 and the joint
+        // sum is 4 (== 2 * peak). The equality boundary of the `sum <=
+        // 2 * peak` invariant, witnessed against
+        // `layer_kinds_uniform_count`. Peer of
+        // `tier_peak_trough_sum_uniform_cover_equals_twice_shared_count`
+        // on the tier altitude.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kinds_uniform_count());
+        assert_eq!(slice.peak_layer_kind_count(), 2);
+        assert_eq!(slice.trough_layer_kind_count(), 2);
+        assert_eq!(slice.layer_kind_peak_trough_sum(), 4);
+        assert_eq!(
+            slice.layer_kind_peak_trough_sum(),
+            2 * slice.peak_layer_kind_count(),
+        );
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_sum_zero_iff_empty() {
+        // Empty-boundary equivalence: `layer_kind_peak_trough_sum() == 0`
+        // iff the chain is empty. Both endpoints are structurally `>= 1`
+        // on every non-empty chain, so their sum is zero exactly on the
+        // empty chain. Peer of `tier_peak_trough_sum_zero_iff_empty` on
+        // the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let sum_zero = slice.layer_kind_peak_trough_sum() == 0;
+            let empty = slice.as_ref().is_empty();
+            assert_eq!(sum_zero, empty);
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_sum_nonempty_lower_bound_is_two() {
+        // Non-empty floor: every non-empty chain has
+        // `layer_kind_peak_trough_sum() >= 2` — both endpoints contribute
+        // at least `1`. Peer of
+        // `tier_peak_trough_sum_nonempty_lower_bound_is_two` on the tier
+        // altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.as_ref().is_empty() {
+                assert!(slice.layer_kind_peak_trough_sum() >= 2);
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_sum_bounded_below_by_layer_kind_spread() {
+        // Companion invariant: `sum >= spread` always — `peak + trough >=
+        // peak - trough` reduces to `2 * trough >= 0`, always true.
+        // Equality holds iff `trough == 0` — i.e. on the empty chain.
+        // Peer of `tier_peak_trough_sum_bounded_below_by_tier_spread` on
+        // the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(slice.layer_kind_peak_trough_sum() >= slice.layer_kind_spread());
+            let equality = slice.layer_kind_peak_trough_sum() == slice.layer_kind_spread();
+            assert_eq!(equality, slice.trough_layer_kind_count() == 0);
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_sum_bounded_above_by_twice_peak() {
+        // Companion invariant: `sum <= 2 * peak` always — `peak + trough
+        // <= 2 * peak` reduces to `trough <= peak`, the structural
+        // `trough <= peak` invariant on `AxisHistogram`. Equality holds
+        // iff `layer_kinds_uniform_count` (peak equals trough). Peer of
+        // `tier_peak_trough_sum_bounded_above_by_twice_peak` on the tier
+        // altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(slice.layer_kind_peak_trough_sum() <= 2 * slice.peak_layer_kind_count(),);
+            let equality = slice.layer_kind_peak_trough_sum() == 2 * slice.peak_layer_kind_count();
+            assert_eq!(equality, slice.layer_kinds_uniform_count());
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_sum_bounded_above_by_twice_len() {
+        // Composition bound: `sum <= 2 * self.as_ref().len()` — both
+        // endpoints are bounded above by `len`. Peer of
+        // `tier_peak_trough_sum_bounded_above_by_twice_len` on the tier
+        // altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(slice.layer_kind_peak_trough_sum() <= 2 * slice.as_ref().len(),);
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_sum_plus_spread_recovers_twice_peak() {
+        // Peak endpoint-recovery: `sum + spread == 2 * peak` — the
+        // `(sum, difference)` surface halves back to `peak` via one
+        // addition. Peer of
+        // `tier_peak_trough_sum_plus_tier_spread_recovers_twice_peak_tier_count`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let sum = slice.layer_kind_peak_trough_sum();
+            let spread = slice.layer_kind_spread();
+            let peak = slice.peak_layer_kind_count();
+            assert_eq!(sum + spread, 2 * peak);
+            assert_eq!((sum + spread) / 2, peak);
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_sum_minus_spread_recovers_twice_trough() {
+        // Trough endpoint-recovery: `sum - spread == 2 * trough` — the
+        // `(sum, difference)` surface halves back to `trough` via one
+        // (underflow-safe) subtraction. Peer of
+        // `tier_peak_trough_sum_minus_tier_spread_recovers_twice_trough_tier_count`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let sum = slice.layer_kind_peak_trough_sum();
+            let spread = slice.layer_kind_spread();
+            let trough = slice.trough_layer_kind_count();
+            assert!(sum >= spread);
+            assert_eq!(sum - spread, 2 * trough);
+            assert_eq!((sum - spread) / 2, trough);
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_sum_agrees_with_open_coded_max_plus_min_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0) + hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0)` walk this lift replaces —
+        // both the named seam and the hand-rolled max-plus-min-over-
+        // support must pointwise agree over every fixture. The
+        // `filter(|(_, c)| c > 0)` step on the min side is the load-
+        // bearing seam: the naive `.min()` over the full axis would
+        // silently pick zero-count absent cells on any non-full-cover
+        // chain, shadowing the trough-of-support the seam surfaces —
+        // and once the trough shadows to zero, the joint sum coincides
+        // with the peak alone, silently underreporting the joint
+        // magnitude. Peer of
+        // `tier_peak_trough_sum_agrees_with_open_coded_max_plus_min_walk`
+        // on the tier altitude and the addition-form sibling of
+        // `layer_kind_spread_agrees_with_open_coded_max_minus_min_walk`
+        // on the same sub-axis.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kind_peak_trough_sum();
+            let hist = slice.layer_kind_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .map(|(_, c)| c)
+                .filter(|&c| c > 0)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(via_seam, peak + trough);
         }
     }
 
