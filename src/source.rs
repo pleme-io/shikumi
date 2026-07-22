@@ -2642,6 +2642,221 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().dominant_observation()
     }
 
+    /// The **recessive layer-kind observation** — the fused `(cell, count)`
+    /// pair on the trough side of this chain's layer-kind histogram: the
+    /// anti-modal [`ConfigSourceKind`] together with the layer count it
+    /// contributed. Returns `None` exactly when the chain is empty (no
+    /// observed cell); otherwise returns `Some((k, n))` where
+    /// `k == recessive_layer_kind().unwrap()` and
+    /// `n == trough_layer_kind_count()` with `n >= 1`.
+    ///
+    /// Defined as `self.layer_kind_histogram().recessive_observation()`,
+    /// routed through [`crate::AxisHistogram::recessive_observation`] one
+    /// altitude down — the fused single-pass argmin scan over the
+    /// histogram's nonzero support that names the anti-modal cell together
+    /// with the trough count simultaneously, halving the work of the two-
+    /// scan `(recessive_layer_kind(), trough_layer_kind_count())` fusion
+    /// the scalar-pair form pays for on every non-empty chain.
+    ///
+    /// The natural typed primitive for chain-shape dashboards, attestation
+    /// manifests, and alerting policies asking *"which layer kind is the
+    /// runt of this recipe, and by how many layers?"*: the CLI
+    /// `config-show` summary line *"runt: Defaults, 1 of 5 layers"* (where
+    /// `Some((Defaults, 1))` is this pair), the attestation manifest
+    /// recording the anti-modal `(cell, count)` pair of a chain by layer
+    /// kind between two rebuild windows, the alerting policy reading
+    /// *"recessive layer-kind observation = Some((Env, 1))"* to gate a
+    /// rebuild window on the anti-modal kind and its density
+    /// simultaneously. Before this lift, every such consumer re-derived
+    /// the pair inline as `(chain.recessive_layer_kind(),
+    /// chain.trough_layer_kind_count())` — two method calls, each routing
+    /// through [`Self::layer_kind_histogram`] and each scanning the counts
+    /// vector independently (once to argmin the cell, once to read the
+    /// trough count back), where the shared
+    /// [`crate::AxisHistogram::recessive_observation`] primitive fuses
+    /// both into one walk.
+    ///
+    /// The chain-altitude layer-kind sub-axis fused-pair peer that
+    /// **lifts the "recessive-observation across altitudes" projection
+    /// sideways** from the tier altitude
+    /// ([`crate::ProvenanceMap::recessive_tier_observation`]) to the first
+    /// chain-altitude sub-axis, seeded on the diff altitude by
+    /// [`crate::ConfigDiff::recessive_kind_observation`]. Mirrors the
+    /// closed sibling modal-side sideways lift
+    /// [`Self::dominant_layer_kind_observation`] on the same layer-kind
+    /// sub-axis. The two remaining chain-altitude sub-axes are the natural
+    /// next sideways lifts (`recessive_file_format_observation` over
+    /// [`Self::file_format_histogram`],
+    /// `recessive_env_prefix_kind_observation` over
+    /// [`Self::env_prefix_kind_histogram`]), mirroring the three-step
+    /// chain trajectory the closed sibling modal-side row already walked
+    /// (`dominant_layer_kind_observation` →
+    /// `dominant_file_format_observation` →
+    /// `dominant_env_prefix_kind_observation`). Once closed at every
+    /// chain sub-axis in the same trajectory, the substrate closes the
+    /// anti-modal `(cell, count)` fused-pair row at every altitude / sub-
+    /// axis of the 5-column grid alongside the closed sibling
+    /// `(recessive_cell, trough_count)` scalar halves and the closed
+    /// modal-side `(dominant_observation)` fused-pair peer, closing the
+    /// joint `(dominant, recessive) × (cell, count) × fused` 2×2×2 = 8-
+    /// seam grid on the histogram surface at every altitude / sub-axis.
+    ///
+    /// The **fused-pair peer** of the two closed anti-modal-side scalar-
+    /// half siblings ([`Self::recessive_layer_kind`] carrying the *cell*
+    /// alone as `Option<ConfigSourceKind>` and
+    /// [`Self::trough_layer_kind_count`] carrying the *count* alone as
+    /// `usize`) — the natural upstream both scalar halves project through,
+    /// from which [`Self::recessive_layer_kind`] recovers via
+    /// `.map(|(k, _)| k)` and [`Self::trough_layer_kind_count`] recovers
+    /// via `.map_or(0, |(_, n)| n)`. Where the two scalar-half siblings
+    /// each surface one half of the anti-modal observation independently
+    /// at the cost of walking the histogram twice, this row surfaces the
+    /// *joint pair itself* as one `Option<(cell, count)>` read.
+    ///
+    /// **Cardinality-`3` reachability at the layer-kind sub-axis —
+    /// matching the cardinality-`3` diff altitude.**
+    /// [`ConfigSourceKind`] carries three cells, so
+    /// `recessive_layer_kind_observation()` reads `None` on the empty
+    /// chain, `Some((Defaults, 1))` on every uniform per-kind full-cover
+    /// chain (declaration-order tie-breaking on the three-cell axis picks
+    /// the first cell at the shared trough count `1` — pointwise identical
+    /// to the modal-side sibling on the same corner), `Some((k, len()))`
+    /// on every singleton-support chain (the sole observed kind collects
+    /// every layer, pointwise identical to the modal-side sibling),
+    /// `Some((Env, 1))` on the sample chain (`File ×2 + Env ×1`; strictly-
+    /// unimodal, uniquely at the trough), and `Some((Defaults, 1))` on an
+    /// env-majority chain (`Env ×3 + File ×1 + Defaults ×1`; trough tied
+    /// at count `1` between `Defaults` and `File`, declaration-order tie-
+    /// break picks `Defaults`). One strict retreat from the cardinality-
+    /// `4` tier altitude (whose count component reaches `4` on uniform-
+    /// full-cover) and pointwise matched to the cardinality-`3` diff
+    /// altitude on the reachable pairs on the same surface.
+    ///
+    /// **Empty-chain convention** — returns `None`, matching the
+    /// [`crate::AxisHistogram::recessive_observation`] empty convention
+    /// one altitude down and the [`Self::recessive_layer_kind`] empty
+    /// convention on the same sub-axis. The scalar count projection
+    /// [`Self::trough_layer_kind_count`] reads `0` on the same boundary
+    /// via `.map_or(0, |(_, n)| n)`.
+    ///
+    /// **Tie-breaking policy on the trough side** — declaration-order
+    /// first: on trough ties, the
+    /// [`crate::AxisHistogram::recessive_observation`] scan (a running-
+    /// min walk with `<`-only promotion — strict inequality, not `<=`)
+    /// keeps the *first* observed cell at that count in
+    /// [`crate::ClosedAxis::ALL`] declaration order (`Defaults → Env →
+    /// File` for [`ConfigSourceKind`]), matching the shared
+    /// [`crate::AxisHistogram::recessive_cell`] tie-breaking one altitude
+    /// down and [`Self::recessive_layer_kind`] on the same sub-axis.
+    /// Every uniform-cover chain (each observed kind producing the same
+    /// nonzero layer count) reads `Some((Defaults, n))` — the first cell
+    /// in declaration order — pointwise identical to
+    /// [`Self::dominant_layer_kind_observation`] on the same input (the
+    /// modal / anti-modal coincidence corner where peak and trough
+    /// coincide).
+    ///
+    /// **Peak-trough coincidence law.**
+    /// [`Self::dominant_layer_kind_observation`] and
+    /// [`Self::recessive_layer_kind_observation`] coincide pointwise on
+    /// every empty chain (both `None`), every singleton-support chain
+    /// (both `Some((k, len()))` at the sole observed cell), and every
+    /// uniform-count chain (both `Some((k, shared_count))` at the first
+    /// observed cell — the modal and anti-modal level sets coincide
+    /// because peak and trough are equal). On every strictly-unimodal
+    /// support where peak > trough, the two projections read OPPOSITE
+    /// ends of the observation interval and DIVERGE pointwise on the
+    /// count component (peak count > trough count strictly). Peer of
+    /// the tier-altitude coincidence law
+    /// ([`crate::ProvenanceMap::recessive_tier_observation`] coincides
+    /// with [`crate::ProvenanceMap::dominant_tier_observation`] on the
+    /// same boundary) and of the diff-altitude coincidence law
+    /// ([`crate::ConfigDiff::recessive_kind_observation`] coincides with
+    /// [`crate::ConfigDiff::dominant_kind_observation`] on the same
+    /// boundary).
+    ///
+    /// # Invariants
+    ///
+    /// - `recessive_layer_kind_observation() ==
+    ///   layer_kind_histogram().recessive_observation()` — the routing
+    ///   equivalence one altitude down; both project the same fused pair
+    ///   off the same primitive.
+    /// - `recessive_layer_kind_observation().is_none() ==
+    ///   self.as_ref().is_empty()` — the `None`-boundary equivalence: the
+    ///   pair is defined exactly when the chain has at least one layer,
+    ///   matching [`Self::recessive_layer_kind`] on the cell side.
+    /// - `recessive_layer_kind_observation().map(|(k, _)| k) ==
+    ///   recessive_layer_kind()` — the cell-side projection recovers
+    ///   [`Self::recessive_layer_kind`] pointwise; both routings pick the
+    ///   same anti-modal cell off the same primitive.
+    /// - `recessive_layer_kind_observation().map_or(0, |(_, n)| n) ==
+    ///   trough_layer_kind_count()` — the count-side projection recovers
+    ///   [`Self::trough_layer_kind_count`] pointwise; both routings read
+    ///   the same trough count off the same primitive. Empty case:
+    ///   `None.map_or(0, …) == 0 == trough_layer_kind_count()`. Non-empty
+    ///   case: `Some((_, n)).map_or(0, …) == n ==
+    ///   trough_layer_kind_count()`.
+    /// - When `Some((k, n))`, `k` is a member of
+    ///   [`Self::present_layer_kinds`] — the anti-modal cell is by
+    ///   definition observed. Peer to the cell-side
+    ///   [`Self::recessive_layer_kind`] membership invariant.
+    /// - When `Some((k, n))`, `layer_kind_histogram().count(k) == n` —
+    ///   the count component equals the observation count at the cell
+    ///   component. Peer to the cell/count consistency law on
+    ///   [`crate::AxisHistogram::recessive_observation`] one altitude
+    ///   down.
+    /// - When `Some((_, n))`, `n >= 1` — every non-empty support has at
+    ///   least one layer at the anti-modal kind, so the count component
+    ///   is strictly positive.
+    /// - When `Some((_, n))`, `n <= peak_layer_kind_count()` — the trough
+    ///   count is bounded above by the peak count. Equality holds iff the
+    ///   layer-kind histogram is uniform-count (peak and trough coincide);
+    ///   the strict inequality holds on every strictly-unimodal support.
+    /// - When `Some((_, n))`, `n <= self.as_ref().len()` — the trough
+    ///   count is bounded above by the total layer count (every kind
+    ///   contributes at most every layer, and the others contribute
+    ///   zero). Equality holds when `present_layer_kinds_count() <= 1`.
+    /// - `recessive_layer_kind_observation()` on a uniform per-kind full-
+    ///   cover chain (one layer per kind) equals
+    ///   `Some((ConfigSourceKind::Defaults, 1))` — declaration-order tie-
+    ///   breaking on the three-cell axis picks the first cell at the
+    ///   shared trough count `1`, matching the modal-side sibling on the
+    ///   same fixture (peak and trough coincide on uniform-count).
+    /// - `recessive_layer_kind_observation()` on a singleton-support
+    ///   chain (every layer on the same kind) equals
+    ///   `Some((k, self.as_ref().len()))` where `k` is the sole observed
+    ///   kind — the trough equals the total, matching the modal-side
+    ///   sibling on the same fixture (peak and trough coincide on
+    ///   singleton-support).
+    /// - `recessive_layer_kind_observation() ==
+    ///   dominant_layer_kind_observation()` whenever the layer-kind
+    ///   histogram is empty or uniform-count (peak and trough coincide
+    ///   with the same declaration-order tie-break). Strictly diverges on
+    ///   the count component on every strictly-unimodal support where
+    ///   peak > trough — the two projections then read different
+    ///   `(cell, count)` pairs at each end of the observation interval.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the fused
+    /// argmin scan through
+    /// [`crate::AxisHistogram::recessive_observation`]). Both are `O(n)`
+    /// in practice since the layer-kind axis carries a fixed three-cell
+    /// cardinality; the returned `Option<(ConfigSourceKind, usize)>` fits
+    /// in one enum + two scalars. Halves the cost of the previous inline
+    /// `(chain.recessive_layer_kind(), chain.trough_layer_kind_count())`
+    /// idiom (which walked the counts vector twice — once to argmin the
+    /// cell, once to read the trough count back — where
+    /// [`crate::AxisHistogram::recessive_observation`] fuses both into a
+    /// single walk).
+    #[must_use]
+    fn recessive_layer_kind_observation(&self) -> Option<(ConfigSourceKind, usize)>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().recessive_observation()
+    }
+
     /// The **balanced-layer-kinds boolean predicate** on the layer-kind
     /// sub-axis of the chain altitude — `true` exactly when every observed
     /// [`ConfigSourceKind`] contributed the same number of layers. The
@@ -34788,6 +35003,635 @@ mod tests {
             let count = obs.map_or(0, |(_, n)| n);
             assert_eq!(cell, slice.dominant_layer_kind());
             assert_eq!(count, slice.peak_layer_kind_count());
+        }
+    }
+
+    // ---- ConfigSourceChain::recessive_layer_kind_observation — anti-modal-
+    //      side fused `(cell, count)` pair seam on the layer-kind sub-axis
+    //      of the chain altitude, lifting AxisHistogram::recessive_observation
+    //      sideways from the tier altitude (recessive_tier_observation) to
+    //      the first chain-altitude sub-axis, seeded on the diff altitude
+    //      by recessive_kind_observation. Fused-pair peer of the closed
+    //      (recessive_layer_kind, trough_layer_kind_count) anti-modal-side
+    //      scalar-half rows, surfacing the pair itself as one Option<(cell,
+    //      count)>-tuple read. Joint upstream of recessive_layer_kind
+    //      (`.map(|(k, _)| k)`) and trough_layer_kind_count
+    //      (`.map_or(0, |(_, n)| n)`). Cardinality-`3` ConfigSourceKind
+    //      axis: matches the cardinality-`3` diff altitude's reachable
+    //      pairs on the same surface (whose count component caps at `3`);
+    //      one strict retreat from the cardinality-`4` tier altitude
+    //      (whose count component reaches `4` on uniform-full-cover).
+    //      Modal / anti-modal coincidence corner: coincides pointwise with
+    //      dominant_layer_kind_observation on empty / singleton-support /
+    //      uniform-count folds; diverges strictly on the count component
+    //      on every strictly-unimodal support where peak > trough. ----
+
+    #[test]
+    fn recessive_layer_kind_observation_matches_layer_kind_histogram_recessive_observation_pointwise()
+     {
+        // Routing pin: `recessive_layer_kind_observation` routes through
+        // `layer_kind_histogram().recessive_observation()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native fused-pair primitive.
+        // Chain layer-kind sub-axis sideways lift of the "recessive-
+        // observation across altitudes" projection climbed to the tier
+        // altitude by
+        // `recessive_tier_observation_matches_tier_histogram_recessive_observation_pointwise`
+        // and seeded on the diff altitude by
+        // `recessive_kind_observation_matches_kind_histogram_recessive_observation_pointwise`.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.layer_kind_histogram().recessive_observation();
+            assert_eq!(slice.recessive_layer_kind_observation(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_matches_recessive_layer_kind_and_trough_layer_kind_count_scalar_pair_pointwise()
+     {
+        // Structural-form pin: `recessive_layer_kind_observation` agrees
+        // with the open-coded `(recessive_layer_kind(),
+        // trough_layer_kind_count())` pair on every fixture — coerced
+        // through the `Option` shape via `.map(|k| (k,
+        // trough_layer_kind_count()))`. Pins the defining equivalence on
+        // the underlying scalar-pair surface: both routings read the same
+        // anti-modal cell and the same trough count off the same
+        // primitive, so the fused-pair form is behaviorally
+        // indistinguishable from the two-call open-coded pair. Peer of
+        // `recessive_tier_observation_matches_recessive_tier_and_trough_tier_count_scalar_pair_pointwise`
+        // on the tier altitude and
+        // `recessive_kind_observation_matches_recessive_kind_and_trough_kind_count_scalar_pair_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_pair = slice
+                .recessive_layer_kind()
+                .map(|k| (k, slice.trough_layer_kind_count()));
+            assert_eq!(slice.recessive_layer_kind_observation(), via_pair);
+        }
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_cell_component_equals_recessive_layer_kind_pointwise() {
+        // Cell-side sibling pin: `.map(|(k, _)| k) ==
+        // recessive_layer_kind()` on every fixture. Pins the fused-pair
+        // primitive as the upstream of the sibling anti-modal-cell
+        // scalar, which reads the same value through the `.map`
+        // projection on the `Option` shape (via the shared
+        // `AxisHistogram::recessive_observation` walk one altitude down).
+        // Empty case: `None.map(…) == None == recessive_layer_kind()`.
+        // Non-empty case: `Some((k, _)).map(…) == Some(k) ==
+        // recessive_layer_kind()`. Peer of
+        // `recessive_tier_observation_cell_component_equals_recessive_tier_pointwise`
+        // on the tier altitude and
+        // `recessive_kind_observation_cell_component_equals_recessive_kind_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_map = slice.recessive_layer_kind_observation().map(|(k, _)| k);
+            assert_eq!(via_map, slice.recessive_layer_kind());
+        }
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_count_component_equals_trough_layer_kind_count_pointwise() {
+        // Count-side sibling pin: `.map_or(0, |(_, n)| n) ==
+        // trough_layer_kind_count()` on every fixture. Pins the fused-
+        // pair primitive as the upstream of the sibling trough-count
+        // scalar, which reads the same value through the `.map_or`
+        // projection on the `Option` shape (via the shared
+        // `AxisHistogram::recessive_observation` walk one altitude down).
+        // Empty case: `None.map_or(0, …) == 0 ==
+        // trough_layer_kind_count()`. Non-empty case: `Some((_, n)).map_or(0,
+        // …) == n == trough_layer_kind_count()`. Peer of
+        // `recessive_tier_observation_count_component_equals_trough_tier_count_pointwise`
+        // on the tier altitude and
+        // `recessive_kind_observation_count_component_equals_trough_kind_count_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_map = slice
+                .recessive_layer_kind_observation()
+                .map_or(0, |(_, n)| n);
+            assert_eq!(via_map, slice.trough_layer_kind_count());
+        }
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_empty_chain_is_none() {
+        // Empty-chain polarity pin: the empty chain has no observed cell,
+        // so the fused pair reads `None` — the vacuous-nothing boundary
+        // lifted from the empty support. The triple `(recessive_layer_kind,
+        // trough_layer_kind_count, recessive_layer_kind_observation)`
+        // reads uniformly `(None, 0, None)` on the empty chain. Peer of
+        // `recessive_tier_observation_empty_map_is_none` on the tier
+        // altitude and `recessive_kind_observation_empty_diff_is_none` on
+        // the diff altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert_eq!(empty.recessive_layer_kind_observation(), None);
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_sample_chain_is_some_env_at_one() {
+        // Strictly-unimodal polarity pin against `sample_chain()`: two
+        // File layers + one Env layer (no Defaults). Env is uniquely
+        // recessive with trough_count `1`, so the fused pair reads
+        // `Some((Env, 1))` — the anti-modal cell paired with its unique
+        // trough count. Peer of `recessive_layer_kind_sample_chain_is_env`
+        // on the cell-only sibling and
+        // `trough_layer_kind_count_sample_chain_is_one` on the count-only
+        // sibling — the fused-pair primitive is upstream of both. Divergent
+        // count component from `dominant_layer_kind_observation_sample_chain_is_some_file_at_two`
+        // on the same fixture (peak=`2` at File, trough=`1` at Env —
+        // strictly-unimodal split at the two ends of the observation
+        // interval).
+        let chain = sample_chain();
+        assert_eq!(
+            chain.as_slice().recessive_layer_kind_observation(),
+            Some((ConfigSourceKind::Env, 1)),
+        );
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_env_majority_is_some_defaults_at_one() {
+        // Strictly-unimodal polarity pin against an env-majority chain:
+        // three Env layers + one File + one Defaults. Env is uniquely
+        // dominant at peak `3`; the trough is tied between `Defaults` and
+        // `File` at count `1`, and declaration-order tie-breaking picks
+        // `Defaults` (the earlier tied observed cell — `Defaults → Env →
+        // File` in `ConfigSourceKind::ALL`). So the fused pair reads
+        // `Some((Defaults, 1))`. Cross-verified against `hist.count(Defaults)
+        // == hist.count(File) == 1 == hist.trough_count()` at the same
+        // observation site. Peer of `recessive_layer_kind_env_majority_is_file`
+        // (sic — cell-only sibling reads `Defaults` under identical
+        // declaration-order tie-break, not `File`; the underscored
+        // fixture-shape peer). Divergent count component from
+        // `dominant_layer_kind_observation_env_majority_is_some_env_at_three`
+        // on the same fixture (peak=`3` at Env, trough=`1` at Defaults —
+        // strictly-unimodal split at the two ends of the observation
+        // interval).
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.layer_kind_histogram();
+        assert_eq!(hist.count(ConfigSourceKind::Defaults), 1);
+        assert_eq!(hist.count(ConfigSourceKind::File), 1);
+        assert_eq!(hist.trough_count(), 1);
+        assert_eq!(
+            slice.recessive_layer_kind_observation(),
+            Some((ConfigSourceKind::Defaults, 1)),
+        );
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_singleton_support_is_some_file_at_len() {
+        // Singleton-support polarity pin: a chain with every layer on
+        // `ConfigSourceKind::File` (three File layers here) collects all
+        // three layers on File and zero on the other cells; the fused
+        // pair reads `Some((File, 3))` — the sole observed cell paired
+        // with the total layer count. Witness of the singleton-support
+        // corner where `n == len()`, and the modal / anti-modal cells
+        // coincide (both the `dominant_layer_kind_observation` and
+        // `recessive_layer_kind_observation` seams read the same value on
+        // this corner). Cardinality-`3` layer-kind axis matches the
+        // cardinality-`3` diff altitude on the same shape; one strict
+        // retreat from the cardinality-`4` tier altitude (whose
+        // singleton-support witness reaches count `4`). Peer of
+        // `recessive_tier_observation_singleton_support_is_some_singleton`
+        // on the tier altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kinds_singular_support());
+        assert_eq!(
+            slice.recessive_layer_kind_observation(),
+            Some((ConfigSourceKind::File, 3)),
+        );
+        assert_eq!(
+            slice.recessive_layer_kind_observation(),
+            slice.dominant_layer_kind_observation(),
+        );
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_uniform_full_cover_is_some_defaults_at_count_one() {
+        // Uniform-axis-cover polarity pin: a chain observing every cell
+        // of `ConfigSourceKind` exactly once has all three nonzero counts
+        // at `1`; the trough is tied between all three cells, and
+        // declaration-order tie-breaking picks `Defaults` (the first cell
+        // in the axis) paired with the shared trough count `1` —
+        // pointwise identical to the modal-side sibling
+        // `dominant_layer_kind_observation` on the same fixture (peak and
+        // trough coincide on uniform-count, and the declaration-order
+        // tie-break is identical on both sides). Top-corner witness of
+        // the tie-breaking policy on the uniform full-cover shape at the
+        // cardinality-`3` layer-kind sub-axis — one strict retreat from
+        // the cardinality-`4` tier altitude's uniform full-cover witness
+        // (which reads `Some((Bare, 1))` on the four-cell axis at the
+        // same shared trough count `1`).
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kinds_balanced());
+        assert!(slice.layer_kinds_full_cover());
+        assert_eq!(
+            slice.recessive_layer_kind_observation(),
+            Some((ConfigSourceKind::Defaults, 1)),
+        );
+        assert_eq!(
+            slice.recessive_layer_kind_observation(),
+            slice.dominant_layer_kind_observation(),
+        );
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_two_way_tie_picks_earliest_declared_observed_cell() {
+        // Two-way-tie polarity pin: a chain with two Env + two File and
+        // zero Defaults has the trough tied between Env and File at count
+        // `2` (with `Defaults` at zero, excluded from the trough search).
+        // Declaration-order tie-breaking picks `Env` (the earliest tied
+        // observed cell — Defaults appears in `ALL` before Env but has
+        // zero count, so it doesn't participate in the tie), paired with
+        // the shared trough count `2`. Pointwise identical to the modal-
+        // side sibling `dominant_layer_kind_observation` on the same
+        // fixture (peak and trough coincide at `2` because both observed
+        // cells share the same count — uniform-count corner). Distinguishing
+        // pin against a mis-implementation that would read `Some((Defaults,
+        // _))` (the first cell of `ALL`) instead of `Some((Env, 2))` (the
+        // first tied observed cell). Peer of
+        // `recessive_layer_kind_two_way_tie_picks_earliest_declared_observed_cell`
+        // (if such exists) on the cell-only sibling, matching the modal-
+        // side peer `dominant_layer_kind_two_way_tie_picks_earliest_declared_observed_cell`.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::Env("OTHER_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.layer_kind_histogram();
+        assert_eq!(hist.count(ConfigSourceKind::Defaults), 0);
+        assert_eq!(hist.count(ConfigSourceKind::Env), 2);
+        assert_eq!(hist.count(ConfigSourceKind::File), 2);
+        assert_eq!(
+            slice.recessive_layer_kind_observation(),
+            Some((ConfigSourceKind::Env, 2)),
+        );
+        assert_eq!(
+            slice.recessive_layer_kind_observation(),
+            slice.dominant_layer_kind_observation(),
+        );
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_none_iff_empty_pointwise() {
+        // None-boundary equivalence pin:
+        // `recessive_layer_kind_observation().is_none()` iff the chain
+        // is empty. Direct pin of the histogram-side `is_empty ⇔
+        // recessive_observation.is_none()` equivalence one altitude
+        // down — the shared vacuous-nothing boundary on the empty
+        // support. Cross-pins with the parallel `recessive_layer_kind` /
+        // `trough_layer_kind_count` scalar-half boundaries. Peer of
+        // `recessive_tier_observation_none_iff_empty_pointwise` on the
+        // tier altitude and
+        // `recessive_kind_observation_none_iff_empty_pointwise` on the
+        // diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let is_none = slice.recessive_layer_kind_observation().is_none();
+            assert_eq!(is_none, slice.is_empty());
+        }
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_is_some_iff_chain_is_nonempty_pointwise() {
+        // Some-boundary equivalence pin (contrapositive of the None-
+        // boundary): `recessive_layer_kind_observation().is_some()` iff
+        // the chain has at least one layer. Direct pin of the histogram-
+        // side `!is_empty ⇔ recessive_observation.is_some()` equivalence
+        // one altitude down. Peer of
+        // `recessive_tier_observation_is_some_iff_map_is_nonempty_pointwise`
+        // on the tier altitude and
+        // `recessive_kind_observation_is_some_iff_kinds_any_observed_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let is_some = slice.recessive_layer_kind_observation().is_some();
+            assert_eq!(is_some, !slice.is_empty());
+        }
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_cell_component_is_present_layer_kind_pointwise() {
+        // Present-support membership pin: when `Some((k, _))`, `k` is a
+        // member of `present_layer_kinds()` — the anti-modal cell is by
+        // definition observed. Lifted from the histogram-side law
+        // `recessive_observation.map(|(k, _)| k) is nonzero-count` one
+        // altitude down. Peer of
+        // `recessive_tier_observation_cell_component_is_contributing_tier_pointwise`
+        // on the tier altitude and
+        // `recessive_kind_observation_cell_component_is_present_kind_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if let Some((k, _)) = slice.recessive_layer_kind_observation() {
+                assert!(
+                    slice.present_layer_kinds().contains(&k),
+                    "recessive cell {k:?} must be present in {:?}",
+                    slice.present_layer_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_count_component_equals_histogram_count_at_cell_pointwise() {
+        // Cell/count consistency pin: when `Some((k, n))`, `n ==
+        // layer_kind_histogram().count(k)` — the count component is the
+        // observation count at the cell component. Lifted from the
+        // histogram-side law `recessive_observation.map(|(k, n)| n ==
+        // count(k))` one altitude down (the trough-count consistency law
+        // on `AxisHistogram::recessive_observation`). Peer of
+        // `recessive_tier_observation_count_component_equals_histogram_count_at_cell_pointwise`
+        // on the tier altitude and
+        // `recessive_kind_observation_count_component_equals_histogram_count_at_cell_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if let Some((k, n)) = slice.recessive_layer_kind_observation() {
+                assert_eq!(n, slice.layer_kind_histogram().count(k));
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_count_component_at_least_one_on_non_empty_pointwise() {
+        // Non-empty lower bound pin: when `Some((_, n))`, `n >= 1` —
+        // every non-empty support has at least one layer at the anti-
+        // modal kind, so the count component is strictly positive. The
+        // `Some((_, 0))` shape is unreachable — every observed cell in a
+        // non-empty support carries at least one layer by the
+        // `recessive_observation` scan's `c > 0` filter one altitude
+        // down. Peer of
+        // `recessive_tier_observation_count_component_at_least_one_on_non_empty_pointwise`
+        // on the tier altitude and
+        // `recessive_kind_observation_count_component_at_least_one_on_non_empty_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if let Some((_, n)) = slice.recessive_layer_kind_observation() {
+                assert!(n >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_count_component_bounded_above_by_peak_layer_kind_count_pointwise()
+     {
+        // Trough-≤-peak upper bound pin: when `Some((_, n))`, `n <=
+        // peak_layer_kind_count()` — the trough count is bounded above
+        // by the peak count on every non-empty support. Sharper than the
+        // total-layer upper bound (`n <= len()`) on every strictly-
+        // unimodal support where the peak is strictly less than the
+        // total. Equality holds iff the layer-kind histogram is uniform-
+        // count (peak and trough coincide across the observed support).
+        // Peer of
+        // `recessive_tier_observation_count_component_bounded_above_by_peak_tier_count_pointwise`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if let Some((_, n)) = slice.recessive_layer_kind_observation() {
+                assert!(n <= slice.peak_layer_kind_count());
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_count_component_bounded_by_len_pointwise() {
+        // Total-layer upper bound pin: when `Some((_, n))`, `n <=
+        // self.as_ref().len()` — the trough count is bounded above by
+        // the total layer count (every kind contributes at most every
+        // layer, and the others contribute zero). Equality holds when
+        // `present_layer_kinds_count() <= 1`; the strict inequality
+        // holds on every multi-kind support. Peer of
+        // `recessive_tier_observation_count_component_bounded_by_len_pointwise`
+        // on the tier altitude and
+        // `recessive_kind_observation_count_component_bounded_by_lines_len_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if let Some((_, n)) = slice.recessive_layer_kind_observation() {
+                assert!(n <= slice.as_ref().len());
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_yields_declaration_first_on_ties_pointwise() {
+        // Declaration-order tie-breaking pin: on trough ties, the `.0`
+        // component is the *first* observed cell at that count in
+        // `ConfigSourceKind::ALL` declaration order (`Defaults → Env →
+        // File`). Cross-pins with the shared
+        // `AxisHistogram::recessive_observation` scan's running-min walk
+        // with `<`-only promotion (strict, not `<=`), which keeps the
+        // first-observed tied cell. Peer of
+        // `recessive_tier_observation_yields_declaration_first_on_ties_pointwise`
+        // on the tier altitude and
+        // `recessive_kind_observation_yields_declaration_first_on_ties_pointwise`
+        // on the diff altitude, projected onto the three-cell
+        // ConfigSourceKind axis.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if let Some((k_obs, n_obs)) = slice.recessive_layer_kind_observation() {
+                let mut first_at_trough = None;
+                for cell in ConfigSourceKind::ALL {
+                    if slice.layer_kind_histogram().count(*cell) == n_obs {
+                        first_at_trough = Some(*cell);
+                        break;
+                    }
+                }
+                assert_eq!(Some(k_obs), first_at_trough);
+            }
+        }
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_agrees_with_open_coded_argmin_walk_pointwise() {
+        // Parity against the exact hand-rolled open-coded fused (cell,
+        // count) argmin walk this lift replaces: scan the histogram's
+        // per-cell counts vector in declaration order, track the running
+        // min cell and count with `<`-only promotion (strict inequality
+        // — the first observed cell at the tied count is kept),
+        // excluding zero-count cells. Catches any future drift where
+        // either implementation stops projecting through the same fused
+        // (cell, count) argmin walk. Peer of
+        // `recessive_tier_observation_agrees_with_open_coded_argmin_walk_pointwise`
+        // on the tier altitude and
+        // `recessive_kind_observation_agrees_with_open_coded_argmin_walk_pointwise`
+        // on the diff altitude, projected onto the three-cell
+        // ConfigSourceKind axis.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let hist = slice.layer_kind_histogram();
+            let mut best: Option<(ConfigSourceKind, usize)> = None;
+            for cell in ConfigSourceKind::ALL {
+                let c = hist.count(*cell);
+                if c == 0 {
+                    continue;
+                }
+                best = match best {
+                    None => Some((*cell, c)),
+                    Some((_, best_n)) if c < best_n => Some((*cell, c)),
+                    other => other,
+                };
+            }
+            assert_eq!(slice.recessive_layer_kind_observation(), best);
+        }
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_map_pair_recovers_scalar_halves_pointwise() {
+        // Round-trip pin: `recessive_layer_kind_observation()` fully
+        // determines the `(recessive_layer_kind, trough_layer_kind_count)`
+        // scalar pair pointwise via `.map` and `.map_or` — the fused-
+        // pair primitive is the upstream both scalar halves project
+        // through, and the pair `(recessive_layer_kind,
+        // trough_layer_kind_count)` recovers under the invertible
+        // projections `.map(|(k, _)| k)` (cell) and `.map_or(0, |(_, n)|
+        // n)` (count). Pins the fused-pair primitive as the natural
+        // upstream both scalar halves project through. Peer of
+        // `recessive_tier_observation_map_pair_recovers_scalar_halves_pointwise`
+        // on the tier altitude and
+        // `recessive_kind_observation_map_pair_recovers_scalar_halves_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let obs = slice.recessive_layer_kind_observation();
+            let cell = obs.map(|(k, _)| k);
+            let count = obs.map_or(0, |(_, n)| n);
+            assert_eq!(cell, slice.recessive_layer_kind());
+            assert_eq!(count, slice.trough_layer_kind_count());
+        }
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_coincides_with_dominant_layer_kind_observation_on_uniform_count_or_empty_pointwise()
+     {
+        // Peak-trough coincidence law (uniform-count / empty side):
+        // `recessive_layer_kind_observation()` and
+        // `dominant_layer_kind_observation()` coincide pointwise on every
+        // empty chain (both `None`) and every uniform-count chain (both
+        // `Some((k, shared_count))` at the first observed cell — the
+        // modal and anti-modal level sets coincide because peak and
+        // trough are equal, and the declaration-order tie-break is
+        // identical on both sides). The empty chain, the singleton-
+        // support chain, the two-way-tie chain, and the uniform-full-
+        // cover chain are all on the uniform-count side of the boundary.
+        // Peer of
+        // `recessive_tier_observation_coincides_with_dominant_tier_observation_on_uniform_count_or_empty_pointwise`
+        // on the tier altitude and
+        // `recessive_kind_observation_coincides_with_dominant_kind_observation_on_uniform_count_or_empty_pointwise`
+        // on the diff altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(
+            empty.recessive_layer_kind_observation(),
+            empty.dominant_layer_kind_observation(),
+        );
+
+        let singleton = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let singleton_slice = singleton.as_slice();
+        assert!(singleton_slice.layer_kinds_balanced());
+        assert_eq!(
+            singleton_slice.recessive_layer_kind_observation(),
+            singleton_slice.dominant_layer_kind_observation(),
+        );
+
+        let two_way_tie = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::Env("OTHER_".to_owned()),
+        ];
+        let two_way_tie_slice = two_way_tie.as_slice();
+        assert!(two_way_tie_slice.layer_kinds_balanced());
+        assert_eq!(
+            two_way_tie_slice.recessive_layer_kind_observation(),
+            two_way_tie_slice.dominant_layer_kind_observation(),
+        );
+
+        let full_cover = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let full_cover_slice = full_cover.as_slice();
+        assert!(full_cover_slice.layer_kinds_balanced());
+        assert!(full_cover_slice.layer_kinds_full_cover());
+        assert_eq!(
+            full_cover_slice.recessive_layer_kind_observation(),
+            full_cover_slice.dominant_layer_kind_observation(),
+        );
+    }
+
+    #[test]
+    fn recessive_layer_kind_observation_diverges_from_dominant_layer_kind_observation_on_strictly_unimodal_pointwise()
+     {
+        // Peak-trough divergence law (strictly-unimodal side):
+        // `recessive_layer_kind_observation()` and
+        // `dominant_layer_kind_observation()` DIVERGE on the count
+        // component on every strictly-unimodal support where
+        // `peak_layer_kind_count() > trough_layer_kind_count()` — the two
+        // projections read OPPOSITE ends of the observation interval,
+        // with the peak count strictly larger than the trough count. The
+        // `sample_chain()` fixture (File=2, Env=1: peak=2 at File,
+        // trough=1 at Env) and the env-majority fixture (Env=3, File=1,
+        // Defaults=1: peak=3 at Env, trough=1 at Defaults after
+        // declaration-order tie-break) are both strictly-unimodal on the
+        // layer-kind axis, so both projections must diverge on the count
+        // component on both. Cross-pins with the histogram-side
+        // divergence law on `AxisHistogram::dominant_observation` and
+        // `AxisHistogram::recessive_observation` one altitude down. Peer
+        // of
+        // `recessive_tier_observation_diverges_from_dominant_tier_observation_on_strictly_unimodal_pointwise`
+        // on the tier altitude and
+        // `recessive_kind_observation_diverges_from_dominant_kind_observation_on_strictly_unimodal_pointwise`
+        // on the diff altitude.
+        for chain in [
+            sample_chain(),
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env("OTHER_".to_owned()),
+                ConfigSource::Env(String::new()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+        ] {
+            let slice = chain.as_slice();
+            assert!(slice.peak_layer_kind_count() > slice.trough_layer_kind_count());
+            let dom = slice.dominant_layer_kind_observation();
+            let rec = slice.recessive_layer_kind_observation();
+            assert!(dom.is_some());
+            assert!(rec.is_some());
+            let (_, dom_n) = dom.unwrap();
+            let (_, rec_n) = rec.unwrap();
+            assert!(dom_n > rec_n);
         }
     }
 
