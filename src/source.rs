@@ -2473,6 +2473,175 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().modality_degree()
     }
 
+    /// The **dominant layer-kind observation** — the fused `(cell, count)`
+    /// pair on the peak side of this chain's layer-kind histogram: the
+    /// modal [`ConfigSourceKind`] together with the layer count it
+    /// contributed. Returns `None` exactly when the chain is empty (no
+    /// observed cell); otherwise returns `Some((k, n))` where
+    /// `k == dominant_layer_kind().unwrap()` and
+    /// `n == peak_layer_kind_count()` with `n >= 1`.
+    ///
+    /// Defined as `self.layer_kind_histogram().dominant_observation()`,
+    /// routed through [`crate::AxisHistogram::dominant_observation`] one
+    /// altitude down — the fused single-pass argmax scan over the fixed-
+    /// cardinality counts vector that names the modal cell together with
+    /// the count it carries in one `Option<(A, usize)>` read, halving the
+    /// work of the two-scan `(dominant_layer_kind(),
+    /// peak_layer_kind_count())` fusion the scalar-pair form pays for on
+    /// every non-empty chain.
+    ///
+    /// The natural typed primitive for chain-shape dashboards, attestation
+    /// manifests, and alerting policies asking *"which layer kind
+    /// dominated this recipe, and by how many layers?"*: the CLI
+    /// `config-show` headline *"File owns 3 of 5 layers"* (where
+    /// `Some((File, 3))` is this pair), the attestation manifest recording
+    /// the modal `(cell, count)` pair of a chain by layer kind between two
+    /// rebuild windows, the alerting policy reading *"dominant layer-kind
+    /// observation = Some((Env, 12))"* to gate a rebuild window on the
+    /// modal kind and its density simultaneously. Before this lift, every
+    /// such consumer re-derived the pair inline as
+    /// `(chain.dominant_layer_kind(), chain.peak_layer_kind_count())` —
+    /// two method calls, each routing through [`Self::layer_kind_histogram`]
+    /// and each scanning the counts vector independently (once to argmax
+    /// the cell, once to read the peak count back), where the shared
+    /// [`crate::AxisHistogram::dominant_observation`] primitive fuses both
+    /// into one walk.
+    ///
+    /// The chain-altitude layer-kind sub-axis fused-pair peer that
+    /// **lifts the "dominant-observation across altitudes" projection
+    /// sideways** from the tier altitude
+    /// ([`crate::ProvenanceMap::dominant_tier_observation`]) to the first
+    /// chain-altitude sub-axis, seeded on the diff altitude by
+    /// [`crate::ConfigDiff::dominant_kind_observation`]. The two remaining
+    /// chain-altitude sub-axes are the natural next sideways lifts
+    /// (`dominant_file_format_observation` over
+    /// [`Self::file_format_histogram`],
+    /// `dominant_env_prefix_kind_observation` over
+    /// [`Self::env_prefix_kind_histogram`]), mirroring the four-step chain
+    /// trajectory the sibling scalar / boolean projections and closed
+    /// classifier rows already walked. Once closed at every chain sub-
+    /// axis in the same three-step trajectory, the substrate closes the
+    /// dominant-observation fused-pair row at every altitude / sub-axis
+    /// of the 5-column grid alongside the closed sibling
+    /// `(dominant_cell, peak_count)` scalar halves.
+    ///
+    /// The **fused-pair peer** of the two closed modal-side scalar-half
+    /// siblings ([`Self::dominant_layer_kind`] carrying the *cell* alone
+    /// as `Option<ConfigSourceKind>` and [`Self::peak_layer_kind_count`]
+    /// carrying the *count* alone as `usize`) — the natural upstream both
+    /// scalar halves project through, from which
+    /// [`Self::dominant_layer_kind`] recovers via `.map(|(k, _)| k)` and
+    /// [`Self::peak_layer_kind_count`] recovers via
+    /// `.map_or(0, |(_, n)| n)`. Where the two scalar-half siblings each
+    /// surface one half of the modal observation independently at the
+    /// cost of walking the histogram twice, this row surfaces the *joint
+    /// pair itself* as one `Option<(cell, count)>` read.
+    ///
+    /// **Cardinality-`3` reachability at the layer-kind sub-axis —
+    /// matching the cardinality-`3` diff altitude.**
+    /// [`ConfigSourceKind`] carries three cells, so
+    /// `dominant_layer_kind_observation()` reads `None` on the empty
+    /// chain, `Some((Defaults, 1))` on every uniform per-kind full-cover
+    /// chain (declaration-order tie-breaking on the three-cell axis picks
+    /// the first cell at the shared peak count `1`), `Some((k, len()))`
+    /// on every singleton-support chain (the sole observed kind collects
+    /// every layer), `Some((File, 2))` on the sample chain (`File ×2 +
+    /// Env ×1`; strictly-unimodal), and `Some((Env, 3))` on an env-
+    /// majority chain — witnesses on every corner of the tie-breaking
+    /// policy on the cardinality-`3` layer-kind axis. The tier altitude
+    /// (cardinality-`4` [`crate::ConfigTierKind`] axis) promotes the
+    /// count component ceiling to `4` on the uniform-full-cover four-tier
+    /// shape — a strict advance the cardinality-`3` layer-kind sub-axis
+    /// cannot inhabit.
+    ///
+    /// **Empty-chain convention** — returns `None`, matching the
+    /// [`crate::AxisHistogram::dominant_observation`] empty convention
+    /// one altitude down and the [`Self::dominant_layer_kind`] empty
+    /// convention on the same sub-axis. The scalar count projection
+    /// [`Self::peak_layer_kind_count`] reads `0` on the same boundary via
+    /// `.map_or(0, |(_, n)| n)`.
+    ///
+    /// **Tie-breaking policy on the peak side** — declaration-order
+    /// first: on peak ties, the
+    /// [`crate::AxisHistogram::dominant_observation`] scan (a running-
+    /// max walk with `>`-only promotion — strict inequality, not `>=`)
+    /// keeps the *first* observed cell at that count in
+    /// [`crate::ClosedAxis::ALL`] declaration order (`Defaults → Env →
+    /// File` for [`ConfigSourceKind`]), matching the shared
+    /// [`crate::AxisHistogram::dominant_cell`] tie-breaking one altitude
+    /// down and [`Self::dominant_layer_kind`] on the same sub-axis. Every
+    /// uniform-cover chain (each observed kind producing the same nonzero
+    /// layer count) reads `Some((Defaults, n))` — the first cell in
+    /// declaration order.
+    ///
+    /// # Invariants
+    ///
+    /// - `dominant_layer_kind_observation() ==
+    ///   layer_kind_histogram().dominant_observation()` — the routing
+    ///   equivalence one altitude down; both project the same fused pair
+    ///   off the same primitive.
+    /// - `dominant_layer_kind_observation().is_none() ==
+    ///   self.as_ref().is_empty()` — the `None`-boundary equivalence: the
+    ///   pair is defined exactly when the chain has at least one layer,
+    ///   matching [`Self::dominant_layer_kind`] on the cell side.
+    /// - `dominant_layer_kind_observation().map(|(k, _)| k) ==
+    ///   dominant_layer_kind()` — the cell-side projection recovers
+    ///   [`Self::dominant_layer_kind`] pointwise; both routings pick the
+    ///   same modal cell off the same primitive.
+    /// - `dominant_layer_kind_observation().map_or(0, |(_, n)| n) ==
+    ///   peak_layer_kind_count()` — the count-side projection recovers
+    ///   [`Self::peak_layer_kind_count`] pointwise; both routings read
+    ///   the same peak count off the same primitive. Empty case:
+    ///   `None.map_or(0, …) == 0 == peak_layer_kind_count()`. Non-empty
+    ///   case: `Some((_, n)).map_or(0, …) == n == peak_layer_kind_count()`.
+    /// - When `Some((k, n))`, `k` is a member of
+    ///   [`Self::present_layer_kinds`] — the modal cell is by definition
+    ///   observed. Peer to the cell-side [`Self::dominant_layer_kind`]
+    ///   membership invariant.
+    /// - When `Some((k, n))`, `layer_kind_histogram().count(k) == n` —
+    ///   the count component equals the observation count at the cell
+    ///   component. Peer to the cell/count consistency law on
+    ///   [`crate::AxisHistogram::dominant_observation`] one altitude
+    ///   down.
+    /// - When `Some((_, n))`, `n >= 1` — every non-empty support has at
+    ///   least one layer at the modal kind, so the count component is
+    ///   strictly positive.
+    /// - When `Some((_, n))`, `n <= self.as_ref().len()` — the peak
+    ///   count is bounded above by the total layer count (every kind
+    ///   contributes at most every layer, and the others contribute
+    ///   zero). Equality holds when `present_layer_kinds_count() <= 1`.
+    /// - `dominant_layer_kind_observation()` on a uniform per-kind full-
+    ///   cover chain (one layer per kind) equals
+    ///   `Some((ConfigSourceKind::Defaults, 1))` — declaration-order tie-
+    ///   breaking on the three-cell axis picks the first cell at the
+    ///   shared peak count `1`.
+    /// - `dominant_layer_kind_observation()` on a singleton-support
+    ///   chain (every layer on the same kind) equals `Some((k,
+    ///   self.as_ref().len()))` where `k` is the sole observed kind —
+    ///   the peak equals the total.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the fused
+    /// argmax scan through
+    /// [`crate::AxisHistogram::dominant_observation`]). Both are `O(n)`
+    /// in practice since the layer-kind axis carries a fixed three-cell
+    /// cardinality; the returned `Option<(ConfigSourceKind, usize)>` fits
+    /// in one enum + two scalars. Halves the cost of the previous inline
+    /// `(chain.dominant_layer_kind(), chain.peak_layer_kind_count())`
+    /// idiom (which walked the counts vector twice — once to argmax the
+    /// cell, once to read the peak count back — where
+    /// [`crate::AxisHistogram::dominant_observation`] fuses both into a
+    /// single walk).
+    #[must_use]
+    fn dominant_layer_kind_observation(&self) -> Option<(ConfigSourceKind, usize)>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().dominant_observation()
+    }
+
     /// The **balanced-layer-kinds boolean predicate** on the layer-kind
     /// sub-axis of the chain altitude — `true` exactly when every observed
     /// [`ConfigSourceKind`] contributed the same number of layers. The
@@ -33785,6 +33954,462 @@ mod tests {
             }
             let hand_rolled = (peak_mult, trough_mult);
             assert_eq!(slice.layer_kind_modality_degree(), hand_rolled);
+        }
+    }
+
+    // ---- ConfigSourceChain::dominant_layer_kind_observation — modal-side
+    //      fused `(cell, count)` pair seam on the layer-kind sub-axis of
+    //      the chain altitude, lifting AxisHistogram::dominant_observation
+    //      sideways from the tier altitude (dominant_tier_observation) to
+    //      the first chain-altitude sub-axis, seeded on the diff altitude
+    //      by dominant_kind_observation. Fused-pair peer of the closed
+    //      (dominant_layer_kind, peak_layer_kind_count) modal-side scalar-
+    //      half rows, surfacing the pair itself as one Option<(cell,
+    //      count)>-tuple read. Joint upstream of dominant_layer_kind
+    //      (`.map(|(k, _)| k)`) and peak_layer_kind_count
+    //      (`.map_or(0, |(_, n)| n)`). Cardinality-`3` ConfigSourceKind
+    //      axis: matches the cardinality-`3` diff altitude's reachable
+    //      pairs on the same surface (whose count component caps at `3`);
+    //      one strict retreat from the cardinality-`4` tier altitude
+    //      (whose count component reaches `4` on uniform-full-cover). ----
+
+    #[test]
+    fn dominant_layer_kind_observation_matches_layer_kind_histogram_dominant_observation_pointwise()
+    {
+        // Routing pin: `dominant_layer_kind_observation` routes through
+        // `layer_kind_histogram().dominant_observation()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native fused-pair primitive.
+        // Chain layer-kind sub-axis sideways lift of the "dominant-
+        // observation across altitudes" projection climbed to the tier
+        // altitude by
+        // `dominant_tier_observation_matches_tier_histogram_dominant_observation_pointwise`
+        // and seeded on the diff altitude by
+        // `dominant_kind_observation_matches_kind_histogram_dominant_observation_pointwise`.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_histogram = slice.layer_kind_histogram().dominant_observation();
+            assert_eq!(slice.dominant_layer_kind_observation(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn dominant_layer_kind_observation_matches_dominant_layer_kind_and_peak_layer_kind_count_scalar_pair_pointwise()
+     {
+        // Structural-form pin: `dominant_layer_kind_observation` agrees
+        // with the open-coded `(dominant_layer_kind(),
+        // peak_layer_kind_count())` pair on every fixture — coerced
+        // through the `Option` shape via `.map(|k| (k,
+        // peak_layer_kind_count()))`. Pins the defining equivalence on
+        // the underlying scalar-pair surface: both routings read the same
+        // modal cell and the same peak count off the same primitive, so
+        // the fused-pair form is behaviorally indistinguishable from the
+        // two-call open-coded pair. Peer of
+        // `dominant_tier_observation_matches_dominant_tier_and_peak_tier_count_scalar_pair_pointwise`
+        // on the tier altitude and
+        // `dominant_kind_observation_matches_dominant_kind_and_peak_kind_count_scalar_pair_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_pair = slice
+                .dominant_layer_kind()
+                .map(|k| (k, slice.peak_layer_kind_count()));
+            assert_eq!(slice.dominant_layer_kind_observation(), via_pair);
+        }
+    }
+
+    #[test]
+    fn dominant_layer_kind_observation_cell_component_equals_dominant_layer_kind_pointwise() {
+        // Cell-side sibling pin: `.map(|(k, _)| k) == dominant_layer_kind()`
+        // on every fixture. Pins the fused-pair primitive as the upstream
+        // of the sibling modal-cell scalar, which reads the same value
+        // through the `.map` projection on the `Option` shape (via the
+        // shared `AxisHistogram::dominant_observation` walk one altitude
+        // down). Empty case: `None.map(…) == None == dominant_layer_kind()`.
+        // Non-empty case: `Some((k, _)).map(…) == Some(k) ==
+        // dominant_layer_kind()`. Peer of
+        // `dominant_tier_observation_cell_component_equals_dominant_tier_pointwise`
+        // on the tier altitude and
+        // `dominant_kind_observation_cell_component_equals_dominant_kind_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_map = slice.dominant_layer_kind_observation().map(|(k, _)| k);
+            assert_eq!(via_map, slice.dominant_layer_kind());
+        }
+    }
+
+    #[test]
+    fn dominant_layer_kind_observation_count_component_equals_peak_layer_kind_count_pointwise() {
+        // Count-side sibling pin: `.map_or(0, |(_, n)| n) ==
+        // peak_layer_kind_count()` on every fixture. Pins the fused-pair
+        // primitive as the upstream of the sibling peak-count scalar,
+        // which reads the same value through the `.map_or` projection on
+        // the `Option` shape (via the shared
+        // `AxisHistogram::dominant_observation` walk one altitude down).
+        // Empty case: `None.map_or(0, …) == 0 == peak_layer_kind_count()`.
+        // Non-empty case: `Some((_, n)).map_or(0, …) == n ==
+        // peak_layer_kind_count()`. Peer of
+        // `dominant_tier_observation_count_component_equals_peak_tier_count_pointwise`
+        // on the tier altitude and
+        // `dominant_kind_observation_count_component_equals_peak_kind_count_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_map = slice
+                .dominant_layer_kind_observation()
+                .map_or(0, |(_, n)| n);
+            assert_eq!(via_map, slice.peak_layer_kind_count());
+        }
+    }
+
+    #[test]
+    fn dominant_layer_kind_observation_empty_chain_is_none() {
+        // Empty-chain polarity pin: the empty chain has no observed cell,
+        // so the fused pair reads `None` — the vacuous-nothing boundary
+        // lifted from the empty support. The triple `(dominant_layer_kind,
+        // peak_layer_kind_count, dominant_layer_kind_observation)` reads
+        // uniformly `(None, 0, None)` on the empty chain. Peer of
+        // `dominant_tier_observation_empty_map_is_none` on the tier
+        // altitude and `dominant_kind_observation_empty_diff_is_none` on
+        // the diff altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert!(empty.is_empty());
+        assert_eq!(empty.dominant_layer_kind_observation(), None);
+    }
+
+    #[test]
+    fn dominant_layer_kind_observation_sample_chain_is_some_file_at_two() {
+        // Strictly-unimodal polarity pin against `sample_chain()`: two
+        // File layers + one Env layer (no Defaults). File is uniquely
+        // dominant with peak_count `2`, so the fused pair reads
+        // `Some((File, 2))` — the modal cell paired with its unique peak
+        // count. Peer of
+        // `dominant_layer_kind_sample_chain_is_file` on the cell-only
+        // sibling and `peak_layer_kind_count_sample_chain_is_two` on the
+        // count-only sibling — the fused-pair primitive is upstream of
+        // both.
+        let chain = sample_chain();
+        assert_eq!(
+            chain.as_slice().dominant_layer_kind_observation(),
+            Some((ConfigSourceKind::File, 2)),
+        );
+    }
+
+    #[test]
+    fn dominant_layer_kind_observation_env_majority_is_some_env_at_three() {
+        // Strictly-unimodal polarity pin against an env-majority chain:
+        // three Env layers + one File + one Defaults. Env is uniquely
+        // dominant with peak_count `3`, so the fused pair reads
+        // `Some((Env, 3))` — the modal cell paired with its unique peak
+        // count. Cross-verified against `hist.count(Env) ==
+        // hist.peak_count() == 3` at the same observation site. Peer of
+        // `dominant_layer_kind_env_majority_is_env` on the cell-only
+        // sibling.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(
+            slice.dominant_layer_kind_observation(),
+            Some((ConfigSourceKind::Env, 3)),
+        );
+    }
+
+    #[test]
+    fn dominant_layer_kind_observation_singleton_support_is_some_file_at_len() {
+        // Singleton-support polarity pin: a chain with every layer on
+        // `ConfigSourceKind::File` (three File layers here) collects all
+        // three layers on File and zero on the other cells; the fused
+        // pair reads `Some((File, 3))` — the sole observed cell paired
+        // with the total layer count. Witness of the singleton-support
+        // corner where `n == len()`. Cardinality-`3` layer-kind axis
+        // matches the cardinality-`3` diff altitude on the same shape;
+        // one strict retreat from the cardinality-`4` tier altitude
+        // (whose singleton-support witness reaches count `4`). Peer of
+        // `dominant_tier_observation_singleton_support_is_some_singleton`
+        // on the tier altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kinds_singular_support());
+        assert_eq!(
+            slice.dominant_layer_kind_observation(),
+            Some((ConfigSourceKind::File, 3)),
+        );
+    }
+
+    #[test]
+    fn dominant_layer_kind_observation_uniform_full_cover_is_some_defaults_at_count_one() {
+        // Uniform-axis-cover polarity pin: a chain observing every cell
+        // of `ConfigSourceKind` exactly once has all three nonzero counts
+        // at `1`; the peak is tied between all three cells, and
+        // declaration-order tie-breaking picks `Defaults` (the first
+        // cell in the axis) paired with the shared peak count `1`. Top-
+        // corner witness of the tie-breaking policy on the uniform full-
+        // cover shape at the cardinality-`3` layer-kind sub-axis — one
+        // strict retreat from the cardinality-`4` tier altitude's
+        // uniform full-cover witness (which reads `Some((Bare, 1))` on
+        // the four-cell axis at the same shared peak count `1`).
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kinds_balanced());
+        assert!(slice.layer_kinds_full_cover());
+        assert_eq!(
+            slice.dominant_layer_kind_observation(),
+            Some((ConfigSourceKind::Defaults, 1)),
+        );
+    }
+
+    #[test]
+    fn dominant_layer_kind_observation_two_way_tie_picks_earliest_declared_observed_cell() {
+        // Two-way-tie polarity pin: a chain with two Env + two File and
+        // zero Defaults has the peak tied between Env and File at count
+        // `2`. Declaration-order tie-breaking picks `Env` (the earliest
+        // tied observed cell — Defaults appears in `ALL` before Env but
+        // has zero count, so it doesn't participate in the tie), paired
+        // with the shared peak count `2`. Distinguishing pin against a
+        // mis-implementation that would read `Some((Defaults, _))` (the
+        // first cell of `ALL`) instead of `Some((Env, 2))` (the first
+        // tied observed cell). Peer of
+        // `dominant_layer_kind_two_way_tie_picks_earliest_declared_observed_cell`
+        // on the cell-only sibling.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::Env("OTHER_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        let hist = slice.layer_kind_histogram();
+        assert_eq!(hist.count(ConfigSourceKind::Defaults), 0);
+        assert_eq!(hist.count(ConfigSourceKind::Env), 2);
+        assert_eq!(hist.count(ConfigSourceKind::File), 2);
+        assert_eq!(
+            slice.dominant_layer_kind_observation(),
+            Some((ConfigSourceKind::Env, 2)),
+        );
+    }
+
+    #[test]
+    fn dominant_layer_kind_observation_none_iff_empty_pointwise() {
+        // None-boundary equivalence pin:
+        // `dominant_layer_kind_observation().is_none()` iff the chain is
+        // empty. Direct pin of the histogram-side `is_empty ⇔
+        // dominant_observation.is_none()` equivalence one altitude down
+        // — the shared vacuous-nothing boundary on the empty support.
+        // Cross-pins with the parallel `dominant_layer_kind` /
+        // `peak_layer_kind_count` scalar-half boundaries. Peer of
+        // `dominant_tier_observation_none_iff_empty_pointwise` on the
+        // tier altitude and
+        // `dominant_kind_observation_none_iff_empty_pointwise` on the
+        // diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let is_none = slice.dominant_layer_kind_observation().is_none();
+            assert_eq!(is_none, slice.is_empty());
+        }
+    }
+
+    #[test]
+    fn dominant_layer_kind_observation_is_some_iff_chain_is_nonempty_pointwise() {
+        // Some-boundary equivalence pin (contrapositive of the None-
+        // boundary): `dominant_layer_kind_observation().is_some()` iff
+        // the chain has at least one layer. Direct pin of the histogram-
+        // side `!is_empty ⇔ dominant_observation.is_some()` equivalence
+        // one altitude down. Peer of
+        // `dominant_tier_observation_is_some_iff_map_is_nonempty_pointwise`
+        // on the tier altitude and
+        // `dominant_kind_observation_is_some_iff_kinds_any_observed_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let is_some = slice.dominant_layer_kind_observation().is_some();
+            assert_eq!(is_some, !slice.is_empty());
+        }
+    }
+
+    #[test]
+    fn dominant_layer_kind_observation_cell_component_is_present_layer_kind_pointwise() {
+        // Present-support membership pin: when `Some((k, _))`, `k` is a
+        // member of `present_layer_kinds()` — the modal cell is by
+        // definition observed. Lifted from the histogram-side law
+        // `dominant_observation.map(|(k, _)| k) is nonzero-count` one
+        // altitude down. Peer of
+        // `dominant_tier_observation_cell_component_is_contributing_tier_pointwise`
+        // on the tier altitude and
+        // `dominant_kind_observation_cell_component_is_present_kind_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if let Some((k, _)) = slice.dominant_layer_kind_observation() {
+                assert!(
+                    slice.present_layer_kinds().contains(&k),
+                    "dominant cell {k:?} must be present in {:?}",
+                    slice.present_layer_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn dominant_layer_kind_observation_count_component_equals_histogram_count_at_cell_pointwise() {
+        // Cell/count consistency pin: when `Some((k, n))`, `n ==
+        // layer_kind_histogram().count(k)` — the count component is the
+        // observation count at the cell component. Lifted from the
+        // histogram-side law `dominant_observation.map(|(k, n)| n ==
+        // count(k))` one altitude down (the peak-count consistency law
+        // on `AxisHistogram::dominant_observation`). Peer of
+        // `dominant_tier_observation_count_component_equals_histogram_count_at_cell_pointwise`
+        // on the tier altitude and
+        // `dominant_kind_observation_count_component_equals_histogram_count_at_cell_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if let Some((k, n)) = slice.dominant_layer_kind_observation() {
+                assert_eq!(n, slice.layer_kind_histogram().count(k));
+            }
+        }
+    }
+
+    #[test]
+    fn dominant_layer_kind_observation_count_component_at_least_one_on_non_empty_pointwise() {
+        // Non-empty lower bound pin: when `Some((_, n))`, `n >= 1` —
+        // every non-empty support has at least one layer at the modal
+        // kind, so the count component is strictly positive. The
+        // `Some((_, 0))` shape is unreachable — every observed cell in a
+        // non-empty support carries at least one layer by the
+        // `dominant_observation` scan's `c > 0` filter one altitude
+        // down. Peer of
+        // `dominant_tier_observation_count_component_at_least_one_on_non_empty_pointwise`
+        // on the tier altitude and
+        // `dominant_kind_observation_count_component_at_least_one_on_non_empty_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if let Some((_, n)) = slice.dominant_layer_kind_observation() {
+                assert!(n >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn dominant_layer_kind_observation_count_component_bounded_by_len_pointwise() {
+        // Total-layer upper bound pin: when `Some((_, n))`, `n <=
+        // self.as_ref().len()` — the peak count is bounded above by the
+        // total layer count (every kind contributes at most every layer,
+        // and the others contribute zero). Equality holds when
+        // `present_layer_kinds_count() <= 1`; the strict inequality
+        // holds on every multi-kind support. Peer of
+        // `dominant_tier_observation_count_component_bounded_by_len_pointwise`
+        // on the tier altitude and
+        // `dominant_kind_observation_count_component_bounded_by_lines_len_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if let Some((_, n)) = slice.dominant_layer_kind_observation() {
+                assert!(n <= slice.as_ref().len());
+            }
+        }
+    }
+
+    #[test]
+    fn dominant_layer_kind_observation_yields_declaration_first_on_ties_pointwise() {
+        // Declaration-order tie-breaking pin: on peak ties, the `.0`
+        // component is the *first* observed cell at that count in
+        // `ConfigSourceKind::ALL` declaration order (`Defaults → Env →
+        // File`). Cross-pins with the shared
+        // `AxisHistogram::dominant_observation` scan's running-max walk
+        // with `>`-only promotion (strict, not `>=`), which keeps the
+        // first-observed tied cell. Peer of
+        // `dominant_tier_observation_yields_declaration_first_on_ties_pointwise`
+        // on the tier altitude and
+        // `dominant_kind_observation_yields_declaration_first_on_ties_pointwise`
+        // on the diff altitude, projected onto the three-cell
+        // ConfigSourceKind axis.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if let Some((k_obs, n_obs)) = slice.dominant_layer_kind_observation() {
+                let mut first_at_peak = None;
+                for cell in ConfigSourceKind::ALL {
+                    if slice.layer_kind_histogram().count(*cell) == n_obs {
+                        first_at_peak = Some(*cell);
+                        break;
+                    }
+                }
+                assert_eq!(Some(k_obs), first_at_peak);
+            }
+        }
+    }
+
+    #[test]
+    fn dominant_layer_kind_observation_agrees_with_open_coded_argmax_walk_pointwise() {
+        // Parity against the exact hand-rolled open-coded fused (cell,
+        // count) argmax walk this lift replaces: scan the histogram's
+        // per-cell counts vector in declaration order, track the running
+        // max cell and count with `>`-only promotion (strict inequality
+        // — the first observed cell at the tied count is kept),
+        // excluding zero-count cells. Catches any future drift where
+        // either implementation stops projecting through the same fused
+        // (cell, count) argmax walk. Peer of
+        // `dominant_tier_observation_agrees_with_open_coded_argmax_walk_pointwise`
+        // on the tier altitude and
+        // `dominant_kind_observation_agrees_with_open_coded_argmax_walk_pointwise`
+        // on the diff altitude, projected onto the three-cell
+        // ConfigSourceKind axis.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let hist = slice.layer_kind_histogram();
+            let mut best: Option<(ConfigSourceKind, usize)> = None;
+            for cell in ConfigSourceKind::ALL {
+                let c = hist.count(*cell);
+                if c == 0 {
+                    continue;
+                }
+                best = match best {
+                    None => Some((*cell, c)),
+                    Some((_, best_n)) if c > best_n => Some((*cell, c)),
+                    other => other,
+                };
+            }
+            assert_eq!(slice.dominant_layer_kind_observation(), best);
+        }
+    }
+
+    #[test]
+    fn dominant_layer_kind_observation_map_pair_recovers_scalar_halves_pointwise() {
+        // Round-trip pin: `dominant_layer_kind_observation()` fully
+        // determines the `(dominant_layer_kind, peak_layer_kind_count)`
+        // scalar pair pointwise via `.map` and `.map_or` — the fused-
+        // pair primitive is the upstream both scalar halves project
+        // through, and the pair `(dominant_layer_kind,
+        // peak_layer_kind_count)` recovers under the invertible
+        // projections `.map(|(k, _)| k)` (cell) and `.map_or(0, |(_, n)|
+        // n)` (count). Pins the fused-pair primitive as the natural
+        // upstream both scalar halves project through. Peer of
+        // `dominant_tier_observation_map_pair_recovers_scalar_halves_pointwise`
+        // on the tier altitude and
+        // `dominant_kind_observation_map_pair_recovers_scalar_halves_pointwise`
+        // on the diff altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let obs = slice.dominant_layer_kind_observation();
+            let cell = obs.map(|(k, _)| k);
+            let count = obs.map_or(0, |(_, n)| n);
+            assert_eq!(cell, slice.dominant_layer_kind());
+            assert_eq!(count, slice.peak_layer_kind_count());
         }
     }
 
