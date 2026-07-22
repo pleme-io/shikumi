@@ -1704,6 +1704,138 @@ impl ProvenanceMap {
         self.tier_histogram().spread()
     }
 
+    /// The **joint-extremes-magnitude of tier counts** — the sum of the
+    /// modal and anti-modal per-tier leaf counts on this resolved fold.
+    /// Routes through [`crate::AxisHistogram::peak_trough_sum`] one
+    /// altitude down: the fused `peak_count() + trough_count()` addition
+    /// on the histogram surface, halving the cost of the inline
+    /// `peak_tier_count() + trough_tier_count()` idiom which walked the
+    /// counts vector twice.
+    ///
+    /// The **addition-form sibling** of the [`Self::tier_spread`]
+    /// subtraction-form scalar on the same count surface, closing the
+    /// `(sum, difference)` pair of the extreme-endpoint algebra at the
+    /// tier altitude. Together with [`Self::tier_spread`], the pair
+    /// `(tier_peak_trough_sum, tier_spread)` reads off `(peak_tier_count,
+    /// trough_tier_count)` bijectively through two halving-additions:
+    /// - `peak_tier_count() == (tier_peak_trough_sum() + tier_spread()) / 2`
+    /// - `trough_tier_count() == (tier_peak_trough_sum() - tier_spread()) / 2`
+    ///
+    /// Both divisions are exact — `tier_peak_trough_sum ± tier_spread` is
+    /// always even by construction, since `(peak + trough) + (peak -
+    /// trough) == 2 * peak` and `(peak + trough) - (peak - trough) ==
+    /// 2 * trough`. The tier-altitude scalar-count surface now carries
+    /// `(peak, trough)` in two orthogonal forms: as separate endpoints
+    /// via [`Self::peak_tier_count`] / [`Self::trough_tier_count`], and
+    /// as `(sum, difference)` via [`Self::tier_peak_trough_sum`] /
+    /// [`Self::tier_spread`].
+    ///
+    /// The **tier-altitude joint-extremes-magnitude peer** — the natural
+    /// typed primitive for fleet dashboards, attestation manifests, and
+    /// alerting policies asking *"how large are the two extreme tier
+    /// buckets together?"*: the fleet dashboard headline *"peak-plus-
+    /// trough tier load: 48 leaves (peak Default 47 + trough Custom 1)"*
+    /// (where 48 is this scalar), the attestation manifest recording the
+    /// joint extreme magnitude of a resolved fold by tier between two
+    /// rebuild windows, the alerting policy reading
+    /// *"`tier_peak_trough_sum` >= threshold"* to gate on the joint two-
+    /// sided magnitude. Before this lift, every such consumer re-derived
+    /// the projection inline as `map.peak_tier_count() +
+    /// map.trough_tier_count()` — two method calls plus an addition at
+    /// every site, each site walking the counts vector twice with no
+    /// named surface for the joint scalar.
+    ///
+    /// The tier-altitude climb of the "peak+trough sums across altitudes"
+    /// projection seeded on the scalar altitude by
+    /// [`crate::AxisHistogram::peak_trough_sum`] and lifted to the diff
+    /// altitude by [`ConfigDiff::kind_peak_trough_sum`] — the next natural
+    /// lifts fan sideways along the chain altitude's three sub-axes
+    /// (`layer_kind_peak_trough_sum`, `file_format_peak_trough_sum`,
+    /// `env_prefix_kind_peak_trough_sum` over the corresponding chain
+    /// histograms). The pattern is the same at every altitude / sub-axis:
+    /// surface the [`crate::AxisHistogram::peak_trough_sum`] scalar
+    /// directly at the local histogram altitude, routing through the
+    /// shared primitive one seam down instead of every consumer pulling
+    /// the histogram temporary and inlining the addition. Parallels the
+    /// "spread across altitudes" projection climbed on the same altitude
+    /// by [`Self::tier_spread`] (the subtraction-form sibling on the same
+    /// closed-endpoint pair).
+    ///
+    /// **Cardinality-`4` reachability at the tier altitude — one strict
+    /// advance over the diff altitude.** [`ConfigTierKind`] carries four
+    /// cells, so `tier_peak_trough_sum()` ranges over `{0} ∪ [2, 2 *
+    /// self.len()]` (`0` exactly on the empty map, `1` unreachable on
+    /// the non-empty lower bound, then `>= 2` reachable on every non-
+    /// empty fold up to `2 * self.len()` on the singleton-support case).
+    /// The uniform-cover shape at the tier altitude witnesses the
+    /// `2 * peak_tier_count` equality boundary via
+    /// [`Self::tiers_uniform_count`].
+    ///
+    /// **Empty-map convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::peak_trough_sum`] empty convention one
+    /// altitude down and the [`Self::peak_tier_count`] /
+    /// [`Self::trough_tier_count`] / [`Self::tier_spread`] empty
+    /// conventions on the same altitude. The scalar-count quadruple
+    /// `(peak_tier_count, trough_tier_count, tier_spread,
+    /// tier_peak_trough_sum)` reads uniformly `(0, 0, 0, 0)` on the empty
+    /// map.
+    ///
+    /// **Empty-boundary equivalence.** `tier_peak_trough_sum() == 0` ⇔
+    /// `self.is_empty()` — both endpoints are structurally `>= 1` on
+    /// every non-empty map (by [`Self::peak_tier_count`]'s and
+    /// [`Self::trough_tier_count`]'s non-emptiness floors), so their sum
+    /// is zero exactly on the empty map. Contrapositively, every non-
+    /// empty map has `tier_peak_trough_sum() >= 2` — the joint magnitude
+    /// has a structural non-empty floor of `2` (both endpoints
+    /// contribute at least `1`).
+    ///
+    /// # Invariants
+    ///
+    /// - `tier_peak_trough_sum() == tier_histogram().peak_trough_sum()`
+    ///   — both project the same scalar off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `tier_peak_trough_sum() == peak_tier_count() + trough_tier_count()`
+    ///   — the fused-pair identity of the joint-extremes-magnitude peer
+    ///   on the underlying scalar count pair.
+    /// - `tier_peak_trough_sum() == 0` ⇔ `self.is_empty()` — the empty-
+    ///   boundary equivalence peer to the two-endpoint surface.
+    /// - `tier_peak_trough_sum() >= 2` whenever `!self.is_empty()` —
+    ///   non-empty floor: both endpoints are at least `1` on every non-
+    ///   empty map.
+    /// - `tier_peak_trough_sum() >= tier_spread()` always — `peak +
+    ///   trough >= peak - trough` reduces to `2 * trough >= 0`, always
+    ///   true. Equality holds iff `trough_tier_count() == 0` — i.e. on
+    ///   the empty map, the sole shape with `trough_tier_count == 0`.
+    /// - `tier_peak_trough_sum() <= 2 * peak_tier_count()` always —
+    ///   `peak + trough <= 2 * peak` reduces to `trough <= peak`, the
+    ///   structural `trough <= peak` invariant. Equality holds iff
+    ///   [`Self::tiers_uniform_count`] is `true` (peak equals trough).
+    /// - `tier_peak_trough_sum() <= 2 * self.len()` always — composition
+    ///   of both endpoints being bounded above by `self.len()`.
+    /// - `tier_peak_trough_sum() + tier_spread() == 2 * peak_tier_count()`
+    ///   always — the peak-endpoint recovery identity through the
+    ///   `(sum, difference)` surface.
+    /// - `tier_peak_trough_sum() - tier_spread() == 2 * trough_tier_count()`
+    ///   always — the trough-endpoint recovery identity (non-negative
+    ///   by the `tier_peak_trough_sum >= tier_spread` invariant).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<ConfigTierKind>()` (the peak +
+    /// trough fused scan through [`crate::AxisHistogram::peak_trough_sum`]).
+    /// Both are `O(n)` in practice since the tier axis carries a fixed
+    /// four-cell cardinality; the returned `usize` reads one scalar.
+    /// Halves the cost of the previous inline `map.peak_tier_count() +
+    /// map.trough_tier_count()` idiom (which walked the counts vector
+    /// twice — once for the max, once for the min-over-support), where
+    /// [`crate::AxisHistogram::peak_trough_sum`] routes both through a
+    /// single scalar read.
+    #[must_use]
+    pub fn tier_peak_trough_sum(&self) -> usize {
+        self.tier_histogram().peak_trough_sum()
+    }
+
     /// The **modal-multiplicity of tier counts** — the number of
     /// [`ConfigTierKind`] cells that hold the peak leaf count on this
     /// resolved fold. Equal to `1` on every strictly-modally-unique fold
@@ -28554,6 +28686,403 @@ mod progressive_tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak - trough);
+        }
+    }
+
+    // ── ProvenanceMap::tier_peak_trough_sum — joint-extremes-magnitude
+    //    peer on the tier altitude, fusing peak_tier_count and
+    //    trough_tier_count into one addition-form scalar and climbing the
+    //    "peak+trough sums across altitudes" projection from the diff
+    //    altitude to the tier altitude ──
+
+    #[test]
+    fn tier_peak_trough_sum_matches_tier_histogram_peak_trough_sum_pointwise() {
+        // Routing pin: `tier_peak_trough_sum` routes through
+        // `tier_histogram().peak_trough_sum()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Tier-altitude climb
+        // of the "peak+trough sums across altitudes" projection, peer of
+        // `kind_peak_trough_sum_matches_kind_histogram_peak_trough_sum_pointwise`
+        // one altitude down.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().peak_trough_sum();
+            assert_eq!(map.tier_peak_trough_sum(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_equals_peak_plus_trough_pointwise() {
+        // Fused-pair pin: `tier_peak_trough_sum == peak_tier_count +
+        // trough_tier_count` on every fixture — the defining equivalence
+        // on the underlying scalar pair. Overflow-safe: both summands are
+        // bounded above by `self.len()`. Tier-altitude peer of
+        // `kind_peak_trough_sum_equals_peak_plus_trough_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let peak = map.peak_tier_count();
+            let trough = map.trough_tier_count();
+            assert_eq!(map.tier_peak_trough_sum(), peak + trough);
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_prog_fixture_is_three() {
+        // Prog attributes 4 leaves: a→Discovered, b→Default, c→Bare,
+        // d→Default. Counts: Bare=1, Discovered=1, Default=2, Custom=0.
+        // Peak lands on Default at 2; trough over support {Bare,
+        // Discovered, Default} lands at 1. Sum = 2 + 1 = 3. Direct pin —
+        // the paired `(peak_tier_count, trough_tier_count, tier_spread,
+        // tier_peak_trough_sum)` quadruple reads `(2, 1, 1, 3)`. Peer of
+        // `tier_spread_prog_fixture_is_one` on the addition-form side.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().peak_tier_count(), 2);
+        assert_eq!(r.provenance().trough_tier_count(), 1);
+        assert_eq!(r.provenance().tier_spread(), 1);
+        assert_eq!(r.provenance().tier_peak_trough_sum(), 3);
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_nested_fixture_is_three() {
+        // Nested attributes 3 leaves: win.w→Discovered, win.h→Default,
+        // theme→Default. Counts: Bare=0, Discovered=1, Default=2,
+        // Custom=0. Peak lands on Default at 2; trough over support
+        // {Discovered, Default} lands at 1. Sum = 2 + 1 = 3. Direct pin
+        // — the joint scalar reads through the seam whether the fixture
+        // is flat or nested.
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.provenance().peak_tier_count(), 2);
+        assert_eq!(r.provenance().trough_tier_count(), 1);
+        assert_eq!(r.provenance().tier_spread(), 1);
+        assert_eq!(r.provenance().tier_peak_trough_sum(), 3);
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_empty_map_is_zero() {
+        // An empty ProvenanceMap has no leaves and therefore zero joint
+        // magnitude — reads `0` per the AxisHistogram::peak_trough_sum
+        // empty convention one altitude down; the `(peak_tier_count,
+        // trough_tier_count, tier_spread, tier_peak_trough_sum)`
+        // quadruple reads `(0, 0, 0, 0)` uniformly on the empty map.
+        // Peer of `tier_spread_empty_map_is_zero`.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.peak_tier_count(), 0);
+        assert_eq!(empty.trough_tier_count(), 0);
+        assert_eq!(empty.tier_spread(), 0);
+        assert_eq!(empty.tier_peak_trough_sum(), 0);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_singleton_support_is_twice_len() {
+        // Singleton-support pin: every leaf lands on the same tier, so
+        // that one tier is both peak and trough of the observed support,
+        // and the joint sum is `2 * self.len()`. Tier-altitude peer of
+        // the trait-uniform `peak_trough_sum == 2 * total on singleton
+        // support` behavior on AxisHistogram.
+        let m: ProvenanceMap = ["a", "b", "c"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 1);
+        assert_eq!(m.peak_tier_count(), 3);
+        assert_eq!(m.trough_tier_count(), 3);
+        assert_eq!(m.tier_peak_trough_sum(), 6);
+        assert_eq!(m.tier_peak_trough_sum(), 2 * m.len());
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_uniform_cover_is_twice_shared_count() {
+        // Uniform-cover pin: every observed tier contributes the same
+        // nonzero count (one leaf each here across all four tiers), so
+        // peak == trough == 1 and the joint sum is `2 * shared_count ==
+        // 2`. On the uniform-cover shape,
+        // `tier_peak_trough_sum == 2 * peak_tier_count` (equality
+        // boundary of the `tier_peak_trough_sum <= 2 * peak_tier_count`
+        // invariant, witnessed by `tiers_uniform_count() == true`). Peer
+        // of `tier_spread_uniform_cover_is_zero` on the addition-form
+        // side.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(m.tier_histogram().is_full_cover());
+        assert!(m.tiers_uniform_count());
+        assert_eq!(m.peak_tier_count(), 1);
+        assert_eq!(m.trough_tier_count(), 1);
+        assert_eq!(m.tier_peak_trough_sum(), 2);
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence pin: `tier_peak_trough_sum() == 0`
+        // iff the map is empty. Both endpoints are structurally `>= 1`
+        // on every non-empty map, so the sum is zero exactly on the
+        // empty map. Contrapositively, every non-empty map has
+        // `tier_peak_trough_sum >= 2`. Empty-boundary peer to the two-
+        // endpoint surface. Tier-altitude peer of
+        // `kind_peak_trough_sum_zero_iff_empty_pointwise` at the diff
+        // altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sum_zero = map.tier_peak_trough_sum() == 0;
+            let is_empty = map.is_empty();
+            assert_eq!(
+                sum_zero,
+                is_empty,
+                "tier_peak_trough_sum == 0 must agree with is_empty() \
+                 for map with peak={p}, trough={t}, sum={s}",
+                p = map.peak_tier_count(),
+                t = map.trough_tier_count(),
+                s = map.tier_peak_trough_sum(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_non_empty_bounded_below_by_two() {
+        // Non-empty floor pin: every non-empty map has
+        // `tier_peak_trough_sum >= 2` — the joint magnitude is at least
+        // `2` because both endpoints are structurally `>= 1` on every
+        // non-empty map (by `peak_tier_count >= 1` and
+        // `trough_tier_count >= 1` on the non-empty case). Tier-altitude
+        // peer of `kind_peak_trough_sum_non_empty_bounded_below_by_two`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+        ] {
+            assert!(
+                map.tier_peak_trough_sum() >= 2,
+                "tier_peak_trough_sum ({s}) must be >= 2 on non-empty map \
+                 (peak={p}, trough={t})",
+                s = map.tier_peak_trough_sum(),
+                p = map.peak_tier_count(),
+                t = map.trough_tier_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_bounded_below_by_tier_spread() {
+        // Structural bound: `tier_peak_trough_sum() >= tier_spread()`
+        // on every fixture — `peak + trough >= peak - trough` reduces
+        // to `2 * trough >= 0`, always true. Equality holds iff
+        // `trough_tier_count == 0` — i.e. on the empty map, the sole
+        // shape with `trough_tier_count == 0`. Peer of
+        // `kind_peak_trough_sum_bounded_below_by_kind_spread`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sum = map.tier_peak_trough_sum();
+            let spread = map.tier_spread();
+            assert!(
+                sum >= spread,
+                "tier_peak_trough_sum ({sum}) must be >= tier_spread ({spread})",
+            );
+            let equality = sum == spread;
+            let trough_zero = map.trough_tier_count() == 0;
+            assert_eq!(
+                equality,
+                trough_zero,
+                "tier_peak_trough_sum == tier_spread must agree with \
+                 trough_tier_count == 0 for map with peak={p}, trough={t}",
+                p = map.peak_tier_count(),
+                t = map.trough_tier_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_bounded_above_by_twice_peak_tier_count() {
+        // Structural bound: `tier_peak_trough_sum() <= 2 *
+        // peak_tier_count()` on every fixture — `peak + trough <= 2 *
+        // peak` reduces to `trough <= peak`, the structural
+        // `trough_tier_count <= peak_tier_count` invariant. Equality
+        // holds iff `tiers_uniform_count() == true` (peak equals
+        // trough). Peer of
+        // `kind_peak_trough_sum_bounded_above_by_twice_peak_kind_count`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sum = map.tier_peak_trough_sum();
+            let peak = map.peak_tier_count();
+            assert!(
+                sum <= 2 * peak,
+                "tier_peak_trough_sum ({sum}) must be <= 2 * peak_tier_count ({p})",
+                p = peak,
+            );
+            let equality = sum == 2 * peak;
+            let uniform = map.tiers_uniform_count();
+            assert_eq!(
+                equality,
+                uniform,
+                "tier_peak_trough_sum == 2 * peak_tier_count must agree \
+                 with tiers_uniform_count for map with peak={peak}, \
+                 trough={t}, sum={sum}",
+                t = map.trough_tier_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_bounded_above_by_twice_len() {
+        // Composition bound: `tier_peak_trough_sum() <= 2 * self.len()`
+        // on every fixture — chaining `tier_peak_trough_sum <= 2 *
+        // peak_tier_count` (previous pin) with `peak_tier_count <=
+        // self.len()`. The joint magnitude of a resolved fold is
+        // bounded above by twice the total leaf count. Peer of
+        // `kind_peak_trough_sum_bounded_above_by_twice_lines_len`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sum = map.tier_peak_trough_sum();
+            let n = map.len();
+            assert!(
+                sum <= 2 * n,
+                "tier_peak_trough_sum ({sum}) must not exceed 2 * len ({twice})",
+                twice = 2 * n,
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_plus_spread_recovers_twice_peak_pointwise() {
+        // Peak-endpoint recovery identity: `tier_peak_trough_sum() +
+        // tier_spread() == 2 * peak_tier_count()` on every fixture.
+        // Together with the trough-endpoint recovery identity, the
+        // `(sum, difference)` pair fully witnesses the `(peak, trough)`
+        // endpoint pair through two halving-additions. Bijective
+        // `(sum, difference) ↔ (peak, trough)` algebra on the closed
+        // scalar-count surface at the tier altitude. Peer of
+        // `kind_peak_trough_sum_plus_spread_recovers_twice_peak_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sum = map.tier_peak_trough_sum();
+            let spread = map.tier_spread();
+            let peak = map.peak_tier_count();
+            assert_eq!(sum + spread, 2 * peak);
+            assert_eq!((sum + spread) % 2, 0, "sum + spread must be even");
+            assert_eq!((sum + spread) / 2, peak);
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_minus_spread_recovers_twice_trough_pointwise() {
+        // Trough-endpoint recovery identity: `tier_peak_trough_sum() -
+        // tier_spread() == 2 * trough_tier_count()` on every fixture.
+        // The subtraction is underflow-safe because
+        // `tier_peak_trough_sum >= tier_spread` holds structurally on
+        // every map (the previous invariant pin). Together with the
+        // peak-endpoint recovery, closes the bijective `(sum,
+        // difference) ↔ (peak, trough)` algebra on the closed scalar-
+        // count surface at the tier altitude. Peer of
+        // `kind_peak_trough_sum_minus_spread_recovers_twice_trough_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sum = map.tier_peak_trough_sum();
+            let spread = map.tier_spread();
+            let trough = map.trough_tier_count();
+            assert!(
+                sum >= spread,
+                "sum ({sum}) >= spread ({spread}) precondition for \
+                 underflow-safe subtraction",
+            );
+            assert_eq!(sum - spread, 2 * trough);
+            assert_eq!((sum - spread) % 2, 0, "sum - spread must be even");
+            assert_eq!((sum - spread) / 2, trough);
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_strictly_ordered_four_tier_fixture_is_five() {
+        // Direct pin at a strictly-ordered four-tier fold with counts
+        // Bare=1, Discovered=2, Default=3, Custom=4 (four distinct
+        // positive counts, one strict advance over the diff altitude's
+        // three-cell case). Peak lands on Custom at 4; trough over full
+        // support lands at 1. Sum = 4 + 1 = 5, spread = 4 - 1 = 3. Pins
+        // the fused-pair identity at a concrete four-cell position where
+        // every count is distinct. Peer of
+        // `kind_peak_trough_sum_skewed_fixture_matches_peak_plus_trough_direct`
+        // on the diff altitude with cardinality advanced from 3 to 4.
+        let m: ProvenanceMap = [
+            (vec!["b1".to_owned()], ConfigTierKind::Bare),
+            (vec!["dv1".to_owned()], ConfigTierKind::Discovered),
+            (vec!["dv2".to_owned()], ConfigTierKind::Discovered),
+            (vec!["df1".to_owned()], ConfigTierKind::Default),
+            (vec!["df2".to_owned()], ConfigTierKind::Default),
+            (vec!["df3".to_owned()], ConfigTierKind::Default),
+            (vec!["c1".to_owned()], ConfigTierKind::Custom),
+            (vec!["c2".to_owned()], ConfigTierKind::Custom),
+            (vec!["c3".to_owned()], ConfigTierKind::Custom),
+            (vec!["c4".to_owned()], ConfigTierKind::Custom),
+        ]
+        .into_iter()
+        .map(|(k, t)| (k, Provenance::computed(t)))
+        .collect();
+        assert_eq!(m.peak_tier_count(), 4);
+        assert_eq!(m.trough_tier_count(), 1);
+        assert_eq!(m.tier_spread(), 3);
+        assert_eq!(m.tier_peak_trough_sum(), 5);
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_agrees_with_open_coded_max_plus_min_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0) + hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0)` walk this lift replaces —
+        // both the named seam and the hand-rolled joint magnitude must
+        // pointwise agree over every fixture. The `.filter(c > 0)` on
+        // the min side is essential (mirroring `trough_count`'s support
+        // discipline); the `.max()` on the peak side operates over the
+        // full axis (mirroring `peak_count`). Peer of
+        // `kind_peak_trough_sum_agrees_with_open_coded_max_plus_min_walk`
+        // and addition-form peer of
+        // `tier_spread_agrees_with_open_coded_max_minus_min_walk` on the
+        // same fixture set.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tier_peak_trough_sum();
+            let hist = map.tier_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .filter(|&(_, c)| c > 0)
+                .map(|(_, c)| c)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(via_seam, peak + trough);
         }
     }
 
