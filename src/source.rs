@@ -1717,6 +1717,179 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().peak_trough_sum()
     }
 
+    /// The **joint-extremes-geometric-magnitude of layer-kind counts** —
+    /// the product of the modal and anti-modal per-kind layer counts on
+    /// the layer-kind sub-axis of the chain altitude. Routes through
+    /// [`crate::AxisHistogram::peak_trough_product`] one altitude down:
+    /// the fused `peak_count() * trough_count()` multiplication on the
+    /// histogram surface, halving the cost of the inline
+    /// `peak_layer_kind_count() * trough_layer_kind_count()` idiom which
+    /// walked the counts vector twice.
+    ///
+    /// The **multiplication-form sibling** of the shipped layer-kind sub-
+    /// axis [`Self::layer_kind_spread`] subtraction-form and
+    /// [`Self::layer_kind_peak_trough_sum`] addition-form scalars on the
+    /// same closed count-endpoint pair — closing the arithmetic algebra
+    /// `{+, -, *}` on the `(peak_layer_kind_count, trough_layer_kind_count)`
+    /// endpoint pair at the layer-kind sub-axis of the chain altitude.
+    /// Together with [`Self::layer_kind_spread`] and
+    /// [`Self::layer_kind_peak_trough_sum`], the triple
+    /// `(layer_kind_peak_trough_sum, layer_kind_spread,
+    /// layer_kind_peak_trough_product)` closes the arithmetic algebra
+    /// `{+, -, *}` on the closed-endpoint pair through the identity
+    ///
+    /// ```text
+    /// layer_kind_peak_trough_sum² - 4 * layer_kind_peak_trough_product
+    ///     == layer_kind_spread²
+    /// ```
+    ///
+    /// — equivalently `(p+t)² - 4pt = (p-t)²`. Every consumer that wanted
+    /// `layer_kind_spread²` from the `(sum, product)` surface — or
+    /// `4 * layer_kind_peak_trough_product` from the `(sum, difference)`
+    /// surface — reads it off in one arithmetic step with no histogram
+    /// re-walk. The layer-kind sub-axis scalar-count surface now carries
+    /// `(peak, trough)` in three orthogonal `(sum, difference, product)`
+    /// forms bijectively coupled by the closed-endpoint quadratic
+    /// identity.
+    ///
+    /// The **chain-altitude joint-extremes-geometric-magnitude peer** at
+    /// the layer-kind sub-axis — the natural typed primitive for CLI
+    /// headlines, attestation manifests, and alerting policies asking
+    /// *"how large is the peak-times-trough of the two extreme layer
+    /// kinds?"*: the `config-show` summary line *"peak×trough layer-kind
+    /// load: 2 layers² (peak File 2 × trough Env 1)"* (where 2 is this
+    /// scalar), the attestation manifest recording the joint extreme
+    /// geometric magnitude of a resolved chain by layer kind between
+    /// rebuild windows, the alerting policy reading
+    /// *"`layer_kind_peak_trough_product` >= threshold"* to gate on the
+    /// joint AM-GM-style two-sided magnitude by layer kind. Before this
+    /// lift, every such consumer re-derived the projection inline as
+    /// `chain.peak_layer_kind_count() * chain.trough_layer_kind_count()`
+    /// — two method calls plus a multiplication at every site, each
+    /// walking the counts vector twice with no named surface for the
+    /// joint scalar at this sub-axis.
+    ///
+    /// The layer-kind sub-axis sideways lift of the "peak×trough products
+    /// across altitudes" projection, seeded on the scalar altitude by
+    /// [`crate::AxisHistogram::peak_trough_product`], lifted to the diff
+    /// altitude by [`crate::ConfigDiff::kind_peak_trough_product`], and
+    /// climbed to the tier altitude by
+    /// [`crate::ProvenanceMap::tier_peak_trough_product`] — the next
+    /// natural lifts fan sideways along the two remaining chain sub-axes
+    /// (`file_format_peak_trough_product` over
+    /// [`Self::file_format_histogram`] and
+    /// `env_prefix_kind_peak_trough_product` over
+    /// [`Self::env_prefix_kind_histogram`]). Parallels the "spread across
+    /// altitudes" and "peak+trough sums across altitudes" projections
+    /// lifted to the same sub-axis by [`Self::layer_kind_spread`] and
+    /// [`Self::layer_kind_peak_trough_sum`] (the subtraction-form and
+    /// addition-form siblings on the same closed-endpoint pair).
+    ///
+    /// **Cardinality-`3` reachability at the layer-kind sub-axis —
+    /// matching the diff altitude, one strict retreat from the tier
+    /// altitude.** [`ConfigSourceKind`] carries three cells (Defaults,
+    /// Env, File) versus [`crate::ConfigTierKind`]'s four (Bare,
+    /// Discovered, Default, Custom), so on the singleton-support case
+    /// `layer_kind_peak_trough_product()` reaches
+    /// `self.as_ref().len()²` (both endpoints coincide on the sole
+    /// observed kind).
+    ///
+    /// **Empty-chain convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::peak_trough_product`] empty convention one
+    /// altitude down and the [`Self::peak_layer_kind_count`] /
+    /// [`Self::trough_layer_kind_count`] / [`Self::layer_kind_spread`] /
+    /// [`Self::layer_kind_peak_trough_sum`] empty conventions on the
+    /// same sub-axis. The scalar-count quintuple
+    /// `(peak_layer_kind_count, trough_layer_kind_count,
+    /// layer_kind_spread, layer_kind_peak_trough_sum,
+    /// layer_kind_peak_trough_product)` reads uniformly
+    /// `(0, 0, 0, 0, 0)` on the empty chain.
+    ///
+    /// **Empty-boundary equivalence.**
+    /// `layer_kind_peak_trough_product() == 0` ⇔
+    /// `self.as_ref().is_empty()` — both endpoints are structurally
+    /// `>= 1` on every non-empty chain (by
+    /// [`Self::peak_layer_kind_count`]'s and
+    /// [`Self::trough_layer_kind_count`]'s non-emptiness floors), so
+    /// their product is zero exactly on the empty chain (usize
+    /// multiplication cannot introduce a zero from non-zero operands).
+    /// Contrapositively, every non-empty chain has
+    /// `layer_kind_peak_trough_product() >= 1` — the joint geometric
+    /// magnitude has a structural non-empty floor of `1` (both endpoints
+    /// contribute at least `1`, and their product is at least `1`).
+    ///
+    /// **Overflow-safe on realistic chain sizes.** The multiplication
+    /// `peak_layer_kind_count() * trough_layer_kind_count()` cannot
+    /// overflow on any chain whose layer vector fits in `usize`: both
+    /// operands are bounded above by `self.as_ref().len()`, so their
+    /// product is bounded above by `self.as_ref().len().pow(2)` (the
+    /// peer bound is tighter than [`Self::layer_kind_peak_trough_sum`]'s
+    /// `2 * self.as_ref().len()` linear bound but still well outside the
+    /// realistic operating range of any chain in the crate).
+    ///
+    /// # Invariants
+    ///
+    /// - `layer_kind_peak_trough_product() ==
+    ///   layer_kind_histogram().peak_trough_product()` — both project
+    ///   the same scalar off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `layer_kind_peak_trough_product() == peak_layer_kind_count() *
+    ///   trough_layer_kind_count()` — the fused-pair identity of the
+    ///   joint-extremes-geometric-magnitude peer on the underlying
+    ///   scalar count pair.
+    /// - `layer_kind_peak_trough_product() == 0` ⇔
+    ///   `self.as_ref().is_empty()` — the empty-boundary equivalence
+    ///   peer to the two-endpoint surface.
+    /// - `layer_kind_peak_trough_product() >= 1` whenever
+    ///   `!self.as_ref().is_empty()` — non-empty floor: both endpoints
+    ///   are at least `1` on every non-empty chain, so their product is
+    ///   at least `1`.
+    /// - `layer_kind_peak_trough_product() <= peak_layer_kind_count() *
+    ///   peak_layer_kind_count()` always — `trough <= peak` gives
+    ///   `p * t <= p * p`. Equality holds iff
+    ///   [`Self::layer_kinds_uniform_count`] is `true` (peak equals
+    ///   trough).
+    /// - `layer_kind_peak_trough_product() <= self.as_ref().len() *
+    ///   self.as_ref().len()` always — composition of both endpoints
+    ///   being bounded above by `self.as_ref().len()`. Tighter than
+    ///   [`Self::layer_kind_peak_trough_sum`]'s `2 * self.as_ref().len()`
+    ///   linear bound on any chain with more than two layers.
+    /// - `4 * layer_kind_peak_trough_product() <=
+    ///   layer_kind_peak_trough_sum() * layer_kind_peak_trough_sum()`
+    ///   always — the AM-GM bound on the two closed endpoints
+    ///   (`(p+t)² >= 4pt`). Equality iff
+    ///   [`Self::layer_kinds_uniform_count`] is `true`.
+    /// - `layer_kind_peak_trough_sum() * layer_kind_peak_trough_sum() -
+    ///   4 * layer_kind_peak_trough_product() == layer_kind_spread() *
+    ///   layer_kind_spread()` always — the closed-endpoint quadratic
+    ///   identity `(p+t)² - 4pt = (p-t)²`. Reads `layer_kind_spread²`
+    ///   off the `(sum, product)` surface — the arithmetic algebra
+    ///   `{+, -, *}` is closed on the
+    ///   `(peak_layer_kind_count, trough_layer_kind_count)` endpoint
+    ///   pair up to squaring at the layer-kind sub-axis.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the fused
+    /// peak-times-trough scan through
+    /// [`crate::AxisHistogram::peak_trough_product`]). Both are `O(n)`
+    /// in practice since the layer-kind axis carries a fixed three-cell
+    /// cardinality; the returned `usize` reads one scalar. Halves the
+    /// cost of the previous inline
+    /// `chain.peak_layer_kind_count() * chain.trough_layer_kind_count()`
+    /// idiom (which walked the counts vector twice — once for the max,
+    /// once for the min-over-support), where
+    /// [`crate::AxisHistogram::peak_trough_product`] routes both through
+    /// a single scalar read.
+    #[must_use]
+    fn layer_kind_peak_trough_product(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().peak_trough_product()
+    }
+
     /// The number of [`ConfigSourceKind`] cells tied at the peak leaf
     /// count on the layer-kind sub-axis of the chain altitude — the
     /// **modal-multiplicity scalar** peer of the modally-tied /
@@ -33714,6 +33887,350 @@ mod tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak + trough);
+        }
+    }
+
+    // ---- ConfigSourceChain::layer_kind_peak_trough_product — joint-
+    //      extremes-geometric-magnitude scalar on the layer-kind sub-axis
+    //      of the chain altitude, fusing peak_layer_kind_count *
+    //      trough_layer_kind_count into one multiplication-form scalar.
+    //      Sideways lift of the "peak×trough products across altitudes"
+    //      projection from the tier altitude to the first chain sub-axis
+    //      — the multiplication-form sibling of layer_kind_spread
+    //      (subtraction-form) and layer_kind_peak_trough_sum (addition-
+    //      form) on the same closed count-endpoint pair, closing the
+    //      arithmetic algebra {+, -, *} at the layer-kind sub-axis
+    //      through the closed-endpoint quadratic identity
+    //      sum² - 4 * product == spread² ----
+
+    #[test]
+    fn layer_kind_peak_trough_product_matches_layer_kind_histogram_peak_trough_product_pointwise() {
+        // Routing pin: `layer_kind_peak_trough_product` routes through
+        // `layer_kind_histogram().peak_trough_product()`, so the two
+        // seams must stay pointwise equivalent under every fixture. Peer
+        // of
+        // `tier_peak_trough_product_matches_tier_histogram_peak_trough_product_pointwise`
+        // on the tier altitude one seam up and
+        // `layer_kind_peak_trough_sum_matches_layer_kind_histogram_peak_trough_sum_pointwise`
+        // on the same sub-axis (addition-form sibling).
+        for chain in recessive_layer_kind_fixtures() {
+            let via_histogram = chain
+                .as_slice()
+                .layer_kind_histogram()
+                .peak_trough_product();
+            assert_eq!(
+                chain.as_slice().layer_kind_peak_trough_product(),
+                via_histogram,
+            );
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_product_equals_peak_times_trough_pointwise() {
+        // The fused-pair pin: `layer_kind_peak_trough_product ==
+        // peak_layer_kind_count * trough_layer_kind_count` on every
+        // fixture — the defining equivalence on the underlying scalar
+        // pair. Peer of
+        // `tier_peak_trough_product_equals_peak_times_trough_pointwise`
+        // on the tier altitude and the multiplication-form sibling of
+        // `layer_kind_peak_trough_sum_equals_peak_plus_trough_pointwise`
+        // on the same sub-axis.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let peak = slice.peak_layer_kind_count();
+            let trough = slice.trough_layer_kind_count();
+            assert_eq!(slice.layer_kind_peak_trough_product(), peak * trough);
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_product_sample_chain_is_two() {
+        // Direct pin against `sample_chain()`: two File layers + one Env
+        // layer. File dominant at 2, Env recessive at 1 — the joint
+        // product is 2. Reads the paired `(peak_layer_kind_count,
+        // trough_layer_kind_count, layer_kind_spread,
+        // layer_kind_peak_trough_sum, layer_kind_peak_trough_product)`
+        // quintuple as `(2, 1, 1, 3, 2)` — matching the tier-altitude
+        // peer `tier_peak_trough_product` on the strictly-unimodal Prog
+        // fixture quintuple `(2, 1, 1, 3, 2)`.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_layer_kind_count(), 2);
+        assert_eq!(slice.trough_layer_kind_count(), 1);
+        assert_eq!(slice.layer_kind_spread(), 1);
+        assert_eq!(slice.layer_kind_peak_trough_sum(), 3);
+        assert_eq!(slice.layer_kind_peak_trough_product(), 2);
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_product_env_majority_is_three() {
+        // Direct pin against an env-majority chain: three Env layers +
+        // one File + one Defaults. Env dominant at 3, Defaults recessive
+        // at 1 (declaration-order tie against File at 1) — the joint
+        // product is 3. Reads the `(peak, trough, spread, sum, product)`
+        // quintuple as `(3, 1, 2, 4, 3)`. Cross-verifies the closed-
+        // endpoint quadratic identity in-place: sum² - 4 * product =
+        // 16 - 12 = 4 = spread².
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_layer_kind_count(), 3);
+        assert_eq!(slice.trough_layer_kind_count(), 1);
+        assert_eq!(slice.layer_kind_spread(), 2);
+        assert_eq!(slice.layer_kind_peak_trough_sum(), 4);
+        assert_eq!(slice.layer_kind_peak_trough_product(), 3);
+        assert_eq!(slice.layer_kind_histogram().peak_trough_product(), 3,);
+        let sum = slice.layer_kind_peak_trough_sum();
+        let product = slice.layer_kind_peak_trough_product();
+        let spread = slice.layer_kind_spread();
+        assert_eq!(sum * sum - 4 * product, spread * spread);
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_product_empty_chain_is_zero() {
+        // An empty chain has no layers and therefore zero joint geometric
+        // magnitude — reads `0` per the AxisHistogram::peak_trough_product
+        // empty convention one altitude down; the `(peak, trough, spread,
+        // sum, product)` quintuple reads `(0, 0, 0, 0, 0)` uniformly on
+        // empty. Peer of `tier_peak_trough_product_empty_map_is_zero` on
+        // the tier altitude.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.peak_layer_kind_count(), 0);
+        assert_eq!(empty.trough_layer_kind_count(), 0);
+        assert_eq!(empty.layer_kind_spread(), 0);
+        assert_eq!(empty.layer_kind_peak_trough_sum(), 0);
+        assert_eq!(empty.layer_kind_peak_trough_product(), 0);
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_product_singleton_support_is_len_squared() {
+        // Singleton-support pin: every layer lands on the same kind, so
+        // that one kind is both peak and trough of the observed support,
+        // and the joint product is `len²`. Direct construction: three
+        // File layers — product = 3 * 3 = 9. Peer of
+        // `tier_peak_trough_product_singleton_support_is_len_squared` on
+        // the tier altitude.
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_layer_kinds().len(), 1);
+        assert_eq!(slice.layer_kind_peak_trough_product(), 9);
+        assert_eq!(
+            slice.layer_kind_peak_trough_product(),
+            slice.as_ref().len() * slice.as_ref().len(),
+        );
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_product_uniform_cover_equals_shared_count_squared() {
+        // Uniform-cover pin: every observed kind contributes the same
+        // nonzero count (two layers each here — a full-cover chain with
+        // uniform count 2 per cell), so peak == trough == 2 and the joint
+        // product is `shared_count² == 4`. The equality boundary of the
+        // `product <= peak²` invariant, witnessed against
+        // `layer_kinds_uniform_count`. Peer of
+        // `tier_peak_trough_product_uniform_cover_is_shared_count_squared`
+        // on the tier altitude.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.layer_kinds_uniform_count());
+        assert_eq!(slice.peak_layer_kind_count(), 2);
+        assert_eq!(slice.trough_layer_kind_count(), 2);
+        assert_eq!(slice.layer_kind_peak_trough_product(), 4);
+        assert_eq!(
+            slice.layer_kind_peak_trough_product(),
+            slice.peak_layer_kind_count() * slice.peak_layer_kind_count(),
+        );
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_product_zero_iff_empty() {
+        // Empty-boundary equivalence: `layer_kind_peak_trough_product() ==
+        // 0` iff the chain is empty. Both endpoints are structurally
+        // `>= 1` on every non-empty chain, and usize multiplication
+        // cannot introduce a zero from non-zero operands, so the product
+        // is zero exactly on the empty chain. Peer of
+        // `tier_peak_trough_product_zero_iff_empty_pointwise` on the tier
+        // altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let product_zero = slice.layer_kind_peak_trough_product() == 0;
+            let empty = slice.as_ref().is_empty();
+            assert_eq!(product_zero, empty);
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_product_nonempty_lower_bound_is_one() {
+        // Non-empty floor: every non-empty chain has
+        // `layer_kind_peak_trough_product() >= 1` — both endpoints
+        // contribute at least `1`, and their product is at least
+        // `1 * 1 == 1`. Peer of
+        // `tier_peak_trough_product_non_empty_bounded_below_by_one` on
+        // the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.as_ref().is_empty() {
+                assert!(slice.layer_kind_peak_trough_product() >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_product_bounded_above_by_peak_squared() {
+        // Companion invariant: `product <= peak²` always — `p * t <=
+        // p * p` reduces to `trough <= peak`, the structural
+        // `trough <= peak` invariant on `AxisHistogram`. Equality holds
+        // iff `layer_kinds_uniform_count` (peak equals trough). Peer of
+        // `tier_peak_trough_product_bounded_above_by_peak_tier_count_squared`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let product = slice.layer_kind_peak_trough_product();
+            let peak = slice.peak_layer_kind_count();
+            assert!(product <= peak * peak);
+            let equality = product == peak * peak;
+            assert_eq!(equality, slice.layer_kinds_uniform_count());
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_product_bounded_above_by_len_squared() {
+        // Composition bound: `product <= self.as_ref().len()²` — chaining
+        // `product <= peak²` (previous pin) with `peak <= len`. Tighter
+        // than `layer_kind_peak_trough_sum`'s `2 * len` linear bound on
+        // any chain with more than two layers. Peer of
+        // `tier_peak_trough_product_bounded_above_by_len_squared` on the
+        // tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let product = slice.layer_kind_peak_trough_product();
+            let n = slice.as_ref().len();
+            assert!(product <= n * n);
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_product_am_gm_bounded_above_by_sum_squared_over_four() {
+        // AM-GM bound: `4 * layer_kind_peak_trough_product <=
+        // layer_kind_peak_trough_sum²` on every fixture — the AM-GM
+        // inequality on the two closed endpoints (`(p+t)² >= 4pt`,
+        // equivalently `(p-t)² >= 0`). Equality holds iff
+        // `layer_kinds_uniform_count() == true` (peak equals trough),
+        // the balanced-distribution corner. Peer of
+        // `tier_peak_trough_product_am_gm_bounded_above_by_sum_squared_over_four`
+        // on the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let product = slice.layer_kind_peak_trough_product();
+            let sum = slice.layer_kind_peak_trough_sum();
+            let sum_sq = sum * sum;
+            let four_product = 4 * product;
+            assert!(four_product <= sum_sq);
+            let equality = four_product == sum_sq;
+            assert_eq!(equality, slice.layer_kinds_uniform_count());
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_product_closes_endpoint_algebra_pointwise() {
+        // Closed-endpoint quadratic identity pin:
+        // `layer_kind_peak_trough_sum² - 4 * layer_kind_peak_trough_product
+        // == layer_kind_spread²` on every fixture — the identity
+        // `(p+t)² - 4pt = (p-t)²` that closes the arithmetic algebra
+        // `{+, -, *}` on the `(peak_layer_kind_count,
+        // trough_layer_kind_count)` endpoint pair at the layer-kind
+        // sub-axis. Reads `layer_kind_spread²` off the `(sum, product)`
+        // surface with no histogram re-walk. The subtraction is
+        // underflow-safe by the AM-GM bound `4 * product <= sum²` (the
+        // previous invariant pin). Peer of
+        // `tier_peak_trough_product_closes_endpoint_algebra_pointwise` on
+        // the tier altitude.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let sum = slice.layer_kind_peak_trough_sum();
+            let product = slice.layer_kind_peak_trough_product();
+            let spread = slice.layer_kind_spread();
+            let sum_sq = sum * sum;
+            let four_product = 4 * product;
+            assert!(four_product <= sum_sq);
+            assert_eq!(sum_sq - four_product, spread * spread);
+        }
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_product_strictly_ordered_three_kind_fixture_is_two() {
+        // Direct pin at a strictly-ordered three-cell chain with counts
+        // Defaults=1, Env=2, File=3 (three distinct positive counts —
+        // the maximal strict-order shape at the layer-kind sub-axis's
+        // cardinality-3 support). Peak lands on File at 3; trough over
+        // full support lands at 1. Product = 3 * 1 = 3, sum = 4, spread
+        // = 2. Verifies the closed-endpoint quadratic identity in-place:
+        // sum² - 4 * product = 16 - 12 = 4 = spread². Multiplication-
+        // form peer of the diff-altitude and tier-altitude strictly-
+        // ordered fixture pins one seam over.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.yaml")),
+            ConfigSource::File(PathBuf::from("/c.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_layer_kind_count(), 3);
+        assert_eq!(slice.trough_layer_kind_count(), 1);
+        assert_eq!(slice.layer_kind_spread(), 2);
+        assert_eq!(slice.layer_kind_peak_trough_sum(), 4);
+        assert_eq!(slice.layer_kind_peak_trough_product(), 3);
+        let sum = slice.layer_kind_peak_trough_sum();
+        let product = slice.layer_kind_peak_trough_product();
+        let spread = slice.layer_kind_spread();
+        assert_eq!(sum * sum - 4 * product, spread * spread);
+    }
+
+    #[test]
+    fn layer_kind_peak_trough_product_agrees_with_open_coded_max_times_min_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0) * hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0)` walk this lift replaces —
+        // both the named seam and the hand-rolled joint geometric
+        // magnitude must pointwise agree over every fixture. The
+        // `filter(|(_, c)| c > 0)` step on the min side is essential
+        // (mirroring `trough_count`'s support discipline); the `.max()`
+        // on the peak side operates over the full axis (mirroring
+        // `peak_count`). Peer of
+        // `tier_peak_trough_product_agrees_with_open_coded_max_times_min_walk`
+        // on the tier altitude and the multiplication-form sibling of
+        // `layer_kind_peak_trough_sum_agrees_with_open_coded_max_plus_min_walk`
+        // on the same sub-axis.
+        for chain in recessive_layer_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.layer_kind_peak_trough_product();
+            let hist = slice.layer_kind_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .map(|(_, c)| c)
+                .filter(|&c| c > 0)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(via_seam, peak * trough);
         }
     }
 
