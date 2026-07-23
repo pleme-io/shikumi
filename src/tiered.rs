@@ -9110,6 +9110,202 @@ impl ConfigDiff {
         self.kind_histogram().peak_trough_sum_of_squares()
     }
 
+    /// The **joint-extremes-cube-magnitude of diff kinds** — the sum of
+    /// the cubes of the modal and anti-modal per-kind line counts on this
+    /// diff. Routes through [`crate::AxisHistogram::peak_trough_sum_of_cubes`]
+    /// one altitude down: the fused `peak_count().pow(3) +
+    /// trough_count().pow(3)` sum-of-cubes on the histogram surface,
+    /// halving the cost of the inline
+    /// `peak_kind_count().pow(3) + trough_kind_count().pow(3)` idiom which
+    /// walked the counts vector twice.
+    ///
+    /// The **sum-of-cubes / power-sum `p_3` sibling** of the shipped diff-
+    /// altitude [`Self::kind_spread`] subtraction-form,
+    /// [`Self::kind_peak_trough_sum`] addition-form,
+    /// [`Self::kind_peak_trough_product`] multiplication-form, and
+    /// [`Self::kind_peak_trough_sum_of_squares`] quadratic-power-sum `p_2`
+    /// scalars on the same closed count-endpoint pair — extending the
+    /// symmetric-polynomial `(e₁, e₂) = (peak+trough, peak*trough)` /
+    /// power-sum `(p_2, p_3) = (peak² + trough², peak³ + trough³)`
+    /// representation of the `(peak_kind_count, trough_kind_count)`
+    /// endpoint pair at the diff altitude through Newton's two-variable
+    /// identity `p_3 == e_1 * p_2 - e_2 * p_1` (specialized to
+    /// `sum · sum_of_squares - product · sum`, equivalently
+    /// `sum · (sum_of_squares - product)`). Together with
+    /// [`Self::kind_spread`], [`Self::kind_peak_trough_sum`],
+    /// [`Self::kind_peak_trough_product`], and
+    /// [`Self::kind_peak_trough_sum_of_squares`], the quintuple
+    /// `(kind_peak_trough_sum, kind_spread, kind_peak_trough_product,
+    /// kind_peak_trough_sum_of_squares, kind_peak_trough_sum_of_cubes)`
+    /// reads the joint sum-of-cubes off three orthogonal scalar surfaces
+    /// of the closed endpoint pair:
+    ///
+    /// ```text
+    /// kind_peak_trough_sum_of_cubes
+    ///     == kind_peak_trough_sum³ - 3 * kind_peak_trough_product * kind_peak_trough_sum
+    ///     (the (sum, product) surface Newton-recovery for p_3)
+    /// kind_peak_trough_sum_of_cubes
+    ///     == kind_peak_trough_sum * (kind_peak_trough_sum_of_squares - kind_peak_trough_product)
+    ///     (the (sum, sos, product) surface factorization
+    ///      p³ + t³ = (p + t)(p² - pt + t²) — non-negative subtraction by
+    ///      the AM-QM bound sos >= 2*product >= product)
+    /// kind_peak_trough_sum_of_cubes
+    ///     == kind_peak_trough_sum * (kind_spread² + kind_peak_trough_product)
+    ///     (the (sum, spread, product) surface identity
+    ///      p³ + t³ = (p + t)((p - t)² + pt))
+    /// ```
+    ///
+    /// Every consumer that wanted `peak³ + trough³` from any of the
+    /// shipped diff-altitude scalar surfaces — `(sum, product)`,
+    /// `(sum, sos, product)`, or `(sum, spread, product)` — reads it off
+    /// in one arithmetic step with no histogram re-walk. Trijective read-
+    /// off across three orthogonal scalar surfaces.
+    ///
+    /// The **diff-altitude joint-extremes-cube-magnitude peer** — the
+    /// natural typed primitive for CLI `config-diff` summaries,
+    /// attestation manifests, and alerting policies asking *"how large is
+    /// the peak³+trough³ joint cube magnitude of the two extreme diff-
+    /// kind buckets?"*: the summary line *"peak³+trough³ diff load: 28
+    /// (peak Context 3³ + trough Removed 1³)"* (where 28 is this scalar),
+    /// the attestation manifest recording the joint extreme sum-of-cubes
+    /// of a rebuild window's diff, the alerting policy reading
+    /// *"`kind_peak_trough_sum_of_cubes` >= threshold"* to gate on the
+    /// joint cubic two-sided magnitude. Before this lift, every such
+    /// consumer re-derived the projection inline as
+    /// `diff.peak_kind_count().pow(3) + diff.trough_kind_count().pow(3)`
+    /// — two method calls plus two cubings plus an addition at every
+    /// site, each site walking the counts vector twice with no named
+    /// surface for the joint scalar.
+    ///
+    /// The diff-altitude climb of the "peak³ + trough³ sums-of-cubes
+    /// across altitudes" projection seeded on the scalar altitude by
+    /// [`crate::AxisHistogram::peak_trough_sum_of_cubes`] — the next
+    /// natural lift climbs to the tier altitude
+    /// (`ProvenanceMap::tier_peak_trough_sum_of_cubes` over
+    /// [`Self::tier_histogram`] on the tier altitude) and sideways along
+    /// the chain altitude's three sub-axes
+    /// (`layer_kind_peak_trough_sum_of_cubes`,
+    /// `file_format_peak_trough_sum_of_cubes`,
+    /// `env_prefix_kind_peak_trough_sum_of_cubes` over the corresponding
+    /// chain histograms). The pattern is the same at every altitude /
+    /// sub-axis: surface the [`crate::AxisHistogram::peak_trough_sum_of_cubes`]
+    /// scalar directly at the local histogram altitude, routing through
+    /// the shared primitive one seam down instead of every consumer
+    /// pulling the histogram temporary and inlining the sum-of-cubes.
+    /// Parallels the sibling "spread across altitudes", "peak+trough sums
+    /// across altitudes", "peak×trough products across altitudes", and
+    /// "peak² + trough² sums-of-squares across altitudes" projections at
+    /// the same altitude on the same closed-endpoint pair.
+    ///
+    /// **Empty-diff convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::peak_trough_sum_of_cubes`] empty
+    /// convention one altitude down and the [`Self::peak_kind_count`] /
+    /// [`Self::trough_kind_count`] / [`Self::kind_spread`] /
+    /// [`Self::kind_peak_trough_sum`] / [`Self::kind_peak_trough_product`]
+    /// / [`Self::kind_peak_trough_sum_of_squares`] empty conventions on
+    /// the same altitude. The scalar-count septuple
+    /// `(peak_kind_count, trough_kind_count, kind_spread,
+    /// kind_peak_trough_sum, kind_peak_trough_product,
+    /// kind_peak_trough_sum_of_squares, kind_peak_trough_sum_of_cubes)`
+    /// reads uniformly `(0, 0, 0, 0, 0, 0, 0)` on the empty diff.
+    ///
+    /// **Empty-boundary equivalence.** `kind_peak_trough_sum_of_cubes()
+    /// == 0` ⇔ `self.lines.is_empty()` — both endpoints are structurally
+    /// `>= 1` on every non-empty diff (by [`Self::peak_kind_count`]'s and
+    /// [`Self::trough_kind_count`]'s non-emptiness floors), so their
+    /// sum-of-cubes is zero exactly on the empty diff (the two cubes
+    /// cannot introduce a zero from non-zero operands). Contrapositively,
+    /// every non-empty diff has `kind_peak_trough_sum_of_cubes() >= 2`
+    /// — the joint cube magnitude has a structural non-empty floor of
+    /// `2` (both cubed endpoints contribute at least `1`, and their sum
+    /// is at least `1 + 1 = 2`).
+    ///
+    /// **AM-cube / power-mean bound.** `4 *
+    /// kind_peak_trough_sum_of_cubes() >= kind_peak_trough_sum().pow(3)`
+    /// always (`p³ + t³ >= (p + t)³ / 4`, from `pt <= ((p + t) / 2)² =
+    /// (p + t)² / 4` applied to `(p + t)³ = p³ + t³ + 3pt(p + t)`).
+    /// Equality holds iff [`Self::kinds_uniform_count`] is `true` — the
+    /// two endpoints coincide, so `4 * sum-of-cubes` collapses onto
+    /// `sum-cubed`. Peer to the AM-QM bound
+    /// `kind_peak_trough_sum_of_squares() >= 2 *
+    /// kind_peak_trough_product()` on `p_2` and the AM-GM bound
+    /// `4 * kind_peak_trough_product() <= kind_peak_trough_sum().pow(2)`
+    /// on the elementary-symmetric pair — all three collapse to the same
+    /// `(p - t)² >= 0` witness on the closed endpoint pair at the diff
+    /// altitude.
+    ///
+    /// **Overflow-safe on realistic diff sizes.** The sum-of-cubes
+    /// `peak_kind_count().pow(3) + trough_kind_count().pow(3)` cannot
+    /// overflow on any diff whose line vector fits in `usize`: both
+    /// cubes are bounded above by `self.lines.len().pow(3)`, so the sum
+    /// is bounded above by `2 * self.lines.len().pow(3)`. Well outside
+    /// the realistic operating range of any diff surface in the crate.
+    ///
+    /// # Invariants
+    ///
+    /// - `kind_peak_trough_sum_of_cubes() ==
+    ///   kind_histogram().peak_trough_sum_of_cubes()` — both project the
+    ///   same scalar off the same primitive; the named seam is the cube-
+    ///   native routing of the histogram surface.
+    /// - `kind_peak_trough_sum_of_cubes() == peak_kind_count().pow(3) +
+    ///   trough_kind_count().pow(3)` — the fused-pair identity of the
+    ///   joint-extremes-cube-magnitude peer on the underlying scalar
+    ///   count pair.
+    /// - `kind_peak_trough_sum_of_cubes() == 0` ⇔ `self.lines.is_empty()`
+    ///   — the empty-boundary equivalence peer to the two-endpoint
+    ///   surface.
+    /// - `kind_peak_trough_sum_of_cubes() >= 2` whenever
+    ///   `!self.lines.is_empty()` — non-empty floor: both endpoints are
+    ///   at least `1` on every non-empty diff, so their sum-of-cubes is
+    ///   at least `2`.
+    /// - `kind_peak_trough_sum_of_cubes() <= kind_peak_trough_sum().pow(3)`
+    ///   always (⇔ `3 * product * sum >= 0`, always true; equality iff
+    ///   `self.lines.is_empty()` — the sole shape where
+    ///   `kind_peak_trough_product == 0`, since both endpoints are `>= 1`
+    ///   on any non-empty diff).
+    /// - `4 * kind_peak_trough_sum_of_cubes() >=
+    ///   kind_peak_trough_sum().pow(3)` always (AM-cube; equality iff
+    ///   [`Self::kinds_uniform_count`] is `true`).
+    /// - `kind_peak_trough_sum_of_cubes() <= 2 * peak_kind_count().pow(3)`
+    ///   always (⇔ `trough_kind_count() <= peak_kind_count()`, the
+    ///   structural invariant). Equality holds iff
+    ///   [`Self::kinds_uniform_count`] is `true`.
+    /// - `kind_peak_trough_sum_of_cubes() <= 2 * self.lines.len().pow(3)`
+    ///   always (composition of both cubed endpoints being bounded above
+    ///   by `self.lines.len().pow(3)`).
+    /// - `kind_peak_trough_sum_of_cubes() + 3 * product * sum ==
+    ///   kind_peak_trough_sum().pow(3)` always — the Newton-identity
+    ///   read-off on the `(sum, product)` surface
+    ///   (`p_3 = e_1³ - 3·e_1·e_2`).
+    /// - `kind_peak_trough_sum_of_cubes() == kind_peak_trough_sum() *
+    ///   (kind_peak_trough_sum_of_squares() - kind_peak_trough_product())`
+    ///   — the sum-of-cubes factorization on the `(sum, sos, product)`
+    ///   surface (`p³ + t³ = (p + t)(p² - pt + t²)`; the subtraction is
+    ///   non-negative by the AM-QM bound `sos >= 2*product >= product`).
+    /// - `kind_peak_trough_sum_of_cubes() == kind_peak_trough_sum() *
+    ///   (kind_spread().pow(2) + kind_peak_trough_product())` — the
+    ///   `(sum, spread, product)` surface identity
+    ///   `p³ + t³ = (p + t)((p - t)² + pt)`.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (the peak +
+    /// trough fused scan through
+    /// [`crate::AxisHistogram::peak_trough_sum_of_cubes`]). Both are
+    /// `O(n)` in practice since the diff-cell axis carries a fixed
+    /// three-cell cardinality; the returned `usize` reads one scalar.
+    /// Halves the cost of the previous inline
+    /// `diff.peak_kind_count().pow(3) + diff.trough_kind_count().pow(3)`
+    /// idiom (which walked the counts vector twice — once for the max,
+    /// once for the min-over-support), where
+    /// [`crate::AxisHistogram::peak_trough_sum_of_cubes`] routes both
+    /// through a single scalar read.
+    #[must_use]
+    pub fn kind_peak_trough_sum_of_cubes(&self) -> usize {
+        self.kind_histogram().peak_trough_sum_of_cubes()
+    }
+
     /// The **modal-multiplicity of diff kinds** — the number of
     /// [`DiffLineKind`] cells that hold the peak line count on this diff.
     /// Equal to `1` on every strictly-modally-unique diff (a unique
@@ -18288,6 +18484,446 @@ mod tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak * peak + trough * trough);
+        }
+    }
+
+    // ── ConfigDiff::kind_peak_trough_sum_of_cubes — joint-extremes-cube-
+    //    magnitude scalar peer on the diff altitude, sum-of-cubes / power-
+    //    sum p_3 sibling of `kind_spread`, `kind_peak_trough_sum`,
+    //    `kind_peak_trough_product`, and `kind_peak_trough_sum_of_squares`,
+    //    climbing the "peak³ + trough³ sums-of-cubes across altitudes"
+    //    projection from the scalar altitude to the diff altitude ──
+
+    #[test]
+    fn kind_peak_trough_sum_of_cubes_matches_kind_histogram_peak_trough_sum_of_cubes_pointwise() {
+        // Routing pin: `kind_peak_trough_sum_of_cubes` routes through
+        // `kind_histogram().peak_trough_sum_of_cubes()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Diff-altitude climb
+        // of the "peak³ + trough³ sums-of-cubes across altitudes"
+        // projection.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().peak_trough_sum_of_cubes();
+            assert_eq!(diff.kind_peak_trough_sum_of_cubes(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_cubes_equals_peak_cubed_plus_trough_cubed_pointwise() {
+        // Fused-pair pin: `kind_peak_trough_sum_of_cubes ==
+        // peak_kind_count³ + trough_kind_count³` on every fixture — the
+        // defining equivalence on the underlying scalar pair. The
+        // cubings-plus-addition is overflow-safe on any diff whose
+        // lines vector fits in `usize`: both cubes are bounded above by
+        // `self.lines.len().pow(3)`.
+        for diff in dominant_kind_fixtures() {
+            let peak = diff.peak_kind_count();
+            let trough = diff.trough_kind_count();
+            assert_eq!(
+                diff.kind_peak_trough_sum_of_cubes(),
+                peak * peak * peak + trough * trough * trough,
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_cubes_context_dominated_fixture_is_twenty_eight() {
+        // Direct pin: a diff of 3 Context + 1 Removed has Context
+        // dominant at 3, Removed rarest at 1 — the joint sum-of-cubes
+        // is `3³ + 1³ == 28`. Reads the paired
+        // `(peak_kind_count, trough_kind_count, kind_spread,
+        // kind_peak_trough_sum, kind_peak_trough_product,
+        // kind_peak_trough_sum_of_squares,
+        // kind_peak_trough_sum_of_cubes)` count septuple as
+        // `(3, 1, 2, 4, 3, 10, 28)`. Peer of
+        // `kind_peak_trough_sum_of_squares_context_dominated_fixture_is_ten`
+        // on the sum-of-cubes side.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_count(), 3);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_spread(), 2);
+        assert_eq!(diff.kind_peak_trough_sum(), 4);
+        assert_eq!(diff.kind_peak_trough_product(), 3);
+        assert_eq!(diff.kind_peak_trough_sum_of_squares(), 10);
+        assert_eq!(diff.kind_peak_trough_sum_of_cubes(), 28);
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_cubes_added_dominated_fixture_is_nine() {
+        // Direct pin: a diff of 2 Added + 1 Context has Added dominant
+        // at 2, Context rarest at 1 — the joint sum-of-cubes is
+        // `2³ + 1³ == 9`. Reads the paired count septuple as
+        // `(2, 1, 1, 3, 2, 5, 9)`. Peer of
+        // `kind_peak_trough_sum_of_squares_added_dominated_fixture_is_five`
+        // on the sum-of-cubes side.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_count(), 2);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_spread(), 1);
+        assert_eq!(diff.kind_peak_trough_sum(), 3);
+        assert_eq!(diff.kind_peak_trough_product(), 2);
+        assert_eq!(diff.kind_peak_trough_sum_of_squares(), 5);
+        assert_eq!(diff.kind_peak_trough_sum_of_cubes(), 9);
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_cubes_empty_diff_is_zero() {
+        // An empty ConfigDiff has no lines and therefore zero joint cube
+        // magnitude — reads `0` per the
+        // AxisHistogram::peak_trough_sum_of_cubes empty convention one
+        // altitude down; the `(peak_kind_count, trough_kind_count,
+        // kind_spread, kind_peak_trough_sum, kind_peak_trough_product,
+        // kind_peak_trough_sum_of_squares,
+        // kind_peak_trough_sum_of_cubes)` septuple reads
+        // `(0, 0, 0, 0, 0, 0, 0)` uniformly on the empty diff. Peer of
+        // `kind_peak_trough_sum_of_squares_empty_diff_is_zero`.
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.peak_kind_count(), 0);
+        assert_eq!(empty.trough_kind_count(), 0);
+        assert_eq!(empty.kind_spread(), 0);
+        assert_eq!(empty.kind_peak_trough_sum(), 0);
+        assert_eq!(empty.kind_peak_trough_product(), 0);
+        assert_eq!(empty.kind_peak_trough_sum_of_squares(), 0);
+        assert_eq!(empty.kind_peak_trough_sum_of_cubes(), 0);
+        assert!(empty.lines.is_empty());
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_cubes_singleton_support_is_twice_line_count_cubed() {
+        // Singleton-support pin: every line lands on the same kind, so
+        // that one kind is both peak and trough of the observed support,
+        // and the joint sum-of-cubes is `line_count³ + line_count³ ==
+        // 2 * line_count³`. Diff-altitude peer of the trait-uniform
+        // `peak_trough_sum_of_cubes == 2 * total³` behavior on
+        // AxisHistogram's singleton-support boundary.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Removed("r3".into()),
+                DiffLine::Removed("r4".into()),
+            ],
+        };
+        assert_eq!(diff.present_kinds().len(), 1);
+        assert_eq!(diff.peak_kind_count(), 4);
+        assert_eq!(diff.trough_kind_count(), 4);
+        assert_eq!(diff.kind_peak_trough_sum_of_cubes(), 128);
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_cubes_uniform_cover_is_twice_shared_count_cubed() {
+        // Uniform-cover pin: every observed kind contributes the same
+        // nonzero count (one line each here), so peak == trough == 1
+        // and the joint sum-of-cubes is `2 * shared_count³ == 2`. On
+        // the uniform-cover shape,
+        // `kind_peak_trough_sum_of_cubes == 2 * peak_kind_count³`
+        // (equality boundary of the `kind_peak_trough_sum_of_cubes <=
+        // 2 * peak_kind_count³` invariant, witnessed by
+        // `kinds_uniform_count() == true`). Peer of
+        // `kind_peak_trough_sum_of_squares_uniform_cover_is_twice_shared_count_squared`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kind_histogram().is_full_cover());
+        assert!(diff.kinds_uniform_count());
+        assert_eq!(diff.peak_kind_count(), 1);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_peak_trough_sum_of_cubes(), 2);
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_cubes_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence pin: `kind_peak_trough_sum_of_cubes()
+        // == 0` iff the diff is empty. Both endpoints are structurally
+        // `>= 1` on every non-empty diff, and cubing cannot introduce
+        // a zero from non-zero operands, so the sum-of-cubes is zero
+        // exactly on the empty diff. Contrapositively, every non-empty
+        // diff has `kind_peak_trough_sum_of_cubes >= 2` (both cubed
+        // endpoints contribute at least `1`). Empty-boundary peer to
+        // the two-endpoint surface.
+        for diff in dominant_kind_fixtures() {
+            let soc_zero = diff.kind_peak_trough_sum_of_cubes() == 0;
+            let is_empty = diff.lines.is_empty();
+            assert_eq!(
+                soc_zero,
+                is_empty,
+                "kind_peak_trough_sum_of_cubes == 0 must agree with \
+                 lines.is_empty() for diff with peak={p}, trough={t}, soc={soc}",
+                p = diff.peak_kind_count(),
+                t = diff.trough_kind_count(),
+                soc = diff.kind_peak_trough_sum_of_cubes(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_cubes_non_empty_bounded_below_by_two() {
+        // Non-empty floor pin: every non-empty diff has
+        // `kind_peak_trough_sum_of_cubes >= 2` — the joint cube
+        // magnitude has a structural non-empty floor of `2` because
+        // both endpoints are structurally `>= 1` on every non-empty
+        // diff (by `peak_kind_count >= 1` and `trough_kind_count >= 1`
+        // on the non-empty case), and their sum-of-cubes is at least
+        // `1 + 1 == 2`.
+        for diff in dominant_kind_fixtures() {
+            if diff.lines.is_empty() {
+                continue;
+            }
+            assert!(
+                diff.kind_peak_trough_sum_of_cubes() >= 2,
+                "kind_peak_trough_sum_of_cubes ({soc}) must be >= 2 on \
+                 non-empty diff (peak={p}, trough={t})",
+                soc = diff.kind_peak_trough_sum_of_cubes(),
+                p = diff.peak_kind_count(),
+                t = diff.trough_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_cubes_am_cube_bounded_below_by_quarter_sum_cubed() {
+        // AM-cube bound: `4 * kind_peak_trough_sum_of_cubes >=
+        // kind_peak_trough_sum³` on every fixture — the power-mean
+        // inequality `p³ + t³ >= (p + t)³ / 4`, from `pt <=
+        // ((p + t) / 2)²` applied to `(p + t)³ = p³ + t³ + 3pt(p + t)`.
+        // Equality holds iff `kinds_uniform_count() == true` (peak
+        // equals trough), the balanced-distribution corner. Peer to the
+        // AM-QM bound `sos >= 2*product` on `p_2` and the AM-GM bound
+        // `4*product <= sum²` on the elementary-symmetric pair.
+        for diff in dominant_kind_fixtures() {
+            let soc = diff.kind_peak_trough_sum_of_cubes();
+            let sum = diff.kind_peak_trough_sum();
+            let sum_cubed = sum * sum * sum;
+            let four_soc = 4 * soc;
+            assert!(
+                four_soc >= sum_cubed,
+                "4 * kind_peak_trough_sum_of_cubes ({four_soc}) must be \
+                 >= kind_peak_trough_sum³ ({sum_cubed})",
+            );
+            let equality = four_soc == sum_cubed;
+            let uniform = diff.kinds_uniform_count();
+            assert_eq!(
+                equality,
+                uniform,
+                "4 * kind_peak_trough_sum_of_cubes == sum³ must agree \
+                 with kinds_uniform_count for diff with peak={p}, \
+                 trough={t}, sum={sum}, soc={soc}",
+                p = diff.peak_kind_count(),
+                t = diff.trough_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_cubes_bounded_above_by_sum_cubed() {
+        // Structural bound: `kind_peak_trough_sum_of_cubes() <=
+        // kind_peak_trough_sum().pow(3)` on every fixture — `p³ + t³ <=
+        // (p + t)³` reduces to `3 * product * sum >= 0`, always true.
+        // Equality holds iff `self.lines.is_empty()` — the sole shape
+        // where `kind_peak_trough_product == 0`, since both endpoints
+        // are `>= 1` on every non-empty diff.
+        for diff in dominant_kind_fixtures() {
+            let soc = diff.kind_peak_trough_sum_of_cubes();
+            let sum = diff.kind_peak_trough_sum();
+            let sum_cubed = sum * sum * sum;
+            assert!(
+                soc <= sum_cubed,
+                "kind_peak_trough_sum_of_cubes ({soc}) must be <= sum³ ({sum_cubed})",
+            );
+            let equality = soc == sum_cubed;
+            let is_empty = diff.lines.is_empty();
+            assert_eq!(
+                equality,
+                is_empty,
+                "kind_peak_trough_sum_of_cubes == sum³ must agree with \
+                 lines.is_empty() for diff with peak={p}, trough={t}, \
+                 sum={sum}, soc={soc}",
+                p = diff.peak_kind_count(),
+                t = diff.trough_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_cubes_bounded_above_by_twice_peak_cubed() {
+        // Structural bound: `kind_peak_trough_sum_of_cubes() <=
+        // 2 * peak_kind_count().pow(3)` on every fixture — `p³ + t³ <=
+        // 2p³` reduces to `trough <= peak` (both non-negative), the
+        // structural `trough_kind_count <= peak_kind_count` invariant.
+        // Equality holds iff `kinds_uniform_count() == true` (peak
+        // equals trough).
+        for diff in dominant_kind_fixtures() {
+            let soc = diff.kind_peak_trough_sum_of_cubes();
+            let peak = diff.peak_kind_count();
+            let twice_peak_cubed = 2 * peak * peak * peak;
+            assert!(
+                soc <= twice_peak_cubed,
+                "kind_peak_trough_sum_of_cubes ({soc}) must be <= \
+                 2 * peak³ ({twice_peak_cubed})",
+            );
+            let equality = soc == twice_peak_cubed;
+            let uniform = diff.kinds_uniform_count();
+            assert_eq!(
+                equality,
+                uniform,
+                "kind_peak_trough_sum_of_cubes == 2 * peak³ must agree \
+                 with kinds_uniform_count for diff with peak={peak}, \
+                 trough={t}, soc={soc}",
+                t = diff.trough_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_cubes_bounded_above_by_twice_lines_len_cubed() {
+        // Composition bound: `kind_peak_trough_sum_of_cubes() <=
+        // 2 * self.lines.len()³` on every fixture — chaining
+        // `soc <= 2 * peak³` (previous pin) with `peak <= lines.len()`.
+        // The joint cube magnitude of a diff is bounded above by twice
+        // the cube of the total line count of the diff.
+        for diff in dominant_kind_fixtures() {
+            let soc = diff.kind_peak_trough_sum_of_cubes();
+            let n = diff.lines.len();
+            let twice_n_cubed = 2 * n * n * n;
+            assert!(
+                soc <= twice_n_cubed,
+                "kind_peak_trough_sum_of_cubes ({soc}) must not exceed \
+                 2 * lines.len()³ ({twice_n_cubed})",
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_cubes_newton_identity_with_sum_and_product_pointwise() {
+        // Newton-identity read-off on the (sum, product) surface:
+        // `kind_peak_trough_sum_of_cubes + 3 * kind_peak_trough_product
+        // * kind_peak_trough_sum == kind_peak_trough_sum³` on every
+        // fixture — the identity `p³ + t³ + 3pt(p + t) = (p + t)³`
+        // specialization of Newton's `p_3 = e_1³ - 3·e_1·e_2`. Reads
+        // sum-of-cubes off the `(sum, product)` surface with no
+        // histogram re-walk.
+        for diff in dominant_kind_fixtures() {
+            let soc = diff.kind_peak_trough_sum_of_cubes();
+            let product = diff.kind_peak_trough_product();
+            let sum = diff.kind_peak_trough_sum();
+            assert_eq!(soc + 3 * product * sum, sum * sum * sum);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_cubes_factorization_with_sum_sos_and_product_pointwise() {
+        // Sum-of-cubes factorization on the (sum, sos, product) surface:
+        // `kind_peak_trough_sum_of_cubes == kind_peak_trough_sum *
+        // (kind_peak_trough_sum_of_squares - kind_peak_trough_product)`
+        // on every fixture — the identity `p³ + t³ = (p + t)(p² - pt +
+        // t²)`. The subtraction `sos - product` is non-negative by the
+        // AM-QM bound `sos >= 2*product >= product` on the closed
+        // endpoint pair (with equality iff product == 0, i.e. iff
+        // `self.lines.is_empty()`).
+        for diff in dominant_kind_fixtures() {
+            let soc = diff.kind_peak_trough_sum_of_cubes();
+            let sos = diff.kind_peak_trough_sum_of_squares();
+            let product = diff.kind_peak_trough_product();
+            let sum = diff.kind_peak_trough_sum();
+            assert!(
+                product <= sos,
+                "sos - product must be non-negative: product ({product}) <= sos ({sos})",
+            );
+            assert_eq!(soc, sum * (sos - product));
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_cubes_factorization_with_sum_spread_and_product_pointwise() {
+        // Sum-of-cubes factorization on the (sum, spread, product)
+        // surface: `kind_peak_trough_sum_of_cubes == kind_peak_trough_sum
+        // * (kind_spread² + kind_peak_trough_product)` on every fixture
+        // — the identity `p³ + t³ = (p + t)((p - t)² + pt)`. Third
+        // orthogonal read-off surface, complementing the (sum, product)
+        // Newton-identity and the (sum, sos, product) factorization
+        // above.
+        for diff in dominant_kind_fixtures() {
+            let soc = diff.kind_peak_trough_sum_of_cubes();
+            let sum = diff.kind_peak_trough_sum();
+            let spread = diff.kind_spread();
+            let product = diff.kind_peak_trough_product();
+            assert_eq!(soc, sum * (spread * spread + product));
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_cubes_skewed_fixture_matches_peak_cubed_plus_trough_cubed_direct() {
+        // Direct pin: a skewed fixture with Context=3, Added=2,
+        // Removed=1 has peak 3, trough 1, joint sum-of-cubes
+        // `3³ + 1³ == 28` — the strictly-ordered three-cell case where
+        // every count is distinct. Pins the fused-pair identity at a
+        // concrete position where no tie-breaking is needed on either
+        // side of the modal-count pair. Sum-of-cubes peer of
+        // `kind_peak_trough_sum_of_squares_skewed_fixture_matches_peak_sq_plus_trough_sq_direct`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let hist = diff.kind_histogram();
+        assert_eq!(hist.count(DiffLineKind::Removed), 1);
+        assert_eq!(hist.count(DiffLineKind::Added), 2);
+        assert_eq!(hist.count(DiffLineKind::Context), 3);
+        assert_eq!(diff.peak_kind_count(), 3);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_spread(), 2);
+        assert_eq!(diff.kind_peak_trough_sum(), 4);
+        assert_eq!(diff.kind_peak_trough_product(), 3);
+        assert_eq!(diff.kind_peak_trough_sum_of_squares(), 10);
+        assert_eq!(diff.kind_peak_trough_sum_of_cubes(), 28);
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_cubes_agrees_with_open_coded_max_cubed_plus_min_cubed_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0).pow(3) + hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0).pow(3)` walk this lift
+        // replaces — both the named seam and the hand-rolled joint
+        // cube magnitude must pointwise agree over every fixture. The
+        // `.filter(c > 0)` on the min side is essential (mirroring
+        // `trough_count`'s support discipline); the `.max()` on the
+        // peak side operates over the full axis (mirroring
+        // `peak_count`). Sum-of-cubes peer of
+        // `kind_peak_trough_sum_of_squares_agrees_with_open_coded_max_sq_plus_min_sq_walk`.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kind_peak_trough_sum_of_cubes();
+            let hist = diff.kind_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .filter(|&(_, c)| c > 0)
+                .map(|(_, c)| c)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(via_seam, peak * peak * peak + trough * trough * trough);
         }
     }
 
