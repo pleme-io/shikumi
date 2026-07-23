@@ -15270,6 +15270,207 @@ pub trait ConfigSourceChain {
         self.env_prefix_kind_histogram().spread()
     }
 
+    /// The **joint-extremes-magnitude of env-prefix-presence counts** —
+    /// the sum of the modal and anti-modal per-kind env-layer counts on
+    /// the env-prefix-presence sub-axis of the chain altitude. Routes
+    /// through [`crate::AxisHistogram::peak_trough_sum`] one altitude
+    /// down: the fused `peak_count() + trough_count()` addition on the
+    /// histogram surface, halving the cost of the inline
+    /// `peak_env_prefix_kind_count() + trough_env_prefix_kind_count()`
+    /// idiom which walked the counts vector twice.
+    ///
+    /// The **addition-form sibling** of the [`Self::env_prefix_kind_spread`]
+    /// subtraction-form scalar on the same count surface at the same
+    /// sub-axis, closing the `(sum, difference)` pair of the extreme-
+    /// endpoint algebra at the env-prefix-presence sub-axis of the chain
+    /// altitude. Together with [`Self::env_prefix_kind_spread`], the pair
+    /// `(env_prefix_kind_peak_trough_sum, env_prefix_kind_spread)` reads
+    /// off `(peak_env_prefix_kind_count, trough_env_prefix_kind_count)`
+    /// bijectively through two halving-additions:
+    /// - `peak_env_prefix_kind_count() ==
+    ///   (env_prefix_kind_peak_trough_sum() +
+    ///   env_prefix_kind_spread()) / 2`
+    /// - `trough_env_prefix_kind_count() ==
+    ///   (env_prefix_kind_peak_trough_sum() -
+    ///   env_prefix_kind_spread()) / 2`
+    ///
+    /// Both divisions are exact — `env_prefix_kind_peak_trough_sum ±
+    /// env_prefix_kind_spread` is always even by construction, since
+    /// `(peak + trough) + (peak - trough) == 2 * peak` and
+    /// `(peak + trough) - (peak - trough) == 2 * trough`. The env-prefix-
+    /// presence sub-axis of the chain altitude now carries `(peak,
+    /// trough)` in two orthogonal forms: as separate endpoints via
+    /// [`Self::peak_env_prefix_kind_count`] /
+    /// [`Self::trough_env_prefix_kind_count`], and as `(sum, difference)`
+    /// via [`Self::env_prefix_kind_peak_trough_sum`] /
+    /// [`Self::env_prefix_kind_spread`].
+    ///
+    /// The **chain-altitude joint-extremes-magnitude peer** at the env-
+    /// prefix sub-axis — the natural typed primitive for CLI headlines,
+    /// attestation manifests, and alerting policies asking *"how large
+    /// are the two extreme env-prefix kinds together?"*: the
+    /// `config-show` summary line *"peak-plus-trough env-prefix load: 4
+    /// env layers (peak Bare 3 + trough Prefixed 1)"* (where 4 is this
+    /// scalar), the attestation manifest recording the joint extreme
+    /// magnitude of a resolved chain by env-prefix kind between two
+    /// rebuild windows, the alerting policy reading
+    /// *"`env_prefix_kind_peak_trough_sum` >= threshold"* to gate a
+    /// rebuild on the joint two-sided magnitude by env-prefix kind.
+    /// Before this closer, every such consumer re-derived the projection
+    /// inline as `chain.peak_env_prefix_kind_count() +
+    /// chain.trough_env_prefix_kind_count()` — two method calls plus an
+    /// addition at every site, each site walking the counts vector twice
+    /// with no named surface at this sub-axis for the joint scalar.
+    ///
+    /// **CLOSES the "peak+trough sums across altitudes" projection at
+    /// the last remaining chain-altitude sub-axis.** Follows the layer-
+    /// kind sub-axis sideways lift
+    /// ([`Self::layer_kind_peak_trough_sum`]) and the file-format sub-
+    /// axis sideways lift ([`Self::file_format_peak_trough_sum`]),
+    /// matching the tier-altitude climb
+    /// ([`crate::ProvenanceMap::tier_peak_trough_sum`]) and the diff-
+    /// altitude seed ([`crate::ConfigDiff::kind_peak_trough_sum`]), and
+    /// rooted on the scalar altitude by
+    /// [`crate::AxisHistogram::peak_trough_sum`]. Every altitude / sub-
+    /// axis of the 5-altitude cube now names the joint-extremes-
+    /// magnitude scalar at one typed seam. The chain-shape
+    /// "peak+trough sums across altitudes" triple
+    /// `(layer_kind_peak_trough_sum, file_format_peak_trough_sum,
+    /// env_prefix_kind_peak_trough_sum)` now spans every sub-axis of the
+    /// chain surface, mirroring the fully-closed `(layer_kind_spread,
+    /// file_format_spread, env_prefix_kind_spread)` subtraction-form
+    /// triple one seam over on the same closed-endpoint pair.
+    ///
+    /// **Empty-histogram convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::peak_trough_sum`] empty convention one
+    /// altitude down and the [`Self::peak_env_prefix_kind_count`] /
+    /// [`Self::trough_env_prefix_kind_count`] /
+    /// [`Self::env_prefix_kind_spread`] empty conventions on the same
+    /// sub-axis. The scalar-count quadruple
+    /// `(peak_env_prefix_kind_count, trough_env_prefix_kind_count,
+    /// env_prefix_kind_spread, env_prefix_kind_peak_trough_sum)` reads
+    /// uniformly `(0, 0, 0, 0)` on the empty histogram. Like
+    /// [`Self::file_format_peak_trough_sum`] and unlike
+    /// [`Self::layer_kind_peak_trough_sum`], the zero-boundary is NOT
+    /// `self.as_ref().is_empty()`: a non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::File`] layers reads
+    /// `0` as well, because those entries project to [`None`] through
+    /// [`ConfigSource::env_prefix_kind`]. Cross-sub-axis divergence from
+    /// [`Self::layer_kind_peak_trough_sum`] — the env-prefix sub-axis's
+    /// empty-boundary is the sub-axis histogram's `is_empty()`, not the
+    /// chain's. Unlike [`Self::file_format_peak_trough_sum`], the
+    /// empty-histogram / no-`Env`-layers condition is exactly the
+    /// layer-kind `count(ConfigSourceKind::Env) == 0` condition: every
+    /// `Env` entry projects to a `Some` cell regardless of prefix
+    /// value, so no `Env` entry is silently dropped by the projection
+    /// the way an unrecognized-extension `File` entry is on the file-
+    /// format sub-axis.
+    ///
+    /// **Empty-boundary equivalence.** `env_prefix_kind_peak_trough_sum()
+    /// == 0` ⇔ `env_prefix_kind_histogram().is_empty()` — both endpoints
+    /// are structurally `>= 1` on every histogram with non-empty
+    /// support, so their sum is zero exactly on the empty histogram.
+    /// Contrapositively, every chain with a non-empty env-prefix
+    /// histogram has `env_prefix_kind_peak_trough_sum() >= 2` — the
+    /// joint magnitude has a structural non-empty floor of `2` at this
+    /// sub-axis (both endpoints contribute at least `1` on any non-
+    /// empty histogram).
+    ///
+    /// **Cardinality-`2` reachability at the env-prefix sub-axis — the
+    /// narrowest bound composition in the projection.**
+    /// [`EnvMetadataTagKind`] carries two cells, so the histogram total
+    /// is at most the count of `Env` layers (strict equality:
+    /// `env_prefix_kind_histogram().total() ==
+    /// layer_kind_histogram().count(ConfigSourceKind::Env)`, since
+    /// every `Env` entry projects to a `Some` cell). The env-prefix
+    /// sub-axis's composition bound therefore reads `2 *
+    /// env_prefix_kind_histogram().total()` — the tightest histogram-
+    /// total bound in the family, since the total is exactly the env-
+    /// layer count rather than the inequality bound the file-format
+    /// histogram carries. On this two-cell axis the reachability range
+    /// collapses to `{0} ∪ [2, 2 * env_layer_count]` with even parity
+    /// on the interior — no odd sum is reachable on the two-cell axis
+    /// when both endpoints are equal, and any strict-unimodal shape
+    /// contributes `peak + trough` = `env_layer_count` (since the two
+    /// cells partition the env layers). The upper bound is reached on
+    /// every uniform two-kind cover: `sum == 2 * shared_count == 2 *
+    /// env_layer_count / 2 * 2 == env_layer_count` when the shared
+    /// count is `env_layer_count / 2` (parity permitting).
+    ///
+    /// # Invariants
+    ///
+    /// - `env_prefix_kind_peak_trough_sum() ==
+    ///   env_prefix_kind_histogram().peak_trough_sum()` — both project
+    ///   the same scalar off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `env_prefix_kind_peak_trough_sum() ==
+    ///   peak_env_prefix_kind_count() + trough_env_prefix_kind_count()`
+    ///   — the fused-pair identity of the joint-extremes-magnitude peer
+    ///   on the underlying scalar count pair.
+    /// - `env_prefix_kind_peak_trough_sum() == 0` ⇔
+    ///   `env_prefix_kind_histogram().is_empty()` — the empty-boundary
+    ///   equivalence peer to the two-endpoint surface. Cross-sub-axis
+    ///   divergence from [`Self::layer_kind_peak_trough_sum`]: the
+    ///   layer-kind sub-axis's zero-boundary is
+    ///   `self.as_ref().is_empty()` (chain-empty); this sub-axis's
+    ///   zero-boundary is `env_prefix_kind_histogram().is_empty()`
+    ///   (histogram-empty), the stricter boundary — a non-empty chain
+    ///   of only `Defaults` / `File` entries also reads `0`.
+    /// - `env_prefix_kind_peak_trough_sum() >= 2` whenever
+    ///   `!env_prefix_kind_histogram().is_empty()` — non-empty floor at
+    ///   this sub-axis: both endpoints are at least `1` on any non-
+    ///   empty histogram.
+    /// - `env_prefix_kind_peak_trough_sum() >= env_prefix_kind_spread()`
+    ///   always — `peak + trough >= peak - trough` reduces to `2 *
+    ///   trough >= 0`, always true. Equality holds iff
+    ///   `trough_env_prefix_kind_count() == 0` — i.e. on every chain
+    ///   whose env-prefix histogram is empty, the sole shape with
+    ///   `trough == 0` at this sub-axis.
+    /// - `env_prefix_kind_peak_trough_sum() <= 2 *
+    ///   peak_env_prefix_kind_count()` always — `peak + trough <= 2 *
+    ///   peak` reduces to `trough <= peak`, the structural `trough <=
+    ///   peak` invariant. Equality holds iff
+    ///   [`Self::env_prefix_kinds_uniform_count`] is `true` (peak equals
+    ///   trough — including the empty-histogram vacuous-uniformity case).
+    /// - `env_prefix_kind_peak_trough_sum() <= 2 *
+    ///   env_prefix_kind_histogram().total()` always — composition of
+    ///   both endpoints being bounded above by the histogram total. On
+    ///   this sub-axis the histogram total equals the env-layer count
+    ///   (strict equality, not the file-format sub-axis's inequality),
+    ///   so this composition bound is the tightest in the family:
+    ///   `2 * env_prefix_kind_histogram().total() == 2 *
+    ///   layer_kind_histogram().count(ConfigSourceKind::Env)`.
+    /// - `env_prefix_kind_peak_trough_sum() + env_prefix_kind_spread()
+    ///   == 2 * peak_env_prefix_kind_count()` always — the peak-
+    ///   endpoint recovery identity through the `(sum, difference)`
+    ///   surface.
+    /// - `env_prefix_kind_peak_trough_sum() - env_prefix_kind_spread()
+    ///   == 2 * trough_env_prefix_kind_count()` always — the trough-
+    ///   endpoint recovery identity (non-negative by the
+    ///   `env_prefix_kind_peak_trough_sum >= env_prefix_kind_spread`
+    ///   invariant).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<EnvMetadataTagKind>()` (the
+    /// fused peak-and-trough scan through
+    /// [`crate::AxisHistogram::peak_trough_sum`]). Both are `O(n)` in
+    /// practice since the env-prefix axis carries a fixed two-cell
+    /// cardinality; the returned `usize` reads one scalar. Halves the
+    /// cost of the previous inline `chain.peak_env_prefix_kind_count() +
+    /// chain.trough_env_prefix_kind_count()` idiom (which walked the counts
+    /// vector twice — once for the max, once for the min-over-support),
+    /// where [`crate::AxisHistogram::peak_trough_sum`] routes both
+    /// through a single scalar read.
+    #[must_use]
+    fn env_prefix_kind_peak_trough_sum(&self) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().peak_trough_sum()
+    }
+
     /// The number of [`EnvMetadataTagKind`] cells tied at the peak leaf
     /// count on the env-prefix-presence sub-axis of the chain altitude —
     /// the **modal-multiplicity scalar** peer of the modally-tied /
@@ -70229,6 +70430,431 @@ mod tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak - trough);
+        }
+    }
+
+    // ---- ConfigSourceChain::env_prefix_kind_peak_trough_sum —
+    //      joint-extremes-magnitude scalar on the env-prefix-presence
+    //      sub-axis of the chain altitude, fusing peak_env_prefix_kind_count
+    //      and trough_env_prefix_kind_count into one addition-form scalar
+    //      and CLOSING the "peak+trough sums across altitudes" projection
+    //      at the last remaining chain-altitude sub-axis, fully closing
+    //      the 5-altitude grid ----
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_matches_env_prefix_kind_histogram_peak_trough_sum_pointwise()
+    {
+        // Routing pin: `env_prefix_kind_peak_trough_sum` routes through
+        // `env_prefix_kind_histogram().peak_trough_sum()`, so the two
+        // seams must stay pointwise equivalent under every fixture. Peer
+        // of `file_format_peak_trough_sum_matches_file_format_histogram_peak_trough_sum_pointwise`
+        // and `layer_kind_peak_trough_sum_matches_layer_kind_histogram_peak_trough_sum_pointwise`
+        // on the sister sub-axes, `tier_peak_trough_sum_matches_tier_histogram_peak_trough_sum_pointwise`
+        // on the tier altitude, and `kind_peak_trough_sum_matches_kind_histogram_peak_trough_sum_pointwise`
+        // on the diff altitude. Addition-form sibling of
+        // `env_prefix_kind_spread_matches_env_prefix_kind_histogram_spread_pointwise`
+        // on the same sub-axis (subtraction-form sibling).
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let via_histogram = chain
+                .as_slice()
+                .env_prefix_kind_histogram()
+                .peak_trough_sum();
+            assert_eq!(
+                chain.as_slice().env_prefix_kind_peak_trough_sum(),
+                via_histogram
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_equals_peak_plus_trough_pointwise() {
+        // The fused-pair pin: `env_prefix_kind_peak_trough_sum ==
+        // peak_env_prefix_kind_count + trough_env_prefix_kind_count` on
+        // every fixture. Peer of
+        // `file_format_peak_trough_sum_equals_peak_plus_trough_pointwise`
+        // and `layer_kind_peak_trough_sum_equals_peak_plus_trough_pointwise`
+        // on the sister sub-axes, and the addition-form sibling of
+        // `env_prefix_kind_spread_equals_peak_minus_trough_pointwise` on
+        // the same sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let peak = slice.peak_env_prefix_kind_count();
+            let trough = slice.trough_env_prefix_kind_count();
+            assert_eq!(slice.env_prefix_kind_peak_trough_sum(), peak + trough);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_sample_chain_is_two() {
+        // Direct pin against `sample_chain()`: two `.yaml` file layers +
+        // one Env layer with prefix `"APP_"`. Prefixed is the sole
+        // observed env-prefix kind (present == {Prefixed}), so peak ==
+        // trough == 1 and the joint sum is 2 — the singleton-support
+        // degenerate at count 1 through the seam. Reads the paired
+        // `(peak_env_prefix_kind_count, trough_env_prefix_kind_count,
+        // env_prefix_kind_spread, env_prefix_kind_peak_trough_sum)`
+        // quadruple as `(1, 1, 0, 2)`. Cross-sub-axis divergence pin
+        // against `file_format_peak_trough_sum_sample_chain_is_four` and
+        // `layer_kind_peak_trough_sum_sample_chain_is_three`: on the same
+        // `sample_chain()` fixture, the file-format sub-axis reads the
+        // quadruple `(2, 2, 0, 4)` (Yaml only observed at count 2), the
+        // layer-kind sub-axis reads `(2, 1, 1, 3)` (File dominant,
+        // Env recessive), and the env-prefix sub-axis reads `(1, 1, 0,
+        // 2)` — the narrowest joint magnitude of the three sub-axes on
+        // this fixture.
+        let chain = sample_chain();
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_env_prefix_kind_count(), 1);
+        assert_eq!(slice.trough_env_prefix_kind_count(), 1);
+        assert_eq!(slice.env_prefix_kind_spread(), 0);
+        assert_eq!(slice.env_prefix_kind_peak_trough_sum(), 2);
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_bare_majority_is_four() {
+        // Direct pin against a bare-majority chain: three empty-prefix
+        // Env layers + one prefixed Env layer + one Defaults + one File.
+        // Bare dominant at 3, Prefixed recessive at 1 — the joint sum
+        // is 4. Reads the paired `(peak, trough, spread, sum)` quadruple
+        // as `(3, 1, 2, 4)`. Cross-verified against
+        // `hist.peak_trough_sum() == 4` at the same site.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.peak_env_prefix_kind_count(), 3);
+        assert_eq!(slice.trough_env_prefix_kind_count(), 1);
+        assert_eq!(slice.env_prefix_kind_spread(), 2);
+        assert_eq!(slice.env_prefix_kind_peak_trough_sum(), 4);
+        assert_eq!(slice.env_prefix_kind_histogram().peak_trough_sum(), 4);
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_empty_chain_is_zero() {
+        // An empty chain has no env layers and therefore zero joint
+        // magnitude — reads `0` per the AxisHistogram::peak_trough_sum
+        // empty convention one altitude down; the `(peak, trough,
+        // spread, sum)` quadruple reads `(0, 0, 0, 0)` uniformly on
+        // empty. Peer of `file_format_peak_trough_sum_empty_chain_is_zero`
+        // and `layer_kind_peak_trough_sum_empty_chain_is_zero` on the
+        // sister sub-axes.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.peak_env_prefix_kind_count(), 0);
+        assert_eq!(empty.trough_env_prefix_kind_count(), 0);
+        assert_eq!(empty.env_prefix_kind_spread(), 0);
+        assert_eq!(empty.env_prefix_kind_peak_trough_sum(), 0);
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_no_env_layers_is_zero() {
+        // The non-empty-chain / empty-histogram boundary the env-prefix
+        // sub-axis pins that the layer-kind sub-axis does *not*. A chain
+        // of only `Defaults` / `File` layers is non-empty but has no
+        // `Some` env_prefix_kind projection, so the histogram is empty
+        // and `env_prefix_kind_peak_trough_sum` reads zero — the
+        // vacuous-uniformity boundary reads through the seam.
+        // Distinguishing pin against the layer-kind sub-axis
+        // `layer_kind_peak_trough_sum` idiom: on those same chains,
+        // `layer_kind_peak_trough_sum` reads a nonzero joint magnitude
+        // (Defaults / File layers still contribute to the layer-kind
+        // histogram) while `env_prefix_kind_peak_trough_sum` reads
+        // zero. Cross-sub-axis divergence at the empty-boundary.
+        // Matches `file_format_peak_trough_sum_no_recognized_files_is_zero`
+        // on the same histogram-empty routing.
+        let fixtures: [Vec<ConfigSource>; 4] = [
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::File(PathBuf::from("/a.toml")),
+                ConfigSource::File(PathBuf::from("/b.yaml")),
+            ],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.unknown")),
+                ConfigSource::File(PathBuf::from("/b.nix")),
+                ConfigSource::Defaults,
+            ],
+        ];
+        for chain in &fixtures {
+            assert!(!chain.is_empty(), "fixture must be non-empty");
+            assert!(
+                chain.as_slice().env_prefix_kind_histogram().is_empty(),
+                "fixture must have empty env-prefix histogram",
+            );
+            assert_eq!(chain.as_slice().env_prefix_kind_peak_trough_sum(), 0);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_singleton_support_multi_layer_is_ten() {
+        // Direct pin at a 5-layer singleton-support Prefixed-only
+        // chain — present == {Prefixed}, peak == trough == 5, sum ==
+        // 10. The scalar peer of the singleton-support cell degenerate
+        // at the joint-magnitude surface — the quadruple reads `(5, 5,
+        // 0, 10)`, distinct from the 3-layer singleton-support pin so
+        // any misread that reintroduces the `peak + trough` inline
+        // idiom as `peak` alone silently under-reports the joint
+        // magnitude on a fixture at a different peak. Peer of
+        // `file_format_peak_trough_sum_singleton_support_multi_layer_is_ten`
+        // and `layer_kind_peak_trough_sum_singleton_support_is_twice_len`
+        // on the sister sub-axes (which reach `2 * len` on the layer-
+        // kind sub-axis and `2 * hist.total()` on the file-format
+        // sub-axis for the same reason).
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env("TOBIRA_".to_owned()),
+            ConfigSource::Env("OTHER_".to_owned()),
+            ConfigSource::Env("EXTRA_".to_owned()),
+            ConfigSource::Env("MORE_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert_eq!(slice.present_env_prefix_kinds().len(), 1);
+        assert_eq!(slice.peak_env_prefix_kind_count(), 5);
+        assert_eq!(slice.trough_env_prefix_kind_count(), 5);
+        assert_eq!(slice.env_prefix_kind_peak_trough_sum(), 10);
+        assert_eq!(
+            slice.env_prefix_kind_peak_trough_sum(),
+            2 * slice.env_prefix_kind_histogram().total(),
+        );
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_uniform_full_cover_equals_twice_shared_count() {
+        // Uniform full-cover pin: every observed env-prefix kind
+        // contributes the same nonzero count (one env layer per kind
+        // here — a full-cover chain with uniform count 1 per cell), so
+        // peak == trough == 1 and the joint sum is 2 (== 2 * peak).
+        // The equality boundary of the `sum <= 2 * peak` invariant,
+        // witnessed against `env_prefix_kinds_uniform_count`. On this
+        // two-cell sub-axis the uniform two-kind cover is the only
+        // full-cover shape (up to shared count), so this pin uniquely
+        // witnesses the equality boundary at the modal-tie / full-cover
+        // corner. Peer of
+        // `file_format_peak_trough_sum_uniform_full_cover_equals_twice_shared_count`
+        // and `layer_kind_peak_trough_sum_uniform_cover_equals_twice_shared_count`
+        // on the sister sub-axes.
+        let chain = vec![
+            ConfigSource::Env(String::new()),
+            ConfigSource::Env("APP_".to_owned()),
+        ];
+        let slice = chain.as_slice();
+        assert!(slice.env_prefix_kind_histogram().is_full_cover());
+        assert!(slice.env_prefix_kinds_uniform_count());
+        assert_eq!(slice.peak_env_prefix_kind_count(), 1);
+        assert_eq!(slice.trough_env_prefix_kind_count(), 1);
+        assert_eq!(slice.env_prefix_kind_peak_trough_sum(), 2);
+        assert_eq!(
+            slice.env_prefix_kind_peak_trough_sum(),
+            2 * slice.peak_env_prefix_kind_count(),
+        );
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_zero_iff_histogram_is_empty() {
+        // Empty-boundary equivalence: `env_prefix_kind_peak_trough_sum()
+        // == 0` iff `env_prefix_kind_histogram().is_empty()`. Both
+        // endpoints are structurally `>= 1` on any non-empty histogram,
+        // so their sum is zero exactly on the empty histogram — the
+        // stricter empty-boundary than the sister layer-kind sub-axis's
+        // chain-empty boundary. Cross-sub-axis divergence pin against
+        // `layer_kind_peak_trough_sum_zero_iff_empty`: on the layer-
+        // kind sub-axis, `sum == 0` iff the chain is empty; on the
+        // env-prefix sub-axis, `sum == 0` iff the histogram is empty
+        // (a non-empty chain of only Defaults / File entries also
+        // reads `0` here). Agreement with
+        // `file_format_peak_trough_sum_zero_iff_histogram_is_empty` on
+        // the file-format sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let sum_zero = slice.env_prefix_kind_peak_trough_sum() == 0;
+            let hist_empty = slice.env_prefix_kind_histogram().is_empty();
+            assert_eq!(
+                sum_zero,
+                hist_empty,
+                "env_prefix_kind_peak_trough_sum() == 0 iff \
+                 env_prefix_kind_histogram().is_empty() \
+                 (sum={s}, hist_empty={e})",
+                s = slice.env_prefix_kind_peak_trough_sum(),
+                e = hist_empty,
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_nonempty_histogram_lower_bound_is_two() {
+        // Non-empty floor: every chain with a non-empty env-prefix
+        // histogram has `env_prefix_kind_peak_trough_sum() >= 2` — both
+        // endpoints contribute at least `1` on any non-empty histogram.
+        // Cross-sub-axis divergence pin against
+        // `layer_kind_peak_trough_sum_nonempty_lower_bound_is_two`: the
+        // layer-kind sub-axis quantifier is `!self.as_ref().is_empty()`;
+        // this sub-axis quantifier is
+        // `!env_prefix_kind_histogram().is_empty()`, the stricter
+        // boundary. Agreement with
+        // `file_format_peak_trough_sum_nonempty_histogram_lower_bound_is_two`
+        // on the file-format sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            if !slice.env_prefix_kind_histogram().is_empty() {
+                assert!(
+                    slice.env_prefix_kind_peak_trough_sum() >= 2,
+                    "non-empty histogram must have sum >= 2 (sum={s})",
+                    s = slice.env_prefix_kind_peak_trough_sum(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_bounded_below_by_env_prefix_kind_spread() {
+        // Companion invariant: `sum >= spread` always — `peak + trough
+        // >= peak - trough` reduces to `2 * trough >= 0`, always true.
+        // Equality holds iff `trough == 0` — i.e. iff
+        // `env_prefix_kind_histogram().is_empty()` at this sub-axis
+        // (the sole shape with `trough == 0`, since every non-empty
+        // histogram has a support cell contributing at least `1`).
+        // Peer of `file_format_peak_trough_sum_bounded_below_by_file_format_spread`
+        // on the file-format sub-axis and
+        // `layer_kind_peak_trough_sum_bounded_below_by_layer_kind_spread`
+        // on the layer-kind sub-axis, with a stricter equality-case
+        // boundary than the layer-kind sister sub-axis's chain-empty
+        // case.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(slice.env_prefix_kind_peak_trough_sum() >= slice.env_prefix_kind_spread());
+            let equality =
+                slice.env_prefix_kind_peak_trough_sum() == slice.env_prefix_kind_spread();
+            assert_eq!(equality, slice.env_prefix_kind_histogram().is_empty());
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_bounded_above_by_twice_peak() {
+        // Companion invariant: `sum <= 2 * peak` always — `peak +
+        // trough <= 2 * peak` reduces to `trough <= peak`, the
+        // structural `trough <= peak` invariant on `AxisHistogram`.
+        // Equality holds iff `env_prefix_kinds_uniform_count` (peak
+        // equals trough — including the empty-histogram vacuous-
+        // uniformity case where both are zero). Peer of
+        // `file_format_peak_trough_sum_bounded_above_by_twice_peak`
+        // and `layer_kind_peak_trough_sum_bounded_above_by_twice_peak`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert!(
+                slice.env_prefix_kind_peak_trough_sum() <= 2 * slice.peak_env_prefix_kind_count(),
+            );
+            let equality =
+                slice.env_prefix_kind_peak_trough_sum() == 2 * slice.peak_env_prefix_kind_count();
+            assert_eq!(equality, slice.env_prefix_kinds_uniform_count());
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_bounded_above_by_twice_histogram_total() {
+        // Composition bound: `sum <= 2 *
+        // env_prefix_kind_histogram().total()` always — both endpoints
+        // are bounded above by the histogram total. On the env-prefix
+        // sub-axis the histogram total equals the env-layer count
+        // (strict equality, not the file-format sub-axis's inequality:
+        // every `Env` entry projects to a `Some` cell regardless of
+        // prefix value), so this composition bound is the tightest in
+        // the family: `2 * env_prefix_kind_histogram().total() == 2 *
+        // layer_kind_histogram().count(ConfigSourceKind::Env)`.
+        // Cross-sub-axis divergence from
+        // `layer_kind_peak_trough_sum_bounded_above_by_twice_len` (the
+        // layer-kind sub-axis composes to `2 * self.as_ref().len()`)
+        // and agreement with
+        // `file_format_peak_trough_sum_bounded_above_by_twice_histogram_total`
+        // on the file-format sub-axis (same histogram-total shape, but
+        // with the strict-equality identity `hist_total == env_layer_count`
+        // rather than the file-format sub-axis's inequality).
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let hist_total = slice.env_prefix_kind_histogram().total();
+            assert!(
+                slice.env_prefix_kind_peak_trough_sum() <= 2 * hist_total,
+                "env_prefix_kind_peak_trough_sum()={s} must be <= 2 * \
+                 env_prefix_kind_histogram().total()={t}",
+                s = slice.env_prefix_kind_peak_trough_sum(),
+                t = hist_total,
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_plus_spread_recovers_twice_peak() {
+        // Peak endpoint-recovery: `sum + spread == 2 * peak` — the
+        // `(sum, difference)` surface halves back to `peak` via one
+        // addition. Peer of
+        // `file_format_peak_trough_sum_plus_spread_recovers_twice_peak`
+        // and `layer_kind_peak_trough_sum_plus_spread_recovers_twice_peak`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let sum = slice.env_prefix_kind_peak_trough_sum();
+            let spread = slice.env_prefix_kind_spread();
+            let peak = slice.peak_env_prefix_kind_count();
+            assert_eq!(sum + spread, 2 * peak);
+            assert_eq!((sum + spread) / 2, peak);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_minus_spread_recovers_twice_trough() {
+        // Trough endpoint-recovery: `sum - spread == 2 * trough` — the
+        // `(sum, difference)` surface halves back to `trough` via one
+        // (underflow-safe) subtraction. Peer of
+        // `file_format_peak_trough_sum_minus_spread_recovers_twice_trough`
+        // and `layer_kind_peak_trough_sum_minus_spread_recovers_twice_trough`
+        // on the sister sub-axes.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let sum = slice.env_prefix_kind_peak_trough_sum();
+            let spread = slice.env_prefix_kind_spread();
+            let trough = slice.trough_env_prefix_kind_count();
+            assert!(sum >= spread);
+            assert_eq!(sum - spread, 2 * trough);
+            assert_eq!((sum - spread) / 2, trough);
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_agrees_with_open_coded_max_plus_min_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0) + hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0)` walk this lift replaces
+        // — both the named seam and the hand-rolled max-plus-min-over-
+        // support must pointwise agree over every fixture. The
+        // `filter(|(_, c)| c > 0)` step on the min side is the load-
+        // bearing seam: the naive `.min()` over the full axis would
+        // silently pick zero-count absent cells on any non-full-cover
+        // chain, shadowing the trough-of-support the seam surfaces —
+        // and once the trough shadows to zero, the joint sum coincides
+        // with the peak alone, silently underreporting the joint
+        // magnitude. Peer of
+        // `file_format_peak_trough_sum_agrees_with_open_coded_max_plus_min_walk`
+        // and `layer_kind_peak_trough_sum_agrees_with_open_coded_max_plus_min_walk`
+        // on the sister sub-axes and the addition-form sibling of
+        // `env_prefix_kind_spread_agrees_with_open_coded_max_minus_min_walk`
+        // on the same sub-axis.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let via_seam = slice.env_prefix_kind_peak_trough_sum();
+            let hist = slice.env_prefix_kind_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .map(|(_, c)| c)
+                .filter(|&c| c > 0)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(via_seam, peak + trough);
         }
     }
 
