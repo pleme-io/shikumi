@@ -13650,9 +13650,9 @@ mod tests {
     }
 
     #[test]
-    fn error_localization_coordinates_generic_realizable_count_is_eight() {
-        assert_eq!(realizable_count::<ErrorLocalizationCoordinates>(), 8);
-        assert_eq!(unrealizable_count::<ErrorLocalizationCoordinates>(), 10);
+    fn error_localization_coordinates_generic_realizable_count_is_nine() {
+        assert_eq!(realizable_count::<ErrorLocalizationCoordinates>(), 9);
+        assert_eq!(unrealizable_count::<ErrorLocalizationCoordinates>(), 12);
         assert_eq!(
             realizable_count::<ErrorLocalizationCoordinates>()
                 + unrealizable_count::<ErrorLocalizationCoordinates>(),
@@ -15748,7 +15748,7 @@ mod tests {
         assert_axis_cardinality_matches_trait_all::<FormatProvenance>(2);
         assert_axis_cardinality_matches_trait_all::<ConfigSourceKind>(3);
         assert_axis_cardinality_matches_trait_all::<FigmentSourceKind>(3);
-        assert_axis_cardinality_matches_trait_all::<ShikumiErrorKind>(6);
+        assert_axis_cardinality_matches_trait_all::<ShikumiErrorKind>(7);
         assert_axis_cardinality_matches_trait_all::<FieldPathLocalization>(3);
         assert_axis_cardinality_matches_trait_all::<AttributionRule>(5);
         assert_axis_cardinality_matches_trait_all::<AttributionConfidence>(2);
@@ -15764,7 +15764,7 @@ mod tests {
         // cardinality with the cube's prior cardinality.
         assert_axis_cardinality_matches_trait_all::<FormatCoordinates>(8);
         assert_axis_cardinality_matches_trait_all::<AttributionCoordinates>(12);
-        assert_axis_cardinality_matches_trait_all::<ErrorLocalizationCoordinates>(18);
+        assert_axis_cardinality_matches_trait_all::<ErrorLocalizationCoordinates>(21);
         assert_axis_cardinality_matches_trait_all::<AttributionSourceKindCoordinates>(9);
         assert_axis_cardinality_matches_trait_all::<AttributionNameKindCoordinates>(6);
     }
@@ -17503,19 +17503,19 @@ mod tests {
         }
         for_each_closed_axis_implementor!(add);
         // 20-axis sum: Format=4, FormatProvenance=2, ConfigSourceKind=3,
-        // FigmentSourceKind=3, ShikumiErrorKind=6, FieldPathLocalization=3,
+        // FigmentSourceKind=3, ShikumiErrorKind=7, FieldPathLocalization=3,
         // AttributionRule=5, AttributionConfidence=2, AttributionAxis=2,
         // PartitionFace=2, ConfigTierKind=4, WatchEventClass=3,
         // FigmentNameTagKind=2, EnvMetadataTagKind=2, SecretBackendKind=8,
         // SecretRefShape=2, SecretOperation=6, SecretErrorKind=5,
-        // SecretClientKind=7, DiffLineKind=3 → 74.
+        // SecretClientKind=7, DiffLineKind=3 → 75.
         // 5-cube sum: FormatCoordinates=8, AttributionCoordinates=12,
-        // ErrorLocalizationCoordinates=18, AttributionSourceKindCoordinates=9,
-        // AttributionNameKindCoordinates=6 → 53. Grand total 74+53 = 127.
+        // ErrorLocalizationCoordinates=21, AttributionSourceKindCoordinates=9,
+        // AttributionNameKindCoordinates=6 → 56. Grand total 75+56 = 131.
         assert_eq!(
-            total, 127,
+            total, 131,
             "macro must emit each implementor exactly once \
-             (today's axis_cardinality checksum is 127)",
+             (today's axis_cardinality checksum is 131)",
         );
     }
 
@@ -17705,8 +17705,8 @@ mod tests {
         // ClosedAxis macro:
         // PartitionFace=2 + ConfigTierKind=4 + Format=4 + FormatProvenance=2
         // + ConfigSourceKind=3 + FigmentSourceKind=3 + AttributionConfidence=2
-        // + AttributionAxis=2 + ShikumiErrorKind=6 + FieldPathLocalization=3
-        // + AttributionRule=5 + WatchEventClass=3 = 39. A duplicated
+        // + AttributionAxis=2 + ShikumiErrorKind=7 + FieldPathLocalization=3
+        // + AttributionRule=5 + WatchEventClass=3 = 40. A duplicated
         // arm would double-count one cardinality; a missing arm would
         // under-count.
         fn axis_card<L: ClosedAxisLabel>() -> usize {
@@ -17720,12 +17720,12 @@ mod tests {
         }
         for_each_closed_axis_label_implementor!(add);
         assert_eq!(
-            total, 74,
+            total, 75,
             "macro must emit each ClosedAxisLabel implementor exactly once \
-             (today's axis_cardinality checksum is 74: \
+             (today's axis_cardinality checksum is 75: \
              PartitionFace=2 + ConfigTierKind=4 + Format=4 + FormatProvenance=2 \
              + ConfigSourceKind=3 + FigmentSourceKind=3 + AttributionConfidence=2 \
-             + AttributionAxis=2 + ShikumiErrorKind=6 + FieldPathLocalization=3 \
+             + AttributionAxis=2 + ShikumiErrorKind=7 + FieldPathLocalization=3 \
              + AttributionRule=5 + WatchEventClass=3 + FigmentNameTagKind=2 \
              + EnvMetadataTagKind=2 + SecretBackendKind=8 + SecretRefShape=2 \
              + SecretOperation=6 + SecretErrorKind=5 + SecretClientKind=7 \
@@ -34354,8 +34354,8 @@ mod tests {
         // an empty histogram with a strict-interior histogram preserves
         // strict-interior (the empty-identity law). Pinned with three
         // witnesses spanning the merge surface on [`ShikumiErrorKind`]
-        // (cardinality 6, where the strict interior reaches supports 2,
-        // 3, and 4), plus the empty-identity law.
+        // (cardinality 7, where the strict interior reaches supports
+        // 2 through 6), plus the empty-identity law.
 
         // Witness 1: strict-interior ⊕ strict-interior on overlapping
         // supports → strict-interior merge (union of supports stays in
@@ -34376,26 +34376,29 @@ mod tests {
         // Witness 2: strict-interior ⊕ strict-interior on disjoint
         // supports whose union reaches `cardinality - 1` → singular-gap
         // merge (loses the strict interior on the singular-gap
-        // boundary). Two two-cell shapes with disjoint supports of size
-        // 2 each whose union has size 4 — still strict interior — then
-        // adding another cell to reach support 5 = singular-gap.
-        let four_cell: AxisHistogram<ShikumiErrorKind> = [
+        // boundary). A five-cell shape (still strict interior on
+        // cardinality 7) merged with one more disjoint cell reaches
+        // support 6 = cardinality - 1 = singular-gap.
+        let five_cell: AxisHistogram<ShikumiErrorKind> = [
             ShikumiErrorKind::NotFound,
             ShikumiErrorKind::Parse,
             ShikumiErrorKind::Watch,
             ShikumiErrorKind::Io,
+            ShikumiErrorKind::Figment,
         ]
         .into_iter()
         .collect();
         let one_cell: AxisHistogram<ShikumiErrorKind> =
-            std::iter::once(ShikumiErrorKind::Figment).collect();
-        assert!(four_cell.has_strict_partial_cover());
-        let merged_gap = four_cell.clone().merge(&one_cell);
+            std::iter::once(ShikumiErrorKind::Extract).collect();
+        assert!(five_cell.has_strict_partial_cover());
+        let merged_gap = five_cell.clone().merge(&one_cell);
         assert!(!merged_gap.has_strict_partial_cover());
         assert!(merged_gap.has_singular_gap());
 
         // Witness 3: strict-interior ⊕ disjoint cover → full-cover
         // merge (loses the strict interior on the full-cover boundary).
+        // A three-cell shape plus a disjoint four-cell shape unions to
+        // all 7 cells.
         let three_cell: AxisHistogram<ShikumiErrorKind> = [
             ShikumiErrorKind::NotFound,
             ShikumiErrorKind::Parse,
@@ -34403,16 +34406,17 @@ mod tests {
         ]
         .into_iter()
         .collect();
-        let other_three_cell: AxisHistogram<ShikumiErrorKind> = [
+        let other_four_cell: AxisHistogram<ShikumiErrorKind> = [
             ShikumiErrorKind::Io,
             ShikumiErrorKind::Figment,
             ShikumiErrorKind::Extract,
+            ShikumiErrorKind::Validation,
         ]
         .into_iter()
         .collect();
         assert!(three_cell.has_strict_partial_cover());
-        assert!(other_three_cell.has_strict_partial_cover());
-        let merged_full = three_cell.clone().merge(&other_three_cell);
+        assert!(other_four_cell.has_strict_partial_cover());
+        let merged_full = three_cell.clone().merge(&other_four_cell);
         assert!(!merged_full.has_strict_partial_cover());
         assert!(merged_full.is_full_cover());
 

@@ -47,6 +47,8 @@ mod cube;
 pub mod discovered;
 mod discovery;
 mod error;
+#[cfg(feature = "hotswap")]
+pub mod hotswap;
 #[cfg(feature = "lisp")]
 pub mod lisp_provider;
 pub mod nix_provider;
@@ -102,6 +104,8 @@ pub use error::{
     AttributionRule, AttributionSourceKindCoordinates, ErrorLocalizationCoordinates,
     FailingSourceAttribution, FieldPathLocalization, ShikumiError, ShikumiErrorKind,
 };
+#[cfg(feature = "hotswap")]
+pub use hotswap::{ConfigSyncProof, ConfigWatermark, Validate, ValidatedTieredConfig};
 #[cfg(feature = "lisp")]
 pub use lisp_provider::{LispProvider, load_from_str as load_lisp_from_str};
 #[doc(hidden)]

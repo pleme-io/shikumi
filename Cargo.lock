@@ -1686,6 +1686,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
+name = "pleme-hotswap"
+version = "0.1.0"
+source = "git+https://github.com/pleme-io/pleme-hotswap-derive#1ecf9faffc8c20013051663966929ab0fb8ff946"
+
+[[package]]
+name = "pleme-hotswap-derive"
+version = "0.1.0"
+source = "git+https://github.com/pleme-io/pleme-hotswap-derive#1ecf9faffc8c20013051663966929ab0fb8ff946"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "potential_utf"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2231,11 +2246,14 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-sdk-secretsmanager",
+ "blake3",
  "clap",
  "figment",
  "gen-platform",
  "gen-types",
  "notify",
+ "pleme-hotswap",
+ "pleme-hotswap-derive",
  "reqwest",
  "serde",
  "serde_json",

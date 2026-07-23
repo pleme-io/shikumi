@@ -58,6 +58,16 @@ pub enum ShikumiError {
         #[source]
         error: Box<figment::Error>,
     },
+
+    /// A resolved candidate parsed cleanly (figment/serde succeeded) but
+    /// failed semantic validation — [`crate::hotswap::Validate::validate`]
+    /// (feature `hotswap`) returned `Err`. Distinct from
+    /// [`Self::Extract`]/[`Self::Figment`]: those catch shape/type
+    /// mismatches figment can detect on its own; this catches a
+    /// well-typed value that is still semantically wrong (an unknown
+    /// enum-string, an out-of-range port, a cross-field constraint).
+    #[error("config validation failed: {0}")]
+    Validation(String),
 }
 
 fn display_sources(sources: &[ConfigSource]) -> String {
@@ -171,6 +181,9 @@ pub enum ShikumiErrorKind {
     /// boxed underlying [`figment::Error`] are both available for
     /// attribution via [`ShikumiError::failing_attribution`].
     Extract,
+    /// [`ShikumiError::Validation`] — a resolved candidate parsed
+    /// cleanly but failed semantic validation.
+    Validation,
 }
 
 impl ShikumiErrorKind {
@@ -212,6 +225,7 @@ impl ShikumiErrorKind {
         Self::Io,
         Self::Figment,
         Self::Extract,
+        Self::Validation,
     ];
 
     /// Returns `true` if this kind wraps a [`figment::Error`] —
@@ -245,7 +259,7 @@ impl ShikumiErrorKind {
     pub fn is_figment_bearing(self) -> bool {
         match self {
             Self::Extract | Self::Figment => true,
-            Self::NotFound | Self::Parse | Self::Watch | Self::Io => false,
+            Self::NotFound | Self::Parse | Self::Watch | Self::Io | Self::Validation => false,
         }
     }
 
@@ -316,6 +330,7 @@ impl ShikumiErrorKind {
             Self::Io => "io",
             Self::Figment => "figment",
             Self::Extract => "extract",
+            Self::Validation => "validation",
         }
     }
 }
@@ -1561,9 +1576,9 @@ pub struct ErrorLocalizationCoordinates {
 
 impl ErrorLocalizationCoordinates {
     /// Every cell of the `kind × localization` product cube — the
-    /// structural composition of [`ShikumiErrorKind::ALL`] (6 cells)
+    /// structural composition of [`ShikumiErrorKind::ALL`] (7 cells)
     /// and [`FieldPathLocalization::ALL`] (3 cells) into the
-    /// `6 × 3 = 18`-cell coordinate space, in lexicographic order
+    /// `7 × 3 = 21`-cell coordinate space, in lexicographic order
     /// over the two sibling slices (kind outermost, localization
     /// innermost).
     ///
@@ -1603,15 +1618,15 @@ impl ErrorLocalizationCoordinates {
     /// product, not a subset and not a superset.
     ///
     /// The partition into realizable and unrealizable cells is the
-    /// 8 + 10 split pinned by [`Self::is_realizable`]: 8 cells satisfy
+    /// 9 + 12 split pinned by [`Self::is_realizable`]: 9 cells satisfy
     /// the realizability invariant (2 figment-bearing kinds × 2
-    /// figment-attached localizations + 4 non-figment-bearing kinds ×
-    /// [`FieldPathLocalization::NotApplicable`]); the other 10 cells
+    /// figment-attached localizations + 5 non-figment-bearing kinds ×
+    /// [`FieldPathLocalization::NotApplicable`]); the other 12 cells
     /// violate it. The `error_localization_coordinates_realizable_image_equals_observed_pairs`
     /// test pins the realizable half as the exact image of
     /// [`ShikumiError::error_localization_coordinates`] over the
     /// canonical construction-table surface, and the
-    /// `error_localization_coordinates_realizable_partitions_into_8_realizable_and_10_unrealizable`
+    /// `error_localization_coordinates_realizable_partitions_into_9_realizable_and_12_unrealizable`
     /// test pins the cardinality split.
     pub const ALL: &'static [Self] = &[
         Self {
@@ -1686,15 +1701,27 @@ impl ErrorLocalizationCoordinates {
             kind: ShikumiErrorKind::Extract,
             localization: FieldPathLocalization::NotApplicable,
         },
+        Self {
+            kind: ShikumiErrorKind::Validation,
+            localization: FieldPathLocalization::Localized,
+        },
+        Self {
+            kind: ShikumiErrorKind::Validation,
+            localization: FieldPathLocalization::FigmentUnlocalized,
+        },
+        Self {
+            kind: ShikumiErrorKind::Validation,
+            localization: FieldPathLocalization::NotApplicable,
+        },
     ];
 
-    /// Realizability predicate over the 18-cell product cube:
-    /// returns `true` exactly on the 8 cells that can be produced by
+    /// Realizability predicate over the 21-cell product cube:
+    /// returns `true` exactly on the 9 cells that can be produced by
     /// [`ShikumiError::error_localization_coordinates`] (or its
     /// captured-failure mirror
     /// [`crate::ReloadFailure::error_localization_coordinates`]) on
     /// some constructible [`ShikumiError`] value, and `false` on the
-    /// remaining 10 cells.
+    /// remaining 12 cells.
     ///
     /// The invariant is
     /// `self.kind.is_figment_bearing() ==
@@ -1704,8 +1731,8 @@ impl ErrorLocalizationCoordinates {
     /// variants (`Figment`, `Extract`) always project to
     /// `Localized` or `FigmentUnlocalized` (the figment error's
     /// `path` slot is `Some`); non-figment-bearing variants
-    /// (`NotFound`, `Parse`, `Watch`, `Io`) always project to
-    /// `NotApplicable` (no figment error to project from).
+    /// (`NotFound`, `Parse`, `Watch`, `Io`, `Validation`) always
+    /// project to `NotApplicable` (no figment error to project from).
     ///
     /// Operational use: an attestation manifest, structured-log
     /// replay, or cross-process diagnostic that observes the (kind,
@@ -2198,7 +2225,7 @@ closed_axis_label_string_surface! {
     type = ShikumiErrorKind,
     parse_error = "unknown shikumi error kind",
     expecting = "a canonical ShikumiErrorKind label \
-                 (`not-found`, `parse`, `watch`, `io`, `figment`, `extract`; \
+                 (`not-found`, `parse`, `watch`, `io`, `figment`, `extract`, `validation`; \
                  case-insensitive)",
 }
 
@@ -2901,6 +2928,7 @@ impl ShikumiError {
             Self::Io(_) => ShikumiErrorKind::Io,
             Self::Figment(_) => ShikumiErrorKind::Figment,
             Self::Extract { .. } => ShikumiErrorKind::Extract,
+            Self::Validation(_) => ShikumiErrorKind::Validation,
         }
     }
 
@@ -3042,12 +3070,12 @@ impl ShikumiError {
     ///
     /// One named typescape value collapsing the two reads into one.
     /// Total forward map: every constructible [`ShikumiError`]
-    /// produces a coordinate cell in the 18-cell product cube
+    /// produces a coordinate cell in the 21-cell product cube
     /// [`ErrorLocalizationCoordinates::ALL`], and the produced cell
     /// always satisfies [`ErrorLocalizationCoordinates::is_realizable`]
     /// (pinned by
     /// `shikumi_error_error_localization_coordinates_returns_realizable_cell`
-    /// over the canonical construction-table surface). The 10
+    /// over the canonical construction-table surface). The 12
     /// unrealizable cells in the cube are observable only as a
     /// cross-axis consistency violation — never as the image of this
     /// accessor.
@@ -4853,6 +4881,10 @@ mod tests {
                     error: fake_figment_error(),
                 },
             ),
+            (
+                ShikumiErrorKind::Validation,
+                ShikumiError::Validation("bad".to_owned()),
+            ),
         ]
     }
 
@@ -5003,6 +5035,7 @@ mod tests {
                 ShikumiErrorKind::Io,
                 ShikumiErrorKind::Figment,
                 ShikumiErrorKind::Extract,
+                ShikumiErrorKind::Validation,
             ],
             "ALL must list variants in declaration order",
         );
@@ -7139,7 +7172,7 @@ mod tests {
         // integer: any new variant on either sibling axis
         // (ShikumiErrorKind::ALL or FieldPathLocalization::ALL)
         // forces an extension of Self::ALL in lockstep through this
-        // assertion. Also pins the concrete current value (18) so
+        // assertion. Also pins the concrete current value (21) so
         // an unintentional churn on either axis is caught even when
         // the product math still works out.
         assert_eq!(
@@ -7149,8 +7182,8 @@ mod tests {
         );
         assert_eq!(
             ErrorLocalizationCoordinates::ALL.len(),
-            18,
-            "ALL must have 6 * 3 = 18 cells today",
+            21,
+            "ALL must have 7 * 3 = 21 cells today",
         );
     }
 
@@ -7204,7 +7237,7 @@ mod tests {
         // the cube:
         //   is_realizable iff
         //   kind.is_figment_bearing() == (localization != NotApplicable).
-        // The two definitions agree on all 18 cells.
+        // The two definitions agree on all 21 cells.
         for cell in ErrorLocalizationCoordinates::ALL.iter().copied() {
             let expected = cell.kind.is_figment_bearing()
                 == !matches!(cell.localization, FieldPathLocalization::NotApplicable);
@@ -7217,15 +7250,15 @@ mod tests {
     }
 
     #[test]
-    fn error_localization_coordinates_realizable_partitions_into_8_realizable_and_10_unrealizable()
+    fn error_localization_coordinates_realizable_partitions_into_9_realizable_and_12_unrealizable()
     {
-        // Pins the 8 + 10 cardinality split:
+        // Pins the 9 + 12 cardinality split:
         // - 2 figment-bearing kinds (Figment, Extract)
         //   × 2 figment-attached localizations (Localized,
         //     FigmentUnlocalized) = 4 realizable cells.
-        // - 4 non-figment-bearing kinds (NotFound, Parse, Watch, Io)
-        //   × 1 NotApplicable = 4 realizable cells.
-        // Total realizable = 8; total unrealizable = 10. A future
+        // - 5 non-figment-bearing kinds (NotFound, Parse, Watch, Io,
+        //   Validation) × 1 NotApplicable = 5 realizable cells.
+        // Total realizable = 9; total unrealizable = 12. A future
         // variant on either sibling axis lands as new cells whose
         // realizability is forced by the is_figment_bearing law,
         // keeping this partition coherent by construction.
@@ -7237,8 +7270,8 @@ mod tests {
             .iter()
             .filter(|c| !c.is_realizable())
             .count();
-        assert_eq!(realizable, 8, "realizable cells must be 8");
-        assert_eq!(unrealizable, 10, "unrealizable cells must be 10");
+        assert_eq!(realizable, 9, "realizable cells must be 9");
+        assert_eq!(unrealizable, 12, "unrealizable cells must be 12");
         assert_eq!(
             realizable + unrealizable,
             ErrorLocalizationCoordinates::ALL.len(),
@@ -7258,8 +7291,9 @@ mod tests {
         // collapsing to NotApplicable, plus the
         // FigmentUnlocalized cells for Extract / Figment) with two
         // path-bearing Figment-bearing constructions and one
-        // Extract+FigmentUnlocalized — together they enumerate all
-        // 8 realizable cells exactly.
+        // Extract+FigmentUnlocalized — together with the Validation
+        // row `one_per_kind()` now carries, they enumerate all 9
+        // realizable cells exactly.
         use std::collections::HashSet;
         let mut observed: HashSet<ErrorLocalizationCoordinates> = HashSet::new();
         for (_, err) in one_per_kind() {
@@ -8153,6 +8187,7 @@ mod tests {
         counts.insert(ShikumiErrorKind::Io, 4);
         counts.insert(ShikumiErrorKind::Parse, 2);
         counts.insert(ShikumiErrorKind::Watch, 3);
+        counts.insert(ShikumiErrorKind::Validation, 7);
         let observed: Vec<ShikumiErrorKind> = counts.keys().copied().collect();
         assert_eq!(
             observed,

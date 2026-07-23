@@ -34,6 +34,16 @@ pub struct ConfigStore<T> {
     sources: Vec<ConfigSource>,
     observatory: ReloadObservatory,
     _watcher: Option<ConfigWatcher>,
+    /// Set by [`Self::load_and_watch_hotswap`] (feature `hotswap`) when a
+    /// reload's [`pleme_hotswap::HotSwapClassifier::classify_change`]
+    /// reports `RequiresRestart` — recorded, never auto-applied. Cleared
+    /// on the next `Free` swap. Always present (not `Option`-wrapped
+    /// around the whole store) so [`Self::pending_restart`] is callable
+    /// on any store, not just ones built via the hotswap constructor;
+    /// stores built via [`Self::load`]/[`Self::load_and_watch`]/
+    /// [`Self::load_merged`] simply never populate it.
+    #[cfg(feature = "hotswap")]
+    pending_restart: Arc<ArcSwapOption<Vec<&'static str>>>,
 }
 
 impl<T> ConfigStore<T>
@@ -57,6 +67,8 @@ where
             sources,
             observatory: ReloadObservatory::new(),
             _watcher: None,
+            #[cfg(feature = "hotswap")]
+            pending_restart: Arc::new(ArcSwapOption::empty()),
         })
     }
 
@@ -121,6 +133,8 @@ where
             sources,
             observatory,
             _watcher: Some(watcher),
+            #[cfg(feature = "hotswap")]
+            pending_restart: Arc::new(ArcSwapOption::empty()),
         })
     }
 
@@ -459,6 +473,8 @@ where
             sources,
             observatory: ReloadObservatory::new(),
             _watcher: None,
+            #[cfg(feature = "hotswap")]
+            pending_restart: Arc::new(ArcSwapOption::empty()),
         })
     }
 
@@ -505,6 +521,228 @@ where
             .iter()
             .fold(ProviderChain::new(), ProviderChain::with_source)
             .extract_with_sources()
+    }
+}
+
+/// Hot-swap-classified hot-reload — theory/CALHA.md §6.2/§6.3. A sibling
+/// of [`ConfigStore::load_and_watch`], gated behind the `hotswap`
+/// feature and the extra `T: HotSwapClassifier + Validate` bounds.
+#[cfg(feature = "hotswap")]
+impl<T> ConfigStore<T>
+where
+    T: for<'de> Deserialize<'de>
+        + serde::Serialize
+        + Send
+        + Sync
+        + 'static
+        + pleme_hotswap::HotSwapClassifier
+        + crate::hotswap::Validate,
+{
+    /// Load config, validate it, and start a file watcher whose reloads
+    /// are classified field-by-field: a candidate where every changed
+    /// field is [`pleme_hotswap::HotSwapClass::Free`] is auto-swapped
+    /// (and `on_free_reload` runs); a candidate where any changed field
+    /// [`pleme_hotswap::HotSwapClass::RequiresRestart`]s is recorded via
+    /// [`Self::pending_restart`] but NEVER auto-applied — only a process
+    /// restart (outside this store's reach; `calha`'s job, not
+    /// shikumi's) picks it up.
+    ///
+    /// **Fail-safe guarantee**: a candidate that fails
+    /// [`crate::hotswap::Validate::validate`] — at construction, or on
+    /// any later reload — never tears down the watch loop and never
+    /// replaces the currently-live value; only the initial load's
+    /// failure surfaces as `Result::Err` (matching
+    /// [`Self::load_and_watch`]'s existing parse-failure contract). A
+    /// later reload's validation failure is recorded via
+    /// [`Self::last_reload_error`], exactly like a parse failure.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ShikumiError` if the initial load, parse, or validation
+    /// fails, or if watcher setup fails.
+    pub fn load_and_watch_hotswap<F>(
+        path: &Path,
+        env_prefix: &str,
+        on_free_reload: F,
+    ) -> Result<Self, ShikumiError>
+    where
+        F: Fn(&T) + Send + Sync + 'static,
+    {
+        let (candidate, sources) = Self::load_from_path(path, env_prefix)?;
+        let config = crate::hotswap::ValidatedTieredConfig::validate(candidate)?.into_inner();
+
+        let inner = Arc::new(ArcSwap::from_pointee(config));
+        let observatory = ReloadObservatory::new();
+        let pending_restart: Arc<ArcSwapOption<Vec<&'static str>>> =
+            Arc::new(ArcSwapOption::empty());
+
+        let inner_clone = inner.clone();
+        let observatory_clone = observatory.clone();
+        let pending_restart_clone = pending_restart.clone();
+        let path_owned = path.to_owned();
+        let prefix_owned = env_prefix.to_owned();
+
+        let watcher = ConfigWatcher::watch(path, move |event| {
+            match WatchEventClass::classify(&event.kind) {
+                WatchEventClass::Reload => {}
+                WatchEventClass::Removed => {
+                    info!("config file removed, continuing to watch for replacement...");
+                    return;
+                }
+                WatchEventClass::Ignored => return,
+            }
+
+            for path in &event.paths {
+                if symlink_target(path).is_some() {
+                    info!("symlink target changed for {}", path.display());
+                }
+            }
+
+            info!(
+                "reloading hot-swap configuration from {}",
+                path_owned.display()
+            );
+            match Self::load_from_path(&path_owned, &prefix_owned) {
+                Ok((candidate, _)) => {
+                    if let Err(err) = Self::apply_hotswap_candidate(
+                        candidate,
+                        &inner_clone,
+                        &observatory_clone,
+                        &pending_restart_clone,
+                        Some(&on_free_reload),
+                    ) {
+                        error!("hot-swap config candidate failed validation: {err}");
+                    }
+                }
+                Err(err) => {
+                    observatory_clone.record_failure(&err);
+                    error!("failed to reload config: {err}");
+                }
+            }
+        })?;
+
+        Ok(Self {
+            inner,
+            path: path.to_owned(),
+            sources,
+            observatory,
+            _watcher: Some(watcher),
+            pending_restart,
+        })
+    }
+
+    /// Synchronous hot-swap reload — the deterministic sibling of the
+    /// watcher-driven auto-reload inside [`Self::load_and_watch_hotswap`].
+    /// Re-reads by replaying [`Self::sources`] (matching [`Self::reload`]'s
+    /// own full-chain-replay contract, not just the primary path),
+    /// validates, classifies the diff against the currently-live value,
+    /// and conditionally swaps — exactly the same
+    /// [`Self::apply_hotswap_candidate`] logic the watcher path uses.
+    ///
+    /// No callback parameter — matches [`Self::reload`]'s own signature
+    /// (that manual sibling doesn't invoke `load_and_watch`'s `on_reload`
+    /// either). A caller that wants to observe the new value reads
+    /// [`Self::get`] after this returns; only the watcher-driven
+    /// construction path fires the `on_free_reload` supplied to
+    /// [`Self::load_and_watch_hotswap`].
+    ///
+    /// Returns `Ok(())` whether the candidate was swapped (`Free`) or
+    /// deferred (`RequiresRestart`, queryable via [`Self::pending_restart`]
+    /// afterward) — both are a *successful* reload attempt in the sense
+    /// that the candidate parsed and validated cleanly. Returns `Err`
+    /// only on a load/parse/validation failure, matching the fail-safe
+    /// guarantee: the live value and generation are untouched.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ShikumiError` if the file cannot be re-parsed or the
+    /// candidate fails [`crate::hotswap::Validate::validate`].
+    pub fn reload_hotswap(&self) -> Result<(), ShikumiError> {
+        let (candidate, _) = match Self::load_from_sources(&self.sources) {
+            Ok(v) => v,
+            Err(err) => {
+                self.observatory.record_failure(&err);
+                return Err(err);
+            }
+        };
+        Self::apply_hotswap_candidate(
+            candidate,
+            &self.inner,
+            &self.observatory,
+            &self.pending_restart,
+            None,
+        )
+    }
+
+    /// Shared classify-validate-and-conditionally-swap step, called by
+    /// both [`Self::load_and_watch_hotswap`]'s watcher closure and
+    /// [`Self::reload_hotswap`] — one source of truth for the hot-swap
+    /// decision logic, so the reactive and synchronous paths can never
+    /// drift apart.
+    ///
+    /// **Fail-safe guarantee** lives here: a validation failure records
+    /// itself via `observatory.record_failure` and returns `Err` WITHOUT
+    /// ever touching `inner` — the caller (either call site) never
+    /// tears down its watch loop on this path, and the live value stays
+    /// exactly what it was.
+    fn apply_hotswap_candidate(
+        candidate: T,
+        inner: &Arc<ArcSwap<T>>,
+        observatory: &ReloadObservatory,
+        pending_restart: &Arc<ArcSwapOption<Vec<&'static str>>>,
+        on_free_reload: Option<&dyn Fn(&T)>,
+    ) -> Result<(), ShikumiError> {
+        let validated = match crate::hotswap::ValidatedTieredConfig::validate(candidate) {
+            Ok(v) => v.into_inner(),
+            Err(err) => {
+                observatory.record_failure(&err);
+                return Err(err);
+            }
+        };
+
+        let current = inner.load();
+        match current.classify_change(&validated) {
+            pleme_hotswap::SwapDecision::Free => {
+                pending_restart.store(None);
+                if let Some(cb) = on_free_reload {
+                    cb(&validated);
+                }
+                observatory.record_success(inner, validated);
+            }
+            pleme_hotswap::SwapDecision::RequiresRestart(reasons) => {
+                info!(
+                    "hot-swap config candidate requires restart ({reasons:?}) -- \
+                     not auto-applied; live value unchanged"
+                );
+                pending_restart.store(Some(Arc::new(reasons)));
+            }
+        }
+        Ok(())
+    }
+
+    /// The current [`crate::hotswap::ConfigSyncProof`] — generation +
+    /// split watermark of the currently-live value, computed on demand
+    /// (never cached, so it always reflects [`Self::get`]'s current
+    /// value with no separate staleness window). This is the queryable
+    /// per-replica convergence fact `calha` polls via `/healthz/config`.
+    #[must_use]
+    pub fn sync_proof(&self) -> crate::hotswap::ConfigSyncProof {
+        let value = self.get();
+        crate::hotswap::ConfigSyncProof {
+            generation: self.generation(),
+            watermark: crate::hotswap::ConfigWatermark::compute(&**value, T::FIELD_CLASSES),
+            observed_at: std::time::SystemTime::now(),
+        }
+    }
+
+    /// The reasons from the most recent reload whose
+    /// [`pleme_hotswap::SwapDecision::RequiresRestart`] classification
+    /// blocked an auto-swap, or `None` if no such reload has occurred
+    /// since the last `Free` swap (or since construction, for a store
+    /// never built via [`Self::load_and_watch_hotswap`]).
+    #[must_use]
+    pub fn pending_restart(&self) -> Option<Vec<&'static str>> {
+        self.pending_restart.load().as_deref().cloned()
     }
 }
 
@@ -2663,5 +2901,235 @@ mod tests {
             6,
             "sum is the total reload-attempt count",
         );
+    }
+}
+
+/// Real, end-to-end proof of `load_and_watch_hotswap` — theory/CALHA.md
+/// §6.2's own stated acceptance criteria: "a unit test asserting the
+/// watch loop survives an injected malformed reload is part of M1's own
+/// acceptance criteria — not an optional nice-to-have." Uses the REAL
+/// `#[derive(HotSwap)]` (via the `pleme-hotswap-derive` dev-dependency),
+/// not a hand-written `HotSwapClassifier` impl, so this exercises the
+/// exact shape a real consumer would.
+///
+/// `reload_hotswap` (synchronous, deterministic) carries the hard
+/// assertions; a separate, best-effort test proves the watcher path
+/// reaches the same `apply_hotswap_candidate` logic, in the same
+/// tolerant-of-CI-timing style as `load_and_watch_triggers_callback`
+/// above (filesystem watch events are not guaranteed to land within a
+/// fixed wall-clock window on every CI backend).
+#[cfg(all(test, feature = "hotswap"))]
+mod hotswap_tests {
+    use super::*;
+    use pleme_hotswap::{HotSwapClass, HotSwapClassifier, SwapDecision};
+    use pleme_hotswap_derive::HotSwap;
+    use serde::{Deserialize, Serialize};
+    use std::fs;
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+    use std::time::Duration;
+    use tempfile::TempDir;
+
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, HotSwap)]
+    struct HotCfg {
+        #[hot_swap]
+        log_level: String,
+        #[restart_required(reason = "bound at process start")]
+        bind_addr: String,
+    }
+
+    impl crate::hotswap::Validate for HotCfg {
+        fn validate(&self) -> Result<(), ShikumiError> {
+            if self.log_level == "invalid" {
+                return Err(ShikumiError::Validation(
+                    "log_level must be a known level".into(),
+                ));
+            }
+            Ok(())
+        }
+    }
+
+    fn write_cfg(path: &std::path::Path, log_level: &str, bind_addr: &str) {
+        fs::write(
+            path,
+            format!("log_level: {log_level}\nbind_addr: \"{bind_addr}\"\n"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn reload_hotswap_applies_free_holds_restart_and_survives_invalid_candidate() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("hotcfg.yaml");
+        write_cfg(&path, "info", "0.0.0.0:8080");
+
+        let store =
+            ConfigStore::<HotCfg>::load_and_watch_hotswap(&path, "HOTCFG_TEST_", |_| {}).unwrap();
+        assert_eq!(store.get().log_level, "info");
+        assert_eq!(store.generation(), 0);
+        assert!(store.pending_restart().is_none());
+
+        // 1. Free-field-only change -> auto-applied.
+        write_cfg(&path, "debug", "0.0.0.0:8080");
+        store.reload_hotswap().unwrap();
+        assert_eq!(store.generation(), 1, "Free candidate must swap");
+        assert_eq!(store.get().log_level, "debug");
+        assert_eq!(
+            store.get().bind_addr,
+            "0.0.0.0:8080",
+            "unchanged field must round-trip through the swap"
+        );
+        assert!(store.pending_restart().is_none());
+
+        // 2. Restart-required field change -> recorded, NOT applied.
+        write_cfg(&path, "debug", "0.0.0.0:9090");
+        store.reload_hotswap().unwrap();
+        assert_eq!(
+            store.generation(),
+            1,
+            "RequiresRestart candidate must NOT swap -- generation stays put"
+        );
+        assert_eq!(
+            store.get().bind_addr,
+            "0.0.0.0:8080",
+            "live value must be UNCHANGED when a restart-required field changed"
+        );
+        assert_eq!(
+            store.pending_restart(),
+            Some(vec!["bound at process start"]),
+            "the pending restart must be recorded and queryable"
+        );
+
+        // 3. Invalid candidate -> the fail-safe guarantee: live value
+        // and generation untouched, no teardown, error surfaces via
+        // Result::Err AND last_reload_error.
+        write_cfg(&path, "invalid", "0.0.0.0:8080");
+        let err = store.reload_hotswap().unwrap_err();
+        assert_eq!(err.kind(), crate::ShikumiErrorKind::Validation);
+        assert_eq!(
+            store.generation(),
+            1,
+            "an invalid candidate must NOT swap -- generation stays put"
+        );
+        assert_eq!(
+            store.get().log_level,
+            "debug",
+            "live value must be UNCHANGED after a failed validation (fail-safe guarantee)"
+        );
+        assert!(store.last_reload_error().is_some());
+        // pending_restart from step 2 must survive an unrelated
+        // validation failure untouched -- the fail-safe guarantee
+        // covers the whole store, not just `inner`.
+        assert_eq!(
+            store.pending_restart(),
+            Some(vec!["bound at process start"]),
+        );
+
+        // 4. The store is still fully alive after the invalid candidate:
+        // one more Free change still applies cleanly. This is the
+        // "never tears down the watch loop" half of the fail-safe
+        // guarantee, proven functionally rather than by internal state.
+        write_cfg(&path, "trace", "0.0.0.0:8080");
+        store.reload_hotswap().unwrap();
+        assert_eq!(store.generation(), 2);
+        assert_eq!(store.get().log_level, "trace");
+        assert!(
+            store.pending_restart().is_none(),
+            "a fresh Free swap must clear the prior pending-restart record"
+        );
+    }
+
+    // `on_free_reload` is a WATCHER-path-only callback (matching
+    // `load_and_watch`'s own `on_reload`, which `reload()` never fires
+    // either) -- so this necessarily rides real filesystem-watch events
+    // and is timing-tolerant like `watcher_path_applies_free_reload_when_it_fires`
+    // below. The assertion that matters is structural regardless of
+    // timing: whatever DID fire must never include a value from the
+    // RequiresRestart write.
+    #[test]
+    fn on_free_reload_callback_only_fires_on_free_swaps() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("hotcfg_cb.yaml");
+        write_cfg(&path, "info", "0.0.0.0:8080");
+
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let seen_clone = seen.clone();
+        // Kept alive (never queried) for the watcher's lifetime -- the
+        // watcher is torn down when the store drops.
+        let _store = ConfigStore::<HotCfg>::load_and_watch_hotswap(&path, "HOTCFG_CB_", move |c| {
+            seen_clone.lock().unwrap().push(c.log_level.clone());
+        })
+        .unwrap();
+
+        thread::sleep(Duration::from_millis(100));
+        write_cfg(&path, "debug", "0.0.0.0:8080"); // Free -- should fire
+        thread::sleep(Duration::from_millis(400));
+        write_cfg(&path, "debug", "0.0.0.0:9999"); // RequiresRestart -- must NOT fire
+        thread::sleep(Duration::from_millis(400));
+
+        let observed = seen.lock().unwrap().clone();
+        assert!(
+            observed.iter().all(|v| v == "debug"),
+            "on_free_reload must never observe a RequiresRestart-blocked candidate: {observed:?}"
+        );
+        assert!(
+            observed.len() <= 1,
+            "on_free_reload must fire at most once across this sequence: {observed:?}"
+        );
+    }
+
+    #[test]
+    fn sync_proof_restart_required_watermark_is_stable_across_a_free_swap() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("hotcfg_proof.yaml");
+        write_cfg(&path, "info", "0.0.0.0:8080");
+
+        let store =
+            ConfigStore::<HotCfg>::load_and_watch_hotswap(&path, "HOTCFG_PROOF_", |_| {}).unwrap();
+        let before = store.sync_proof();
+
+        write_cfg(&path, "debug", "0.0.0.0:8080");
+        store.reload_hotswap().unwrap();
+        let after = store.sync_proof();
+
+        assert_eq!(after.generation, before.generation + 1);
+        assert_eq!(
+            after.watermark.restart_required, before.watermark.restart_required,
+            "a Free-only swap must not move the restart_required watermark"
+        );
+        assert_ne!(
+            after.watermark.full, before.watermark.full,
+            "the full watermark must move on any swap"
+        );
+    }
+
+    // Best-effort: the watcher path reaches the same
+    // apply_hotswap_candidate logic as reload_hotswap above. Tolerant
+    // of CI filesystem-watch timing, matching
+    // `load_and_watch_triggers_callback`'s own established convention
+    // in the sibling `tests` module — the hard assertions live in the
+    // synchronous tests above; this only checks the watcher path
+    // doesn't diverge when it DOES fire.
+    #[test]
+    fn watcher_path_applies_free_reload_when_it_fires() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("hotcfg_watch.yaml");
+        write_cfg(&path, "info", "0.0.0.0:8080");
+
+        let store =
+            ConfigStore::<HotCfg>::load_and_watch_hotswap(&path, "HOTCFG_WATCH_", |_| {}).unwrap();
+
+        thread::sleep(Duration::from_millis(100));
+        write_cfg(&path, "debug", "0.0.0.0:8080");
+        thread::sleep(Duration::from_millis(800));
+
+        if store.generation() > 0 {
+            assert_eq!(store.get().log_level, "debug");
+        }
+        // Note: on some CI systems the watcher may be slower or
+        // coalesce events differently, so we don't hard-fail if no
+        // event landed within the window -- reload_hotswap's tests
+        // above cover the core classify/validate/swap logic
+        // deterministically.
     }
 }

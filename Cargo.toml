@@ -59,6 +59,19 @@ vault-native = ["dep:reqwest", "dep:tokio"]
 # the consumer that already has auth plumbing. See RFC 0001.
 gcp-native = ["dep:reqwest", "dep:tokio"]
 
+# Per-field hot-swap-safety classification (theory/CALHA.md SS6.3):
+# a T: HotSwapClassifier + Validate wrapper (ValidatedTieredConfig),
+# a split blake3 watermark (full vs. restart-required subtree), and
+# ConfigStore::load_and_watch_hotswap -- a sibling of load_and_watch
+# that classifies each reload's diff and auto-swaps only the Free
+# half, never the RequiresRestart half. `pleme-hotswap` provides the
+# HotSwapClassifier trait + HotSwapClass/SwapDecision types this
+# module's generic bounds require; `#[derive(HotSwap)]` (the separate
+# `pleme-hotswap-derive` proc-macro crate) is how a consumer's own
+# config struct implements that trait -- not a dependency of shikumi
+# itself.
+hotswap = ["dep:pleme-hotswap", "dep:blake3"]
+
 [dependencies]
 arc-swap = "1.8"
 figment = { version = "0.10", features = ["env", "yaml", "toml"] }
@@ -86,6 +99,14 @@ tracing = "0.1"
 # Object-safe async trait — needed for SecretClient in secret_client.rs.
 async-trait = "0.1"
 tatara-lisp = { git = "https://github.com/pleme-io/tatara", package = "tatara-lisp", optional = true , version = "0.2" }
+# Feature-gated `hotswap`: the HotSwapClassifier trait + HotSwapClass/
+# SwapDecision runtime types a T: TieredConfig implementor's derived
+# impl (via the sibling `pleme-hotswap-derive` proc-macro crate) must
+# satisfy. The `pleme-hotswap-derive` repo hosts both crates.
+pleme-hotswap = { git = "https://github.com/pleme-io/pleme-hotswap-derive", package = "pleme-hotswap", optional = true, version = "0.1" }
+# Feature-gated `hotswap`: the split ConfigWatermark hash (full vs.
+# restart-required subtree).
+blake3 = { version = "1", optional = true }
 # Feature-gated native Akeyless SDK (generated from OpenAPI via forge-gen).
 akeyless-api = { git = "https://github.com/pleme-io/akeyless-api", optional = true , version = "0.1" }
 # Feature-gated native AWS Secrets Manager SDK + credential provider chain.
@@ -114,3 +135,7 @@ serde_json = "1"
 serde_yaml = "0.9"
 # SecretClient async tests — needed even when no native features are on.
 tokio = { version = "1", features = ["rt", "macros"] }
+# `hotswap` feature tests only: real #[derive(HotSwap)] on a test
+# struct, matching what a real hotswap consumer would use. Not a
+# runtime dependency of shikumi itself.
+pleme-hotswap-derive = { git = "https://github.com/pleme-io/pleme-hotswap-derive", package = "pleme-hotswap-derive" }
