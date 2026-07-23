@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "cargo_lock_sha256": "15bcf5dfccada6c6136c043e371b4307655ef9ac73aaa6cedecd74786629d4f2",
+  "cargo_lock_sha256": "3afd42fee98ec0f6452c63c8e9034de23f7cf36cae9d3263849025848eff3084",
   "target_resolves": {
     "base": {
       "arc-swap-1.9.2": {
@@ -836,6 +836,44 @@
       },
       "pin-project-lite-0.2.17": {
         "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
+      },
+      "pleme-hotswap-derive-0.1.0-1ecf9faffc8c20013051663966929ab0fb8ff946": {
+        "runtime_dependencies": [
+          {
+            "name": "proc_macro2",
+            "package_key": "proc-macro2-1.0.107",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "quote",
+            "package_key": "quote-1.0.47",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
+            "name": "syn",
+            "package_key": "syn-2.0.119",
+            "kind": "normal",
+            "features": [
+              "full"
+            ],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          }
+        ],
         "build_dependencies": [],
         "features": []
       },
@@ -4093,6 +4131,10 @@
     "pin-project-lite-0.2.17": {
       "edition": "2018"
     },
+    "pleme-hotswap-derive-0.1.0-1ecf9faffc8c20013051663966929ab0fb8ff946": {
+      "edition": "2024",
+      "proc_macro": true
+    },
     "proc-macro2-1.0.107": {
       "edition": "2021",
       "build_script": "build.rs"
@@ -4238,7 +4280,8 @@
   "git_nar_sha256": {
     "gen-macros-0.1.23-8dd812128473c11ec5d88d8ea2eeb3e1d3d5b9b7": "sha256-L7/TtcG9gywC0+sfJEFjtdBIqfqC5fSx1yV2vaKy3ps=",
     "gen-platform-0.1.23-8dd812128473c11ec5d88d8ea2eeb3e1d3d5b9b7": "sha256-L7/TtcG9gywC0+sfJEFjtdBIqfqC5fSx1yV2vaKy3ps=",
-    "gen-types-0.1.23-8dd812128473c11ec5d88d8ea2eeb3e1d3d5b9b7": "sha256-L7/TtcG9gywC0+sfJEFjtdBIqfqC5fSx1yV2vaKy3ps="
+    "gen-types-0.1.23-8dd812128473c11ec5d88d8ea2eeb3e1d3d5b9b7": "sha256-L7/TtcG9gywC0+sfJEFjtdBIqfqC5fSx1yV2vaKy3ps=",
+    "pleme-hotswap-derive-0.1.0-1ecf9faffc8c20013051663966929ab0fb8ff946": "sha256-cBTKeWcJ+GJnCjPhnpJrWAEtUrhIpNUkPKj6gMCdK04="
   },
   "flake_metadata": {}
 }
