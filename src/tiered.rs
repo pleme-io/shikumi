@@ -2155,6 +2155,192 @@ impl ProvenanceMap {
         self.tier_histogram().peak_trough_sum_of_squares()
     }
 
+    /// The **joint-extremes-cube-magnitude of tier counts** — the sum of
+    /// the cubes of the modal and anti-modal per-tier leaf counts on this
+    /// resolved fold. Routes through
+    /// [`crate::AxisHistogram::peak_trough_sum_of_cubes`] one altitude
+    /// down: the fused `peak_count().pow(3) + trough_count().pow(3)`
+    /// sum-of-cubes on the histogram surface, halving the cost of the
+    /// inline `peak_tier_count().pow(3) + trough_tier_count().pow(3)`
+    /// idiom which walked the counts vector twice.
+    ///
+    /// The **sum-of-cubes / power-sum `p_3` sibling** of the shipped
+    /// tier-altitude [`Self::tier_spread`] subtraction-form,
+    /// [`Self::tier_peak_trough_sum`] addition-form,
+    /// [`Self::tier_peak_trough_product`] multiplication-form, and
+    /// [`Self::tier_peak_trough_sum_of_squares`] quadratic-power-sum
+    /// `p_2` scalars on the same closed count-endpoint pair — extending
+    /// the symmetric-polynomial `(e₁, e₂) = (peak+trough, peak*trough)` /
+    /// power-sum `(p_2, p_3) = (peak² + trough², peak³ + trough³)`
+    /// representation of the `(peak_tier_count, trough_tier_count)`
+    /// endpoint pair at the tier altitude through Newton's two-variable
+    /// identity `p_3 == e_1 * p_2 - e_2 * p_1` (specialized to
+    /// `sum · sum_of_squares - product · sum`, equivalently
+    /// `sum · (sum_of_squares - product)`). Together with
+    /// [`Self::tier_spread`], [`Self::tier_peak_trough_sum`],
+    /// [`Self::tier_peak_trough_product`], and
+    /// [`Self::tier_peak_trough_sum_of_squares`], the quintuple
+    /// `(tier_peak_trough_sum, tier_spread, tier_peak_trough_product,
+    /// tier_peak_trough_sum_of_squares, tier_peak_trough_sum_of_cubes)`
+    /// reads the joint sum-of-cubes off three orthogonal scalar surfaces
+    /// of the closed endpoint pair:
+    ///
+    /// ```text
+    /// tier_peak_trough_sum_of_cubes
+    ///     == tier_peak_trough_sum³ - 3 * tier_peak_trough_product * tier_peak_trough_sum
+    ///     (the (sum, product) surface Newton-recovery for p_3)
+    /// tier_peak_trough_sum_of_cubes
+    ///     == tier_peak_trough_sum * (tier_peak_trough_sum_of_squares - tier_peak_trough_product)
+    ///     (the (sum, sos, product) surface factorization
+    ///      p³ + t³ = (p + t)(p² - pt + t²) — non-negative subtraction by
+    ///      the AM-QM bound sos >= 2*product >= product)
+    /// tier_peak_trough_sum_of_cubes
+    ///     == tier_peak_trough_sum * (tier_spread² + tier_peak_trough_product)
+    ///     (the (sum, spread, product) surface identity
+    ///      p³ + t³ = (p + t)((p - t)² + pt))
+    /// ```
+    ///
+    /// Every consumer that wanted `peak³ + trough³` from any of the
+    /// shipped tier-altitude scalar surfaces — `(sum, product)`,
+    /// `(sum, sos, product)`, or `(sum, spread, product)` — reads it off
+    /// in one arithmetic step with no histogram re-walk. Trijective read-
+    /// off across three orthogonal scalar surfaces.
+    ///
+    /// The **tier-altitude joint-extremes-cube-magnitude peer** — the
+    /// natural typed primitive for fleet dashboards, attestation
+    /// manifests, and alerting policies asking *"how large is the peak³ +
+    /// trough³ joint cube magnitude of the two extreme tier buckets?"*:
+    /// the dashboard headline *"peak³+trough³ tier load: 9 leaves³ (peak
+    /// Default 2³ + trough Bare 1³)"* (where 9 is this scalar), the
+    /// attestation manifest recording the joint cube magnitude of a
+    /// resolved fold by tier between rebuild windows, the alerting policy
+    /// reading *"`tier_peak_trough_sum_of_cubes` >= threshold"* to gate
+    /// on the joint cubic two-sided magnitude. Before this lift, every
+    /// such consumer re-derived the projection inline as
+    /// `map.peak_tier_count().pow(3) + map.trough_tier_count().pow(3)` —
+    /// two method calls plus two cubings plus an addition at every site,
+    /// each site walking the counts vector twice with no named surface
+    /// for the joint scalar.
+    ///
+    /// The tier-altitude climb of the "peak³ + trough³ sums-of-cubes
+    /// across altitudes" projection seeded on the scalar altitude by
+    /// [`crate::AxisHistogram::peak_trough_sum_of_cubes`] and lifted to
+    /// the diff altitude by
+    /// [`ConfigDiff::kind_peak_trough_sum_of_cubes`] — the next natural
+    /// lifts fan sideways along the chain altitude's three sub-axes
+    /// (`layer_kind_peak_trough_sum_of_cubes`,
+    /// `file_format_peak_trough_sum_of_cubes`,
+    /// `env_prefix_kind_peak_trough_sum_of_cubes` over the corresponding
+    /// chain histograms). The pattern is the same at every altitude /
+    /// sub-axis: surface the
+    /// [`crate::AxisHistogram::peak_trough_sum_of_cubes`] scalar directly
+    /// at the local histogram altitude, routing through the shared
+    /// primitive one seam down instead of every consumer pulling the
+    /// histogram temporary and inlining the sum-of-cubes. Parallels the
+    /// sibling "spread across altitudes", "peak+trough sums across
+    /// altitudes", "peak×trough products across altitudes", and
+    /// "peak² + trough² sums-of-squares across altitudes" projections at
+    /// the same altitude on the same closed-endpoint pair.
+    ///
+    /// **AM-cube / power-mean bound.**
+    /// `4 * tier_peak_trough_sum_of_cubes() >=
+    /// tier_peak_trough_sum().pow(3)` always (`p³ + t³ >= (p + t)³ / 4`,
+    /// from `pt <= ((p + t) / 2)² = (p + t)² / 4` applied to
+    /// `(p + t)³ = p³ + t³ + 3pt(p + t)`). Equality holds iff
+    /// [`Self::tiers_uniform_count`] is `true` — the two endpoints
+    /// coincide, so `4 * sum-of-cubes` collapses onto `sum-cubed`. Peer
+    /// to the AM-QM bound `tier_peak_trough_sum_of_squares >= 2 *
+    /// tier_peak_trough_product` on `p_2` and the AM-GM bound
+    /// `4 * tier_peak_trough_product <= tier_peak_trough_sum²` on the
+    /// elementary-symmetric pair — all three collapse to the same
+    /// `(p - t)² >= 0` witness on the closed endpoint pair at the tier
+    /// altitude.
+    ///
+    /// **Empty-map convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::peak_trough_sum_of_cubes`] empty
+    /// convention one altitude down and the [`Self::peak_tier_count`] /
+    /// [`Self::trough_tier_count`] / [`Self::tier_spread`] /
+    /// [`Self::tier_peak_trough_sum`] / [`Self::tier_peak_trough_product`]
+    /// / [`Self::tier_peak_trough_sum_of_squares`] empty conventions on
+    /// the same altitude. The scalar-count septuple
+    /// `(peak_tier_count, trough_tier_count, tier_spread,
+    /// tier_peak_trough_sum, tier_peak_trough_product,
+    /// tier_peak_trough_sum_of_squares, tier_peak_trough_sum_of_cubes)`
+    /// reads uniformly `(0, 0, 0, 0, 0, 0, 0)` on the empty map.
+    ///
+    /// **Empty-boundary equivalence.** `tier_peak_trough_sum_of_cubes()
+    /// == 0` ⇔ `self.is_empty()` — both endpoints are structurally `>= 1`
+    /// on every non-empty map (by [`Self::peak_tier_count`]'s and
+    /// [`Self::trough_tier_count`]'s non-emptiness floors), so their
+    /// sum-of-cubes is zero exactly on the empty map. Contrapositively,
+    /// every non-empty map has `tier_peak_trough_sum_of_cubes() >= 2`
+    /// (both cubed endpoints are structurally `>= 1`, so their sum-of-
+    /// cubes is `>= 1 + 1 == 2`).
+    ///
+    /// # Invariants
+    ///
+    /// - `tier_peak_trough_sum_of_cubes() ==
+    ///   tier_histogram().peak_trough_sum_of_cubes()` — both project the
+    ///   same scalar off the same primitive; the named seam is the cube-
+    ///   native routing of the histogram surface.
+    /// - `tier_peak_trough_sum_of_cubes() == peak_tier_count().pow(3) +
+    ///   trough_tier_count().pow(3)` — the fused-pair identity of the
+    ///   joint-extremes-cube-magnitude peer on the underlying scalar
+    ///   count pair.
+    /// - `tier_peak_trough_sum_of_cubes() == 0` ⇔ `self.is_empty()` —
+    ///   the empty-boundary equivalence peer to the two-endpoint surface.
+    /// - `tier_peak_trough_sum_of_cubes() >= 2` whenever
+    ///   `!self.is_empty()` — non-empty floor: both endpoints are at
+    ///   least `1` on every non-empty map, so their sum-of-cubes is at
+    ///   least `2`.
+    /// - `tier_peak_trough_sum_of_cubes() <=
+    ///   tier_peak_trough_sum().pow(3)` always (⇔
+    ///   `3 * product * sum >= 0`, always true; equality iff
+    ///   `self.is_empty()` — the sole shape where
+    ///   `tier_peak_trough_product == 0`, since both endpoints are `>= 1`
+    ///   on any non-empty map).
+    /// - `4 * tier_peak_trough_sum_of_cubes() >=
+    ///   tier_peak_trough_sum().pow(3)` always (AM-cube; equality iff
+    ///   [`Self::tiers_uniform_count`] is `true`).
+    /// - `tier_peak_trough_sum_of_cubes() <= 2 * peak_tier_count().pow(3)`
+    ///   always (⇔ `trough_tier_count() <= peak_tier_count()`, the
+    ///   structural invariant). Equality iff
+    ///   [`Self::tiers_uniform_count`] is `true`.
+    /// - `tier_peak_trough_sum_of_cubes() <= 2 * self.len().pow(3)`
+    ///   always (composition of both cubed endpoints being bounded above
+    ///   by `self.len().pow(3)`).
+    /// - `tier_peak_trough_sum_of_cubes() + 3 * tier_peak_trough_product() *
+    ///   tier_peak_trough_sum() == tier_peak_trough_sum().pow(3)` always
+    ///   — the Newton-identity read-off on the `(sum, product)` surface
+    ///   (`p_3 = e_1³ - 3·e_1·e_2`).
+    /// - `tier_peak_trough_sum_of_cubes() == tier_peak_trough_sum() *
+    ///   (tier_peak_trough_sum_of_squares() - tier_peak_trough_product())`
+    ///   — the sum-of-cubes factorization on the `(sum, sos, product)`
+    ///   surface (`p³ + t³ = (p + t)(p² - pt + t²)`; the subtraction is
+    ///   non-negative by the AM-QM bound `sos >= 2*product >= product`).
+    /// - `tier_peak_trough_sum_of_cubes() == tier_peak_trough_sum() *
+    ///   (tier_spread().pow(2) + tier_peak_trough_product())` — the
+    ///   `(sum, spread, product)` surface identity
+    ///   `p³ + t³ = (p + t)((p - t)² + pt)`.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<ConfigTierKind>()` (the peak +
+    /// trough fused scan through
+    /// [`crate::AxisHistogram::peak_trough_sum_of_cubes`]). Both are
+    /// `O(n)` in practice since the tier axis carries a fixed four-cell
+    /// cardinality; the returned `usize` reads one scalar. Halves the
+    /// cost of the previous inline `map.peak_tier_count().pow(3) +
+    /// map.trough_tier_count().pow(3)` idiom (which walked the counts
+    /// vector twice — once for the max, once for the min-over-support),
+    /// where [`crate::AxisHistogram::peak_trough_sum_of_cubes`] routes
+    /// both through a single scalar read.
+    #[must_use]
+    pub fn tier_peak_trough_sum_of_cubes(&self) -> usize {
+        self.tier_histogram().peak_trough_sum_of_cubes()
+    }
+
     /// The **modal-multiplicity of tier counts** — the number of
     /// [`ConfigTierKind`] cells that hold the peak leaf count on this
     /// resolved fold. Equal to `1` on every strictly-modally-unique fold
@@ -32027,6 +32213,506 @@ mod progressive_tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak * peak + trough * trough);
+        }
+    }
+
+    // ── ProvenanceMap::tier_peak_trough_sum_of_cubes — joint-extremes-
+    //    cube-magnitude peer on the tier altitude, sum-of-cubes / power-
+    //    sum p_3 sibling of `tier_spread`, `tier_peak_trough_sum`,
+    //    `tier_peak_trough_product`, and `tier_peak_trough_sum_of_squares`,
+    //    climbing the "peak³ + trough³ sums-of-cubes across altitudes"
+    //    projection from the diff altitude to the tier altitude ──
+
+    #[test]
+    fn tier_peak_trough_sum_of_cubes_matches_tier_histogram_peak_trough_sum_of_cubes_pointwise() {
+        // Routing pin: `tier_peak_trough_sum_of_cubes` routes through
+        // `tier_histogram().peak_trough_sum_of_cubes()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Tier-
+        // altitude climb of the "peak³ + trough³ sums-of-cubes across
+        // altitudes" projection, peer of
+        // `kind_peak_trough_sum_of_cubes_matches_kind_histogram_peak_trough_sum_of_cubes_pointwise`
+        // one altitude down.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().peak_trough_sum_of_cubes();
+            assert_eq!(map.tier_peak_trough_sum_of_cubes(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_cubes_equals_peak_cubed_plus_trough_cubed_pointwise() {
+        // Fused-pair pin: `tier_peak_trough_sum_of_cubes ==
+        // peak_tier_count³ + trough_tier_count³` on every fixture — the
+        // defining equivalence on the underlying scalar pair. The
+        // cubings-plus-addition is overflow-safe on any resolved fold
+        // whose leaf-key vector fits in `usize`: both cubes are bounded
+        // above by `self.len().pow(3)`. Peer of
+        // `kind_peak_trough_sum_of_cubes_equals_peak_cubed_plus_trough_cubed_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let peak = map.peak_tier_count();
+            let trough = map.trough_tier_count();
+            assert_eq!(
+                map.tier_peak_trough_sum_of_cubes(),
+                peak * peak * peak + trough * trough * trough,
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_cubes_prog_fixture_is_nine() {
+        // Prog attributes 4 leaves: a→Discovered, b→Default, c→Bare,
+        // d→Default. Counts: Bare=1, Discovered=1, Default=2, Custom=0.
+        // Peak lands on Default at 2; trough over support {Bare,
+        // Discovered, Default} lands at 1. Sum-of-cubes = 2³ + 1³ = 9.
+        // Direct pin — the paired `(peak_tier_count, trough_tier_count,
+        // tier_spread, tier_peak_trough_sum, tier_peak_trough_product,
+        // tier_peak_trough_sum_of_squares, tier_peak_trough_sum_of_cubes)`
+        // septuple reads `(2, 1, 1, 3, 2, 5, 9)`. Sum-of-cubes peer of
+        // `tier_peak_trough_sum_of_squares_prog_fixture_is_five`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().peak_tier_count(), 2);
+        assert_eq!(r.provenance().trough_tier_count(), 1);
+        assert_eq!(r.provenance().tier_spread(), 1);
+        assert_eq!(r.provenance().tier_peak_trough_sum(), 3);
+        assert_eq!(r.provenance().tier_peak_trough_product(), 2);
+        assert_eq!(r.provenance().tier_peak_trough_sum_of_squares(), 5);
+        assert_eq!(r.provenance().tier_peak_trough_sum_of_cubes(), 9);
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_cubes_nested_fixture_is_nine() {
+        // Nested attributes 3 leaves: win.w→Discovered, win.h→Default,
+        // theme→Default. Counts: Bare=0, Discovered=1, Default=2,
+        // Custom=0. Peak lands on Default at 2; trough over support
+        // {Discovered, Default} lands at 1. Sum-of-cubes = 2³ + 1³ = 9.
+        // Direct pin — the joint scalar reads through the seam whether
+        // the fixture is flat or nested. Sum-of-cubes peer of
+        // `tier_peak_trough_sum_of_squares_nested_fixture_is_five`.
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.provenance().peak_tier_count(), 2);
+        assert_eq!(r.provenance().trough_tier_count(), 1);
+        assert_eq!(r.provenance().tier_spread(), 1);
+        assert_eq!(r.provenance().tier_peak_trough_sum(), 3);
+        assert_eq!(r.provenance().tier_peak_trough_product(), 2);
+        assert_eq!(r.provenance().tier_peak_trough_sum_of_squares(), 5);
+        assert_eq!(r.provenance().tier_peak_trough_sum_of_cubes(), 9);
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_cubes_empty_map_is_zero() {
+        // An empty ProvenanceMap has no leaves and therefore zero joint
+        // cube magnitude — reads `0` per the
+        // AxisHistogram::peak_trough_sum_of_cubes empty convention one
+        // altitude down; the `(peak_tier_count, trough_tier_count,
+        // tier_spread, tier_peak_trough_sum, tier_peak_trough_product,
+        // tier_peak_trough_sum_of_squares,
+        // tier_peak_trough_sum_of_cubes)` septuple reads
+        // `(0, 0, 0, 0, 0, 0, 0)` uniformly on the empty map. Peer of
+        // `tier_peak_trough_sum_of_squares_empty_map_is_zero` on the
+        // sum-of-cubes side.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.peak_tier_count(), 0);
+        assert_eq!(empty.trough_tier_count(), 0);
+        assert_eq!(empty.tier_spread(), 0);
+        assert_eq!(empty.tier_peak_trough_sum(), 0);
+        assert_eq!(empty.tier_peak_trough_product(), 0);
+        assert_eq!(empty.tier_peak_trough_sum_of_squares(), 0);
+        assert_eq!(empty.tier_peak_trough_sum_of_cubes(), 0);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_cubes_singleton_support_is_twice_len_cubed() {
+        // Singleton-support pin: every leaf lands on the same tier, so
+        // that one tier is both peak and trough of the observed support,
+        // and the joint sum-of-cubes is `self.len()³ + self.len()³ ==
+        // 2 * self.len()³`. Tier-altitude peer of the trait-uniform
+        // `peak_trough_sum_of_cubes == 2 * total³` behavior on
+        // AxisHistogram's singleton-support boundary — and of
+        // `kind_peak_trough_sum_of_cubes_singleton_support_is_twice_line_count_cubed`
+        // one altitude down.
+        let m: ProvenanceMap = ["a", "b", "c"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 1);
+        assert_eq!(m.peak_tier_count(), 3);
+        assert_eq!(m.trough_tier_count(), 3);
+        assert_eq!(m.tier_peak_trough_sum_of_cubes(), 54);
+        assert_eq!(
+            m.tier_peak_trough_sum_of_cubes(),
+            2 * m.len() * m.len() * m.len()
+        );
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_cubes_uniform_cover_is_twice_shared_count_cubed() {
+        // Uniform-cover pin: every observed tier contributes the same
+        // nonzero count (one leaf each here across all four tiers), so
+        // peak == trough == 1 and the joint sum-of-cubes is
+        // `2 * shared_count³ == 2`. On the uniform-cover shape,
+        // `tier_peak_trough_sum_of_cubes == 2 * peak_tier_count³`
+        // (equality boundary of the `tier_peak_trough_sum_of_cubes <=
+        // 2 * peak_tier_count³` invariant, witnessed by
+        // `tiers_uniform_count() == true`). Peer of
+        // `tier_peak_trough_sum_of_squares_uniform_cover_is_twice_shared_count_squared`
+        // on the sum-of-cubes side.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(m.tier_histogram().is_full_cover());
+        assert!(m.tiers_uniform_count());
+        assert_eq!(m.peak_tier_count(), 1);
+        assert_eq!(m.trough_tier_count(), 1);
+        assert_eq!(m.tier_peak_trough_sum_of_cubes(), 2);
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_cubes_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence pin: `tier_peak_trough_sum_of_cubes()
+        // == 0` iff the map is empty. Both endpoints are structurally
+        // `>= 1` on every non-empty map, and cubing cannot introduce a
+        // zero from non-zero operands, so the sum-of-cubes is zero
+        // exactly on the empty map. Contrapositively, every non-empty
+        // map has `tier_peak_trough_sum_of_cubes >= 2`. Empty-boundary
+        // peer to the two-endpoint surface. Tier-altitude peer of
+        // `kind_peak_trough_sum_of_cubes_zero_iff_empty_pointwise` at
+        // the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let soc_zero = map.tier_peak_trough_sum_of_cubes() == 0;
+            let is_empty = map.is_empty();
+            assert_eq!(
+                soc_zero,
+                is_empty,
+                "tier_peak_trough_sum_of_cubes == 0 must agree with \
+                 is_empty() for map with peak={p}, trough={t}, soc={soc}",
+                p = map.peak_tier_count(),
+                t = map.trough_tier_count(),
+                soc = map.tier_peak_trough_sum_of_cubes(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_cubes_non_empty_bounded_below_by_two() {
+        // Non-empty floor pin: every non-empty map has
+        // `tier_peak_trough_sum_of_cubes >= 2` — the joint cube
+        // magnitude has a structural non-empty floor of `2` because
+        // both cubed endpoints are structurally `>= 1` on every non-
+        // empty map (by `peak_tier_count >= 1` and `trough_tier_count
+        // >= 1` on the non-empty case), and their sum-of-cubes is at
+        // least `1 + 1 == 2`. Peer of
+        // `kind_peak_trough_sum_of_cubes_non_empty_bounded_below_by_two`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+        ] {
+            assert!(
+                map.tier_peak_trough_sum_of_cubes() >= 2,
+                "tier_peak_trough_sum_of_cubes ({soc}) must be >= 2 on \
+                 non-empty map (peak={p}, trough={t})",
+                soc = map.tier_peak_trough_sum_of_cubes(),
+                p = map.peak_tier_count(),
+                t = map.trough_tier_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_cubes_am_cube_bounded_below_by_quarter_sum_cubed() {
+        // AM-cube bound: `4 * tier_peak_trough_sum_of_cubes >=
+        // tier_peak_trough_sum³` on every fixture — the power-mean
+        // inequality `p³ + t³ >= (p + t)³ / 4`, from `pt <=
+        // ((p + t) / 2)²` applied to `(p + t)³ = p³ + t³ + 3pt(p + t)`.
+        // Equality holds iff `tiers_uniform_count() == true` (peak
+        // equals trough), the balanced-distribution corner. Peer to the
+        // AM-QM bound `sos >= 2*product` on `p_2` and the AM-GM bound
+        // `4*product <= sum²` on the elementary-symmetric pair. Peer of
+        // `kind_peak_trough_sum_of_cubes_am_cube_bounded_below_by_quarter_sum_cubed`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let soc = map.tier_peak_trough_sum_of_cubes();
+            let sum = map.tier_peak_trough_sum();
+            let sum_cubed = sum * sum * sum;
+            let four_soc = 4 * soc;
+            assert!(
+                four_soc >= sum_cubed,
+                "4 * tier_peak_trough_sum_of_cubes ({four_soc}) must be \
+                 >= tier_peak_trough_sum³ ({sum_cubed})",
+            );
+            let equality = four_soc == sum_cubed;
+            let uniform = map.tiers_uniform_count();
+            assert_eq!(
+                equality,
+                uniform,
+                "4 * tier_peak_trough_sum_of_cubes == sum³ must agree \
+                 with tiers_uniform_count for map with peak={p}, \
+                 trough={t}, sum={sum}, soc={soc}",
+                p = map.peak_tier_count(),
+                t = map.trough_tier_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_cubes_bounded_above_by_sum_cubed() {
+        // Structural bound: `tier_peak_trough_sum_of_cubes() <=
+        // tier_peak_trough_sum().pow(3)` on every fixture — `p³ + t³
+        // <= (p + t)³` reduces to `3 * product * sum >= 0`, always
+        // true. Equality holds iff `self.is_empty()` — the sole shape
+        // where `tier_peak_trough_product == 0`, since both endpoints
+        // are `>= 1` on every non-empty map. Peer of
+        // `kind_peak_trough_sum_of_cubes_bounded_above_by_sum_cubed`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let soc = map.tier_peak_trough_sum_of_cubes();
+            let sum = map.tier_peak_trough_sum();
+            let sum_cubed = sum * sum * sum;
+            assert!(
+                soc <= sum_cubed,
+                "tier_peak_trough_sum_of_cubes ({soc}) must be <= sum³ ({sum_cubed})",
+            );
+            let equality = soc == sum_cubed;
+            let is_empty = map.is_empty();
+            assert_eq!(
+                equality,
+                is_empty,
+                "tier_peak_trough_sum_of_cubes == sum³ must agree with \
+                 is_empty() for map with peak={p}, trough={t}, sum={sum}, soc={soc}",
+                p = map.peak_tier_count(),
+                t = map.trough_tier_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_cubes_bounded_above_by_twice_peak_cubed() {
+        // Structural bound: `tier_peak_trough_sum_of_cubes() <=
+        // 2 * peak_tier_count()³` on every fixture — `p³ + t³ <= 2p³`
+        // reduces to `trough <= peak` (both non-negative), the
+        // structural `trough_tier_count <= peak_tier_count` invariant.
+        // Equality holds iff `tiers_uniform_count() == true` (peak
+        // equals trough). Peer of
+        // `kind_peak_trough_sum_of_cubes_bounded_above_by_twice_peak_cubed`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let soc = map.tier_peak_trough_sum_of_cubes();
+            let peak = map.peak_tier_count();
+            let twice_peak_cubed = 2 * peak * peak * peak;
+            assert!(
+                soc <= twice_peak_cubed,
+                "tier_peak_trough_sum_of_cubes ({soc}) must be <= \
+                 2 * peak³ ({twice_peak_cubed})",
+            );
+            let equality = soc == twice_peak_cubed;
+            let uniform = map.tiers_uniform_count();
+            assert_eq!(
+                equality,
+                uniform,
+                "tier_peak_trough_sum_of_cubes == 2 * peak³ must agree \
+                 with tiers_uniform_count for map with peak={peak}, \
+                 trough={t}, soc={soc}",
+                t = map.trough_tier_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_cubes_bounded_above_by_twice_len_cubed() {
+        // Composition bound: `tier_peak_trough_sum_of_cubes() <=
+        // 2 * self.len()³` on every fixture — chaining
+        // `soc <= 2 * peak³` (previous pin) with `peak <= self.len()`.
+        // The joint cube magnitude of a resolved fold is bounded above
+        // by twice the cube of the total leaf count of the fold. Peer of
+        // `kind_peak_trough_sum_of_cubes_bounded_above_by_twice_lines_len_cubed`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let soc = map.tier_peak_trough_sum_of_cubes();
+            let n = map.len();
+            let twice_n_cubed = 2 * n * n * n;
+            assert!(
+                soc <= twice_n_cubed,
+                "tier_peak_trough_sum_of_cubes ({soc}) must not exceed \
+                 2 * self.len()³ ({twice_n_cubed})",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_cubes_newton_identity_with_sum_and_product_pointwise() {
+        // Newton-identity read-off on the (sum, product) surface:
+        // `tier_peak_trough_sum_of_cubes + 3 * tier_peak_trough_product
+        // * tier_peak_trough_sum == tier_peak_trough_sum³` on every
+        // fixture — the identity `p³ + t³ + 3pt(p + t) = (p + t)³`
+        // specialization of Newton's `p_3 = e_1³ - 3·e_1·e_2`. Reads
+        // sum-of-cubes off the `(sum, product)` surface with no
+        // histogram re-walk. Peer of
+        // `kind_peak_trough_sum_of_cubes_newton_identity_with_sum_and_product_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let soc = map.tier_peak_trough_sum_of_cubes();
+            let product = map.tier_peak_trough_product();
+            let sum = map.tier_peak_trough_sum();
+            assert_eq!(soc + 3 * product * sum, sum * sum * sum);
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_cubes_factorization_with_sum_sos_and_product_pointwise() {
+        // Sum-of-cubes factorization on the (sum, sos, product)
+        // surface: `tier_peak_trough_sum_of_cubes ==
+        // tier_peak_trough_sum * (tier_peak_trough_sum_of_squares -
+        // tier_peak_trough_product)` on every fixture — the identity
+        // `p³ + t³ = (p + t)(p² - pt + t²)`. The subtraction
+        // `sos - product` is non-negative by the AM-QM bound
+        // `sos >= 2*product >= product` on the closed endpoint pair
+        // (with equality iff product == 0, i.e. iff `self.is_empty()`).
+        // Peer of
+        // `kind_peak_trough_sum_of_cubes_factorization_with_sum_sos_and_product_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let soc = map.tier_peak_trough_sum_of_cubes();
+            let sos = map.tier_peak_trough_sum_of_squares();
+            let product = map.tier_peak_trough_product();
+            let sum = map.tier_peak_trough_sum();
+            assert!(
+                product <= sos,
+                "sos - product must be non-negative: product ({product}) <= sos ({sos})",
+            );
+            assert_eq!(soc, sum * (sos - product));
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_cubes_factorization_with_sum_spread_and_product_pointwise() {
+        // Sum-of-cubes factorization on the (sum, spread, product)
+        // surface: `tier_peak_trough_sum_of_cubes == tier_peak_trough_sum
+        // * (tier_spread² + tier_peak_trough_product)` on every fixture
+        // — the identity `p³ + t³ = (p + t)((p - t)² + pt)`. Third
+        // orthogonal read-off surface, complementing the (sum, product)
+        // Newton-identity and the (sum, sos, product) factorization
+        // above. Peer of
+        // `kind_peak_trough_sum_of_cubes_factorization_with_sum_spread_and_product_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let soc = map.tier_peak_trough_sum_of_cubes();
+            let sum = map.tier_peak_trough_sum();
+            let spread = map.tier_spread();
+            let product = map.tier_peak_trough_product();
+            assert_eq!(soc, sum * (spread * spread + product));
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_cubes_strictly_ordered_four_tier_fixture_is_sixty_five() {
+        // Direct pin at a strictly-ordered four-tier fold with counts
+        // Bare=1, Discovered=2, Default=3, Custom=4 (four distinct
+        // positive counts, one strict advance over the diff altitude's
+        // three-cell case). Peak lands on Custom at 4; trough over full
+        // support lands at 1. Sum-of-cubes = 4³ + 1³ = 65, sum = 5,
+        // spread = 3, product = 4, sos = 17. Verifies the (sum, sos,
+        // product) factorization in-place: soc = 5 * (17 - 4) = 65.
+        // Sum-of-cubes peer of
+        // `tier_peak_trough_sum_of_squares_strictly_ordered_four_tier_fixture_is_seventeen`
+        // on the same fixture.
+        let m: ProvenanceMap = [
+            (vec!["b1".to_owned()], ConfigTierKind::Bare),
+            (vec!["dv1".to_owned()], ConfigTierKind::Discovered),
+            (vec!["dv2".to_owned()], ConfigTierKind::Discovered),
+            (vec!["df1".to_owned()], ConfigTierKind::Default),
+            (vec!["df2".to_owned()], ConfigTierKind::Default),
+            (vec!["df3".to_owned()], ConfigTierKind::Default),
+            (vec!["c1".to_owned()], ConfigTierKind::Custom),
+            (vec!["c2".to_owned()], ConfigTierKind::Custom),
+            (vec!["c3".to_owned()], ConfigTierKind::Custom),
+            (vec!["c4".to_owned()], ConfigTierKind::Custom),
+        ]
+        .into_iter()
+        .map(|(k, t)| (k, Provenance::computed(t)))
+        .collect();
+        assert_eq!(m.peak_tier_count(), 4);
+        assert_eq!(m.trough_tier_count(), 1);
+        assert_eq!(m.tier_spread(), 3);
+        assert_eq!(m.tier_peak_trough_sum(), 5);
+        assert_eq!(m.tier_peak_trough_product(), 4);
+        assert_eq!(m.tier_peak_trough_sum_of_squares(), 17);
+        assert_eq!(m.tier_peak_trough_sum_of_cubes(), 65);
+        let soc = m.tier_peak_trough_sum_of_cubes();
+        let sum = m.tier_peak_trough_sum();
+        let sos = m.tier_peak_trough_sum_of_squares();
+        let product = m.tier_peak_trough_product();
+        assert_eq!(soc, sum * (sos - product));
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_cubes_agrees_with_open_coded_max_cubed_plus_min_cubed_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0).pow(3) + hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0).pow(3)` walk this lift
+        // replaces — both the named seam and the hand-rolled joint
+        // cube magnitude must pointwise agree over every fixture. The
+        // `.filter(c > 0)` on the min side is essential (mirroring
+        // `trough_count`'s support discipline); the `.max()` on the
+        // peak side operates over the full axis (mirroring
+        // `peak_count`). Sum-of-cubes peer of
+        // `tier_peak_trough_sum_of_squares_agrees_with_open_coded_max_sq_plus_min_sq_walk`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tier_peak_trough_sum_of_cubes();
+            let hist = map.tier_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .filter(|&(_, c)| c > 0)
+                .map(|(_, c)| c)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(via_seam, peak * peak * peak + trough * trough * trough);
         }
     }
 
