@@ -5752,6 +5752,190 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         peak * peak + trough * trough
     }
 
+    /// The **observed-distribution peak-trough sum-of-cubes** — the sum
+    /// of the cubes of the maximum and minimum observation counts over
+    /// the histogram's observed support. Equal to
+    /// `self.peak_count().pow(3) + self.trough_count().pow(3)` by
+    /// construction; named at the trait level so consumers reading off
+    /// the joint extreme-count `p_3` power-sum / *cube-magnitude*
+    /// projection route through one scalar rather than re-deriving the
+    /// (peak, trough) sum-of-cubes at every diagnostic / dashboard /
+    /// attestation site.
+    ///
+    /// The natural typed primitive for the *joint-extremes-cube-
+    /// magnitude* question every operator-facing summary asks of an
+    /// observation window: *"how large are the two extreme buckets in
+    /// sum-of-cubes?"* — the *cubic power-sum* `p_3 = p³ + t³` sibling
+    /// of the shipped subtraction-form [`Self::spread`] (`p - t`),
+    /// addition-form [`Self::peak_trough_sum`] (`p + t`),
+    /// multiplication-form [`Self::peak_trough_product`] (`pt`), and
+    /// quadratic-power-sum [`Self::peak_trough_sum_of_squares`]
+    /// (`p² + t²`) scalars on the same closed-endpoint pair. Extends
+    /// the closed symmetric-polynomial / power-sum surface from
+    /// `p_2 = p² + t²` to `p_3 = p³ + t³` through Newton's two-
+    /// variable identity `p_3 = e_1 * p_2 - e_2 * p_1` (specialized to
+    /// `sum · sum_of_squares - product · sum`, equivalently
+    /// `sum · (sum_of_squares - product)`).
+    ///
+    /// **Three orthogonal Newton-identity read-off surfaces.** The
+    /// pair `(peak_trough_sum, peak_trough_product)` reads the
+    /// elementary-symmetric-polynomial surface `(e_1, e_2) = (p + t,
+    /// pt)`; the new power-sum `peak_trough_sum_of_cubes` composes
+    /// with it through three specializations of Newton's identity
+    /// `p_3 = e_1 * p_2 - e_2 * p_1`, each reading `sum_of_cubes` off
+    /// one of three orthogonal scalar surfaces:
+    ///
+    /// - `peak_trough_sum_of_cubes() ==
+    ///   peak_trough_sum().pow(3) - 3 * peak_trough_product() * peak_trough_sum()`
+    ///   — the identity `p³ + t³ = (p + t)³ - 3pt(p + t)` reads
+    ///   sum-of-cubes off the `(sum, product)` surface.
+    /// - `peak_trough_sum_of_cubes() ==
+    ///   peak_trough_sum() * (peak_trough_sum_of_squares() - peak_trough_product())`
+    ///   — the factorization `p³ + t³ = (p + t)(p² - pt + t²)` reads
+    ///   sum-of-cubes off the `(sum, sum_of_squares, product)`
+    ///   surface.
+    /// - `peak_trough_sum_of_cubes() ==
+    ///   peak_trough_sum() * (spread().pow(2) + peak_trough_product())`
+    ///   — the identity `p³ + t³ = (p + t)((p - t)² + pt)` reads
+    ///   sum-of-cubes off the `(sum, spread, product)` surface.
+    ///
+    /// Before this seed, every consumer asking *"what is the cubic
+    /// power-sum of the two extreme buckets of this observation
+    /// window?"* re-derived the projection inline as
+    /// `hist.peak_count().pow(3) + hist.trough_count().pow(3)` — two
+    /// method calls, two cubings, and an addition at every site, with
+    /// silent re-derivation of both endpoints and no named surface for
+    /// the joint scalar the [`Self::spread`], [`Self::peak_trough_sum`],
+    /// [`Self::peak_trough_product`], and
+    /// [`Self::peak_trough_sum_of_squares`] siblings already read off
+    /// in subtraction, addition, multiplication, and quadratic-power-
+    /// sum form.
+    ///
+    /// **Overflow-safe by construction on realistic sizes.** The
+    /// expression `peak_count().pow(3) + trough_count().pow(3)` cannot
+    /// overflow on any histogram whose total count is below
+    /// `∛(usize::MAX / 2)` (~2.09e6 on 64-bit targets): both cubes are
+    /// bounded above by `total().pow(3)`, so the sum is bounded above
+    /// by `2 * total().pow(3)`. Cannot overflow on realistic
+    /// configuration histograms (chain source counts, diff line
+    /// counts, error classes over a reload window).
+    ///
+    /// **Empty-histogram convention** — returns `0`, matching the
+    /// [`Self::total`], [`Self::distinct_cells`], [`Self::peak_count`],
+    /// [`Self::trough_count`], [`Self::spread`],
+    /// [`Self::peak_trough_sum`], [`Self::peak_trough_product`], and
+    /// [`Self::peak_trough_sum_of_squares`] empty conventions. The
+    /// scalar peer nonuple
+    /// `(total, distinct_cells, peak_count, trough_count, spread,
+    /// peak_trough_sum, peak_trough_product, peak_trough_sum_of_squares,
+    /// peak_trough_sum_of_cubes)` is therefore uniformly
+    /// `(0, 0, 0, 0, 0, 0, 0, 0, 0)` on the empty histogram.
+    ///
+    /// **AM-cube / power-mean bound.** `4 * peak_trough_sum_of_cubes() >=
+    /// peak_trough_sum().pow(3)` always (equivalently
+    /// `p³ + t³ >= (p + t)³ / 4`, from `pt <= ((p + t) / 2)² =
+    /// (p + t)² / 4` applied to Newton's identity
+    /// `(p + t)³ = p³ + t³ + 3pt(p + t)`). Equality holds iff
+    /// [`Self::is_uniform_count`] is `true` — the two endpoints
+    /// coincide, so the sum-cubed collapses onto four times the
+    /// sum-of-cubes. Peer to the AM-QM bound
+    /// `peak_trough_sum_of_squares() >= 2 * peak_trough_product()` on
+    /// `p_2`, and to the AM-GM bound
+    /// `4 * peak_trough_product() <= peak_trough_sum().pow(2)` on the
+    /// elementary-symmetric pair — all three inequalities collapse to
+    /// the same `(p - t)² >= 0` witness on the closed endpoint pair.
+    ///
+    /// **Companion invariants** with [`Self::total`],
+    /// [`Self::distinct_cells`], [`Self::peak_count`],
+    /// [`Self::trough_count`], [`Self::spread`],
+    /// [`Self::peak_trough_sum`], [`Self::peak_trough_product`], and
+    /// [`Self::peak_trough_sum_of_squares`]:
+    /// - `peak_trough_sum_of_cubes() == peak_count().pow(3) +
+    ///   trough_count().pow(3)` always (the defining equivalence on
+    ///   the underlying scalar pair).
+    /// - `peak_trough_sum_of_cubes() == 0` ⇔ [`Self::is_empty`] is
+    ///   `true` (empty-boundary peer to the scalar nonuple: both
+    ///   endpoints are zero only on the empty histogram, and their
+    ///   sum-of-cubes is zero exactly then). Contrapositively, a
+    ///   non-empty histogram has `peak_trough_sum_of_cubes() >= 2` —
+    ///   both endpoints are at least `1` by [`Self::peak_count`]'s
+    ///   and [`Self::trough_count`]'s non-emptiness floors, so their
+    ///   sum-of-cubes is at least `1 + 1 = 2`.
+    /// - `peak_trough_sum_of_cubes() <= 2 * peak_count().pow(3)`
+    ///   always (⇔ `trough_count() <= peak_count()`, the structural
+    ///   invariant). Equality holds iff [`Self::is_uniform_count`] is
+    ///   `true`.
+    /// - `peak_trough_sum_of_cubes() <= 2 * total().pow(3)` always
+    ///   (both cubed endpoints are bounded above by `total³`).
+    /// - `peak_trough_sum_of_cubes() <= peak_trough_sum().pow(3)`
+    ///   always (⇔ `3 * peak_trough_product() * peak_trough_sum() >=
+    ///   0`, always true; equality iff [`Self::is_empty`] — the sole
+    ///   shape where `peak_trough_product == 0`, since both endpoints
+    ///   are `>= 1` on any non-empty histogram).
+    /// - `4 * peak_trough_sum_of_cubes() >= peak_trough_sum().pow(3)`
+    ///   always (the AM-cube / power-mean bound; equality iff
+    ///   [`Self::is_uniform_count`] is `true`).
+    /// - `peak_trough_sum_of_cubes() + 3 * peak_trough_product() *
+    ///   peak_trough_sum() == peak_trough_sum().pow(3)` always — the
+    ///   Newton-identity endpoint-recovery on the `(sum, product)`
+    ///   surface (non-negative both sides).
+    /// - `peak_trough_sum_of_cubes() == peak_trough_sum() *
+    ///   (peak_trough_sum_of_squares() - peak_trough_product())`
+    ///   always — the sum-of-cubes factorization on the
+    ///   `(sum, sum_of_squares, product)` surface (non-negative
+    ///   subtraction by the AM-QM bound
+    ///   `sum_of_squares >= 2 * product >= product`).
+    /// - `peak_trough_sum_of_cubes() == peak_trough_sum() *
+    ///   (spread().pow(2) + peak_trough_product())` always — the
+    ///   `(sum, spread, product)` surface read-off.
+    /// - The merge behavior is *non-monotonic* (peer to
+    ///   [`Self::trough_count`], [`Self::spread`],
+    ///   [`Self::peak_trough_sum`], [`Self::peak_trough_product`],
+    ///   and [`Self::peak_trough_sum_of_squares`]): merging two
+    ///   histograms can either grow the sum-of-cubes (when supports
+    ///   overlap and both endpoints grow) or shrink it (when the
+    ///   other side introduces a fresh low-count cell that pulls the
+    ///   merged trough³ below the self trough³ by more than the
+    ///   peak³ grows). The empty-identity law still holds:
+    ///   `merge(self, empty).peak_trough_sum_of_cubes() ==
+    ///   self.peak_trough_sum_of_cubes()`.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]. The three
+    /// trait-uniform laws pinned in [`tests`] hold across the
+    /// implementor set
+    /// (`axis_histogram_peak_trough_sum_of_cubes_empty_is_zero_*`,
+    /// `axis_histogram_peak_trough_sum_of_cubes_singleton_is_two_*`,
+    /// `axis_histogram_peak_trough_sum_of_cubes_axis_cover_is_two_*`).
+    ///
+    /// Peer to [`Self::total`] (the *sum* over every cell),
+    /// [`Self::distinct_cells`] (the *support cardinality*),
+    /// [`Self::peak_count`] (the *modal* count scalar),
+    /// [`Self::trough_count`] (the *rarest-observed* count scalar),
+    /// [`Self::spread`] (the *difference* of the two endpoints),
+    /// [`Self::peak_trough_sum`] (the *sum* of the two endpoints),
+    /// [`Self::peak_trough_product`] (the *product* of the two
+    /// endpoints), and [`Self::peak_trough_sum_of_squares`] (the
+    /// *sum-of-squares* / `p_2` power-sum of the two endpoints): the
+    /// scalar surface of the histogram now carries the natural nonuple
+    /// `(how many observations, how many kinds, how many on the peak,
+    /// how many on the trough, how much spread, how much peak-trough
+    /// sum, how much peak-trough product, how much peak-trough
+    /// sum-of-squares, how much peak-trough sum-of-cubes)` projections
+    /// — every operator-facing summary reads off one method call
+    /// each, and the elementary-symmetric-polynomial pair
+    /// `(sum, product)` composes with the two power-sums
+    /// `sum_of_squares` (`p_2`) and `sum_of_cubes` (`p_3`) through
+    /// Newton's two-variable identities `p_2 = e_1² - 2·e_2` and
+    /// `p_3 = e_1³ - 3·e_1·e_2` with no histogram re-walk.
+    #[must_use]
+    pub fn peak_trough_sum_of_cubes(&self) -> usize {
+        let peak = self.peak_count();
+        let trough = self.trough_count();
+        peak * peak * peak + trough * trough * trough
+    }
+
     /// `true` exactly when every observed cell of the closed axis carries
     /// the same observation count — the **uniformly-observed-count
     /// predicate** on the histogram surface. The typed peer of
@@ -32200,6 +32384,387 @@ mod tests {
         assert_eq!(
             with_empty.peak_trough_sum_of_squares(),
             added_two_removed_one.peak_trough_sum_of_squares(),
+        );
+    }
+
+    // ---- AxisHistogram::peak_trough_sum_of_cubes trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // `peak_trough_sum_of_cubes` projection's contract holds uniformly
+    // without per-axis test duplication: empty → 0 (both endpoints
+    // zero on the empty histogram); singleton → 2 on every cell K
+    // (one observed cell with count 1, peak = trough = 1,
+    // sum-of-cubes = 1³ + 1³ = 2); uniform axis-cover → 2 (every
+    // cell at one, peak = trough = 1, sum-of-cubes = 1³ + 1³ = 2).
+    // Concrete defining-equivalence, empty-boundary, structural-
+    // bounds, three-surface Newton-identity, and merge non-
+    // monotonicity pins follow below on [`DiffLineKind`].
+
+    fn assert_peak_trough_sum_of_cubes_empty_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.peak_trough_sum_of_cubes(),
+            0,
+            "empty histogram peak_trough_sum_of_cubes must be 0 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_peak_trough_sum_of_cubes_singleton_is_two<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has peak = trough = 1, so
+        // peak_trough_sum_of_cubes = 1³ + 1³ = 2 — the singleton-
+        // support case is trivially balanced at the p_3 power-sum of
+        // the endpoint pair.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.peak_trough_sum_of_cubes(),
+                2,
+                "singleton peak_trough_sum_of_cubes must be 2 for observed cell {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_peak_trough_sum_of_cubes_axis_cover_is_two<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once produces a uniform
+        // histogram (every cell at 1, peak = trough = 1, sum-of-
+        // cubes = 1³ + 1³ = 2) — the "every observed kind fired the
+        // same number of times" boundary at the maximum-coverage
+        // shape.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            hist.peak_trough_sum_of_cubes(),
+            2,
+            "axis-cover histogram peak_trough_sum_of_cubes must be 2 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_cubes_empty_is_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_trough_sum_of_cubes_empty_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_cubes_singleton_is_two_for_every_closed_axis_implementor()
+    {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_trough_sum_of_cubes_singleton_is_two::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_cubes_axis_cover_is_two_for_every_closed_axis_implementor()
+    {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_trough_sum_of_cubes_axis_cover_is_two::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_cubes_equals_peak_cubed_plus_trough_cubed() {
+        // The seed's defining equivalence: peak_trough_sum_of_cubes
+        // reads the same scalar as the open-coded
+        // `peak_count³ + trough_count³` sum every consumer re-derived
+        // inline. Pinned pointwise across the canonical observation-
+        // mix shapes (empty, singleton, uniform-tied, strict-skew,
+        // heavy-tail) so a future regression in either side surfaces
+        // here.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let peak = hist.peak_count();
+            let trough = hist.trough_count();
+            assert_eq!(
+                hist.peak_trough_sum_of_cubes(),
+                peak * peak * peak + trough * trough * trough,
+                "peak_trough_sum_of_cubes must equal peak_count³ + trough_count³ on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_cubes_zero_iff_empty() {
+        // The empty-boundary equivalence: peak_trough_sum_of_cubes
+        // == 0 iff the histogram is empty. Both endpoints are
+        // structurally >= 1 on any non-empty histogram, so their
+        // sum-of-cubes is >= 2 exactly when non-empty and == 0
+        // exactly when empty.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert_eq!(empty.peak_trough_sum_of_cubes(), 0);
+        assert!(empty.is_empty());
+
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert!(singleton.peak_trough_sum_of_cubes() >= 2);
+        assert!(!singleton.is_empty());
+
+        let axis_cover: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        assert!(axis_cover.peak_trough_sum_of_cubes() >= 2);
+        assert!(!axis_cover.is_empty());
+
+        let skewed: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert!(skewed.peak_trough_sum_of_cubes() >= 2);
+        assert!(!skewed.is_empty());
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_cubes_bounds() {
+        // Structural-bound pins:
+        //   - soc <= sum³           (⇔ 3 * product * sum >= 0, always;
+        //                              equality iff is_empty),
+        //   - 4 * soc >= sum³       (AM-cube; equality iff is_uniform_count),
+        //   - soc <= 2 * peak³      (⇔ trough <= peak; equality iff is_uniform_count),
+        //   - soc <= 2 * total³     (composition of both cubed
+        //                             endpoints <= total³).
+        // Pinned at four shapes (empty, singleton, uniform axis-
+        // cover, strict-skew) so each bound gets a tight witness.
+        let inputs: [(&[DiffLineKind], bool, bool); 4] = [
+            (&[], true, true),
+            (&[DiffLineKind::Added], true, false),
+            (
+                &[
+                    DiffLineKind::Added,
+                    DiffLineKind::Removed,
+                    DiffLineKind::Context,
+                ],
+                true,
+                false,
+            ),
+            (
+                &[
+                    DiffLineKind::Added,
+                    DiffLineKind::Added,
+                    DiffLineKind::Removed,
+                ],
+                false,
+                false,
+            ),
+        ];
+        for (input, is_uniform_expected, is_empty_expected) in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let soc = hist.peak_trough_sum_of_cubes();
+            let sum = hist.peak_trough_sum();
+            let peak = hist.peak_count();
+            let total = hist.total();
+            assert!(
+                soc <= sum * sum * sum,
+                "peak_trough_sum_of_cubes {soc} must be <= peak_trough_sum³ {} on input of length {}",
+                sum * sum * sum,
+                input.len(),
+            );
+            assert!(
+                4 * soc >= sum * sum * sum,
+                "AM-cube: 4 * peak_trough_sum_of_cubes {} must be >= peak_trough_sum³ {} on input of length {}",
+                4 * soc,
+                sum * sum * sum,
+                input.len(),
+            );
+            assert!(
+                soc <= 2 * peak * peak * peak,
+                "peak_trough_sum_of_cubes {soc} must be <= 2 * peak_count³ {} on input of length {}",
+                2 * peak * peak * peak,
+                input.len(),
+            );
+            assert!(
+                soc <= 2 * total * total * total,
+                "peak_trough_sum_of_cubes {soc} must be <= 2 * total³ {} on input of length {}",
+                2 * total * total * total,
+                input.len(),
+            );
+            assert_eq!(
+                soc == sum * sum * sum,
+                is_empty_expected,
+                "soc == sum³ iff is_empty on input of length {}",
+                input.len(),
+            );
+            assert_eq!(
+                4 * soc == sum * sum * sum,
+                is_uniform_expected,
+                "AM-cube equality (4 * soc == sum³) iff is_uniform_count on input of length {}",
+                input.len(),
+            );
+            assert_eq!(
+                soc == 2 * peak * peak * peak,
+                is_uniform_expected,
+                "soc == 2 * peak³ iff is_uniform_count on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_cubes_three_surface_newton_identities() {
+        // Three orthogonal Newton-identity read-offs of soc:
+        //   soc + 3 * product * sum == sum³            (sum, product)
+        //   soc == sum * (sum_of_squares - product)    (sum, sos, product)
+        //   soc == sum * (spread² + product)           (sum, spread, product)
+        // Reads soc off three orthogonal surfaces with no histogram
+        // re-walk. Pinned across canonical observation-mix shapes so
+        // the identities are exercised at every (peak, trough) shape.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let soc = hist.peak_trough_sum_of_cubes();
+            let sum = hist.peak_trough_sum();
+            let product = hist.peak_trough_product();
+            let sos = hist.peak_trough_sum_of_squares();
+            let spread = hist.spread();
+            assert_eq!(
+                soc + 3 * product * sum,
+                sum * sum * sum,
+                "Newton identity: soc + 3 * product * sum == sum³ on input of length {}",
+                input.len(),
+            );
+            assert_eq!(
+                soc,
+                sum * (sos - product),
+                "Factorization: soc == sum * (sos - product) on input of length {}",
+                input.len(),
+            );
+            assert_eq!(
+                soc,
+                sum * (spread * spread + product),
+                "(sum, spread, product) identity: soc == sum * (spread² + product) on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_cubes_after_merge_is_non_monotonic() {
+        // The (merge, peak_trough_sum_of_cubes) composition: peer to
+        // trough's, spread's, peak_trough_sum's,
+        // peak_trough_product's, and peak_trough_sum_of_squares's
+        // non-monotonic behavior — soc can either grow (when supports
+        // overlap and both endpoints grow) or shrink (when the merged
+        // partner introduces a fresh low-count cell that pulls the
+        // merged trough³ below the self trough³ by more than the
+        // peak³ grows). Empty-identity still holds.
+        let added_two: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Added]
+            .into_iter()
+            .collect();
+        let added_two_removed_one: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let added_five: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        let removed_one: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        let empty_hist: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+
+        // Grow branch: merging balanced-support {Added:2} (soc =
+        // 2³ + 2³ = 16, peak = trough = 2) with skewed {Added:2,
+        // Removed:1} (soc = 2³ + 1³ = 9, peak = 2, trough = 1)
+        // gives {Added:4, Removed:1} with peak = 4, trough = 1,
+        // soc = 64 + 1 = 65 — strictly greater than both operands.
+        let grow_pair = added_two.clone().merge(&added_two_removed_one);
+        assert_eq!(grow_pair.peak_trough_sum_of_cubes(), 65);
+        assert!(grow_pair.peak_trough_sum_of_cubes() > added_two.peak_trough_sum_of_cubes());
+        assert!(
+            grow_pair.peak_trough_sum_of_cubes() > added_two_removed_one.peak_trough_sum_of_cubes(),
+        );
+
+        // Shrink branch: merging singleton-support {Added:5} (soc =
+        // 5³ + 5³ = 250, peak = trough = 5) with singleton-support
+        // {Removed:1} (soc = 1 + 1 = 2, peak = trough = 1) gives
+        // {Added:5, Removed:1} with peak = 5, trough = 1, soc =
+        // 125 + 1 = 126 — strictly *below* the LHS's soc 250. The
+        // fresh low-count Removed cell pulls the merged trough³ from
+        // 125 down to 1 while the merged peak³ stays at 125, so
+        // peak³ + trough³ shrinks from 250 to 126. The non-monotonic
+        // shrink branch.
+        let shrink = added_five.clone().merge(&removed_one);
+        assert_eq!(shrink.peak_trough_sum_of_cubes(), 126);
+        assert!(shrink.peak_trough_sum_of_cubes() < added_five.peak_trough_sum_of_cubes());
+        assert!(shrink.peak_trough_sum_of_cubes() > removed_one.peak_trough_sum_of_cubes());
+
+        // Identity (empty-rhs): merge leaves the sum-of-cubes
+        // unchanged.
+        let with_empty = added_two_removed_one.clone().merge(&empty_hist);
+        assert_eq!(
+            with_empty.peak_trough_sum_of_cubes(),
+            added_two_removed_one.peak_trough_sum_of_cubes(),
         );
     }
 
