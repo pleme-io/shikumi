@@ -8465,6 +8465,150 @@ impl ConfigDiff {
         self.kind_histogram().peak_trough_sum()
     }
 
+    /// The **joint-extremes-geometric-magnitude of diff kinds** — the
+    /// product of the modal and anti-modal per-kind line counts on this
+    /// diff. Routes through [`crate::AxisHistogram::peak_trough_product`]
+    /// one altitude down: the fused `peak_count() * trough_count()`
+    /// multiplication on the histogram surface, halving the cost of the
+    /// inline `peak_kind_count() * trough_kind_count()` idiom which
+    /// walked the counts vector twice.
+    ///
+    /// The **multiplication-form sibling** of the shipped diff-altitude
+    /// [`Self::kind_spread`] subtraction-form and [`Self::kind_peak_trough_sum`]
+    /// addition-form scalars on the same closed count-endpoint pair —
+    /// closing the arithmetic algebra `{+, -, *}` on the
+    /// `(peak_kind_count, trough_kind_count)` endpoint pair at the diff
+    /// altitude. Together with [`Self::kind_spread`] and
+    /// [`Self::kind_peak_trough_sum`], the triple
+    /// `(kind_peak_trough_sum, kind_spread, kind_peak_trough_product)`
+    /// closes the arithmetic algebra `{+, -, *}` on the closed-endpoint
+    /// pair through the identity
+    ///
+    /// ```text
+    /// kind_peak_trough_sum² - 4 * kind_peak_trough_product == kind_spread²
+    /// ```
+    ///
+    /// — equivalently `(p+t)² - 4pt = (p-t)²`. Every consumer that wanted
+    /// `kind_spread²` from the `(sum, product)` surface — or
+    /// `4 * kind_peak_trough_product` from the `(sum, difference)` surface —
+    /// reads it off in one arithmetic step with no histogram re-walk. The
+    /// diff-altitude scalar-count surface now carries `(peak, trough)` in
+    /// three orthogonal `(sum, difference, product)` forms bijectively
+    /// coupled by the closed-endpoint quadratic identity.
+    ///
+    /// The **diff-altitude joint-extremes-geometric-magnitude peer** — the
+    /// natural typed primitive for CLI `config-diff` summaries,
+    /// attestation manifests, and alerting policies asking *"how large
+    /// is the peak-times-trough of the two extreme diff-kind buckets?"*:
+    /// the summary line *"peak×trough diff load: 3 lines² (peak Context
+    /// 3 × trough Removed 1)"* (where 3 is this scalar), the attestation
+    /// manifest recording the joint extreme geometric magnitude of a
+    /// rebuild window's diff, the alerting policy reading
+    /// *"`kind_peak_trough_product` >= threshold"* to gate on the joint
+    /// AM-GM-style two-sided magnitude. Before this lift, every such
+    /// consumer re-derived the projection inline as
+    /// `diff.peak_kind_count() * diff.trough_kind_count()` — two method
+    /// calls plus a multiplication at every site, each site walking the
+    /// counts vector twice with no named surface for the joint scalar.
+    ///
+    /// The diff-altitude climb of the "peak×trough products across
+    /// altitudes" projection seeded on the scalar altitude by
+    /// [`crate::AxisHistogram::peak_trough_product`] — the next natural
+    /// lift climbs to the tier altitude (`ProvenanceMap::tier_peak_trough_product`
+    /// over [`Self::tier_histogram`] on the tier altitude) and sideways
+    /// along the chain altitude's three sub-axes
+    /// (`layer_kind_peak_trough_product`, `file_format_peak_trough_product`,
+    /// `env_prefix_kind_peak_trough_product` over the corresponding chain
+    /// histograms). The pattern is the same at every altitude / sub-axis:
+    /// surface the [`crate::AxisHistogram::peak_trough_product`] scalar
+    /// directly at the local histogram altitude, routing through the
+    /// shared primitive one seam down instead of every consumer pulling
+    /// the histogram temporary and inlining the multiplication. Parallels
+    /// the sibling "spread across altitudes" and "peak+trough sums across
+    /// altitudes" projections at the same altitude on the same closed-
+    /// endpoint pair.
+    ///
+    /// **Empty-diff convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::peak_trough_product`] empty convention one
+    /// altitude down and the [`Self::peak_kind_count`] /
+    /// [`Self::trough_kind_count`] / [`Self::kind_spread`] /
+    /// [`Self::kind_peak_trough_sum`] empty conventions on the same
+    /// altitude. The scalar-count quintuple
+    /// `(peak_kind_count, trough_kind_count, kind_spread,
+    /// kind_peak_trough_sum, kind_peak_trough_product)` reads uniformly
+    /// `(0, 0, 0, 0, 0)` on the empty diff.
+    ///
+    /// **Empty-boundary equivalence.** `kind_peak_trough_product() == 0`
+    /// ⇔ `self.lines.is_empty()` — both endpoints are structurally `>= 1`
+    /// on every non-empty diff (by [`Self::peak_kind_count`]'s and
+    /// [`Self::trough_kind_count`]'s non-emptiness floors), so their
+    /// product is zero exactly on the empty diff (usize multiplication
+    /// cannot introduce a zero from non-zero operands). Contrapositively,
+    /// every non-empty diff has `kind_peak_trough_product() >= 1` — the
+    /// joint geometric magnitude has a structural non-empty floor of `1`
+    /// (both endpoints contribute at least `1`, and their product is at
+    /// least `1`).
+    ///
+    /// **Overflow-safe on realistic diff sizes.** The multiplication
+    /// `peak_kind_count() * trough_kind_count()` cannot overflow on any
+    /// diff whose line vector fits in `usize`: both operands are bounded
+    /// above by `self.lines.len()`, so their product is bounded above by
+    /// `self.lines.len().pow(2)` (the peer bound is tighter than
+    /// [`Self::kind_peak_trough_sum`]'s `2 * self.lines.len()` linear
+    /// bound but still well outside the realistic operating range of any
+    /// diff surface in the crate).
+    ///
+    /// # Invariants
+    ///
+    /// - `kind_peak_trough_product() == kind_histogram().peak_trough_product()`
+    ///   — both project the same scalar off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `kind_peak_trough_product() == peak_kind_count() * trough_kind_count()`
+    ///   — the fused-pair identity of the joint-extremes-geometric-
+    ///   magnitude peer on the underlying scalar count pair.
+    /// - `kind_peak_trough_product() == 0` ⇔ `self.lines.is_empty()` —
+    ///   the empty-boundary equivalence peer to the two-endpoint surface.
+    /// - `kind_peak_trough_product() >= 1` whenever `!self.lines.is_empty()`
+    ///   — non-empty floor: both endpoints are at least `1` on every
+    ///   non-empty diff, so their product is at least `1`.
+    /// - `kind_peak_trough_product() <= peak_kind_count() * peak_kind_count()`
+    ///   always — `trough <= peak` gives `p * t <= p * p`. Equality
+    ///   holds iff [`Self::kinds_uniform_count`] is `true` (peak equals
+    ///   trough).
+    /// - `kind_peak_trough_product() <= self.lines.len() * self.lines.len()`
+    ///   always — composition of both endpoints being bounded above by
+    ///   `self.lines.len()`. Tighter than [`Self::kind_peak_trough_sum`]'s
+    ///   `2 * self.lines.len()` linear bound on any diff with more than
+    ///   two lines.
+    /// - `4 * kind_peak_trough_product() <= kind_peak_trough_sum() *
+    ///   kind_peak_trough_sum()` always — the AM-GM bound on the two
+    ///   closed endpoints (`(p+t)² >= 4pt`). Equality iff
+    ///   [`Self::kinds_uniform_count`] is `true`.
+    /// - `kind_peak_trough_sum() * kind_peak_trough_sum() - 4 *
+    ///   kind_peak_trough_product() == kind_spread() * kind_spread()`
+    ///   always — the closed-endpoint quadratic identity
+    ///   `(p+t)² - 4pt = (p-t)²`. Reads `kind_spread²` off the
+    ///   `(sum, product)` surface — the arithmetic algebra `{+, -, *}`
+    ///   is closed on the `(peak_kind_count, trough_kind_count)`
+    ///   endpoint pair up to squaring at the diff altitude.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (the peak +
+    /// trough fused scan through [`crate::AxisHistogram::peak_trough_product`]).
+    /// Both are `O(n)` in practice since the diff-cell axis carries a
+    /// fixed three-cell cardinality; the returned `usize` reads one
+    /// scalar. Halves the cost of the previous inline
+    /// `diff.peak_kind_count() * diff.trough_kind_count()` idiom (which
+    /// walked the counts vector twice — once for the max, once for the
+    /// min-over-support), where [`crate::AxisHistogram::peak_trough_product`]
+    /// routes both through a single scalar read.
+    #[must_use]
+    pub fn kind_peak_trough_product(&self) -> usize {
+        self.kind_histogram().peak_trough_product()
+    }
+
     /// The **modal-multiplicity of diff kinds** — the number of
     /// [`DiffLineKind`] cells that hold the peak line count on this diff.
     /// Equal to `1` on every strictly-modally-unique diff (a unique
@@ -16861,6 +17005,359 @@ mod tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak + trough);
+        }
+    }
+
+    // ── ConfigDiff::kind_peak_trough_product — joint-extremes-geometric-
+    //    magnitude scalar peer on the diff altitude, multiplication-form
+    //    sibling of `kind_spread` and `kind_peak_trough_sum`, climbing
+    //    the "peak×trough products across altitudes" projection from the
+    //    scalar altitude to the diff altitude ──
+
+    #[test]
+    fn kind_peak_trough_product_matches_kind_histogram_peak_trough_product_pointwise() {
+        // Routing pin: `kind_peak_trough_product` routes through
+        // `kind_histogram().peak_trough_product()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Diff-altitude climb
+        // of the "peak×trough products across altitudes" projection.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().peak_trough_product();
+            assert_eq!(diff.kind_peak_trough_product(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_product_equals_peak_times_trough_pointwise() {
+        // Fused-pair pin: `kind_peak_trough_product == peak_kind_count *
+        // trough_kind_count` on every fixture — the defining equivalence
+        // on the underlying scalar pair. The multiplication is overflow-
+        // safe on any diff whose lines vector fits in `usize`: both
+        // operands are bounded above by `self.lines.len()`.
+        for diff in dominant_kind_fixtures() {
+            let peak = diff.peak_kind_count();
+            let trough = diff.trough_kind_count();
+            assert_eq!(diff.kind_peak_trough_product(), peak * trough);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_product_context_dominated_fixture_is_three() {
+        // Direct pin: a diff of 3 Context + 1 Removed has Context
+        // dominant at 3, Removed rarest at 1 — the joint product is
+        // `3 * 1 == 3`. Reads the paired
+        // `(peak_kind_count, trough_kind_count, kind_spread,
+        // kind_peak_trough_sum, kind_peak_trough_product)` count
+        // quintuple as `(3, 1, 2, 4, 3)`. Peer of
+        // `kind_peak_trough_sum_context_dominated_fixture_is_four` on
+        // the multiplication-form side.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_count(), 3);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_spread(), 2);
+        assert_eq!(diff.kind_peak_trough_sum(), 4);
+        assert_eq!(diff.kind_peak_trough_product(), 3);
+    }
+
+    #[test]
+    fn kind_peak_trough_product_added_dominated_fixture_is_two() {
+        // Direct pin: a diff of 2 Added + 1 Context has Added dominant
+        // at 2, Context rarest at 1 — the joint product is `2 * 1 == 2`.
+        // Reads the paired count quintuple as `(2, 1, 1, 3, 2)`. Peer
+        // of `kind_peak_trough_sum_added_dominated_fixture_is_three` on
+        // the multiplication-form side.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_count(), 2);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_spread(), 1);
+        assert_eq!(diff.kind_peak_trough_sum(), 3);
+        assert_eq!(diff.kind_peak_trough_product(), 2);
+    }
+
+    #[test]
+    fn kind_peak_trough_product_empty_diff_is_zero() {
+        // An empty ConfigDiff has no lines and therefore zero joint
+        // geometric magnitude — reads `0` per the
+        // AxisHistogram::peak_trough_product empty convention one
+        // altitude down; the `(peak_kind_count, trough_kind_count,
+        // kind_spread, kind_peak_trough_sum, kind_peak_trough_product)`
+        // quintuple reads `(0, 0, 0, 0, 0)` uniformly on the empty diff.
+        // Peer of `kind_peak_trough_sum_empty_diff_is_zero`.
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.peak_kind_count(), 0);
+        assert_eq!(empty.trough_kind_count(), 0);
+        assert_eq!(empty.kind_spread(), 0);
+        assert_eq!(empty.kind_peak_trough_sum(), 0);
+        assert_eq!(empty.kind_peak_trough_product(), 0);
+        assert!(empty.lines.is_empty());
+    }
+
+    #[test]
+    fn kind_peak_trough_product_singleton_support_is_line_count_squared() {
+        // Singleton-support pin: every line lands on the same kind, so
+        // that one kind is both peak and trough of the observed support,
+        // and the joint product is `line_count²`. Diff-altitude peer of
+        // the trait-uniform `peak_trough_product == total²` behavior on
+        // AxisHistogram's singleton-support boundary.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Removed("r3".into()),
+                DiffLine::Removed("r4".into()),
+            ],
+        };
+        assert_eq!(diff.present_kinds().len(), 1);
+        assert_eq!(diff.peak_kind_count(), 4);
+        assert_eq!(diff.trough_kind_count(), 4);
+        assert_eq!(diff.kind_peak_trough_product(), 16);
+    }
+
+    #[test]
+    fn kind_peak_trough_product_uniform_cover_is_shared_count_squared() {
+        // Uniform-cover pin: every observed kind contributes the same
+        // nonzero count (one line each here), so peak == trough == 1
+        // and the joint product is `shared_count² == 1`. On the uniform-
+        // cover shape, `kind_peak_trough_product == peak_kind_count²`
+        // (equality boundary of the `kind_peak_trough_product <=
+        // peak_kind_count²` invariant, witnessed by
+        // `kinds_uniform_count() == true`). Peer of
+        // `kind_peak_trough_sum_uniform_cover_is_twice_shared_count` on
+        // the multiplication-form side.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kind_histogram().is_full_cover());
+        assert!(diff.kinds_uniform_count());
+        assert_eq!(diff.peak_kind_count(), 1);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_peak_trough_product(), 1);
+    }
+
+    #[test]
+    fn kind_peak_trough_product_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence pin: `kind_peak_trough_product() ==
+        // 0` iff the diff is empty. Both endpoints are structurally
+        // `>= 1` on every non-empty diff, and usize multiplication
+        // cannot introduce a zero from non-zero operands, so the product
+        // is zero exactly on the empty diff. Contrapositively, every
+        // non-empty diff has `kind_peak_trough_product >= 1`. Empty-
+        // boundary peer to the two-endpoint surface.
+        for diff in dominant_kind_fixtures() {
+            let product_zero = diff.kind_peak_trough_product() == 0;
+            let is_empty = diff.lines.is_empty();
+            assert_eq!(
+                product_zero,
+                is_empty,
+                "kind_peak_trough_product == 0 must agree with lines.is_empty() \
+                 for diff with peak={p}, trough={t}, product={pr}",
+                p = diff.peak_kind_count(),
+                t = diff.trough_kind_count(),
+                pr = diff.kind_peak_trough_product(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_product_non_empty_bounded_below_by_one() {
+        // Non-empty floor pin: every non-empty diff has
+        // `kind_peak_trough_product >= 1` — the joint geometric
+        // magnitude is at least `1` because both endpoints are
+        // structurally `>= 1` on every non-empty diff (by
+        // `peak_kind_count >= 1` and `trough_kind_count >= 1` on the
+        // non-empty case), and their product is at least `1 * 1 == 1`.
+        for diff in dominant_kind_fixtures() {
+            if diff.lines.is_empty() {
+                continue;
+            }
+            assert!(
+                diff.kind_peak_trough_product() >= 1,
+                "kind_peak_trough_product ({pr}) must be >= 1 on non-empty \
+                 diff (peak={p}, trough={t})",
+                pr = diff.kind_peak_trough_product(),
+                p = diff.peak_kind_count(),
+                t = diff.trough_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_product_bounded_above_by_peak_squared() {
+        // Structural bound: `kind_peak_trough_product() <=
+        // peak_kind_count()²` on every fixture — `p * t <= p * p`
+        // reduces to `trough <= peak`, the structural
+        // `trough_kind_count <= peak_kind_count` invariant. Equality
+        // holds iff `kinds_uniform_count() == true` (peak equals
+        // trough).
+        for diff in dominant_kind_fixtures() {
+            let product = diff.kind_peak_trough_product();
+            let peak = diff.peak_kind_count();
+            let peak_sq = peak * peak;
+            assert!(
+                product <= peak_sq,
+                "kind_peak_trough_product ({product}) must be <= peak² ({peak_sq})",
+            );
+            let equality = product == peak_sq;
+            let uniform = diff.kinds_uniform_count();
+            assert_eq!(
+                equality,
+                uniform,
+                "kind_peak_trough_product == peak² must agree with \
+                 kinds_uniform_count for diff with peak={peak}, \
+                 trough={t}, product={product}",
+                t = diff.trough_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_product_bounded_above_by_lines_len_squared() {
+        // Composition bound: `kind_peak_trough_product() <=
+        // self.lines.len()²` on every fixture — chaining
+        // `kind_peak_trough_product <= peak_kind_count²` (previous pin)
+        // with `peak_kind_count <= self.lines.len()`. The joint
+        // geometric magnitude of a diff is bounded above by the square
+        // of the total line count of the diff.
+        for diff in dominant_kind_fixtures() {
+            let product = diff.kind_peak_trough_product();
+            let n = diff.lines.len();
+            let n_sq = n * n;
+            assert!(
+                product <= n_sq,
+                "kind_peak_trough_product ({product}) must not exceed lines.len()² ({n_sq})",
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_product_am_gm_bounded_above_by_sum_squared_over_four() {
+        // AM-GM bound: `4 * kind_peak_trough_product() <=
+        // kind_peak_trough_sum()²` on every fixture — the AM-GM
+        // inequality on the two closed endpoints (`(p+t)² >= 4pt`,
+        // equivalently `(p-t)² >= 0`). Equality holds iff
+        // `kinds_uniform_count() == true` (peak equals trough), the
+        // balanced-distribution corner.
+        for diff in dominant_kind_fixtures() {
+            let product = diff.kind_peak_trough_product();
+            let sum = diff.kind_peak_trough_sum();
+            let sum_sq = sum * sum;
+            let four_product = 4 * product;
+            assert!(
+                four_product <= sum_sq,
+                "4 * kind_peak_trough_product ({four_product}) must be <= \
+                 kind_peak_trough_sum² ({sum_sq})",
+            );
+            let equality = four_product == sum_sq;
+            let uniform = diff.kinds_uniform_count();
+            assert_eq!(
+                equality,
+                uniform,
+                "4 * kind_peak_trough_product == kind_peak_trough_sum² must \
+                 agree with kinds_uniform_count for diff with peak={p}, \
+                 trough={t}, sum={sum}, product={product}",
+                p = diff.peak_kind_count(),
+                t = diff.trough_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_product_closes_endpoint_algebra_pointwise() {
+        // Closed-endpoint quadratic identity pin: `kind_peak_trough_sum²
+        // - 4 * kind_peak_trough_product == kind_spread²` on every
+        // fixture — the identity `(p+t)² - 4pt = (p-t)²` that closes
+        // the arithmetic algebra `{+, -, *}` on the
+        // `(peak_kind_count, trough_kind_count)` endpoint pair at the
+        // diff altitude. Reads `kind_spread²` off the `(sum, product)`
+        // surface with no histogram re-walk. The subtraction is
+        // underflow-safe by the AM-GM bound `4 * product <= sum²` (the
+        // previous invariant pin).
+        for diff in dominant_kind_fixtures() {
+            let sum = diff.kind_peak_trough_sum();
+            let product = diff.kind_peak_trough_product();
+            let spread = diff.kind_spread();
+            let sum_sq = sum * sum;
+            let four_product = 4 * product;
+            assert!(
+                four_product <= sum_sq,
+                "AM-GM bound must hold for underflow-safe subtraction: \
+                 4 * product ({four_product}) <= sum² ({sum_sq})",
+            );
+            assert_eq!(sum_sq - four_product, spread * spread);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_product_skewed_fixture_matches_peak_times_trough_direct() {
+        // Direct pin: a skewed fixture with Context=3, Added=2,
+        // Removed=1 has peak 3, trough 1, joint product 3 — the
+        // strictly-ordered three-cell case where every count is
+        // distinct. Pins the fused-pair identity at a concrete position
+        // where no tie-breaking is needed on either side of the modal-
+        // count pair. Multiplication-form peer of
+        // `kind_peak_trough_sum_skewed_fixture_matches_peak_plus_trough_direct`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let hist = diff.kind_histogram();
+        assert_eq!(hist.count(DiffLineKind::Removed), 1);
+        assert_eq!(hist.count(DiffLineKind::Added), 2);
+        assert_eq!(hist.count(DiffLineKind::Context), 3);
+        assert_eq!(diff.peak_kind_count(), 3);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_spread(), 2);
+        assert_eq!(diff.kind_peak_trough_sum(), 4);
+        assert_eq!(diff.kind_peak_trough_product(), 3);
+    }
+
+    #[test]
+    fn kind_peak_trough_product_agrees_with_open_coded_max_times_min_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0) * hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0)` walk this lift replaces
+        // — both the named seam and the hand-rolled joint geometric
+        // magnitude must pointwise agree over every fixture. The
+        // `.filter(c > 0)` on the min side is essential (mirroring
+        // `trough_count`'s support discipline); the `.max()` on the
+        // peak side operates over the full axis (mirroring
+        // `peak_count`). Multiplication-form peer of
+        // `kind_peak_trough_sum_agrees_with_open_coded_max_plus_min_walk`.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kind_peak_trough_product();
+            let hist = diff.kind_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .filter(|&(_, c)| c > 0)
+                .map(|(_, c)| c)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(via_seam, peak * trough);
         }
     }
 
