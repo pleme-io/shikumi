@@ -5936,6 +5936,202 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         peak * peak * peak + trough * trough * trough
     }
 
+    /// The **observed-distribution peak-trough sum-of-fourth-powers** —
+    /// the sum of the fourth powers of the maximum and minimum
+    /// observation counts over the histogram's observed support. Equal
+    /// to `self.peak_count().pow(4) + self.trough_count().pow(4)` by
+    /// construction; named at the trait level so consumers reading off
+    /// the joint extreme-count `p_4` power-sum / *quartic-magnitude*
+    /// projection route through one scalar rather than re-deriving the
+    /// (peak, trough) sum-of-fourth-powers at every diagnostic /
+    /// dashboard / attestation site.
+    ///
+    /// The natural typed primitive for the *joint-extremes-quartic-
+    /// magnitude* question every operator-facing summary asks of an
+    /// observation window: *"how large are the two extreme buckets in
+    /// sum-of-fourth-powers?"* — the *quartic power-sum*
+    /// `p_4 = p⁴ + t⁴` sibling of the shipped subtraction-form
+    /// [`Self::spread`] (`p - t`), addition-form
+    /// [`Self::peak_trough_sum`] (`p + t`), multiplication-form
+    /// [`Self::peak_trough_product`] (`pt`), quadratic-power-sum
+    /// [`Self::peak_trough_sum_of_squares`] (`p² + t²`), and
+    /// cubic-power-sum [`Self::peak_trough_sum_of_cubes`]
+    /// (`p³ + t³`) scalars on the same closed-endpoint pair. Extends
+    /// the closed symmetric-polynomial / power-sum surface from
+    /// `p_3 = p³ + t³` to `p_4 = p⁴ + t⁴` through Newton's two-
+    /// variable identity `p_4 = e_1 * p_3 - e_2 * p_2` (specialized to
+    /// `sum · sum_of_cubes - product · sum_of_squares`).
+    ///
+    /// **Two orthogonal read-off surfaces.** The pair
+    /// `(peak_trough_sum, peak_trough_product)` reads the elementary-
+    /// symmetric-polynomial surface `(e_1, e_2) = (p + t, pt)`; the new
+    /// power-sum `peak_trough_sum_of_fourth_powers` composes with it
+    /// through two specializations of Newton's identity, each reading
+    /// `sum_of_fourth_powers` off one of two orthogonal scalar surfaces:
+    ///
+    /// - `peak_trough_sum_of_fourth_powers() ==
+    ///   peak_trough_sum_of_squares().pow(2) - 2 * peak_trough_product().pow(2)`
+    ///   — the identity `p⁴ + t⁴ = (p² + t²)² - 2(pt)²` reads
+    ///   sum-of-fourth-powers off the `(sum_of_squares, product)`
+    ///   surface.
+    /// - `peak_trough_sum_of_fourth_powers() ==
+    ///   peak_trough_sum() * peak_trough_sum_of_cubes() - peak_trough_product() * peak_trough_sum_of_squares()`
+    ///   — Newton's identity `p_4 = e_1 * p_3 - e_2 * p_2` reads
+    ///   sum-of-fourth-powers off the
+    ///   `(sum, sum_of_cubes, product, sum_of_squares)` surface.
+    ///
+    /// Before this seed, every consumer asking *"what is the quartic
+    /// power-sum of the two extreme buckets of this observation
+    /// window?"* re-derived the projection inline as
+    /// `hist.peak_count().pow(4) + hist.trough_count().pow(4)` — two
+    /// method calls, two fourth-powers, and an addition at every site,
+    /// with silent re-derivation of both endpoints and no named surface
+    /// for the joint scalar the [`Self::spread`],
+    /// [`Self::peak_trough_sum`], [`Self::peak_trough_product`],
+    /// [`Self::peak_trough_sum_of_squares`], and
+    /// [`Self::peak_trough_sum_of_cubes`] siblings already read off in
+    /// subtraction, addition, multiplication, quadratic-power-sum, and
+    /// cubic-power-sum form.
+    ///
+    /// **Overflow-safe by construction on realistic sizes.** The
+    /// expression `peak_count().pow(4) + trough_count().pow(4)` cannot
+    /// overflow on any histogram whose total count is below
+    /// `⁴√(usize::MAX / 2)` (~46340 on 64-bit targets): both
+    /// fourth-powers are bounded above by `total().pow(4)`, so the
+    /// sum is bounded above by `2 * total().pow(4)`. Cannot overflow
+    /// on realistic configuration histograms (chain source counts,
+    /// diff line counts, error classes over a reload window).
+    ///
+    /// **Empty-histogram convention** — returns `0`, matching the
+    /// [`Self::total`], [`Self::distinct_cells`], [`Self::peak_count`],
+    /// [`Self::trough_count`], [`Self::spread`],
+    /// [`Self::peak_trough_sum`], [`Self::peak_trough_product`],
+    /// [`Self::peak_trough_sum_of_squares`], and
+    /// [`Self::peak_trough_sum_of_cubes`] empty conventions. The
+    /// scalar peer decuple
+    /// `(total, distinct_cells, peak_count, trough_count, spread,
+    /// peak_trough_sum, peak_trough_product, peak_trough_sum_of_squares,
+    /// peak_trough_sum_of_cubes, peak_trough_sum_of_fourth_powers)` is
+    /// therefore uniformly `(0, 0, 0, 0, 0, 0, 0, 0, 0, 0)` on the
+    /// empty histogram.
+    ///
+    /// **AM-quartic / power-mean bound.**
+    /// `8 * peak_trough_sum_of_fourth_powers() >=
+    /// peak_trough_sum().pow(4)` always. By the power-mean inequality
+    /// on two nonnegative reals, `((p⁴ + t⁴) / 2)^(1/4) >= (p + t) / 2`,
+    /// so `p⁴ + t⁴ >= (p + t)⁴ / 8`. Equality holds iff
+    /// [`Self::is_uniform_count`] is `true` — the two endpoints
+    /// coincide. Peer to the AM-cube bound
+    /// `4 * peak_trough_sum_of_cubes() >= peak_trough_sum().pow(3)`
+    /// on `p_3`, the AM-QM bound
+    /// `peak_trough_sum_of_squares() >= 2 * peak_trough_product()` on
+    /// `p_2`, and the AM-GM bound
+    /// `4 * peak_trough_product() <= peak_trough_sum().pow(2)` on the
+    /// elementary-symmetric pair — all four inequalities collapse to
+    /// the same `(p - t)² >= 0` witness on the closed endpoint pair.
+    ///
+    /// **Companion invariants** with [`Self::total`],
+    /// [`Self::distinct_cells`], [`Self::peak_count`],
+    /// [`Self::trough_count`], [`Self::spread`],
+    /// [`Self::peak_trough_sum`], [`Self::peak_trough_product`],
+    /// [`Self::peak_trough_sum_of_squares`], and
+    /// [`Self::peak_trough_sum_of_cubes`]:
+    /// - `peak_trough_sum_of_fourth_powers() == peak_count().pow(4) +
+    ///   trough_count().pow(4)` always (the defining equivalence on
+    ///   the underlying scalar pair).
+    /// - `peak_trough_sum_of_fourth_powers() == 0` ⇔ [`Self::is_empty`]
+    ///   is `true` (empty-boundary peer to the scalar decuple: both
+    ///   endpoints are zero only on the empty histogram, and their
+    ///   sum-of-fourth-powers is zero exactly then). Contrapositively,
+    ///   a non-empty histogram has `peak_trough_sum_of_fourth_powers() >= 2`
+    ///   — both endpoints are at least `1` by [`Self::peak_count`]'s
+    ///   and [`Self::trough_count`]'s non-emptiness floors, so their
+    ///   sum-of-fourth-powers is at least `1 + 1 = 2`.
+    /// - `peak_trough_sum_of_fourth_powers() <= 2 * peak_count().pow(4)`
+    ///   always (⇔ `trough_count() <= peak_count()`, the structural
+    ///   invariant). Equality holds iff [`Self::is_uniform_count`] is
+    ///   `true`.
+    /// - `peak_trough_sum_of_fourth_powers() <= 2 * total().pow(4)`
+    ///   always (both fourth-powered endpoints are bounded above by
+    ///   `total⁴`).
+    /// - `peak_trough_sum_of_fourth_powers() <= peak_trough_sum().pow(4)`
+    ///   always (⇔ `4 * peak_trough_product() * peak_trough_sum_of_squares() +
+    ///   6 * peak_trough_product().pow(2) >= 0`, always true; equality
+    ///   iff [`Self::is_empty`] — the sole shape where
+    ///   `peak_trough_product == 0`, since both endpoints are `>= 1`
+    ///   on any non-empty histogram).
+    /// - `8 * peak_trough_sum_of_fourth_powers() >= peak_trough_sum().pow(4)`
+    ///   always (the AM-quartic / power-mean bound; equality iff
+    ///   [`Self::is_uniform_count`] is `true`).
+    /// - `peak_trough_sum_of_fourth_powers() ==
+    ///   peak_trough_sum_of_squares().pow(2) - 2 * peak_trough_product().pow(2)`
+    ///   always — the sum-of-fourth-powers factorization on the
+    ///   `(sum_of_squares, product)` surface (non-negative subtraction
+    ///   by `sum_of_squares >= 2 * product >= sqrt(2) * product`,
+    ///   equivalently `sum_of_squares² >= 2 * product²`).
+    /// - `peak_trough_sum_of_fourth_powers() ==
+    ///   peak_trough_sum() * peak_trough_sum_of_cubes() -
+    ///   peak_trough_product() * peak_trough_sum_of_squares()`
+    ///   always — Newton's identity endpoint-recovery
+    ///   `p_4 = e_1 * p_3 - e_2 * p_2` on the `(sum, sum_of_cubes,
+    ///   product, sum_of_squares)` surface (non-negative subtraction:
+    ///   `sum * sum_of_cubes >= product * sum_of_squares` on the closed
+    ///   endpoint pair, since the LHS distributes over the two power-
+    ///   sum products of `(p + t)(p³ + t³) = p⁴ + t⁴ + pt(p² + t²)`
+    ///   while the RHS reads exactly `pt(p² + t²)`).
+    /// - The merge behavior is *non-monotonic* (peer to
+    ///   [`Self::trough_count`], [`Self::spread`],
+    ///   [`Self::peak_trough_sum`], [`Self::peak_trough_product`],
+    ///   [`Self::peak_trough_sum_of_squares`], and
+    ///   [`Self::peak_trough_sum_of_cubes`]): merging two histograms
+    ///   can either grow the sum-of-fourth-powers (when supports
+    ///   overlap and both endpoints grow) or shrink it (when the other
+    ///   side introduces a fresh low-count cell that pulls the merged
+    ///   trough⁴ below the self trough⁴ by more than the peak⁴ grows).
+    ///   The empty-identity law still holds:
+    ///   `merge(self, empty).peak_trough_sum_of_fourth_powers() ==
+    ///   self.peak_trough_sum_of_fourth_powers()`.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]. The three
+    /// trait-uniform laws pinned in [`tests`] hold across the
+    /// implementor set
+    /// (`axis_histogram_peak_trough_sum_of_fourth_powers_empty_is_zero_*`,
+    /// `axis_histogram_peak_trough_sum_of_fourth_powers_singleton_is_two_*`,
+    /// `axis_histogram_peak_trough_sum_of_fourth_powers_axis_cover_is_two_*`).
+    ///
+    /// Peer to [`Self::total`] (the *sum* over every cell),
+    /// [`Self::distinct_cells`] (the *support cardinality*),
+    /// [`Self::peak_count`] (the *modal* count scalar),
+    /// [`Self::trough_count`] (the *rarest-observed* count scalar),
+    /// [`Self::spread`] (the *difference* of the two endpoints),
+    /// [`Self::peak_trough_sum`] (the *sum* of the two endpoints),
+    /// [`Self::peak_trough_product`] (the *product* of the two
+    /// endpoints), [`Self::peak_trough_sum_of_squares`] (the
+    /// *sum-of-squares* / `p_2` power-sum of the two endpoints), and
+    /// [`Self::peak_trough_sum_of_cubes`] (the *sum-of-cubes* / `p_3`
+    /// power-sum of the two endpoints): the scalar surface of the
+    /// histogram now carries the natural decuple
+    /// `(how many observations, how many kinds, how many on the peak,
+    /// how many on the trough, how much spread, how much peak-trough
+    /// sum, how much peak-trough product, how much peak-trough
+    /// sum-of-squares, how much peak-trough sum-of-cubes, how much
+    /// peak-trough sum-of-fourth-powers)` projections — every
+    /// operator-facing summary reads off one method call each, and the
+    /// elementary-symmetric-polynomial pair `(sum, product)` composes
+    /// with the three power-sums `sum_of_squares` (`p_2`),
+    /// `sum_of_cubes` (`p_3`), and `sum_of_fourth_powers` (`p_4`)
+    /// through Newton's two-variable identities `p_2 = e_1² - 2·e_2`,
+    /// `p_3 = e_1³ - 3·e_1·e_2`, and `p_4 = e_1·p_3 - e_2·p_2` with
+    /// no histogram re-walk.
+    #[must_use]
+    pub fn peak_trough_sum_of_fourth_powers(&self) -> usize {
+        let peak = self.peak_count();
+        let trough = self.trough_count();
+        peak * peak * peak * peak + trough * trough * trough * trough
+    }
+
     /// `true` exactly when every observed cell of the closed axis carries
     /// the same observation count — the **uniformly-observed-count
     /// predicate** on the histogram surface. The typed peer of
@@ -32765,6 +32961,394 @@ mod tests {
         assert_eq!(
             with_empty.peak_trough_sum_of_cubes(),
             added_two_removed_one.peak_trough_sum_of_cubes(),
+        );
+    }
+
+    // ---- AxisHistogram::peak_trough_sum_of_fourth_powers trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // `peak_trough_sum_of_fourth_powers` projection's contract holds
+    // uniformly without per-axis test duplication: empty → 0 (both
+    // endpoints zero on the empty histogram); singleton → 2 on every
+    // cell K (one observed cell with count 1, peak = trough = 1,
+    // sum-of-fourth-powers = 1⁴ + 1⁴ = 2); uniform axis-cover → 2
+    // (every cell at one, peak = trough = 1, sum-of-fourth-powers =
+    // 1⁴ + 1⁴ = 2). Concrete defining-equivalence, empty-boundary,
+    // structural-bounds, two-surface Newton-identity, and merge non-
+    // monotonicity pins follow below on [`DiffLineKind`].
+
+    fn assert_peak_trough_sum_of_fourth_powers_empty_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.peak_trough_sum_of_fourth_powers(),
+            0,
+            "empty histogram peak_trough_sum_of_fourth_powers must be 0 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_peak_trough_sum_of_fourth_powers_singleton_is_two<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has peak = trough = 1, so
+        // peak_trough_sum_of_fourth_powers = 1⁴ + 1⁴ = 2 — the
+        // singleton-support case is trivially balanced at the p_4
+        // power-sum of the endpoint pair.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.peak_trough_sum_of_fourth_powers(),
+                2,
+                "singleton peak_trough_sum_of_fourth_powers must be 2 for observed cell {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_peak_trough_sum_of_fourth_powers_axis_cover_is_two<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once produces a uniform
+        // histogram (every cell at 1, peak = trough = 1, sum-of-
+        // fourth-powers = 1⁴ + 1⁴ = 2) — the "every observed kind
+        // fired the same number of times" boundary at the maximum-
+        // coverage shape.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            hist.peak_trough_sum_of_fourth_powers(),
+            2,
+            "axis-cover histogram peak_trough_sum_of_fourth_powers must be 2 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_fourth_powers_empty_is_zero_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_trough_sum_of_fourth_powers_empty_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_fourth_powers_singleton_is_two_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_trough_sum_of_fourth_powers_singleton_is_two::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_fourth_powers_axis_cover_is_two_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_trough_sum_of_fourth_powers_axis_cover_is_two::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_fourth_powers_equals_peak_fourth_plus_trough_fourth() {
+        // The seed's defining equivalence: peak_trough_sum_of_fourth_powers
+        // reads the same scalar as the open-coded
+        // `peak_count⁴ + trough_count⁴` sum every consumer re-derived
+        // inline. Pinned pointwise across the canonical observation-
+        // mix shapes (empty, singleton, uniform-tied, strict-skew,
+        // heavy-tail) so a future regression in either side surfaces
+        // here.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let peak = hist.peak_count();
+            let trough = hist.trough_count();
+            assert_eq!(
+                hist.peak_trough_sum_of_fourth_powers(),
+                peak * peak * peak * peak + trough * trough * trough * trough,
+                "peak_trough_sum_of_fourth_powers must equal peak_count⁴ + trough_count⁴ on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_fourth_powers_zero_iff_empty() {
+        // The empty-boundary equivalence: peak_trough_sum_of_fourth_powers
+        // == 0 iff the histogram is empty. Both endpoints are
+        // structurally >= 1 on any non-empty histogram, so their
+        // sum-of-fourth-powers is >= 2 exactly when non-empty and == 0
+        // exactly when empty.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert_eq!(empty.peak_trough_sum_of_fourth_powers(), 0);
+        assert!(empty.is_empty());
+
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert!(singleton.peak_trough_sum_of_fourth_powers() >= 2);
+        assert!(!singleton.is_empty());
+
+        let axis_cover: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        assert!(axis_cover.peak_trough_sum_of_fourth_powers() >= 2);
+        assert!(!axis_cover.is_empty());
+
+        let skewed: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert!(skewed.peak_trough_sum_of_fourth_powers() >= 2);
+        assert!(!skewed.is_empty());
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_fourth_powers_bounds() {
+        // Structural-bound pins:
+        //   - sofp <= sum⁴          (⇔ 4·product·sos + 6·product² >= 0,
+        //                              always; equality iff is_empty),
+        //   - 8 * sofp >= sum⁴      (AM-quartic; equality iff is_uniform_count),
+        //   - sofp <= 2 * peak⁴     (⇔ trough <= peak; equality iff is_uniform_count),
+        //   - sofp <= 2 * total⁴    (composition of both quartic
+        //                             endpoints <= total⁴).
+        // Pinned at four shapes (empty, singleton, uniform axis-
+        // cover, strict-skew) so each bound gets a tight witness.
+        let inputs: [(&[DiffLineKind], bool, bool); 4] = [
+            (&[], true, true),
+            (&[DiffLineKind::Added], true, false),
+            (
+                &[
+                    DiffLineKind::Added,
+                    DiffLineKind::Removed,
+                    DiffLineKind::Context,
+                ],
+                true,
+                false,
+            ),
+            (
+                &[
+                    DiffLineKind::Added,
+                    DiffLineKind::Added,
+                    DiffLineKind::Removed,
+                ],
+                false,
+                false,
+            ),
+        ];
+        for (input, is_uniform_expected, is_empty_expected) in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let sofp = hist.peak_trough_sum_of_fourth_powers();
+            let sum = hist.peak_trough_sum();
+            let peak = hist.peak_count();
+            let total = hist.total();
+            let sum4 = sum * sum * sum * sum;
+            let peak4 = peak * peak * peak * peak;
+            let total4 = total * total * total * total;
+            assert!(
+                sofp <= sum4,
+                "peak_trough_sum_of_fourth_powers {sofp} must be <= peak_trough_sum⁴ {sum4} on input of length {}",
+                input.len(),
+            );
+            assert!(
+                8 * sofp >= sum4,
+                "AM-quartic: 8 * peak_trough_sum_of_fourth_powers {} must be >= peak_trough_sum⁴ {sum4} on input of length {}",
+                8 * sofp,
+                input.len(),
+            );
+            assert!(
+                sofp <= 2 * peak4,
+                "peak_trough_sum_of_fourth_powers {sofp} must be <= 2 * peak_count⁴ {} on input of length {}",
+                2 * peak4,
+                input.len(),
+            );
+            assert!(
+                sofp <= 2 * total4,
+                "peak_trough_sum_of_fourth_powers {sofp} must be <= 2 * total⁴ {} on input of length {}",
+                2 * total4,
+                input.len(),
+            );
+            assert_eq!(
+                sofp == sum4,
+                is_empty_expected,
+                "sofp == sum⁴ iff is_empty on input of length {}",
+                input.len(),
+            );
+            assert_eq!(
+                8 * sofp == sum4,
+                is_uniform_expected,
+                "AM-quartic equality (8 * sofp == sum⁴) iff is_uniform_count on input of length {}",
+                input.len(),
+            );
+            assert_eq!(
+                sofp == 2 * peak4,
+                is_uniform_expected,
+                "sofp == 2 * peak⁴ iff is_uniform_count on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_fourth_powers_two_surface_newton_identities() {
+        // Two orthogonal read-offs of sofp:
+        //   sofp == sos² - 2 * product²                        (sos, product)
+        //   sofp == sum * soc - product * sos                  (sum, soc, product, sos)
+        //     — Newton's identity p_4 = e_1 * p_3 - e_2 * p_2.
+        // Reads sofp off two orthogonal surfaces with no histogram
+        // re-walk. Pinned across canonical observation-mix shapes so
+        // the identities are exercised at every (peak, trough) shape.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let sofp = hist.peak_trough_sum_of_fourth_powers();
+            let sum = hist.peak_trough_sum();
+            let product = hist.peak_trough_product();
+            let sos = hist.peak_trough_sum_of_squares();
+            let soc = hist.peak_trough_sum_of_cubes();
+            assert_eq!(
+                sofp,
+                sos * sos - 2 * product * product,
+                "(sos, product) factorization: sofp == sos² - 2·product² on input of length {}",
+                input.len(),
+            );
+            assert_eq!(
+                sofp,
+                sum * soc - product * sos,
+                "Newton p_4 = e_1·p_3 - e_2·p_2: sofp == sum·soc - product·sos on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_fourth_powers_after_merge_is_non_monotonic() {
+        // The (merge, peak_trough_sum_of_fourth_powers) composition:
+        // peer to trough's, spread's, peak_trough_sum's,
+        // peak_trough_product's, peak_trough_sum_of_squares's, and
+        // peak_trough_sum_of_cubes's non-monotonic behavior — sofp can
+        // either grow (when supports overlap and both endpoints grow)
+        // or shrink (when the merged partner introduces a fresh low-
+        // count cell that pulls the merged trough⁴ below the self
+        // trough⁴ by more than the peak⁴ grows). Empty-identity still
+        // holds.
+        let added_two: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Added]
+            .into_iter()
+            .collect();
+        let added_two_removed_one: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let added_five: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        let removed_one: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        let empty_hist: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+
+        // Grow branch: merging balanced-support {Added:2} (sofp =
+        // 2⁴ + 2⁴ = 32, peak = trough = 2) with skewed {Added:2,
+        // Removed:1} (sofp = 2⁴ + 1⁴ = 17, peak = 2, trough = 1)
+        // gives {Added:4, Removed:1} with peak = 4, trough = 1,
+        // sofp = 256 + 1 = 257 — strictly greater than both operands.
+        let grow_pair = added_two.clone().merge(&added_two_removed_one);
+        assert_eq!(grow_pair.peak_trough_sum_of_fourth_powers(), 257);
+        assert!(
+            grow_pair.peak_trough_sum_of_fourth_powers()
+                > added_two.peak_trough_sum_of_fourth_powers(),
+        );
+        assert!(
+            grow_pair.peak_trough_sum_of_fourth_powers()
+                > added_two_removed_one.peak_trough_sum_of_fourth_powers(),
+        );
+
+        // Shrink branch: merging singleton-support {Added:5} (sofp =
+        // 5⁴ + 5⁴ = 1250, peak = trough = 5) with singleton-support
+        // {Removed:1} (sofp = 1 + 1 = 2, peak = trough = 1) gives
+        // {Added:5, Removed:1} with peak = 5, trough = 1, sofp =
+        // 625 + 1 = 626 — strictly *below* the LHS's sofp 1250. The
+        // fresh low-count Removed cell pulls the merged trough⁴ from
+        // 625 down to 1 while the merged peak⁴ stays at 625, so
+        // peak⁴ + trough⁴ shrinks from 1250 to 626. The non-monotonic
+        // shrink branch.
+        let shrink = added_five.clone().merge(&removed_one);
+        assert_eq!(shrink.peak_trough_sum_of_fourth_powers(), 626);
+        assert!(
+            shrink.peak_trough_sum_of_fourth_powers()
+                < added_five.peak_trough_sum_of_fourth_powers(),
+        );
+        assert!(
+            shrink.peak_trough_sum_of_fourth_powers()
+                > removed_one.peak_trough_sum_of_fourth_powers(),
+        );
+
+        // Identity (empty-rhs): merge leaves the sum-of-fourth-powers
+        // unchanged.
+        let with_empty = added_two_removed_one.clone().merge(&empty_hist);
+        assert_eq!(
+            with_empty.peak_trough_sum_of_fourth_powers(),
+            added_two_removed_one.peak_trough_sum_of_fourth_powers(),
         );
     }
 
