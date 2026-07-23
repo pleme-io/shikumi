@@ -5442,6 +5442,145 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         self.peak_count() + self.trough_count()
     }
 
+    /// The **observed-distribution peak-trough product** — the product of
+    /// the maximum and minimum observation counts over the histogram's
+    /// observed support. Equal to
+    /// `self.peak_count() * self.trough_count()` by construction; named
+    /// at the trait level so consumers reading off the joint extreme-
+    /// count *geometric-magnitude* / *product* route through one scalar
+    /// projection rather than re-deriving the (peak, trough)
+    /// multiplication at every diagnostic / dashboard / attestation
+    /// site.
+    ///
+    /// The natural typed primitive for the *joint-extremes-geometric-
+    /// magnitude* question every operator-facing summary asks of an
+    /// observation window: *"how large is the product of the two
+    /// extreme buckets?"* — the natural input to AM-GM-style two-sided
+    /// bounds and to the closed-endpoint quadratic identity
+    /// `peak_trough_sum² - 4 * peak_trough_product == spread²` that
+    /// closes the arithmetic algebra `{+, -, *}` on the
+    /// `(peak_count, trough_count)` endpoint pair. Before this lift,
+    /// every consumer asking *"what is the peak-times-trough of this
+    /// observation window?"* re-derived the projection inline as
+    /// `hist.peak_count() * hist.trough_count()` — two method calls
+    /// plus a multiplication at every site, with silent re-derivation
+    /// of both endpoints and no named surface for the joint scalar the
+    /// [`Self::spread`] and [`Self::peak_trough_sum`] siblings already
+    /// read off in subtraction and addition form.
+    ///
+    /// **Overflow-safe by construction on realistic sizes.** The
+    /// multiplication `peak_count() * trough_count()` cannot overflow
+    /// on any histogram whose total count is below `√(usize::MAX)`
+    /// (~4.29e9 on 64-bit targets): both operands are bounded above by
+    /// [`Self::total`], so their product is bounded above by
+    /// `total()²`. Cannot overflow on realistic configuration
+    /// histograms (chain source counts, diff line counts, error
+    /// classes over a reload window) — the peer bound is tighter than
+    /// [`Self::peak_trough_sum`]'s `2 * total()` linear bound but still
+    /// well outside the realistic operating range of any typed
+    /// configuration surface in the crate.
+    ///
+    /// **Empty-histogram convention** — returns `0`, matching the
+    /// [`Self::total`], [`Self::distinct_cells`], [`Self::peak_count`],
+    /// [`Self::trough_count`], [`Self::spread`], and
+    /// [`Self::peak_trough_sum`] empty conventions. The scalar peer
+    /// septuple
+    /// `(total, distinct_cells, peak_count, trough_count, spread,
+    /// peak_trough_sum, peak_trough_product)` is therefore uniformly
+    /// `(0, 0, 0, 0, 0, 0, 0)` on the empty histogram.
+    ///
+    /// **Closed-endpoint quadratic identity.** Together with
+    /// [`Self::spread`] and [`Self::peak_trough_sum`], the triple
+    /// `(peak_trough_sum, spread, peak_trough_product)` closes the
+    /// arithmetic algebra `{+, -, *}` on the `(peak_count,
+    /// trough_count)` endpoint pair through the identity
+    /// `peak_trough_sum² - 4 * peak_trough_product == spread²` —
+    /// equivalently `(p+t)² - 4pt = (p-t)²`. Every consumer that
+    /// wanted `spread²` from the sum-and-product surface — or
+    /// `4 * product` from the sum-and-spread surface — reads it off in
+    /// one arithmetic step with no histogram re-walk.
+    ///
+    /// **Arithmetic-mean–geometric-mean bound.** `4 * peak_trough_product
+    /// <= peak_trough_sum²` always (the AM-GM inequality on the two
+    /// closed endpoints: `(p+t)² >= 4pt`, equivalently `(p-t)² >= 0`).
+    /// Equality holds iff [`Self::is_uniform_count`] is `true` — the
+    /// two endpoints coincide, so the sum-squared equals four times
+    /// the product-squared-root's square, i.e., the two forms carry
+    /// the same joint magnitude on the balanced-distribution corner.
+    ///
+    /// **Companion invariants** with [`Self::total`],
+    /// [`Self::distinct_cells`], [`Self::peak_count`],
+    /// [`Self::trough_count`], [`Self::spread`], and
+    /// [`Self::peak_trough_sum`]:
+    /// - `peak_trough_product() == peak_count() * trough_count()`
+    ///   always (the defining equivalence on the underlying scalar
+    ///   pair).
+    /// - `peak_trough_product() == 0` ⇔ [`Self::is_empty`] is `true`
+    ///   (empty-boundary peer to the scalar septuple: both endpoints
+    ///   are zero only on the empty histogram, and their product is
+    ///   zero exactly then — the multiplication cannot introduce a
+    ///   zero from non-zero operands over `usize`). Contrapositively,
+    ///   a non-empty histogram has `peak_trough_product() >= 1` — both
+    ///   endpoints are at least `1` by [`Self::peak_count`]'s and
+    ///   [`Self::trough_count`]'s non-emptiness floors.
+    /// - `peak_trough_product() <= peak_count() * peak_count()` always
+    ///   (⇔ `trough_count() <= peak_count()`, the structural
+    ///   invariant). Equality holds iff [`Self::is_uniform_count`] is
+    ///   `true` (peak equals trough).
+    /// - `peak_trough_product() <= total() * total()` always (both
+    ///   endpoints are bounded above by `total`, so their product is
+    ///   bounded above by `total²`).
+    /// - `4 * peak_trough_product() <= peak_trough_sum() *
+    ///   peak_trough_sum()` always (the AM-GM bound on the two closed
+    ///   endpoints). Equality iff [`Self::is_uniform_count`] is `true`.
+    /// - `peak_trough_sum() * peak_trough_sum() - 4 *
+    ///   peak_trough_product() == spread() * spread()` always (the
+    ///   closed-endpoint quadratic identity `(p+t)² - 4pt = (p-t)²`).
+    ///   Reads `spread²` off the `(sum, product)` surface — the
+    ///   arithmetic algebra `{+, -, *}` is closed on the
+    ///   `(peak_count, trough_count)` endpoint pair up to squaring.
+    /// - The merge behavior is *non-monotonic* (peer to
+    ///   [`Self::trough_count`], [`Self::spread`], and
+    ///   [`Self::peak_trough_sum`]): merging two histograms can either
+    ///   grow the product (when supports overlap and both endpoints
+    ///   grow) or shrink it (when the other side introduces a fresh
+    ///   low-count cell that pulls the merged trough below the self
+    ///   trough by a factor larger than the peak's growth factor).
+    ///   The empty-identity law still holds:
+    ///   `merge(self, empty).peak_trough_product() ==
+    ///   self.peak_trough_product()`.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor (the twenty
+    /// closed-enum axis primitives plus the five product cubes —
+    /// twenty-five today, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]) inherits the
+    /// projection at no per-axis cost. The three trait-uniform laws
+    /// pinned in [`tests`] hold across the implementor set
+    /// (`axis_histogram_peak_trough_product_empty_is_zero_*`,
+    /// `axis_histogram_peak_trough_product_singleton_is_one_*`,
+    /// `axis_histogram_peak_trough_product_axis_cover_is_one_*`).
+    ///
+    /// Peer to [`Self::total`] (the *sum* over every cell),
+    /// [`Self::distinct_cells`] (the *support cardinality*),
+    /// [`Self::peak_count`] (the *modal* count scalar),
+    /// [`Self::trough_count`] (the *rarest-observed* count scalar),
+    /// [`Self::spread`] (the *difference* of the two endpoints), and
+    /// [`Self::peak_trough_sum`] (the *sum* of the two endpoints): the
+    /// scalar surface of the histogram now carries the natural
+    /// septuple
+    /// `(how many observations, how many kinds, how many on the peak,
+    /// how many on the trough, how much spread, how much peak-trough
+    /// sum, how much peak-trough product)` projections — every
+    /// operator-facing summary reads off one method call each, and the
+    /// closed-endpoint arithmetic algebra `{+, -, *}` on the
+    /// `(peak_count, trough_count)` pair is bijectively witnessed by
+    /// the `(peak_trough_sum, spread, peak_trough_product)` triple
+    /// through the quadratic identity above.
+    #[must_use]
+    pub fn peak_trough_product(&self) -> usize {
+        self.peak_count() * self.trough_count()
+    }
+
     /// `true` exactly when every observed cell of the closed axis carries
     /// the same observation count — the **uniformly-observed-count
     /// predicate** on the histogram surface. The typed peer of
@@ -31114,6 +31253,378 @@ mod tests {
         assert_eq!(
             with_empty.peak_trough_sum(),
             added_two_removed_one.peak_trough_sum(),
+        );
+    }
+
+    // ---- AxisHistogram::peak_trough_product trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // `peak_trough_product` projection's contract holds uniformly
+    // without per-axis test duplication: empty → 0 (both endpoints
+    // zero on the empty histogram); singleton → 1 on every cell K
+    // (one observed cell with count 1, peak = trough = 1, product =
+    // 1); uniform axis-cover → 1 (every cell at one, peak = trough =
+    // 1, product = 1). Concrete defining-equivalence, empty-boundary,
+    // AM-GM bound, closed-endpoint quadratic identity, and merge non-
+    // monotonicity pins follow below on [`DiffLineKind`].
+
+    fn assert_peak_trough_product_empty_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.peak_trough_product(),
+            0,
+            "empty histogram peak_trough_product must be 0 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_peak_trough_product_singleton_is_one<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has peak = trough = 1, so
+        // peak_trough_product = 1 — the singleton-support case is
+        // trivially balanced. Pinned uniformly across every
+        // closed-axis implementor.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.peak_trough_product(),
+                1,
+                "singleton peak_trough_product must be 1 for observed cell {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_peak_trough_product_axis_cover_is_one<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once produces a uniform
+        // histogram (every cell at 1, peak = trough = 1, product =
+        // 1) — the structural "every observed kind fired the same
+        // number of times" boundary at the maximum-coverage shape.
+        // Pinned uniformly across every closed-axis implementor.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            hist.peak_trough_product(),
+            1,
+            "axis-cover histogram peak_trough_product must be 1 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_product_empty_is_zero_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_trough_product_empty_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_product_singleton_is_one_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_trough_product_singleton_is_one::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_product_axis_cover_is_one_for_every_closed_axis_implementor() {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_trough_product_axis_cover_is_one::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_product_equals_peak_times_trough() {
+        // The lift's defining equivalence: peak_trough_product reads
+        // the same scalar as the open-coded `peak_count * trough_count`
+        // multiplication every consumer re-derived inline. Pinned
+        // pointwise across the canonical observation-mix shapes
+        // (empty, singleton, uniform-tied, strict-skew, heavy-tail) so
+        // a future regression in either side surfaces here.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.peak_trough_product(),
+                hist.peak_count() * hist.trough_count(),
+                "peak_trough_product must equal peak_count * trough_count on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_product_zero_iff_empty() {
+        // The empty-boundary equivalence: peak_trough_product == 0
+        // iff the histogram is empty. Both endpoints (peak and
+        // trough) are structurally >= 1 on any non-empty histogram,
+        // so their product is >= 1 exactly when non-empty and == 0
+        // exactly when empty (usize multiplication cannot introduce
+        // a zero from two non-zero operands). Pinned at both sides
+        // of the equivalence across the boundary shapes.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert_eq!(empty.peak_trough_product(), 0);
+        assert!(empty.is_empty());
+
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert!(singleton.peak_trough_product() >= 1);
+        assert!(!singleton.is_empty());
+
+        let axis_cover: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        assert!(axis_cover.peak_trough_product() >= 1);
+        assert!(!axis_cover.is_empty());
+
+        let two_each: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert!(two_each.peak_trough_product() >= 1);
+        assert!(!two_each.is_empty());
+
+        let skewed: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert!(skewed.peak_trough_product() >= 1);
+        assert!(!skewed.is_empty());
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_product_bounds() {
+        // Structural-bound pins:
+        //   - peak_trough_product <= peak_count² (⇔ trough <= peak,
+        //     always true; equality iff is_uniform_count),
+        //   - peak_trough_product <= total² (composition of both
+        //     endpoints <= total),
+        //   - 4 * peak_trough_product <= peak_trough_sum² (AM-GM;
+        //     equality iff is_uniform_count).
+        // Pinned at four shapes (empty, singleton, uniform axis-
+        // cover, strict-skew) so each bound gets a tight witness.
+        let inputs: [(&[DiffLineKind], bool); 4] = [
+            (&[], true),                    // empty: is_uniform_count == true (vacuous)
+            (&[DiffLineKind::Added], true), // singleton: is_uniform_count == true
+            (
+                &[
+                    DiffLineKind::Added,
+                    DiffLineKind::Removed,
+                    DiffLineKind::Context,
+                ],
+                true,
+            ), // uniform axis-cover: is_uniform_count == true
+            (
+                &[
+                    DiffLineKind::Added,
+                    DiffLineKind::Added,
+                    DiffLineKind::Removed,
+                ],
+                false,
+            ), // strict-skew: peak=2, trough=1, product=2; sum=3, 4*2=8 <= 9; is_uniform_count == false
+        ];
+        for (input, is_uniform_expected) in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert!(
+                hist.peak_trough_product() <= hist.peak_count() * hist.peak_count(),
+                "peak_trough_product {} must be <= peak_count² {} on input of length {}",
+                hist.peak_trough_product(),
+                hist.peak_count() * hist.peak_count(),
+                input.len(),
+            );
+            assert!(
+                hist.peak_trough_product() <= hist.total() * hist.total(),
+                "peak_trough_product {} must be <= total² {} on input of length {}",
+                hist.peak_trough_product(),
+                hist.total() * hist.total(),
+                input.len(),
+            );
+            assert!(
+                4 * hist.peak_trough_product() <= hist.peak_trough_sum() * hist.peak_trough_sum(),
+                "AM-GM: 4 * peak_trough_product {} must be <= peak_trough_sum² {} on input of length {}",
+                4 * hist.peak_trough_product(),
+                hist.peak_trough_sum() * hist.peak_trough_sum(),
+                input.len(),
+            );
+            assert_eq!(
+                hist.peak_trough_product() == hist.peak_count() * hist.peak_count(),
+                is_uniform_expected,
+                "peak_trough_product == peak_count² iff is_uniform_count on input of length {}",
+                input.len(),
+            );
+            assert_eq!(
+                4 * hist.peak_trough_product() == hist.peak_trough_sum() * hist.peak_trough_sum(),
+                is_uniform_expected,
+                "AM-GM equality (4 * product == sum²) iff is_uniform_count on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_product_closes_endpoint_algebra() {
+        // The closed-endpoint quadratic identity that closes the
+        // arithmetic algebra `{+, -, *}` on the (peak_count,
+        // trough_count) endpoint pair:
+        //   peak_trough_sum² - 4 * peak_trough_product == spread²,
+        // equivalently `(p+t)² - 4pt = (p-t)²`. Reads spread² off the
+        // (sum, product) surface with no histogram re-walk. Pinned
+        // across the canonical observation-mix shapes so the identity
+        // is exercised at every (peak, trough) shape in the
+        // histogram's range.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let sum = hist.peak_trough_sum();
+            let product = hist.peak_trough_product();
+            let spread = hist.spread();
+            assert_eq!(
+                sum * sum - 4 * product,
+                spread * spread,
+                "closed-endpoint quadratic identity: sum² - 4 * product must equal spread² on input of length {}",
+                input.len(),
+            );
+            // The dual form: (sum + spread)/2 == peak, (sum - spread)/2
+            // == trough — combined with the product read-off,
+            // (peak, trough) is fully recovered from any two of
+            // (sum, spread, product) up to the quadratic.
+            let peak_recovered = (sum + spread) / 2;
+            let trough_recovered = (sum - spread) / 2;
+            assert_eq!(
+                peak_recovered * trough_recovered,
+                product,
+                "peak_recovered * trough_recovered must equal peak_trough_product on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_product_after_merge_is_non_monotonic() {
+        // The (merge, peak_trough_product) composition: peer to
+        // trough's, spread's, and peak_trough_sum's non-monotonic
+        // behavior — peak_trough_product can either grow (when
+        // supports overlap and both endpoints grow) or shrink (when
+        // the merged partner introduces a fresh low-count cell that
+        // pulls the merged trough below the self trough by a factor
+        // larger than the peak's growth factor). The empty-identity
+        // law still holds. Pinned with grow, shrink, and empty-
+        // identity branches so each branch of the non-monotonic
+        // behavior gets a tight witness.
+        let added_two: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Added]
+            .into_iter()
+            .collect();
+        let added_two_removed_one: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let added_five: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        let removed_one: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        let empty_hist: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+
+        // Grow branch: merging balanced-support {Added:2} (product 4,
+        // peak = trough = 2) with skewed {Added:2, Removed:1}
+        // (product 2, peak = 2, trough = 1) gives {Added:4, Removed:1}
+        // with peak 4, trough 1, product 4 — equal to the LHS's
+        // product 4 and strictly greater than the RHS's product 2.
+        // The merged product grows past the RHS but stays even with
+        // the LHS on this pair.
+        let grow_pair = added_two.clone().merge(&added_two_removed_one);
+        assert_eq!(grow_pair.peak_trough_product(), 4);
+        assert!(grow_pair.peak_trough_product() > added_two_removed_one.peak_trough_product());
+        assert!(grow_pair.peak_trough_product() >= added_two.peak_trough_product());
+
+        // Shrink branch: merging singleton-support {Added:5}
+        // (product 25, peak = trough = 5) with singleton-support
+        // {Removed:1} (product 1, peak = trough = 1) gives {Added:5,
+        // Removed:1} with peak 5, trough 1, product 5 — strictly
+        // *below* the LHS's product 25. The fresh low-count Removed
+        // cell pulls the merged trough from 5 down to 1 while the
+        // merged peak stays at 5, so peak * trough shrinks from 25
+        // to 5. The non-monotonic shrink branch.
+        let shrink = added_five.clone().merge(&removed_one);
+        assert_eq!(shrink.peak_trough_product(), 5);
+        assert!(shrink.peak_trough_product() < added_five.peak_trough_product());
+        assert!(shrink.peak_trough_product() > removed_one.peak_trough_product());
+
+        // Identity (empty-rhs): merge leaves the product unchanged.
+        let with_empty = added_two_removed_one.clone().merge(&empty_hist);
+        assert_eq!(
+            with_empty.peak_trough_product(),
+            added_two_removed_one.peak_trough_product(),
         );
     }
 
