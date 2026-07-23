@@ -1983,9 +1983,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-pki-types"
-version = "1.15.0"
+version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "764899a24af3980067ee14bc143654f297b22eaebfe3c7b6b211920a5a59b046"
+checksum = "2f4925028c7eb5d1fcdaf196971378ed9d2c1c4efc7dc5d011256f76c99c0a96"
 dependencies = [
  "web-time",
  "zeroize",
@@ -2239,7 +2239,7 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.349"
+version = "0.1.350"
 dependencies = [
  "akeyless-api",
  "arc-swap",
@@ -2376,7 +2376,7 @@ dependencies = [
 [[package]]
 name = "tatara-lisp"
 version = "0.2.154"
-source = "git+https://github.com/pleme-io/tatara#7967ef8b4d96d415cdb342d9ffff33c773e7d1a1"
+source = "git+https://github.com/pleme-io/tatara#9b7455d2c65f2a30b37057cf837cee77f060eb56"
 dependencies = [
  "blake3",
  "serde",
@@ -2388,7 +2388,7 @@ dependencies = [
 [[package]]
 name = "tatara-lisp-derive"
 version = "0.2.154"
-source = "git+https://github.com/pleme-io/tatara#7967ef8b4d96d415cdb342d9ffff33c773e7d1a1"
+source = "git+https://github.com/pleme-io/tatara#9b7455d2c65f2a30b37057cf837cee77f060eb56"
 dependencies = [
  "proc-macro2",
  "quote",
