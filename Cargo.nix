@@ -5654,6 +5654,54 @@ rec {
         ];
 
       };
+      "pleme-hotswap" = rec {
+        crateName = "pleme-hotswap";
+        version = "0.1.0";
+        edition = "2024";
+        workspace_member = null;
+        src = pkgs.fetchgit {
+          url = "https://github.com/pleme-io/pleme-hotswap-derive";
+          rev = "1ecf9faffc8c20013051663966929ab0fb8ff946";
+          sha256 = "0kibkp081ym87hjdb928p192s0aqdf99xq9k19kn5y09cxwwl53h";
+        };
+        libName = "pleme_hotswap";
+        authors = [
+          "pleme-io"
+        ];
+
+      };
+      "pleme-hotswap-derive" = rec {
+        crateName = "pleme-hotswap-derive";
+        version = "0.1.0";
+        edition = "2024";
+        workspace_member = null;
+        src = pkgs.fetchgit {
+          url = "https://github.com/pleme-io/pleme-hotswap-derive";
+          rev = "1ecf9faffc8c20013051663966929ab0fb8ff946";
+          sha256 = "0kibkp081ym87hjdb928p192s0aqdf99xq9k19kn5y09cxwwl53h";
+        };
+        procMacro = true;
+        libName = "pleme_hotswap_derive";
+        authors = [
+          "pleme-io"
+        ];
+        dependencies = [
+          {
+            name = "proc-macro2";
+            packageId = "proc-macro2";
+          }
+          {
+            name = "quote";
+            packageId = "quote";
+          }
+          {
+            name = "syn";
+            packageId = "syn 2.0.119";
+            features = [ "full" ];
+          }
+        ];
+
+      };
       "potential_utf" = rec {
         crateName = "potential_utf";
         version = "0.1.5";
@@ -7615,7 +7663,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.345";
+        version = "0.1.346";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -7641,6 +7689,11 @@ rec {
           {
             name = "aws-sdk-secretsmanager";
             packageId = "aws-sdk-secretsmanager";
+            optional = true;
+          }
+          {
+            name = "blake3";
+            packageId = "blake3";
             optional = true;
           }
           {
@@ -7673,6 +7726,12 @@ rec {
             usesDefaultFeatures = false;
             target = { target, features }: ("macos" == target."os" or null);
             features = [ "macos_kqueue" ];
+          }
+          {
+            name = "pleme-hotswap";
+            packageId = "pleme-hotswap";
+            rename = "pleme-hotswap";
+            optional = true;
           }
           {
             name = "reqwest";
@@ -7717,6 +7776,11 @@ rec {
         ];
         devDependencies = [
           {
+            name = "pleme-hotswap-derive";
+            packageId = "pleme-hotswap-derive";
+            rename = "pleme-hotswap-derive";
+          }
+          {
             name = "serde_json";
             packageId = "serde_json";
           }
@@ -7739,11 +7803,12 @@ rec {
           "aws-native" = [ "dep:aws-sdk-secretsmanager" "dep:aws-config" "dep:tokio" ];
           "cli" = [ "dep:clap" ];
           "gcp-native" = [ "dep:reqwest" "dep:tokio" ];
+          "hotswap" = [ "dep:pleme-hotswap" "dep:blake3" ];
           "lisp" = [ "dep:tatara-lisp" ];
           "op-native" = [ "dep:reqwest" "dep:tokio" ];
           "vault-native" = [ "dep:reqwest" "dep:tokio" ];
         };
-        resolvedDefaultFeatures = [ "akeyless-native" "aws-native" "cli" "default" "gcp-native" "lisp" "op-native" "vault-native" ];
+        resolvedDefaultFeatures = [ "akeyless-native" "aws-native" "cli" "default" "gcp-native" "hotswap" "lisp" "op-native" "vault-native" ];
       };
       "shlex" = rec {
         crateName = "shlex";
