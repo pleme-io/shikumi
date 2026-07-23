@@ -9492,6 +9492,189 @@ impl ConfigDiff {
         self.kind_histogram().peak_trough_sum_of_cubes()
     }
 
+    /// The **joint-extremes-quartic-magnitude of diff kinds** — the sum
+    /// of the fourth powers of the modal and anti-modal per-kind line
+    /// counts on this diff. Routes through
+    /// [`crate::AxisHistogram::peak_trough_sum_of_fourth_powers`] one
+    /// altitude down: the fused `peak_count().pow(4) +
+    /// trough_count().pow(4)` sum-of-fourth-powers on the histogram
+    /// surface, halving the cost of the inline
+    /// `peak_kind_count().pow(4) + trough_kind_count().pow(4)` idiom
+    /// which walked the counts vector twice.
+    ///
+    /// The **sum-of-fourth-powers / power-sum `p_4` sibling** of the
+    /// shipped diff-altitude [`Self::kind_spread`] subtraction-form,
+    /// [`Self::kind_peak_trough_sum`] addition-form,
+    /// [`Self::kind_peak_trough_product`] multiplication-form,
+    /// [`Self::kind_peak_trough_sum_of_squares`] quadratic-power-sum `p_2`,
+    /// and [`Self::kind_peak_trough_sum_of_cubes`] cubic-power-sum `p_3`
+    /// scalars on the same closed count-endpoint pair — extending the
+    /// symmetric-polynomial `(e₁, e₂) = (peak+trough, peak*trough)` /
+    /// power-sum `(p_2, p_3, p_4) = (peak² + trough², peak³ + trough³,
+    /// peak⁴ + trough⁴)` representation of the `(peak_kind_count,
+    /// trough_kind_count)` endpoint pair at the diff altitude through
+    /// Newton's two-variable identity `p_4 == e_1 * p_3 - e_2 * p_2`
+    /// (specialized to `sum · sum_of_cubes - product · sum_of_squares`)
+    /// and the quartic factorization `p_4 == p_2² - 2·e_2²`
+    /// (equivalently `sum_of_squares² - 2·product²`). Together with the
+    /// shipped diff-altitude quintuple, the sextuple
+    /// `(kind_peak_trough_sum, kind_spread, kind_peak_trough_product,
+    /// kind_peak_trough_sum_of_squares, kind_peak_trough_sum_of_cubes,
+    /// kind_peak_trough_sum_of_fourth_powers)` reads the joint
+    /// sum-of-fourth-powers off two orthogonal scalar surfaces of the
+    /// closed endpoint pair:
+    ///
+    /// ```text
+    /// kind_peak_trough_sum_of_fourth_powers
+    ///     == kind_peak_trough_sum_of_squares² - 2 * kind_peak_trough_product²
+    ///     (the (sos, product) surface factorization
+    ///      p⁴ + t⁴ = (p² + t²)² - 2(pt)² — non-negative subtraction by
+    ///      the AM-QM bound sos² >= (2·product)² / 2 = 2·product²)
+    /// kind_peak_trough_sum_of_fourth_powers
+    ///     == kind_peak_trough_sum * kind_peak_trough_sum_of_cubes
+    ///        - kind_peak_trough_product * kind_peak_trough_sum_of_squares
+    ///     (the (sum, soc, product, sos) surface Newton-recovery for p_4;
+    ///      non-negative subtraction: (p+t)(p³+t³) = p⁴+t⁴+pt(p²+t²)
+    ///      while pt·(p²+t²) reads exactly the second term)
+    /// ```
+    ///
+    /// Every consumer that wanted `peak⁴ + trough⁴` from either of the
+    /// shipped diff-altitude scalar surfaces — `(sos, product)` or
+    /// `(sum, soc, product, sos)` — reads it off in one arithmetic step
+    /// with no histogram re-walk.
+    ///
+    /// The **diff-altitude joint-extremes-quartic-magnitude peer** — the
+    /// natural typed primitive for CLI `config-diff` summaries,
+    /// attestation manifests, and alerting policies asking *"how large
+    /// is the peak⁴+trough⁴ joint quartic magnitude of the two extreme
+    /// diff-kind buckets?"*: the summary line *"peak⁴+trough⁴ diff load:
+    /// 82 (peak Context 3⁴ + trough Removed 1⁴)"* (where 82 is this
+    /// scalar), the attestation manifest recording the joint extreme
+    /// sum-of-fourth-powers of a rebuild window's diff, the alerting
+    /// policy reading *"`kind_peak_trough_sum_of_fourth_powers` >=
+    /// threshold"* to gate on the joint quartic two-sided magnitude.
+    /// Before this lift, every such consumer re-derived the projection
+    /// inline as `diff.peak_kind_count().pow(4) +
+    /// diff.trough_kind_count().pow(4)` — two method calls plus two
+    /// fourth-powerings plus an addition at every site, each site
+    /// walking the counts vector twice with no named surface for the
+    /// joint scalar.
+    ///
+    /// The diff-altitude climb of the "peak⁴ + trough⁴
+    /// sums-of-fourth-powers across altitudes" projection seeded on the
+    /// scalar altitude by
+    /// [`crate::AxisHistogram::peak_trough_sum_of_fourth_powers`] — the
+    /// next natural lift climbs to the tier altitude
+    /// (`ProvenanceMap::tier_peak_trough_sum_of_fourth_powers` over
+    /// [`Self::tier_histogram`] on the tier altitude) and sideways along
+    /// the chain altitude's three sub-axes
+    /// (`layer_kind_peak_trough_sum_of_fourth_powers`,
+    /// `file_format_peak_trough_sum_of_fourth_powers`,
+    /// `env_prefix_kind_peak_trough_sum_of_fourth_powers` over the
+    /// corresponding chain histograms). The pattern is the same at every
+    /// altitude / sub-axis: surface the
+    /// [`crate::AxisHistogram::peak_trough_sum_of_fourth_powers`] scalar
+    /// directly at the local histogram altitude, routing through the
+    /// shared primitive one seam down instead of every consumer pulling
+    /// the histogram temporary and inlining the sum-of-fourth-powers.
+    /// Parallels the sibling "spread across altitudes", "peak+trough
+    /// sums across altitudes", "peak×trough products across altitudes",
+    /// "peak² + trough² sums-of-squares across altitudes", and "peak³ +
+    /// trough³ sums-of-cubes across altitudes" projections at the same
+    /// altitude on the same closed-endpoint pair.
+    ///
+    /// **Empty-diff convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::peak_trough_sum_of_fourth_powers`] empty
+    /// convention one altitude down and every diff-altitude scalar peer
+    /// on the same altitude. The scalar-count octuple
+    /// `(peak_kind_count, trough_kind_count, kind_spread,
+    /// kind_peak_trough_sum, kind_peak_trough_product,
+    /// kind_peak_trough_sum_of_squares, kind_peak_trough_sum_of_cubes,
+    /// kind_peak_trough_sum_of_fourth_powers)` reads uniformly
+    /// `(0, 0, 0, 0, 0, 0, 0, 0)` on the empty diff.
+    ///
+    /// **Empty-boundary equivalence.**
+    /// `kind_peak_trough_sum_of_fourth_powers() == 0` ⇔
+    /// `self.lines.is_empty()` — both endpoints are structurally `>= 1`
+    /// on every non-empty diff, so their sum-of-fourth-powers is zero
+    /// exactly on the empty diff (the two fourth-powers cannot introduce
+    /// a zero from non-zero operands). Contrapositively, every non-empty
+    /// diff has `kind_peak_trough_sum_of_fourth_powers() >= 2` — the
+    /// joint quartic magnitude has a structural non-empty floor of `2`
+    /// (both fourth-powered endpoints contribute at least `1`, and their
+    /// sum is at least `1 + 1 = 2`).
+    ///
+    /// **AM-quartic / power-mean bound.** `8 *
+    /// kind_peak_trough_sum_of_fourth_powers() >=
+    /// kind_peak_trough_sum().pow(4)` always — the power-mean inequality
+    /// `p⁴ + t⁴ >= (p + t)⁴ / 8`. Equality holds iff
+    /// [`Self::kinds_uniform_count`] is `true`. Peer to the AM-cube
+    /// bound `4 * sum_of_cubes >= sum³` on `p_3`, the AM-QM bound
+    /// `sum_of_squares >= 2 * product` on `p_2`, and the AM-GM bound
+    /// `4 * product <= sum²` on the elementary-symmetric pair — all four
+    /// collapse to the same `(p - t)² >= 0` witness on the closed
+    /// endpoint pair at the diff altitude.
+    ///
+    /// **Overflow-safe on realistic diff sizes.** The sum-of-fourth-powers
+    /// `peak_kind_count().pow(4) + trough_kind_count().pow(4)` cannot
+    /// overflow on any diff whose line vector fits in `usize`: both
+    /// fourth-powers are bounded above by `self.lines.len().pow(4)`, so
+    /// the sum is bounded above by `2 * self.lines.len().pow(4)`. Well
+    /// outside the realistic operating range of any diff surface in the
+    /// crate.
+    ///
+    /// # Invariants
+    ///
+    /// - `kind_peak_trough_sum_of_fourth_powers() ==
+    ///   kind_histogram().peak_trough_sum_of_fourth_powers()` — both
+    ///   project the same scalar off the same primitive; the named seam
+    ///   is the quartic-native routing of the histogram surface.
+    /// - `kind_peak_trough_sum_of_fourth_powers() == peak_kind_count().pow(4) +
+    ///   trough_kind_count().pow(4)` — the fused-pair identity of the
+    ///   joint-extremes-quartic-magnitude peer on the underlying scalar
+    ///   count pair.
+    /// - `kind_peak_trough_sum_of_fourth_powers() == 0` ⇔
+    ///   `self.lines.is_empty()` — the empty-boundary equivalence peer
+    ///   to the two-endpoint surface.
+    /// - `kind_peak_trough_sum_of_fourth_powers() >= 2` whenever
+    ///   `!self.lines.is_empty()` — non-empty floor: both endpoints are
+    ///   at least `1` on every non-empty diff, so their
+    ///   sum-of-fourth-powers is at least `2`.
+    /// - `kind_peak_trough_sum_of_fourth_powers() <=
+    ///   kind_peak_trough_sum().pow(4)` always (equality iff
+    ///   `self.lines.is_empty()`).
+    /// - `8 * kind_peak_trough_sum_of_fourth_powers() >=
+    ///   kind_peak_trough_sum().pow(4)` always (AM-quartic; equality iff
+    ///   [`Self::kinds_uniform_count`] is `true`).
+    /// - `kind_peak_trough_sum_of_fourth_powers() <= 2 * peak_kind_count().pow(4)`
+    ///   always (⇔ `trough_kind_count() <= peak_kind_count()`, the
+    ///   structural invariant). Equality holds iff
+    ///   [`Self::kinds_uniform_count`] is `true`.
+    /// - `kind_peak_trough_sum_of_fourth_powers() <= 2 * self.lines.len().pow(4)`
+    ///   always (composition of both fourth-powered endpoints being
+    ///   bounded above by `self.lines.len().pow(4)`).
+    /// - `kind_peak_trough_sum_of_fourth_powers() == kind_peak_trough_sum_of_squares().pow(2) - 2 * kind_peak_trough_product().pow(2)`
+    ///   always — the sum-of-fourth-powers factorization on the
+    ///   `(sos, product)` surface (`p⁴ + t⁴ = (p² + t²)² - 2(pt)²`;
+    ///   non-negative subtraction by the AM-QM bound `sos >= 2·product`
+    ///   squared).
+    /// - `kind_peak_trough_sum_of_fourth_powers() == kind_peak_trough_sum() * kind_peak_trough_sum_of_cubes() - kind_peak_trough_product() * kind_peak_trough_sum_of_squares()`
+    ///   always — Newton's identity `p_4 = e_1 * p_3 - e_2 * p_2` on the
+    ///   `(sum, sum_of_cubes, product, sum_of_squares)` surface.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (the peak +
+    /// trough fused scan through
+    /// [`crate::AxisHistogram::peak_trough_sum_of_fourth_powers`]). Both
+    /// are `O(n)` in practice since the diff-cell axis carries a fixed
+    /// three-cell cardinality; the returned `usize` reads one scalar.
+    #[must_use]
+    pub fn kind_peak_trough_sum_of_fourth_powers(&self) -> usize {
+        self.kind_histogram().peak_trough_sum_of_fourth_powers()
+    }
+
     /// The **modal-multiplicity of diff kinds** — the number of
     /// [`DiffLineKind`] cells that hold the peak line count on this diff.
     /// Equal to `1` on every strictly-modally-unique diff (a unique
@@ -19110,6 +19293,444 @@ mod tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak * peak * peak + trough * trough * trough);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fourth_powers_matches_kind_histogram_peak_trough_sum_of_fourth_powers_pointwise()
+     {
+        // Routing pin: `kind_peak_trough_sum_of_fourth_powers` routes
+        // through `kind_histogram().peak_trough_sum_of_fourth_powers()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared quartic-native primitive.
+        // Diff-altitude climb of the "peak⁴ + trough⁴ sums-of-fourth-
+        // powers across altitudes" projection.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().peak_trough_sum_of_fourth_powers();
+            assert_eq!(diff.kind_peak_trough_sum_of_fourth_powers(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fourth_powers_equals_peak_quartic_plus_trough_quartic_pointwise() {
+        // Fused-pair pin: `kind_peak_trough_sum_of_fourth_powers ==
+        // peak_kind_count⁴ + trough_kind_count⁴` on every fixture — the
+        // defining equivalence on the underlying scalar pair. The
+        // fourth-powerings-plus-addition is overflow-safe on any diff
+        // whose lines vector fits in `usize`: both fourth-powers are
+        // bounded above by `self.lines.len().pow(4)`.
+        for diff in dominant_kind_fixtures() {
+            let peak = diff.peak_kind_count();
+            let trough = diff.trough_kind_count();
+            assert_eq!(
+                diff.kind_peak_trough_sum_of_fourth_powers(),
+                peak * peak * peak * peak + trough * trough * trough * trough,
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fourth_powers_context_dominated_fixture_is_eighty_two() {
+        // Direct pin: a diff of 3 Context + 1 Removed has Context
+        // dominant at 3, Removed rarest at 1 — the joint
+        // sum-of-fourth-powers is `3⁴ + 1⁴ == 82`. Reads the paired
+        // `(peak_kind_count, trough_kind_count, kind_spread,
+        // kind_peak_trough_sum, kind_peak_trough_product,
+        // kind_peak_trough_sum_of_squares, kind_peak_trough_sum_of_cubes,
+        // kind_peak_trough_sum_of_fourth_powers)` count octuple as
+        // `(3, 1, 2, 4, 3, 10, 28, 82)`. Peer of
+        // `kind_peak_trough_sum_of_cubes_context_dominated_fixture_is_twenty_eight`
+        // on the sum-of-fourth-powers side.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_count(), 3);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_spread(), 2);
+        assert_eq!(diff.kind_peak_trough_sum(), 4);
+        assert_eq!(diff.kind_peak_trough_product(), 3);
+        assert_eq!(diff.kind_peak_trough_sum_of_squares(), 10);
+        assert_eq!(diff.kind_peak_trough_sum_of_cubes(), 28);
+        assert_eq!(diff.kind_peak_trough_sum_of_fourth_powers(), 82);
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fourth_powers_added_dominated_fixture_is_seventeen() {
+        // Direct pin: a diff of 2 Added + 1 Context has Added dominant
+        // at 2, Context rarest at 1 — the joint sum-of-fourth-powers is
+        // `2⁴ + 1⁴ == 17`. Reads the paired count octuple as
+        // `(2, 1, 1, 3, 2, 5, 9, 17)`. Peer of
+        // `kind_peak_trough_sum_of_cubes_added_dominated_fixture_is_nine`
+        // on the sum-of-fourth-powers side.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_count(), 2);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_spread(), 1);
+        assert_eq!(diff.kind_peak_trough_sum(), 3);
+        assert_eq!(diff.kind_peak_trough_product(), 2);
+        assert_eq!(diff.kind_peak_trough_sum_of_squares(), 5);
+        assert_eq!(diff.kind_peak_trough_sum_of_cubes(), 9);
+        assert_eq!(diff.kind_peak_trough_sum_of_fourth_powers(), 17);
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fourth_powers_empty_diff_is_zero() {
+        // An empty ConfigDiff has no lines and therefore zero joint
+        // quartic magnitude — reads `0` per the
+        // AxisHistogram::peak_trough_sum_of_fourth_powers empty
+        // convention one altitude down; the diff-altitude octuple reads
+        // `(0, 0, 0, 0, 0, 0, 0, 0)` uniformly on the empty diff. Peer
+        // of `kind_peak_trough_sum_of_cubes_empty_diff_is_zero`.
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.peak_kind_count(), 0);
+        assert_eq!(empty.trough_kind_count(), 0);
+        assert_eq!(empty.kind_spread(), 0);
+        assert_eq!(empty.kind_peak_trough_sum(), 0);
+        assert_eq!(empty.kind_peak_trough_product(), 0);
+        assert_eq!(empty.kind_peak_trough_sum_of_squares(), 0);
+        assert_eq!(empty.kind_peak_trough_sum_of_cubes(), 0);
+        assert_eq!(empty.kind_peak_trough_sum_of_fourth_powers(), 0);
+        assert!(empty.lines.is_empty());
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fourth_powers_singleton_support_is_twice_line_count_quartic() {
+        // Singleton-support pin: every line lands on the same kind, so
+        // that one kind is both peak and trough of the observed support,
+        // and the joint sum-of-fourth-powers is `line_count⁴ +
+        // line_count⁴ == 2 * line_count⁴`. Diff-altitude peer of the
+        // trait-uniform `peak_trough_sum_of_fourth_powers == 2 * total⁴`
+        // behavior on AxisHistogram's singleton-support boundary.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Removed("r3".into()),
+                DiffLine::Removed("r4".into()),
+            ],
+        };
+        assert_eq!(diff.present_kinds().len(), 1);
+        assert_eq!(diff.peak_kind_count(), 4);
+        assert_eq!(diff.trough_kind_count(), 4);
+        // 4⁴ + 4⁴ = 256 + 256 = 512
+        assert_eq!(diff.kind_peak_trough_sum_of_fourth_powers(), 512);
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fourth_powers_uniform_cover_is_twice_shared_count_quartic() {
+        // Uniform-cover pin: every observed kind contributes the same
+        // nonzero count (one line each here), so peak == trough == 1
+        // and the joint sum-of-fourth-powers is `2 * shared_count⁴ == 2`.
+        // On the uniform-cover shape,
+        // `kind_peak_trough_sum_of_fourth_powers == 2 *
+        // peak_kind_count⁴` (equality boundary of the
+        // `kind_peak_trough_sum_of_fourth_powers <= 2 * peak_kind_count⁴`
+        // invariant, witnessed by `kinds_uniform_count() == true`).
+        // Peer of
+        // `kind_peak_trough_sum_of_cubes_uniform_cover_is_twice_shared_count_cubed`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kind_histogram().is_full_cover());
+        assert!(diff.kinds_uniform_count());
+        assert_eq!(diff.peak_kind_count(), 1);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_peak_trough_sum_of_fourth_powers(), 2);
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fourth_powers_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence pin:
+        // `kind_peak_trough_sum_of_fourth_powers() == 0` iff the diff
+        // is empty. Both endpoints are structurally `>= 1` on every
+        // non-empty diff, and fourth-powering cannot introduce a zero
+        // from non-zero operands, so the sum-of-fourth-powers is zero
+        // exactly on the empty diff. Contrapositively, every non-empty
+        // diff has `kind_peak_trough_sum_of_fourth_powers >= 2` (both
+        // fourth-powered endpoints contribute at least `1`). Empty-
+        // boundary peer to the two-endpoint surface.
+        for diff in dominant_kind_fixtures() {
+            let sofp_zero = diff.kind_peak_trough_sum_of_fourth_powers() == 0;
+            let is_empty = diff.lines.is_empty();
+            assert_eq!(
+                sofp_zero,
+                is_empty,
+                "kind_peak_trough_sum_of_fourth_powers == 0 must agree \
+                 with lines.is_empty() for diff with peak={p}, \
+                 trough={t}, sofp={sofp}",
+                p = diff.peak_kind_count(),
+                t = diff.trough_kind_count(),
+                sofp = diff.kind_peak_trough_sum_of_fourth_powers(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fourth_powers_non_empty_bounded_below_by_two() {
+        // Non-empty floor pin: every non-empty diff has
+        // `kind_peak_trough_sum_of_fourth_powers >= 2` — the joint
+        // quartic magnitude has a structural non-empty floor of `2`
+        // because both endpoints are structurally `>= 1` on every
+        // non-empty diff, and their sum-of-fourth-powers is at least
+        // `1 + 1 == 2`.
+        for diff in dominant_kind_fixtures() {
+            if diff.lines.is_empty() {
+                continue;
+            }
+            assert!(
+                diff.kind_peak_trough_sum_of_fourth_powers() >= 2,
+                "kind_peak_trough_sum_of_fourth_powers ({sofp}) must \
+                 be >= 2 on non-empty diff (peak={p}, trough={t})",
+                sofp = diff.kind_peak_trough_sum_of_fourth_powers(),
+                p = diff.peak_kind_count(),
+                t = diff.trough_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fourth_powers_am_quartic_bounded_below_by_eighth_sum_quartic() {
+        // AM-quartic bound: `8 * kind_peak_trough_sum_of_fourth_powers
+        // >= kind_peak_trough_sum⁴` on every fixture — the power-mean
+        // inequality `p⁴ + t⁴ >= (p + t)⁴ / 8`. Equality holds iff
+        // `kinds_uniform_count() == true` (peak equals trough), the
+        // balanced-distribution corner. Peer to the AM-cube bound
+        // `4 * soc >= sum³` on `p_3`, the AM-QM bound
+        // `sos >= 2*product` on `p_2`, and the AM-GM bound
+        // `4 * product <= sum²` on the elementary-symmetric pair.
+        for diff in dominant_kind_fixtures() {
+            let sofp = diff.kind_peak_trough_sum_of_fourth_powers();
+            let sum = diff.kind_peak_trough_sum();
+            let sum_quartic = sum * sum * sum * sum;
+            let eight_sofp = 8 * sofp;
+            assert!(
+                eight_sofp >= sum_quartic,
+                "8 * kind_peak_trough_sum_of_fourth_powers ({eight_sofp}) \
+                 must be >= kind_peak_trough_sum⁴ ({sum_quartic})",
+            );
+            let equality = eight_sofp == sum_quartic;
+            let uniform = diff.kinds_uniform_count();
+            assert_eq!(
+                equality,
+                uniform,
+                "8 * kind_peak_trough_sum_of_fourth_powers == sum⁴ \
+                 must agree with kinds_uniform_count for diff with \
+                 peak={p}, trough={t}, sum={sum}, sofp={sofp}",
+                p = diff.peak_kind_count(),
+                t = diff.trough_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fourth_powers_bounded_above_by_sum_quartic() {
+        // Structural bound: `kind_peak_trough_sum_of_fourth_powers() <=
+        // kind_peak_trough_sum().pow(4)` on every fixture — expanding
+        // `(p + t)⁴ = p⁴ + t⁴ + 4pt(p² + t²) + 6p²t²`, the excess terms
+        // over `p⁴ + t⁴` are all non-negative. Equality holds iff
+        // `self.lines.is_empty()` — the sole shape where either endpoint
+        // is zero, since both endpoints are `>= 1` on every non-empty
+        // diff.
+        for diff in dominant_kind_fixtures() {
+            let sofp = diff.kind_peak_trough_sum_of_fourth_powers();
+            let sum = diff.kind_peak_trough_sum();
+            let sum_quartic = sum * sum * sum * sum;
+            assert!(
+                sofp <= sum_quartic,
+                "kind_peak_trough_sum_of_fourth_powers ({sofp}) must be \
+                 <= sum⁴ ({sum_quartic})",
+            );
+            let equality = sofp == sum_quartic;
+            let is_empty = diff.lines.is_empty();
+            assert_eq!(
+                equality,
+                is_empty,
+                "kind_peak_trough_sum_of_fourth_powers == sum⁴ must \
+                 agree with lines.is_empty() for diff with peak={p}, \
+                 trough={t}, sum={sum}, sofp={sofp}",
+                p = diff.peak_kind_count(),
+                t = diff.trough_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fourth_powers_bounded_above_by_twice_peak_quartic() {
+        // Structural bound: `kind_peak_trough_sum_of_fourth_powers() <=
+        // 2 * peak_kind_count().pow(4)` on every fixture — `p⁴ + t⁴ <=
+        // 2p⁴` reduces to `trough <= peak` (both non-negative), the
+        // structural `trough_kind_count <= peak_kind_count` invariant.
+        // Equality holds iff `kinds_uniform_count() == true` (peak
+        // equals trough).
+        for diff in dominant_kind_fixtures() {
+            let sofp = diff.kind_peak_trough_sum_of_fourth_powers();
+            let peak = diff.peak_kind_count();
+            let twice_peak_quartic = 2 * peak * peak * peak * peak;
+            assert!(
+                sofp <= twice_peak_quartic,
+                "kind_peak_trough_sum_of_fourth_powers ({sofp}) must \
+                 be <= 2 * peak⁴ ({twice_peak_quartic})",
+            );
+            let equality = sofp == twice_peak_quartic;
+            let uniform = diff.kinds_uniform_count();
+            assert_eq!(
+                equality,
+                uniform,
+                "kind_peak_trough_sum_of_fourth_powers == 2 * peak⁴ \
+                 must agree with kinds_uniform_count for diff with \
+                 peak={peak}, trough={t}, sofp={sofp}",
+                t = diff.trough_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fourth_powers_bounded_above_by_twice_lines_len_quartic() {
+        // Composition bound: `kind_peak_trough_sum_of_fourth_powers() <=
+        // 2 * self.lines.len()⁴` on every fixture — chaining
+        // `sofp <= 2 * peak⁴` (previous pin) with `peak <= lines.len()`.
+        // The joint quartic magnitude of a diff is bounded above by
+        // twice the fourth power of the total line count of the diff.
+        for diff in dominant_kind_fixtures() {
+            let sofp = diff.kind_peak_trough_sum_of_fourth_powers();
+            let n = diff.lines.len();
+            let twice_n_quartic = 2 * n * n * n * n;
+            assert!(
+                sofp <= twice_n_quartic,
+                "kind_peak_trough_sum_of_fourth_powers ({sofp}) must \
+                 not exceed 2 * lines.len()⁴ ({twice_n_quartic})",
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fourth_powers_factorization_with_sos_and_product_pointwise() {
+        // Sum-of-fourth-powers factorization on the (sos, product)
+        // surface: `kind_peak_trough_sum_of_fourth_powers ==
+        // kind_peak_trough_sum_of_squares² - 2 *
+        // kind_peak_trough_product²` on every fixture — the identity
+        // `p⁴ + t⁴ = (p² + t²)² - 2(pt)²`. The subtraction is
+        // non-negative because `sos = p² + t² >= 2pt = 2·product`
+        // (AM-QM), so `sos² >= 4·product² >= 2·product²`.
+        for diff in dominant_kind_fixtures() {
+            let sofp = diff.kind_peak_trough_sum_of_fourth_powers();
+            let sos = diff.kind_peak_trough_sum_of_squares();
+            let product = diff.kind_peak_trough_product();
+            let two_product_sq = 2 * product * product;
+            let sos_sq = sos * sos;
+            assert!(
+                two_product_sq <= sos_sq,
+                "sos² - 2·product² must be non-negative: 2·product² \
+                 ({two_product_sq}) <= sos² ({sos_sq})",
+            );
+            assert_eq!(sofp, sos_sq - two_product_sq);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fourth_powers_newton_identity_with_sum_soc_product_sos_pointwise() {
+        // Newton's identity `p_4 = e_1 * p_3 - e_2 * p_2` read-off on
+        // the (sum, sum_of_cubes, product, sum_of_squares) surface:
+        // `kind_peak_trough_sum_of_fourth_powers == kind_peak_trough_sum
+        // * kind_peak_trough_sum_of_cubes - kind_peak_trough_product *
+        // kind_peak_trough_sum_of_squares` on every fixture. The
+        // subtraction is non-negative: expanding `(p+t)(p³+t³) = p⁴ +
+        // t⁴ + pt(p²+t²)`, the second term is exactly `product * sos`,
+        // so LHS - RHS = p⁴ + t⁴ = sofp >= 0.
+        for diff in dominant_kind_fixtures() {
+            let sofp = diff.kind_peak_trough_sum_of_fourth_powers();
+            let sum = diff.kind_peak_trough_sum();
+            let soc = diff.kind_peak_trough_sum_of_cubes();
+            let product = diff.kind_peak_trough_product();
+            let sos = diff.kind_peak_trough_sum_of_squares();
+            let lhs = sum * soc;
+            let rhs = product * sos;
+            assert!(
+                rhs <= lhs,
+                "sum·soc - product·sos must be non-negative: \
+                 product·sos ({rhs}) <= sum·soc ({lhs})",
+            );
+            assert_eq!(sofp, lhs - rhs);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fourth_powers_skewed_fixture_matches_peak_quartic_plus_trough_quartic_direct()
+     {
+        // Direct pin: a skewed fixture with Context=3, Added=2,
+        // Removed=1 has peak 3, trough 1, joint sum-of-fourth-powers
+        // `3⁴ + 1⁴ == 82` — the strictly-ordered three-cell case where
+        // every count is distinct. Pins the fused-pair identity at a
+        // concrete position where no tie-breaking is needed on either
+        // side of the modal-count pair. Sum-of-fourth-powers peer of
+        // `kind_peak_trough_sum_of_cubes_skewed_fixture_matches_peak_cubed_plus_trough_cubed_direct`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+            ],
+        };
+        let hist = diff.kind_histogram();
+        assert_eq!(hist.count(DiffLineKind::Removed), 1);
+        assert_eq!(hist.count(DiffLineKind::Added), 2);
+        assert_eq!(hist.count(DiffLineKind::Context), 3);
+        assert_eq!(diff.peak_kind_count(), 3);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_spread(), 2);
+        assert_eq!(diff.kind_peak_trough_sum(), 4);
+        assert_eq!(diff.kind_peak_trough_product(), 3);
+        assert_eq!(diff.kind_peak_trough_sum_of_squares(), 10);
+        assert_eq!(diff.kind_peak_trough_sum_of_cubes(), 28);
+        assert_eq!(diff.kind_peak_trough_sum_of_fourth_powers(), 82);
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fourth_powers_agrees_with_open_coded_max_quartic_plus_min_quartic_walk()
+     {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0).pow(4) + hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0).pow(4)` walk this lift
+        // replaces — both the named seam and the hand-rolled joint
+        // quartic magnitude must pointwise agree over every fixture.
+        // The `.filter(c > 0)` on the min side is essential (mirroring
+        // `trough_count`'s support discipline); the `.max()` on the
+        // peak side operates over the full axis (mirroring
+        // `peak_count`). Sum-of-fourth-powers peer of
+        // `kind_peak_trough_sum_of_cubes_agrees_with_open_coded_max_cubed_plus_min_cubed_walk`.
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kind_peak_trough_sum_of_fourth_powers();
+            let hist = diff.kind_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .filter(|&(_, c)| c > 0)
+                .map(|(_, c)| c)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(
+                via_seam,
+                peak * peak * peak * peak + trough * trough * trough * trough,
+            );
         }
     }
 
