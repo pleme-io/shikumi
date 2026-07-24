@@ -2152,7 +2152,7 @@ impl ProvenanceMap {
     /// both through a single scalar read.
     #[must_use]
     pub fn tier_peak_trough_sum_of_squares(&self) -> usize {
-        self.tier_histogram().peak_trough_sum_of_squares()
+        self.tier_peak_trough_sum_of_powers(2)
     }
 
     /// The **joint-extremes-cube-magnitude of tier counts** — the sum of
@@ -2338,7 +2338,7 @@ impl ProvenanceMap {
     /// both through a single scalar read.
     #[must_use]
     pub fn tier_peak_trough_sum_of_cubes(&self) -> usize {
-        self.tier_histogram().peak_trough_sum_of_cubes()
+        self.tier_peak_trough_sum_of_powers(3)
     }
 
     /// The **joint-extremes-quartic-magnitude of tier counts** — the
@@ -2522,7 +2522,7 @@ impl ProvenanceMap {
     /// routes both through a single scalar read.
     #[must_use]
     pub fn tier_peak_trough_sum_of_fourth_powers(&self) -> usize {
-        self.tier_histogram().peak_trough_sum_of_fourth_powers()
+        self.tier_peak_trough_sum_of_powers(4)
     }
 
     /// The **joint-extremes-quintic-magnitude of tier counts** — the sum
@@ -2716,7 +2716,7 @@ impl ProvenanceMap {
     /// both through a single scalar read.
     #[must_use]
     pub fn tier_peak_trough_sum_of_fifth_powers(&self) -> usize {
-        self.tier_histogram().peak_trough_sum_of_fifth_powers()
+        self.tier_peak_trough_sum_of_powers(5)
     }
 
     /// The **joint-extremes-sextic-magnitude of tier counts** — the sum
@@ -2918,7 +2918,62 @@ impl ProvenanceMap {
     /// both through a single scalar read.
     #[must_use]
     pub fn tier_peak_trough_sum_of_sixth_powers(&self) -> usize {
-        self.tier_histogram().peak_trough_sum_of_sixth_powers()
+        self.tier_peak_trough_sum_of_powers(6)
+    }
+
+    /// The **joint-extremes-Ln-magnitude of tier counts at runtime
+    /// exponent `n`** — the sum of the `n`th powers of the modal and
+    /// anti-modal per-tier leaf counts on this resolved fold. Routes
+    /// through [`crate::AxisHistogram::peak_trough_sum_of_powers`] one
+    /// altitude down: the fused `peak_count().pow(n) +
+    /// trough_count().pow(n)` runtime-exponent power-sum on the
+    /// histogram surface, halving the cost of the inline
+    /// `peak_tier_count().pow(n) + trough_tier_count().pow(n)` idiom
+    /// which walked the counts vector twice.
+    ///
+    /// The **runtime-exponent generalization** of the tier-altitude
+    /// power-sum family: the five shipped fixed-exponent siblings —
+    /// [`Self::tier_peak_trough_sum_of_squares`] (`n = 2`),
+    /// [`Self::tier_peak_trough_sum_of_cubes`] (`n = 3`),
+    /// [`Self::tier_peak_trough_sum_of_fourth_powers`] (`n = 4`),
+    /// [`Self::tier_peak_trough_sum_of_fifth_powers`] (`n = 5`), and
+    /// [`Self::tier_peak_trough_sum_of_sixth_powers`] (`n = 6`) — each
+    /// route through this primitive at their fixed `N`, so the
+    /// joint-extremes `p_n` at the tier altitude reads off ONE typed
+    /// scalar at a runtime-chosen exponent instead of dispatching over
+    /// the named table or growing a seventh / eighth / n-th named
+    /// tier-altitude sibling to extend the ladder. The scalar-altitude
+    /// peer [`crate::AxisHistogram::peak_trough_sum_of_powers`] closes
+    /// the exponent axis on the histogram surface; this method lifts
+    /// that closure one altitude up to the tier-count endpoint pair.
+    ///
+    /// # Boundary conventions
+    ///
+    /// Inherited from the scalar-altitude primitive:
+    /// - `tier_peak_trough_sum_of_powers(0) == 2` for every resolved
+    ///   fold (even the empty map) since `usize::pow(0) == 1` per
+    ///   operand — the closed `1 + 1 == 2` boundary of the two-operand
+    ///   power-sum family.
+    /// - `tier_peak_trough_sum_of_powers(1) == tier_peak_trough_sum()`
+    ///   — the linear-power-sum degenerates to the shipped addition-
+    ///   form scalar [`Self::tier_peak_trough_sum`].
+    /// - `tier_peak_trough_sum_of_powers(n) == 0` for `n >= 1` iff
+    ///   `self.is_empty()` — every non-empty resolved fold has both
+    ///   endpoints `>= 1`, so `p_n >= 2` on any non-empty fold at
+    ///   `n >= 1`.
+    ///
+    /// # Newton's two-variable recurrence
+    ///
+    /// For `n >= 2`, the tier-altitude primitive satisfies Newton's
+    /// identity `p_n == e_1 * p_(n-1) - e_2 * p_(n-2)` where `e_1 =
+    /// tier_peak_trough_sum()` and `e_2 = tier_peak_trough_product()`
+    /// — the same two elementary-symmetric-polynomial scalars that
+    /// close the entire power-sum family on the tier count-endpoint
+    /// pair. The identity holds without underflow on `usize` by the
+    /// same rearrangement the scalar-altitude primitive uses.
+    #[must_use]
+    pub fn tier_peak_trough_sum_of_powers(&self, n: u32) -> usize {
+        self.tier_histogram().peak_trough_sum_of_powers(n)
     }
 
     /// The **modal-multiplicity of tier counts** — the number of
@@ -36162,6 +36217,126 @@ mod progressive_tests {
                 peak * peak * peak * peak * peak * peak
                     + trough * trough * trough * trough * trough * trough,
             );
+        }
+    }
+
+    // ── ProvenanceMap::tier_peak_trough_sum_of_powers — runtime-exponent
+    //    tier-altitude power-sum primitive, closing the exponent axis at
+    //    the tier altitude. Four pins seal the fold the five shipped named
+    //    fixed-exponent tier siblings (squares, cubes, fourth_powers,
+    //    fifth_powers, sixth_powers) now route through: the boundary
+    //    conventions at n == 0 (== 2 on every fold, incl. empty via
+    //    `0.pow(0) == 1` per operand) and n == 1 (== tier_peak_trough_sum,
+    //    the shipped addition-form degenerate); the fixed-exponent routing
+    //    pin (each of the 5 named siblings equals
+    //    `tier_peak_trough_sum_of_powers(N)` pointwise across the canonical
+    //    tier-mix fixtures); and Newton's two-variable recurrence pin `p_n
+    //    == e_1 * p_(n-1) - e_2 * p_(n-2)` for n in 2..=6, proving the
+    //    primitive closes the whole tier-altitude power-sum family under
+    //    one identity — not just at any single fixed exponent.
+
+    #[test]
+    fn tier_peak_trough_sum_of_powers_at_zero_is_two_on_every_fold_including_empty() {
+        // Boundary pin at n == 0: for every resolved fold — non-empty or
+        // empty — `peak_tier_count().pow(0) == 1` and
+        // `trough_tier_count().pow(0) == 1` (usize's `0.pow(0) == 1` per
+        // operand), so `p_0 == 1 + 1 == 2` uniformly. The closed
+        // convention that lets `tier_peak_trough_sum_of_powers(0)` read
+        // the "two operands are present" cardinality without a nonempty
+        // guard, lifted from the scalar-altitude primitive.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.tier_peak_trough_sum_of_powers(0), 2);
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_powers_at_one_equals_tier_peak_trough_sum_pointwise() {
+        // Boundary pin at n == 1: the linear-power-sum degenerates to
+        // the shipped addition-form scalar `tier_peak_trough_sum`.
+        // Pinned pointwise across every canonical fixture so a future
+        // regression in either side surfaces here.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.tier_peak_trough_sum_of_powers(1),
+                map.tier_peak_trough_sum(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_powers_routes_named_siblings_pointwise() {
+        // Routing pin: each of the five shipped named exponents
+        // (squares, cubes, fourth_powers, fifth_powers, sixth_powers)
+        // equals `tier_peak_trough_sum_of_powers(N)` pointwise across
+        // every canonical fixture. Seals the delegation the fold
+        // installs — a future drift between the primitive and any named
+        // sibling surfaces here.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.tier_peak_trough_sum_of_squares(),
+                map.tier_peak_trough_sum_of_powers(2),
+            );
+            assert_eq!(
+                map.tier_peak_trough_sum_of_cubes(),
+                map.tier_peak_trough_sum_of_powers(3),
+            );
+            assert_eq!(
+                map.tier_peak_trough_sum_of_fourth_powers(),
+                map.tier_peak_trough_sum_of_powers(4),
+            );
+            assert_eq!(
+                map.tier_peak_trough_sum_of_fifth_powers(),
+                map.tier_peak_trough_sum_of_powers(5),
+            );
+            assert_eq!(
+                map.tier_peak_trough_sum_of_sixth_powers(),
+                map.tier_peak_trough_sum_of_powers(6),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_powers_satisfies_newton_recurrence_pointwise() {
+        // Newton's two-variable recurrence pin at n in 2..=6: `p_n ==
+        // e_1 * p_(n-1) - e_2 * p_(n-2)` where `e_1 =
+        // tier_peak_trough_sum` and `e_2 = tier_peak_trough_product`.
+        // Proves the primitive closes the whole tier-altitude power-sum
+        // family under one identity — not just at any single fixed
+        // exponent. The identity holds without underflow on `usize` by
+        // the same rearrangement the scalar-altitude primitive uses
+        // (`(p+t)(p^(n-1)+t^(n-1)) = p^n + t^n +
+        // p*t*(p^(n-2)+t^(n-2))` on non-negative `p`, `t`).
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let e1 = map.tier_peak_trough_sum();
+            let e2 = map.tier_peak_trough_product();
+            for n in 2u32..=6 {
+                let p_n = map.tier_peak_trough_sum_of_powers(n);
+                let p_n_minus_1 = map.tier_peak_trough_sum_of_powers(n - 1);
+                let p_n_minus_2 = map.tier_peak_trough_sum_of_powers(n - 2);
+                assert_eq!(
+                    p_n + e2 * p_n_minus_2,
+                    e1 * p_n_minus_1,
+                    "Newton p_{n} + e_2 * p_{prev2} == e_1 * p_{prev1}",
+                    prev2 = n - 2,
+                    prev1 = n - 1,
+                );
+            }
         }
     }
 
