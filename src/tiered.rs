@@ -458,18 +458,21 @@ pub trait TieredConfig: Sized + Clone + Serialize + DeserializeOwned {
     #[must_use]
     fn resolve_progressive_with(overlays: &[ProgressiveLayer]) -> ProgressiveResolution<Self> {
         // 1. Assemble the three trait tiers, each serialized to a dict and
-        //    tagged with its computed-defaults provenance.
+        //    tagged with its computed-defaults provenance. Each tier's
+        //    provenance flows through the named constructor on `Provenance`
+        //    (`bare()` / `discovered()` / `prescribed_default()`), so the
+        //    fold's provenance-construction identity lives at one site per
+        //    tier — not three unpacked `computed(ConfigTierKind::_)`
+        //    literals here that drift from the constructor grid on
+        //    `Provenance` if a tier ever grows a richer source variant.
         let mut layers: Vec<(Provenance, Dict)> = vec![
+            (Provenance::bare(), tiered_to_dict(&Self::bare())),
             (
-                Provenance::computed(ConfigTierKind::Bare),
-                tiered_to_dict(&Self::bare()),
-            ),
-            (
-                Provenance::computed(ConfigTierKind::Discovered),
+                Provenance::discovered(),
                 tiered_to_dict(&Self::discovered()),
             ),
             (
-                Provenance::computed(ConfigTierKind::Default),
+                Provenance::prescribed_default(),
                 tiered_to_dict(&Self::prescribed_default()),
             ),
         ];
@@ -619,6 +622,23 @@ impl Provenance {
         }
     }
 
+    /// The zero-opinion floor tier — tier [`ConfigTierKind::Bare`], source
+    /// [`ConfigSource::Defaults`]. The tier-axis peer of [`Self::discovered`]
+    /// / [`Self::prescribed_default`] on the computed-defaults row: every
+    /// leaf the fold credits to [`TieredConfig::bare`] carries this
+    /// provenance verbatim.
+    ///
+    /// Before this constructor, every bare-tier caller — including the
+    /// canonical fold seam at [`TieredConfig::resolve_progressive_with`]
+    /// — hand-composed the identity as `Provenance::computed(ConfigTierKind::Bare)`.
+    /// Lifting it to a named constructor closes one more spot of the
+    /// tier-axis constructor grid at one site, mirroring the
+    /// [`Self::discovered`] closure on the middle computed-defaults row.
+    #[must_use]
+    pub fn bare() -> Self {
+        Self::computed(ConfigTierKind::Bare)
+    }
+
     /// A runtime-discovered overlay — tier [`ConfigTierKind::Discovered`],
     /// source [`ConfigSource::Defaults`] (the discovered tier is a
     /// computed-defaults class today: machine-derived, not operator-supplied,
@@ -644,6 +664,30 @@ impl Provenance {
     #[must_use]
     pub fn discovered() -> Self {
         Self::computed(ConfigTierKind::Discovered)
+    }
+
+    /// The prescribed-default tier — tier [`ConfigTierKind::Default`], source
+    /// [`ConfigSource::Defaults`]. The tier-axis peer of [`Self::bare`] /
+    /// [`Self::discovered`] on the computed-defaults row: every leaf the
+    /// fold credits to [`TieredConfig::prescribed_default`] carries this
+    /// provenance verbatim.
+    ///
+    /// Named after the trait method [`TieredConfig::prescribed_default`]
+    /// rather than the tier variant name (`Default`) to keep the identity
+    /// unambiguous vs the Rust [`std::default::Default`] convention: this
+    /// constructor names the prescribed-default TIER's provenance, not a
+    /// [`Provenance`] default value. Before this constructor, every
+    /// prescribed-default-tier caller — including the canonical fold seam at
+    /// [`TieredConfig::resolve_progressive_with`] and the recessive-tier
+    /// diff pins — hand-composed the identity as
+    /// `Provenance::computed(ConfigTierKind::Default)`. Lifting it to a
+    /// named constructor closes the last spot of the tier-axis
+    /// constructor grid on the computed-defaults row, so the whole row
+    /// ([`Self::bare`] / [`Self::discovered`] / [`Self::prescribed_default`])
+    /// now reads through named constructors uniformly.
+    #[must_use]
+    pub fn prescribed_default() -> Self {
+        Self::computed(ConfigTierKind::Default)
     }
 
     /// The conceptual tier that produced the value.
@@ -48871,6 +48915,125 @@ mod progressive_tests {
         assert_eq!(Provenance::discovered().tier(), ConfigTierKind::Discovered);
         assert_eq!(Provenance::discovered().source(), &ConfigSource::Defaults);
         assert_eq!(Provenance::discovered().to_string(), "discovered");
+    }
+
+    #[test]
+    fn provenance_bare_helper_matches_computed_bare() {
+        // The bare() helper closes the tier-axis constructor grid on
+        // Provenance on the FIRST computed-defaults row (Bare + Defaults),
+        // peer of discovered() on the middle row and prescribed_default()
+        // on the last row. Its identity is the same (tier: Bare, source:
+        // Defaults) pair every prior bare-tier caller — including the
+        // canonical fold seam at TieredConfig::resolve_progressive_with —
+        // hand-composed as computed(ConfigTierKind::Bare). All four
+        // observable facets (equality, tier, source, Display) must agree
+        // with the manual composition, so the constructor is a
+        // zero-behavior-change closure of a hand-written idiom.
+        assert_eq!(
+            Provenance::bare(),
+            Provenance::computed(ConfigTierKind::Bare)
+        );
+        assert_eq!(Provenance::bare().tier(), ConfigTierKind::Bare);
+        assert_eq!(Provenance::bare().source(), &ConfigSource::Defaults);
+        assert_eq!(Provenance::bare().to_string(), "bare");
+    }
+
+    #[test]
+    fn provenance_prescribed_default_helper_matches_computed_default() {
+        // The prescribed_default() helper closes the tier-axis
+        // constructor grid on Provenance on the LAST computed-defaults row
+        // (Default + Defaults), peer of bare() on the first row and
+        // discovered() on the middle row. Named after the trait method
+        // rather than the tier variant (`Default`) to keep the identity
+        // unambiguous vs the Rust std::default::Default convention. All
+        // four observable facets (equality, tier, source, Display) must
+        // agree with the manual composition computed(ConfigTierKind::Default),
+        // so the constructor is a zero-behavior-change closure of the
+        // hand-written idiom at the ~15 prior call sites (the fold seam
+        // plus a dozen recessive-tier diff pins in the tiered.rs test
+        // module) that composed it by hand.
+        assert_eq!(
+            Provenance::prescribed_default(),
+            Provenance::computed(ConfigTierKind::Default)
+        );
+        assert_eq!(
+            Provenance::prescribed_default().tier(),
+            ConfigTierKind::Default
+        );
+        assert_eq!(
+            Provenance::prescribed_default().source(),
+            &ConfigSource::Defaults
+        );
+        assert_eq!(Provenance::prescribed_default().to_string(), "default");
+    }
+
+    #[test]
+    fn resolve_progressive_fold_seam_stamps_named_tier_provenance() {
+        // End-to-end pin on the fold seam. The three trait tiers seed the
+        // fold at TieredConfig::resolve_progressive_with with provenances
+        // that must be byte-identical (equality + Display) to the three
+        // named Provenance constructors on the computed-defaults row:
+        // Provenance::bare() / discovered() / prescribed_default(). This
+        // is the load-bearing invariant of the seam refactor — the fold's
+        // provenance-construction identity now flows through the named
+        // constructors, so any future richer source variant added to a
+        // computed-defaults tier propagates through the whole fold via
+        // ONE seam (the tier's Provenance constructor) instead of the
+        // three unpacked `computed(ConfigTierKind::_)` literals the seam
+        // previously carried. A leaf pinned at each of the three tiers
+        // proves each named constructor is the effective identity the
+        // fold hands out to callers.
+        #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+        struct TierSeamFixture {
+            b: u32,
+            d: u32,
+            p: u32,
+        }
+        impl TieredConfig for TierSeamFixture {
+            fn bare() -> Self {
+                Self { b: 11, d: 0, p: 0 }
+            }
+            // Each tier PRESERVES the fields the tier below already set
+            // (b in discovered; b and d in prescribed_default) so the
+            // last-changer rule credits each field to the FIRST tier that
+            // set it to its final value — the seam's per-tier attribution
+            // then reads pointwise off the three named constructors.
+            fn discovered() -> Self {
+                Self { b: 11, d: 22, p: 0 }
+            }
+            fn prescribed_default() -> Self {
+                Self {
+                    b: 11,
+                    d: 22,
+                    p: 33,
+                }
+            }
+        }
+        let r = TierSeamFixture::resolve_progressive();
+        // Each field's provenance is exactly the named constructor for its
+        // tier — the seam's per-leaf attribution matches the constructor
+        // grid pointwise.
+        let bare_p = r.provenance().provenance_of(&["b"]).unwrap();
+        assert_eq!(bare_p, &Provenance::bare());
+        assert_eq!(bare_p.to_string(), "bare");
+        let disc_p = r.provenance().provenance_of(&["d"]).unwrap();
+        assert_eq!(disc_p, &Provenance::discovered());
+        assert_eq!(disc_p.to_string(), "discovered");
+        let default_p = r.provenance().provenance_of(&["p"]).unwrap();
+        assert_eq!(default_p, &Provenance::prescribed_default());
+        assert_eq!(default_p.to_string(), "default");
+        // And the seam continues to produce the same folded value as the
+        // legacy hand-composed seam did — proven by every existing
+        // resolve_progressive test in this module continuing to pass, plus
+        // this pointwise check on the fixture.
+        assert_eq!(
+            r.value(),
+            &TierSeamFixture {
+                b: 11,
+                d: 22,
+                p: 33
+            }
+        );
     }
 
     #[test]
