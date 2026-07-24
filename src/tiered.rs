@@ -93,13 +93,15 @@
 //!    test.
 
 use crate::discovered::{DiscoveryLayer, compose, deep_merge, deep_merge_attributed};
+use crate::error::ShikumiError;
+use crate::provider::ProviderChain;
 use crate::source::ConfigSource;
 use figment::value::Dict;
 use figment::{Figment, providers::Serialized};
 use serde::{Serialize, de::DeserializeOwned};
 use std::collections::BTreeMap;
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 // ── ConfigTierKind — variant-tag projection of ConfigTier
 
@@ -8210,6 +8212,58 @@ impl ProgressiveLayer {
             provenance: Provenance::env(prefix),
             dict,
         }
+    }
+
+    /// Read an operator FILE overlay from a path — the single-call fusion
+    /// of the file-parsing side of the [`ProviderChain`] figment fold with
+    /// the [`TieredConfig::resolve_progressive_with`] tier fold.
+    ///
+    /// The file is parsed via [`ProviderChain::with_file`], so format
+    /// detection (`.yaml` / `.yml` / `.toml` / `.nix` / `.lisp`) is
+    /// identical to what a direct [`ProviderChain`] load would produce: a
+    /// value ingested through `resolve_progressive_with(&[from_file(p)?])`
+    /// and through `ProviderChain::new().with_file(p).extract()` cannot
+    /// drift on format detection. The resulting overlay carries
+    /// [`Provenance::file`]`(path)`, so every leaf the file wins in the
+    /// progressive fold is stamped with the operator-visible file source
+    /// — closing the seam that previously forced the caller to hand-build
+    /// the [`Dict`] before calling [`Self::file`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ShikumiError::Extract`] if the file cannot be read,
+    /// parsed, or extracted into a [`Dict`]. The error carries the
+    /// recorded [`ConfigSource::File`] chain — the same failure shape
+    /// [`ProviderChain::extract`] emits on the identical file layer, so
+    /// operator-facing diagnostics agree by construction across the fold
+    /// seam.
+    pub fn try_from_file(path: impl AsRef<Path>) -> Result<Self, ShikumiError> {
+        let path = path.as_ref();
+        let dict: Dict = ProviderChain::new().with_file(path).extract()?;
+        Ok(Self::file(path.to_path_buf(), dict))
+    }
+
+    /// Read an operator ENV overlay from a prefix — the env-side fusion
+    /// peer of [`Self::try_from_file`].
+    ///
+    /// The env vars are parsed via [`ProviderChain::with_env`], which
+    /// splits nested keys on `__` (`APP_OPTIONS__PADDING=10` →
+    /// `options.padding = 10`), so the ingested shape is identical to
+    /// what a direct [`ProviderChain::with_env`] merge would produce. The
+    /// resulting overlay carries [`Provenance::env`]`(prefix)`, so every
+    /// leaf the env layer wins in the progressive fold is stamped with
+    /// the operator-visible env prefix. Infallible: a prefix that matches
+    /// zero env vars degenerates to an empty-dict overlay (a no-op in the
+    /// fold), matching [`ProviderChain::with_env`]'s "no env vars matched
+    /// → identity layer" semantics.
+    #[must_use]
+    pub fn from_env(prefix: impl AsRef<str>) -> Self {
+        let prefix = prefix.as_ref();
+        let dict: Dict = ProviderChain::new()
+            .with_env(prefix)
+            .extract()
+            .unwrap_or_default();
+        Self::env(prefix.to_owned(), dict)
     }
 
     /// The provenance stamped on every leaf this overlay wins.
@@ -48614,5 +48668,120 @@ mod progressive_tests {
             Provenance::computed(ConfigTierKind::Default).tier_ordinal()
                 < Provenance::file("/x").tier_ordinal()
         );
+    }
+
+    #[test]
+    fn progressive_try_from_file_reads_yaml_via_provider_chain() {
+        // The fusion constructor lets the caller point at a YAML path
+        // instead of hand-building a Dict: the file is parsed via
+        // ProviderChain::with_file (same format detection), the resulting
+        // overlay carries Provenance::file(path), and the leaf it wins in
+        // the progressive fold is stamped with that file's ConfigSource.
+        // Before this constructor, the caller had to open the file,
+        // deserialize it, and re-insert values into a Dict by hand.
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("prog.yaml");
+        std::fs::write(&path, "b: 99\n").unwrap();
+
+        let layer = ProgressiveLayer::try_from_file(&path).unwrap();
+        let r = Prog::resolve_progressive_with(&[layer]);
+
+        assert_eq!(r.value().b, 99, "file overlay beats prescribed b=20");
+        let prov = r.provenance().provenance_of(&["b"]).unwrap();
+        assert_eq!(prov.tier(), ConfigTierKind::Custom);
+        assert_eq!(prov.source(), &ConfigSource::File(path.clone()));
+        // A leaf the file didn't touch keeps its computed-tier provenance.
+        assert_eq!(
+            r.provenance().provenance_of(&["a"]).unwrap().tier(),
+            ConfigTierKind::Discovered
+        );
+    }
+
+    #[test]
+    fn progressive_try_from_file_and_provider_chain_agree_on_format_detection() {
+        // The load-bearing fusion invariant: the same TOML file, ingested
+        // through the two paths, yields byte-identical resolved values on
+        // every leaf the file sets. A drift here would mean an operator
+        // migrating from ProviderChain to resolve_progressive_with sees
+        // different parses of the same on-disk bytes — the exact seam the
+        // fusion is meant to close.
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("prog.toml");
+        std::fs::write(&path, "b = 77\nc = 44\n").unwrap();
+
+        let via_progressive =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::try_from_file(&path).unwrap()]);
+        let via_chain: Prog = ProviderChain::new()
+            .with_defaults(&Prog::prescribed_default())
+            .with_file(&path)
+            .extract()
+            .unwrap();
+
+        assert_eq!(via_progressive.value().b, via_chain.b);
+        assert_eq!(via_progressive.value().c, via_chain.c);
+    }
+
+    #[test]
+    fn progressive_try_from_file_malformed_returns_extract_error() {
+        // A file whose bytes don't parse as the declared format surfaces
+        // as ShikumiError::Extract with the ConfigSource::File chain
+        // recorded, so the operator sees the failing file identity
+        // without a separate try/log/wrap dance. (A *missing* file is
+        // silently an empty overlay: figment's file providers are
+        // optional-by-default, matching ProviderChain::with_file's own
+        // semantics — the fusion faithfully inherits that contract.)
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("prog.yaml");
+        std::fs::write(&path, "b: [unterminated\n").unwrap();
+        let err = ProgressiveLayer::try_from_file(&path).unwrap_err();
+        assert!(
+            matches!(err, ShikumiError::Extract { .. }),
+            "malformed-yaml error must be a ShikumiError::Extract; got {err:?}"
+        );
+        if let ShikumiError::Extract { sources, .. } = &err {
+            assert!(
+                sources
+                    .iter()
+                    .any(|s| matches!(s, ConfigSource::File(p) if p == &path)),
+                "Extract error must carry the failing file in its source chain; got {sources:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_from_env_stamps_env_provenance() {
+        // The env-side fusion peer: an env prefix produces an overlay
+        // whose leaves are stamped Provenance::env(prefix). Uses a unique
+        // prefix so parallel test runs don't collide on env state.
+        let prefix = "SHIKUMI_TIERED_ENV_TEST_";
+        let var = "SHIKUMI_TIERED_ENV_TEST_B";
+        // SAFETY: env access is guarded by a unique prefix; the cleanup
+        // below runs on every path.
+        unsafe { std::env::set_var(var, "555") };
+
+        let layer = ProgressiveLayer::from_env(prefix);
+        let r = Prog::resolve_progressive_with(&[layer]);
+
+        unsafe { std::env::remove_var(var) };
+
+        assert_eq!(r.value().b, 555, "env overlay beats prescribed b=20");
+        let prov = r.provenance().provenance_of(&["b"]).unwrap();
+        assert_eq!(prov.tier(), ConfigTierKind::Custom);
+        assert_eq!(prov.source(), &ConfigSource::Env(prefix.to_owned()));
+    }
+
+    #[test]
+    fn progressive_from_env_empty_prefix_degenerates_to_no_op() {
+        // No env vars match the (unique) prefix → the overlay contributes
+        // an empty dict → the fold behaves exactly as
+        // resolve_progressive() would without any overlay, matching
+        // ProviderChain::with_env's "no matches → identity layer"
+        // semantics. Regression protection for the infallible-but-honest
+        // contract on from_env.
+        let baseline = Prog::resolve_progressive();
+        let with_empty = Prog::resolve_progressive_with(&[ProgressiveLayer::from_env(
+            "SHIKUMI_TIERED_ENV_UNMATCHED_PREFIX_",
+        )]);
+        assert_eq!(baseline.value(), with_empty.value());
     }
 }
