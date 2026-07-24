@@ -6342,6 +6342,224 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         peak * peak * peak * peak * peak + trough * trough * trough * trough * trough
     }
 
+    /// The **sum-of-sixth-powers** / `p_6` power-sum of the observed-
+    /// support endpoint pair — the sixtic-power-sum scalar
+    /// `peak_count().pow(6) + trough_count().pow(6)` fused into ONE
+    /// method call on the scalar / histogram surface. The *sixtic-
+    /// power-sum `p_6` sibling* of the shipped subtraction-form
+    /// [`Self::spread`] (`p - t`), addition-form
+    /// [`Self::peak_trough_sum`] (`p + t`), multiplication-form
+    /// [`Self::peak_trough_product`] (`pt`), quadratic-power-sum
+    /// [`Self::peak_trough_sum_of_squares`] (`p² + t²`), cubic-power-sum
+    /// [`Self::peak_trough_sum_of_cubes`] (`p³ + t³`), quartic-power-sum
+    /// [`Self::peak_trough_sum_of_fourth_powers`] (`p⁴ + t⁴`), and
+    /// quintic-power-sum [`Self::peak_trough_sum_of_fifth_powers`]
+    /// (`p⁵ + t⁵`) scalars on the same closed-endpoint pair. Extends
+    /// the closed symmetric-polynomial / power-sum surface from
+    /// `p_5 = p⁵ + t⁵` to `p_6 = p⁶ + t⁶` through Newton's two-variable
+    /// identity `p_6 = e_1 * p_5 - e_2 * p_4` (specialized to
+    /// `sum · sum_of_fifth_powers - product · sum_of_fourth_powers`).
+    ///
+    /// **Two orthogonal read-off surfaces.** The pair
+    /// `(peak_trough_sum, peak_trough_product)` reads the elementary-
+    /// symmetric-polynomial surface `(e_1, e_2) = (p + t, pt)`; the new
+    /// power-sum `peak_trough_sum_of_sixth_powers` composes with it
+    /// through two specializations of Newton's identity, each reading
+    /// `sum_of_sixth_powers` off one of two orthogonal scalar surfaces:
+    ///
+    /// - `peak_trough_sum_of_sixth_powers() ==
+    ///   peak_trough_sum() * peak_trough_sum_of_fifth_powers() -
+    ///   peak_trough_product() * peak_trough_sum_of_fourth_powers()`
+    ///   — Newton's identity `p_6 = e_1 * p_5 - e_2 * p_4` reads
+    ///   sum-of-sixth-powers off the
+    ///   `(sum, sum_of_fifth_powers, product, sum_of_fourth_powers)`
+    ///   surface.
+    /// - `peak_trough_sum_of_sixth_powers() ==
+    ///   peak_trough_sum_of_cubes().pow(2) -
+    ///   2 * peak_trough_product().pow(3)`
+    ///   — the sum-of-two-cubes-squared identity
+    ///   `p⁶ + t⁶ = (p³ + t³)² - 2·(pt)³` reads sum-of-sixth-powers off
+    ///   the `(sum_of_cubes, product)` surface with a single squaring
+    ///   and a single cubing (non-negative subtraction: `soc² >=
+    ///   2·product³` on any nonnegative pair, since it rearranges to
+    ///   `p⁶ + t⁶ >= 0`).
+    ///
+    /// Before this seed, every consumer asking *"what is the sextic
+    /// power-sum of the two extreme buckets of this observation
+    /// window?"* re-derived the projection inline as
+    /// `hist.peak_count().pow(6) + hist.trough_count().pow(6)` — two
+    /// method calls, two sixth-powers, and an addition at every site,
+    /// with silent re-derivation of both endpoints and no named surface
+    /// for the joint scalar the [`Self::spread`],
+    /// [`Self::peak_trough_sum`], [`Self::peak_trough_product`],
+    /// [`Self::peak_trough_sum_of_squares`],
+    /// [`Self::peak_trough_sum_of_cubes`],
+    /// [`Self::peak_trough_sum_of_fourth_powers`], and
+    /// [`Self::peak_trough_sum_of_fifth_powers`] siblings already read
+    /// off in subtraction, addition, multiplication, quadratic-power-
+    /// sum, cubic-power-sum, quartic-power-sum, and quintic-power-sum
+    /// form.
+    ///
+    /// **Overflow-safe by construction on realistic sizes.** The
+    /// expression `peak_count().pow(6) + trough_count().pow(6)` cannot
+    /// overflow on any histogram whose total count is below
+    /// `⁶√(usize::MAX / 2)` (~1442 on 64-bit targets): both sixth-powers
+    /// are bounded above by `total().pow(6)`, so the sum is bounded
+    /// above by `2 * total().pow(6)`. Cannot overflow on realistic
+    /// configuration histograms (chain source counts, diff line counts,
+    /// error classes over a reload window).
+    ///
+    /// **Empty-histogram convention** — returns `0`, matching the
+    /// [`Self::total`], [`Self::distinct_cells`], [`Self::peak_count`],
+    /// [`Self::trough_count`], [`Self::spread`],
+    /// [`Self::peak_trough_sum`], [`Self::peak_trough_product`],
+    /// [`Self::peak_trough_sum_of_squares`],
+    /// [`Self::peak_trough_sum_of_cubes`],
+    /// [`Self::peak_trough_sum_of_fourth_powers`], and
+    /// [`Self::peak_trough_sum_of_fifth_powers`] empty conventions. The
+    /// scalar peer 12-tuple
+    /// `(total, distinct_cells, peak_count, trough_count, spread,
+    /// peak_trough_sum, peak_trough_product, peak_trough_sum_of_squares,
+    /// peak_trough_sum_of_cubes, peak_trough_sum_of_fourth_powers,
+    /// peak_trough_sum_of_fifth_powers, peak_trough_sum_of_sixth_powers)`
+    /// is therefore uniformly `(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)` on
+    /// the empty histogram.
+    ///
+    /// **AM-sextic / power-mean bound.**
+    /// `32 * peak_trough_sum_of_sixth_powers() >=
+    /// peak_trough_sum().pow(6)` always. By the power-mean inequality
+    /// on two nonnegative reals, `((p⁶ + t⁶) / 2)^(1/6) >= (p + t) / 2`,
+    /// so `p⁶ + t⁶ >= (p + t)⁶ / 32`. Equality holds iff
+    /// [`Self::is_uniform_count`] is `true` — the two endpoints
+    /// coincide. Peer to the AM-quintic bound
+    /// `16 * peak_trough_sum_of_fifth_powers() >= peak_trough_sum().pow(5)`
+    /// on `p_5`, the AM-quartic bound
+    /// `8 * peak_trough_sum_of_fourth_powers() >= peak_trough_sum().pow(4)`
+    /// on `p_4`, the AM-cube bound
+    /// `4 * peak_trough_sum_of_cubes() >= peak_trough_sum().pow(3)` on
+    /// `p_3`, the AM-QM bound
+    /// `peak_trough_sum_of_squares() >= 2 * peak_trough_product()` on
+    /// `p_2`, and the AM-GM bound
+    /// `4 * peak_trough_product() <= peak_trough_sum().pow(2)` on the
+    /// elementary-symmetric pair — all six inequalities collapse to
+    /// the same `(p - t)² >= 0` witness on the closed endpoint pair.
+    ///
+    /// **Companion invariants** with [`Self::total`],
+    /// [`Self::distinct_cells`], [`Self::peak_count`],
+    /// [`Self::trough_count`], [`Self::spread`],
+    /// [`Self::peak_trough_sum`], [`Self::peak_trough_product`],
+    /// [`Self::peak_trough_sum_of_squares`],
+    /// [`Self::peak_trough_sum_of_cubes`],
+    /// [`Self::peak_trough_sum_of_fourth_powers`], and
+    /// [`Self::peak_trough_sum_of_fifth_powers`]:
+    /// - `peak_trough_sum_of_sixth_powers() == peak_count().pow(6) +
+    ///   trough_count().pow(6)` always (the defining equivalence on
+    ///   the underlying scalar pair).
+    /// - `peak_trough_sum_of_sixth_powers() == 0` ⇔ [`Self::is_empty`]
+    ///   is `true` (empty-boundary peer to the scalar 12-tuple: both
+    ///   endpoints are zero only on the empty histogram, and their
+    ///   sum-of-sixth-powers is zero exactly then). Contrapositively,
+    ///   a non-empty histogram has `peak_trough_sum_of_sixth_powers() >= 2`
+    ///   — both endpoints are at least `1` by [`Self::peak_count`]'s
+    ///   and [`Self::trough_count`]'s non-emptiness floors, so their
+    ///   sum-of-sixth-powers is at least `1 + 1 = 2`.
+    /// - `peak_trough_sum_of_sixth_powers() <= 2 * peak_count().pow(6)`
+    ///   always (⇔ `trough_count() <= peak_count()`, the structural
+    ///   invariant). Equality holds iff [`Self::is_uniform_count`] is
+    ///   `true`.
+    /// - `peak_trough_sum_of_sixth_powers() <= 2 * total().pow(6)`
+    ///   always (both sixth-powered endpoints are bounded above by
+    ///   `total⁶`).
+    /// - `peak_trough_sum_of_sixth_powers() <= peak_trough_sum().pow(6)`
+    ///   always (⇔ `6·p⁵t + 15·p⁴t² + 20·p³t³ + 15·p²t⁴ + 6·pt⁵ >= 0`,
+    ///   always true; equality iff [`Self::is_empty`] — the sole shape
+    ///   where the five mixed-term coefficients vanish, since both
+    ///   endpoints are `>= 1` on any non-empty histogram).
+    /// - `32 * peak_trough_sum_of_sixth_powers() >= peak_trough_sum().pow(6)`
+    ///   always (the AM-sextic / power-mean bound; equality iff
+    ///   [`Self::is_uniform_count`] is `true`).
+    /// - `peak_trough_sum_of_sixth_powers() ==
+    ///   peak_trough_sum() * peak_trough_sum_of_fifth_powers() -
+    ///   peak_trough_product() * peak_trough_sum_of_fourth_powers()`
+    ///   always — Newton's identity endpoint-recovery
+    ///   `p_6 = e_1 * p_5 - e_2 * p_4` on the `(sum, sum_of_fifth_powers,
+    ///   product, sum_of_fourth_powers)` surface (non-negative
+    ///   subtraction: `sum * sum_of_fifth_powers >= product *
+    ///   sum_of_fourth_powers` on the closed endpoint pair, since the
+    ///   LHS distributes over `(p + t)(p⁵ + t⁵) = p⁶ + t⁶ + pt(p⁴ + t⁴)`
+    ///   while the RHS reads exactly `pt(p⁴ + t⁴)`).
+    /// - `peak_trough_sum_of_sixth_powers() ==
+    ///   peak_trough_sum_of_cubes().pow(2) -
+    ///   2 * peak_trough_product().pow(3)`
+    ///   always — the sum-of-two-cubes-squared identity
+    ///   `p⁶ + t⁶ = (p³ + t³)² - 2·(pt)³` reads sum-of-sixth-powers off
+    ///   the `(sum_of_cubes, product)` surface with a single squaring
+    ///   and a single cubing (non-negative subtraction: `soc² >=
+    ///   2·product³` on any nonnegative pair, since it rearranges to
+    ///   `p⁶ + t⁶ >= 0`).
+    /// - The merge behavior is *non-monotonic* (peer to
+    ///   [`Self::trough_count`], [`Self::spread`],
+    ///   [`Self::peak_trough_sum`], [`Self::peak_trough_product`],
+    ///   [`Self::peak_trough_sum_of_squares`],
+    ///   [`Self::peak_trough_sum_of_cubes`],
+    ///   [`Self::peak_trough_sum_of_fourth_powers`], and
+    ///   [`Self::peak_trough_sum_of_fifth_powers`]): merging two
+    ///   histograms can either grow the sum-of-sixth-powers (when
+    ///   supports overlap and both endpoints grow) or shrink it (when
+    ///   the other side introduces a fresh low-count cell that pulls
+    ///   the merged trough⁶ below the self trough⁶ by more than the
+    ///   peak⁶ grows). The empty-identity law still holds:
+    ///   `merge(self, empty).peak_trough_sum_of_sixth_powers() ==
+    ///   self.peak_trough_sum_of_sixth_powers()`.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]. The three
+    /// trait-uniform laws pinned in [`tests`] hold across the
+    /// implementor set
+    /// (`axis_histogram_peak_trough_sum_of_sixth_powers_empty_is_zero_*`,
+    /// `axis_histogram_peak_trough_sum_of_sixth_powers_singleton_is_two_*`,
+    /// `axis_histogram_peak_trough_sum_of_sixth_powers_axis_cover_is_two_*`).
+    ///
+    /// Peer to [`Self::total`] (the *sum* over every cell),
+    /// [`Self::distinct_cells`] (the *support cardinality*),
+    /// [`Self::peak_count`] (the *modal* count scalar),
+    /// [`Self::trough_count`] (the *rarest-observed* count scalar),
+    /// [`Self::spread`] (the *difference* of the two endpoints),
+    /// [`Self::peak_trough_sum`] (the *sum* of the two endpoints),
+    /// [`Self::peak_trough_product`] (the *product* of the two
+    /// endpoints), [`Self::peak_trough_sum_of_squares`] (the
+    /// *sum-of-squares* / `p_2` power-sum of the two endpoints),
+    /// [`Self::peak_trough_sum_of_cubes`] (the *sum-of-cubes* / `p_3`
+    /// power-sum of the two endpoints),
+    /// [`Self::peak_trough_sum_of_fourth_powers`] (the
+    /// *sum-of-fourth-powers* / `p_4` power-sum of the two endpoints),
+    /// and [`Self::peak_trough_sum_of_fifth_powers`] (the
+    /// *sum-of-fifth-powers* / `p_5` power-sum of the two endpoints):
+    /// the scalar surface of the histogram now carries the natural
+    /// 12-tuple `(how many observations, how many kinds, how many on
+    /// the peak, how many on the trough, how much spread, how much
+    /// peak-trough sum, how much peak-trough product, how much
+    /// peak-trough sum-of-squares, how much peak-trough sum-of-cubes,
+    /// how much peak-trough sum-of-fourth-powers, how much peak-trough
+    /// sum-of-fifth-powers, how much peak-trough sum-of-sixth-powers)`
+    /// projections — every operator-facing summary reads off one method
+    /// call each, and the elementary-symmetric-polynomial pair `(sum,
+    /// product)` composes with the five power-sums `sum_of_squares`
+    /// (`p_2`), `sum_of_cubes` (`p_3`), `sum_of_fourth_powers` (`p_4`),
+    /// `sum_of_fifth_powers` (`p_5`), and `sum_of_sixth_powers` (`p_6`)
+    /// through Newton's two-variable identities `p_2 = e_1² - 2·e_2`,
+    /// `p_3 = e_1³ - 3·e_1·e_2`, `p_4 = e_1·p_3 - e_2·p_2`,
+    /// `p_5 = e_1·p_4 - e_2·p_3`, and `p_6 = e_1·p_5 - e_2·p_4` with
+    /// no histogram re-walk.
+    #[must_use]
+    pub fn peak_trough_sum_of_sixth_powers(&self) -> usize {
+        let peak = self.peak_count();
+        let trough = self.trough_count();
+        peak * peak * peak * peak * peak * peak
+            + trough * trough * trough * trough * trough * trough
+    }
+
     /// `true` exactly when every observed cell of the closed axis carries
     /// the same observation count — the **uniformly-observed-count
     /// predicate** on the histogram surface. The typed peer of
@@ -33949,6 +34167,398 @@ mod tests {
         assert_eq!(
             with_empty.peak_trough_sum_of_fifth_powers(),
             added_two_removed_one.peak_trough_sum_of_fifth_powers(),
+        );
+    }
+
+    // ---- AxisHistogram::peak_trough_sum_of_sixth_powers trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // `peak_trough_sum_of_sixth_powers` projection's contract holds
+    // uniformly without per-axis test duplication: empty → 0 (both
+    // endpoints zero on the empty histogram); singleton → 2 on every
+    // cell K (one observed cell with count 1, peak = trough = 1,
+    // sum-of-sixth-powers = 1⁶ + 1⁶ = 2); uniform axis-cover → 2
+    // (every cell at one, peak = trough = 1, sum-of-sixth-powers =
+    // 1⁶ + 1⁶ = 2). Concrete defining-equivalence, empty-boundary,
+    // structural-bounds, two-surface Newton-identity, and merge non-
+    // monotonicity pins follow below on [`DiffLineKind`].
+
+    fn assert_peak_trough_sum_of_sixth_powers_empty_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.peak_trough_sum_of_sixth_powers(),
+            0,
+            "empty histogram peak_trough_sum_of_sixth_powers must be 0 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_peak_trough_sum_of_sixth_powers_singleton_is_two<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has peak = trough = 1, so
+        // peak_trough_sum_of_sixth_powers = 1⁶ + 1⁶ = 2 — the
+        // singleton-support case is trivially balanced at the p_6
+        // power-sum of the endpoint pair.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.peak_trough_sum_of_sixth_powers(),
+                2,
+                "singleton peak_trough_sum_of_sixth_powers must be 2 for observed cell {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_peak_trough_sum_of_sixth_powers_axis_cover_is_two<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once produces a uniform
+        // histogram (every cell at 1, peak = trough = 1, sum-of-
+        // sixth-powers = 1⁶ + 1⁶ = 2) — the "every observed kind
+        // fired the same number of times" boundary at the maximum-
+        // coverage shape.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            hist.peak_trough_sum_of_sixth_powers(),
+            2,
+            "axis-cover histogram peak_trough_sum_of_sixth_powers must be 2 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_sixth_powers_empty_is_zero_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_trough_sum_of_sixth_powers_empty_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_sixth_powers_singleton_is_two_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_trough_sum_of_sixth_powers_singleton_is_two::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_sixth_powers_axis_cover_is_two_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_trough_sum_of_sixth_powers_axis_cover_is_two::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_sixth_powers_equals_peak_sixth_plus_trough_sixth() {
+        // The seed's defining equivalence: peak_trough_sum_of_sixth_powers
+        // reads the same scalar as the open-coded
+        // `peak_count⁶ + trough_count⁶` sum every consumer re-derived
+        // inline. Pinned pointwise across the canonical observation-
+        // mix shapes (empty, singleton, uniform-tied, strict-skew,
+        // heavy-tail) so a future regression in either side surfaces
+        // here.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let peak = hist.peak_count();
+            let trough = hist.trough_count();
+            assert_eq!(
+                hist.peak_trough_sum_of_sixth_powers(),
+                peak * peak * peak * peak * peak * peak
+                    + trough * trough * trough * trough * trough * trough,
+                "peak_trough_sum_of_sixth_powers must equal peak_count⁶ + trough_count⁶ on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_sixth_powers_zero_iff_empty() {
+        // The empty-boundary equivalence: peak_trough_sum_of_sixth_powers
+        // == 0 iff the histogram is empty. Both endpoints are
+        // structurally >= 1 on any non-empty histogram, so their
+        // sum-of-sixth-powers is >= 2 exactly when non-empty and == 0
+        // exactly when empty.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert_eq!(empty.peak_trough_sum_of_sixth_powers(), 0);
+        assert!(empty.is_empty());
+
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert!(singleton.peak_trough_sum_of_sixth_powers() >= 2);
+        assert!(!singleton.is_empty());
+
+        let axis_cover: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        assert!(axis_cover.peak_trough_sum_of_sixth_powers() >= 2);
+        assert!(!axis_cover.is_empty());
+
+        let skewed: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert!(skewed.peak_trough_sum_of_sixth_powers() >= 2);
+        assert!(!skewed.is_empty());
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_sixth_powers_bounds() {
+        // Structural-bound pins:
+        //   - sofsp <= sum⁶         (⇔ 6·p⁵t + 15·p⁴t² + 20·p³t³ + 15·p²t⁴
+        //                              + 6·pt⁵ >= 0, always;
+        //                              equality iff is_empty),
+        //   - 32 * sofsp >= sum⁶    (AM-sextic; equality iff is_uniform_count),
+        //   - sofsp <= 2 * peak⁶    (⇔ trough <= peak; equality iff is_uniform_count),
+        //   - sofsp <= 2 * total⁶   (composition of both sextic
+        //                             endpoints <= total⁶).
+        // Pinned at four shapes (empty, singleton, uniform axis-
+        // cover, strict-skew) so each bound gets a tight witness.
+        let inputs: [(&[DiffLineKind], bool, bool); 4] = [
+            (&[], true, true),
+            (&[DiffLineKind::Added], true, false),
+            (
+                &[
+                    DiffLineKind::Added,
+                    DiffLineKind::Removed,
+                    DiffLineKind::Context,
+                ],
+                true,
+                false,
+            ),
+            (
+                &[
+                    DiffLineKind::Added,
+                    DiffLineKind::Added,
+                    DiffLineKind::Removed,
+                ],
+                false,
+                false,
+            ),
+        ];
+        for (input, is_uniform_expected, is_empty_expected) in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let sofsp = hist.peak_trough_sum_of_sixth_powers();
+            let sum = hist.peak_trough_sum();
+            let peak = hist.peak_count();
+            let total = hist.total();
+            let sum6 = sum * sum * sum * sum * sum * sum;
+            let peak6 = peak * peak * peak * peak * peak * peak;
+            let total6 = total * total * total * total * total * total;
+            assert!(
+                sofsp <= sum6,
+                "peak_trough_sum_of_sixth_powers {sofsp} must be <= peak_trough_sum⁶ {sum6} on input of length {}",
+                input.len(),
+            );
+            assert!(
+                32 * sofsp >= sum6,
+                "AM-sextic: 32 * peak_trough_sum_of_sixth_powers {} must be >= peak_trough_sum⁶ {sum6} on input of length {}",
+                32 * sofsp,
+                input.len(),
+            );
+            assert!(
+                sofsp <= 2 * peak6,
+                "peak_trough_sum_of_sixth_powers {sofsp} must be <= 2 * peak_count⁶ {} on input of length {}",
+                2 * peak6,
+                input.len(),
+            );
+            assert!(
+                sofsp <= 2 * total6,
+                "peak_trough_sum_of_sixth_powers {sofsp} must be <= 2 * total⁶ {} on input of length {}",
+                2 * total6,
+                input.len(),
+            );
+            assert_eq!(
+                sofsp == sum6,
+                is_empty_expected,
+                "sofsp == sum⁶ iff is_empty on input of length {}",
+                input.len(),
+            );
+            assert_eq!(
+                32 * sofsp == sum6,
+                is_uniform_expected,
+                "AM-sextic equality (32 * sofsp == sum⁶) iff is_uniform_count on input of length {}",
+                input.len(),
+            );
+            assert_eq!(
+                sofsp == 2 * peak6,
+                is_uniform_expected,
+                "sofsp == 2 * peak⁶ iff is_uniform_count on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_sixth_powers_two_surface_newton_identities() {
+        // Two orthogonal read-offs of sofsp:
+        //   sofsp == sum * sofip - product * sofp               (sum, sofip, product, sofp)
+        //     — Newton's identity p_6 = e_1 * p_5 - e_2 * p_4.
+        //   sofsp == soc² - 2 * product³                        (soc, product)
+        //     — factorization p⁶ + t⁶ = (p³ + t³)² - 2·(pt)³.
+        // Reads sofsp off two orthogonal surfaces with no histogram
+        // re-walk. Pinned across canonical observation-mix shapes so
+        // the identities are exercised at every (peak, trough) shape.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let sofsp = hist.peak_trough_sum_of_sixth_powers();
+            let sum = hist.peak_trough_sum();
+            let product = hist.peak_trough_product();
+            let soc = hist.peak_trough_sum_of_cubes();
+            let sofp = hist.peak_trough_sum_of_fourth_powers();
+            let sofip = hist.peak_trough_sum_of_fifth_powers();
+            assert_eq!(
+                sofsp,
+                sum * sofip - product * sofp,
+                "Newton p_6 = e_1·p_5 - e_2·p_4: sofsp == sum·sofip - product·sofp on input of length {}",
+                input.len(),
+            );
+            assert_eq!(
+                sofsp,
+                soc * soc - 2 * product * product * product,
+                "(soc, product) factorization: sofsp == soc² - 2·product³ on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_sixth_powers_after_merge_is_non_monotonic() {
+        // The (merge, peak_trough_sum_of_sixth_powers) composition:
+        // peer to trough's, spread's, peak_trough_sum's,
+        // peak_trough_product's, peak_trough_sum_of_squares's,
+        // peak_trough_sum_of_cubes's, peak_trough_sum_of_fourth_powers's,
+        // and peak_trough_sum_of_fifth_powers's non-monotonic behavior —
+        // sofsp can either grow (when supports overlap and both
+        // endpoints grow) or shrink (when the merged partner introduces
+        // a fresh low-count cell that pulls the merged trough⁶ below
+        // the self trough⁶ by more than the peak⁶ grows). Empty-
+        // identity still holds.
+        let added_two: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Added]
+            .into_iter()
+            .collect();
+        let added_two_removed_one: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let added_five: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        let removed_one: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        let empty_hist: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+
+        // Grow branch: merging balanced-support {Added:2} (sofsp =
+        // 2⁶ + 2⁶ = 128, peak = trough = 2) with skewed {Added:2,
+        // Removed:1} (sofsp = 2⁶ + 1⁶ = 65, peak = 2, trough = 1)
+        // gives {Added:4, Removed:1} with peak = 4, trough = 1,
+        // sofsp = 4096 + 1 = 4097 — strictly greater than both operands.
+        let grow_pair = added_two.clone().merge(&added_two_removed_one);
+        assert_eq!(grow_pair.peak_trough_sum_of_sixth_powers(), 4097);
+        assert!(
+            grow_pair.peak_trough_sum_of_sixth_powers()
+                > added_two.peak_trough_sum_of_sixth_powers(),
+        );
+        assert!(
+            grow_pair.peak_trough_sum_of_sixth_powers()
+                > added_two_removed_one.peak_trough_sum_of_sixth_powers(),
+        );
+
+        // Shrink branch: merging singleton-support {Added:5} (sofsp =
+        // 5⁶ + 5⁶ = 31250, peak = trough = 5) with singleton-support
+        // {Removed:1} (sofsp = 1 + 1 = 2, peak = trough = 1) gives
+        // {Added:5, Removed:1} with peak = 5, trough = 1, sofsp =
+        // 15625 + 1 = 15626 — strictly *below* the LHS's sofsp 31250.
+        // The fresh low-count Removed cell pulls the merged trough⁶
+        // from 15625 down to 1 while the merged peak⁶ stays at 15625,
+        // so peak⁶ + trough⁶ shrinks from 31250 to 15626. The
+        // non-monotonic shrink branch.
+        let shrink = added_five.clone().merge(&removed_one);
+        assert_eq!(shrink.peak_trough_sum_of_sixth_powers(), 15626);
+        assert!(
+            shrink.peak_trough_sum_of_sixth_powers() < added_five.peak_trough_sum_of_sixth_powers(),
+        );
+        assert!(
+            shrink.peak_trough_sum_of_sixth_powers()
+                > removed_one.peak_trough_sum_of_sixth_powers(),
+        );
+
+        // Identity (empty-rhs): merge leaves the sum-of-sixth-powers
+        // unchanged.
+        let with_empty = added_two_removed_one.clone().merge(&empty_hist);
+        assert_eq!(
+            with_empty.peak_trough_sum_of_sixth_powers(),
+            added_two_removed_one.peak_trough_sum_of_sixth_powers(),
         );
     }
 
