@@ -119,9 +119,11 @@ impl SecretSource {
     /// top-level [`Self::Literal`] shorthand and the explicit
     /// [`SecretBackend::Literal`] tag onto the same
     /// [`SecretBackendKind::Literal`] cell — the equivalence the
-    /// [`resolve`] dispatch table already encodes pointwise (the
-    /// [`Self::Literal`] arm and the [`SecretBackend::Literal`] arm
-    /// take identical bodies).
+    /// [`resolve`] dispatch table encodes structurally at a single
+    /// or-patterned arm (the [`Self::Literal`] shape and the
+    /// [`SecretBackend::Literal`] shape share one match arm, one body,
+    /// one code path — any future per-shape divergence must explicitly
+    /// split the arm to compile).
     ///
     /// The closed-image projection over the [`SecretSource`] variant
     /// space onto the [`SecretBackendKind`] axis, composing
@@ -657,8 +659,18 @@ closed_axis_label_string_surface! {
 /// individual `resolve_*` functions for their specific error shapes.
 pub fn resolve(source: &SecretSource) -> Result<String, ShikumiError> {
     match source {
-        SecretSource::Literal(value) => Ok(value.clone()),
-        SecretSource::Backend(SecretBackend::Literal(value)) => Ok(value.clone()),
+        // The two-literal-paths equivalence — the bare-string shorthand
+        // and the explicit `{literal: "..."}` tag both declare the same
+        // secret — is structural here: one arm, one body, one code path
+        // that a future per-arm divergence must explicitly split (any
+        // arm-specific logic on either literal shape now fails to
+        // compile against this single arm and forces the operator to
+        // reason about the equivalence at the type level, not to
+        // maintain it by mutually editing two identically-bodied arms).
+        // Pinned pointwise by `resolve_literal_paths_produce_pointwise_equal_values`.
+        SecretSource::Literal(value) | SecretSource::Backend(SecretBackend::Literal(value)) => {
+            Ok(value.clone())
+        }
         SecretSource::Backend(SecretBackend::Command(cmd)) => resolve_command(cmd),
         SecretSource::Backend(SecretBackend::Op(reference)) => resolve_op(reference),
         SecretSource::Backend(SecretBackend::Sops(SopsRef::File(path))) => resolve_sops_file(path),
@@ -1425,6 +1437,52 @@ mod tests {
         let source = SecretSource::Backend(SecretBackend::Literal("explicit".into()));
         let value = resolve(&source).unwrap();
         assert_eq!(value, "explicit");
+    }
+
+    #[test]
+    fn resolve_literal_paths_produce_pointwise_equal_values() {
+        // The two-literal-paths equivalence pinned pointwise at the
+        // value axis: for every payload, `resolve` returns the same
+        // `Ok(payload)` whether it reaches the literal-pass-through arm
+        // via `SecretSource::Literal(_)` (the bare-string YAML
+        // shorthand) or via `SecretSource::Backend(SecretBackend::
+        // Literal(_))` (the explicit `{literal: "..."}` tag). Complements
+        // `secret_source_backend_kind_collapses_literal_paths` (which
+        // pins the equivalence at the kind axis) and
+        // `secret_source_resolve_dispatch_partitions_by_backend_kind`
+        // (which pins dispatch totality). Together the three fix the
+        // literal-pass-through fact at (kind, dispatch, value) so the
+        // structural single-arm collapse in the resolve match cannot
+        // silently drift into arm-specific behavior — the value pin
+        // fires the moment either shape starts returning a differently-
+        // shaped `Result` for the same payload.
+        for payload in [
+            "",
+            "dev",
+            "very-long-secret-payload-$@!",
+            "hunter2",
+            "line\nwith\nnewlines",
+            "unicode-秘密-🔒",
+        ] {
+            let bare = resolve(&SecretSource::Literal(payload.into()));
+            let tagged = resolve(&SecretSource::Backend(SecretBackend::Literal(
+                payload.into(),
+            )));
+            let bare_value = bare.expect("bare literal must resolve to Ok");
+            let tagged_value = tagged.expect("tagged literal must resolve to Ok");
+            assert_eq!(
+                bare_value, payload,
+                "SecretSource::Literal must round-trip payload verbatim",
+            );
+            assert_eq!(
+                tagged_value, payload,
+                "SecretSource::Backend(SecretBackend::Literal) must round-trip payload verbatim",
+            );
+            assert_eq!(
+                bare_value, tagged_value,
+                "the two literal paths must produce pointwise-equal resolved values",
+            );
+        }
     }
 
     // ── shell_escape ───────────────────────────────────────────────
