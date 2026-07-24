@@ -2719,6 +2719,208 @@ impl ProvenanceMap {
         self.tier_histogram().peak_trough_sum_of_fifth_powers()
     }
 
+    /// The **joint-extremes-sextic-magnitude of tier counts** — the sum
+    /// of the sixth powers of the modal and anti-modal per-tier leaf
+    /// counts on this resolved fold. Routes through
+    /// [`crate::AxisHistogram::peak_trough_sum_of_sixth_powers`] one
+    /// altitude down: the fused `peak_count().pow(6) +
+    /// trough_count().pow(6)` sum-of-sixth-powers on the histogram
+    /// surface, halving the cost of the inline
+    /// `peak_tier_count().pow(6) + trough_tier_count().pow(6)` idiom
+    /// which walked the counts vector twice.
+    ///
+    /// The **sum-of-sixth-powers / power-sum `p_6` sibling** of the
+    /// shipped tier-altitude [`Self::tier_spread`] subtraction-form,
+    /// [`Self::tier_peak_trough_sum`] addition-form,
+    /// [`Self::tier_peak_trough_product`] multiplication-form,
+    /// [`Self::tier_peak_trough_sum_of_squares`] quadratic-power-sum
+    /// `p_2`, [`Self::tier_peak_trough_sum_of_cubes`] cubic-power-sum
+    /// `p_3`, [`Self::tier_peak_trough_sum_of_fourth_powers`]
+    /// quartic-power-sum `p_4`, and
+    /// [`Self::tier_peak_trough_sum_of_fifth_powers`] quintic-power-sum
+    /// `p_5` scalars on the same closed count-endpoint pair — extending
+    /// the symmetric-polynomial `(e₁, e₂) = (peak+trough, peak*trough)`
+    /// / power-sum `(p_2, p_3, p_4, p_5, p_6) = (peak² + trough²,
+    /// peak³ + trough³, peak⁴ + trough⁴, peak⁵ + trough⁵, peak⁶ +
+    /// trough⁶)` representation of the `(peak_tier_count,
+    /// trough_tier_count)` endpoint pair at the tier altitude through
+    /// Newton's two-variable identity `p_6 == e_1 * p_5 - e_2 * p_4`
+    /// (specialized to `sum · sum_of_fifth_powers - product ·
+    /// sum_of_fourth_powers`) and the sum-of-two-cubes-squared
+    /// factorization `p_6 == p_3² - 2 * e_2³` (equivalently
+    /// `sum_of_cubes.pow(2) - 2 * product.pow(3)`). Together with the
+    /// shipped tier-altitude septuple, the octuple
+    /// `(tier_peak_trough_sum, tier_spread, tier_peak_trough_product,
+    /// tier_peak_trough_sum_of_squares, tier_peak_trough_sum_of_cubes,
+    /// tier_peak_trough_sum_of_fourth_powers,
+    /// tier_peak_trough_sum_of_fifth_powers,
+    /// tier_peak_trough_sum_of_sixth_powers)` reads the joint
+    /// sum-of-sixth-powers off two orthogonal scalar surfaces of the
+    /// closed endpoint pair:
+    ///
+    /// ```text
+    /// tier_peak_trough_sum_of_sixth_powers
+    ///     == tier_peak_trough_sum * tier_peak_trough_sum_of_fifth_powers
+    ///        - tier_peak_trough_product * tier_peak_trough_sum_of_fourth_powers
+    ///     (Newton's identity p_6 = e_1·p_5 - e_2·p_4 on the
+    ///      (sum, sofip, product, sofp) surface — non-negative subtraction
+    ///      since (p+t)(p⁵+t⁵) = p⁶+t⁶+pt(p⁴+t⁴) distributes into LHS =
+    ///      p_6 + pt·p_4 while pt·p_4 reads exactly the second term)
+    /// tier_peak_trough_sum_of_sixth_powers
+    ///     == tier_peak_trough_sum_of_cubes.pow(2)
+    ///        - 2 * tier_peak_trough_product.pow(3)
+    ///     (sum-of-two-cubes-squared factorization
+    ///      p⁶ + t⁶ = (p³ + t³)² - 2·(pt)³ — a single squaring and a
+    ///      single cubing off the (soc, product) surface)
+    /// ```
+    ///
+    /// Every consumer that wanted `peak⁶ + trough⁶` from either of the
+    /// shipped tier-altitude scalar surfaces — `(sum, sofip, product,
+    /// sofp)` or `(soc, product)` — reads it off in one arithmetic
+    /// step with no histogram re-walk.
+    ///
+    /// The **tier-altitude joint-extremes-sextic-magnitude peer** —
+    /// the natural typed primitive for fleet dashboards, attestation
+    /// manifests, and alerting policies asking *"how large is the
+    /// peak⁶+trough⁶ joint sextic magnitude of the two extreme tier
+    /// buckets?"*: the dashboard headline *"peak⁶+trough⁶ tier load:
+    /// 65 leaves⁶ (peak Default 2⁶ + trough Bare 1⁶)"* (where 65 is
+    /// this scalar), the attestation manifest recording the joint
+    /// sextic magnitude of a resolved fold by tier between rebuild
+    /// windows, the alerting policy reading
+    /// *"`tier_peak_trough_sum_of_sixth_powers` >= threshold"* to gate
+    /// on the joint sextic two-sided magnitude. Before this lift,
+    /// every such consumer re-derived the projection inline as
+    /// `map.peak_tier_count().pow(6) + map.trough_tier_count().pow(6)`
+    /// — two method calls plus two sixth-powerings plus an addition
+    /// at every site, each site walking the counts vector twice with
+    /// no named surface for the joint scalar.
+    ///
+    /// The tier-altitude climb of the "peak⁶ + trough⁶
+    /// sums-of-sixth-powers across altitudes" projection seeded on the
+    /// scalar altitude by
+    /// [`crate::AxisHistogram::peak_trough_sum_of_sixth_powers`] and
+    /// lifted to the diff altitude by
+    /// [`ConfigDiff::kind_peak_trough_sum_of_sixth_powers`] — the next
+    /// natural lifts fan sideways along the chain altitude's three
+    /// sub-axes (`layer_kind_peak_trough_sum_of_sixth_powers`,
+    /// `file_format_peak_trough_sum_of_sixth_powers`,
+    /// `env_prefix_kind_peak_trough_sum_of_sixth_powers` over the
+    /// corresponding chain histograms). The pattern is the same at
+    /// every altitude / sub-axis: surface the
+    /// [`crate::AxisHistogram::peak_trough_sum_of_sixth_powers`] scalar
+    /// directly at the local histogram altitude, routing through the
+    /// shared primitive one seam down instead of every consumer pulling
+    /// the histogram temporary and inlining the sum-of-sixth-powers.
+    /// Parallels the sibling "spread across altitudes", "peak+trough
+    /// sums across altitudes", "peak×trough products across altitudes",
+    /// "peak² + trough² sums-of-squares across altitudes", "peak³ +
+    /// trough³ sums-of-cubes across altitudes", "peak⁴ + trough⁴
+    /// sums-of-fourth-powers across altitudes", and "peak⁵ + trough⁵
+    /// sums-of-fifth-powers across altitudes" projections at the same
+    /// altitude on the same closed-endpoint pair.
+    ///
+    /// **AM-sextic / power-mean bound.** `32 *
+    /// tier_peak_trough_sum_of_sixth_powers() >=
+    /// tier_peak_trough_sum().pow(6)` always — the power-mean
+    /// inequality `p⁶ + t⁶ >= (p + t)⁶ / 32`. Equality holds iff
+    /// [`Self::tiers_uniform_count`] is `true`. Peer to the AM-quintic
+    /// bound `16 * sum_of_fifth_powers >= sum⁵` on `p_5`, the
+    /// AM-quartic bound `8 * sum_of_fourth_powers >= sum⁴` on `p_4`,
+    /// the AM-cube bound `4 * sum_of_cubes >= sum³` on `p_3`, the
+    /// AM-QM bound `sum_of_squares >= 2 * product` on `p_2`, and the
+    /// AM-GM bound `4 * product <= sum²` on the elementary-symmetric
+    /// pair — all six collapse to the same `(p - t)² >= 0` witness on
+    /// the closed endpoint pair at the tier altitude.
+    ///
+    /// **Empty-map convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::peak_trough_sum_of_sixth_powers`] empty
+    /// convention one altitude down and every tier-altitude scalar peer
+    /// on the same altitude. The scalar-count nonuple `(peak_tier_count,
+    /// trough_tier_count, tier_spread, tier_peak_trough_sum,
+    /// tier_peak_trough_product, tier_peak_trough_sum_of_squares,
+    /// tier_peak_trough_sum_of_cubes,
+    /// tier_peak_trough_sum_of_fourth_powers,
+    /// tier_peak_trough_sum_of_fifth_powers,
+    /// tier_peak_trough_sum_of_sixth_powers)` reads uniformly
+    /// `(0, 0, 0, 0, 0, 0, 0, 0, 0, 0)` on the empty map.
+    ///
+    /// **Empty-boundary equivalence.**
+    /// `tier_peak_trough_sum_of_sixth_powers() == 0` ⇔ `self.is_empty()`
+    /// — both endpoints are structurally `>= 1` on every non-empty map
+    /// (by [`Self::peak_tier_count`]'s and [`Self::trough_tier_count`]'s
+    /// non-emptiness floors), so their sum-of-sixth-powers is zero
+    /// exactly on the empty map. Contrapositively, every non-empty map
+    /// has `tier_peak_trough_sum_of_sixth_powers() >= 2` (both
+    /// sixth-powered endpoints are structurally `>= 1`, so their
+    /// sum-of-sixth-powers is `>= 1 + 1 == 2`).
+    ///
+    /// **Overflow-safe on realistic map sizes.** The sum-of-sixth-powers
+    /// `peak_tier_count().pow(6) + trough_tier_count().pow(6)` cannot
+    /// overflow on any map whose leaf-key vector fits in `usize`: both
+    /// sixth-powers are bounded above by `self.len().pow(6)`, so the
+    /// sum is bounded above by `2 * self.len().pow(6)`. Cannot overflow
+    /// on any realistic resolved fold (below `⁶√(usize::MAX / 2)` ≈
+    /// 1442 leaves on 64-bit targets).
+    ///
+    /// # Invariants
+    ///
+    /// - `tier_peak_trough_sum_of_sixth_powers() ==
+    ///   tier_histogram().peak_trough_sum_of_sixth_powers()` — both
+    ///   project the same scalar off the same primitive; the named
+    ///   seam is the sextic-native routing of the histogram surface.
+    /// - `tier_peak_trough_sum_of_sixth_powers() == peak_tier_count().pow(6) +
+    ///   trough_tier_count().pow(6)` — the fused-pair identity of the
+    ///   joint-extremes-sextic-magnitude peer on the underlying scalar
+    ///   count pair.
+    /// - `tier_peak_trough_sum_of_sixth_powers() == 0` ⇔
+    ///   `self.is_empty()` — the empty-boundary equivalence peer to
+    ///   the two-endpoint surface.
+    /// - `tier_peak_trough_sum_of_sixth_powers() >= 2` whenever
+    ///   `!self.is_empty()` — non-empty floor: both endpoints are at
+    ///   least `1` on every non-empty map, so their sum-of-sixth-powers
+    ///   is at least `2`.
+    /// - `32 * tier_peak_trough_sum_of_sixth_powers() >=
+    ///   tier_peak_trough_sum().pow(6)` always (AM-sextic; equality
+    ///   iff [`Self::tiers_uniform_count`] is `true`).
+    /// - `tier_peak_trough_sum_of_sixth_powers() <= 2 * peak_tier_count().pow(6)`
+    ///   always (⇔ `trough_tier_count() <= peak_tier_count()`, the
+    ///   structural invariant). Equality iff
+    ///   [`Self::tiers_uniform_count`] is `true`.
+    /// - `tier_peak_trough_sum_of_sixth_powers() <= 2 * self.len().pow(6)`
+    ///   always (composition of both sixth-powered endpoints being
+    ///   bounded above by `self.len().pow(6)`).
+    /// - `tier_peak_trough_sum_of_sixth_powers() ==
+    ///   tier_peak_trough_sum() * tier_peak_trough_sum_of_fifth_powers() -
+    ///   tier_peak_trough_product() * tier_peak_trough_sum_of_fourth_powers()`
+    ///   always — Newton's identity `p_6 = e_1 * p_5 - e_2 * p_4` on
+    ///   the `(sum, sum_of_fifth_powers, product, sum_of_fourth_powers)`
+    ///   surface.
+    /// - `tier_peak_trough_sum_of_sixth_powers() ==
+    ///   tier_peak_trough_sum_of_cubes().pow(2) - 2 *
+    ///   tier_peak_trough_product().pow(3)` always — the
+    ///   sum-of-two-cubes-squared factorization on the `(soc, product)`
+    ///   surface (`p⁶ + t⁶ = (p³ + t³)² - 2·(pt)³`).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<ConfigTierKind>()` (the peak +
+    /// trough fused scan through
+    /// [`crate::AxisHistogram::peak_trough_sum_of_sixth_powers`]). Both
+    /// are `O(n)` in practice since the tier axis carries a fixed
+    /// four-cell cardinality; the returned `usize` reads one scalar.
+    /// Halves the cost of the previous inline
+    /// `map.peak_tier_count().pow(6) + map.trough_tier_count().pow(6)`
+    /// idiom (which walked the counts vector twice — once for the max,
+    /// once for the min-over-support), where
+    /// [`crate::AxisHistogram::peak_trough_sum_of_sixth_powers`] routes
+    /// both through a single scalar read.
+    #[must_use]
+    pub fn tier_peak_trough_sum_of_sixth_powers(&self) -> usize {
+        self.tier_histogram().peak_trough_sum_of_sixth_powers()
+    }
+
     /// The **modal-multiplicity of tier counts** — the number of
     /// [`ConfigTierKind`] cells that hold the peak leaf count on this
     /// resolved fold. Equal to `1` on every strictly-modally-unique fold
@@ -35459,6 +35661,506 @@ mod progressive_tests {
             assert_eq!(
                 via_seam,
                 peak * peak * peak * peak * peak + trough * trough * trough * trough * trough,
+            );
+        }
+    }
+
+    // ── ProvenanceMap::tier_peak_trough_sum_of_sixth_powers — joint-
+    //    extremes-sextic-magnitude peer on the tier altitude, sum-of-
+    //    sixth-powers / power-sum p_6 sibling of `tier_spread`,
+    //    `tier_peak_trough_sum`, `tier_peak_trough_product`,
+    //    `tier_peak_trough_sum_of_squares`, `tier_peak_trough_sum_of_cubes`,
+    //    `tier_peak_trough_sum_of_fourth_powers`, and
+    //    `tier_peak_trough_sum_of_fifth_powers`, climbing the "peak⁶ +
+    //    trough⁶ sums-of-sixth-powers across altitudes" projection from the
+    //    diff altitude to the tier altitude ──
+
+    #[test]
+    fn tier_peak_trough_sum_of_sixth_powers_matches_tier_histogram_peak_trough_sum_of_sixth_powers_pointwise()
+     {
+        // Routing pin: `tier_peak_trough_sum_of_sixth_powers` routes
+        // through `tier_histogram().peak_trough_sum_of_sixth_powers()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared sextic-native primitive.
+        // Tier-altitude climb of the "peak⁶ + trough⁶ sums-of-sixth-
+        // powers across altitudes" projection, peer of
+        // `kind_peak_trough_sum_of_sixth_powers_matches_kind_histogram_peak_trough_sum_of_sixth_powers_pointwise`
+        // one altitude down.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().peak_trough_sum_of_sixth_powers();
+            assert_eq!(map.tier_peak_trough_sum_of_sixth_powers(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_sixth_powers_equals_peak_sextic_plus_trough_sextic_pointwise() {
+        // Fused-pair pin: `tier_peak_trough_sum_of_sixth_powers ==
+        // peak_tier_count⁶ + trough_tier_count⁶` on every fixture — the
+        // defining equivalence on the underlying scalar pair. The
+        // sixth-powerings-plus-addition is overflow-safe on any
+        // resolved fold whose leaf-key vector fits in `usize`: both
+        // sixth-powers are bounded above by `self.len().pow(6)`. Peer
+        // of
+        // `kind_peak_trough_sum_of_sixth_powers_equals_peak_sextic_plus_trough_sextic_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let peak = map.peak_tier_count();
+            let trough = map.trough_tier_count();
+            assert_eq!(
+                map.tier_peak_trough_sum_of_sixth_powers(),
+                peak * peak * peak * peak * peak * peak
+                    + trough * trough * trough * trough * trough * trough,
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_sixth_powers_prog_fixture_is_sixty_five() {
+        // Prog attributes 4 leaves: a→Discovered, b→Default, c→Bare,
+        // d→Default. Counts: Bare=1, Discovered=1, Default=2, Custom=0.
+        // Peak lands on Default at 2; trough over support {Bare,
+        // Discovered, Default} lands at 1. Sum-of-sixth-powers = 2⁶ +
+        // 1⁶ = 65. Direct pin — the paired `(peak_tier_count,
+        // trough_tier_count, tier_spread, tier_peak_trough_sum,
+        // tier_peak_trough_product, tier_peak_trough_sum_of_squares,
+        // tier_peak_trough_sum_of_cubes,
+        // tier_peak_trough_sum_of_fourth_powers,
+        // tier_peak_trough_sum_of_fifth_powers,
+        // tier_peak_trough_sum_of_sixth_powers)` 10-tuple reads
+        // `(2, 1, 1, 3, 2, 5, 9, 17, 33, 65)`. Sum-of-sixth-powers peer of
+        // `tier_peak_trough_sum_of_fifth_powers_prog_fixture_is_thirty_three`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().peak_tier_count(), 2);
+        assert_eq!(r.provenance().trough_tier_count(), 1);
+        assert_eq!(r.provenance().tier_spread(), 1);
+        assert_eq!(r.provenance().tier_peak_trough_sum(), 3);
+        assert_eq!(r.provenance().tier_peak_trough_product(), 2);
+        assert_eq!(r.provenance().tier_peak_trough_sum_of_squares(), 5);
+        assert_eq!(r.provenance().tier_peak_trough_sum_of_cubes(), 9);
+        assert_eq!(r.provenance().tier_peak_trough_sum_of_fourth_powers(), 17);
+        assert_eq!(r.provenance().tier_peak_trough_sum_of_fifth_powers(), 33);
+        assert_eq!(r.provenance().tier_peak_trough_sum_of_sixth_powers(), 65);
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_sixth_powers_nested_fixture_is_sixty_five() {
+        // Nested attributes 3 leaves: win.w→Discovered, win.h→Default,
+        // theme→Default. Counts: Bare=0, Discovered=1, Default=2,
+        // Custom=0. Peak lands on Default at 2; trough over support
+        // {Discovered, Default} lands at 1. Sum-of-sixth-powers = 2⁶ +
+        // 1⁶ = 65. Direct pin — the joint scalar reads through the
+        // seam whether the fixture is flat or nested. Sum-of-sixth-
+        // powers peer of
+        // `tier_peak_trough_sum_of_fifth_powers_nested_fixture_is_thirty_three`.
+        let r = Nested::resolve_progressive();
+        assert_eq!(r.provenance().peak_tier_count(), 2);
+        assert_eq!(r.provenance().trough_tier_count(), 1);
+        assert_eq!(r.provenance().tier_spread(), 1);
+        assert_eq!(r.provenance().tier_peak_trough_sum(), 3);
+        assert_eq!(r.provenance().tier_peak_trough_product(), 2);
+        assert_eq!(r.provenance().tier_peak_trough_sum_of_squares(), 5);
+        assert_eq!(r.provenance().tier_peak_trough_sum_of_cubes(), 9);
+        assert_eq!(r.provenance().tier_peak_trough_sum_of_fourth_powers(), 17);
+        assert_eq!(r.provenance().tier_peak_trough_sum_of_fifth_powers(), 33);
+        assert_eq!(r.provenance().tier_peak_trough_sum_of_sixth_powers(), 65);
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_sixth_powers_empty_map_is_zero() {
+        // An empty ProvenanceMap has no leaves and therefore zero joint
+        // sextic magnitude — reads `0` per the
+        // AxisHistogram::peak_trough_sum_of_sixth_powers empty
+        // convention one altitude down; the `(peak_tier_count,
+        // trough_tier_count, tier_spread, tier_peak_trough_sum,
+        // tier_peak_trough_product, tier_peak_trough_sum_of_squares,
+        // tier_peak_trough_sum_of_cubes,
+        // tier_peak_trough_sum_of_fourth_powers,
+        // tier_peak_trough_sum_of_fifth_powers,
+        // tier_peak_trough_sum_of_sixth_powers)` 10-tuple reads
+        // `(0, 0, 0, 0, 0, 0, 0, 0, 0, 0)` uniformly on the empty map.
+        // Peer of `tier_peak_trough_sum_of_fifth_powers_empty_map_is_zero`
+        // on the sum-of-sixth-powers side.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.peak_tier_count(), 0);
+        assert_eq!(empty.trough_tier_count(), 0);
+        assert_eq!(empty.tier_spread(), 0);
+        assert_eq!(empty.tier_peak_trough_sum(), 0);
+        assert_eq!(empty.tier_peak_trough_product(), 0);
+        assert_eq!(empty.tier_peak_trough_sum_of_squares(), 0);
+        assert_eq!(empty.tier_peak_trough_sum_of_cubes(), 0);
+        assert_eq!(empty.tier_peak_trough_sum_of_fourth_powers(), 0);
+        assert_eq!(empty.tier_peak_trough_sum_of_fifth_powers(), 0);
+        assert_eq!(empty.tier_peak_trough_sum_of_sixth_powers(), 0);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_sixth_powers_singleton_support_is_twice_len_sextic() {
+        // Singleton-support pin: every leaf lands on the same tier, so
+        // that one tier is both peak and trough of the observed
+        // support, and the joint sum-of-sixth-powers is
+        // `self.len()⁶ + self.len()⁶ == 2 * self.len()⁶`. Tier-altitude
+        // peer of the trait-uniform `peak_trough_sum_of_sixth_powers
+        // == 2 * total⁶` behavior on AxisHistogram's singleton-support
+        // boundary — and of
+        // `kind_peak_trough_sum_of_sixth_powers_singleton_support_is_twice_line_count_sextic`
+        // one altitude down.
+        let m: ProvenanceMap = ["a", "b", "c"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_tiers().len(), 1);
+        assert_eq!(m.peak_tier_count(), 3);
+        assert_eq!(m.trough_tier_count(), 3);
+        // 3⁶ + 3⁶ = 729 + 729 = 1458
+        assert_eq!(m.tier_peak_trough_sum_of_sixth_powers(), 1458);
+        assert_eq!(
+            m.tier_peak_trough_sum_of_sixth_powers(),
+            2 * m.len() * m.len() * m.len() * m.len() * m.len() * m.len()
+        );
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_sixth_powers_uniform_cover_is_twice_shared_count_sextic() {
+        // Uniform-cover pin: every observed tier contributes the same
+        // nonzero count (one leaf each here across all four tiers), so
+        // peak == trough == 1 and the joint sum-of-sixth-powers is
+        // `2 * shared_count⁶ == 2`. On the uniform-cover shape,
+        // `tier_peak_trough_sum_of_sixth_powers == 2 * peak_tier_count⁶`
+        // (equality boundary of the `tier_peak_trough_sum_of_sixth_powers
+        // <= 2 * peak_tier_count⁶` invariant, witnessed by
+        // `tiers_uniform_count() == true`). Peer of
+        // `tier_peak_trough_sum_of_fifth_powers_uniform_cover_is_twice_shared_count_quintic`
+        // on the sum-of-sixth-powers side.
+        let m: ProvenanceMap = ConfigTierKind::ALL
+            .iter()
+            .copied()
+            .map(|t| (vec![t.as_str().to_owned()], Provenance::computed(t)))
+            .collect();
+        assert!(m.tier_histogram().is_full_cover());
+        assert!(m.tiers_uniform_count());
+        assert_eq!(m.peak_tier_count(), 1);
+        assert_eq!(m.trough_tier_count(), 1);
+        assert_eq!(m.tier_peak_trough_sum_of_sixth_powers(), 2);
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_sixth_powers_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence pin:
+        // `tier_peak_trough_sum_of_sixth_powers() == 0` iff the map
+        // is empty. Both endpoints are structurally `>= 1` on every
+        // non-empty map, and sixth-powering cannot introduce a zero
+        // from non-zero operands, so the sum-of-sixth-powers is zero
+        // exactly on the empty map. Contrapositively, every non-empty
+        // map has `tier_peak_trough_sum_of_sixth_powers >= 2`.
+        // Empty-boundary peer to the two-endpoint surface. Tier-
+        // altitude peer of
+        // `kind_peak_trough_sum_of_sixth_powers_zero_iff_empty_pointwise`
+        // at the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofsp_zero = map.tier_peak_trough_sum_of_sixth_powers() == 0;
+            let is_empty = map.is_empty();
+            assert_eq!(
+                sofsp_zero,
+                is_empty,
+                "tier_peak_trough_sum_of_sixth_powers == 0 must agree \
+                 with is_empty() for map with peak={p}, trough={t}, sofsp={sofsp}",
+                p = map.peak_tier_count(),
+                t = map.trough_tier_count(),
+                sofsp = map.tier_peak_trough_sum_of_sixth_powers(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_sixth_powers_non_empty_bounded_below_by_two() {
+        // Non-empty floor pin: every non-empty map has
+        // `tier_peak_trough_sum_of_sixth_powers >= 2` — the joint
+        // sextic magnitude has a structural non-empty floor of `2`
+        // because both sixth-powered endpoints are structurally
+        // `>= 1` on every non-empty map (by `peak_tier_count >= 1`
+        // and `trough_tier_count >= 1` on the non-empty case), and
+        // their sum-of-sixth-powers is at least `1 + 1 == 2`. Peer
+        // of
+        // `kind_peak_trough_sum_of_sixth_powers_non_empty_bounded_below_by_two`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+        ] {
+            assert!(
+                map.tier_peak_trough_sum_of_sixth_powers() >= 2,
+                "tier_peak_trough_sum_of_sixth_powers ({sofsp}) must \
+                 be >= 2 on non-empty map (peak={p}, trough={t})",
+                sofsp = map.tier_peak_trough_sum_of_sixth_powers(),
+                p = map.peak_tier_count(),
+                t = map.trough_tier_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_sixth_powers_am_sextic_bounded_below_by_thirty_second_sum_sextic() {
+        // AM-sextic bound: `32 * tier_peak_trough_sum_of_sixth_powers
+        // >= tier_peak_trough_sum⁶` on every fixture — the power-mean
+        // inequality `p⁶ + t⁶ >= (p + t)⁶ / 32`. Equality holds iff
+        // `tiers_uniform_count() == true` (peak equals trough), the
+        // balanced-distribution corner. Peer to the AM-quintic bound
+        // `16 * sofip >= sum⁵` on `p_5`, the AM-quartic bound `8 *
+        // sofp >= sum⁴` on `p_4`, the AM-cube bound `4 * soc >= sum³`
+        // on `p_3`, the AM-QM bound `sos >= 2*product` on `p_2`, and
+        // the AM-GM bound `4 * product <= sum²` on the elementary-
+        // symmetric pair. Peer of
+        // `kind_peak_trough_sum_of_sixth_powers_am_sextic_bounded_below_by_thirty_second_sum_sextic`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofsp = map.tier_peak_trough_sum_of_sixth_powers();
+            let sum = map.tier_peak_trough_sum();
+            let sum_sextic = sum * sum * sum * sum * sum * sum;
+            let thirty_two_sofsp = 32 * sofsp;
+            assert!(
+                thirty_two_sofsp >= sum_sextic,
+                "32 * tier_peak_trough_sum_of_sixth_powers ({thirty_two_sofsp}) \
+                 must be >= tier_peak_trough_sum⁶ ({sum_sextic})",
+            );
+            let equality = thirty_two_sofsp == sum_sextic;
+            let uniform = map.tiers_uniform_count();
+            assert_eq!(
+                equality,
+                uniform,
+                "32 * tier_peak_trough_sum_of_sixth_powers == sum⁶ \
+                 must agree with tiers_uniform_count for map with \
+                 peak={p}, trough={t}, sum={sum}, sofsp={sofsp}",
+                p = map.peak_tier_count(),
+                t = map.trough_tier_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_sixth_powers_bounded_above_by_twice_peak_sextic() {
+        // Structural bound: `tier_peak_trough_sum_of_sixth_powers() <=
+        // 2 * peak_tier_count()⁶` on every fixture — `p⁶ + t⁶ <= 2p⁶`
+        // reduces to `trough <= peak` (both non-negative), the
+        // structural `trough_tier_count <= peak_tier_count` invariant.
+        // Equality holds iff `tiers_uniform_count() == true` (peak
+        // equals trough). Peer of
+        // `kind_peak_trough_sum_of_sixth_powers_bounded_above_by_twice_peak_sextic`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofsp = map.tier_peak_trough_sum_of_sixth_powers();
+            let peak = map.peak_tier_count();
+            let twice_peak_sextic = 2 * peak * peak * peak * peak * peak * peak;
+            assert!(
+                sofsp <= twice_peak_sextic,
+                "tier_peak_trough_sum_of_sixth_powers ({sofsp}) must be \
+                 <= 2 * peak⁶ ({twice_peak_sextic})",
+            );
+            let equality = sofsp == twice_peak_sextic;
+            let uniform = map.tiers_uniform_count();
+            assert_eq!(
+                equality,
+                uniform,
+                "tier_peak_trough_sum_of_sixth_powers == 2 * peak⁶ \
+                 must agree with tiers_uniform_count for map with \
+                 peak={peak}, trough={t}, sofsp={sofsp}",
+                t = map.trough_tier_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_sixth_powers_bounded_above_by_twice_len_sextic() {
+        // Composition bound: `tier_peak_trough_sum_of_sixth_powers() <=
+        // 2 * self.len()⁶` on every fixture — chaining
+        // `sofsp <= 2 * peak⁶` (previous pin) with `peak <= self.len()`.
+        // The joint sextic magnitude of a resolved fold is bounded
+        // above by twice the sixth power of the total leaf count of
+        // the fold. Peer of
+        // `kind_peak_trough_sum_of_sixth_powers_bounded_above_by_twice_lines_len_sextic`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofsp = map.tier_peak_trough_sum_of_sixth_powers();
+            let n = map.len();
+            let twice_n_sextic = 2 * n * n * n * n * n * n;
+            assert!(
+                sofsp <= twice_n_sextic,
+                "tier_peak_trough_sum_of_sixth_powers ({sofsp}) must not \
+                 exceed 2 * self.len()⁶ ({twice_n_sextic})",
+            );
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_sixth_powers_newton_identity_with_sum_sofip_product_sofp_pointwise()
+    {
+        // Newton's identity `p_6 = e_1 * p_5 - e_2 * p_4` read-off on
+        // the (sum, sum_of_fifth_powers, product, sum_of_fourth_powers)
+        // surface: `tier_peak_trough_sum_of_sixth_powers ==
+        // tier_peak_trough_sum * tier_peak_trough_sum_of_fifth_powers -
+        // tier_peak_trough_product * tier_peak_trough_sum_of_fourth_powers`
+        // on every fixture. The subtraction is non-negative: expanding
+        // `(p+t)(p⁵+t⁵) = p⁶+t⁶+pt(p⁴+t⁴)`, the second term is exactly
+        // `product * sofp`, so LHS - RHS = p⁶+t⁶ = sofsp >= 0. Peer of
+        // `kind_peak_trough_sum_of_sixth_powers_newton_identity_with_sum_sofip_product_sofp_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let p_six = map.tier_peak_trough_sum_of_sixth_powers();
+            let sum = map.tier_peak_trough_sum();
+            let p_five = map.tier_peak_trough_sum_of_fifth_powers();
+            let product = map.tier_peak_trough_product();
+            let p_four = map.tier_peak_trough_sum_of_fourth_powers();
+            let lhs = sum * p_five;
+            let rhs = product * p_four;
+            assert!(
+                rhs <= lhs,
+                "sum·sofip - product·sofp must be non-negative: \
+                 product·sofp ({rhs}) <= sum·sofip ({lhs})",
+            );
+            assert_eq!(p_six, lhs - rhs);
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_sixth_powers_factorization_with_soc_product_pointwise() {
+        // (soc, product) surface factorization:
+        // `tier_peak_trough_sum_of_sixth_powers ==
+        // tier_peak_trough_sum_of_cubes.pow(2) - 2 *
+        // tier_peak_trough_product.pow(3)` on every fixture — the
+        // identity `p⁶ + t⁶ = (p³ + t³)² - 2·(pt)³`. Non-negative
+        // subtraction since `(p³+t³)² = p⁶+t⁶+2·p³t³` so LHS - RHS =
+        // p⁶+t⁶ = sofsp. Peer of
+        // `kind_peak_trough_sum_of_sixth_powers_factorization_with_soc_product_pointwise`
+        // at the diff altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofsp = map.tier_peak_trough_sum_of_sixth_powers();
+            let soc = map.tier_peak_trough_sum_of_cubes();
+            let product = map.tier_peak_trough_product();
+            let lhs = soc * soc;
+            let rhs = 2 * product * product * product;
+            assert!(
+                rhs <= lhs,
+                "soc² - 2·product³ must be non-negative: \
+                 2·product³ ({rhs}) <= soc² ({lhs})",
+            );
+            assert_eq!(sofsp, lhs - rhs);
+        }
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_sixth_powers_strictly_ordered_four_tier_fixture_is_four_thousand_ninety_seven()
+     {
+        // Direct pin at a strictly-ordered four-tier fold with counts
+        // Bare=1, Discovered=2, Default=3, Custom=4 (four distinct
+        // positive counts, one strict advance over the diff altitude's
+        // three-cell case). Peak lands on Custom at 4; trough over
+        // full support lands at 1. Sum-of-sixth-powers = 4⁶ + 1⁶ =
+        // 4097, sum = 5, spread = 3, product = 4, sos = 17, soc = 65,
+        // sofp = 257, sofip = 1025. Verifies both read-offs in-place:
+        // sofsp = 5·1025 - 4·257 = 5125 - 1028 = 4097 (Newton p_6 =
+        // e_1·p_5 - e_2·p_4), sofsp = 65² - 2·4³ = 4225 - 128 = 4097
+        // ((soc, product) factorization). Sum-of-sixth-powers peer of
+        // `tier_peak_trough_sum_of_fifth_powers_strictly_ordered_four_tier_fixture_is_one_thousand_twenty_five`
+        // on the same fixture.
+        let m: ProvenanceMap = [
+            (vec!["b1".to_owned()], ConfigTierKind::Bare),
+            (vec!["dv1".to_owned()], ConfigTierKind::Discovered),
+            (vec!["dv2".to_owned()], ConfigTierKind::Discovered),
+            (vec!["df1".to_owned()], ConfigTierKind::Default),
+            (vec!["df2".to_owned()], ConfigTierKind::Default),
+            (vec!["df3".to_owned()], ConfigTierKind::Default),
+            (vec!["c1".to_owned()], ConfigTierKind::Custom),
+            (vec!["c2".to_owned()], ConfigTierKind::Custom),
+            (vec!["c3".to_owned()], ConfigTierKind::Custom),
+            (vec!["c4".to_owned()], ConfigTierKind::Custom),
+        ]
+        .into_iter()
+        .map(|(k, t)| (k, Provenance::computed(t)))
+        .collect();
+        assert_eq!(m.peak_tier_count(), 4);
+        assert_eq!(m.trough_tier_count(), 1);
+        assert_eq!(m.tier_spread(), 3);
+        assert_eq!(m.tier_peak_trough_sum(), 5);
+        assert_eq!(m.tier_peak_trough_product(), 4);
+        assert_eq!(m.tier_peak_trough_sum_of_squares(), 17);
+        assert_eq!(m.tier_peak_trough_sum_of_cubes(), 65);
+        assert_eq!(m.tier_peak_trough_sum_of_fourth_powers(), 257);
+        assert_eq!(m.tier_peak_trough_sum_of_fifth_powers(), 1025);
+        assert_eq!(m.tier_peak_trough_sum_of_sixth_powers(), 4097);
+        let sofsp = m.tier_peak_trough_sum_of_sixth_powers();
+        let sum = m.tier_peak_trough_sum();
+        let p_five = m.tier_peak_trough_sum_of_fifth_powers();
+        let product = m.tier_peak_trough_product();
+        let p_four = m.tier_peak_trough_sum_of_fourth_powers();
+        let soc = m.tier_peak_trough_sum_of_cubes();
+        assert_eq!(sofsp, sum * p_five - product * p_four);
+        assert_eq!(sofsp, soc * soc - 2 * product * product * product);
+    }
+
+    #[test]
+    fn tier_peak_trough_sum_of_sixth_powers_agrees_with_open_coded_max_sextic_plus_min_sextic_walk()
+    {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0).pow(6) + hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0).pow(6)` walk this lift
+        // replaces — both the named seam and the hand-rolled joint
+        // sextic magnitude must pointwise agree over every fixture.
+        // The `.filter(c > 0)` on the min side is essential (mirroring
+        // `trough_count`'s support discipline); the `.max()` on the
+        // peak side operates over the full axis (mirroring
+        // `peak_count`). Sum-of-sixth-powers peer of
+        // `tier_peak_trough_sum_of_fifth_powers_agrees_with_open_coded_max_quintic_plus_min_quintic_walk`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.tier_peak_trough_sum_of_sixth_powers();
+            let hist = map.tier_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .filter(|&(_, c)| c > 0)
+                .map(|(_, c)| c)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(
+                via_seam,
+                peak * peak * peak * peak * peak * peak
+                    + trough * trough * trough * trough * trough * trough,
             );
         }
     }
