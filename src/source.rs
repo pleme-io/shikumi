@@ -18121,8 +18121,7 @@ pub trait ConfigSourceChain {
     where
         Self: AsRef<[ConfigSource]>,
     {
-        self.env_prefix_kind_histogram()
-            .peak_trough_sum_of_squares()
+        self.env_prefix_kind_peak_trough_sum_of_powers(2)
     }
 
     /// The **joint-extremes-cube-magnitude of env-prefix-presence counts**
@@ -18390,7 +18389,7 @@ pub trait ConfigSourceChain {
     where
         Self: AsRef<[ConfigSource]>,
     {
-        self.env_prefix_kind_histogram().peak_trough_sum_of_cubes()
+        self.env_prefix_kind_peak_trough_sum_of_powers(3)
     }
 
     /// The **joint-extremes-quartic-magnitude of env-prefix-presence
@@ -18643,8 +18642,7 @@ pub trait ConfigSourceChain {
     where
         Self: AsRef<[ConfigSource]>,
     {
-        self.env_prefix_kind_histogram()
-            .peak_trough_sum_of_fourth_powers()
+        self.env_prefix_kind_peak_trough_sum_of_powers(4)
     }
 
     /// The **joint-extremes-quintic-magnitude of env-prefix-presence
@@ -18907,8 +18905,70 @@ pub trait ConfigSourceChain {
     where
         Self: AsRef<[ConfigSource]>,
     {
+        self.env_prefix_kind_peak_trough_sum_of_powers(5)
+    }
+
+    /// The **joint-extremes-Lⁿ-magnitude of env-prefix-presence counts** at
+    /// a runtime-chosen exponent — the runtime-exponent generalization
+    /// `peak_env_prefix_kind_count().pow(n) +
+    /// trough_env_prefix_kind_count().pow(n)` of the env-prefix sub-axis
+    /// power-sum family, lifted from the scalar-altitude primitive
+    /// [`crate::AxisHistogram::peak_trough_sum_of_powers`] one altitude
+    /// down through [`Self::env_prefix_kind_histogram`]. The four shipped
+    /// fixed-exponent siblings —
+    /// [`Self::env_prefix_kind_peak_trough_sum_of_squares`] (`n = 2`),
+    /// [`Self::env_prefix_kind_peak_trough_sum_of_cubes`] (`n = 3`),
+    /// [`Self::env_prefix_kind_peak_trough_sum_of_fourth_powers`] (`n = 4`),
+    /// and [`Self::env_prefix_kind_peak_trough_sum_of_fifth_powers`] (`n =
+    /// 5`) — each route through this primitive at their fixed `N`, so the
+    /// joint-extremes `p_n` on the env-prefix sub-axis reads off ONE typed
+    /// scalar at a runtime-chosen exponent instead of dispatching over the
+    /// named table or growing a sixth / seventh / n-th named sibling to
+    /// extend the ladder. **CLOSES the "runtime-exponent joint-extremes
+    /// power-sum across altitudes" projection at every altitude / sub-axis
+    /// of the 5-altitude cube** — the last remaining chain sub-axis after
+    /// [`Self::layer_kind_peak_trough_sum_of_powers`] and
+    /// [`Self::file_format_peak_trough_sum_of_powers`], joining
+    /// [`crate::ProvenanceMap::tier_peak_trough_sum_of_powers`] on the tier
+    /// altitude and [`crate::ConfigDiff::kind_peak_trough_sum_of_powers`]
+    /// on the diff altitude. Every altitude / sub-axis of the 5-altitude
+    /// cube now names the runtime-exponent joint-extremes power-sum scalar
+    /// at one typed seam.
+    ///
+    /// # Boundary conventions
+    ///
+    /// Inherited from the scalar-altitude primitive:
+    /// - `env_prefix_kind_peak_trough_sum_of_powers(0) == 2` for every
+    ///   chain (even the empty chain, and every chain with no `Env` layer)
+    ///   since `usize::pow(0) == 1` per operand — the closed `1 + 1 == 2`
+    ///   boundary of the two-operand power-sum family.
+    /// - `env_prefix_kind_peak_trough_sum_of_powers(1) ==
+    ///   env_prefix_kind_peak_trough_sum()` — the linear-power-sum
+    ///   degenerates to the shipped addition-form scalar
+    ///   [`Self::env_prefix_kind_peak_trough_sum`].
+    /// - `env_prefix_kind_peak_trough_sum_of_powers(n) == 0` for `n >= 1`
+    ///   iff the env-prefix histogram is empty (chain empty OR no chain
+    ///   layer is an [`ConfigSource::Env`] entry); every non-empty env-
+    ///   prefix histogram has both endpoints `>= 1`, so `p_n >= 2` on any
+    ///   such chain at `n >= 1`.
+    ///
+    /// # Newton's two-variable recurrence
+    ///
+    /// For `n >= 2`, the sub-axis primitive satisfies Newton's identity
+    /// `p_n == e_1 * p_(n-1) - e_2 * p_(n-2)` where
+    /// `e_1 = env_prefix_kind_peak_trough_sum()` and
+    /// `e_2 = env_prefix_kind_peak_trough_product()` — the same two
+    /// elementary-symmetric-polynomial scalars that close the entire
+    /// power-sum family on the env-prefix count-endpoint pair. The
+    /// identity holds without underflow on `usize` by the same
+    /// rearrangement the scalar-altitude primitive uses.
+    #[must_use]
+    fn env_prefix_kind_peak_trough_sum_of_powers(&self, n: u32) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
         self.env_prefix_kind_histogram()
-            .peak_trough_sum_of_fifth_powers()
+            .peak_trough_sum_of_powers(n)
     }
 
     /// The number of [`EnvMetadataTagKind`] cells tied at the peak leaf
@@ -81699,6 +81759,137 @@ mod tests {
                 via_seam,
                 peak * peak * peak * peak * peak + trough * trough * trough * trough * trough,
             );
+        }
+    }
+
+    // ---- ConfigSourceChain::env_prefix_kind_peak_trough_sum_of_powers —
+    //      runtime-exponent generalization of the env-prefix sub-axis
+    //      power-sum family, closing the LAST remaining sub-axis of the
+    //      5-altitude cube under the runtime-exponent primitive. Pinned
+    //      against the same four invariants as the peer altitudes: the
+    //      two boundary conventions (n == 0 reads 2 uniformly, n == 1
+    //      degenerates to env_prefix_kind_peak_trough_sum), the routing
+    //      pin that ties every named sibling (squares, cubes,
+    //      fourth_powers, fifth_powers) to `_of_powers(N)`, and the two-
+    //      variable Newton recurrence `p_n == e_1 * p_(n-1) - e_2 *
+    //      p_(n-2)` for n in 2..=5, proving the primitive closes the
+    //      whole sub-axis power-sum family under one identity — not just
+    //      at any single fixed exponent. Peer of
+    //      `layer_kind_peak_trough_sum_of_powers_*` and
+    //      `file_format_peak_trough_sum_of_powers_*` on the sister chain
+    //      sub-axes, `tier_peak_trough_sum_of_powers_*` on the tier
+    //      altitude, and `kind_peak_trough_sum_of_powers_*` on the diff
+    //      altitude ----
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_of_powers_at_zero_is_two_on_every_chain_including_empty() {
+        // Boundary pin at n == 0: for every chain — non-empty or empty,
+        // with or without `Env` layers — `peak_env_prefix_kind_count()
+        // .pow(0) == 1` and `trough_env_prefix_kind_count().pow(0) == 1`
+        // (usize's `0.pow(0) == 1` per operand), so `p_0 == 1 + 1 == 2`
+        // uniformly. The closed convention that lets
+        // `env_prefix_kind_peak_trough_sum_of_powers(0)` read the "two
+        // operands are present" cardinality without a nonempty guard,
+        // lifted from the scalar-altitude primitive. Peer of
+        // `layer_kind_peak_trough_sum_of_powers_at_zero_is_two_on_every_chain_including_empty`
+        // and
+        // `file_format_peak_trough_sum_of_powers_at_zero_is_two_on_every_chain_including_empty`
+        // on the sister sub-axes one seam over.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            assert_eq!(
+                chain
+                    .as_slice()
+                    .env_prefix_kind_peak_trough_sum_of_powers(0),
+                2,
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_of_powers_at_one_equals_env_prefix_kind_peak_trough_sum_pointwise()
+     {
+        // Boundary pin at n == 1: the linear-power-sum degenerates to the
+        // shipped addition-form scalar `env_prefix_kind_peak_trough_sum`.
+        // Pinned pointwise across every canonical fixture so a future
+        // regression in either side surfaces here. Peer of
+        // `layer_kind_peak_trough_sum_of_powers_at_one_equals_layer_kind_peak_trough_sum_pointwise`
+        // and
+        // `file_format_peak_trough_sum_of_powers_at_one_equals_file_format_peak_trough_sum_pointwise`
+        // on the sister sub-axes one seam over.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.env_prefix_kind_peak_trough_sum_of_powers(1),
+                slice.env_prefix_kind_peak_trough_sum(),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_of_powers_routes_named_siblings_pointwise() {
+        // Routing pin: each of the four shipped named exponents
+        // (squares, cubes, fourth_powers, fifth_powers) equals
+        // `env_prefix_kind_peak_trough_sum_of_powers(N)` pointwise across
+        // every canonical fixture. Seals the delegation the lift installs
+        // — a future drift between the primitive and any named sibling
+        // surfaces here. Peer of
+        // `layer_kind_peak_trough_sum_of_powers_routes_named_siblings_pointwise`
+        // and
+        // `file_format_peak_trough_sum_of_powers_routes_named_siblings_pointwise`
+        // on the sister sub-axes,
+        // `tier_peak_trough_sum_of_powers_routes_named_siblings_pointwise`
+        // on the tier altitude, and
+        // `kind_peak_trough_sum_of_powers_routes_named_siblings_pointwise`
+        // on the diff altitude.
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.env_prefix_kind_peak_trough_sum_of_squares(),
+                slice.env_prefix_kind_peak_trough_sum_of_powers(2),
+            );
+            assert_eq!(
+                slice.env_prefix_kind_peak_trough_sum_of_cubes(),
+                slice.env_prefix_kind_peak_trough_sum_of_powers(3),
+            );
+            assert_eq!(
+                slice.env_prefix_kind_peak_trough_sum_of_fourth_powers(),
+                slice.env_prefix_kind_peak_trough_sum_of_powers(4),
+            );
+            assert_eq!(
+                slice.env_prefix_kind_peak_trough_sum_of_fifth_powers(),
+                slice.env_prefix_kind_peak_trough_sum_of_powers(5),
+            );
+        }
+    }
+
+    #[test]
+    fn env_prefix_kind_peak_trough_sum_of_powers_satisfies_newton_recurrence_pointwise() {
+        // Newton's two-variable recurrence pin at n in 2..=5: `p_n ==
+        // e_1 * p_(n-1) - e_2 * p_(n-2)` where `e_1 =
+        // env_prefix_kind_peak_trough_sum` and `e_2 =
+        // env_prefix_kind_peak_trough_product`. Proves the primitive
+        // closes the whole env-prefix sub-axis power-sum family under one
+        // identity — not just at any single fixed exponent. The identity
+        // holds without underflow on `usize` by the same rearrangement the
+        // scalar-altitude primitive uses
+        // (`(p+t)(p^(n-1)+t^(n-1)) = p^n + t^n +
+        // p*t*(p^(n-2)+t^(n-2))` on non-negative `p`, `t`).
+        for chain in recessive_env_prefix_kind_fixtures() {
+            let slice = chain.as_slice();
+            let e1 = slice.env_prefix_kind_peak_trough_sum();
+            let e2 = slice.env_prefix_kind_peak_trough_product();
+            for n in 2u32..=5 {
+                let p_n = slice.env_prefix_kind_peak_trough_sum_of_powers(n);
+                let p_n_minus_1 = slice.env_prefix_kind_peak_trough_sum_of_powers(n - 1);
+                let p_n_minus_2 = slice.env_prefix_kind_peak_trough_sum_of_powers(n - 2);
+                assert_eq!(
+                    p_n + e2 * p_n_minus_2,
+                    e1 * p_n_minus_1,
+                    "Newton p_{n} + e_2 * p_{prev2} == e_1 * p_{prev1}",
+                    prev2 = n - 2,
+                    prev1 = n - 1,
+                );
+            }
         }
     }
 
