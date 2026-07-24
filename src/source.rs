@@ -9587,7 +9587,7 @@ pub trait ConfigSourceChain {
     where
         Self: AsRef<[ConfigSource]>,
     {
-        self.file_format_histogram().peak_trough_sum_of_squares()
+        self.file_format_peak_trough_sum_of_powers(2)
     }
 
     /// The **joint-extremes-cube-magnitude of file-format counts** — the
@@ -9815,7 +9815,7 @@ pub trait ConfigSourceChain {
     where
         Self: AsRef<[ConfigSource]>,
     {
-        self.file_format_histogram().peak_trough_sum_of_cubes()
+        self.file_format_peak_trough_sum_of_powers(3)
     }
 
     /// The **joint-extremes-quartic-magnitude of file-format counts** —
@@ -10047,8 +10047,7 @@ pub trait ConfigSourceChain {
     where
         Self: AsRef<[ConfigSource]>,
     {
-        self.file_format_histogram()
-            .peak_trough_sum_of_fourth_powers()
+        self.file_format_peak_trough_sum_of_powers(4)
     }
 
     /// The **joint-extremes-quintic-magnitude of file-format counts** —
@@ -10289,8 +10288,68 @@ pub trait ConfigSourceChain {
     where
         Self: AsRef<[ConfigSource]>,
     {
-        self.file_format_histogram()
-            .peak_trough_sum_of_fifth_powers()
+        self.file_format_peak_trough_sum_of_powers(5)
+    }
+
+    /// The **joint-extremes-Lⁿ-magnitude of file-format counts** at a
+    /// runtime-chosen exponent — the runtime-exponent generalization
+    /// `peak_file_format_count().pow(n) + trough_file_format_count().pow(n)`
+    /// of the file-format sub-axis power-sum family, lifted from the
+    /// scalar-altitude primitive
+    /// [`crate::AxisHistogram::peak_trough_sum_of_powers`] one altitude
+    /// down through [`Self::file_format_histogram`]. The four shipped
+    /// fixed-exponent siblings —
+    /// [`Self::file_format_peak_trough_sum_of_squares`] (`n = 2`),
+    /// [`Self::file_format_peak_trough_sum_of_cubes`] (`n = 3`),
+    /// [`Self::file_format_peak_trough_sum_of_fourth_powers`] (`n = 4`),
+    /// and [`Self::file_format_peak_trough_sum_of_fifth_powers`] (`n = 5`)
+    /// — each route through this primitive at their fixed `N`, so the
+    /// joint-extremes `p_n` on the file-format sub-axis reads off ONE
+    /// typed scalar at a runtime-chosen exponent instead of dispatching
+    /// over the named table or growing a sixth / seventh / n-th named
+    /// sibling to extend the ladder. Peer of
+    /// [`Self::layer_kind_peak_trough_sum_of_powers`] on the sister
+    /// chain sub-axis one seam over,
+    /// [`crate::ProvenanceMap::tier_peak_trough_sum_of_powers`] on the
+    /// tier altitude, and
+    /// [`crate::ConfigDiff::kind_peak_trough_sum_of_powers`] on the diff
+    /// altitude — the same runtime-exponent lift, sideways to the second
+    /// chain sub-axis.
+    ///
+    /// # Boundary conventions
+    ///
+    /// Inherited from the scalar-altitude primitive:
+    /// - `file_format_peak_trough_sum_of_powers(0) == 2` for every chain
+    ///   (even the empty chain, and every chain with no recognized-
+    ///   extension file layer) since `usize::pow(0) == 1` per operand —
+    ///   the closed `1 + 1 == 2` boundary of the two-operand power-sum
+    ///   family.
+    /// - `file_format_peak_trough_sum_of_powers(1) ==
+    ///   file_format_peak_trough_sum()` — the linear-power-sum
+    ///   degenerates to the shipped addition-form scalar
+    ///   [`Self::file_format_peak_trough_sum`].
+    /// - `file_format_peak_trough_sum_of_powers(n) == 0` for `n >= 1` iff
+    ///   the file-format histogram is empty (chain empty OR no chain
+    ///   layer carries a recognized-extension format); every non-empty
+    ///   file-format histogram has both endpoints `>= 1`, so `p_n >= 2`
+    ///   on any such chain at `n >= 1`.
+    ///
+    /// # Newton's two-variable recurrence
+    ///
+    /// For `n >= 2`, the sub-axis primitive satisfies Newton's identity
+    /// `p_n == e_1 * p_(n-1) - e_2 * p_(n-2)` where
+    /// `e_1 = file_format_peak_trough_sum()` and
+    /// `e_2 = file_format_peak_trough_product()` — the same two
+    /// elementary-symmetric-polynomial scalars that close the entire
+    /// power-sum family on the file-format count-endpoint pair. The
+    /// identity holds without underflow on `usize` by the same
+    /// rearrangement the scalar-altitude primitive uses.
+    #[must_use]
+    fn file_format_peak_trough_sum_of_powers(&self, n: u32) -> usize
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().peak_trough_sum_of_powers(n)
     }
 
     /// The number of [`crate::discovery::Format`] cells tied at the peak
@@ -53830,6 +53889,127 @@ mod tests {
                 via_seam,
                 peak * peak * peak * peak * peak + trough * trough * trough * trough * trough,
             );
+        }
+    }
+
+    // ---- ConfigSourceChain::file_format_peak_trough_sum_of_powers(n) —
+    //      runtime-exponent generalization of the file-format sub-axis
+    //      power-sum family, lifting AxisHistogram::peak_trough_sum_of_powers
+    //      one altitude up through file_format_histogram(). The four
+    //      shipped fixed-exponent siblings (squares, cubes, fourth_powers,
+    //      fifth_powers) now route through this primitive at their fixed
+    //      N, closing the exponent axis at the file-format sub-axis under
+    //      one typed runtime-generic surface. Four pins seal the
+    //      primitive: the two boundary conventions (n == 0 reads 2
+    //      uniformly, n == 1 degenerates to file_format_peak_trough_sum),
+    //      the routing pin that ties every named sibling to
+    //      `_of_powers(N)`, and the two-variable Newton recurrence
+    //      `p_n == e_1 * p_(n-1) - e_2 * p_(n-2)` for n in 2..=5,
+    //      proving the primitive closes the whole sub-axis power-sum
+    //      family under one identity — not just at any single fixed
+    //      exponent. Peer of `layer_kind_peak_trough_sum_of_powers_*`
+    //      on the sister chain sub-axis one seam over,
+    //      `tier_peak_trough_sum_of_powers_*` on the tier altitude, and
+    //      `kind_peak_trough_sum_of_powers_*` on the diff altitude ----
+
+    #[test]
+    fn file_format_peak_trough_sum_of_powers_at_zero_is_two_on_every_chain_including_empty() {
+        // Boundary pin at n == 0: for every chain — non-empty or empty,
+        // with or without recognized-extension file layers —
+        // `peak_file_format_count().pow(0) == 1` and
+        // `trough_file_format_count().pow(0) == 1` (usize's `0.pow(0) == 1`
+        // per operand), so `p_0 == 1 + 1 == 2` uniformly. The closed
+        // convention that lets `file_format_peak_trough_sum_of_powers(0)`
+        // read the "two operands are present" cardinality without a
+        // nonempty guard, lifted from the scalar-altitude primitive.
+        // Peer of
+        // `layer_kind_peak_trough_sum_of_powers_at_zero_is_two_on_every_chain_including_empty`
+        // on the sister sub-axis one seam over.
+        for chain in recessive_file_format_fixtures() {
+            assert_eq!(chain.as_slice().file_format_peak_trough_sum_of_powers(0), 2);
+        }
+    }
+
+    #[test]
+    fn file_format_peak_trough_sum_of_powers_at_one_equals_file_format_peak_trough_sum_pointwise() {
+        // Boundary pin at n == 1: the linear-power-sum degenerates to
+        // the shipped addition-form scalar `file_format_peak_trough_sum`.
+        // Pinned pointwise across every canonical fixture so a future
+        // regression in either side surfaces here. Peer of
+        // `layer_kind_peak_trough_sum_of_powers_at_one_equals_layer_kind_peak_trough_sum_pointwise`
+        // on the sister sub-axis one seam over.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.file_format_peak_trough_sum_of_powers(1),
+                slice.file_format_peak_trough_sum(),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_peak_trough_sum_of_powers_routes_named_siblings_pointwise() {
+        // Routing pin: each of the four shipped named exponents
+        // (squares, cubes, fourth_powers, fifth_powers) equals
+        // `file_format_peak_trough_sum_of_powers(N)` pointwise across
+        // every canonical fixture. Seals the delegation the lift
+        // installs — a future drift between the primitive and any named
+        // sibling surfaces here. Peer of
+        // `layer_kind_peak_trough_sum_of_powers_routes_named_siblings_pointwise`
+        // on the sister sub-axis one seam over,
+        // `tier_peak_trough_sum_of_powers_routes_named_siblings_pointwise`
+        // on the tier altitude, and
+        // `kind_peak_trough_sum_of_powers_routes_named_siblings_pointwise`
+        // on the diff altitude.
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            assert_eq!(
+                slice.file_format_peak_trough_sum_of_squares(),
+                slice.file_format_peak_trough_sum_of_powers(2),
+            );
+            assert_eq!(
+                slice.file_format_peak_trough_sum_of_cubes(),
+                slice.file_format_peak_trough_sum_of_powers(3),
+            );
+            assert_eq!(
+                slice.file_format_peak_trough_sum_of_fourth_powers(),
+                slice.file_format_peak_trough_sum_of_powers(4),
+            );
+            assert_eq!(
+                slice.file_format_peak_trough_sum_of_fifth_powers(),
+                slice.file_format_peak_trough_sum_of_powers(5),
+            );
+        }
+    }
+
+    #[test]
+    fn file_format_peak_trough_sum_of_powers_satisfies_newton_recurrence_pointwise() {
+        // Newton's two-variable recurrence pin at n in 2..=5: `p_n ==
+        // e_1 * p_(n-1) - e_2 * p_(n-2)` where `e_1 =
+        // file_format_peak_trough_sum` and `e_2 =
+        // file_format_peak_trough_product`. Proves the primitive closes
+        // the whole file-format sub-axis power-sum family under one
+        // identity — not just at any single fixed exponent. The identity
+        // holds without underflow on `usize` by the same rearrangement
+        // the scalar-altitude primitive uses
+        // (`(p+t)(p^(n-1)+t^(n-1)) = p^n + t^n +
+        // p*t*(p^(n-2)+t^(n-2))` on non-negative `p`, `t`).
+        for chain in recessive_file_format_fixtures() {
+            let slice = chain.as_slice();
+            let e1 = slice.file_format_peak_trough_sum();
+            let e2 = slice.file_format_peak_trough_product();
+            for n in 2u32..=5 {
+                let p_n = slice.file_format_peak_trough_sum_of_powers(n);
+                let p_n_minus_1 = slice.file_format_peak_trough_sum_of_powers(n - 1);
+                let p_n_minus_2 = slice.file_format_peak_trough_sum_of_powers(n - 2);
+                assert_eq!(
+                    p_n + e2 * p_n_minus_2,
+                    e1 * p_n_minus_1,
+                    "Newton p_{n} + e_2 * p_{prev2} == e_1 * p_{prev1}",
+                    prev2 = n - 2,
+                    prev1 = n - 1,
+                );
+            }
         }
     }
 
