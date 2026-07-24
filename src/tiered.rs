@@ -10140,6 +10140,97 @@ impl ConfigDiff {
         self.kind_histogram().peak_trough_sum_of_fifth_powers()
     }
 
+    /// The **observed-distribution peak-trough sum-of-sixth-powers of diff
+    /// kinds** — the sum of the sixth powers of the peak and trough
+    /// [`DiffLineKind`] counts on this diff. Equal to
+    /// `self.peak_kind_count().pow(6) + self.trough_kind_count().pow(6)`
+    /// by construction; the *joint-extremes-sextic-magnitude* / power-sum
+    /// `p_6` sibling of the shipped [`Self::kind_spread`] (`peak - trough`),
+    /// [`Self::kind_peak_trough_sum`] (`peak + trough`),
+    /// [`Self::kind_peak_trough_product`] (`peak * trough`),
+    /// [`Self::kind_peak_trough_sum_of_squares`] (`p_2`),
+    /// [`Self::kind_peak_trough_sum_of_cubes`] (`p_3`),
+    /// [`Self::kind_peak_trough_sum_of_fourth_powers`] (`p_4`), and
+    /// [`Self::kind_peak_trough_sum_of_fifth_powers`] (`p_5`) scalars on
+    /// the same closed count-endpoint pair — the diff-altitude climb of
+    /// the "peak⁶ + trough⁶ sums-of-sixth-powers across altitudes"
+    /// projection seeded on the scalar altitude by
+    /// [`crate::AxisHistogram::peak_trough_sum_of_sixth_powers`]. Routes
+    /// through [`Self::kind_histogram`], reading the fused primitive one
+    /// altitude down so the two-scan cost of the inline
+    /// `peak_kind_count().pow(6) + trough_kind_count().pow(6)` idiom
+    /// halves to one histogram walk.
+    ///
+    /// The `p_6` scalar composes with the shipped diff-altitude siblings
+    /// through two orthogonal read-off surfaces with no histogram
+    /// re-walk:
+    ///
+    /// ```text
+    /// kind_peak_trough_sum_of_sixth_powers
+    ///     == kind_peak_trough_sum * kind_peak_trough_sum_of_fifth_powers
+    ///        - kind_peak_trough_product * kind_peak_trough_sum_of_fourth_powers
+    ///     (Newton's identity p_6 = e_1·p_5 - e_2·p_4 on the
+    ///      (sum, sofip, product, sofp) surface — non-negative subtraction
+    ///      since (p+t)(p⁵+t⁵) = p⁶+t⁶+pt(p⁴+t⁴) distributes into LHS =
+    ///      p_6 + pt·p_4 while pt·p_4 reads exactly the second term)
+    /// kind_peak_trough_sum_of_sixth_powers
+    ///     == kind_peak_trough_sum_of_cubes.pow(2)
+    ///        - 2 * kind_peak_trough_product.pow(3)
+    ///     (sum-of-two-cubes-squared factorization
+    ///      p⁶ + t⁶ = (p³ + t³)² - 2·(pt)³ — a single squaring and a
+    ///      single cubing off the (soc, product) surface)
+    /// ```
+    ///
+    /// **Empty-diff convention** — returns `0`. **Empty-boundary
+    /// equivalence** — `kind_peak_trough_sum_of_sixth_powers() == 0` ⇔
+    /// `self.lines.is_empty()` (both endpoints are structurally `>= 1` on
+    /// every non-empty diff, so the sum-of-sixth-powers is at least
+    /// `1 + 1 == 2` on any non-empty diff). **AM-sextic / power-mean
+    /// bound** — `32 * kind_peak_trough_sum_of_sixth_powers() >=
+    /// kind_peak_trough_sum().pow(6)` always, with equality iff
+    /// [`Self::kinds_uniform_count`] is `true`; peer to the AM-quintic
+    /// bound `16·sofip >= sum⁵` on `p_5`, the AM-quartic bound
+    /// `8·sofp >= sum⁴` on `p_4`, the AM-cube bound `4·soc >= sum³` on
+    /// `p_3`, the AM-QM bound `sos >= 2·product` on `p_2`, and the
+    /// AM-GM bound `4·product <= sum²` on the elementary-symmetric pair.
+    /// **Overflow-safe on realistic diff sizes** — bounded above by
+    /// `2 * self.lines.len().pow(6)`, so cannot overflow on any diff
+    /// whose line count is below `⁶√(usize::MAX / 2)` (~1442 on 64-bit).
+    ///
+    /// # Invariants
+    ///
+    /// - `kind_peak_trough_sum_of_sixth_powers() ==
+    ///   kind_histogram().peak_trough_sum_of_sixth_powers()` — routing
+    ///   through the shared sextic-native primitive.
+    /// - `kind_peak_trough_sum_of_sixth_powers() == peak_kind_count().pow(6) +
+    ///   trough_kind_count().pow(6)` — fused-pair identity.
+    /// - `kind_peak_trough_sum_of_sixth_powers() == 0` ⇔ `self.lines.is_empty()`.
+    /// - `kind_peak_trough_sum_of_sixth_powers() >= 2` whenever `!self.lines.is_empty()`.
+    /// - `32 * kind_peak_trough_sum_of_sixth_powers() >=
+    ///   kind_peak_trough_sum().pow(6)` (AM-sextic; equality iff
+    ///   [`Self::kinds_uniform_count`]).
+    /// - `kind_peak_trough_sum_of_sixth_powers() <= 2 * peak_kind_count().pow(6)`
+    ///   (equality iff [`Self::kinds_uniform_count`]).
+    /// - `kind_peak_trough_sum_of_sixth_powers() <= 2 * self.lines.len().pow(6)`.
+    /// - `kind_peak_trough_sum_of_sixth_powers() == kind_peak_trough_sum() *
+    ///   kind_peak_trough_sum_of_fifth_powers() - kind_peak_trough_product() *
+    ///   kind_peak_trough_sum_of_fourth_powers()` (Newton `p_6 = e_1·p_5 - e_2·p_4`).
+    /// - `kind_peak_trough_sum_of_sixth_powers() ==
+    ///   kind_peak_trough_sum_of_cubes().pow(2) - 2 *
+    ///   kind_peak_trough_product().pow(3)` (sum-of-two-cubes-squared
+    ///   factorization p⁶ + t⁶ = (p³ + t³)² − 2·(pt)³).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (peak + trough
+    /// fused scan). Both are `O(n)` in practice — the diff-cell axis
+    /// carries a fixed three-cell cardinality.
+    #[must_use]
+    pub fn kind_peak_trough_sum_of_sixth_powers(&self) -> usize {
+        self.kind_histogram().peak_trough_sum_of_sixth_powers()
+    }
+
     /// The **modal-multiplicity of diff kinds** — the number of
     /// [`DiffLineKind`] cells that hold the peak line count on this diff.
     /// Equal to `1` on every strictly-modally-unique diff (a unique
@@ -20452,6 +20543,267 @@ mod tests {
             assert_eq!(
                 via_seam,
                 peak * peak * peak * peak * peak + trough * trough * trough * trough * trough,
+            );
+        }
+    }
+
+    // ── ConfigDiff::kind_peak_trough_sum_of_sixth_powers — diff-altitude
+    //    climb of the "peak⁶ + trough⁶ sums-of-sixth-powers across
+    //    altitudes" projection seeded on the scalar altitude by
+    //    AxisHistogram::peak_trough_sum_of_sixth_powers ──
+
+    #[test]
+    fn kind_peak_trough_sum_of_sixth_powers_matches_kind_histogram_peak_trough_sum_of_sixth_powers_pointwise()
+     {
+        // Routing pin: `kind_peak_trough_sum_of_sixth_powers` routes
+        // through `kind_histogram().peak_trough_sum_of_sixth_powers()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared sextic-native primitive.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().peak_trough_sum_of_sixth_powers();
+            assert_eq!(diff.kind_peak_trough_sum_of_sixth_powers(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_sixth_powers_equals_peak_sextic_plus_trough_sextic_pointwise() {
+        // Fused-pair pin: `kind_peak_trough_sum_of_sixth_powers ==
+        // peak_kind_count⁶ + trough_kind_count⁶` on every fixture — the
+        // defining equivalence on the underlying scalar pair.
+        for diff in dominant_kind_fixtures() {
+            let peak = diff.peak_kind_count();
+            let trough = diff.trough_kind_count();
+            assert_eq!(
+                diff.kind_peak_trough_sum_of_sixth_powers(),
+                peak * peak * peak * peak * peak * peak
+                    + trough * trough * trough * trough * trough * trough,
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_sixth_powers_context_dominated_fixture_is_seven_hundred_thirty() {
+        // Direct pin: a diff of 3 Context + 1 Removed has Context
+        // dominant at 3, Removed rarest at 1 — the joint
+        // sum-of-sixth-powers is `3⁶ + 1⁶ == 730`. Reads the paired
+        // count decuple as `(peak, trough, spread, sum, product, sos,
+        // soc, sofp, sofip, sofsp) = (3, 1, 2, 4, 3, 10, 28, 82, 244,
+        // 730)`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_count(), 3);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_spread(), 2);
+        assert_eq!(diff.kind_peak_trough_sum(), 4);
+        assert_eq!(diff.kind_peak_trough_product(), 3);
+        assert_eq!(diff.kind_peak_trough_sum_of_squares(), 10);
+        assert_eq!(diff.kind_peak_trough_sum_of_cubes(), 28);
+        assert_eq!(diff.kind_peak_trough_sum_of_fourth_powers(), 82);
+        assert_eq!(diff.kind_peak_trough_sum_of_fifth_powers(), 244);
+        assert_eq!(diff.kind_peak_trough_sum_of_sixth_powers(), 730);
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_sixth_powers_added_dominated_fixture_is_sixty_five() {
+        // Direct pin: a diff of 2 Added + 1 Context has Added dominant
+        // at 2, Context rarest at 1 — the joint sum-of-sixth-powers is
+        // `2⁶ + 1⁶ == 65`. Reads the paired count decuple as
+        // `(2, 1, 1, 3, 2, 5, 9, 17, 33, 65)`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_count(), 2);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_peak_trough_sum_of_fifth_powers(), 33);
+        assert_eq!(diff.kind_peak_trough_sum_of_sixth_powers(), 65);
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_sixth_powers_empty_diff_is_zero() {
+        // Empty-diff convention: no observed cells → sum-of-sixth-powers
+        // reads `0`, matching every diff-altitude scalar peer.
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.kind_peak_trough_sum_of_sixth_powers(), 0);
+        assert!(empty.lines.is_empty());
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_sixth_powers_singleton_support_is_twice_line_count_sextic() {
+        // Singleton-support pin: every line lands on the same kind, so
+        // peak == trough == line_count, and the joint sum-of-sixth-powers
+        // is `2 * line_count⁶`. Diff-altitude peer of the trait-uniform
+        // `peak_trough_sum_of_sixth_powers == 2 * total⁶` behavior on
+        // AxisHistogram's singleton-support boundary.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Removed("r3".into()),
+                DiffLine::Removed("r4".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_count(), 4);
+        assert_eq!(diff.trough_kind_count(), 4);
+        // 4⁶ + 4⁶ = 4096 + 4096 = 8192
+        assert_eq!(diff.kind_peak_trough_sum_of_sixth_powers(), 8192);
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_sixth_powers_uniform_cover_is_two() {
+        // Uniform-cover pin: every observed kind contributes the same
+        // nonzero count (one line each here), so peak == trough == 1 and
+        // the joint sum-of-sixth-powers is `1⁶ + 1⁶ == 2`. Equality
+        // boundary of both `sofsp <= 2·peak⁶` and `32·sofsp == sum⁶`
+        // (since sum = 2, sum⁶ = 64, 32·sofsp = 64).
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kinds_uniform_count());
+        assert_eq!(diff.kind_peak_trough_sum_of_sixth_powers(), 2);
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_sixth_powers_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence: `sofsp == 0` iff the diff is
+        // empty. Both endpoints are structurally `>= 1` on every
+        // non-empty diff, and sixth-powering cannot introduce a zero
+        // from non-zero operands.
+        for diff in dominant_kind_fixtures() {
+            let sofsp_zero = diff.kind_peak_trough_sum_of_sixth_powers() == 0;
+            let is_empty = diff.lines.is_empty();
+            assert_eq!(sofsp_zero, is_empty);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_sixth_powers_non_empty_bounded_below_by_two() {
+        // Non-empty floor pin: `sofsp >= 2` on every non-empty diff —
+        // both sixth-powered endpoints contribute at least `1`.
+        for diff in dominant_kind_fixtures() {
+            if diff.lines.is_empty() {
+                continue;
+            }
+            assert!(diff.kind_peak_trough_sum_of_sixth_powers() >= 2);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_sixth_powers_am_sextic_bounded_below_by_thirty_secondth_sum_sextic()
+    {
+        // AM-sextic bound: `32 * sofsp >= sum⁶` on every fixture — the
+        // power-mean inequality `p⁶ + t⁶ >= (p + t)⁶ / 32`. Equality
+        // holds iff `kinds_uniform_count() == true` (peak equals trough).
+        for diff in dominant_kind_fixtures() {
+            let sofsp = diff.kind_peak_trough_sum_of_sixth_powers();
+            let sum = diff.kind_peak_trough_sum();
+            let sum_sextic = sum * sum * sum * sum * sum * sum;
+            let thirty_two_sofsp = 32 * sofsp;
+            assert!(thirty_two_sofsp >= sum_sextic);
+            assert_eq!(thirty_two_sofsp == sum_sextic, diff.kinds_uniform_count());
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_sixth_powers_bounded_above_by_twice_peak_sextic() {
+        // Structural bound: `sofsp <= 2 * peak⁶` on every fixture —
+        // `p⁶ + t⁶ <= 2p⁶` reduces to `trough <= peak` (both
+        // non-negative). Equality iff `kinds_uniform_count()`.
+        for diff in dominant_kind_fixtures() {
+            let sofsp = diff.kind_peak_trough_sum_of_sixth_powers();
+            let peak = diff.peak_kind_count();
+            let twice_peak_sextic = 2 * peak * peak * peak * peak * peak * peak;
+            assert!(sofsp <= twice_peak_sextic);
+            assert_eq!(sofsp == twice_peak_sextic, diff.kinds_uniform_count());
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_sixth_powers_bounded_above_by_twice_lines_len_sextic() {
+        // Composition bound: `sofsp <= 2 * self.lines.len()⁶` chaining
+        // `sofsp <= 2·peak⁶` with `peak <= lines.len()`.
+        for diff in dominant_kind_fixtures() {
+            let sofsp = diff.kind_peak_trough_sum_of_sixth_powers();
+            let n = diff.lines.len();
+            let twice_n_sextic = 2 * n * n * n * n * n * n;
+            assert!(sofsp <= twice_n_sextic);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_sixth_powers_newton_identity_with_sum_sofip_product_sofp_pointwise()
+    {
+        // Newton's identity `p_6 = e_1·p_5 - e_2·p_4` on the
+        // (sum, sofip, product, sofp) surface: `sofsp == sum·sofip -
+        // product·sofp` on every fixture. Non-negative subtraction since
+        // `(p+t)(p⁵+t⁵) = p⁶+t⁶+pt(p⁴+t⁴)` so LHS - RHS = p⁶+t⁶ = sofsp.
+        for diff in dominant_kind_fixtures() {
+            let p_six = diff.kind_peak_trough_sum_of_sixth_powers();
+            let sum = diff.kind_peak_trough_sum();
+            let p_five = diff.kind_peak_trough_sum_of_fifth_powers();
+            let product = diff.kind_peak_trough_product();
+            let p_four = diff.kind_peak_trough_sum_of_fourth_powers();
+            let lhs = sum * p_five;
+            let rhs = product * p_four;
+            assert!(rhs <= lhs);
+            assert_eq!(p_six, lhs - rhs);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_sixth_powers_sum_of_two_cubes_squared_factorization_pointwise() {
+        // (soc, product) surface factorization: `sofsp == soc² -
+        // 2·product³` on every fixture — the sum-of-two-cubes-squared
+        // identity `p⁶ + t⁶ = (p³ + t³)² - 2·(pt)³`. Non-negative
+        // subtraction since `(p³+t³)² = p⁶ + 2p³t³ + t⁶` so LHS - RHS =
+        // p⁶ + t⁶ = sofsp.
+        for diff in dominant_kind_fixtures() {
+            let sofsp = diff.kind_peak_trough_sum_of_sixth_powers();
+            let soc = diff.kind_peak_trough_sum_of_cubes();
+            let product = diff.kind_peak_trough_product();
+            let lhs = soc * soc;
+            let rhs = 2 * product * product * product;
+            assert!(rhs <= lhs);
+            assert_eq!(sofsp, lhs - rhs);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_sixth_powers_agrees_with_open_coded_max_sextic_plus_min_sextic_walk()
+    {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0).pow(6) + hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0).pow(6)` walk this lift
+        // replaces. The `.filter(c > 0)` on the min side is essential
+        // (mirroring `trough_count`'s support discipline).
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kind_peak_trough_sum_of_sixth_powers();
+            let hist = diff.kind_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .filter(|&(_, c)| c > 0)
+                .map(|(_, c)| c)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(
+                via_seam,
+                peak * peak * peak * peak * peak * peak
+                    + trough * trough * trough * trough * trough * trough,
             );
         }
     }
