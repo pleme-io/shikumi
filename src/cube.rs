@@ -6132,6 +6132,216 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         peak * peak * peak * peak + trough * trough * trough * trough
     }
 
+    /// The **observed-distribution peak-trough sum-of-fifth-powers** —
+    /// the sum of the fifth powers of the maximum and minimum observation
+    /// counts over the histogram's observed support. Equal to
+    /// `self.peak_count().pow(5) + self.trough_count().pow(5)` by
+    /// construction; named at the trait level so consumers reading off
+    /// the joint extreme-count `p_5` power-sum / *quintic-magnitude*
+    /// projection route through one scalar rather than re-deriving the
+    /// (peak, trough) sum-of-fifth-powers at every diagnostic /
+    /// dashboard / attestation site.
+    ///
+    /// The natural typed primitive for the *joint-extremes-quintic-
+    /// magnitude* question every operator-facing summary asks of an
+    /// observation window: *"how large are the two extreme buckets in
+    /// sum-of-fifth-powers?"* — the *quintic power-sum*
+    /// `p_5 = p⁵ + t⁵` sibling of the shipped subtraction-form
+    /// [`Self::spread`] (`p - t`), addition-form
+    /// [`Self::peak_trough_sum`] (`p + t`), multiplication-form
+    /// [`Self::peak_trough_product`] (`pt`), quadratic-power-sum
+    /// [`Self::peak_trough_sum_of_squares`] (`p² + t²`), cubic-power-sum
+    /// [`Self::peak_trough_sum_of_cubes`] (`p³ + t³`), and quartic-
+    /// power-sum [`Self::peak_trough_sum_of_fourth_powers`] (`p⁴ + t⁴`)
+    /// scalars on the same closed-endpoint pair. Extends the closed
+    /// symmetric-polynomial / power-sum surface from `p_4 = p⁴ + t⁴` to
+    /// `p_5 = p⁵ + t⁵` through Newton's two-variable identity
+    /// `p_5 = e_1 * p_4 - e_2 * p_3` (specialized to
+    /// `sum · sum_of_fourth_powers - product · sum_of_cubes`).
+    ///
+    /// **Two orthogonal read-off surfaces.** The pair
+    /// `(peak_trough_sum, peak_trough_product)` reads the elementary-
+    /// symmetric-polynomial surface `(e_1, e_2) = (p + t, pt)`; the new
+    /// power-sum `peak_trough_sum_of_fifth_powers` composes with it
+    /// through two specializations of Newton's identity, each reading
+    /// `sum_of_fifth_powers` off one of two orthogonal scalar surfaces:
+    ///
+    /// - `peak_trough_sum_of_fifth_powers() ==
+    ///   peak_trough_sum() * peak_trough_sum_of_fourth_powers() -
+    ///   peak_trough_product() * peak_trough_sum_of_cubes()`
+    ///   — Newton's identity `p_5 = e_1 * p_4 - e_2 * p_3` reads
+    ///   sum-of-fifth-powers off the
+    ///   `(sum, sum_of_fourth_powers, product, sum_of_cubes)` surface.
+    /// - `peak_trough_sum_of_fifth_powers() ==
+    ///   peak_trough_sum_of_squares() * peak_trough_sum_of_cubes() -
+    ///   peak_trough_product().pow(2) * peak_trough_sum()`
+    ///   — the identity `p⁵ + t⁵ = (p² + t²)(p³ + t³) - p²t²(p + t)`
+    ///   reads sum-of-fifth-powers off the
+    ///   `(sum_of_squares, sum_of_cubes, product, sum)` surface.
+    ///
+    /// Before this seed, every consumer asking *"what is the quintic
+    /// power-sum of the two extreme buckets of this observation
+    /// window?"* re-derived the projection inline as
+    /// `hist.peak_count().pow(5) + hist.trough_count().pow(5)` — two
+    /// method calls, two fifth-powers, and an addition at every site,
+    /// with silent re-derivation of both endpoints and no named surface
+    /// for the joint scalar the [`Self::spread`],
+    /// [`Self::peak_trough_sum`], [`Self::peak_trough_product`],
+    /// [`Self::peak_trough_sum_of_squares`],
+    /// [`Self::peak_trough_sum_of_cubes`], and
+    /// [`Self::peak_trough_sum_of_fourth_powers`] siblings already read
+    /// off in subtraction, addition, multiplication, quadratic-power-
+    /// sum, cubic-power-sum, and quartic-power-sum form.
+    ///
+    /// **Overflow-safe by construction on realistic sizes.** The
+    /// expression `peak_count().pow(5) + trough_count().pow(5)` cannot
+    /// overflow on any histogram whose total count is below
+    /// `⁵√(usize::MAX / 2)` (~3435 on 64-bit targets): both fifth-powers
+    /// are bounded above by `total().pow(5)`, so the sum is bounded
+    /// above by `2 * total().pow(5)`. Cannot overflow on realistic
+    /// configuration histograms (chain source counts, diff line counts,
+    /// error classes over a reload window).
+    ///
+    /// **Empty-histogram convention** — returns `0`, matching the
+    /// [`Self::total`], [`Self::distinct_cells`], [`Self::peak_count`],
+    /// [`Self::trough_count`], [`Self::spread`],
+    /// [`Self::peak_trough_sum`], [`Self::peak_trough_product`],
+    /// [`Self::peak_trough_sum_of_squares`],
+    /// [`Self::peak_trough_sum_of_cubes`], and
+    /// [`Self::peak_trough_sum_of_fourth_powers`] empty conventions. The
+    /// scalar peer 11-tuple
+    /// `(total, distinct_cells, peak_count, trough_count, spread,
+    /// peak_trough_sum, peak_trough_product, peak_trough_sum_of_squares,
+    /// peak_trough_sum_of_cubes, peak_trough_sum_of_fourth_powers,
+    /// peak_trough_sum_of_fifth_powers)` is therefore uniformly
+    /// `(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)` on the empty histogram.
+    ///
+    /// **AM-quintic / power-mean bound.**
+    /// `16 * peak_trough_sum_of_fifth_powers() >=
+    /// peak_trough_sum().pow(5)` always. By the power-mean inequality
+    /// on two nonnegative reals, `((p⁵ + t⁵) / 2)^(1/5) >= (p + t) / 2`,
+    /// so `p⁵ + t⁵ >= (p + t)⁵ / 16`. Equality holds iff
+    /// [`Self::is_uniform_count`] is `true` — the two endpoints
+    /// coincide. Peer to the AM-quartic bound
+    /// `8 * peak_trough_sum_of_fourth_powers() >= peak_trough_sum().pow(4)`
+    /// on `p_4`, the AM-cube bound
+    /// `4 * peak_trough_sum_of_cubes() >= peak_trough_sum().pow(3)`
+    /// on `p_3`, the AM-QM bound
+    /// `peak_trough_sum_of_squares() >= 2 * peak_trough_product()` on
+    /// `p_2`, and the AM-GM bound
+    /// `4 * peak_trough_product() <= peak_trough_sum().pow(2)` on the
+    /// elementary-symmetric pair — all five inequalities collapse to
+    /// the same `(p - t)² >= 0` witness on the closed endpoint pair.
+    ///
+    /// **Companion invariants** with [`Self::total`],
+    /// [`Self::distinct_cells`], [`Self::peak_count`],
+    /// [`Self::trough_count`], [`Self::spread`],
+    /// [`Self::peak_trough_sum`], [`Self::peak_trough_product`],
+    /// [`Self::peak_trough_sum_of_squares`],
+    /// [`Self::peak_trough_sum_of_cubes`], and
+    /// [`Self::peak_trough_sum_of_fourth_powers`]:
+    /// - `peak_trough_sum_of_fifth_powers() == peak_count().pow(5) +
+    ///   trough_count().pow(5)` always (the defining equivalence on
+    ///   the underlying scalar pair).
+    /// - `peak_trough_sum_of_fifth_powers() == 0` ⇔ [`Self::is_empty`]
+    ///   is `true` (empty-boundary peer to the scalar 11-tuple: both
+    ///   endpoints are zero only on the empty histogram, and their
+    ///   sum-of-fifth-powers is zero exactly then). Contrapositively,
+    ///   a non-empty histogram has `peak_trough_sum_of_fifth_powers() >= 2`
+    ///   — both endpoints are at least `1` by [`Self::peak_count`]'s
+    ///   and [`Self::trough_count`]'s non-emptiness floors, so their
+    ///   sum-of-fifth-powers is at least `1 + 1 = 2`.
+    /// - `peak_trough_sum_of_fifth_powers() <= 2 * peak_count().pow(5)`
+    ///   always (⇔ `trough_count() <= peak_count()`, the structural
+    ///   invariant). Equality holds iff [`Self::is_uniform_count`] is
+    ///   `true`.
+    /// - `peak_trough_sum_of_fifth_powers() <= 2 * total().pow(5)`
+    ///   always (both fifth-powered endpoints are bounded above by
+    ///   `total⁵`).
+    /// - `peak_trough_sum_of_fifth_powers() <= peak_trough_sum().pow(5)`
+    ///   always (⇔ `5·p⁴t + 10·p³t² + 10·p²t³ + 5·pt⁴ >= 0`, always
+    ///   true; equality iff [`Self::is_empty`] — the sole shape where
+    ///   the four mixed-term coefficients vanish, since both endpoints
+    ///   are `>= 1` on any non-empty histogram).
+    /// - `16 * peak_trough_sum_of_fifth_powers() >= peak_trough_sum().pow(5)`
+    ///   always (the AM-quintic / power-mean bound; equality iff
+    ///   [`Self::is_uniform_count`] is `true`).
+    /// - `peak_trough_sum_of_fifth_powers() ==
+    ///   peak_trough_sum() * peak_trough_sum_of_fourth_powers() -
+    ///   peak_trough_product() * peak_trough_sum_of_cubes()`
+    ///   always — Newton's identity endpoint-recovery
+    ///   `p_5 = e_1 * p_4 - e_2 * p_3` on the `(sum, sum_of_fourth_powers,
+    ///   product, sum_of_cubes)` surface (non-negative subtraction:
+    ///   `sum * sum_of_fourth_powers >= product * sum_of_cubes` on the
+    ///   closed endpoint pair, since the LHS distributes over
+    ///   `(p + t)(p⁴ + t⁴) = p⁵ + t⁵ + pt(p³ + t³)` while the RHS reads
+    ///   exactly `pt(p³ + t³)`).
+    /// - `peak_trough_sum_of_fifth_powers() ==
+    ///   peak_trough_sum_of_squares() * peak_trough_sum_of_cubes() -
+    ///   peak_trough_product().pow(2) * peak_trough_sum()`
+    ///   always — the sum-of-fifth-powers factorization on the
+    ///   `(sum_of_squares, sum_of_cubes, product, sum)` surface
+    ///   (non-negative subtraction: `(p² + t²)(p³ + t³) =
+    ///   p⁵ + t⁵ + p²t²(p + t)`, so the identity reads
+    ///   `p_5 = sos·soc - product²·sum`).
+    /// - The merge behavior is *non-monotonic* (peer to
+    ///   [`Self::trough_count`], [`Self::spread`],
+    ///   [`Self::peak_trough_sum`], [`Self::peak_trough_product`],
+    ///   [`Self::peak_trough_sum_of_squares`],
+    ///   [`Self::peak_trough_sum_of_cubes`], and
+    ///   [`Self::peak_trough_sum_of_fourth_powers`]): merging two
+    ///   histograms can either grow the sum-of-fifth-powers (when
+    ///   supports overlap and both endpoints grow) or shrink it (when
+    ///   the other side introduces a fresh low-count cell that pulls
+    ///   the merged trough⁵ below the self trough⁵ by more than the
+    ///   peak⁵ grows). The empty-identity law still holds:
+    ///   `merge(self, empty).peak_trough_sum_of_fifth_powers() ==
+    ///   self.peak_trough_sum_of_fifth_powers()`.
+    ///
+    /// Trait-uniform: every [`ClosedAxis`] implementor inherits the
+    /// projection at no per-axis cost, reached uniformly through
+    /// `for_each_closed_axis_implementor!` in [`tests`]. The three
+    /// trait-uniform laws pinned in [`tests`] hold across the
+    /// implementor set
+    /// (`axis_histogram_peak_trough_sum_of_fifth_powers_empty_is_zero_*`,
+    /// `axis_histogram_peak_trough_sum_of_fifth_powers_singleton_is_two_*`,
+    /// `axis_histogram_peak_trough_sum_of_fifth_powers_axis_cover_is_two_*`).
+    ///
+    /// Peer to [`Self::total`] (the *sum* over every cell),
+    /// [`Self::distinct_cells`] (the *support cardinality*),
+    /// [`Self::peak_count`] (the *modal* count scalar),
+    /// [`Self::trough_count`] (the *rarest-observed* count scalar),
+    /// [`Self::spread`] (the *difference* of the two endpoints),
+    /// [`Self::peak_trough_sum`] (the *sum* of the two endpoints),
+    /// [`Self::peak_trough_product`] (the *product* of the two
+    /// endpoints), [`Self::peak_trough_sum_of_squares`] (the
+    /// *sum-of-squares* / `p_2` power-sum of the two endpoints),
+    /// [`Self::peak_trough_sum_of_cubes`] (the *sum-of-cubes* / `p_3`
+    /// power-sum of the two endpoints), and
+    /// [`Self::peak_trough_sum_of_fourth_powers`] (the
+    /// *sum-of-fourth-powers* / `p_4` power-sum of the two endpoints):
+    /// the scalar surface of the histogram now carries the natural
+    /// 11-tuple `(how many observations, how many kinds, how many on
+    /// the peak, how many on the trough, how much spread, how much
+    /// peak-trough sum, how much peak-trough product, how much
+    /// peak-trough sum-of-squares, how much peak-trough sum-of-cubes,
+    /// how much peak-trough sum-of-fourth-powers, how much peak-trough
+    /// sum-of-fifth-powers)` projections — every operator-facing
+    /// summary reads off one method call each, and the elementary-
+    /// symmetric-polynomial pair `(sum, product)` composes with the
+    /// four power-sums `sum_of_squares` (`p_2`), `sum_of_cubes`
+    /// (`p_3`), `sum_of_fourth_powers` (`p_4`), and `sum_of_fifth_powers`
+    /// (`p_5`) through Newton's two-variable identities
+    /// `p_2 = e_1² - 2·e_2`, `p_3 = e_1³ - 3·e_1·e_2`,
+    /// `p_4 = e_1·p_3 - e_2·p_2`, and `p_5 = e_1·p_4 - e_2·p_3` with
+    /// no histogram re-walk.
+    #[must_use]
+    pub fn peak_trough_sum_of_fifth_powers(&self) -> usize {
+        let peak = self.peak_count();
+        let trough = self.trough_count();
+        peak * peak * peak * peak * peak + trough * trough * trough * trough * trough
+    }
+
     /// `true` exactly when every observed cell of the closed axis carries
     /// the same observation count — the **uniformly-observed-count
     /// predicate** on the histogram surface. The typed peer of
@@ -33349,6 +33559,396 @@ mod tests {
         assert_eq!(
             with_empty.peak_trough_sum_of_fourth_powers(),
             added_two_removed_one.peak_trough_sum_of_fourth_powers(),
+        );
+    }
+
+    // ---- AxisHistogram::peak_trough_sum_of_fifth_powers trait-uniform laws ----
+    //
+    // Three trait-uniform laws reach every [`ClosedAxis`] implementor
+    // through [`for_each_closed_axis_implementor`] so the per-axis
+    // `peak_trough_sum_of_fifth_powers` projection's contract holds
+    // uniformly without per-axis test duplication: empty → 0 (both
+    // endpoints zero on the empty histogram); singleton → 2 on every
+    // cell K (one observed cell with count 1, peak = trough = 1,
+    // sum-of-fifth-powers = 1⁵ + 1⁵ = 2); uniform axis-cover → 2
+    // (every cell at one, peak = trough = 1, sum-of-fifth-powers =
+    // 1⁵ + 1⁵ = 2). Concrete defining-equivalence, empty-boundary,
+    // structural-bounds, two-surface Newton-identity, and merge non-
+    // monotonicity pins follow below on [`DiffLineKind`].
+
+    fn assert_peak_trough_sum_of_fifth_powers_empty_is_zero<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        let hist = AxisHistogram::<A>::empty();
+        assert_eq!(
+            hist.peak_trough_sum_of_fifth_powers(),
+            0,
+            "empty histogram peak_trough_sum_of_fifth_powers must be 0 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    fn assert_peak_trough_sum_of_fifth_powers_singleton_is_two<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // For every cell of the axis: a histogram built from one
+        // observation of that cell has peak = trough = 1, so
+        // peak_trough_sum_of_fifth_powers = 1⁵ + 1⁵ = 2 — the
+        // singleton-support case is trivially balanced at the p_5
+        // power-sum of the endpoint pair.
+        for observed in axis_iter::<A>() {
+            let hist: AxisHistogram<A> = std::iter::once(observed).collect();
+            assert_eq!(
+                hist.peak_trough_sum_of_fifth_powers(),
+                2,
+                "singleton peak_trough_sum_of_fifth_powers must be 2 for observed cell {observed:?} on axis {}",
+                std::any::type_name::<A>(),
+            );
+        }
+    }
+
+    fn assert_peak_trough_sum_of_fifth_powers_axis_cover_is_two<A>()
+    where
+        A: ClosedAxis + std::fmt::Debug,
+    {
+        // Observing every cell exactly once produces a uniform
+        // histogram (every cell at 1, peak = trough = 1, sum-of-
+        // fifth-powers = 1⁵ + 1⁵ = 2) — the "every observed kind
+        // fired the same number of times" boundary at the maximum-
+        // coverage shape.
+        let hist: AxisHistogram<A> = axis_iter::<A>().collect();
+        assert_eq!(
+            hist.peak_trough_sum_of_fifth_powers(),
+            2,
+            "axis-cover histogram peak_trough_sum_of_fifth_powers must be 2 on axis {}",
+            std::any::type_name::<A>(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_fifth_powers_empty_is_zero_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_trough_sum_of_fifth_powers_empty_is_zero::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_fifth_powers_singleton_is_two_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_trough_sum_of_fifth_powers_singleton_is_two::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_fifth_powers_axis_cover_is_two_for_every_closed_axis_implementor()
+     {
+        macro_rules! check {
+            ($ty:ident) => {
+                assert_peak_trough_sum_of_fifth_powers_axis_cover_is_two::<$ty>();
+            };
+        }
+        for_each_closed_axis_implementor!(check);
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_fifth_powers_equals_peak_fifth_plus_trough_fifth() {
+        // The seed's defining equivalence: peak_trough_sum_of_fifth_powers
+        // reads the same scalar as the open-coded
+        // `peak_count⁵ + trough_count⁵` sum every consumer re-derived
+        // inline. Pinned pointwise across the canonical observation-
+        // mix shapes (empty, singleton, uniform-tied, strict-skew,
+        // heavy-tail) so a future regression in either side surfaces
+        // here.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let peak = hist.peak_count();
+            let trough = hist.trough_count();
+            assert_eq!(
+                hist.peak_trough_sum_of_fifth_powers(),
+                peak * peak * peak * peak * peak + trough * trough * trough * trough * trough,
+                "peak_trough_sum_of_fifth_powers must equal peak_count⁵ + trough_count⁵ on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_fifth_powers_zero_iff_empty() {
+        // The empty-boundary equivalence: peak_trough_sum_of_fifth_powers
+        // == 0 iff the histogram is empty. Both endpoints are
+        // structurally >= 1 on any non-empty histogram, so their
+        // sum-of-fifth-powers is >= 2 exactly when non-empty and == 0
+        // exactly when empty.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert_eq!(empty.peak_trough_sum_of_fifth_powers(), 0);
+        assert!(empty.is_empty());
+
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert!(singleton.peak_trough_sum_of_fifth_powers() >= 2);
+        assert!(!singleton.is_empty());
+
+        let axis_cover: AxisHistogram<DiffLineKind> = axis_iter::<DiffLineKind>().collect();
+        assert!(axis_cover.peak_trough_sum_of_fifth_powers() >= 2);
+        assert!(!axis_cover.is_empty());
+
+        let skewed: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert!(skewed.peak_trough_sum_of_fifth_powers() >= 2);
+        assert!(!skewed.is_empty());
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_fifth_powers_bounds() {
+        // Structural-bound pins:
+        //   - sofip <= sum⁵         (⇔ 5·p⁴t + 10·p³t² + 10·p²t³ + 5·pt⁴ >= 0,
+        //                              always; equality iff is_empty),
+        //   - 16 * sofip >= sum⁵    (AM-quintic; equality iff is_uniform_count),
+        //   - sofip <= 2 * peak⁵    (⇔ trough <= peak; equality iff is_uniform_count),
+        //   - sofip <= 2 * total⁵   (composition of both quintic
+        //                             endpoints <= total⁵).
+        // Pinned at four shapes (empty, singleton, uniform axis-
+        // cover, strict-skew) so each bound gets a tight witness.
+        let inputs: [(&[DiffLineKind], bool, bool); 4] = [
+            (&[], true, true),
+            (&[DiffLineKind::Added], true, false),
+            (
+                &[
+                    DiffLineKind::Added,
+                    DiffLineKind::Removed,
+                    DiffLineKind::Context,
+                ],
+                true,
+                false,
+            ),
+            (
+                &[
+                    DiffLineKind::Added,
+                    DiffLineKind::Added,
+                    DiffLineKind::Removed,
+                ],
+                false,
+                false,
+            ),
+        ];
+        for (input, is_uniform_expected, is_empty_expected) in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let sofip = hist.peak_trough_sum_of_fifth_powers();
+            let sum = hist.peak_trough_sum();
+            let peak = hist.peak_count();
+            let total = hist.total();
+            let sum5 = sum * sum * sum * sum * sum;
+            let peak5 = peak * peak * peak * peak * peak;
+            let total5 = total * total * total * total * total;
+            assert!(
+                sofip <= sum5,
+                "peak_trough_sum_of_fifth_powers {sofip} must be <= peak_trough_sum⁵ {sum5} on input of length {}",
+                input.len(),
+            );
+            assert!(
+                16 * sofip >= sum5,
+                "AM-quintic: 16 * peak_trough_sum_of_fifth_powers {} must be >= peak_trough_sum⁵ {sum5} on input of length {}",
+                16 * sofip,
+                input.len(),
+            );
+            assert!(
+                sofip <= 2 * peak5,
+                "peak_trough_sum_of_fifth_powers {sofip} must be <= 2 * peak_count⁵ {} on input of length {}",
+                2 * peak5,
+                input.len(),
+            );
+            assert!(
+                sofip <= 2 * total5,
+                "peak_trough_sum_of_fifth_powers {sofip} must be <= 2 * total⁵ {} on input of length {}",
+                2 * total5,
+                input.len(),
+            );
+            assert_eq!(
+                sofip == sum5,
+                is_empty_expected,
+                "sofip == sum⁵ iff is_empty on input of length {}",
+                input.len(),
+            );
+            assert_eq!(
+                16 * sofip == sum5,
+                is_uniform_expected,
+                "AM-quintic equality (16 * sofip == sum⁵) iff is_uniform_count on input of length {}",
+                input.len(),
+            );
+            assert_eq!(
+                sofip == 2 * peak5,
+                is_uniform_expected,
+                "sofip == 2 * peak⁵ iff is_uniform_count on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_fifth_powers_two_surface_newton_identities() {
+        // Two orthogonal read-offs of sofip:
+        //   sofip == sum * sofp - product * soc                (sum, sofp, product, soc)
+        //     — Newton's identity p_5 = e_1 * p_4 - e_2 * p_3.
+        //   sofip == sos * soc - product² * sum                (sos, soc, product, sum)
+        //     — factorization p⁵ + t⁵ = (p² + t²)(p³ + t³) - p²t²(p + t).
+        // Reads sofip off two orthogonal surfaces with no histogram
+        // re-walk. Pinned across canonical observation-mix shapes so
+        // the identities are exercised at every (peak, trough) shape.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let sofip = hist.peak_trough_sum_of_fifth_powers();
+            let sum = hist.peak_trough_sum();
+            let product = hist.peak_trough_product();
+            let sos = hist.peak_trough_sum_of_squares();
+            let soc = hist.peak_trough_sum_of_cubes();
+            let sofp = hist.peak_trough_sum_of_fourth_powers();
+            assert_eq!(
+                sofip,
+                sum * sofp - product * soc,
+                "Newton p_5 = e_1·p_4 - e_2·p_3: sofip == sum·sofp - product·soc on input of length {}",
+                input.len(),
+            );
+            assert_eq!(
+                sofip,
+                sos * soc - product * product * sum,
+                "(sos, soc, product, sum) factorization: sofip == sos·soc - product²·sum on input of length {}",
+                input.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_fifth_powers_after_merge_is_non_monotonic() {
+        // The (merge, peak_trough_sum_of_fifth_powers) composition:
+        // peer to trough's, spread's, peak_trough_sum's,
+        // peak_trough_product's, peak_trough_sum_of_squares's,
+        // peak_trough_sum_of_cubes's, and
+        // peak_trough_sum_of_fourth_powers's non-monotonic behavior —
+        // sofip can either grow (when supports overlap and both
+        // endpoints grow) or shrink (when the merged partner introduces
+        // a fresh low-count cell that pulls the merged trough⁵ below
+        // the self trough⁵ by more than the peak⁵ grows). Empty-
+        // identity still holds.
+        let added_two: AxisHistogram<DiffLineKind> = [DiffLineKind::Added, DiffLineKind::Added]
+            .into_iter()
+            .collect();
+        let added_two_removed_one: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        let added_five: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+        ]
+        .into_iter()
+        .collect();
+        let removed_one: AxisHistogram<DiffLineKind> =
+            std::iter::once(DiffLineKind::Removed).collect();
+        let empty_hist: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+
+        // Grow branch: merging balanced-support {Added:2} (sofip =
+        // 2⁵ + 2⁵ = 64, peak = trough = 2) with skewed {Added:2,
+        // Removed:1} (sofip = 2⁵ + 1⁵ = 33, peak = 2, trough = 1)
+        // gives {Added:4, Removed:1} with peak = 4, trough = 1,
+        // sofip = 1024 + 1 = 1025 — strictly greater than both operands.
+        let grow_pair = added_two.clone().merge(&added_two_removed_one);
+        assert_eq!(grow_pair.peak_trough_sum_of_fifth_powers(), 1025);
+        assert!(
+            grow_pair.peak_trough_sum_of_fifth_powers()
+                > added_two.peak_trough_sum_of_fifth_powers(),
+        );
+        assert!(
+            grow_pair.peak_trough_sum_of_fifth_powers()
+                > added_two_removed_one.peak_trough_sum_of_fifth_powers(),
+        );
+
+        // Shrink branch: merging singleton-support {Added:5} (sofip =
+        // 5⁵ + 5⁵ = 6250, peak = trough = 5) with singleton-support
+        // {Removed:1} (sofip = 1 + 1 = 2, peak = trough = 1) gives
+        // {Added:5, Removed:1} with peak = 5, trough = 1, sofip =
+        // 3125 + 1 = 3126 — strictly *below* the LHS's sofip 6250. The
+        // fresh low-count Removed cell pulls the merged trough⁵ from
+        // 3125 down to 1 while the merged peak⁵ stays at 3125, so
+        // peak⁵ + trough⁵ shrinks from 6250 to 3126. The non-monotonic
+        // shrink branch.
+        let shrink = added_five.clone().merge(&removed_one);
+        assert_eq!(shrink.peak_trough_sum_of_fifth_powers(), 3126);
+        assert!(
+            shrink.peak_trough_sum_of_fifth_powers() < added_five.peak_trough_sum_of_fifth_powers(),
+        );
+        assert!(
+            shrink.peak_trough_sum_of_fifth_powers()
+                > removed_one.peak_trough_sum_of_fifth_powers(),
+        );
+
+        // Identity (empty-rhs): merge leaves the sum-of-fifth-powers
+        // unchanged.
+        let with_empty = added_two_removed_one.clone().merge(&empty_hist);
+        assert_eq!(
+            with_empty.peak_trough_sum_of_fifth_powers(),
+            added_two_removed_one.peak_trough_sum_of_fifth_powers(),
         );
     }
 
