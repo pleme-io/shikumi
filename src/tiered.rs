@@ -476,11 +476,20 @@ pub trait TieredConfig: Sized + Clone + Serialize + DeserializeOwned {
                 tiered_to_dict(&Self::prescribed_default()),
             ),
         ];
-        layers.extend(
-            overlays
-                .iter()
-                .map(|ov| (ov.provenance().clone(), ov.dict().clone())),
-        );
+        // Unpack each overlay into its (provenance, dict) pair via the
+        // named ProgressiveLayer::into_parts destructuring accessor —
+        // NOT the ad-hoc `|ov| (ov.provenance().clone(), ov.dict().clone())`
+        // lambda the seam previously carried. The two forms are pointwise
+        // equal (both clone the two owned fields once each: the outer
+        // `.cloned()` on the borrowed slice clones the whole overlay
+        // struct, which the derived `Clone` impl on `ProgressiveLayer`
+        // implements as a field-wise clone of `Provenance` + `Dict`;
+        // `into_parts` then moves both fields out with no allocation) —
+        // pinned by `tests::progressive_layer_into_parts_matches_field_accessors`.
+        // Routing the seam through the named method means a future
+        // callsite unpacking a `ProgressiveLayer` into its owned pair
+        // reaches for the same primitive, not a re-derived closure.
+        layers.extend(overlays.iter().cloned().map(ProgressiveLayer::into_parts));
         // 2. Order by the const ConfigTierKind ClosedAxis ordinal. A stable
         //    sort keeps same-tier overlays (e.g. two files) in caller order.
         layers.sort_by_key(|(prov, _)| prov.tier_ordinal());
@@ -8389,6 +8398,57 @@ impl ProgressiveLayer {
     #[must_use]
     pub fn dict(&self) -> &Dict {
         &self.dict
+    }
+
+    /// Consume `self`, yielding the owned `(provenance, dict)` pair the
+    /// overlay carries — the consuming destructuring dual of the borrow-side
+    /// [`Self::provenance`] / [`Self::dict`] accessor pair.
+    ///
+    /// Peer of [`ProgressiveResolution::into_parts`] on the atomic-pair
+    /// ownership boundary: [`ProgressiveResolution::into_parts`] hands out
+    /// `(T, ProvenanceMap)` when the resolution's fields need to move to
+    /// caller-owned homes; [`Self::into_parts`] hands out
+    /// `(Provenance, Dict)` when the overlay's fields need to move to a
+    /// pair-shaped consumer without a per-field `.clone()`.
+    ///
+    /// Round-trips through [`Self::new`] on the same pair with no
+    /// allocation or conversion — a caller that destructures a
+    /// [`ProgressiveLayer`] via [`Self::into_parts`] and rebuilds it via
+    /// [`Self::new`] recovers `self` byte-identically. Symmetric with the
+    /// [`From<ProgressiveLayer> for (Provenance, Dict)`] impl, which is the
+    /// std-trait facade over this method — `<(Provenance, Dict)>::from(layer)`
+    /// and `layer.into_parts()` produce identical pairs.
+    ///
+    /// # Load-bearing use — the fold seam
+    ///
+    /// [`TieredConfig::resolve_progressive_with`] unpacks each overlay in
+    /// the input slice into its `(provenance, dict)` pair before folding.
+    /// Routing that seam through `overlays.iter().cloned().map(ProgressiveLayer::into_parts)`
+    /// — instead of the ad-hoc `|ov| (ov.provenance().clone(), ov.dict().clone())`
+    /// lambda — names the pair-extraction operation on the overlay type
+    /// itself, so a future callsite doing the same unpack reaches for the
+    /// same method rather than re-deriving the lambda. The two forms are
+    /// pointwise equal (both clone the two fields once) — pinned by
+    /// [`tests::progressive_layer_into_parts_matches_field_accessors`].
+    #[must_use]
+    pub fn into_parts(self) -> (Provenance, Dict) {
+        (self.provenance, self.dict)
+    }
+}
+
+/// Std-trait facade over [`ProgressiveLayer::into_parts`]: the same
+/// consuming destructuring, spelled `<(Provenance, Dict)>::from(layer)`
+/// for callers routing through the [`From`] blanket
+/// ([`Into::into`] chains, generic bounds `T: Into<(Provenance, Dict)>`).
+///
+/// Pointwise equal to [`ProgressiveLayer::into_parts`] on every input —
+/// pinned by
+/// [`tests::progressive_layer_from_tuple_agrees_with_into_parts`]. Peer
+/// of the [`FromIterator`] / [`IntoIterator`] / [`Extend`] std-trait
+/// facades already lifted onto [`ProvenanceMap`] on the tiered algebra.
+impl From<ProgressiveLayer> for (Provenance, Dict) {
+    fn from(layer: ProgressiveLayer) -> Self {
+        layer.into_parts()
     }
 }
 
@@ -49119,5 +49179,83 @@ mod progressive_tests {
             Prog::resolve_progressive_with(&[ProgressiveLayer::discovered_from_layers(&[])]);
         assert_eq!(baseline.value(), with_empty.value());
         assert_eq!(baseline.provenance(), with_empty.provenance());
+    }
+
+    #[test]
+    fn progressive_layer_into_parts_round_trips_through_new() {
+        // The consuming destructuring accessor is the exact inverse of
+        // ProgressiveLayer::new on the same (provenance, dict) pair:
+        // destructuring an overlay via into_parts and rebuilding it via
+        // new recovers the original overlay byte-identically. The pair is
+        // atomic on the ownership boundary — the two fields move together
+        // out of the struct and back in, matching the (T, ProvenanceMap)
+        // round-trip ProgressiveResolution::into_parts + a synthesized
+        // constructor would satisfy on the atomic-pair peer.
+        let prov = Provenance::file("/etc/rt.yaml");
+        let mut dict = Dict::new();
+        dict.insert("k".to_owned(), Value::from(7_u32));
+        let layer = ProgressiveLayer::new(prov.clone(), dict.clone());
+        let (out_prov, out_dict) = layer.into_parts();
+        assert_eq!(out_prov, prov);
+        assert_eq!(out_dict, dict);
+        let rebuilt = ProgressiveLayer::new(out_prov, out_dict);
+        assert_eq!(rebuilt, ProgressiveLayer::new(prov, dict));
+    }
+
+    #[test]
+    fn progressive_layer_into_parts_matches_field_accessors() {
+        // The load-bearing pointwise invariant behind the fold-seam
+        // refactor: `layer.clone().into_parts()` is equal to
+        // `(layer.provenance().clone(), layer.dict().clone())` — the two
+        // forms the seam has now / the seam had before. Same field-wise
+        // clone cost (Provenance + Dict), same output pair. Without this
+        // pin, a future edit to `Clone for ProgressiveLayer` (e.g. adding
+        // an interned identity) could silently diverge the two paths.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(42_u32));
+        let layer = ProgressiveLayer::env("SHIKUMI_INTO_PARTS_TEST_", dict);
+        let via_into_parts = layer.clone().into_parts();
+        let via_accessors = (layer.provenance().clone(), layer.dict().clone());
+        assert_eq!(via_into_parts, via_accessors);
+    }
+
+    #[test]
+    fn progressive_layer_from_tuple_agrees_with_into_parts() {
+        // The std-trait facade on the ownership boundary: the
+        // `From<ProgressiveLayer> for (Provenance, Dict)` impl and the
+        // inherent `into_parts` method produce the same pair on every
+        // input. Callers routing through `Into::into` /
+        // `<(Provenance, Dict)>::from(layer)` hit the same destructuring
+        // as callers naming the inherent method — the two spellings are
+        // one operation, not a facade with drift.
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("prog.yaml");
+        std::fs::write(&path, "c: 33\n").unwrap();
+        let layer = ProgressiveLayer::try_from_file(&path).unwrap();
+        let via_method = layer.clone().into_parts();
+        let via_from: (Provenance, Dict) = layer.into();
+        assert_eq!(via_method, via_from);
+    }
+
+    #[test]
+    fn resolve_progressive_with_seam_routes_through_into_parts() {
+        // End-to-end regression on the fold seam: after routing
+        // TieredConfig::resolve_progressive_with's overlay unpack through
+        // `.iter().cloned().map(ProgressiveLayer::into_parts)` instead of
+        // the ad-hoc field-clone lambda, an operator overlay's value +
+        // provenance land identically at the resolved leaf. Guards against
+        // a future edit that mis-routes the seam and silently drops or
+        // mis-stamps overlays.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(88_u32));
+        let layer = ProgressiveLayer::file("/etc/seam.yaml", dict);
+        let r = Prog::resolve_progressive_with(&[layer]);
+        assert_eq!(r.value().b, 88);
+        let prov = r.provenance().provenance_of(&["b"]).unwrap();
+        assert_eq!(prov.tier(), ConfigTierKind::Custom);
+        assert_eq!(
+            prov.source(),
+            &ConfigSource::File(PathBuf::from("/etc/seam.yaml"))
+        );
     }
 }
