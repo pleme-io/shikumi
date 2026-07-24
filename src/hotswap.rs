@@ -113,7 +113,9 @@ impl ConfigWatermark {
                     field_classes
                         .iter()
                         .filter(|(_, class)| matches!(class, HotSwapClass::RequiresRestart { .. }))
-                        .filter_map(|(field, _)| map.get(*field).map(|v| ((*field).to_owned(), v.clone())))
+                        .filter_map(|(field, _)| {
+                            map.get(*field).map(|v| ((*field).to_owned(), v.clone()))
+                        })
                         .collect();
                 let bytes = serde_json::to_vec(&restart_map).unwrap_or_default();
                 blake3::hash(&bytes)
@@ -191,7 +193,10 @@ mod tests {
     fn validated_tiered_config_accepts_a_valid_candidate_and_derefs_and_unwraps() {
         let v = ValidatedTieredConfig::validate(AlwaysOk(7)).unwrap();
         let deref_field: &AlwaysOk = &v; // exercises the Deref impl
-        assert_eq!(deref_field.0, 7, "Deref must reach the wrapped value's fields");
+        assert_eq!(
+            deref_field.0, 7,
+            "Deref must reach the wrapped value's fields"
+        );
         assert_eq!(v.into_inner(), AlwaysOk(7));
     }
 
@@ -207,7 +212,10 @@ mod tests {
         let mut c2 = base();
         c2.log_level = "debug".into();
         let b = ConfigWatermark::compute(&c2, FIELD_CLASSES);
-        assert_ne!(a.full, b.full, "full watermark must change on any field edit");
+        assert_ne!(
+            a.full, b.full,
+            "full watermark must change on any field edit"
+        );
     }
 
     #[test]
@@ -247,9 +255,6 @@ mod tests {
     // dependency, matching the real HotSwapClassifier shape.
     #[test]
     fn swap_decision_free_and_require_restart_are_distinguishable() {
-        assert_ne!(
-            SwapDecision::Free,
-            SwapDecision::RequiresRestart(vec!["x"])
-        );
+        assert_ne!(SwapDecision::Free, SwapDecision::RequiresRestart(vec!["x"]));
     }
 }

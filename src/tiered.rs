@@ -29719,6 +29719,53 @@ mod progressive_tests {
     }
 
     #[test]
+    fn progressive_same_tier_overlays_keep_caller_order_on_leaf_collisions() {
+        // Two file overlays sit at the same `ConfigTierKind::Custom` rank,
+        // so the tier-ordinal sort in `resolve_progressive_with` is a
+        // *stable* sort in the same-tier case: caller order determines
+        // which overlay writes last, and per-leaf attribution reflects
+        // that. Regression protection for the "same-tier overlays keep
+        // caller order" invariant stated at the fold — a switch to an
+        // unstable sort key would silently reshuffle which file's value
+        // survives on a per-leaf collision.
+        let mut first = Dict::new();
+        first.insert("b".to_owned(), Value::from(101_u32));
+        first.insert("c".to_owned(), Value::from(202_u32));
+        let mut second = Dict::new();
+        second.insert("b".to_owned(), Value::from(303_u32));
+        // second deliberately does NOT touch c.
+
+        let r = Prog::resolve_progressive_with(&[
+            ProgressiveLayer::file("/etc/first.yaml", first),
+            ProgressiveLayer::file("/etc/second.yaml", second),
+        ]);
+
+        // On the colliding leaf b, the later-in-caller-order file wins.
+        assert_eq!(
+            r.value().b,
+            303,
+            "later-in-caller-order same-tier overlay wins on collision"
+        );
+        assert_eq!(
+            r.provenance().provenance_of(&["b"]).unwrap().source(),
+            &ConfigSource::File("/etc/second.yaml".into()),
+            "b's provenance credits the later file, matching the caller-order value"
+        );
+        // On the non-colliding leaf c, the earlier file's value survives
+        // untouched and keeps its earlier-file provenance.
+        assert_eq!(
+            r.value().c,
+            202,
+            "an unshared leaf survives from the earlier same-tier overlay"
+        );
+        assert_eq!(
+            r.provenance().provenance_of(&["c"]).unwrap().source(),
+            &ConfigSource::File("/etc/first.yaml".into()),
+            "c's provenance credits the earlier file, the sole writer of that leaf"
+        );
+    }
+
+    #[test]
     fn progressive_contributing_tiers_in_precedence_order() {
         let r = Prog::resolve_progressive();
         // Bare (c), Discovered (a), Default (b, d) all survive.
