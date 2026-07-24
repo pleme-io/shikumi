@@ -9928,7 +9928,7 @@ impl ConfigDiff {
     /// through a single scalar read.
     #[must_use]
     pub fn kind_peak_trough_sum_of_squares(&self) -> usize {
-        self.kind_histogram().peak_trough_sum_of_squares()
+        self.kind_peak_trough_sum_of_powers(2)
     }
 
     /// The **joint-extremes-cube-magnitude of diff kinds** — the sum of
@@ -10124,7 +10124,7 @@ impl ConfigDiff {
     /// through a single scalar read.
     #[must_use]
     pub fn kind_peak_trough_sum_of_cubes(&self) -> usize {
-        self.kind_histogram().peak_trough_sum_of_cubes()
+        self.kind_peak_trough_sum_of_powers(3)
     }
 
     /// The **joint-extremes-quartic-magnitude of diff kinds** — the sum
@@ -10307,7 +10307,7 @@ impl ConfigDiff {
     /// three-cell cardinality; the returned `usize` reads one scalar.
     #[must_use]
     pub fn kind_peak_trough_sum_of_fourth_powers(&self) -> usize {
-        self.kind_histogram().peak_trough_sum_of_fourth_powers()
+        self.kind_peak_trough_sum_of_powers(4)
     }
 
     /// The **observed-distribution peak-trough sum-of-fifth-powers of diff
@@ -10394,7 +10394,7 @@ impl ConfigDiff {
     /// carries a fixed three-cell cardinality.
     #[must_use]
     pub fn kind_peak_trough_sum_of_fifth_powers(&self) -> usize {
-        self.kind_histogram().peak_trough_sum_of_fifth_powers()
+        self.kind_peak_trough_sum_of_powers(5)
     }
 
     /// The **observed-distribution peak-trough sum-of-sixth-powers of diff
@@ -10485,7 +10485,65 @@ impl ConfigDiff {
     /// carries a fixed three-cell cardinality.
     #[must_use]
     pub fn kind_peak_trough_sum_of_sixth_powers(&self) -> usize {
-        self.kind_histogram().peak_trough_sum_of_sixth_powers()
+        self.kind_peak_trough_sum_of_powers(6)
+    }
+
+    /// The **joint-extremes-Ln-magnitude of diff kinds at runtime
+    /// exponent `n`** — the sum of the `n`th powers of the modal and
+    /// anti-modal per-kind line counts on this diff. Routes through
+    /// [`crate::AxisHistogram::peak_trough_sum_of_powers`] one altitude
+    /// down: the fused `peak_count().pow(n) + trough_count().pow(n)`
+    /// runtime-exponent power-sum on the histogram surface, halving the
+    /// cost of the inline `peak_kind_count().pow(n) +
+    /// trough_kind_count().pow(n)` idiom which walked the counts vector
+    /// twice.
+    ///
+    /// The **runtime-exponent generalization** of the diff-altitude
+    /// power-sum family: the five shipped fixed-exponent siblings —
+    /// [`Self::kind_peak_trough_sum_of_squares`] (`n = 2`),
+    /// [`Self::kind_peak_trough_sum_of_cubes`] (`n = 3`),
+    /// [`Self::kind_peak_trough_sum_of_fourth_powers`] (`n = 4`),
+    /// [`Self::kind_peak_trough_sum_of_fifth_powers`] (`n = 5`), and
+    /// [`Self::kind_peak_trough_sum_of_sixth_powers`] (`n = 6`) — each
+    /// route through this primitive at their fixed `N`, so the
+    /// joint-extremes `p_n` at the diff altitude reads off ONE typed
+    /// scalar at a runtime-chosen exponent instead of dispatching over
+    /// the named table or growing a seventh / eighth / n-th named
+    /// diff-altitude sibling to extend the ladder. The scalar-altitude
+    /// peer [`crate::AxisHistogram::peak_trough_sum_of_powers`] closes
+    /// the exponent axis on the histogram surface; this method lifts
+    /// that closure one altitude up to the diff kind-count endpoint pair,
+    /// paralleling the tier-altitude closure
+    /// [`ProvenanceMap::tier_peak_trough_sum_of_powers`] on the tier
+    /// count-endpoint pair.
+    ///
+    /// # Boundary conventions
+    ///
+    /// Inherited from the scalar-altitude primitive:
+    /// - `kind_peak_trough_sum_of_powers(0) == 2` for every diff (even
+    ///   the empty diff) since `usize::pow(0) == 1` per operand — the
+    ///   closed `1 + 1 == 2` boundary of the two-operand power-sum
+    ///   family.
+    /// - `kind_peak_trough_sum_of_powers(1) == kind_peak_trough_sum()` —
+    ///   the linear-power-sum degenerates to the shipped addition-form
+    ///   scalar [`Self::kind_peak_trough_sum`].
+    /// - `kind_peak_trough_sum_of_powers(n) == 0` for `n >= 1` iff
+    ///   `self.lines.is_empty()` — every non-empty diff has both
+    ///   endpoints `>= 1`, so `p_n >= 2` on any non-empty diff at
+    ///   `n >= 1`.
+    ///
+    /// # Newton's two-variable recurrence
+    ///
+    /// For `n >= 2`, the diff-altitude primitive satisfies Newton's
+    /// identity `p_n == e_1 * p_(n-1) - e_2 * p_(n-2)` where `e_1 =
+    /// kind_peak_trough_sum()` and `e_2 = kind_peak_trough_product()`
+    /// — the same two elementary-symmetric-polynomial scalars that
+    /// close the entire power-sum family on the diff kind-count
+    /// endpoint pair. The identity holds without underflow on `usize`
+    /// by the same rearrangement the scalar-altitude primitive uses.
+    #[must_use]
+    pub fn kind_peak_trough_sum_of_powers(&self, n: u32) -> usize {
+        self.kind_histogram().peak_trough_sum_of_powers(n)
     }
 
     /// The **modal-multiplicity of diff kinds** — the number of
@@ -21062,6 +21120,109 @@ mod tests {
                 peak * peak * peak * peak * peak * peak
                     + trough * trough * trough * trough * trough * trough,
             );
+        }
+    }
+
+    // ── ConfigDiff::kind_peak_trough_sum_of_powers — runtime-exponent
+    //    diff-altitude power-sum primitive, closing the exponent axis at
+    //    the diff altitude. Four pins seal the fold the five shipped named
+    //    fixed-exponent diff siblings (squares, cubes, fourth_powers,
+    //    fifth_powers, sixth_powers) now route through: the boundary
+    //    conventions at n == 0 (== 2 on every diff, incl. empty via
+    //    `0.pow(0) == 1` per operand) and n == 1 (== kind_peak_trough_sum,
+    //    the shipped addition-form degenerate); the fixed-exponent routing
+    //    pin (each of the 5 named siblings equals
+    //    `kind_peak_trough_sum_of_powers(N)` pointwise across the canonical
+    //    diff-mix fixtures); and Newton's two-variable recurrence pin
+    //    `p_n == e_1 * p_(n-1) - e_2 * p_(n-2)` for n in 2..=6, proving the
+    //    primitive closes the whole diff-altitude power-sum family under
+    //    one identity — not just at any single fixed exponent.
+
+    #[test]
+    fn kind_peak_trough_sum_of_powers_at_zero_is_two_on_every_diff_including_empty() {
+        // Boundary pin at n == 0: for every diff — non-empty or empty —
+        // `peak_kind_count().pow(0) == 1` and `trough_kind_count().pow(0)
+        // == 1` (usize's `0.pow(0) == 1` per operand), so `p_0 == 1 + 1
+        // == 2` uniformly. The closed convention that lets
+        // `kind_peak_trough_sum_of_powers(0)` read the "two operands are
+        // present" cardinality without a nonempty guard, lifted from the
+        // scalar-altitude primitive.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(diff.kind_peak_trough_sum_of_powers(0), 2);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_powers_at_one_equals_kind_peak_trough_sum_pointwise() {
+        // Boundary pin at n == 1: the linear-power-sum degenerates to
+        // the shipped addition-form scalar `kind_peak_trough_sum`.
+        // Pinned pointwise across every canonical fixture so a future
+        // regression in either side surfaces here.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kind_peak_trough_sum_of_powers(1),
+                diff.kind_peak_trough_sum(),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_powers_routes_named_siblings_pointwise() {
+        // Routing pin: each of the five shipped named exponents
+        // (squares, cubes, fourth_powers, fifth_powers, sixth_powers)
+        // equals `kind_peak_trough_sum_of_powers(N)` pointwise across
+        // every canonical fixture. Seals the delegation the fold
+        // installs — a future drift between the primitive and any named
+        // sibling surfaces here.
+        for diff in dominant_kind_fixtures() {
+            assert_eq!(
+                diff.kind_peak_trough_sum_of_squares(),
+                diff.kind_peak_trough_sum_of_powers(2),
+            );
+            assert_eq!(
+                diff.kind_peak_trough_sum_of_cubes(),
+                diff.kind_peak_trough_sum_of_powers(3),
+            );
+            assert_eq!(
+                diff.kind_peak_trough_sum_of_fourth_powers(),
+                diff.kind_peak_trough_sum_of_powers(4),
+            );
+            assert_eq!(
+                diff.kind_peak_trough_sum_of_fifth_powers(),
+                diff.kind_peak_trough_sum_of_powers(5),
+            );
+            assert_eq!(
+                diff.kind_peak_trough_sum_of_sixth_powers(),
+                diff.kind_peak_trough_sum_of_powers(6),
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_powers_satisfies_newton_recurrence_pointwise() {
+        // Newton's two-variable recurrence pin at n in 2..=6: `p_n ==
+        // e_1 * p_(n-1) - e_2 * p_(n-2)` where `e_1 = kind_peak_trough_sum`
+        // and `e_2 = kind_peak_trough_product`. Proves the primitive
+        // closes the whole diff-altitude power-sum family under one
+        // identity — not just at any single fixed exponent. The identity
+        // holds without underflow on `usize` by the same rearrangement
+        // the scalar-altitude primitive uses (`(p+t)(p^(n-1)+t^(n-1)) =
+        // p^n + t^n + p*t*(p^(n-2)+t^(n-2))` on non-negative `p`, `t`).
+        for diff in dominant_kind_fixtures() {
+            let e1 = diff.kind_peak_trough_sum();
+            let e2 = diff.kind_peak_trough_product();
+            for n in 2u32..=6 {
+                let p_n = diff.kind_peak_trough_sum_of_powers(n);
+                let p_n_minus_1 = diff.kind_peak_trough_sum_of_powers(n - 1);
+                let p_n_minus_2 = diff.kind_peak_trough_sum_of_powers(n - 2);
+                assert_eq!(
+                    p_n + e2 * p_n_minus_2,
+                    e1 * p_n_minus_1,
+                    "Newton p_{n} + e_2 * p_{prev2} == e_1 * p_{prev1}",
+                    prev2 = n - 2,
+                    prev1 = n - 1,
+                );
+            }
         }
     }
 
