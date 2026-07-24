@@ -5581,6 +5581,47 @@ impl<A: ClosedAxis> AxisHistogram<A> {
         self.peak_count() * self.trough_count()
     }
 
+    /// The **observed-distribution peak-trough sum-of-nth-powers** —
+    /// `self.peak_count().pow(n) + self.trough_count().pow(n)` in one
+    /// call, generalizing the entire named-exponent family
+    /// [`Self::peak_trough_sum_of_squares`] (`n = 2`),
+    /// [`Self::peak_trough_sum_of_cubes`] (`n = 3`),
+    /// [`Self::peak_trough_sum_of_fourth_powers`] (`n = 4`),
+    /// [`Self::peak_trough_sum_of_fifth_powers`] (`n = 5`), and
+    /// [`Self::peak_trough_sum_of_sixth_powers`] (`n = 6`) that each
+    /// route through this primitive with a fixed `n`. Consumers reading
+    /// off the joint extreme-count Lⁿ magnitude at a runtime-chosen
+    /// exponent (fleet dashboards spanning a family of power-sums,
+    /// Newton-identity closures, `p_k` bound checks) route through one
+    /// method instead of a dispatch table over the named siblings.
+    ///
+    /// Boundary values match the named-sibling conventions:
+    /// `peak_trough_sum_of_powers(0)` returns `2` for any histogram
+    /// (`usize::pow(0) == 1` per operand); `peak_trough_sum_of_powers(1)`
+    /// matches [`Self::peak_trough_sum`]; every `n >= 2` matches the
+    /// corresponding `peak_trough_sum_of_<name>` above.
+    ///
+    /// **Newton's identity (two variables).** For every `n >= 2`,
+    ///
+    /// ```text
+    /// peak_trough_sum_of_powers(n)
+    ///     == peak_trough_sum() * peak_trough_sum_of_powers(n - 1)
+    ///        - peak_trough_product() * peak_trough_sum_of_powers(n - 2)
+    /// ```
+    ///
+    /// where `peak_trough_sum_of_powers(0) == 2` and
+    /// `peak_trough_sum_of_powers(1) == peak_trough_sum()`. The
+    /// subtraction never underflows on `usize`: the algebraic identity
+    /// `(p + t)(p^(n-1) + t^(n-1)) = p^n + t^n + p·t·(p^(n-2) + t^(n-2))`
+    /// pins the left minuend `>=` the right subtrahend for non-negative
+    /// `p`, `t`.
+    #[must_use]
+    pub fn peak_trough_sum_of_powers(&self, n: u32) -> usize {
+        let peak = self.peak_count();
+        let trough = self.trough_count();
+        peak.pow(n) + trough.pow(n)
+    }
+
     /// The **observed-distribution peak-trough sum-of-squares** — the sum
     /// of the squares of the maximum and minimum observation counts over
     /// the histogram's observed support. Equal to
@@ -5747,9 +5788,7 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     /// re-walk.
     #[must_use]
     pub fn peak_trough_sum_of_squares(&self) -> usize {
-        let peak = self.peak_count();
-        let trough = self.trough_count();
-        peak * peak + trough * trough
+        self.peak_trough_sum_of_powers(2)
     }
 
     /// The **observed-distribution peak-trough sum-of-cubes** — the sum
@@ -5931,9 +5970,7 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     /// `p_3 = e_1³ - 3·e_1·e_2` with no histogram re-walk.
     #[must_use]
     pub fn peak_trough_sum_of_cubes(&self) -> usize {
-        let peak = self.peak_count();
-        let trough = self.trough_count();
-        peak * peak * peak + trough * trough * trough
+        self.peak_trough_sum_of_powers(3)
     }
 
     /// The **observed-distribution peak-trough sum-of-fourth-powers** —
@@ -6127,9 +6164,7 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     /// no histogram re-walk.
     #[must_use]
     pub fn peak_trough_sum_of_fourth_powers(&self) -> usize {
-        let peak = self.peak_count();
-        let trough = self.trough_count();
-        peak * peak * peak * peak + trough * trough * trough * trough
+        self.peak_trough_sum_of_powers(4)
     }
 
     /// The **observed-distribution peak-trough sum-of-fifth-powers** —
@@ -6337,9 +6372,7 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     /// no histogram re-walk.
     #[must_use]
     pub fn peak_trough_sum_of_fifth_powers(&self) -> usize {
-        let peak = self.peak_count();
-        let trough = self.trough_count();
-        peak * peak * peak * peak * peak + trough * trough * trough * trough * trough
+        self.peak_trough_sum_of_powers(5)
     }
 
     /// The **sum-of-sixth-powers** / `p_6` power-sum of the observed-
@@ -6554,10 +6587,7 @@ impl<A: ClosedAxis> AxisHistogram<A> {
     /// no histogram re-walk.
     #[must_use]
     pub fn peak_trough_sum_of_sixth_powers(&self) -> usize {
-        let peak = self.peak_count();
-        let trough = self.trough_count();
-        peak * peak * peak * peak * peak * peak
-            + trough * trough * trough * trough * trough * trough
+        self.peak_trough_sum_of_powers(6)
     }
 
     /// `true` exactly when every observed cell of the closed axis carries
@@ -46381,5 +46411,146 @@ mod tests {
     #[test]
     fn support_magnitude_direction_ord_matches_all_declaration_order() {
         assert_ord_matches_all_declaration_order(SupportMagnitudeDirection::ALL);
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_powers_boundary_exponents_match_shipped_scalars() {
+        // The runtime-exponent generalization pins its two boundary
+        // exponents against the shipped scalar primitives: pow(0) == 2
+        // on every histogram (both operands ^0 == 1 in usize::pow,
+        // including 0.pow(0) == 1 — so the empty histogram still sums
+        // to 2 at n=0, unlike the n>=1 case where it sums to 0), and
+        // pow(1) == peak_trough_sum on every histogram. The boundary
+        // tests seal the fold at n=0 and n=1 so the routing through
+        // pow(n) inherits the same identities as the fixed-exponent
+        // siblings on the joint count-endpoint pair.
+        let empty: AxisHistogram<DiffLineKind> = AxisHistogram::empty();
+        assert_eq!(empty.peak_trough_sum_of_powers(0), 2);
+        assert_eq!(empty.peak_trough_sum_of_powers(1), empty.peak_trough_sum());
+
+        let singleton: AxisHistogram<DiffLineKind> = std::iter::once(DiffLineKind::Added).collect();
+        assert_eq!(singleton.peak_trough_sum_of_powers(0), 2);
+        assert_eq!(
+            singleton.peak_trough_sum_of_powers(1),
+            singleton.peak_trough_sum(),
+        );
+
+        let skewed: AxisHistogram<DiffLineKind> = [
+            DiffLineKind::Added,
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(skewed.peak_trough_sum_of_powers(0), 2);
+        assert_eq!(
+            skewed.peak_trough_sum_of_powers(1),
+            skewed.peak_trough_sum(),
+        );
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_powers_named_exponents_route_through_generic_primitive() {
+        // The whole named-exponent family — squares, cubes, fourth,
+        // fifth, sixth — routes through the runtime-exponent primitive
+        // with the corresponding fixed n. Pinning the equivalence
+        // pointwise across a diverse observation-mix fixture surfaces
+        // any drift between the generic fold and the shipped named
+        // scalars, so the family stays a set of one-liner aliases over
+        // the primitive.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            assert_eq!(
+                hist.peak_trough_sum_of_squares(),
+                hist.peak_trough_sum_of_powers(2),
+            );
+            assert_eq!(
+                hist.peak_trough_sum_of_cubes(),
+                hist.peak_trough_sum_of_powers(3),
+            );
+            assert_eq!(
+                hist.peak_trough_sum_of_fourth_powers(),
+                hist.peak_trough_sum_of_powers(4),
+            );
+            assert_eq!(
+                hist.peak_trough_sum_of_fifth_powers(),
+                hist.peak_trough_sum_of_powers(5),
+            );
+            assert_eq!(
+                hist.peak_trough_sum_of_sixth_powers(),
+                hist.peak_trough_sum_of_powers(6),
+            );
+        }
+    }
+
+    #[test]
+    fn axis_histogram_peak_trough_sum_of_powers_newton_recurrence_closes_over_exponent_axis() {
+        // Newton's two-variable power-sum identity:
+        //   p_n == e_1 * p_(n-1) - e_2 * p_(n-2), n >= 2
+        // where e_1 = peak+trough and e_2 = peak*trough. The identity
+        // never underflows on usize because
+        //   (p+t)(p^(n-1)+t^(n-1)) = p^n + t^n + p*t*(p^(n-2)+t^(n-2)),
+        // so the left minuend dominates the right subtrahend termwise.
+        // Pinning the recurrence n=2..=6 across the fixture cements the
+        // primitive as the single seam every named power-sum sibling
+        // reads through.
+        let inputs: [&[DiffLineKind]; 5] = [
+            &[],
+            &[DiffLineKind::Added],
+            &[
+                DiffLineKind::Context,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+            &[
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Added,
+                DiffLineKind::Removed,
+            ],
+        ];
+        for input in inputs {
+            let hist: AxisHistogram<DiffLineKind> = input.iter().copied().collect();
+            let e1 = hist.peak_trough_sum();
+            let e2 = hist.peak_trough_product();
+            for n in 2u32..=6 {
+                let p_n = hist.peak_trough_sum_of_powers(n);
+                let p_n_minus_1 = hist.peak_trough_sum_of_powers(n - 1);
+                let p_n_minus_2 = hist.peak_trough_sum_of_powers(n - 2);
+                assert_eq!(
+                    p_n,
+                    e1 * p_n_minus_1 - e2 * p_n_minus_2,
+                    "Newton's recurrence must close at n={n} on input of length {}",
+                    input.len(),
+                );
+            }
+        }
     }
 }
