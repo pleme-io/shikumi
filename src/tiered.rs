@@ -619,6 +619,33 @@ impl Provenance {
         }
     }
 
+    /// A runtime-discovered overlay — tier [`ConfigTierKind::Discovered`],
+    /// source [`ConfigSource::Defaults`] (the discovered tier is a
+    /// computed-defaults class today: machine-derived, not operator-supplied,
+    /// and the layer-kind partition records it under `Defaults` in lockstep
+    /// with [`crate::ProviderChain::with_discovered`]).
+    ///
+    /// The named sibling of [`Self::file`] / [`Self::env`] on the tier axis:
+    /// [`Self::file`] closes the operator-file overlay identity at one site,
+    /// [`Self::env`] closes the operator-env overlay identity at one site,
+    /// and [`Self::discovered`] closes the runtime-discovered overlay
+    /// identity at one site. Before this constructor, every discovered-tier
+    /// overlay's provenance was hand-composed at each caller as
+    /// `Provenance::computed(ConfigTierKind::Discovered)` — the same manual
+    /// composition [`Self::file`] / [`Self::env`] were introduced to remove
+    /// on the operator overlays; lifting the discovered constructor to the
+    /// same seam keeps the tier-axis constructor grid honest.
+    ///
+    /// A dedicated `ConfigSource::Discovered`-shaped variant remains a
+    /// deliberate future refinement (named at [`crate::ProviderChain::with_discovered`]);
+    /// this constructor is the seam that variant will thread through when
+    /// it lands — every caller that today writes `Provenance::discovered()`
+    /// inherits the richer source at zero call-site churn.
+    #[must_use]
+    pub fn discovered() -> Self {
+        Self::computed(ConfigTierKind::Discovered)
+    }
+
     /// The conceptual tier that produced the value.
     #[must_use]
     pub fn tier(&self) -> ConfigTierKind {
@@ -8212,6 +8239,48 @@ impl ProgressiveLayer {
             provenance: Provenance::env(prefix),
             dict,
         }
+    }
+
+    /// A runtime-discovered overlay — [`Provenance::discovered`].
+    ///
+    /// The tier-axis peer of [`Self::file`] / [`Self::env`] on the
+    /// pre-built-dict side of the constructor grid: the caller passes the
+    /// partial dict a discovery layer already composed, and the fold stamps
+    /// [`Provenance::discovered`] on every leaf it wins.
+    ///
+    /// Typically produced by [`crate::discovered::compose`] over a stack of
+    /// [`DiscoveryLayer`]s; when the caller wants the composition to happen
+    /// inline, [`Self::discovered_from_layers`] is the fusion peer of
+    /// [`Self::try_from_file`] / [`Self::from_env`] on the discovered tier.
+    #[must_use]
+    pub fn discovered(dict: Dict) -> Self {
+        Self {
+            provenance: Provenance::discovered(),
+            dict,
+        }
+    }
+
+    /// Read a runtime-discovered overlay from a [`DiscoveryLayer`] stack —
+    /// the discovered-tier fusion peer of [`Self::try_from_file`] /
+    /// [`Self::from_env`].
+    ///
+    /// Composes the layers via [`crate::discovered::compose`] (the same
+    /// coarse→specific per-leaf merge [`TieredConfig::discovered_from_layers`]
+    /// runs to seed the trait's `discovered()` tier), then stamps
+    /// [`Provenance::discovered`] on every leaf the resulting overlay wins.
+    /// The ingested dict is thus identical, on the same input, to
+    /// `crate::discovered::compose(layers)` — a caller wiring their
+    /// discovered tier via `Self::discovered_from_layers` and one wiring the
+    /// same layer stack through `TieredConfig::discovered_from_layers`
+    /// cannot drift on discovery composition.
+    ///
+    /// Infallible: an empty layer stack (or a stack whose every
+    /// [`DiscoveryLayer::discover`] returns an empty dict) degenerates to
+    /// an empty-dict overlay (a no-op in the fold), matching
+    /// [`crate::discovered::compose`]'s totality contract.
+    #[must_use]
+    pub fn discovered_from_layers(layers: &[&dyn DiscoveryLayer]) -> Self {
+        Self::discovered(compose(layers))
     }
 
     /// Read an operator FILE overlay from a path — the single-call fusion
@@ -48783,5 +48852,109 @@ mod progressive_tests {
             "SHIKUMI_TIERED_ENV_UNMATCHED_PREFIX_",
         )]);
         assert_eq!(baseline.value(), with_empty.value());
+    }
+
+    #[test]
+    fn provenance_discovered_helper_matches_computed_discovered() {
+        // The discovered() helper closes the tier-axis constructor grid on
+        // Provenance at one site: file/env are the operator-overlay
+        // constructors, discovered is the runtime-computed-overlay peer.
+        // Its identity is the same (tier: Discovered, source: Defaults)
+        // pair every prior discovered-tier caller composed by hand as
+        // computed(ConfigTierKind::Discovered); lifting it to a named
+        // constructor gives the future ConfigSource::Discovered refinement
+        // a single seam to thread through.
+        assert_eq!(
+            Provenance::discovered(),
+            Provenance::computed(ConfigTierKind::Discovered)
+        );
+        assert_eq!(Provenance::discovered().tier(), ConfigTierKind::Discovered);
+        assert_eq!(Provenance::discovered().source(), &ConfigSource::Defaults);
+        assert_eq!(Provenance::discovered().to_string(), "discovered");
+    }
+
+    #[test]
+    fn progressive_layer_discovered_stamps_discovered_provenance() {
+        // The overlay's structural contract: provenance is
+        // Provenance::discovered() (tier Discovered, source Defaults —
+        // the same layer-kind partition Provider::with_discovered records),
+        // and the overlay's dict is the caller's Dict verbatim. This is
+        // the tier-axis peer of the operator-overlay identity the
+        // file / env constructors already close at one site.
+        let mut dict = Dict::new();
+        dict.insert("c".to_owned(), Value::from(77_u32));
+        let overlay = ProgressiveLayer::discovered(dict.clone());
+        assert_eq!(overlay.provenance(), &Provenance::discovered());
+        assert_eq!(overlay.provenance().tier(), ConfigTierKind::Discovered);
+        assert_eq!(overlay.provenance().source(), &ConfigSource::Defaults);
+        assert_eq!(overlay.dict(), &dict);
+    }
+
+    #[test]
+    fn progressive_layer_discovered_overlay_survives_fold_as_discovered() {
+        // End-to-end: a Discovered overlay's leaf value survives to the
+        // resolved config and is attributed to Discovered — the
+        // last-changer rule requires the value the overlay writes to agree
+        // with the value prescribed_default() would emit (so
+        // prescribed_default() skips at step 4 and the Discovered
+        // attribution from step 3 stands). The fixture below is the
+        // minimal shape that exercises exactly this seam: bare == 0,
+        // discovered == 0 (no self-contribution), prescribed_default ==
+        // 99, overlay == 99. Without ProgressiveLayer::discovered the
+        // caller would hand-build `ProgressiveLayer::new(
+        // Provenance::computed(ConfigTierKind::Discovered), dict)` — the
+        // constructor closes that composition at one site.
+        #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+        struct DiscOverlay {
+            x: u32,
+        }
+        impl TieredConfig for DiscOverlay {
+            fn bare() -> Self {
+                Self { x: 0 }
+            }
+            fn prescribed_default() -> Self {
+                Self { x: 99 }
+            }
+        }
+        let mut dict = Dict::new();
+        dict.insert("x".to_owned(), Value::from(99_u32));
+        let overlay = ProgressiveLayer::discovered(dict);
+        let r = DiscOverlay::resolve_progressive_with(&[overlay]);
+        assert_eq!(r.value().x, 99);
+        let prov = r.provenance().provenance_of(&["x"]).unwrap();
+        assert_eq!(prov.tier(), ConfigTierKind::Discovered);
+        assert_eq!(prov.source(), &ConfigSource::Defaults);
+    }
+
+    #[test]
+    fn progressive_layer_discovered_from_layers_matches_compose() {
+        // The fusion peer of try_from_file / from_env on the discovered
+        // tier: the caller passes a DiscoveryLayer stack, and the
+        // constructor runs compose(layers) at the seam. The load-bearing
+        // invariant is that the overlay's dict is exactly what compose
+        // would produce on the same input — a caller ingesting a layer
+        // stack through resolve_progressive_with(&[discovered_from_layers(&L)])
+        // and one wiring the same stack through
+        // TieredConfig::discovered_from_layers cannot drift on discovery
+        // composition.
+        let layers: &[&dyn DiscoveryLayer] = &[&AxisLayer { key: "a", val: 33 }];
+        let overlay = ProgressiveLayer::discovered_from_layers(layers);
+        assert_eq!(overlay.provenance(), &Provenance::discovered());
+        assert_eq!(overlay.dict(), &compose(layers));
+    }
+
+    #[test]
+    fn progressive_layer_discovered_from_layers_empty_stack_is_no_op() {
+        // Totality: an empty layer stack (or a stack whose every
+        // discover() returns an empty dict) degenerates to an empty-dict
+        // overlay — the fold-side identity, matching
+        // compose(&[]).is_empty() at the source. Regression protection
+        // for the discovered-tier peer of from_env's unmatched-prefix
+        // identity.
+        let baseline = Prog::resolve_progressive();
+        let with_empty =
+            Prog::resolve_progressive_with(&[ProgressiveLayer::discovered_from_layers(&[])]);
+        assert_eq!(baseline.value(), with_empty.value());
+        assert_eq!(baseline.provenance(), with_empty.provenance());
     }
 }
