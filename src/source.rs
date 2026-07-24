@@ -12,7 +12,6 @@
 use std::fmt;
 use std::panic::Location;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
 /// A single layer in a config provider chain.
 ///

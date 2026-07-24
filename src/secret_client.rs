@@ -50,8 +50,6 @@
 //! ```
 
 use std::collections::HashMap;
-use std::fmt;
-use std::str::FromStr;
 use std::sync::RwLock;
 
 use async_trait::async_trait;
