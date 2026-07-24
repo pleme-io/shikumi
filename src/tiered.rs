@@ -9859,6 +9859,93 @@ impl ConfigDiff {
         self.kind_histogram().peak_trough_sum_of_fourth_powers()
     }
 
+    /// The **observed-distribution peak-trough sum-of-fifth-powers of diff
+    /// kinds** — the sum of the fifth powers of the peak and trough
+    /// [`DiffLineKind`] counts on this diff. Equal to
+    /// `self.peak_kind_count().pow(5) + self.trough_kind_count().pow(5)`
+    /// by construction; the *joint-extremes-quintic-magnitude* / power-sum
+    /// `p_5` sibling of the shipped [`Self::kind_spread`] (`peak - trough`),
+    /// [`Self::kind_peak_trough_sum`] (`peak + trough`),
+    /// [`Self::kind_peak_trough_product`] (`peak * trough`),
+    /// [`Self::kind_peak_trough_sum_of_squares`] (`p_2`),
+    /// [`Self::kind_peak_trough_sum_of_cubes`] (`p_3`), and
+    /// [`Self::kind_peak_trough_sum_of_fourth_powers`] (`p_4`) scalars on
+    /// the same closed count-endpoint pair — the diff-altitude climb of
+    /// the "peak⁵ + trough⁵ sums-of-fifth-powers across altitudes"
+    /// projection seeded on the scalar altitude by
+    /// [`crate::AxisHistogram::peak_trough_sum_of_fifth_powers`]. Routes
+    /// through [`Self::kind_histogram`], reading the fused primitive one
+    /// altitude down so the two-scan cost of the inline
+    /// `peak_kind_count().pow(5) + trough_kind_count().pow(5)` idiom
+    /// halves to one histogram walk.
+    ///
+    /// The `p_5` scalar composes with the shipped diff-altitude siblings
+    /// through two orthogonal Newton-identity read-off surfaces with no
+    /// histogram re-walk:
+    ///
+    /// ```text
+    /// kind_peak_trough_sum_of_fifth_powers
+    ///     == kind_peak_trough_sum * kind_peak_trough_sum_of_fourth_powers
+    ///        - kind_peak_trough_product * kind_peak_trough_sum_of_cubes
+    ///     (Newton's identity p_5 = e_1·p_4 - e_2·p_3 on the
+    ///      (sum, sofp, product, soc) surface — non-negative subtraction
+    ///      since (p+t)(p⁴+t⁴) = p⁵+t⁵+pt(p³+t³) distributes into LHS =
+    ///      p_5 + pt·p_3 while pt·p_3 reads exactly the second term)
+    /// kind_peak_trough_sum_of_fifth_powers
+    ///     == kind_peak_trough_sum_of_squares * kind_peak_trough_sum_of_cubes
+    ///        - kind_peak_trough_product.pow(2) * kind_peak_trough_sum
+    ///     (the (sos, soc, product, sum) surface factorization
+    ///      p⁵ + t⁵ = (p² + t²)(p³ + t³) - p²t²(p + t))
+    /// ```
+    ///
+    /// **Empty-diff convention** — returns `0`. **Empty-boundary
+    /// equivalence** — `kind_peak_trough_sum_of_fifth_powers() == 0` ⇔
+    /// `self.lines.is_empty()` (both endpoints are structurally `>= 1` on
+    /// every non-empty diff, so the sum-of-fifth-powers is at least
+    /// `1 + 1 == 2` on any non-empty diff). **AM-quintic / power-mean
+    /// bound** — `16 * kind_peak_trough_sum_of_fifth_powers() >=
+    /// kind_peak_trough_sum().pow(5)` always, with equality iff
+    /// [`Self::kinds_uniform_count`] is `true`; peer to the AM-quartic
+    /// bound `8·sofp >= sum⁴` on `p_4`, the AM-cube bound `4·soc >= sum³`
+    /// on `p_3`, the AM-QM bound `sos >= 2·product` on `p_2`, and the
+    /// AM-GM bound `4·product <= sum²` on the elementary-symmetric pair.
+    /// **Overflow-safe on realistic diff sizes** — bounded above by
+    /// `2 * self.lines.len().pow(5)`, so cannot overflow on any diff
+    /// whose line count is below `⁵√(usize::MAX / 2)` (~3435 on 64-bit).
+    ///
+    /// # Invariants
+    ///
+    /// - `kind_peak_trough_sum_of_fifth_powers() ==
+    ///   kind_histogram().peak_trough_sum_of_fifth_powers()` — routing
+    ///   through the shared quintic-native primitive.
+    /// - `kind_peak_trough_sum_of_fifth_powers() == peak_kind_count().pow(5) +
+    ///   trough_kind_count().pow(5)` — fused-pair identity.
+    /// - `kind_peak_trough_sum_of_fifth_powers() == 0` ⇔ `self.lines.is_empty()`.
+    /// - `kind_peak_trough_sum_of_fifth_powers() >= 2` whenever `!self.lines.is_empty()`.
+    /// - `16 * kind_peak_trough_sum_of_fifth_powers() >=
+    ///   kind_peak_trough_sum().pow(5)` (AM-quintic; equality iff
+    ///   [`Self::kinds_uniform_count`]).
+    /// - `kind_peak_trough_sum_of_fifth_powers() <= 2 * peak_kind_count().pow(5)`
+    ///   (equality iff [`Self::kinds_uniform_count`]).
+    /// - `kind_peak_trough_sum_of_fifth_powers() <= 2 * self.lines.len().pow(5)`.
+    /// - `kind_peak_trough_sum_of_fifth_powers() == kind_peak_trough_sum() *
+    ///   kind_peak_trough_sum_of_fourth_powers() - kind_peak_trough_product() *
+    ///   kind_peak_trough_sum_of_cubes()` (Newton `p_5 = e_1·p_4 - e_2·p_3`).
+    /// - `kind_peak_trough_sum_of_fifth_powers() == kind_peak_trough_sum_of_squares() *
+    ///   kind_peak_trough_sum_of_cubes() - kind_peak_trough_product().pow(2) *
+    ///   kind_peak_trough_sum()` (the (sos, soc, product, sum) factorization).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (histogram build) and
+    /// `k = crate::axis_cardinality::<DiffLineKind>()` (peak + trough
+    /// fused scan). Both are `O(n)` in practice — the diff-cell axis
+    /// carries a fixed three-cell cardinality.
+    #[must_use]
+    pub fn kind_peak_trough_sum_of_fifth_powers(&self) -> usize {
+        self.kind_histogram().peak_trough_sum_of_fifth_powers()
+    }
+
     /// The **modal-multiplicity of diff kinds** — the number of
     /// [`DiffLineKind`] cells that hold the peak line count on this diff.
     /// Equal to `1` on every strictly-modally-unique diff (a unique
@@ -19914,6 +20001,263 @@ mod tests {
             assert_eq!(
                 via_seam,
                 peak * peak * peak * peak + trough * trough * trough * trough,
+            );
+        }
+    }
+
+    // ── ConfigDiff::kind_peak_trough_sum_of_fifth_powers — diff-altitude
+    //    climb of the "peak⁵ + trough⁵ sums-of-fifth-powers across
+    //    altitudes" projection seeded on the scalar altitude by
+    //    AxisHistogram::peak_trough_sum_of_fifth_powers ──
+
+    #[test]
+    fn kind_peak_trough_sum_of_fifth_powers_matches_kind_histogram_peak_trough_sum_of_fifth_powers_pointwise()
+     {
+        // Routing pin: `kind_peak_trough_sum_of_fifth_powers` routes
+        // through `kind_histogram().peak_trough_sum_of_fifth_powers()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared quintic-native primitive.
+        for diff in dominant_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().peak_trough_sum_of_fifth_powers();
+            assert_eq!(diff.kind_peak_trough_sum_of_fifth_powers(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fifth_powers_equals_peak_quintic_plus_trough_quintic_pointwise() {
+        // Fused-pair pin: `kind_peak_trough_sum_of_fifth_powers ==
+        // peak_kind_count⁵ + trough_kind_count⁵` on every fixture — the
+        // defining equivalence on the underlying scalar pair.
+        for diff in dominant_kind_fixtures() {
+            let peak = diff.peak_kind_count();
+            let trough = diff.trough_kind_count();
+            assert_eq!(
+                diff.kind_peak_trough_sum_of_fifth_powers(),
+                peak * peak * peak * peak * peak + trough * trough * trough * trough * trough,
+            );
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fifth_powers_context_dominated_fixture_is_two_hundred_forty_four() {
+        // Direct pin: a diff of 3 Context + 1 Removed has Context
+        // dominant at 3, Removed rarest at 1 — the joint
+        // sum-of-fifth-powers is `3⁵ + 1⁵ == 244`. Reads the paired
+        // count nonuple as `(peak, trough, spread, sum, product, sos,
+        // soc, sofp, sofip) = (3, 1, 2, 4, 3, 10, 28, 82, 244)`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("c1".into()),
+                DiffLine::Context("c2".into()),
+                DiffLine::Context("c3".into()),
+                DiffLine::Removed("r".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_count(), 3);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_spread(), 2);
+        assert_eq!(diff.kind_peak_trough_sum(), 4);
+        assert_eq!(diff.kind_peak_trough_product(), 3);
+        assert_eq!(diff.kind_peak_trough_sum_of_squares(), 10);
+        assert_eq!(diff.kind_peak_trough_sum_of_cubes(), 28);
+        assert_eq!(diff.kind_peak_trough_sum_of_fourth_powers(), 82);
+        assert_eq!(diff.kind_peak_trough_sum_of_fifth_powers(), 244);
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fifth_powers_added_dominated_fixture_is_thirty_three() {
+        // Direct pin: a diff of 2 Added + 1 Context has Added dominant
+        // at 2, Context rarest at 1 — the joint sum-of-fifth-powers is
+        // `2⁵ + 1⁵ == 33`. Reads the paired count nonuple as
+        // `(2, 1, 1, 3, 2, 5, 9, 17, 33)`.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_count(), 2);
+        assert_eq!(diff.trough_kind_count(), 1);
+        assert_eq!(diff.kind_peak_trough_sum_of_fourth_powers(), 17);
+        assert_eq!(diff.kind_peak_trough_sum_of_fifth_powers(), 33);
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fifth_powers_empty_diff_is_zero() {
+        // Empty-diff convention: no observed cells → sum-of-fifth-powers
+        // reads `0`, matching every diff-altitude scalar peer.
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.kind_peak_trough_sum_of_fifth_powers(), 0);
+        assert!(empty.lines.is_empty());
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fifth_powers_singleton_support_is_twice_line_count_quintic() {
+        // Singleton-support pin: every line lands on the same kind, so
+        // peak == trough == line_count, and the joint sum-of-fifth-powers
+        // is `2 * line_count⁵`. Diff-altitude peer of the trait-uniform
+        // `peak_trough_sum_of_fifth_powers == 2 * total⁵` behavior on
+        // AxisHistogram's singleton-support boundary.
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+                DiffLine::Removed("r3".into()),
+                DiffLine::Removed("r4".into()),
+            ],
+        };
+        assert_eq!(diff.peak_kind_count(), 4);
+        assert_eq!(diff.trough_kind_count(), 4);
+        // 4⁵ + 4⁵ = 1024 + 1024 = 2048
+        assert_eq!(diff.kind_peak_trough_sum_of_fifth_powers(), 2048);
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fifth_powers_uniform_cover_is_two() {
+        // Uniform-cover pin: every observed kind contributes the same
+        // nonzero count (one line each here), so peak == trough == 1 and
+        // the joint sum-of-fifth-powers is `1⁵ + 1⁵ == 2`. Equality
+        // boundary of both `sofip <= 2·peak⁵` and `16·sofip == sum⁵`
+        // (since sum = 2, sum⁵ = 32, 16·sofip = 32).
+        let diff = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(diff.kinds_uniform_count());
+        assert_eq!(diff.kind_peak_trough_sum_of_fifth_powers(), 2);
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fifth_powers_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence: `sofip == 0` iff the diff is
+        // empty. Both endpoints are structurally `>= 1` on every
+        // non-empty diff, and fifth-powering cannot introduce a zero
+        // from non-zero operands.
+        for diff in dominant_kind_fixtures() {
+            let sofip_zero = diff.kind_peak_trough_sum_of_fifth_powers() == 0;
+            let is_empty = diff.lines.is_empty();
+            assert_eq!(sofip_zero, is_empty);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fifth_powers_non_empty_bounded_below_by_two() {
+        // Non-empty floor pin: `sofip >= 2` on every non-empty diff —
+        // both fifth-powered endpoints contribute at least `1`.
+        for diff in dominant_kind_fixtures() {
+            if diff.lines.is_empty() {
+                continue;
+            }
+            assert!(diff.kind_peak_trough_sum_of_fifth_powers() >= 2);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fifth_powers_am_quintic_bounded_below_by_sixteenth_sum_quintic() {
+        // AM-quintic bound: `16 * sofip >= sum⁵` on every fixture — the
+        // power-mean inequality `p⁵ + t⁵ >= (p + t)⁵ / 16`. Equality
+        // holds iff `kinds_uniform_count() == true` (peak equals trough).
+        for diff in dominant_kind_fixtures() {
+            let sofip = diff.kind_peak_trough_sum_of_fifth_powers();
+            let sum = diff.kind_peak_trough_sum();
+            let sum_quintic = sum * sum * sum * sum * sum;
+            let sixteen_sofip = 16 * sofip;
+            assert!(sixteen_sofip >= sum_quintic);
+            assert_eq!(sixteen_sofip == sum_quintic, diff.kinds_uniform_count());
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fifth_powers_bounded_above_by_twice_peak_quintic() {
+        // Structural bound: `sofip <= 2 * peak⁵` on every fixture —
+        // `p⁵ + t⁵ <= 2p⁵` reduces to `trough <= peak` (both
+        // non-negative). Equality iff `kinds_uniform_count()`.
+        for diff in dominant_kind_fixtures() {
+            let sofip = diff.kind_peak_trough_sum_of_fifth_powers();
+            let peak = diff.peak_kind_count();
+            let twice_peak_quintic = 2 * peak * peak * peak * peak * peak;
+            assert!(sofip <= twice_peak_quintic);
+            assert_eq!(sofip == twice_peak_quintic, diff.kinds_uniform_count());
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fifth_powers_bounded_above_by_twice_lines_len_quintic() {
+        // Composition bound: `sofip <= 2 * self.lines.len()⁵` chaining
+        // `sofip <= 2·peak⁵` with `peak <= lines.len()`.
+        for diff in dominant_kind_fixtures() {
+            let sofip = diff.kind_peak_trough_sum_of_fifth_powers();
+            let n = diff.lines.len();
+            let twice_n_quintic = 2 * n * n * n * n * n;
+            assert!(sofip <= twice_n_quintic);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fifth_powers_newton_identity_with_sum_sofp_product_soc_pointwise() {
+        // Newton's identity `p_5 = e_1·p_4 - e_2·p_3` on the
+        // (sum, sofp, product, soc) surface: `sofip == sum·sofp -
+        // product·soc` on every fixture. Non-negative subtraction since
+        // `(p+t)(p⁴+t⁴) = p⁵+t⁵+pt(p³+t³)` so LHS - RHS = p⁵+t⁵ = sofip.
+        for diff in dominant_kind_fixtures() {
+            let p_five = diff.kind_peak_trough_sum_of_fifth_powers();
+            let sum = diff.kind_peak_trough_sum();
+            let p_four = diff.kind_peak_trough_sum_of_fourth_powers();
+            let product = diff.kind_peak_trough_product();
+            let soc = diff.kind_peak_trough_sum_of_cubes();
+            let lhs = sum * p_four;
+            let rhs = product * soc;
+            assert!(rhs <= lhs);
+            assert_eq!(p_five, lhs - rhs);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fifth_powers_factorization_with_sos_soc_product_sum_pointwise() {
+        // (sos, soc, product, sum) surface factorization: `sofip ==
+        // sos·soc - product²·sum` on every fixture — the identity
+        // `p⁵ + t⁵ = (p² + t²)(p³ + t³) - p²t²(p + t)`. Non-negative
+        // subtraction since `(p²+t²)(p³+t³) = p⁵+t⁵+p²t²(p+t)` so
+        // LHS - RHS = p⁵+t⁵ = sofip.
+        for diff in dominant_kind_fixtures() {
+            let sofip = diff.kind_peak_trough_sum_of_fifth_powers();
+            let sos = diff.kind_peak_trough_sum_of_squares();
+            let soc = diff.kind_peak_trough_sum_of_cubes();
+            let product = diff.kind_peak_trough_product();
+            let sum = diff.kind_peak_trough_sum();
+            let lhs = sos * soc;
+            let rhs = product * product * sum;
+            assert!(rhs <= lhs);
+            assert_eq!(sofip, lhs - rhs);
+        }
+    }
+
+    #[test]
+    fn kind_peak_trough_sum_of_fifth_powers_agrees_with_open_coded_max_quintic_plus_min_quintic_walk()
+     {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0).pow(5) + hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0).pow(5)` walk this lift
+        // replaces. The `.filter(c > 0)` on the min side is essential
+        // (mirroring `trough_count`'s support discipline).
+        for diff in dominant_kind_fixtures() {
+            let via_seam = diff.kind_peak_trough_sum_of_fifth_powers();
+            let hist = diff.kind_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .filter(|&(_, c)| c > 0)
+                .map(|(_, c)| c)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(
+                via_seam,
+                peak * peak * peak * peak * peak + trough * trough * trough * trough * trough,
             );
         }
     }
