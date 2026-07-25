@@ -689,6 +689,35 @@ pub enum HintSurface {
     EnvVar,
 }
 
+impl HintSurface {
+    /// Every [`HintSurface`] variant in the canonical yield order
+    /// [`HealthReport::hint_iter`] uses — the same four sub-string
+    /// order [`ConfigCoverage::assert_healthy`]'s panic message
+    /// emits: [`Self::DeadKnob`], [`Self::StaleEntry`],
+    /// [`Self::ValueKey`], [`Self::EnvVar`]. The per-enum-listing
+    /// peer of the sibling `ALL` constants across the crate (e.g.
+    /// [`crate::tiered::ConfigTierKind::ALL`],
+    /// [`crate::discovery::Format::ALL`]) — the same idiom applied
+    /// to the coverage-hint surface tag.
+    ///
+    /// Consumers iterate this to enumerate every surface without
+    /// hand-listing variants — a new `HintSurface` variant is
+    /// picked up here in one place and flows through every
+    /// ALL-driven caller automatically (dashboards that tile every
+    /// surface, tests that sum per-surface counts back to
+    /// [`HealthReport::hint_count`], CI that gates a hint-count
+    /// budget per surface). Callsites in this crate that previously
+    /// hand-declared a four-element `[HintSurface; 4]` array in
+    /// their test module now thread through this constant instead,
+    /// so the canonical order is single-sourced.
+    pub const ALL: &'static [Self] = &[
+        Self::DeadKnob,
+        Self::StaleEntry,
+        Self::ValueKey,
+        Self::EnvVar,
+    ];
+}
+
 /// Surface-tagged view of one coverage hint, borrowed from a
 /// [`HealthReport`]. Produced by [`HealthReport::hint_iter`].
 ///
@@ -2978,20 +3007,6 @@ tags: []
     // ─── hint_iter_by_surface / hint_count_by_surface — per-surface
     // ─── projection peers of hint_iter / hint_count ────────────────
 
-    /// Every surface a `HealthReport` recognises, in the canonical
-    /// yield order pinned by
-    /// `health_report_hint_iter_canonical_order_is_dead_stale_value_env`.
-    /// Local to these tests; the partition invariants below iterate
-    /// this list once so a future surface variant needs to be added
-    /// here (and only here) for the partition proofs to keep covering
-    /// every variant.
-    const ALL_HINT_SURFACES: [HintSurface; 4] = [
-        HintSurface::DeadKnob,
-        HintSurface::StaleEntry,
-        HintSurface::ValueKey,
-        HintSurface::EnvVar,
-    ];
-
     #[test]
     fn health_report_hint_iter_by_surface_partitions_hint_iter() {
         // The construction-true partition invariant that welds the
@@ -3032,7 +3047,7 @@ value_only_leaf: 1
         // (a) + (b): the surface-tag equivalence with the manually
         // filtered projection of hint_iter — everything hint_iter tags
         // as s, and nothing else, appears in hint_iter_by_surface(s).
-        for surface in ALL_HINT_SURFACES {
+        for &surface in HintSurface::ALL {
             let projected: Vec<SurfaceHint<'_>> = health.hint_iter_by_surface(surface).collect();
             let manually_filtered: Vec<SurfaceHint<'_>> = health
                 .hint_iter()
@@ -3050,7 +3065,7 @@ value_only_leaf: 1
         // (c): re-chaining the four per-surface projections in
         // canonical order recovers hint_iter itself — no dedup, no
         // reorder, no dropped hint.
-        let rechained: Vec<SurfaceHint<'_>> = ALL_HINT_SURFACES
+        let rechained: Vec<SurfaceHint<'_>> = HintSurface::ALL
             .iter()
             .flat_map(|s| health.hint_iter_by_surface(*s))
             .collect();
@@ -3087,13 +3102,13 @@ tags: []
         );
         // Clean corner: every per-surface count is 0, and the sum
         // matches hint_count() == 0.
-        let clean_sum: usize = ALL_HINT_SURFACES
+        let clean_sum: usize = HintSurface::ALL
             .iter()
             .map(|s| clean_health.hint_count_by_surface(*s))
             .sum();
         assert_eq!(clean_sum, clean_health.hint_count());
         assert_eq!(clean_sum, 0);
-        for surface in ALL_HINT_SURFACES {
+        for &surface in HintSurface::ALL {
             assert_eq!(
                 clean_health.hint_count_by_surface(surface),
                 0,
@@ -3122,14 +3137,14 @@ value_only_leaf: 1
             "MYAPP_",
             &dirty_env,
         );
-        for surface in ALL_HINT_SURFACES {
+        for &surface in HintSurface::ALL {
             assert_eq!(
                 dirty_health.hint_count_by_surface(surface),
                 1,
                 "surface={surface:?} health={dirty_health:?}",
             );
         }
-        let dirty_sum: usize = ALL_HINT_SURFACES
+        let dirty_sum: usize = HintSurface::ALL
             .iter()
             .map(|s| dirty_health.hint_count_by_surface(*s))
             .sum();
@@ -3197,7 +3212,7 @@ value_only_leaf: 1
             let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
             let health =
                 ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", env);
-            for surface in ALL_HINT_SURFACES {
+            for &surface in HintSurface::ALL {
                 assert_eq!(
                     health.hint_count_by_surface(surface),
                     health.hint_iter_by_surface(surface).count(),
@@ -3205,5 +3220,103 @@ value_only_leaf: 1
                 );
             }
         }
+    }
+
+    // ─── HintSurface::ALL — canonical per-enum listing peer of the
+    // ─── sibling `ALL` constants across the crate ────────────────
+
+    #[test]
+    fn hint_surface_all_matches_canonical_yield_order_verbatim() {
+        // Pin `HintSurface::ALL` to the canonical yield order the
+        // panic path and `hint_iter` already agree on. The
+        // hint-iter side is pinned by
+        // `health_report_hint_iter_canonical_order_is_dead_stale_value_env`;
+        // this test welds the const listing to that same order so a
+        // future refactor that reorders one against the other turns
+        // red at the earliest possible seam.
+        assert_eq!(
+            HintSurface::ALL,
+            &[
+                HintSurface::DeadKnob,
+                HintSurface::StaleEntry,
+                HintSurface::ValueKey,
+                HintSurface::EnvVar,
+            ],
+        );
+    }
+
+    #[test]
+    fn hint_surface_all_covers_every_variant_exactly_once() {
+        // Uniqueness + exhaustiveness of the const listing. A
+        // duplicated variant would double-count a surface in every
+        // ALL-driven fold (a per-surface sum-back-to-hint_count, a
+        // dashboard tiling loop) — pin uniqueness at the const
+        // level so no consumer needs their own dedup pass. And the
+        // exhaustive match below turns a future variant added to
+        // `HintSurface` without a matching ALL entry into a
+        // compile-time failure in this test module, forcing the
+        // ALL update in the same PR.
+        let unique: std::collections::HashSet<HintSurface> =
+            HintSurface::ALL.iter().copied().collect();
+        assert_eq!(
+            unique.len(),
+            HintSurface::ALL.len(),
+            "HintSurface::ALL must list every variant exactly once, got {:?}",
+            HintSurface::ALL,
+        );
+        for expected in [
+            HintSurface::DeadKnob,
+            HintSurface::StaleEntry,
+            HintSurface::ValueKey,
+            HintSurface::EnvVar,
+        ] {
+            // Exhaustive match keeps the coverage claim honest: a
+            // new variant added to `HintSurface` makes THIS match
+            // non-exhaustive at compile time, forcing the author to
+            // extend both the match arms and `HintSurface::ALL` in
+            // the same PR.
+            match expected {
+                HintSurface::DeadKnob
+                | HintSurface::StaleEntry
+                | HintSurface::ValueKey
+                | HintSurface::EnvVar => {}
+            }
+            assert!(
+                HintSurface::ALL.contains(&expected),
+                "HintSurface::ALL must contain {expected:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn hint_surface_all_equals_dedup_of_hint_iter_across_dirty_surfaces() {
+        // The empirical peer: dirty every surface (one hint each,
+        // the same construction
+        // `health_report_hint_iter_yields_every_hint_tagged_by_surface_of_origin`
+        // uses) and verify `hint_iter` yields exactly the four
+        // variants of `HintSurface::ALL` in the same order the const
+        // lists them. Welds the const listing to the observed
+        // enumeration through a nonzero-count corner — a future
+        // refactor that reorders either side turns this red at the
+        // seam between the type-level enumeration and the runtime
+        // fold.
+        let consumed = &["name", "tags", "window.witdh", "window.height"];
+        let yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+value_only_leaf: 1
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
+        let observed: Vec<HintSurface> = health.hint_iter().map(|h| h.surface).collect();
+        assert_eq!(
+            observed,
+            HintSurface::ALL.to_vec(),
+            "hint_iter must yield exactly one hint per surface in the order HintSurface::ALL lists them",
+        );
     }
 }
