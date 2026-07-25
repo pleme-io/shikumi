@@ -1143,6 +1143,55 @@ impl HealthReport {
             .filter(|s| self.is_clean_by_surface(*s))
             .collect()
     }
+
+    /// The scalar-cardinality peer of [`Self::dirty_surfaces`] — the
+    /// number of [`HintSurface`] variants that need attention on this
+    /// report, folded through [`HintSurface::ALL`] with NO allocation
+    /// of the underlying variant list. Equivalent to
+    /// `dirty_surfaces().len()` and delegates to the primitive
+    /// per-surface predicate [`Self::is_clean_by_surface`], so this
+    /// scalar cannot drift from either the filter-projection (identical
+    /// filter body) or the scalar per-surface predicate beneath it.
+    ///
+    /// Where [`Self::dirty_surfaces`] returns "which surfaces to fix"
+    /// (a `Vec<HintSurface>` a caller must allocate and walk), this
+    /// returns "how many surfaces to fix" as one `usize` — the shape a
+    /// per-report severity gauge, a CI hint-surface-budget threshold
+    /// ("fail the build if more than one surface is dirty"), or a
+    /// compact diagnostics-endpoint scalar payload actually wants (no
+    /// need to allocate the variant list only to read its `len`).
+    /// Bounded by `0 ≤ dirty_surface_count() ≤ HintSurface::ALL.len()`
+    /// on any input, with `dirty_surface_count() == 0 ⇔ is_clean()`
+    /// — the whole-report predicate peer projected onto the scalar
+    /// cardinality of the false-side filter-projection: `HintSurface`'s
+    /// four variants partition [`Self::hint_iter`] and every dirty
+    /// surface contributes at least one hint, so the count is zero
+    /// iff every surface is clean.
+    ///
+    /// Sums with [`Self::clean_surfaces`]`().len()` back to
+    /// `HintSurface::ALL.len()` under the same partition invariant
+    /// — the whole-report projection of the pointwise
+    /// `is_clean_by_surface(s) XOR !is_clean_by_surface(s)` tautology
+    /// on the scalar-cardinality side. A future consumer that wants
+    /// both cardinalities (dirty severity + clean success ledger size)
+    /// gets both as scalars without allocating either variant list.
+    ///
+    /// Delegates through [`Self::is_clean_by_surface`] pointwise (the
+    /// same primitive [`Self::dirty_surfaces`] delegates through), so
+    /// this scalar cannot drift from the filter-projection nor from
+    /// the per-surface predicate beneath both. Consumers that want a
+    /// scalar severity number call this directly instead of
+    /// `dirty_surfaces().len()` — the named peer says "this is the
+    /// supported access pattern" and pairs with the filter-projection
+    /// on the value side of the same false-side axis.
+    #[must_use]
+    pub fn dirty_surface_count(&self) -> usize {
+        HintSurface::ALL
+            .iter()
+            .copied()
+            .filter(|s| !self.is_clean_by_surface(*s))
+            .count()
+    }
 }
 
 /// One env-var-shaped typo hint: an env var carrying the shikumi prefix
@@ -4654,5 +4703,268 @@ value_only_leaf: 1
             HintSurface::ALL.to_vec(),
             "hint_iter must yield exactly one hint per surface in the order HintSurface::ALL lists them",
         );
+    }
+
+    // ─── dirty_surface_count — scalar-cardinality peer of
+    // ─── dirty_surfaces (allocation-free "how many surfaces to fix") ───
+
+    #[test]
+    fn dirty_surface_count_equals_dirty_surfaces_len() {
+        // The delegation invariant projected onto the scalar-
+        // cardinality peer: `dirty_surface_count()` equals
+        // `dirty_surfaces().len()` on any input. Welds the two peers
+        // through set-shape identity — a future refactor that inlines
+        // one against the other must keep the two in lockstep.
+        // Verified on a mixed corner (only env-var surface dirty; the
+        // other three clean) so at least one variant lands on each side
+        // of the boundary and the count-length identity is meaningfully
+        // exercised (nonzero, non-full).
+        let mixed_consumed = &["name", "tags", "window.width", "window.height"];
+        let mixed_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+";
+        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
+            mixed_consumed,
+            &mixed_value,
+            "MYAPP_",
+            &mixed_env,
+        );
+        assert_eq!(
+            mixed_health.dirty_surface_count(),
+            mixed_health.dirty_surfaces().len(),
+        );
+        // Load-bear the mixed shape so a regression that returned the
+        // wrong scalar still turns red here even if the count-length
+        // identity happened to survive vacuously.
+        assert_eq!(
+            mixed_health.dirty_surface_count(),
+            1,
+            "mixed corner: exactly one dirty surface (env-var)",
+        );
+    }
+
+    #[test]
+    fn dirty_surface_count_is_zero_iff_is_clean() {
+        // The whole-report predicate peer, projected onto the scalar-
+        // cardinality side of the false-side filter-projection:
+        // `dirty_surface_count() == 0 ⇔ is_clean()`. Verified on both
+        // extremes so no arm is vacuously covered — clean corner (zero
+        // dirty surfaces, whole clean) and fully-dirty corner (all four
+        // dirty, whole dirty). Welds the scalar cardinality to the
+        // whole-report predicate through the partition invariant:
+        // `HintSurface`'s four variants partition `hint_iter` and every
+        // dirty surface contributes at least one hint, so zero-dirty
+        // iff whole-clean.
+        let clean_consumed = &["name", "tags", "window.width", "window.height"];
+        let clean_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+";
+        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_env: Vec<(String, String)> = vec![];
+        let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
+            clean_consumed,
+            &clean_value,
+            "MYAPP_",
+            &clean_env,
+        );
+        assert_eq!(clean_health.dirty_surface_count(), 0);
+        assert_eq!(
+            clean_health.dirty_surface_count() == 0,
+            clean_health.is_clean(),
+        );
+
+        let dirty_consumed = &["name", "tags", "window.witdh", "window.height"];
+        let dirty_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+value_only_leaf: 1
+";
+        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
+            dirty_consumed,
+            &dirty_value,
+            "MYAPP_",
+            &dirty_env,
+        );
+        assert_eq!(dirty_health.dirty_surface_count(), HintSurface::ALL.len());
+        assert_eq!(
+            dirty_health.dirty_surface_count() == 0,
+            dirty_health.is_clean(),
+        );
+    }
+
+    #[test]
+    fn dirty_surface_count_agrees_with_is_clean_by_surfaces_false_count() {
+        // Cross-peer agreement with the bool-side histogram:
+        // `dirty_surface_count()` equals the count of `false` entries
+        // in `is_clean_by_surfaces()`. Welds the scalar cardinality to
+        // the histogram peer so a future refactor that inlines one
+        // against the other must keep the two in lockstep — the count-
+        // side complement of
+        // `dirty_surfaces_agrees_with_is_clean_by_surfaces_false_side`
+        // (which welds the value-side filter-projection to the same
+        // histogram). Verified on a mixed corner where at least one
+        // entry lands on each side of the histogram predicate.
+        let mixed_consumed = &["name", "tags", "window.width", "window.height"];
+        let mixed_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+";
+        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
+            mixed_consumed,
+            &mixed_value,
+            "MYAPP_",
+            &mixed_env,
+        );
+        let false_count = mixed_health
+            .is_clean_by_surfaces()
+            .iter()
+            .filter(|(_, clean)| !*clean)
+            .count();
+        assert_eq!(mixed_health.dirty_surface_count(), false_count);
+    }
+
+    #[test]
+    fn dirty_surface_count_plus_clean_surfaces_len_equals_hint_surface_all_len() {
+        // The whole-report projection of the pointwise
+        // `is_clean_by_surface(s) XOR !is_clean_by_surface(s)`
+        // tautology on the scalar-cardinality side: the dirty count
+        // plus the clean-surfaces cardinality equals
+        // `HintSurface::ALL.len()`. Welds the false-side scalar
+        // cardinality to the true-side filter-projection through the
+        // partition invariant — a future refactor that drifts either
+        // side against the const listing turns this red. Verified on
+        // the mixed corner (nontrivial partition, both sides nonzero)
+        // AND on both extremes (clean corner: dirty=0, clean=ALL;
+        // fully-dirty corner: dirty=ALL, clean=0) so the sum identity
+        // survives every arm of the partition.
+        let mixed_consumed = &["name", "tags", "window.width", "window.height"];
+        let mixed_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+";
+        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
+            mixed_consumed,
+            &mixed_value,
+            "MYAPP_",
+            &mixed_env,
+        );
+        assert_eq!(
+            mixed_health.dirty_surface_count() + mixed_health.clean_surfaces().len(),
+            HintSurface::ALL.len(),
+        );
+        // Load-bear the mixed shape so a regression that had both
+        // sides sum right but neither be the true partition still
+        // turns red here.
+        assert_eq!(mixed_health.dirty_surface_count(), 1);
+        assert_eq!(
+            mixed_health.clean_surfaces().len(),
+            HintSurface::ALL.len() - 1
+        );
+
+        let clean_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+";
+        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_env: Vec<(String, String)> = vec![];
+        let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
+            &["name", "tags", "window.width", "window.height"],
+            &clean_value,
+            "MYAPP_",
+            &clean_env,
+        );
+        assert_eq!(
+            clean_health.dirty_surface_count() + clean_health.clean_surfaces().len(),
+            HintSurface::ALL.len(),
+        );
+        assert_eq!(clean_health.dirty_surface_count(), 0);
+        assert_eq!(clean_health.clean_surfaces().len(), HintSurface::ALL.len());
+
+        let dirty_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+value_only_leaf: 1
+";
+        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
+            &["name", "tags", "window.witdh", "window.height"],
+            &dirty_value,
+            "MYAPP_",
+            &dirty_env,
+        );
+        assert_eq!(
+            dirty_health.dirty_surface_count() + dirty_health.clean_surfaces().len(),
+            HintSurface::ALL.len(),
+        );
+        assert_eq!(dirty_health.dirty_surface_count(), HintSurface::ALL.len());
+        assert_eq!(dirty_health.clean_surfaces().len(), 0);
+    }
+
+    #[test]
+    fn dirty_surface_count_is_bounded_by_hint_surface_all_len() {
+        // The type-level upper bound, verified on both extremes so
+        // both endpoints of `0 ≤ dirty_surface_count() ≤
+        // HintSurface::ALL.len()` are exercised (not vacuously
+        // covered): the clean corner pins the lower bound, the
+        // fully-dirty corner pins the upper bound. A regression that
+        // grew a spurious dirty surface (e.g. double-counted one
+        // variant) would push above the upper bound and turn this red
+        // even if the peer agreement tests happened to survive.
+        let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
+            &["name", "tags", "window.width", "window.height"],
+            &serde_yaml::from_str::<serde_yaml::Value>(
+                "name: kanchi\nwindow:\n  width: 100\n  height: 40\ntags: []\n",
+            )
+            .unwrap(),
+            "MYAPP_",
+            &Vec::<(String, String)>::new(),
+        );
+        assert!(clean_health.dirty_surface_count() <= HintSurface::ALL.len());
+        assert_eq!(clean_health.dirty_surface_count(), 0);
+
+        let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
+            &["name", "tags", "window.witdh", "window.height"],
+            &serde_yaml::from_str::<serde_yaml::Value>(
+                "name: kanchi\nwindow:\n  width: 100\n  height: 40\ntags: []\nvalue_only_leaf: 1\n",
+            )
+            .unwrap(),
+            "MYAPP_",
+            &dirty_env,
+        );
+        assert!(dirty_health.dirty_surface_count() <= HintSurface::ALL.len());
+        assert_eq!(dirty_health.dirty_surface_count(), HintSurface::ALL.len());
     }
 }
