@@ -90,6 +90,18 @@ impl ConfigCoverage {
     /// with its nearest counterpart across the diff so the diagnostic
     /// tells the operator *which* leaf they mistyped, not just that a
     /// typo exists somewhere.
+    ///
+    /// The panic message routes through the shared
+    /// [`fn@render_hint_pairs`] renderer — the same fold [`Self::assert_no_unknown_keys`]
+    /// and [`Self::assert_no_unknown_env_vars`] use on their respective
+    /// surfaces so every [`ConfigCoverage`] assertion produces
+    /// identically-shaped `"entry" (did you mean "suggestion"?)` output.
+    ///
+    /// # Panics
+    ///
+    /// Panics with the readable diff described above when any schema leaf
+    /// of `T` is not present in `consumed`, or any entry in `consumed` is
+    /// not a schema leaf of `T`.
     pub fn assert_every_field_consumed<T: TieredConfig>(consumed: &[&str]) {
         let hinted = Self::hinted_report::<T>(consumed);
         assert!(
@@ -97,8 +109,74 @@ impl ConfigCoverage {
             "shikumi::ConfigCoverage: config schema and consumer list disagree.\n  \
              dead knobs (declared but no consumer — wire or delete): {}\n  \
              stale entries (consumed but not declared — remove or correct): {}",
-            render_hint_list(&hinted.dead_knobs),
-            render_hint_list(&hinted.stale_entries)
+            render_hint_pairs(coverage_hint_pairs(&hinted.dead_knobs)),
+            render_hint_pairs(coverage_hint_pairs(&hinted.stale_entries)),
+        );
+    }
+
+    /// Assert that no leaf path in the operator's deserialized config
+    /// value corresponds to something outside `T`'s schema. Panics with
+    /// a readable diff on failure — the file-surface peer of
+    /// [`Self::assert_every_field_consumed`]. Each unknown key is
+    /// paired with its nearest schema leaf under the typo threshold so
+    /// the diagnostic names *which* leaf the operator almost certainly
+    /// meant, not just that an unknown key exists somewhere.
+    ///
+    /// The canonical use is a `#[test]` in the consuming crate that
+    /// loads each shipped example config through `serde_yaml::from_str`
+    /// and asserts it audits clean, so a schema-renamed field caught in
+    /// docs but forgotten in the sample config surfaces at test time
+    /// instead of at first-run time. Layered above [`Self::audit_value`]
+    /// so the underlying schema-diff logic stays single-sourced.
+    ///
+    /// # Panics
+    ///
+    /// Panics with the readable diff described above when [`Self::audit_value`]
+    /// surfaces any leaf path in `value` that is not a schema leaf of `T`.
+    pub fn assert_no_unknown_keys<T: TieredConfig>(value: &serde_yaml::Value) {
+        let audit = Self::audit_value::<T>(value);
+        assert!(
+            audit.is_clean(),
+            "shikumi::ConfigCoverage: config value has unknown keys not in schema.\n  \
+             unknown keys (remove or correct): {}",
+            render_hint_pairs(value_key_hint_pairs(&audit.unknown)),
+        );
+    }
+
+    /// Assert that no prefixed environment variable corresponds to
+    /// something outside `T`'s schema. Panics with a readable diff on
+    /// failure — the env-var-surface peer of
+    /// [`Self::assert_every_field_consumed`]. Each unknown env var is
+    /// paired with its nearest schema leaf **in env-var form** (so the
+    /// operator sees the exact name they should have set, not a dotted
+    /// path they have to re-encode by hand).
+    ///
+    /// The canonical use is a `#[test]` in a consuming crate or an
+    /// operator-side preflight that snapshots the current process
+    /// environment (`std::env::vars().collect()`) and asserts every
+    /// shikumi-prefixed override is a real knob — turning a silent
+    /// misspelled `MYAPP_WINDOW__WITDH` (that figment cheerfully
+    /// ignores) into a hard test failure. Layered above
+    /// [`Self::audit_env_vars`] so the underlying schema-diff logic
+    /// stays single-sourced.
+    ///
+    /// # Panics
+    ///
+    /// Panics with the readable diff described above when [`Self::audit_env_vars`]
+    /// surfaces any `prefix`-carrying env var whose normalized dotted
+    /// path is not a schema leaf of `T`.
+    pub fn assert_no_unknown_env_vars<T, K, V>(prefix: &str, env: &[(K, V)])
+    where
+        T: TieredConfig,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        let audit = Self::audit_env_vars::<T, K, V>(prefix, env);
+        assert!(
+            audit.is_clean(),
+            "shikumi::ConfigCoverage: environment has unknown {prefix}* vars not in schema.\n  \
+             unknown env vars (remove or correct): {}",
+            render_hint_pairs(env_var_hint_pairs(&audit.unknown)),
         );
     }
 
@@ -549,20 +627,34 @@ impl ValueAudit {
     }
 }
 
-/// Render a hint list for the assertion panic message.
-fn render_hint_list(hints: &[CoverageHint]) -> String {
-    if hints.is_empty() {
+/// Render a list of `(entry, did_you_mean)` pairs into the shape used
+/// by every [`ConfigCoverage`] assertion panic: `["entry", "other" (did
+/// you mean "suggestion"?), ...]`. Empty input renders as `"[]"`.
+///
+/// The three surface hint types ([`CoverageHint`], [`ValueKeyHint`],
+/// [`EnvVarHint`]) each adapt to `(&str, Option<&str>)` via the
+/// per-surface `_hint_pairs` helpers below, so
+/// [`ConfigCoverage::assert_every_field_consumed`],
+/// [`ConfigCoverage::assert_no_unknown_keys`], and
+/// [`ConfigCoverage::assert_no_unknown_env_vars`] all produce
+/// identically-shaped diagnostics.
+fn render_hint_pairs<'a, I>(pairs: I) -> String
+where
+    I: IntoIterator<Item = (&'a str, Option<&'a str>)>,
+{
+    let mut iter = pairs.into_iter().peekable();
+    if iter.peek().is_none() {
         return "[]".to_string();
     }
     let mut out = String::from("[");
-    for (i, hint) in hints.iter().enumerate() {
+    for (i, (entry, suggestion)) in iter.enumerate() {
         if i > 0 {
             out.push_str(", ");
         }
         out.push('"');
-        out.push_str(&hint.entry);
+        out.push_str(entry);
         out.push('"');
-        if let Some(sug) = &hint.did_you_mean {
+        if let Some(sug) = suggestion {
             out.push_str(" (did you mean \"");
             out.push_str(sug);
             out.push_str("\"?)");
@@ -570,6 +662,33 @@ fn render_hint_list(hints: &[CoverageHint]) -> String {
     }
     out.push(']');
     out
+}
+
+/// Adapt a slice of `CoverageHint` for [`fn@render_hint_pairs`] — the
+/// dead-knob / stale-entry surface.
+fn coverage_hint_pairs(hints: &[CoverageHint]) -> impl Iterator<Item = (&str, Option<&str>)> {
+    hints
+        .iter()
+        .map(|h| (h.entry.as_str(), h.did_you_mean.as_deref()))
+}
+
+/// Adapt a slice of `ValueKeyHint` for [`fn@render_hint_pairs`] — the
+/// file-value surface.
+fn value_key_hint_pairs(hints: &[ValueKeyHint]) -> impl Iterator<Item = (&str, Option<&str>)> {
+    hints
+        .iter()
+        .map(|h| (h.path.as_str(), h.did_you_mean.as_deref()))
+}
+
+/// Adapt a slice of `EnvVarHint` for [`fn@render_hint_pairs`] — the
+/// env-var surface. Uses the raw `env_var` name (case preserved) so
+/// operators see the exact string they typed, and renders the
+/// suggestion in env-var form (already produced by
+/// [`ConfigCoverage::audit_env_vars`]).
+fn env_var_hint_pairs(hints: &[EnvVarHint]) -> impl Iterator<Item = (&str, Option<&str>)> {
+    hints
+        .iter()
+        .map(|h| (h.env_var.as_str(), h.did_you_mean.as_deref()))
 }
 
 /// Pure Levenshtein edit distance implemented with a two-row DP over
@@ -1464,6 +1583,216 @@ totally_unrelated: x
             hinted.dead_knobs[0].did_you_mean.as_deref(),
             Some("window.witdh"),
             "the mirror direction must pair the dead knob with the typo it lost consumer coverage to",
+        );
+    }
+
+    #[test]
+    fn assert_no_unknown_keys_does_not_panic_on_clean_value() {
+        // A value shaped exactly like the schema audits clean and the
+        // assertion returns without panicking. The routing invariant on
+        // the file surface: assert_no_unknown_keys wraps audit_value's
+        // is_clean() with the shared panic-rendering fold, so an audit
+        // that is_clean() MUST NOT panic here.
+        let yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: [a, b]
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        ConfigCoverage::assert_no_unknown_keys::<Demo>(&value);
+    }
+
+    #[test]
+    #[should_panic(expected = "\"window.witdh\" (did you mean \"window.width\"?)")]
+    fn assert_no_unknown_keys_panic_message_includes_did_you_mean_hint() {
+        // The value-surface analog of the schema-vs-consumer typo panic
+        // test: a one-transposition typo on window.width must surface
+        // in the panic string paired with the schema leaf, in the same
+        // `"entry" (did you mean "suggestion"?)` shape that
+        // assert_every_field_consumed produces.
+        let yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        ConfigCoverage::assert_no_unknown_keys::<Demo>(&value);
+    }
+
+    #[test]
+    #[should_panic(expected = "unknown keys (remove or correct):")]
+    fn assert_no_unknown_keys_panic_message_includes_headline() {
+        // Pin the operator-facing headline verbatim so a future refactor
+        // cannot silently drop the "which surface failed" cue that tells
+        // the operator the failure is in their YAML file (not their env,
+        // not their consumer list).
+        let yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+totally.unrelated: 1
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        ConfigCoverage::assert_no_unknown_keys::<Demo>(&value);
+    }
+
+    #[test]
+    fn assert_no_unknown_env_vars_does_not_panic_on_clean_environment() {
+        // Every prefixed env var corresponds to a real schema leaf —
+        // the assertion returns without panicking. Unrelated env vars
+        // outside the prefix are silently dropped (they are not
+        // shikumi's problem), so PATH / HOME must not turn this red.
+        let env: Vec<(String, String)> = vec![
+            ("MYAPP_NAME".into(), "kanchi".into()),
+            ("MYAPP_WINDOW__WIDTH".into(), "100".into()),
+            ("MYAPP_WINDOW__HEIGHT".into(), "40".into()),
+            ("PATH".into(), "/usr/bin".into()),
+        ];
+        ConfigCoverage::assert_no_unknown_env_vars::<Demo, _, _>("MYAPP_", &env);
+    }
+
+    #[test]
+    #[should_panic(expected = "\"MYAPP_WINDOW__WITDH\" (did you mean \"MYAPP_WINDOW__WIDTH\"?)")]
+    fn assert_no_unknown_env_vars_panic_message_includes_env_var_form_hint() {
+        // The env-var-surface analog: the panic must name BOTH the raw
+        // env var the operator typed AND the suggestion **in env-var
+        // form** — the operator sees exactly the name they should have
+        // set, not a dotted path they have to re-encode. This is the
+        // asymmetry with the value/consumer surfaces: env-var hints go
+        // through path_to_env_var before rendering.
+        let env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WITDH".into(), "100".into())];
+        ConfigCoverage::assert_no_unknown_env_vars::<Demo, _, _>("MYAPP_", &env);
+    }
+
+    #[test]
+    #[should_panic(expected = "unknown env vars (remove or correct):")]
+    fn assert_no_unknown_env_vars_panic_message_includes_headline() {
+        // Same "which surface failed" cue as the value-surface assertion
+        // — the operator instantly knows the failure is in their
+        // environment, not in a YAML file or a consumer list. Prevents
+        // a future refactor from collapsing the three surface headlines
+        // into one indistinguishable message.
+        let env: Vec<(String, String)> = vec![("MYAPP_UNRELATED_KNOB".into(), "x".into())];
+        ConfigCoverage::assert_no_unknown_env_vars::<Demo, _, _>("MYAPP_", &env);
+    }
+
+    #[test]
+    #[should_panic(expected = "\"MYAPP_UNRELATED_KNOB\"")]
+    fn assert_no_unknown_env_vars_panic_still_names_entry_without_hint() {
+        // A prefixed but totally-unrelated env var has no near
+        // schema-leaf neighbour (no hint), but the panic must still
+        // name the offending entry — the assertion never silently drops
+        // an unknown just because it lacks a suggestion.
+        let env: Vec<(String, String)> = vec![("MYAPP_UNRELATED_KNOB".into(), "x".into())];
+        ConfigCoverage::assert_no_unknown_env_vars::<Demo, _, _>("MYAPP_", &env);
+    }
+
+    #[test]
+    fn assert_panic_messages_use_same_hint_rendering_across_all_three_surfaces() {
+        // The routing theorem: all three assertion surfaces
+        // (assert_every_field_consumed, assert_no_unknown_keys,
+        // assert_no_unknown_env_vars) render their hint list through
+        // the same shared render_hint_pairs primitive, so an operator
+        // reading a failure message sees identically-shaped output
+        // regardless of which surface caught the typo. Verify by
+        // catching each panic and comparing the rendered hint substring.
+        let consumer_panic = std::panic::catch_unwind(|| {
+            ConfigCoverage::assert_every_field_consumed::<Demo>(&[
+                "name",
+                "tags",
+                "window.witdh",
+                "window.height",
+            ]);
+        })
+        .expect_err("consumer surface must panic on the typo");
+        let value_panic = std::panic::catch_unwind(|| {
+            let yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+";
+            let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+            ConfigCoverage::assert_no_unknown_keys::<Demo>(&value);
+        })
+        .expect_err("value surface must panic on the typo");
+        let env_panic = std::panic::catch_unwind(|| {
+            let env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WITDH".into(), "100".into())];
+            ConfigCoverage::assert_no_unknown_env_vars::<Demo, _, _>("MYAPP_", &env);
+        })
+        .expect_err("env surface must panic on the typo");
+        let msg = |p: &Box<dyn std::any::Any + Send>| -> String {
+            if let Some(s) = p.downcast_ref::<&'static str>() {
+                (*s).to_string()
+            } else if let Some(s) = p.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                panic!("panic payload was neither &str nor String")
+            }
+        };
+        // All three panic messages contain the shared "(did you mean
+        // \"…\"?)" shape produced by render_hint_pairs — the exact leaf
+        // name differs by surface (dotted vs env-var form), but the
+        // suffix is the tell.
+        for m in [msg(&consumer_panic), msg(&value_panic), msg(&env_panic)] {
+            assert!(
+                m.contains("(did you mean \""),
+                "panic message must route through render_hint_pairs: {m}",
+            );
+            assert!(
+                m.contains("\"?)"),
+                "panic message must close the render_hint_pairs suggestion: {m}",
+            );
+        }
+    }
+
+    #[test]
+    fn assert_no_unknown_keys_and_assert_no_unknown_env_vars_agree_on_same_typo() {
+        // The cross-surface twin: the same underlying typo, expressed
+        // once as YAML and once as an env var, produces panic messages
+        // whose hint suggestions map to the same schema leaf modulo
+        // env-var-form rendering. Locks the two new assertions to
+        // audit_value / audit_env_vars's shared audit_paths fold — a
+        // future refactor drifting either surface turns this red.
+        let value_panic = std::panic::catch_unwind(|| {
+            let yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+";
+            let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+            ConfigCoverage::assert_no_unknown_keys::<Demo>(&value);
+        })
+        .expect_err("value surface must panic on the typo");
+        let env_panic = std::panic::catch_unwind(|| {
+            let env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WITDH".into(), "100".into())];
+            ConfigCoverage::assert_no_unknown_env_vars::<Demo, _, _>("MYAPP_", &env);
+        })
+        .expect_err("env surface must panic on the typo");
+        let msg = |p: &Box<dyn std::any::Any + Send>| -> String {
+            p.downcast_ref::<String>()
+                .cloned()
+                .or_else(|| p.downcast_ref::<&'static str>().map(|s| (*s).to_string()))
+                .expect("panic payload was neither &str nor String")
+        };
+        let v = msg(&value_panic);
+        let e = msg(&env_panic);
+        assert!(
+            v.contains("window.witdh") && v.contains("window.width"),
+            "value panic must name both the typo and the schema leaf: {v}",
+        );
+        assert!(
+            e.contains("MYAPP_WINDOW__WITDH") && e.contains("MYAPP_WINDOW__WIDTH"),
+            "env panic must name both the typo and the schema leaf in env-var form: {e}",
         );
     }
 
