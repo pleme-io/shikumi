@@ -656,6 +656,57 @@ impl HintedCoverageReport {
     pub fn is_clean(&self) -> bool {
         self.hint_count() == 0
     }
+
+    /// Iterate every hint in this report as [`SurfaceHint`] values,
+    /// tagged with the [`HintSurface`] each came from — the
+    /// enumeration primitive peer of [`Self::hint_count`] at the
+    /// sub-report scope, and the coverage-sub-report analogue of
+    /// [`HealthReport::hint_iter`].
+    ///
+    /// Yields in canonical order — dead knobs first, then stale
+    /// entries — matching the sub-slice
+    /// [`HealthReport::hint_iter`] emits for this sub-report and the
+    /// [`HintSurface::ALL`]-ordered first two variants
+    /// ([`HintSurface::DeadKnob`], [`HintSurface::StaleEntry`]).
+    /// Within each surface, hints follow the order of their
+    /// underlying hint list (sorted by entry per the audit
+    /// primitives, so the enumeration is deterministic end-to-end).
+    ///
+    /// `hint_iter().count()` equals [`Self::hint_count`] by
+    /// construction — the two share the two underlying hint lists
+    /// and cannot drift. Each yielded [`SurfaceHint`]'s
+    /// `(entry, did_you_mean)` pair is exactly what
+    /// [`ConfigCoverage::assert_every_field_consumed`] feeds the
+    /// shared [`fn@render_hint_pairs`] renderer for that hint, so a
+    /// consumer routing this iterator through the same renderer
+    /// produces the same text as the panic path — without having to
+    /// parse the panic string. Composes with
+    /// [`ValueAudit::hint_count`] / [`EnvVarAudit::hint_count`] as
+    /// the coverage-sub-report slice of a future refactor that
+    /// collapses [`HealthReport::hint_iter`] into a chain of the
+    /// three sub-report enumeration primitives — that composition is
+    /// welded by
+    /// `health_report_hint_iter_chains_sub_report_hint_iter_coverage_prefix`.
+    ///
+    /// Consumers holding only a [`HintedCoverageReport`] (a `#[test]`
+    /// that only runs [`ConfigCoverage::hinted_report`] without a
+    /// full [`ConfigCoverage::health_report`], a diagnostics endpoint
+    /// that reports schema-vs-consumer surface hints alone, a
+    /// per-sub-report JSON row array) iterate this directly instead
+    /// of walking the two hint lists by hand.
+    pub fn hint_iter(&self) -> impl Iterator<Item = SurfaceHint<'_>> {
+        let dead_knobs = self.dead_knobs.iter().map(|h| SurfaceHint {
+            surface: HintSurface::DeadKnob,
+            entry: h.entry.as_str(),
+            did_you_mean: h.did_you_mean.as_deref(),
+        });
+        let stale_entries = self.stale_entries.iter().map(|h| SurfaceHint {
+            surface: HintSurface::StaleEntry,
+            entry: h.entry.as_str(),
+            did_you_mean: h.did_you_mean.as_deref(),
+        });
+        dead_knobs.chain(stale_entries)
+    }
 }
 
 /// Which of the four coverage surfaces a [`SurfaceHint`] came from —
@@ -3000,6 +3051,120 @@ tags: []
             hinted.hint_count(),
             hinted.dead_knobs.len() + hinted.stale_entries.len(),
         );
+    }
+
+    // ─── HintedCoverageReport::hint_iter — the enumeration
+    // ─── primitive peer of hint_count at the sub-report scope ───
+
+    #[test]
+    fn hinted_coverage_hint_iter_count_equals_hint_count() {
+        // The delegation-shape invariant on the enumeration primitive:
+        // `hint_iter().count()` equals `hint_count()` on any input.
+        // Welds the enumeration peer to the scalar-cardinality peer
+        // through the two underlying hint lists (dead_knobs +
+        // stale_entries), so a future refactor that inlines one against
+        // the other must keep the two in lockstep. Verified on both
+        // the clean corner (zero-count) and a mixed corner where both
+        // arms of the bidirectional diff are nonzero, so no arm is
+        // vacuously covered.
+        let clean_consumed = &["name", "tags", "window.width", "window.height"];
+        let clean_hinted = ConfigCoverage::hinted_report::<Demo>(clean_consumed);
+        assert_eq!(clean_hinted.hint_iter().count(), clean_hinted.hint_count());
+        assert_eq!(clean_hinted.hint_iter().count(), 0);
+
+        let mixed_consumed = &["name", "tags", "window.witdh", "window.height"];
+        let mixed_hinted = ConfigCoverage::hinted_report::<Demo>(mixed_consumed);
+        assert_eq!(mixed_hinted.hint_iter().count(), mixed_hinted.hint_count());
+        assert_eq!(mixed_hinted.hint_iter().count(), 2);
+    }
+
+    #[test]
+    fn hinted_coverage_hint_iter_yields_dead_knobs_first_then_stale_entries() {
+        // The canonical yield order on the sub-report: dead knobs
+        // first (tagged `HintSurface::DeadKnob`), then stale entries
+        // (tagged `HintSurface::StaleEntry`) — matching the first
+        // two variants of `HintSurface::ALL` verbatim and the
+        // sub-slice `HealthReport::hint_iter` emits for the coverage
+        // sub-report. Welds the sub-report enumeration order to
+        // `HintSurface::ALL` so a future variant reordering picks up
+        // in one place and this test enforces the wiring in the
+        // other. Verified on a mixed input that populates BOTH arms
+        // so the boundary between the two surface tags is
+        // meaningfully exercised.
+        let consumed = &["name", "tags", "window.witdh", "window.height"];
+        let hinted = ConfigCoverage::hinted_report::<Demo>(consumed);
+        let observed: Vec<HintSurface> = hinted.hint_iter().map(|h| h.surface).collect();
+        assert_eq!(
+            observed,
+            vec![HintSurface::DeadKnob, HintSurface::StaleEntry],
+            "hint_iter must yield dead knobs first (DeadKnob-tagged), then stale entries (StaleEntry-tagged), \
+             matching the first two variants of HintSurface::ALL",
+        );
+    }
+
+    #[test]
+    fn hinted_coverage_hint_iter_carries_entry_and_did_you_mean_from_source_lists() {
+        // The field-shape invariant on the enumeration primitive:
+        // every yielded `SurfaceHint` carries the `(entry,
+        // did_you_mean)` pair from the underlying `CoverageHint` in
+        // its source list verbatim — the same `(entry,
+        // did_you_mean)` pair `assert_every_field_consumed` feeds
+        // the shared `render_hint_pairs` renderer, so a consumer
+        // that renders through `hint_iter` produces the same text as
+        // the panic path without having to parse it. Verified on a
+        // symmetric-typo input where BOTH arms carry a `did_you_mean`
+        // pointing at each other, so the field-shape invariant is
+        // exercised on both the `Some` and (implicitly)
+        // structurally-sound arms.
+        let consumed = &["name", "tags", "window.witdh", "window.height"];
+        let hinted = ConfigCoverage::hinted_report::<Demo>(consumed);
+        let hints: Vec<SurfaceHint<'_>> = hinted.hint_iter().collect();
+        assert_eq!(hints.len(), 2);
+
+        // Dead-knob arm: window.width (declared but missing), paired
+        // with window.witdh (its typo counterpart).
+        assert_eq!(hints[0].surface, HintSurface::DeadKnob);
+        assert_eq!(hints[0].entry, "window.width");
+        assert_eq!(hints[0].did_you_mean, Some("window.witdh"));
+
+        // Stale-entry arm: window.witdh (typo consumer entry), paired
+        // with window.width (its schema counterpart).
+        assert_eq!(hints[1].surface, HintSurface::StaleEntry);
+        assert_eq!(hints[1].entry, "window.witdh");
+        assert_eq!(hints[1].did_you_mean, Some("window.width"));
+    }
+
+    #[test]
+    fn hinted_coverage_hint_iter_matches_health_report_coverage_prefix() {
+        // The whole-report/sub-report compositional wiring: the
+        // sequence `hinted.hint_iter()` yields on a
+        // `HintedCoverageReport` equals the coverage-prefix of
+        // `HealthReport::hint_iter` on the corresponding
+        // `HealthReport` (the first `hinted.hint_count()` items,
+        // which are exactly the DeadKnob-then-StaleEntry hints from
+        // the coverage sub-report). Welds the sub-report enumeration
+        // primitive to its whole-report peer through the four-list
+        // chain composition, so a future refactor that collapses
+        // `HealthReport::hint_iter` into a chain of the three
+        // sub-report enumeration primitives (the natural next step)
+        // is already welded on the coverage arm.
+        let consumed = &["name", "tags", "window.witdh", "window.height"];
+        let yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let env: Vec<(String, String)> = vec![];
+        let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
+        let sub_report_seq: Vec<SurfaceHint<'_>> = health.coverage.hint_iter().collect();
+        let whole_report_prefix: Vec<SurfaceHint<'_>> = health
+            .hint_iter()
+            .take(health.coverage.hint_count())
+            .collect();
+        assert_eq!(sub_report_seq, whole_report_prefix);
     }
 
     #[test]
