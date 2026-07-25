@@ -232,6 +232,47 @@ impl ConfigCoverage {
         out
     }
 
+    /// Audit a deserialized config value (typically what
+    /// `serde_yaml::from_str` returns from the operator's YAML/TOML
+    /// file — but any `serde_yaml::Value` shape works, including one
+    /// crossed over from `toml::Value` via serde) for dotted leaf paths
+    /// that do not correspond to any schema leaf of `T`. Each unknown
+    /// key is paired with a "did you mean" hint: the closest schema
+    /// leaf under the typo threshold documented on [`Self::did_you_mean`],
+    /// in dotted-path form.
+    ///
+    /// The third leg of the coverage-audit family on the file surface:
+    /// [`Self::hinted_report`] audits a consumer-declared list;
+    /// [`Self::audit_env_vars`] audits env-var-shaped names on the
+    /// process-environment surface; `audit_value` audits the user's
+    /// serialized config file — the primary surface where serde's
+    /// default deserializer silently drops unknown fields, and even
+    /// `#[serde(deny_unknown_fields)]` only fails hard on the first
+    /// stray key with no typo hint.
+    ///
+    /// Mappings recurse; sequences are one knob (the whole list is one
+    /// leaf, matching [`Self::schema_leaf_paths`]'s convention so a
+    /// value round-tripped through the schema's serialised form audits
+    /// clean). The audit is deterministic: unknown paths are returned
+    /// sorted for diagnostic stability across runs.
+    #[must_use]
+    pub fn audit_value<T: TieredConfig>(value: &serde_yaml::Value) -> ValueAudit {
+        let schema = Self::schema_leaf_paths::<T>();
+        let schema_set: BTreeSet<&str> = schema.iter().map(String::as_str).collect();
+        let mut leaves = Vec::new();
+        collect_leaves(value, &mut String::new(), &mut leaves);
+        let mut unknown: Vec<ValueKeyHint> = leaves
+            .into_iter()
+            .filter(|p| !schema_set.contains(p.as_str()))
+            .map(|path| {
+                let did_you_mean = Self::did_you_mean(&path, &schema).map(str::to_owned);
+                ValueKeyHint { path, did_you_mean }
+            })
+            .collect();
+        unknown.sort_by(|a, b| a.path.cmp(&b.path));
+        ValueAudit { unknown }
+    }
+
     /// Audit `env` — a snapshot of `(name, _value)` pairs (typically
     /// [`std::env::vars`] collected once) — for env-var names that
     /// carry the shikumi `prefix` but do not correspond to any schema
@@ -349,6 +390,42 @@ pub struct EnvVarAudit {
 impl EnvVarAudit {
     /// True iff no prefixed env var deviated from the schema — every
     /// operator override in the environment is a real knob.
+    #[must_use]
+    pub fn is_clean(&self) -> bool {
+        self.unknown.is_empty()
+    }
+}
+
+/// One config-value-shaped typo hint: a dotted leaf path present in the
+/// operator's deserialized config value (typically a `serde_yaml::Value`
+/// loaded from their YAML/TOML file) but not corresponding to any
+/// schema leaf, paired with the closest schema leaf (if any lies within
+/// the typo threshold). Produced by [`ConfigCoverage::audit_value`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValueKeyHint {
+    /// Dotted path of the unknown leaf in the operator's config value
+    /// (e.g. `window.witdh`, `unknown_section.knob`).
+    pub path: String,
+    /// Closest schema leaf, in dotted-path form. [`None`] when no
+    /// schema leaf lies within the typo threshold.
+    pub did_you_mean: Option<String>,
+}
+
+/// Result of [`ConfigCoverage::audit_value`] — every dotted leaf path in
+/// the operator's serialized config value that does not correspond to a
+/// schema leaf, each with an optional nearest-neighbour hint. Leaves
+/// that *do* correspond to schema leaves are silently dropped (they are
+/// legitimate overrides, not typos).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ValueAudit {
+    /// Unknown leaf paths in the operator's value, sorted by path for
+    /// determinism.
+    pub unknown: Vec<ValueKeyHint>,
+}
+
+impl ValueAudit {
+    /// True iff no leaf in the value deviated from the schema — every
+    /// operator override in the config file is a real knob.
     #[must_use]
     pub fn is_clean(&self) -> bool {
         self.unknown.is_empty()
@@ -797,5 +874,184 @@ mod tests {
         ];
         let audit = ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &env);
         assert!(audit.is_clean());
+    }
+
+    #[test]
+    fn audit_value_is_clean_when_value_only_has_schema_leaves() {
+        // A YAML value shaped exactly like Demo's schema audits clean.
+        let yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: [a, b, c]
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let audit = ConfigCoverage::audit_value::<Demo>(&value);
+        assert!(audit.is_clean(), "expected clean audit, got {audit:?}");
+        assert!(audit.unknown.is_empty());
+    }
+
+    #[test]
+    fn audit_value_flags_typoed_key_with_dotted_path_hint() {
+        // A one-transposition typo on window.width surfaces as an
+        // unknown key with the schema-leaf hint attached.
+        let yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let audit = ConfigCoverage::audit_value::<Demo>(&value);
+        assert_eq!(audit.unknown.len(), 1);
+        assert_eq!(audit.unknown[0].path, "window.witdh");
+        assert_eq!(
+            audit.unknown[0].did_you_mean.as_deref(),
+            Some("window.width"),
+            "hint must name the schema leaf the operator almost certainly meant",
+        );
+        assert!(!audit.is_clean());
+    }
+
+    #[test]
+    fn audit_value_leaves_hint_none_when_no_close_schema_leaf_exists() {
+        // A totally-unrelated key: surfaces as unknown with no hint.
+        let yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+unrelated_section:
+  some_knob: yes
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let audit = ConfigCoverage::audit_value::<Demo>(&value);
+        assert_eq!(audit.unknown.len(), 1);
+        assert_eq!(audit.unknown[0].path, "unrelated_section.some_knob");
+        assert!(
+            audit.unknown[0].did_you_mean.is_none(),
+            "no near schema leaf → no hint, never fall back to closest anyway",
+        );
+    }
+
+    #[test]
+    fn audit_value_is_sorted_by_path_for_determinism() {
+        // Multiple unknowns: the audit result must always emerge in
+        // dotted-path order so operators see a stable diagnostic.
+        let yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+zzz_extra: 1
+aaa_extra: 1
+mmm_extra: 1
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let audit = ConfigCoverage::audit_value::<Demo>(&value);
+        let paths: Vec<&str> = audit.unknown.iter().map(|h| h.path.as_str()).collect();
+        assert_eq!(paths, vec!["aaa_extra", "mmm_extra", "zzz_extra"]);
+    }
+
+    #[test]
+    fn audit_value_treats_sequence_as_one_leaf_matching_schema_convention() {
+        // The schema treats `tags: Vec<String>` as one leaf (schema
+        // path `tags`, not `tags.0` / `tags.1`). audit_value must
+        // agree so a YAML value like `tags: [a, b, c]` does not surface
+        // three phantom typos.
+        let yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: [one, two, three]
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let audit = ConfigCoverage::audit_value::<Demo>(&value);
+        assert!(
+            audit.is_clean(),
+            "list values must map to one schema leaf (`tags`), not per-index — audit: {audit:?}",
+        );
+    }
+
+    #[test]
+    fn audit_value_is_clean_on_serialized_prescribed_default() {
+        // The theorem: the schema serialised through its own prescribed
+        // default MUST audit clean — schema_leaf_paths and audit_value
+        // are derived from the same tree walk (collect_leaves), so a
+        // future refactor that drifts the two must turn this red.
+        let default_yaml = serde_yaml::to_value(Demo::prescribed_default()).unwrap();
+        let audit = ConfigCoverage::audit_value::<Demo>(&default_yaml);
+        assert!(
+            audit.is_clean(),
+            "audit_value(serde_yaml::to_value(T::prescribed_default())) must be clean; got {audit:?}",
+        );
+    }
+
+    #[test]
+    fn audit_value_agrees_with_env_var_audit_on_the_same_override_state() {
+        // The invariant that welds audit_value and audit_env_vars into
+        // one primitive under two keyings: the SAME set of typoed
+        // overrides — expressed once as env vars and once as YAML —
+        // must produce the SAME set of unknown dotted paths (modulo
+        // the env-var-form rendering that audit_env_vars applies to
+        // its hint). If a future refactor drifts the two extractors,
+        // this test goes red at the earliest possible seam.
+        let env: Vec<(String, String)> = vec![
+            ("MYAPP_WINDOW__WITDH".into(), "100".into()),
+            ("MYAPP_UNRELATED_KNOB".into(), "x".into()),
+        ];
+        let env_audit = ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &env);
+        let yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+unrelated_knob: x
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value_audit = ConfigCoverage::audit_value::<Demo>(&value);
+        // Cross-keying: the sorted set of normalized dotted paths must
+        // agree between the two audits.
+        let env_paths: Vec<&str> = env_audit
+            .unknown
+            .iter()
+            .map(|h| h.normalized_path.as_str())
+            .collect();
+        let value_paths: Vec<&str> = value_audit
+            .unknown
+            .iter()
+            .map(|h| h.path.as_str())
+            .collect();
+        assert_eq!(
+            env_paths, value_paths,
+            "audit_env_vars and audit_value must agree on the unknown-leaf-path set",
+        );
+        // And the schema-leaf hints must agree in dotted-path form
+        // (audit_env_vars renders its hint back to env-var form, so
+        // decode it through env_var_to_path for the comparison).
+        let env_hints: Vec<Option<String>> = env_audit
+            .unknown
+            .iter()
+            .map(|h| {
+                h.did_you_mean
+                    .as_deref()
+                    .and_then(|e| ConfigCoverage::env_var_to_path("MYAPP_", e))
+            })
+            .collect();
+        let value_hints: Vec<Option<String>> = value_audit
+            .unknown
+            .iter()
+            .map(|h| h.did_you_mean.clone())
+            .collect();
+        assert_eq!(
+            env_hints, value_hints,
+            "the two audits must produce the same did-you-mean hint per unknown path (up to env-var rendering)",
+        );
     }
 }
