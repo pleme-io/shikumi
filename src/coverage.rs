@@ -86,18 +86,174 @@ impl ConfigCoverage {
 
     /// Assert that every declared field of `T` is consumed and vice versa.
     /// Panics with a readable diff on failure — the canonical use is a
-    /// `#[test]` in the consuming crate.
+    /// `#[test]` in the consuming crate. Each failing entry is paired
+    /// with its nearest counterpart across the diff so the diagnostic
+    /// tells the operator *which* leaf they mistyped, not just that a
+    /// typo exists somewhere.
     pub fn assert_every_field_consumed<T: TieredConfig>(consumed: &[&str]) {
-        let report = Self::report::<T>(consumed);
+        let hinted = Self::hinted_report::<T>(consumed);
         assert!(
-            report.is_clean(),
+            hinted.is_clean(),
             "shikumi::ConfigCoverage: config schema and consumer list disagree.\n  \
-             dead knobs (declared but no consumer — wire or delete): {:?}\n  \
-             stale entries (consumed but not declared — remove the entry): {:?}",
-            report.dead_knobs,
-            report.stale_entries
+             dead knobs (declared but no consumer — wire or delete): {}\n  \
+             stale entries (consumed but not declared — remove or correct): {}",
+            render_hint_list(&hinted.dead_knobs),
+            render_hint_list(&hinted.stale_entries)
         );
     }
+
+    /// Bidirectional coverage report augmented with a "did you mean"
+    /// hint per stale / dead entry. Each stale entry is paired with the
+    /// nearest schema leaf (its likely intended path if it is a typo);
+    /// each dead knob is paired with the nearest consumed entry (its
+    /// likely intended consumer). Hints are only produced when the
+    /// nearest counterpart is within the automatic typo-threshold
+    /// documented on [`Self::did_you_mean`].
+    #[must_use]
+    pub fn hinted_report<T: TieredConfig>(consumed: &[&str]) -> HintedCoverageReport {
+        let schema = Self::schema_leaf_paths::<T>();
+        let consumed_owned: Vec<String> = consumed.iter().map(|s| (*s).to_string()).collect();
+        let schema_set: BTreeSet<String> = schema.iter().cloned().collect();
+        let consumed_set: BTreeSet<String> = consumed_owned.iter().cloned().collect();
+        let dead_knobs = schema_set
+            .difference(&consumed_set)
+            .map(|entry| CoverageHint {
+                entry: entry.clone(),
+                did_you_mean: Self::did_you_mean(entry, &consumed_owned).map(str::to_owned),
+            })
+            .collect();
+        let stale_entries = consumed_set
+            .difference(&schema_set)
+            .map(|entry| CoverageHint {
+                entry: entry.clone(),
+                did_you_mean: Self::did_you_mean(entry, &schema).map(str::to_owned),
+            })
+            .collect();
+        HintedCoverageReport {
+            dead_knobs,
+            stale_entries,
+        }
+    }
+
+    /// Pure Levenshtein edit distance between `a` and `b`, counting
+    /// insertions, deletions, and substitutions equally. Exposed as an
+    /// associated function so consumers can build their own "did you
+    /// mean" hints over any string set (e.g. an env-var name that did
+    /// not match any known prefix) without pulling in a separate
+    /// similarity crate.
+    #[must_use]
+    pub fn edit_distance(a: &str, b: &str) -> usize {
+        levenshtein(a, b)
+    }
+
+    /// The nearest string in `candidates` to `needle` by Levenshtein
+    /// distance, if any is within the automatic typo-threshold
+    /// `max(1, needle.chars().count() / 3)`. Ties break to the lowest
+    /// distance; among equal-distance candidates, the earliest one in
+    /// `candidates` wins so the choice is deterministic. Returns
+    /// [`None`] when `candidates` is empty or every candidate exceeds
+    /// the threshold — a `None` is the correct answer, not a
+    /// suppressed match, and callers should treat it as "no
+    /// suggestion" rather than degrade to the closest anyway.
+    #[must_use]
+    pub fn did_you_mean<'a, S: AsRef<str> + 'a>(
+        needle: &str,
+        candidates: &'a [S],
+    ) -> Option<&'a str> {
+        let threshold = needle.chars().count().max(3) / 3;
+        candidates
+            .iter()
+            .map(|c| (c.as_ref(), levenshtein(needle, c.as_ref())))
+            .filter(|(_, d)| *d <= threshold)
+            .min_by_key(|(_, d)| *d)
+            .map(|(s, _)| s)
+    }
+}
+
+/// A single stale/dead entry paired with its closest counterpart across
+/// the coverage diff, if any lies within the auto typo-threshold. See
+/// [`ConfigCoverage::did_you_mean`] for the threshold rule.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoverageHint {
+    /// The entry that failed coverage — a stale consumed path or a dead
+    /// schema leaf.
+    pub entry: String,
+    /// Nearest matching counterpart: for a stale entry, the closest
+    /// schema leaf; for a dead knob, the closest consumed path. [`None`]
+    /// when no counterpart is within the typo threshold.
+    pub did_you_mean: Option<String>,
+}
+
+/// Bidirectional coverage result with per-entry "did you mean" hints —
+/// the hinted mirror of [`CoverageReport`]. Produced by
+/// [`ConfigCoverage::hinted_report`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HintedCoverageReport {
+    /// Schema leaves with no matching consumed entry — each paired with
+    /// its nearest consumed path if one lies within the typo threshold.
+    pub dead_knobs: Vec<CoverageHint>,
+    /// Consumed entries with no matching schema leaf — each paired with
+    /// its nearest schema leaf if one lies within the typo threshold.
+    pub stale_entries: Vec<CoverageHint>,
+}
+
+impl HintedCoverageReport {
+    /// True iff both hint lists are empty — the coverage-clean condition.
+    #[must_use]
+    pub fn is_clean(&self) -> bool {
+        self.dead_knobs.is_empty() && self.stale_entries.is_empty()
+    }
+}
+
+/// Render a hint list for the assertion panic message.
+fn render_hint_list(hints: &[CoverageHint]) -> String {
+    if hints.is_empty() {
+        return "[]".to_string();
+    }
+    let mut out = String::from("[");
+    for (i, hint) in hints.iter().enumerate() {
+        if i > 0 {
+            out.push_str(", ");
+        }
+        out.push('"');
+        out.push_str(&hint.entry);
+        out.push('"');
+        if let Some(sug) = &hint.did_you_mean {
+            out.push_str(" (did you mean \"");
+            out.push_str(sug);
+            out.push_str("\"?)");
+        }
+    }
+    out.push(']');
+    out
+}
+
+/// Pure Levenshtein edit distance implemented with a two-row DP over
+/// [`char`]s (not bytes), so multi-byte scalar values count as one edit.
+/// O(m*n) time, O(min(m,n)) space; ~40 lines is cheaper here than
+/// pulling in `strsim` for one use.
+fn levenshtein(a: &str, b: &str) -> usize {
+    let (a, b) = if a.chars().count() < b.chars().count() {
+        (b, a)
+    } else {
+        (a, b)
+    };
+    let b_chars: Vec<char> = b.chars().collect();
+    let n = b_chars.len();
+    if n == 0 {
+        return a.chars().count();
+    }
+    let mut prev: Vec<usize> = (0..=n).collect();
+    let mut curr: Vec<usize> = vec![0; n + 1];
+    for (i, ca) in a.chars().enumerate() {
+        curr[0] = i + 1;
+        for (j, cb) in b_chars.iter().enumerate() {
+            let cost = usize::from(ca != *cb);
+            curr[j + 1] = (prev[j + 1] + 1).min(curr[j] + 1).min(prev[j] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[n]
 }
 
 /// Walk a serialised config value, pushing the dotted path of every
@@ -202,5 +358,161 @@ mod tests {
     #[should_panic(expected = "dead knobs")]
     fn assert_panics_on_dead_knob() {
         ConfigCoverage::assert_every_field_consumed::<Demo>(&["name", "tags", "window.width"]);
+    }
+
+    #[test]
+    fn edit_distance_is_symmetric_and_zero_on_equal_strings() {
+        assert_eq!(ConfigCoverage::edit_distance("width", "width"), 0);
+        assert_eq!(ConfigCoverage::edit_distance("width", "witdh"), 2);
+        assert_eq!(
+            ConfigCoverage::edit_distance("width", "witdh"),
+            ConfigCoverage::edit_distance("witdh", "width"),
+            "Levenshtein must be symmetric"
+        );
+    }
+
+    #[test]
+    fn edit_distance_handles_empty_and_multibyte_correctly() {
+        assert_eq!(ConfigCoverage::edit_distance("", ""), 0);
+        assert_eq!(ConfigCoverage::edit_distance("abc", ""), 3);
+        assert_eq!(ConfigCoverage::edit_distance("", "xyz"), 3);
+        // Two 3-char scripts differing entirely: 仕組み → 組仕み (2 swaps)
+        assert_eq!(ConfigCoverage::edit_distance("仕組み", "組仕み"), 2);
+        // Multi-byte scalars count as 1 char, not 3 bytes:
+        assert_eq!(ConfigCoverage::edit_distance("é", "e"), 1);
+    }
+
+    #[test]
+    fn did_you_mean_finds_close_typo() {
+        let candidates: Vec<String> = ["window.width", "window.height", "name", "tags"]
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        assert_eq!(
+            ConfigCoverage::did_you_mean("window.witdh", &candidates),
+            Some("window.width"),
+            "one transposition inside a 12-char path must be within the typo threshold"
+        );
+    }
+
+    #[test]
+    fn did_you_mean_rejects_distant_string() {
+        let candidates: Vec<String> = ["window.width", "window.height"]
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        assert!(
+            ConfigCoverage::did_you_mean("abc", &candidates).is_none(),
+            "a totally unrelated needle must not degrade to the closest anyway"
+        );
+    }
+
+    #[test]
+    fn did_you_mean_returns_none_on_empty_candidates() {
+        let candidates: Vec<String> = vec![];
+        assert!(ConfigCoverage::did_you_mean("window.width", &candidates).is_none());
+    }
+
+    #[test]
+    fn did_you_mean_breaks_ties_by_earliest_candidate() {
+        // Two candidates equidistant from "foo" → pick the earlier one so
+        // the hint is deterministic across runs (BTreeSet-ordered inputs
+        // in hinted_report already do this, but the primitive should too).
+        let candidates: Vec<String> = vec!["fob".into(), "fop".into()];
+        assert_eq!(
+            ConfigCoverage::did_you_mean("foo", &candidates),
+            Some("fob"),
+            "min_by_key picks the first equal-distance element"
+        );
+    }
+
+    #[test]
+    fn hinted_report_pairs_stale_entry_with_nearest_schema_leaf() {
+        // Consumer *also* declared window.width, so no dead knob — only
+        // the extra typo entry survives as stale.
+        let hinted = ConfigCoverage::hinted_report::<Demo>(&[
+            "name",
+            "tags",
+            "window.width",
+            "window.witdh", // typo, extra
+            "window.height",
+        ]);
+        assert_eq!(hinted.stale_entries.len(), 1);
+        assert_eq!(hinted.stale_entries[0].entry, "window.witdh");
+        assert_eq!(
+            hinted.stale_entries[0].did_you_mean.as_deref(),
+            Some("window.width"),
+            "stale entry must be paired with the closest schema leaf"
+        );
+        assert!(hinted.dead_knobs.is_empty());
+        assert!(!hinted.is_clean());
+    }
+
+    #[test]
+    fn hinted_report_pairs_dead_knob_with_nearest_consumed_entry() {
+        // Consumer wrote "window.witdh" instead of "window.width" — the
+        // schema still declares window.width, so it becomes a dead knob
+        // AND the typo becomes a stale entry, and both point at each
+        // other.
+        let hinted = ConfigCoverage::hinted_report::<Demo>(&[
+            "name",
+            "tags",
+            "window.witdh",
+            "window.height",
+        ]);
+        assert_eq!(hinted.dead_knobs.len(), 1);
+        assert_eq!(hinted.dead_knobs[0].entry, "window.width");
+        assert_eq!(
+            hinted.dead_knobs[0].did_you_mean.as_deref(),
+            Some("window.witdh"),
+            "dead knob must be paired with the closest consumed path — even when that path is itself the typo"
+        );
+    }
+
+    #[test]
+    fn hinted_report_leaves_hint_empty_when_no_close_candidate_exists() {
+        // "extra.unrelated" has no close cousin among the schema leaves
+        // (name / tags / window.width / window.height) — the hint field
+        // must stay None rather than pointing at the closest anyway.
+        let hinted = ConfigCoverage::hinted_report::<Demo>(&[
+            "name",
+            "tags",
+            "window.width",
+            "window.height",
+            "extra.unrelated",
+        ]);
+        assert_eq!(hinted.stale_entries.len(), 1);
+        assert_eq!(hinted.stale_entries[0].entry, "extra.unrelated");
+        assert!(
+            hinted.stale_entries[0].did_you_mean.is_none(),
+            "no near counterpart → no hint (never fall back to the least-bad match)"
+        );
+    }
+
+    #[test]
+    fn hinted_report_is_clean_when_coverage_is_clean() {
+        let hinted = ConfigCoverage::hinted_report::<Demo>(&[
+            "name",
+            "tags",
+            "window.width",
+            "window.height",
+        ]);
+        assert!(hinted.is_clean());
+        assert!(hinted.dead_knobs.is_empty());
+        assert!(hinted.stale_entries.is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "\"window.witdh\" (did you mean \"window.width\"?)")]
+    fn assert_panic_message_includes_did_you_mean_hint() {
+        // The typo → schema-leaf pairing is what makes the diagnostic
+        // actionable; pin the exact phrasing in the panic string so a
+        // future refactor cannot silently drop it.
+        ConfigCoverage::assert_every_field_consumed::<Demo>(&[
+            "name",
+            "tags",
+            "window.witdh",
+            "window.height",
+        ]);
     }
 }

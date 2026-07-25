@@ -62,7 +62,7 @@ mod store;
 pub mod tiered;
 mod watcher;
 
-pub use coverage::{ConfigCoverage, CoverageReport};
+pub use coverage::{ConfigCoverage, CoverageHint, CoverageReport, HintedCoverageReport};
 pub use cube::{
     AxisHistogram, AxisHistogramIntoIter, AxisHistogramIter, AxisHistogramIterMut,
     AxisHistogramNonzero, AxisHistogramObserved, AxisHistogramUnobserved, AxisIter, ClosedAxis,
