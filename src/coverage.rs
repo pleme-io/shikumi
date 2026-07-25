@@ -28,7 +28,7 @@
 //! }
 //! ```
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::tiered::TieredConfig;
 
@@ -232,6 +232,48 @@ impl ConfigCoverage {
         out
     }
 
+    /// The shared "diff paths against schema + hint each unknown" fold —
+    /// the primitive [`Self::audit_value`] and [`Self::audit_env_vars`]
+    /// both route through after their surface-specific extraction
+    /// (walk-a-value-tree for `audit_value`; normalize-env-vars for
+    /// `audit_env_vars`).
+    ///
+    /// Given an iterator of dotted paths and a schema of `T`: silently
+    /// drop every path that corresponds to a schema leaf (they are
+    /// legitimate overrides, not typos); return each remainder paired
+    /// with the closest schema leaf under the typo threshold documented
+    /// on [`Self::did_you_mean`] (or [`None`] when nothing lies within
+    /// the threshold — never fall back to the least-bad match).
+    ///
+    /// The result is sorted by path for diagnostic determinism. The
+    /// input is not deduplicated: two identical unknown paths produce
+    /// two [`PathHint`] entries. Callers that want set semantics
+    /// (`hinted_report`) collect their input into a `BTreeSet` first.
+    ///
+    /// A downstream audit only needs to lift its surface to
+    /// `IntoIterator<Item = String>` to inherit the shared fold; the
+    /// surface-specific rendering (rejoining raw env-var names,
+    /// wrapping in [`ValueKeyHint`] / [`EnvVarHint`], etc.) is a thin
+    /// layer above this primitive.
+    #[must_use]
+    pub fn audit_paths<T: TieredConfig, I>(paths: I) -> Vec<PathHint>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let schema = Self::schema_leaf_paths::<T>();
+        let schema_set: BTreeSet<&str> = schema.iter().map(String::as_str).collect();
+        let mut unknown: Vec<PathHint> = paths
+            .into_iter()
+            .filter(|p| !schema_set.contains(p.as_str()))
+            .map(|path| PathHint {
+                did_you_mean: Self::did_you_mean(&path, &schema).map(str::to_owned),
+                path,
+            })
+            .collect();
+        unknown.sort_by(|a, b| a.path.cmp(&b.path));
+        unknown
+    }
+
     /// Audit a deserialized config value (typically what
     /// `serde_yaml::from_str` returns from the operator's YAML/TOML
     /// file — but any `serde_yaml::Value` shape works, including one
@@ -255,21 +297,19 @@ impl ConfigCoverage {
     /// value round-tripped through the schema's serialised form audits
     /// clean). The audit is deterministic: unknown paths are returned
     /// sorted for diagnostic stability across runs.
+    ///
+    /// The schema diff + hint pairing is delegated to the shared
+    /// [`Self::audit_paths`] fold — this function is the surface-
+    /// specific extractor (walk the value tree, wrap each `PathHint`
+    /// as a `ValueKeyHint`).
     #[must_use]
     pub fn audit_value<T: TieredConfig>(value: &serde_yaml::Value) -> ValueAudit {
-        let schema = Self::schema_leaf_paths::<T>();
-        let schema_set: BTreeSet<&str> = schema.iter().map(String::as_str).collect();
         let mut leaves = Vec::new();
         collect_leaves(value, &mut String::new(), &mut leaves);
-        let mut unknown: Vec<ValueKeyHint> = leaves
+        let unknown = Self::audit_paths::<T, _>(leaves)
             .into_iter()
-            .filter(|p| !schema_set.contains(p.as_str()))
-            .map(|path| {
-                let did_you_mean = Self::did_you_mean(&path, &schema).map(str::to_owned);
-                ValueKeyHint { path, did_you_mean }
-            })
+            .map(|PathHint { path, did_you_mean }| ValueKeyHint { path, did_you_mean })
             .collect();
-        unknown.sort_by(|a, b| a.path.cmp(&b.path));
         ValueAudit { unknown }
     }
 
@@ -293,33 +333,66 @@ impl ConfigCoverage {
     /// process launches with a shuffled environment. Env vars that
     /// match a schema leaf are silently dropped — this is a hint
     /// surface, not a listing of every legitimate override.
+    ///
+    /// The schema diff + hint pairing is delegated to the shared
+    /// [`Self::audit_paths`] fold — this function is the surface-
+    /// specific extractor (normalize env vars into dotted paths via
+    /// [`Self::env_var_to_path`], rejoin the surviving unknowns with
+    /// their raw env-var names, and render each hint back to env-var
+    /// form via [`Self::path_to_env_var`]).
     #[must_use]
     pub fn audit_env_vars<T: TieredConfig, K, V>(prefix: &str, env: &[(K, V)]) -> EnvVarAudit
     where
         K: AsRef<str>,
         V: AsRef<str>,
     {
-        let schema = Self::schema_leaf_paths::<T>();
-        let schema_set: BTreeSet<&str> = schema.iter().map(String::as_str).collect();
-        let mut unknown: Vec<EnvVarHint> = env
+        let normalized: Vec<(String, String)> = env
             .iter()
             .filter_map(|(name, _)| {
                 let raw = name.as_ref();
-                let path = Self::env_var_to_path(prefix, raw)?;
-                if schema_set.contains(path.as_str()) {
-                    return None;
-                }
-                let suggested_path = Self::did_you_mean(&path, &schema);
+                Self::env_var_to_path(prefix, raw).map(|path| (raw.to_owned(), path))
+            })
+            .collect();
+        let path_hints: BTreeMap<String, Option<String>> =
+            Self::audit_paths::<T, _>(normalized.iter().map(|(_, p)| p.clone()))
+                .into_iter()
+                .map(|PathHint { path, did_you_mean }| (path, did_you_mean))
+                .collect();
+        let mut unknown: Vec<EnvVarHint> = normalized
+            .into_iter()
+            .filter_map(|(env_var, path)| {
+                let hint = path_hints.get(&path)?;
                 Some(EnvVarHint {
-                    env_var: raw.to_owned(),
+                    did_you_mean: hint.as_deref().map(|p| Self::path_to_env_var(prefix, p)),
+                    env_var,
                     normalized_path: path,
-                    did_you_mean: suggested_path.map(|p| Self::path_to_env_var(prefix, p)),
                 })
             })
             .collect();
         unknown.sort_by(|a, b| a.env_var.cmp(&b.env_var));
         EnvVarAudit { unknown }
     }
+}
+
+/// A single unknown dotted-path entry: a path that does not correspond
+/// to any schema leaf, paired with the closest schema leaf under the
+/// typo threshold documented on [`ConfigCoverage::did_you_mean`].
+/// Produced by [`ConfigCoverage::audit_paths`] — the surface-agnostic
+/// primitive [`ConfigCoverage::audit_value`] and
+/// [`ConfigCoverage::audit_env_vars`] both route through after their
+/// surface-specific extraction (walk-a-value-tree; normalize-env-vars).
+///
+/// The surface-specific hint types ([`ValueKeyHint`], [`EnvVarHint`])
+/// wrap a `PathHint`'s (path, `did_you_mean`) pair with any additional
+/// surface state (e.g. `EnvVarHint::env_var`, the raw pre-normalization
+/// env-var name).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PathHint {
+    /// The unknown dotted path (e.g. `window.witdh`, `unknown.knob`).
+    pub path: String,
+    /// Closest schema leaf, in dotted-path form. [`None`] when no
+    /// schema leaf lies within the typo threshold.
+    pub did_you_mean: Option<String>,
 }
 
 /// A single stale/dead entry paired with its closest counterpart across
@@ -1052,6 +1125,171 @@ unrelated_knob: x
         assert_eq!(
             env_hints, value_hints,
             "the two audits must produce the same did-you-mean hint per unknown path (up to env-var rendering)",
+        );
+    }
+
+    #[test]
+    fn audit_paths_filters_known_paths_and_hints_unknown_with_did_you_mean() {
+        // The shared fold: given a heterogeneous input, drop schema
+        // leaves silently, surface every unknown with a hint against
+        // the schema (or None when nothing lies within the threshold),
+        // sorted by path.
+        let paths = vec![
+            "name".to_string(),              // known — filtered
+            "window.witdh".to_string(),      // typo — surfaces with hint
+            "window.height".to_string(),     // known — filtered
+            "totally.unrelated".to_string(), // unknown — no hint (nothing close)
+        ];
+        let audits = ConfigCoverage::audit_paths::<Demo, _>(paths);
+        assert_eq!(audits.len(), 2);
+        // Sorted by path: "totally.unrelated" < "window.witdh"
+        assert_eq!(audits[0].path, "totally.unrelated");
+        assert!(
+            audits[0].did_you_mean.is_none(),
+            "no near schema leaf → no hint, never fall back to closest anyway",
+        );
+        assert_eq!(audits[1].path, "window.witdh");
+        assert_eq!(audits[1].did_you_mean.as_deref(), Some("window.width"));
+    }
+
+    #[test]
+    fn audit_paths_returns_empty_when_every_path_is_a_schema_leaf() {
+        let paths: Vec<String> = ["name", "tags", "window.width", "window.height"]
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        let audits = ConfigCoverage::audit_paths::<Demo, _>(paths);
+        assert!(audits.is_empty(), "all-known input → empty audit");
+    }
+
+    #[test]
+    fn audit_paths_returns_empty_when_input_is_empty() {
+        let audits = ConfigCoverage::audit_paths::<Demo, _>(Vec::<String>::new());
+        assert!(audits.is_empty());
+    }
+
+    #[test]
+    fn audit_paths_preserves_duplicate_unknown_paths() {
+        // audit_paths is a fold, not a set operation — two identical
+        // unknown paths produce two PathHint entries. This matches the
+        // current audit_env_vars behavior (two env vars normalizing to
+        // the same path both surface as separate EnvVarHints).
+        let audits = ConfigCoverage::audit_paths::<Demo, _>(vec![
+            "window.witdh".to_string(),
+            "window.witdh".to_string(),
+        ]);
+        assert_eq!(audits.len(), 2);
+        assert_eq!(audits[0].path, "window.witdh");
+        assert_eq!(audits[1].path, "window.witdh");
+    }
+
+    #[test]
+    fn audit_value_equals_audit_paths_on_its_extracted_leaves() {
+        // The routing invariant on the file surface: audit_value(v)
+        // must equal audit_paths::<T>(leaves(v)) modulo the
+        // ValueKeyHint <-> PathHint field rename. A future refactor
+        // that drifts audit_value away from audit_paths (e.g. adding a
+        // second schema-diff pass, changing the sort order) turns this
+        // red at the earliest possible seam.
+        let yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+totally_unrelated: x
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value_audit = ConfigCoverage::audit_value::<Demo>(&value);
+        // Hand-encode the leaves audit_value walks — mappings recurse,
+        // sequences (`tags`) are one leaf.
+        let manual_leaves: Vec<String> = vec![
+            "name".into(),
+            "window.witdh".into(),
+            "window.height".into(),
+            "tags".into(),
+            "totally_unrelated".into(),
+        ];
+        let manual = ConfigCoverage::audit_paths::<Demo, _>(manual_leaves);
+        let value_pairs: Vec<(String, Option<String>)> = value_audit
+            .unknown
+            .into_iter()
+            .map(|h| (h.path, h.did_you_mean))
+            .collect();
+        let manual_pairs: Vec<(String, Option<String>)> = manual
+            .into_iter()
+            .map(|PathHint { path, did_you_mean }| (path, did_you_mean))
+            .collect();
+        assert_eq!(
+            value_pairs, manual_pairs,
+            "audit_value must equal audit_paths on its extracted leaves — the primitive is one fold, not two",
+        );
+    }
+
+    #[test]
+    fn audit_env_vars_equals_audit_paths_on_its_normalized_paths() {
+        // The routing invariant on the env-var surface: after
+        // normalizing env vars into dotted paths, the schema-diff +
+        // hint pairing agrees with audit_paths on the same paths. The
+        // env-var-form rendering that audit_env_vars applies to its
+        // hint is the surface layer above the shared fold, not a
+        // separate schema-diff pass.
+        let env: Vec<(String, String)> = vec![
+            ("MYAPP_NAME".into(), "kanchi".into()), // known → filtered
+            ("MYAPP_WINDOW__WITDH".into(), "100".into()), // typo — surfaces
+            ("MYAPP_TOTALLY_UNRELATED".into(), "x".into()), // unknown — no hint
+            ("PATH".into(), "/usr/bin".into()),     // outside prefix — filtered
+        ];
+        let env_audit = ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &env);
+        // The same normalization audit_env_vars applies before routing
+        // through audit_paths (drop outside-prefix vars; lowercase +
+        // "__" → ".").
+        let normalized: Vec<String> = env
+            .iter()
+            .filter_map(|(name, _)| ConfigCoverage::env_var_to_path("MYAPP_", name))
+            .collect();
+        let manual = ConfigCoverage::audit_paths::<Demo, _>(normalized);
+        // env_audit is sorted by env_var name; manual is sorted by
+        // path. Compare via a set of (normalized_path, hint-in-dotted-
+        // path-form) pairs so the sort order does not conflate with
+        // the actual invariant.
+        let env_pairs: BTreeSet<(String, Option<String>)> = env_audit
+            .unknown
+            .into_iter()
+            .map(|h| {
+                (
+                    h.normalized_path,
+                    h.did_you_mean
+                        .and_then(|e| ConfigCoverage::env_var_to_path("MYAPP_", &e)),
+                )
+            })
+            .collect();
+        let manual_pairs: BTreeSet<(String, Option<String>)> = manual
+            .into_iter()
+            .map(|PathHint { path, did_you_mean }| (path, did_you_mean))
+            .collect();
+        assert_eq!(
+            env_pairs, manual_pairs,
+            "audit_env_vars must equal audit_paths on its normalized paths (up to env-var-form hint rendering)",
+        );
+    }
+
+    #[test]
+    fn audit_value_is_clean_on_serialized_prescribed_default_after_lift() {
+        // The schema self-check theorem still holds through the
+        // audit_paths lift: a value round-tripped through the schema's
+        // own prescribed default audits clean, because both
+        // schema_leaf_paths and audit_paths are derived from the same
+        // tree walk over the same schema. Redundant with the pre-lift
+        // test but pinned again here because audit_value now routes
+        // through audit_paths, so a bug in the fold or the primitive
+        // must not silently produce false positives on the schema's
+        // own output.
+        let default_yaml = serde_yaml::to_value(Demo::prescribed_default()).unwrap();
+        let audit = ConfigCoverage::audit_value::<Demo>(&default_yaml);
+        assert!(
+            audit.is_clean(),
+            "audit_value(serde_yaml::to_value(T::prescribed_default())) must be clean after the audit_paths lift; got {audit:?}",
         );
     }
 }
