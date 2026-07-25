@@ -634,10 +634,27 @@ pub struct HintedCoverageReport {
 }
 
 impl HintedCoverageReport {
+    /// Total count of unhealthy entries across both hint lists — the
+    /// sum of dead knobs and stale entries. The peer of
+    /// [`Self::is_clean`] (`is_empty`/`len` shape): `is_clean() ⇔
+    /// hint_count() == 0` holds by construction, since `is_clean`
+    /// delegates to `hint_count() == 0`.
+    ///
+    /// Consumers that want to prioritise remediation ("which config
+    /// surface has the most typos"), report a total-severity number
+    /// to a diagnostics endpoint, or gate CI on a hint-count budget
+    /// call this directly instead of hand-summing the hint lists.
+    #[must_use]
+    pub fn hint_count(&self) -> usize {
+        self.dead_knobs.len() + self.stale_entries.len()
+    }
+
     /// True iff both hint lists are empty — the coverage-clean condition.
+    /// Equivalent to `hint_count() == 0`, and delegates to it so the
+    /// two peers cannot drift.
     #[must_use]
     pub fn is_clean(&self) -> bool {
-        self.dead_knobs.is_empty() && self.stale_entries.is_empty()
+        self.hint_count() == 0
     }
 }
 
@@ -666,12 +683,31 @@ pub struct HealthReport {
 }
 
 impl HealthReport {
+    /// Total count of unhealthy entries across every surface — the
+    /// sum of [`HintedCoverageReport::hint_count`],
+    /// [`ValueAudit::hint_count`], and [`EnvVarAudit::hint_count`].
+    /// The peer of [`Self::is_clean`] (`is_empty`/`len` shape):
+    /// `is_clean() ⇔ hint_count() == 0` holds by construction, since
+    /// `is_clean` delegates to `hint_count() == 0`.
+    ///
+    /// This is the natural roll-up for a diagnostics endpoint that
+    /// reports "N total operator overrides deviate from the schema"
+    /// as one number, or for CI to enforce a monotonically-shrinking
+    /// hint-count budget across a fleet of consumers without having
+    /// to hand-sum the four surface hint lists.
+    #[must_use]
+    pub fn hint_count(&self) -> usize {
+        self.coverage.hint_count() + self.value.hint_count() + self.env.hint_count()
+    }
+
     /// True iff every one of the three surfaces (consumer list, config
     /// value, prefixed environment) is clean — no dead knobs, no stale
     /// consumer entries, no unknown value keys, no unknown env vars.
+    /// Equivalent to `hint_count() == 0`, and delegates to it so the
+    /// two peers cannot drift.
     #[must_use]
     pub fn is_clean(&self) -> bool {
-        self.coverage.is_clean() && self.value.is_clean() && self.env.is_clean()
+        self.hint_count() == 0
     }
 }
 
@@ -706,11 +742,24 @@ pub struct EnvVarAudit {
 }
 
 impl EnvVarAudit {
+    /// Total count of unknown prefixed env vars — every operator
+    /// override in the environment that does NOT correspond to a
+    /// schema leaf. The peer of [`Self::is_clean`]
+    /// (`is_empty`/`len` shape): `is_clean() ⇔ hint_count() == 0`
+    /// holds by construction, since `is_clean` delegates to
+    /// `hint_count() == 0`.
+    #[must_use]
+    pub fn hint_count(&self) -> usize {
+        self.unknown.len()
+    }
+
     /// True iff no prefixed env var deviated from the schema — every
     /// operator override in the environment is a real knob.
+    /// Equivalent to `hint_count() == 0`, and delegates to it so the
+    /// two peers cannot drift.
     #[must_use]
     pub fn is_clean(&self) -> bool {
-        self.unknown.is_empty()
+        self.hint_count() == 0
     }
 }
 
@@ -742,11 +791,24 @@ pub struct ValueAudit {
 }
 
 impl ValueAudit {
+    /// Total count of unknown leaf paths in the operator's config
+    /// value — every dotted path in their YAML/TOML that does NOT
+    /// correspond to a schema leaf. The peer of [`Self::is_clean`]
+    /// (`is_empty`/`len` shape): `is_clean() ⇔ hint_count() == 0`
+    /// holds by construction, since `is_clean` delegates to
+    /// `hint_count() == 0`.
+    #[must_use]
+    pub fn hint_count(&self) -> usize {
+        self.unknown.len()
+    }
+
     /// True iff no leaf in the value deviated from the schema — every
     /// operator override in the config file is a real knob.
+    /// Equivalent to `hint_count() == 0`, and delegates to it so the
+    /// two peers cannot drift.
     #[must_use]
     pub fn is_clean(&self) -> bool {
-        self.unknown.is_empty()
+        self.hint_count() == 0
     }
 }
 
@@ -2299,5 +2361,182 @@ tags: []
                 "assert_healthy panic ⇔ OR of individual panics; corner ({c_dirty},{v_dirty},{e_dirty})",
             );
         }
+    }
+
+    #[test]
+    fn hint_count_is_zero_iff_is_clean_across_every_report_type() {
+        // The construction-true equivalence theorem for every report
+        // type that carries an `is_clean` predicate: `is_clean() ⇔
+        // hint_count() == 0`. Because `is_clean` on all four types
+        // delegates to `hint_count() == 0`, this is a construction
+        // check — a future refactor that reroutes `is_clean` to any
+        // other primitive turns this red at the earliest possible
+        // seam. Verified pointwise on both the clean and dirty
+        // corner of every report type produced by `ConfigCoverage`.
+        //
+        // Clean corner: fully-consistent inputs on every surface —
+        // all four counts must be zero and every predicate must be
+        // true.
+        let clean_consumed = &["name", "tags", "window.width", "window.height"];
+        let clean_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+";
+        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WIDTH".into(), "100".into())];
+        let clean_coverage = ConfigCoverage::hinted_report::<Demo>(clean_consumed);
+        let clean_value_audit = ConfigCoverage::audit_value::<Demo>(&clean_value);
+        let clean_env_audit = ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &clean_env);
+        let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
+            clean_consumed,
+            &clean_value,
+            "MYAPP_",
+            &clean_env,
+        );
+        assert_eq!(clean_coverage.hint_count(), 0);
+        assert!(clean_coverage.is_clean());
+        assert_eq!(clean_value_audit.hint_count(), 0);
+        assert!(clean_value_audit.is_clean());
+        assert_eq!(clean_env_audit.hint_count(), 0);
+        assert!(clean_env_audit.is_clean());
+        assert_eq!(clean_health.hint_count(), 0);
+        assert!(clean_health.is_clean());
+
+        // Dirty corner: dirty each surface once — the count must be
+        // strictly positive and the predicate must be false. This
+        // catches a future refactor that accidentally rewires
+        // `is_clean` to a stale AND-of-lists shape while
+        // `hint_count` correctly counts, or vice versa.
+        let dirty_consumed = &["name", "tags", "window.witdh", "window.height"];
+        let dirty_coverage = ConfigCoverage::hinted_report::<Demo>(dirty_consumed);
+        assert!(dirty_coverage.hint_count() > 0);
+        assert!(!dirty_coverage.is_clean());
+        let dirty_yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+";
+        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_value_audit = ConfigCoverage::audit_value::<Demo>(&dirty_value);
+        assert!(dirty_value_audit.hint_count() > 0);
+        assert!(!dirty_value_audit.is_clean());
+        let dirty_env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WITDH".into(), "100".into())];
+        let dirty_env_audit = ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &dirty_env);
+        assert!(dirty_env_audit.hint_count() > 0);
+        assert!(!dirty_env_audit.is_clean());
+        let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
+            dirty_consumed,
+            &dirty_value,
+            "MYAPP_",
+            &dirty_env,
+        );
+        assert!(dirty_health.hint_count() > 0);
+        assert!(!dirty_health.is_clean());
+    }
+
+    #[test]
+    fn hinted_coverage_hint_count_equals_dead_knobs_plus_stale_entries() {
+        // The additive-composition invariant on the schema-vs-consumer
+        // surface: hint_count is exactly the sum of the two hint
+        // lists, verified on an input that populates BOTH arms so a
+        // future refactor that collapses one arm out of the sum
+        // turns red.
+        //
+        // `window.witdh` in `consumed` (typo) → 1 stale entry.
+        // `window.width` missing from `consumed` → 1 dead knob.
+        // Total hint_count == 2.
+        let consumed = &["name", "tags", "window.witdh", "window.height"];
+        let hinted = ConfigCoverage::hinted_report::<Demo>(consumed);
+        assert_eq!(hinted.dead_knobs.len(), 1);
+        assert_eq!(hinted.stale_entries.len(), 1);
+        assert_eq!(hinted.hint_count(), 2);
+        assert_eq!(
+            hinted.hint_count(),
+            hinted.dead_knobs.len() + hinted.stale_entries.len(),
+        );
+    }
+
+    #[test]
+    fn value_and_env_hint_counts_equal_their_unknown_list_lengths() {
+        // The additive-composition invariant on the file-value and
+        // env surfaces: each hint_count is exactly the length of the
+        // single `unknown` list on its report, verified on an input
+        // with a nonzero count so a future refactor cannot silently
+        // route hint_count through a stale predicate.
+        let yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+  totally_extra: 1
+tags: []
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value_audit = ConfigCoverage::audit_value::<Demo>(&value);
+        assert_eq!(value_audit.hint_count(), value_audit.unknown.len());
+        assert!(value_audit.hint_count() >= 2, "{value_audit:?}");
+        let env: Vec<(String, String)> = vec![
+            ("MYAPP_WINDOW__WITDH".into(), "1".into()),
+            ("MYAPP_UNRELATED_KNOB".into(), "x".into()),
+            ("MYAPP_ANOTHER_STRAY".into(), "y".into()),
+        ];
+        let env_audit = ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &env);
+        assert_eq!(env_audit.hint_count(), env_audit.unknown.len());
+        assert_eq!(env_audit.hint_count(), 3);
+    }
+
+    #[test]
+    fn health_report_hint_count_equals_sum_of_surface_hint_counts() {
+        // The fold-composition invariant that makes `HealthReport`
+        // safe to interpret as one severity number: its hint_count
+        // is exactly the sum of the three surface hint_counts, with
+        // NO cross-surface dedup (a typo counted on both consumer
+        // and env surfaces is two hints, not one). A future refactor
+        // that introduces hidden cross-surface coupling — the same
+        // failure mode `health_report_equals_running_each_individual_audit`
+        // pins on the report level — turns red here on the count
+        // roll-up.
+        let consumed = &["name", "tags", "window.witdh", "window.height"];
+        let yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+totally_unrelated: 1
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let env: Vec<(String, String)> = vec![
+            ("MYAPP_WINDOW__WITDH".into(), "1".into()),
+            ("MYAPP_UNRELATED_KNOB".into(), "x".into()),
+        ];
+        let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
+        assert_eq!(
+            health.hint_count(),
+            health.coverage.hint_count() + health.value.hint_count() + health.env.hint_count(),
+        );
+        // And the surface counts equal running the primitives in
+        // isolation — pins that HealthReport hasn't stolen any count
+        // from its sub-reports.
+        assert_eq!(
+            health.coverage.hint_count(),
+            ConfigCoverage::hinted_report::<Demo>(consumed).hint_count(),
+        );
+        assert_eq!(
+            health.value.hint_count(),
+            ConfigCoverage::audit_value::<Demo>(&value).hint_count(),
+        );
+        assert_eq!(
+            health.env.hint_count(),
+            ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &env).hint_count(),
+        );
+        // Every hint must show up in the total — bound the sum from
+        // below.
+        assert!(health.hint_count() >= 3, "{health:?}");
     }
 }
