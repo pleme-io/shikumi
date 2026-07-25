@@ -168,6 +168,117 @@ impl ConfigCoverage {
             .min_by_key(|(_, d)| *d)
             .map(|(s, _)| s)
     }
+
+    /// Convert an environment-variable name to the dotted config path
+    /// figment would extract it under, matching the transformation
+    /// applied by `figment::providers::Env::prefixed(prefix).split("__")`
+    /// — the same shape used by [`crate::ProviderChain::with_env`].
+    ///
+    /// The prefix match is ASCII-case-insensitive (as figment does),
+    /// the stem after the prefix is lowercased, and `__` becomes `.`.
+    /// Returns [`None`] when `var` does not start with `prefix` under
+    /// case-insensitive comparison, so callers can pipe raw
+    /// [`std::env::vars`] through this and cheaply filter to the shikumi
+    /// slice in one pass:
+    ///
+    /// ```
+    /// use shikumi::ConfigCoverage;
+    /// assert_eq!(
+    ///     ConfigCoverage::env_var_to_path("MYAPP_", "MYAPP_OPTIONS__PADDING"),
+    ///     Some("options.padding".to_string()),
+    /// );
+    /// assert_eq!(
+    ///     ConfigCoverage::env_var_to_path("MYAPP_", "OTHER_KNOB"),
+    ///     None,
+    /// );
+    /// ```
+    #[must_use]
+    pub fn env_var_to_path(prefix: &str, var: &str) -> Option<String> {
+        if var.len() < prefix.len() {
+            return None;
+        }
+        let (head, tail) = var.split_at(prefix.len());
+        if !head.eq_ignore_ascii_case(prefix) {
+            return None;
+        }
+        Some(tail.to_ascii_lowercase().replace("__", "."))
+    }
+
+    /// The inverse of [`Self::env_var_to_path`]: render a dotted schema
+    /// path as the environment-variable name a figment env layer would
+    /// pick up. `prefix` is emitted verbatim (operators pick their
+    /// convention — usually upper-case-with-trailing-underscore), the
+    /// path is uppercased, and each `.` becomes `__`.
+    ///
+    /// ```
+    /// use shikumi::ConfigCoverage;
+    /// assert_eq!(
+    ///     ConfigCoverage::path_to_env_var("MYAPP_", "options.padding"),
+    ///     "MYAPP_OPTIONS__PADDING",
+    /// );
+    /// ```
+    #[must_use]
+    pub fn path_to_env_var(prefix: &str, path: &str) -> String {
+        let mut out = String::with_capacity(prefix.len() + path.len());
+        out.push_str(prefix);
+        for (i, part) in path.split('.').enumerate() {
+            if i > 0 {
+                out.push_str("__");
+            }
+            for ch in part.chars() {
+                out.extend(ch.to_uppercase());
+            }
+        }
+        out
+    }
+
+    /// Audit `env` — a snapshot of `(name, _value)` pairs (typically
+    /// [`std::env::vars`] collected once) — for env-var names that
+    /// carry the shikumi `prefix` but do not correspond to any schema
+    /// leaf of `T`. Each unknown var is paired with a "did you mean"
+    /// hint: the closest schema leaf under the typo threshold,
+    /// rendered back in env-var form so the operator sees *exactly*
+    /// the name they meant to set — not a dotted path they now have to
+    /// re-encode by hand.
+    ///
+    /// Values are ignored on purpose — a typo audit does not need to
+    /// deserialize anything, and forcing values in would tie the API
+    /// to figment's env-provider surface. The `_value` slot exists so
+    /// `std::env::vars().collect()` drops straight in without a
+    /// caller-side `map(|(k, _)| k)`.
+    ///
+    /// The audit is deterministic: unknown vars are returned sorted by
+    /// their raw env-var name so the diagnostic is stable across
+    /// process launches with a shuffled environment. Env vars that
+    /// match a schema leaf are silently dropped — this is a hint
+    /// surface, not a listing of every legitimate override.
+    #[must_use]
+    pub fn audit_env_vars<T: TieredConfig, K, V>(prefix: &str, env: &[(K, V)]) -> EnvVarAudit
+    where
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        let schema = Self::schema_leaf_paths::<T>();
+        let schema_set: BTreeSet<&str> = schema.iter().map(String::as_str).collect();
+        let mut unknown: Vec<EnvVarHint> = env
+            .iter()
+            .filter_map(|(name, _)| {
+                let raw = name.as_ref();
+                let path = Self::env_var_to_path(prefix, raw)?;
+                if schema_set.contains(path.as_str()) {
+                    return None;
+                }
+                let suggested_path = Self::did_you_mean(&path, &schema);
+                Some(EnvVarHint {
+                    env_var: raw.to_owned(),
+                    normalized_path: path,
+                    did_you_mean: suggested_path.map(|p| Self::path_to_env_var(prefix, p)),
+                })
+            })
+            .collect();
+        unknown.sort_by(|a, b| a.env_var.cmp(&b.env_var));
+        EnvVarAudit { unknown }
+    }
 }
 
 /// A single stale/dead entry paired with its closest counterpart across
@@ -202,6 +313,45 @@ impl HintedCoverageReport {
     #[must_use]
     pub fn is_clean(&self) -> bool {
         self.dead_knobs.is_empty() && self.stale_entries.is_empty()
+    }
+}
+
+/// One env-var-shaped typo hint: an env var carrying the shikumi prefix
+/// but not corresponding to any schema leaf, paired with the closest
+/// schema-leaf-in-env-var-form (if any lies within the typo threshold).
+/// Produced by [`ConfigCoverage::audit_env_vars`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnvVarHint {
+    /// The env-var name as observed in the environment (case preserved).
+    pub env_var: String,
+    /// The dotted path figment would extract this env var under — the
+    /// normalized form used for the schema-leaf comparison.
+    pub normalized_path: String,
+    /// Closest schema leaf, rendered back in env-var form (using the
+    /// same `prefix` that produced the audit) so the operator sees the
+    /// name they should have set, not a dotted path. [`None`] when no
+    /// schema leaf lies within the typo threshold.
+    pub did_you_mean: Option<String>,
+}
+
+/// Result of [`ConfigCoverage::audit_env_vars`] — every prefixed env var
+/// that does not correspond to a schema leaf, each with an optional
+/// nearest-neighbour hint. Env vars that *do* correspond to schema
+/// leaves are silently dropped (they are legitimate overrides, not
+/// typos).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct EnvVarAudit {
+    /// Prefixed env vars whose normalized dotted path does not match
+    /// any schema leaf, sorted by raw env-var name for determinism.
+    pub unknown: Vec<EnvVarHint>,
+}
+
+impl EnvVarAudit {
+    /// True iff no prefixed env var deviated from the schema — every
+    /// operator override in the environment is a real knob.
+    #[must_use]
+    pub fn is_clean(&self) -> bool {
+        self.unknown.is_empty()
     }
 }
 
@@ -514,5 +664,138 @@ mod tests {
             "window.witdh",
             "window.height",
         ]);
+    }
+
+    #[test]
+    fn env_var_to_path_lowercases_and_swaps_separator() {
+        assert_eq!(
+            ConfigCoverage::env_var_to_path("MYAPP_", "MYAPP_WINDOW__WIDTH"),
+            Some("window.width".to_string()),
+        );
+    }
+
+    #[test]
+    fn env_var_to_path_matches_prefix_case_insensitively_like_figment() {
+        assert_eq!(
+            ConfigCoverage::env_var_to_path("MyApp_", "MYAPP_NAME"),
+            Some("name".to_string()),
+            "figment env prefix comparison is ASCII-case-insensitive; ours must agree",
+        );
+    }
+
+    #[test]
+    fn env_var_to_path_rejects_var_without_prefix() {
+        assert_eq!(
+            ConfigCoverage::env_var_to_path("MYAPP_", "OTHER_NAME"),
+            None
+        );
+        assert_eq!(ConfigCoverage::env_var_to_path("MYAPP_", "MYA"), None);
+    }
+
+    #[test]
+    fn path_to_env_var_is_inverse_of_env_var_to_path_over_schema() {
+        // Round-trip every schema leaf through the encoder-then-decoder;
+        // the transformation is only useful as a hint if it is a
+        // bijection on the schema surface.
+        let schema = ConfigCoverage::schema_leaf_paths::<Demo>();
+        for path in schema {
+            let env = ConfigCoverage::path_to_env_var("MYAPP_", &path);
+            assert_eq!(
+                ConfigCoverage::env_var_to_path("MYAPP_", &env),
+                Some(path.clone()),
+                "round-trip failed for {path}",
+            );
+        }
+    }
+
+    #[test]
+    fn path_to_env_var_uppercases_and_encodes_separator() {
+        assert_eq!(
+            ConfigCoverage::path_to_env_var("MYAPP_", "window.width"),
+            "MYAPP_WINDOW__WIDTH",
+        );
+    }
+
+    #[test]
+    fn audit_env_vars_drops_env_vars_matching_schema_leaves() {
+        // Every env var here corresponds to a real Demo leaf — nothing
+        // should surface as unknown.
+        let env: Vec<(String, String)> = vec![
+            ("MYAPP_NAME".into(), "kanchi".into()),
+            ("MYAPP_WINDOW__WIDTH".into(), "100".into()),
+            ("MYAPP_WINDOW__HEIGHT".into(), "40".into()),
+            ("UNRELATED_VAR".into(), "ignored".into()),
+        ];
+        let audit = ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &env);
+        assert!(audit.is_clean(), "no typos → clean audit; got {audit:?}");
+        assert!(audit.unknown.is_empty());
+    }
+
+    #[test]
+    fn audit_env_vars_flags_unknown_and_pairs_with_env_var_form_hint() {
+        // MYAPP_WINDOW__WITDH (transposition) should surface as an
+        // unknown env var paired with MYAPP_WINDOW__WIDTH in env-var
+        // form (not dotted-path form).
+        let env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WITDH".into(), "100".into())];
+        let audit = ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &env);
+        assert_eq!(audit.unknown.len(), 1);
+        let hint = &audit.unknown[0];
+        assert_eq!(hint.env_var, "MYAPP_WINDOW__WITDH");
+        assert_eq!(hint.normalized_path, "window.witdh");
+        assert_eq!(
+            hint.did_you_mean.as_deref(),
+            Some("MYAPP_WINDOW__WIDTH"),
+            "hint must be rendered in env-var form the operator can copy-paste",
+        );
+        assert!(!audit.is_clean());
+    }
+
+    #[test]
+    fn audit_env_vars_leaves_hint_none_when_no_close_leaf_exists() {
+        // A totally-unrelated prefixed env var: still surfaces as
+        // unknown, but with no hint (no leaf is within the typo
+        // threshold).
+        let env: Vec<(String, String)> = vec![("MYAPP_UNRELATED_KNOB".into(), "x".into())];
+        let audit = ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &env);
+        assert_eq!(audit.unknown.len(), 1);
+        assert_eq!(audit.unknown[0].env_var, "MYAPP_UNRELATED_KNOB");
+        assert!(
+            audit.unknown[0].did_you_mean.is_none(),
+            "no near schema leaf → no hint, never fall back to closest anyway",
+        );
+    }
+
+    #[test]
+    fn audit_env_vars_is_sorted_by_env_var_name_for_determinism() {
+        // Shuffle the input; the output must always emerge in
+        // env-var-name order so operators see a stable diagnostic
+        // across runs.
+        let env: Vec<(String, String)> = vec![
+            ("MYAPP_ZZZ_UNKNOWN".into(), "z".into()),
+            ("MYAPP_AAA_UNKNOWN".into(), "a".into()),
+            ("MYAPP_MMM_UNKNOWN".into(), "m".into()),
+        ];
+        let audit = ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &env);
+        let names: Vec<&str> = audit.unknown.iter().map(|h| h.env_var.as_str()).collect();
+        assert_eq!(
+            names,
+            vec![
+                "MYAPP_AAA_UNKNOWN",
+                "MYAPP_MMM_UNKNOWN",
+                "MYAPP_ZZZ_UNKNOWN"
+            ],
+        );
+    }
+
+    #[test]
+    fn audit_env_vars_ignores_env_vars_outside_shikumi_prefix() {
+        // A misspelt PATH is not shikumi's problem — the audit must
+        // silently drop env vars outside its prefix.
+        let env: Vec<(String, String)> = vec![
+            ("PATH".into(), "/usr/bin".into()),
+            ("HOME".into(), "/root".into()),
+        ];
+        let audit = ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &env);
+        assert!(audit.is_clean());
     }
 }
