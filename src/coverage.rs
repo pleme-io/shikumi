@@ -143,6 +143,95 @@ impl ConfigCoverage {
         );
     }
 
+    /// The one-shot health check: run all three coverage audits on the
+    /// three operator-controllable input surfaces (consumer-declared
+    /// field list; deserialized config value; prefixed process
+    /// environment) and return their combined [`HealthReport`].
+    /// [`Self::assert_healthy`] layers above this to render the
+    /// merged panic message; consumers that want to inspect the report
+    /// structurally (e.g. to attach it to a diagnostics endpoint,
+    /// serialize it into a golden fixture, or triage which surface
+    /// failed first) call this directly.
+    ///
+    /// The primitive is one call: `hinted_report::<T>(consumed)` for
+    /// the schema-vs-consumer surface; `audit_value::<T>(value)` for
+    /// the file surface; `audit_env_vars::<T, K, V>(env_prefix, env)`
+    /// for the env surface. The three audits collapse into a single
+    /// `HealthReport` with no cross-surface logic — the surfaces
+    /// remain independently checkable, and adding a fourth surface
+    /// (a TOML value, a CLI argv slice, a fetched-config manifest)
+    /// is one field on `HealthReport` and one line here.
+    #[must_use]
+    pub fn health_report<T, K, V>(
+        consumed: &[&str],
+        value: &serde_yaml::Value,
+        env_prefix: &str,
+        env: &[(K, V)],
+    ) -> HealthReport
+    where
+        T: TieredConfig,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        HealthReport {
+            coverage: Self::hinted_report::<T>(consumed),
+            value: Self::audit_value::<T>(value),
+            env: Self::audit_env_vars::<T, K, V>(env_prefix, env),
+        }
+    }
+
+    /// Assert that all three coverage surfaces are healthy in one shot.
+    /// Panics with a merged diff that surfaces every unhealthy surface
+    /// simultaneously — an operator sees the complete picture (a
+    /// stale consumer entry AND a misspelled env var AND an unknown
+    /// key in a shipped example config) in one panic string, not a
+    /// game of whack-a-mole one surface at a time.
+    ///
+    /// The canonical use is a single `#[test]` per config type that
+    /// replaces the three ceremony-heavy tests otherwise needed to
+    /// exercise [`Self::assert_every_field_consumed`],
+    /// [`Self::assert_no_unknown_keys`], and
+    /// [`Self::assert_no_unknown_env_vars`] individually.
+    ///
+    /// All four hint lists (dead knobs, stale entries, unknown value
+    /// keys, unknown env vars) render through the same
+    /// [`fn@render_hint_pairs`] primitive the individual assertions
+    /// use, so a future sharpening of the panic format (adding the
+    /// schema-leaf source path, ANSI colour on the suggestion, a
+    /// nearest-neighbour tier hint) lands in one place and lifts every
+    /// consumer uniformly.
+    ///
+    /// # Panics
+    ///
+    /// Panics with the merged diff described above when
+    /// [`Self::health_report`] reports any unhealthy surface (a dead
+    /// knob, a stale consumer entry, an unknown value key, or an
+    /// unknown prefixed env var).
+    pub fn assert_healthy<T, K, V>(
+        consumed: &[&str],
+        value: &serde_yaml::Value,
+        env_prefix: &str,
+        env: &[(K, V)],
+    ) where
+        T: TieredConfig,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        let report = Self::health_report::<T, K, V>(consumed, value, env_prefix, env);
+        assert!(
+            report.is_clean(),
+            "shikumi::ConfigCoverage: config unhealthy across surfaces.\n  \
+             dead knobs (declared but no consumer — wire or delete): {}\n  \
+             stale entries (consumed but not declared — remove or correct): {}\n  \
+             unknown keys in value (remove or correct): {}\n  \
+             unknown env vars {env_prefix}* (remove or correct): {}",
+            render_hint_pairs(coverage_hint_pairs(&report.coverage.dead_knobs)),
+            render_hint_pairs(coverage_hint_pairs(&report.coverage.stale_entries)),
+            render_hint_pairs(value_key_hint_pairs(&report.value.unknown)),
+            render_hint_pairs(env_var_hint_pairs(&report.env.unknown)),
+        );
+    }
+
     /// Assert that no prefixed environment variable corresponds to
     /// something outside `T`'s schema. Panics with a readable diff on
     /// failure — the env-var-surface peer of
@@ -549,6 +638,40 @@ impl HintedCoverageReport {
     #[must_use]
     pub fn is_clean(&self) -> bool {
         self.dead_knobs.is_empty() && self.stale_entries.is_empty()
+    }
+}
+
+/// Combined coverage-and-typo-audit result across all three
+/// operator-controllable input surfaces: consumer-declared field list,
+/// deserialized config value, prefixed process environment. Produced by
+/// [`ConfigCoverage::health_report`].
+///
+/// A single test that constructs a `HealthReport` and asserts
+/// [`Self::is_clean`] is equivalent to running
+/// [`ConfigCoverage::assert_every_field_consumed`],
+/// [`ConfigCoverage::assert_no_unknown_keys`], and
+/// [`ConfigCoverage::assert_no_unknown_env_vars`] in sequence — but
+/// surfaces every unhealthy surface in one report instead of stopping
+/// at the first failure, so an operator sees the complete picture (a
+/// misspelled env var AND a stale consumer entry AND an unknown key
+/// in a shipped example config) in one shot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HealthReport {
+    /// Bidirectional schema-vs-consumer coverage with typo hints.
+    pub coverage: HintedCoverageReport,
+    /// Unknown leaf paths in the operator's config value with typo hints.
+    pub value: ValueAudit,
+    /// Unknown prefixed env vars with env-var-form typo hints.
+    pub env: EnvVarAudit,
+}
+
+impl HealthReport {
+    /// True iff every one of the three surfaces (consumer list, config
+    /// value, prefixed environment) is clean — no dead knobs, no stale
+    /// consumer entries, no unknown value keys, no unknown env vars.
+    #[must_use]
+    pub fn is_clean(&self) -> bool {
+        self.coverage.is_clean() && self.value.is_clean() && self.env.is_clean()
     }
 }
 
@@ -1813,5 +1936,368 @@ tags: []
             audit.is_clean(),
             "audit_value(serde_yaml::to_value(T::prescribed_default())) must be clean after the audit_paths lift; got {audit:?}",
         );
+    }
+
+    // ─── health_report / assert_healthy — the one-shot combined check ───
+
+    #[test]
+    fn health_report_is_clean_when_every_surface_is_clean() {
+        // The fully-healthy state: every consumer entry maps to a
+        // schema leaf, the value has no unknown keys, and every
+        // prefixed env var is a real knob. `is_clean` must be true
+        // and each sub-report must be clean individually.
+        let consumed = &["name", "tags", "window.width", "window.height"];
+        let yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: [a, b]
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let env: Vec<(String, String)> = vec![
+            ("MYAPP_NAME".into(), "kanchi".into()),
+            ("MYAPP_WINDOW__WIDTH".into(), "100".into()),
+            ("PATH".into(), "/usr/bin".into()), // outside prefix — ignored
+        ];
+        let report = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
+        assert!(report.is_clean(), "expected clean health, got {report:?}");
+        assert!(report.coverage.is_clean());
+        assert!(report.value.is_clean());
+        assert!(report.env.is_clean());
+    }
+
+    #[test]
+    fn assert_healthy_does_not_panic_on_healthy_input() {
+        let consumed = &["name", "tags", "window.width", "window.height"];
+        let yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: [a, b]
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let env: Vec<(String, String)> = vec![
+            ("MYAPP_WINDOW__WIDTH".into(), "100".into()),
+            ("PATH".into(), "/usr/bin".into()),
+        ];
+        ConfigCoverage::assert_healthy::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
+    }
+
+    #[test]
+    fn health_report_equals_running_each_individual_audit() {
+        // The fold-composition invariant: health_report.{coverage,
+        // value, env} must equal hinted_report / audit_value /
+        // audit_env_vars called independently on the same inputs.
+        // health_report is the sum of the three primitives with no
+        // cross-surface logic — a future refactor that adds hidden
+        // coupling between surfaces (e.g. suppressing an env-var
+        // typo because the same leaf is present in `consumed`) turns
+        // this red at the earliest possible seam.
+        let consumed = &["name", "tags", "window.witdh", "window.height"];
+        let yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+totally_unrelated: 1
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let env: Vec<(String, String)> = vec![
+            ("MYAPP_WINDOW__WITDH".into(), "100".into()),
+            ("MYAPP_UNRELATED_KNOB".into(), "x".into()),
+        ];
+        let combined =
+            ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
+        assert_eq!(
+            combined.coverage,
+            ConfigCoverage::hinted_report::<Demo>(consumed)
+        );
+        assert_eq!(combined.value, ConfigCoverage::audit_value::<Demo>(&value));
+        assert_eq!(
+            combined.env,
+            ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &env),
+        );
+    }
+
+    #[test]
+    fn health_report_is_dirty_when_any_single_surface_is_dirty() {
+        // The disjunction invariant: is_clean is false iff ANY surface
+        // is dirty. Verify pointwise by dirtying one surface at a time
+        // — the two clean surfaces must stay clean, the dirty one
+        // surfaces, and is_clean() is false.
+        let clean_consumed = &["name", "tags", "window.width", "window.height"];
+        let clean_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+";
+        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WIDTH".into(), "100".into())];
+        // Only consumer surface dirty (a stale extra entry).
+        let dirty_consumed = &[
+            "name",
+            "tags",
+            "window.width",
+            "window.height",
+            "window.depth",
+        ];
+        let r = ConfigCoverage::health_report::<Demo, _, _>(
+            dirty_consumed,
+            &clean_value,
+            "MYAPP_",
+            &clean_env,
+        );
+        assert!(!r.is_clean());
+        assert!(!r.coverage.is_clean());
+        assert!(r.value.is_clean());
+        assert!(r.env.is_clean());
+        // Only value surface dirty (an unknown YAML key).
+        let dirty_yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+";
+        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let r = ConfigCoverage::health_report::<Demo, _, _>(
+            clean_consumed,
+            &dirty_value,
+            "MYAPP_",
+            &clean_env,
+        );
+        assert!(!r.is_clean());
+        assert!(r.coverage.is_clean());
+        assert!(!r.value.is_clean());
+        assert!(r.env.is_clean());
+        // Only env surface dirty (a misspelled prefixed env var).
+        let dirty_env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WITDH".into(), "100".into())];
+        let r = ConfigCoverage::health_report::<Demo, _, _>(
+            clean_consumed,
+            &clean_value,
+            "MYAPP_",
+            &dirty_env,
+        );
+        assert!(!r.is_clean());
+        assert!(r.coverage.is_clean());
+        assert!(r.value.is_clean());
+        assert!(!r.env.is_clean());
+    }
+
+    #[test]
+    #[should_panic(expected = "config unhealthy across surfaces.")]
+    fn assert_healthy_panic_message_includes_multi_surface_headline() {
+        // Pin the operator-facing multi-surface headline verbatim so a
+        // future refactor cannot silently collapse it into
+        // one of the single-surface panics — the operator instantly
+        // knows the failure crossed surface boundaries and where each
+        // sub-diagnostic came from.
+        let env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WITDH".into(), "100".into())];
+        let yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        ConfigCoverage::assert_healthy::<Demo, _, _>(
+            &["name", "tags", "window.width", "window.height"],
+            &value,
+            "MYAPP_",
+            &env,
+        );
+    }
+
+    #[test]
+    fn assert_healthy_panic_names_every_dirty_surface_in_one_shot() {
+        // The multi-surface diagnostic theorem: dirty ALL three
+        // surfaces at once and verify the single panic string names
+        // the failing entry from each surface — the whole point of
+        // the one-shot check is that operators see the complete
+        // picture in one panic instead of playing whack-a-mole one
+        // assertion at a time. Uses catch_unwind because
+        // #[should_panic(expected = …)] can only match one substring.
+        let consumed = &[
+            "name",
+            "tags",
+            "window.width",
+            "window.height",
+            "consumer_only_leaf", // stale entry on consumer surface
+        ];
+        let yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+value_only_leaf: 1
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        let payload = std::panic::catch_unwind(|| {
+            ConfigCoverage::assert_healthy::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
+        })
+        .expect_err("all three surfaces dirty → assert_healthy must panic");
+        let msg = payload
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| {
+                payload
+                    .downcast_ref::<&'static str>()
+                    .map(|s| (*s).to_string())
+            })
+            .expect("panic payload was neither &str nor String");
+        assert!(
+            msg.contains("consumer_only_leaf"),
+            "panic must name the stale consumer entry: {msg}",
+        );
+        assert!(
+            msg.contains("value_only_leaf"),
+            "panic must name the unknown value key: {msg}",
+        );
+        assert!(
+            msg.contains("MYAPP_ENV_ONLY_LEAF"),
+            "panic must name the unknown env var (raw name): {msg}",
+        );
+    }
+
+    #[test]
+    fn assert_healthy_panic_still_uses_shared_render_hint_pairs_across_surfaces() {
+        // Extend the routing theorem to the merged assertion: the
+        // did-you-mean-shaped hint suffix produced by render_hint_pairs
+        // must appear for at least one entry per dirty surface that
+        // had a near neighbour — proving the merged panic path routes
+        // ALL surface hints through the same shared renderer, not a
+        // bespoke one-off formatter for the combined case.
+        let consumed = &[
+            "name",
+            "tags",
+            "window.width",
+            "window.height",
+            "window.heigth", // typo → nearest schema leaf is window.height
+        ];
+        let yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WITDH".into(), "100".into())];
+        let payload = std::panic::catch_unwind(|| {
+            ConfigCoverage::assert_healthy::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
+        })
+        .expect_err("all three surfaces dirty → assert_healthy must panic");
+        let msg = payload
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| {
+                payload
+                    .downcast_ref::<&'static str>()
+                    .map(|s| (*s).to_string())
+            })
+            .expect("panic payload was neither &str nor String");
+        // Consumer-surface hint (dotted-path form).
+        assert!(
+            msg.contains("\"window.heigth\" (did you mean \"window.height\"?)"),
+            "consumer-surface hint must render through render_hint_pairs: {msg}",
+        );
+        // Value-surface hint (dotted-path form).
+        assert!(
+            msg.contains("\"window.witdh\" (did you mean \"window.width\"?)"),
+            "value-surface hint must render through render_hint_pairs: {msg}",
+        );
+        // Env-surface hint (env-var form).
+        assert!(
+            msg.contains("\"MYAPP_WINDOW__WITDH\" (did you mean \"MYAPP_WINDOW__WIDTH\"?)"),
+            "env-surface hint must render through render_hint_pairs: {msg}",
+        );
+    }
+
+    #[test]
+    fn assert_healthy_panics_iff_any_individual_assertion_would_panic() {
+        // The equivalence theorem: assert_healthy panics ⇔ any of the
+        // three individual assertions would panic on the same inputs.
+        // Enumerate the 2³ boolean corners over which surfaces are
+        // dirty and verify the equivalence pointwise.
+        let clean_consumed = &["name", "tags", "window.width", "window.height"];
+        let dirty_consumed = &[
+            "name",
+            "tags",
+            "window.width",
+            "window.height",
+            "extra_leaf",
+        ];
+        let clean_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+";
+        let dirty_yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+";
+        let clean_env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WIDTH".into(), "100".into())];
+        let dirty_env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WITDH".into(), "100".into())];
+        for &(c_dirty, v_dirty, e_dirty) in &[
+            (false, false, false),
+            (true, false, false),
+            (false, true, false),
+            (false, false, true),
+            (true, true, false),
+            (true, false, true),
+            (false, true, true),
+            (true, true, true),
+        ] {
+            let consumed = if c_dirty {
+                dirty_consumed.as_slice()
+            } else {
+                clean_consumed.as_slice()
+            };
+            let yaml = if v_dirty { dirty_yaml } else { clean_yaml };
+            let env = if e_dirty { &dirty_env } else { &clean_env };
+            let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+            let any_dirty = c_dirty || v_dirty || e_dirty;
+            let healthy_panicked = std::panic::catch_unwind(|| {
+                ConfigCoverage::assert_healthy::<Demo, _, _>(consumed, &value, "MYAPP_", env);
+            })
+            .is_err();
+            assert_eq!(
+                healthy_panicked, any_dirty,
+                "assert_healthy must panic iff any surface dirty; corner ({c_dirty},{v_dirty},{e_dirty})",
+            );
+            // And a spot-check against the individual assertions on
+            // the same corner: OR-ing their panic outcomes must equal
+            // healthy_panicked.
+            let consumer_panicked = std::panic::catch_unwind(|| {
+                ConfigCoverage::assert_every_field_consumed::<Demo>(consumed);
+            })
+            .is_err();
+            let value_panicked = std::panic::catch_unwind(|| {
+                ConfigCoverage::assert_no_unknown_keys::<Demo>(&value);
+            })
+            .is_err();
+            let env_panicked = std::panic::catch_unwind(|| {
+                ConfigCoverage::assert_no_unknown_env_vars::<Demo, _, _>("MYAPP_", env);
+            })
+            .is_err();
+            assert_eq!(
+                healthy_panicked,
+                consumer_panicked || value_panicked || env_panicked,
+                "assert_healthy panic ⇔ OR of individual panics; corner ({c_dirty},{v_dirty},{e_dirty})",
+            );
+        }
     }
 }

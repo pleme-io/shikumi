@@ -63,8 +63,8 @@ pub mod tiered;
 mod watcher;
 
 pub use coverage::{
-    ConfigCoverage, CoverageHint, CoverageReport, EnvVarAudit, EnvVarHint, HintedCoverageReport,
-    PathHint, ValueAudit, ValueKeyHint,
+    ConfigCoverage, CoverageHint, CoverageReport, EnvVarAudit, EnvVarHint, HealthReport,
+    HintedCoverageReport, PathHint, ValueAudit, ValueKeyHint,
 };
 pub use cube::{
     AxisHistogram, AxisHistogramIntoIter, AxisHistogramIter, AxisHistogramIterMut,
