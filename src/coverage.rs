@@ -986,6 +986,59 @@ impl HealthReport {
         }
         out
     }
+
+    /// The plural batch peer of [`Self::is_clean_by_surface`] and the
+    /// bool-side histogram of [`Self::hint_iter`] — every
+    /// [`HintSurface`] variant paired with its per-surface cleanness
+    /// predicate, folded through [`HintSurface::ALL`] in canonical
+    /// yield order (dead knobs, stale entries, unknown value keys,
+    /// unknown env vars). The AND-side peer of
+    /// [`Self::hint_counts_by_surface`] on the count side, and the
+    /// per-surface projection of [`Self::is_clean`] promoted to a
+    /// whole-histogram fact.
+    ///
+    /// Returns a fixed-size
+    /// `[(HintSurface, bool); HintSurface::ALL.len()]` array so the
+    /// "one entry per surface, no missing surface, no duplicate
+    /// surface" claim is a fact of the type — no runtime length
+    /// check, no room for a caller to see a partial histogram, no
+    /// room for a `BTreeMap`-shaped alternative to silently drop a
+    /// clean surface (a variant added to [`HintSurface`] with its
+    /// [`HintSurface::ALL`] entry — welded by
+    /// `hint_surface_all_covers_every_variant_exactly_once` —
+    /// automatically grows the returned array's cardinality, and
+    /// every consumer picks up the new surface without a code
+    /// change).
+    ///
+    /// The tag order matches [`HintSurface::ALL`] verbatim, and the
+    /// AND of the array's predicates equals [`Self::is_clean`] since
+    /// [`HintSurface`]'s four variants partition [`Self::hint_iter`]
+    /// — the same fold-composition invariant [`Self::is_clean_by_surface`]
+    /// promises pointwise, promoted here to a whole-histogram fact so
+    /// a consumer that emits the full per-surface cleanness table (a
+    /// Prometheus gauge vector with `surface` as the label and a `0`/`1`
+    /// value, a dashboard tile row with one traffic-light per surface,
+    /// a golden fixture that compares clean and dirty runs across a
+    /// fleet of consumers) has one call site instead of a hand-walked
+    /// loop over [`HintSurface::ALL`].
+    ///
+    /// Delegates through [`Self::is_clean_by_surface`] pointwise so
+    /// this whole-histogram peer cannot drift from its scalar
+    /// per-surface peer, and cannot drift from
+    /// [`Self::hint_count_by_surface`] (which the scalar peer
+    /// delegates through in turn) or from the enumeration primitive
+    /// [`Self::hint_iter`] beneath both.
+    #[must_use]
+    pub fn is_clean_by_surfaces(&self) -> [(HintSurface, bool); HintSurface::ALL.len()] {
+        let mut out = [(HintSurface::DeadKnob, true); HintSurface::ALL.len()];
+        let mut i = 0;
+        while i < HintSurface::ALL.len() {
+            let surface = HintSurface::ALL[i];
+            out[i] = (surface, self.is_clean_by_surface(surface));
+            i += 1;
+        }
+        out
+    }
 }
 
 /// One env-var-shaped typo hint: an env var carrying the shikumi prefix
@@ -3666,6 +3719,262 @@ tags: []
             mixed_health.is_clean_by_surface(HintSurface::ValueKey),
             "mixed corner: value-key surface must stay clean",
         );
+    }
+
+    // ─── is_clean_by_surfaces — plural batch peer of
+    // ─── is_clean_by_surface (bool-side histogram) ────────────────
+
+    #[test]
+    fn is_clean_by_surfaces_pairs_agree_with_is_clean_by_surface_pointwise() {
+        // The delegation invariant, projected onto the histogram: for
+        // every returned (surface, clean) pair, `clean` matches
+        // `is_clean_by_surface(surface)` verbatim, on both a clean
+        // corner (every predicate true) and a dirty corner (every
+        // predicate false). Verified on both extremes so no per-surface
+        // arm is vacuously covered and a future refactor that inlines
+        // the histogram against the scalar peer has to keep the two in
+        // lockstep.
+        let clean_consumed = &["name", "tags", "window.width", "window.height"];
+        let clean_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+";
+        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_env: Vec<(String, String)> = vec![];
+        let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
+            clean_consumed,
+            &clean_value,
+            "MYAPP_",
+            &clean_env,
+        );
+        let clean_hist = clean_health.is_clean_by_surfaces();
+        assert_eq!(
+            clean_hist.len(),
+            HintSurface::ALL.len(),
+            "is_clean_by_surfaces must return one entry per HintSurface::ALL variant",
+        );
+        for (surface, clean) in &clean_hist {
+            assert_eq!(*clean, clean_health.is_clean_by_surface(*surface));
+            assert!(
+                *clean,
+                "clean corner: every surface must be clean, saw dirty at {surface:?}",
+            );
+        }
+
+        let dirty_consumed = &["name", "tags", "window.witdh", "window.height"];
+        let dirty_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+value_only_leaf: 1
+";
+        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
+            dirty_consumed,
+            &dirty_value,
+            "MYAPP_",
+            &dirty_env,
+        );
+        let dirty_hist = dirty_health.is_clean_by_surfaces();
+        for (surface, clean) in &dirty_hist {
+            assert_eq!(*clean, dirty_health.is_clean_by_surface(*surface));
+            assert!(
+                !*clean,
+                "dirty corner: every surface must be dirty, saw clean at {surface:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn is_clean_by_surfaces_and_equals_is_clean() {
+        // The fold-composition invariant on the bool side, promoted to
+        // the whole-histogram peer: `is_clean() == and-over
+        // is_clean_by_surfaces()`. Verified across the full lattice —
+        // clean corner (whole clean / every entry true), fully-dirty
+        // corner (whole dirty / every entry false), and a MIXED corner
+        // (only the env-var surface dirty — whole dirty, three entries
+        // still true, only one false). The mixed corner is the
+        // load-bearing case: it pins the AND identity where the
+        // pointwise sum-back on the count-side histogram is trivial and
+        // the shape of the array (not just its total) matters most.
+        let clean_consumed = &["name", "tags", "window.width", "window.height"];
+        let clean_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+";
+        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_env: Vec<(String, String)> = vec![];
+        let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
+            clean_consumed,
+            &clean_value,
+            "MYAPP_",
+            &clean_env,
+        );
+        let clean_and: bool = clean_health.is_clean_by_surfaces().iter().all(|(_, c)| *c);
+        assert_eq!(clean_and, clean_health.is_clean());
+        assert!(clean_and);
+
+        let dirty_consumed = &["name", "tags", "window.witdh", "window.height"];
+        let dirty_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+value_only_leaf: 1
+";
+        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
+            dirty_consumed,
+            &dirty_value,
+            "MYAPP_",
+            &dirty_env,
+        );
+        let dirty_and: bool = dirty_health.is_clean_by_surfaces().iter().all(|(_, c)| *c);
+        assert_eq!(dirty_and, dirty_health.is_clean());
+        assert!(!dirty_and);
+
+        // Mixed corner: dirty only the env-var surface, leave the other
+        // three clean. The array must have exactly one `false` entry —
+        // at the env-var surface — and three `true` entries at the
+        // other surfaces.
+        let mixed_consumed = &["name", "tags", "window.width", "window.height"];
+        let mixed_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+";
+        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
+            mixed_consumed,
+            &mixed_value,
+            "MYAPP_",
+            &mixed_env,
+        );
+        let mixed_hist = mixed_health.is_clean_by_surfaces();
+        let mixed_and: bool = mixed_hist.iter().all(|(_, c)| *c);
+        assert_eq!(mixed_and, mixed_health.is_clean());
+        assert!(
+            !mixed_and,
+            "mixed corner: whole-histogram AND must be false when any surface is dirty",
+        );
+        for (surface, clean) in &mixed_hist {
+            match surface {
+                HintSurface::EnvVar => {
+                    assert!(!*clean, "mixed corner: env-var surface entry must be false");
+                }
+                HintSurface::DeadKnob | HintSurface::StaleEntry | HintSurface::ValueKey => {
+                    assert!(*clean, "mixed corner: {surface:?} entry must stay true");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn is_clean_by_surfaces_tag_sequence_equals_hint_surface_all() {
+        // The tag-order invariant, verified independently of the
+        // predicates: the sequence of surface tags in the returned
+        // array equals `HintSurface::ALL` verbatim on any corner (a
+        // clean report reveals ordering regressions even when every
+        // predicate is true). Welds the batch peer's order to the
+        // canonical listing that
+        // `hint_surface_all_matches_canonical_yield_order_verbatim`
+        // welds to the panic + hint_iter path — so a future reorder on
+        // any of the three (batch peer, ALL const, hint_iter) turns red
+        // at the earliest seam. Mirrors
+        // `hint_counts_by_surface_tag_sequence_equals_hint_surface_all`
+        // for the bool-side histogram.
+        let health = ConfigCoverage::health_report::<Demo, _, _>(
+            &["name", "tags", "window.width", "window.height"],
+            &serde_yaml::Value::Null,
+            "MYAPP_",
+            &Vec::<(String, String)>::new(),
+        );
+        let observed: Vec<HintSurface> = health
+            .is_clean_by_surfaces()
+            .iter()
+            .map(|(s, _)| *s)
+            .collect();
+        assert_eq!(observed, HintSurface::ALL.to_vec());
+    }
+
+    #[test]
+    fn is_clean_by_surfaces_length_matches_hint_surface_all_length() {
+        // The array's type-level cardinality — const-evaluated from
+        // `HintSurface::ALL.len()` at the return-type declaration —
+        // must equal the const's own length at runtime, so a consumer
+        // that destructures the array via a
+        // `[(_, a), (_, b), (_, c), (_, d)]` pattern (or reserves a
+        // fixed-size buffer sized by the const) never sees a partial
+        // histogram. Guaranteed by construction; pinned here at read
+        // time so a future refactor that switches the return type to
+        // `Vec<...>` or a `BTreeMap<...>` (either of which could
+        // silently return fewer than every surface) turns red. Mirrors
+        // `hint_counts_by_surface_length_matches_hint_surface_all_length`
+        // for the bool-side histogram.
+        let health = ConfigCoverage::health_report::<Demo, _, _>(
+            &["name", "tags", "window.width", "window.height"],
+            &serde_yaml::Value::Null,
+            "MYAPP_",
+            &Vec::<(String, String)>::new(),
+        );
+        assert_eq!(health.is_clean_by_surfaces().len(), HintSurface::ALL.len(),);
+    }
+
+    #[test]
+    fn is_clean_by_surfaces_pairs_agree_with_hint_counts_by_surface_pointwise() {
+        // The bool-side vs count-side agreement of the two histogram
+        // peers: for every surface, the bool entry equals the count
+        // entry being zero (both projections of `hint_iter`
+        // partitioned by surface). Pins the two histograms — which
+        // could otherwise silently drift if one is refactored to a
+        // shortcut that skips a surface — to the same underlying
+        // per-surface fold. Verified on a mixed corner where only the
+        // env-var surface is dirty, so at least one entry lands on
+        // each side of the zero-count / clean-predicate boundary.
+        let mixed_consumed = &["name", "tags", "window.width", "window.height"];
+        let mixed_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+";
+        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        let mixed_health = ConfigCoverage::health_report::<Demo, _, _>(
+            mixed_consumed,
+            &mixed_value,
+            "MYAPP_",
+            &mixed_env,
+        );
+        let bools = mixed_health.is_clean_by_surfaces();
+        let counts = mixed_health.hint_counts_by_surface();
+        assert_eq!(bools.len(), counts.len());
+        for ((b_surface, b_clean), (c_surface, c_count)) in bools.iter().zip(counts.iter()) {
+            assert_eq!(
+                b_surface, c_surface,
+                "histograms must yield surfaces in the same order",
+            );
+            assert_eq!(
+                *b_clean,
+                *c_count == 0,
+                "surface={b_surface:?}: is_clean must equal (hint_count == 0)",
+            );
+        }
     }
 
     // ─── HintSurface::ALL — canonical per-enum listing peer of the
