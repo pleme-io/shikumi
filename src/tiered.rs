@@ -8486,7 +8486,23 @@ impl<T> ProgressiveResolution<T> {
         self.value
     }
 
-    /// Consume, yielding both the value and its provenance map.
+    /// Consume, yielding both the value and its provenance map — the
+    /// consuming destructuring dual of the borrow-side [`Self::value`] /
+    /// [`Self::provenance`] accessor pair.
+    ///
+    /// Peer of [`ProgressiveLayer::into_parts`] on the atomic-pair
+    /// ownership boundary: [`ProgressiveLayer::into_parts`] hands out
+    /// `(Provenance, Dict)` when the *input* overlay's fields need to move
+    /// to a pair-shaped consumer; [`Self::into_parts`] hands out
+    /// `(T, ProvenanceMap)` when the *output* resolution's fields need to
+    /// move to caller-owned homes without a per-field `.clone()`.
+    ///
+    /// Symmetric with the [`From<ProgressiveResolution<T>> for (T, ProvenanceMap)`]
+    /// impl, which is the std-trait facade over this method —
+    /// `<(T, ProvenanceMap)>::from(resolution)` and
+    /// `resolution.into_parts()` produce identical pairs. Pointwise
+    /// equality pinned by
+    /// [`progressive_tests::progressive_resolution_from_tuple_agrees_with_into_parts`].
     #[must_use]
     pub fn into_parts(self) -> (T, ProvenanceMap) {
         (self.value, self.provenance)
@@ -8496,6 +8512,27 @@ impl<T> ProgressiveResolution<T> {
 impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
     fn eq(&self, other: &Self) -> bool {
         self.value == other.value && self.provenance == other.provenance
+    }
+}
+
+/// Std-trait facade over [`ProgressiveResolution::into_parts`]: the same
+/// consuming destructuring, spelled `<(T, ProvenanceMap)>::from(resolution)`
+/// for callers routing through the [`From`] blanket ([`Into::into`]
+/// chains, generic bounds `R: Into<(T, ProvenanceMap)>`).
+///
+/// Pointwise equal to [`ProgressiveResolution::into_parts`] on every input —
+/// pinned by
+/// [`progressive_tests::progressive_resolution_from_tuple_agrees_with_into_parts`].
+/// Peer of the [`From<ProgressiveLayer> for (Provenance, Dict)`] facade on
+/// the *input* side of the atomic-pair ownership boundary: both members of
+/// the fold's atomic-pair boundary (input [`ProgressiveLayer`], output
+/// [`ProgressiveResolution<T>`]) now expose both spellings of the consuming
+/// destructuring — inherent `into_parts` and the [`From`] std-trait facade
+/// — so a downstream consumer bounded on `T: Into<(A, B)>` picks up either
+/// atomic pair without special-casing.
+impl<T> From<ProgressiveResolution<T>> for (T, ProvenanceMap) {
+    fn from(resolution: ProgressiveResolution<T>) -> Self {
+        resolution.into_parts()
     }
 }
 
@@ -49256,6 +49293,74 @@ mod progressive_tests {
         assert_eq!(
             prov.source(),
             &ConfigSource::File(PathBuf::from("/etc/seam.yaml"))
+        );
+    }
+
+    #[test]
+    fn progressive_resolution_into_parts_matches_field_accessors() {
+        // The load-bearing pointwise invariant on the *output* side of
+        // the atomic-pair ownership boundary — peer of
+        // progressive_layer_into_parts_matches_field_accessors on the
+        // *input* side: `r.clone().into_parts()` is equal to
+        // `(r.value().clone(), r.provenance().clone())`, so the
+        // consuming destructuring and the borrow-side field-clone pair
+        // remain byte-equal even after Clone for ProgressiveResolution
+        // ever grows a third field (e.g. a resolution timestamp, a
+        // fold-source watermark) that changes what a naive `Self { .. }`
+        // move would return.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(99_u32));
+        let layer = ProgressiveLayer::file("/etc/into_parts.yaml", dict);
+        let r = Prog::resolve_progressive_with(&[layer]);
+        let via_into_parts = r.clone().into_parts();
+        let via_accessors = (r.value().clone(), r.provenance().clone());
+        assert_eq!(via_into_parts, via_accessors);
+    }
+
+    #[test]
+    fn progressive_resolution_from_tuple_agrees_with_into_parts() {
+        // The std-trait facade on the *output* side of the atomic-pair
+        // ownership boundary — peer of
+        // progressive_layer_from_tuple_agrees_with_into_parts on the
+        // *input* side. Callers routing through `Into::into` /
+        // `<(Prog, ProvenanceMap)>::from(resolution)` hit the same
+        // destructuring as callers naming the inherent `into_parts`
+        // method: the two spellings are one operation, not a facade
+        // with drift, so a downstream generic bound
+        // `R: Into<(Prog, ProvenanceMap)>` picks up ProgressiveResolution
+        // for free — exactly the way the `From<ProgressiveLayer>`
+        // facade let a downstream `T: Into<(Provenance, Dict)>` bound
+        // pick up ProgressiveLayer.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(77_u32));
+        let layer = ProgressiveLayer::file("/etc/from_tuple.yaml", dict);
+        let r = Prog::resolve_progressive_with(&[layer]);
+        let via_method = r.clone().into_parts();
+        let via_from: (Prog, ProvenanceMap) = r.into();
+        assert_eq!(via_method, via_from);
+    }
+
+    #[test]
+    fn progressive_resolution_into_parts_end_to_end_survives_facade() {
+        // End-to-end pin: routing a ProgressiveResolution through the
+        // From facade rebuilds a resolution whose value + provenance
+        // are byte-identical to the direct fold's output. Guards
+        // against a future edit that mis-routes the facade and silently
+        // drops or mis-stamps the atomic pair on the way through
+        // `Into::into`.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(88_u32));
+        let layer = ProgressiveLayer::file("/etc/end_to_end.yaml", dict);
+        let direct = Prog::resolve_progressive_with(&[layer.clone()]);
+        let (value, prov_map): (Prog, ProvenanceMap) =
+            Prog::resolve_progressive_with(&[layer]).into();
+        assert_eq!(&value, direct.value());
+        assert_eq!(&prov_map, direct.provenance());
+        let prov = prov_map.provenance_of(&["b"]).unwrap();
+        assert_eq!(prov.tier(), ConfigTierKind::Custom);
+        assert_eq!(
+            prov.source(),
+            &ConfigSource::File(PathBuf::from("/etc/end_to_end.yaml"))
         );
     }
 }
