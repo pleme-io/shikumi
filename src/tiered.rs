@@ -510,10 +510,7 @@ pub trait TieredConfig: Sized + Clone + Serialize + DeserializeOwned {
             .merge(Serialized::defaults(&merged))
             .extract::<Self>()
             .unwrap_or_else(|_| Self::prescribed_default());
-        ProgressiveResolution {
-            value,
-            provenance: ProvenanceMap { inner: attribution },
-        }
+        ProgressiveResolution::new(value, ProvenanceMap { inner: attribution })
     }
 
     /// Low-ceremony standard seam for wiring the [`Self::discovered`] tier
@@ -8526,6 +8523,35 @@ impl From<ProgressiveLayer> for (Provenance, Dict) {
     }
 }
 
+/// Std-trait facade over [`ProgressiveLayer::new`]: rebuild an overlay
+/// from an owned `(provenance, dict)` pair, spelled
+/// `ProgressiveLayer::from((p, d))` for callers routing through the
+/// [`From`] blanket ([`Into::into`] chains, generic bounds
+/// `T: Into<ProgressiveLayer>`).
+///
+/// Pointwise equal to [`ProgressiveLayer::new`] on every input pair —
+/// pinned by [`tests::progressive_layer_from_pair_agrees_with_new`]. The
+/// reconstruction dual of the [`From<ProgressiveLayer> for (Provenance, Dict)`]
+/// facade above: together they close BOTH directions of the atomic-pair
+/// ownership boundary on the overlay container, so a
+/// [`ProgressiveLayer`] round-trips through the `(Provenance, Dict)` pair
+/// byte-identically via either the inherent
+/// [`ProgressiveLayer::new`] / [`ProgressiveLayer::into_parts`] pair or
+/// the two [`From`] facades. Peer of the
+/// [`From<(ConfigTierKind, ConfigSource)> for Provenance`] reconstruction
+/// facade one seam down at the [`Provenance`] primitive, lifting the same
+/// closure to the container level: a downstream generic bound
+/// `T: Into<ProgressiveLayer>` — a `ConfigPlane` broadcast surface
+/// decoding a wire-encoded `(provenance, dict)` pair, a per-overlay map
+/// that stores the two fields separately, an FFI boundary that owns its
+/// inputs — picks up the pair for free without reaching for the inherent
+/// constructor name.
+impl From<(Provenance, Dict)> for ProgressiveLayer {
+    fn from((provenance, dict): (Provenance, Dict)) -> Self {
+        Self::new(provenance, dict)
+    }
+}
+
 // ── ProgressiveResolution — the (value, provenance) pair the fold returns ──
 
 /// The atomic result of [`TieredConfig::resolve_progressive`]: the resolved
@@ -8542,6 +8568,31 @@ pub struct ProgressiveResolution<T> {
 }
 
 impl<T> ProgressiveResolution<T> {
+    /// Construct a resolution from an owned `(value, provenance)` pair —
+    /// the reconstruction dual of [`Self::into_parts`].
+    ///
+    /// Peer of [`ProgressiveLayer::new`] on the atomic-pair ownership
+    /// boundary: [`ProgressiveLayer::new`] rebuilds an input overlay from
+    /// its `(Provenance, Dict)` pair; [`Self::new`] rebuilds the output
+    /// resolution from its `(T, ProvenanceMap)` pair. Together with the
+    /// destructuring pair ([`Self::into_parts`] plus the
+    /// [`From<ProgressiveResolution<T>> for (T, ProvenanceMap)`] facade),
+    /// this closes both directions of the atomic-pair ownership boundary
+    /// on the resolution container — the seam
+    /// [`TieredConfig::resolve_progressive_with`] used to reach for via
+    /// the struct-literal `ProgressiveResolution { value, provenance }`
+    /// now flows through a named constructor.
+    ///
+    /// Symmetric with the [`From<(T, ProvenanceMap)> for ProgressiveResolution<T>`]
+    /// impl, which is the std-trait facade over this method — `ProgressiveResolution::from((v, m))`
+    /// and `ProgressiveResolution::new(v, m)` produce identical resolutions.
+    /// Round-trips through [`Self::into_parts`] on the same pair with no
+    /// allocation or conversion.
+    #[must_use]
+    pub fn new(value: T, provenance: ProvenanceMap) -> Self {
+        Self { value, provenance }
+    }
+
     /// The resolved config value.
     #[must_use]
     pub fn value(&self) -> &T {
@@ -8607,6 +8658,42 @@ impl<T: PartialEq> PartialEq for ProgressiveResolution<T> {
 impl<T> From<ProgressiveResolution<T>> for (T, ProvenanceMap) {
     fn from(resolution: ProgressiveResolution<T>) -> Self {
         resolution.into_parts()
+    }
+}
+
+/// Std-trait facade over [`ProgressiveResolution::new`]: rebuild a
+/// resolution from an owned `(value, provenance)` pair, spelled
+/// `ProgressiveResolution::from((v, m))` for callers routing through the
+/// [`From`] blanket ([`Into::into`] chains, generic bounds
+/// `R: Into<ProgressiveResolution<T>>`).
+///
+/// Pointwise equal to [`ProgressiveResolution::new`] on every input pair —
+/// pinned by
+/// [`progressive_tests::progressive_resolution_from_pair_agrees_with_new`].
+/// The reconstruction dual of the
+/// [`From<ProgressiveResolution<T>> for (T, ProvenanceMap)`] facade
+/// above: together they close BOTH directions of the atomic-pair
+/// ownership boundary on the resolution container, so a
+/// [`ProgressiveResolution<T>`] round-trips through the
+/// `(T, ProvenanceMap)` pair byte-identically via either the inherent
+/// [`ProgressiveResolution::new`] / [`ProgressiveResolution::into_parts`]
+/// pair or the two [`From`] facades.
+///
+/// Peer of the [`From<(Provenance, Dict)> for ProgressiveLayer`]
+/// reconstruction facade on the input side of the fold's atomic-pair
+/// boundary: both members of that boundary (input [`ProgressiveLayer`],
+/// output [`ProgressiveResolution<T>`]) now expose both spellings of the
+/// consuming destructuring AND both spellings of the reconstruction —
+/// inherent [`Self::new`] / [`Self::into_parts`] plus the two [`From`]
+/// std-trait facades. A downstream consumer bounded on
+/// `R: Into<ProgressiveResolution<T>>` (a `ConfigPlane` broadcast surface
+/// re-hydrating a wire-encoded resolution, a fixture harness that hands
+/// the fold a synthesized `(T, ProvenanceMap)` pair, an FFI boundary
+/// that owns its inputs) picks up the pair for free without reaching for
+/// the inherent constructor name.
+impl<T> From<(T, ProvenanceMap)> for ProgressiveResolution<T> {
+    fn from((value, provenance): (T, ProvenanceMap)) -> Self {
+        Self::new(value, provenance)
     }
 }
 
@@ -49436,6 +49523,34 @@ mod progressive_tests {
     }
 
     #[test]
+    fn progressive_layer_from_pair_agrees_with_new() {
+        // The reconstruction dual of progressive_layer_from_tuple_agrees_with_into_parts:
+        // the `From<(Provenance, Dict)> for ProgressiveLayer` impl and the
+        // inherent `ProgressiveLayer::new` constructor produce the same
+        // overlay on every input pair. Together with the two destructuring-
+        // side impls above, this closes BOTH directions of the atomic-pair
+        // ownership boundary on the overlay container — a ProgressiveLayer
+        // round-trips through the (Provenance, Dict) pair via either the
+        // inherent [new, into_parts] pair or the two From facades and lands
+        // at the identical byte-image. A downstream generic bound
+        // `T: Into<ProgressiveLayer>` — a ConfigPlane broadcast surface
+        // decoding a wire-encoded (provenance, dict) pair — decodes via
+        // one `.into()` call and no caller has to reach for the inherent
+        // constructor name.
+        let mut dict = Dict::new();
+        dict.insert("k".to_owned(), Value::from(9_u32));
+        let pair = (Provenance::file("/etc/from_pair_layer.yaml"), dict);
+        let via_new = ProgressiveLayer::new(pair.0.clone(), pair.1.clone());
+        let via_from: ProgressiveLayer = pair.clone().into();
+        assert_eq!(via_new, via_from);
+        // And round-tripping in both directions lands byte-identically —
+        // proof the two From impls are inverses on the atomic pair at the
+        // container altitude.
+        let round_tripped: (Provenance, Dict) = via_from.into();
+        assert_eq!(round_tripped, pair);
+    }
+
+    #[test]
     fn resolve_progressive_with_seam_routes_through_into_parts() {
         // End-to-end regression on the fold seam: after routing
         // TieredConfig::resolve_progressive_with's overlay unpack through
@@ -49499,6 +49614,61 @@ mod progressive_tests {
         let via_method = r.clone().into_parts();
         let via_from: (Prog, ProvenanceMap) = r.into();
         assert_eq!(via_method, via_from);
+    }
+
+    #[test]
+    fn progressive_resolution_from_pair_agrees_with_new() {
+        // The reconstruction dual of progressive_resolution_from_tuple_agrees_with_into_parts
+        // on the *output* container — peer of
+        // progressive_layer_from_pair_agrees_with_new on the *input*
+        // container: the `From<(T, ProvenanceMap)> for ProgressiveResolution<T>`
+        // impl and the inherent `ProgressiveResolution::new` constructor
+        // produce the same resolution on every input pair. Together with
+        // the destructuring-side facades, this closes BOTH directions of
+        // the atomic-pair ownership boundary on the resolution container,
+        // so a ProgressiveResolution<T> round-trips through the
+        // (T, ProvenanceMap) pair via either the inherent
+        // [new, into_parts] pair or the two From facades and lands at the
+        // identical byte-image. Symmetric with what
+        // provenance_from_pair_agrees_with_new pins one seam down at the
+        // Provenance primitive: both altitudes of the tiered algebra now
+        // carry the reconstruction facade the primitive gained in the
+        // prior commit.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(66_u32));
+        let layer = ProgressiveLayer::file("/etc/from_pair_res.yaml", dict);
+        let seed = Prog::resolve_progressive_with(&[layer]);
+        let pair = seed.clone().into_parts();
+        let via_new = ProgressiveResolution::<Prog>::new(pair.0.clone(), pair.1.clone());
+        let via_from: ProgressiveResolution<Prog> = pair.clone().into();
+        assert_eq!(via_new, via_from);
+        // And round-tripping in both directions lands byte-identically —
+        // proof the two From impls are inverses on the atomic pair at the
+        // resolution container altitude.
+        let round_tripped: (Prog, ProvenanceMap) = via_from.into();
+        assert_eq!(round_tripped, pair);
+    }
+
+    #[test]
+    fn progressive_resolution_new_agrees_with_struct_literal_construction() {
+        // The load-bearing invariant behind routing
+        // TieredConfig::resolve_progressive_with's terminal construction
+        // through `ProgressiveResolution::new` instead of the struct-
+        // literal `ProgressiveResolution { value, provenance }`: both
+        // spellings produce the same resolution on every input pair.
+        // Without this pin, a future field added to ProgressiveResolution
+        // (a resolution timestamp, a fold-source watermark) could silently
+        // diverge the two paths — the struct-literal site would force the
+        // new field visibly, but a `new`-routed site would keep compiling
+        // if `new` defaulted the field. Pins the two spellings as one
+        // operation.
+        let mut dict = Dict::new();
+        dict.insert("b".to_owned(), Value::from(55_u32));
+        let layer = ProgressiveLayer::file("/etc/new_lit.yaml", dict);
+        let via_fold = Prog::resolve_progressive_with(&[layer]);
+        let (value, provenance) = via_fold.clone().into_parts();
+        let via_new = ProgressiveResolution::<Prog>::new(value, provenance);
+        assert_eq!(via_new, via_fold);
     }
 
     #[test]
