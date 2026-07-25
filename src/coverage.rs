@@ -681,12 +681,14 @@ impl HintedCoverageReport {
     /// consumer routing this iterator through the same renderer
     /// produces the same text as the panic path — without having to
     /// parse the panic string. Composes with
-    /// [`ValueAudit::hint_count`] / [`EnvVarAudit::hint_count`] as
-    /// the coverage-sub-report slice of a future refactor that
-    /// collapses [`HealthReport::hint_iter`] into a chain of the
-    /// three sub-report enumeration primitives — that composition is
-    /// welded by
-    /// `health_report_hint_iter_chains_sub_report_hint_iter_coverage_prefix`.
+    /// [`ValueAudit::hint_iter`] / [`EnvVarAudit::hint_iter`] as the
+    /// coverage-sub-report slice of [`HealthReport::hint_iter`],
+    /// which folds through the three sub-report enumeration
+    /// primitives (so the whole-report enumeration cannot drift from
+    /// its three sub-report peers) — the composition is welded by
+    /// `health_report_hint_iter_chains_sub_report_hint_iters` and the
+    /// coverage-arm prefix identity by
+    /// `hinted_coverage_hint_iter_matches_health_report_coverage_prefix`.
     ///
     /// Consumers holding only a [`HintedCoverageReport`] (a `#[test]`
     /// that only runs [`ConfigCoverage::hinted_report`] without a
@@ -877,31 +879,22 @@ impl HealthReport {
     /// compares clean and dirty runs across a fleet of consumers)
     /// iterate this directly instead of walking the four hint lists
     /// by hand.
+    ///
+    /// Folds through the three sub-report enumeration primitives —
+    /// [`HintedCoverageReport::hint_iter`],
+    /// [`ValueAudit::hint_iter`], [`EnvVarAudit::hint_iter`] — so a
+    /// future refactor that changes which underlying hint list feeds
+    /// a surface tag flows through to this method automatically, and
+    /// the whole-report/sub-report identity
+    /// `HealthReport::hint_iter() ==
+    /// coverage.hint_iter().chain(value.hint_iter()).chain(env.hint_iter())`
+    /// holds by construction — welded by
+    /// `health_report_hint_iter_chains_sub_report_hint_iters`.
     pub fn hint_iter(&self) -> impl Iterator<Item = SurfaceHint<'_>> {
-        let dead_knobs = self.coverage.dead_knobs.iter().map(|h| SurfaceHint {
-            surface: HintSurface::DeadKnob,
-            entry: h.entry.as_str(),
-            did_you_mean: h.did_you_mean.as_deref(),
-        });
-        let stale_entries = self.coverage.stale_entries.iter().map(|h| SurfaceHint {
-            surface: HintSurface::StaleEntry,
-            entry: h.entry.as_str(),
-            did_you_mean: h.did_you_mean.as_deref(),
-        });
-        let value_keys = self.value.unknown.iter().map(|h| SurfaceHint {
-            surface: HintSurface::ValueKey,
-            entry: h.path.as_str(),
-            did_you_mean: h.did_you_mean.as_deref(),
-        });
-        let env_vars = self.env.unknown.iter().map(|h| SurfaceHint {
-            surface: HintSurface::EnvVar,
-            entry: h.env_var.as_str(),
-            did_you_mean: h.did_you_mean.as_deref(),
-        });
-        dead_knobs
-            .chain(stale_entries)
-            .chain(value_keys)
-            .chain(env_vars)
+        self.coverage
+            .hint_iter()
+            .chain(self.value.hint_iter())
+            .chain(self.env.hint_iter())
     }
 
     /// Iterate every hint on ONE [`HintSurface`], as [`SurfaceHint`]
@@ -1353,6 +1346,45 @@ impl EnvVarAudit {
     pub fn is_clean(&self) -> bool {
         self.hint_count() == 0
     }
+
+    /// Iterate every hint in this report as [`SurfaceHint`] values,
+    /// each tagged [`HintSurface::EnvVar`] — the enumeration primitive
+    /// peer of [`Self::hint_count`] at the sub-report scope, and the
+    /// env-var-sub-report analogue of [`HealthReport::hint_iter`] (and
+    /// of [`HintedCoverageReport::hint_iter`] /
+    /// [`ValueAudit::hint_iter`] on the other two sub-reports).
+    ///
+    /// Yields in the order [`Self::unknown`] holds — sorted by raw
+    /// env-var name per [`ConfigCoverage::audit_env_vars`], so the
+    /// enumeration is deterministic end-to-end — with every yielded
+    /// [`SurfaceHint`] carrying the raw `env_var` name (case
+    /// preserved) as `entry` and the env-var-form suggestion as
+    /// `did_you_mean`, exactly what
+    /// [`ConfigCoverage::assert_no_unknown_env_vars`] feeds the shared
+    /// [`fn@render_hint_pairs`] renderer for its panic message.
+    ///
+    /// `hint_iter().count()` equals [`Self::hint_count`] by
+    /// construction — the two share the single underlying
+    /// [`Self::unknown`] list and cannot drift.
+    ///
+    /// Consumers holding only an [`EnvVarAudit`] (a `#[test]` that
+    /// runs [`ConfigCoverage::audit_env_vars`] alone without a full
+    /// [`ConfigCoverage::health_report`], a diagnostics endpoint that
+    /// reports env-var typos alone, a per-sub-report JSON row array)
+    /// iterate this directly instead of walking [`Self::unknown`] by
+    /// hand and re-deriving the surface tag. Composes with
+    /// [`HintedCoverageReport::hint_iter`] / [`ValueAudit::hint_iter`]
+    /// as the env-var-sub-report slice of [`HealthReport::hint_iter`],
+    /// which folds through the three sub-report enumeration
+    /// primitives — the composition is welded by
+    /// `health_report_hint_iter_chains_sub_report_hint_iters`.
+    pub fn hint_iter(&self) -> impl Iterator<Item = SurfaceHint<'_>> {
+        self.unknown.iter().map(|h| SurfaceHint {
+            surface: HintSurface::EnvVar,
+            entry: h.env_var.as_str(),
+            did_you_mean: h.did_you_mean.as_deref(),
+        })
+    }
 }
 
 /// One config-value-shaped typo hint: a dotted leaf path present in the
@@ -1401,6 +1433,45 @@ impl ValueAudit {
     #[must_use]
     pub fn is_clean(&self) -> bool {
         self.hint_count() == 0
+    }
+
+    /// Iterate every hint in this report as [`SurfaceHint`] values,
+    /// each tagged [`HintSurface::ValueKey`] — the enumeration
+    /// primitive peer of [`Self::hint_count`] at the sub-report scope,
+    /// and the file-value-sub-report analogue of
+    /// [`HealthReport::hint_iter`] (and of
+    /// [`HintedCoverageReport::hint_iter`] /
+    /// [`EnvVarAudit::hint_iter`] on the other two sub-reports).
+    ///
+    /// Yields in the order [`Self::unknown`] holds — sorted by dotted
+    /// path per [`ConfigCoverage::audit_value`], so the enumeration is
+    /// deterministic end-to-end — with every yielded [`SurfaceHint`]
+    /// carrying the dotted `path` as `entry` and the closest schema
+    /// leaf (if any) as `did_you_mean`, exactly what
+    /// [`ConfigCoverage::assert_no_unknown_keys`] feeds the shared
+    /// [`fn@render_hint_pairs`] renderer for its panic message.
+    ///
+    /// `hint_iter().count()` equals [`Self::hint_count`] by
+    /// construction — the two share the single underlying
+    /// [`Self::unknown`] list and cannot drift.
+    ///
+    /// Consumers holding only a [`ValueAudit`] (a `#[test]` that runs
+    /// [`ConfigCoverage::audit_value`] alone without a full
+    /// [`ConfigCoverage::health_report`], a diagnostics endpoint that
+    /// reports file-value typos alone, a per-sub-report JSON row
+    /// array) iterate this directly instead of walking
+    /// [`Self::unknown`] by hand and re-deriving the surface tag.
+    /// Composes with [`HintedCoverageReport::hint_iter`] /
+    /// [`EnvVarAudit::hint_iter`] as the file-value-sub-report slice
+    /// of [`HealthReport::hint_iter`], which folds through the three
+    /// sub-report enumeration primitives — the composition is welded
+    /// by `health_report_hint_iter_chains_sub_report_hint_iters`.
+    pub fn hint_iter(&self) -> impl Iterator<Item = SurfaceHint<'_>> {
+        self.unknown.iter().map(|h| SurfaceHint {
+            surface: HintSurface::ValueKey,
+            entry: h.path.as_str(),
+            did_you_mean: h.did_you_mean.as_deref(),
+        })
     }
 }
 
@@ -3165,6 +3236,249 @@ tags: []
             .take(health.coverage.hint_count())
             .collect();
         assert_eq!(sub_report_seq, whole_report_prefix);
+    }
+
+    // ─── ValueAudit::hint_iter / EnvVarAudit::hint_iter — the
+    // ─── enumeration primitive peers of hint_count at the two
+    // ─── remaining sub-report scopes; jointly welded to
+    // ─── HealthReport::hint_iter through the three-sub-report chain
+    // ─── composition below. ───
+
+    #[test]
+    fn value_audit_hint_iter_count_equals_hint_count() {
+        // The delegation-shape invariant on the value-audit
+        // enumeration primitive: `hint_iter().count()` equals
+        // `hint_count()` on any input. Welds the enumeration peer to
+        // the scalar-cardinality peer through the single underlying
+        // `unknown` list, so a future refactor that inlines one
+        // against the other keeps the two in lockstep. Verified on
+        // both the clean corner (zero-count) and a mixed corner where
+        // several unknown paths are present, so no arm is vacuously
+        // covered.
+        let clean_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+";
+        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_audit = ConfigCoverage::audit_value::<Demo>(&clean_value);
+        assert_eq!(clean_audit.hint_iter().count(), clean_audit.hint_count());
+        assert_eq!(clean_audit.hint_iter().count(), 0);
+
+        let dirty_yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+  totally_extra: 1
+tags: []
+";
+        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_audit = ConfigCoverage::audit_value::<Demo>(&dirty_value);
+        assert_eq!(dirty_audit.hint_iter().count(), dirty_audit.hint_count());
+        assert!(dirty_audit.hint_iter().count() >= 2, "{dirty_audit:?}");
+    }
+
+    #[test]
+    fn value_audit_hint_iter_tags_every_hint_with_valuekey_surface() {
+        // The surface-tag invariant on the value-audit enumeration:
+        // every yielded `SurfaceHint` carries `HintSurface::ValueKey`,
+        // matching the third variant of `HintSurface::ALL` and the
+        // sub-slice `HealthReport::hint_iter` emits for the value
+        // sub-report. Welds the sub-report enumeration surface tag to
+        // `HintSurface::ValueKey` so a future refactor that reassigns
+        // the tag turns red here.
+        let yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let audit = ConfigCoverage::audit_value::<Demo>(&value);
+        assert!(audit.hint_count() >= 1, "{audit:?}");
+        for hint in audit.hint_iter() {
+            assert_eq!(
+                hint.surface,
+                HintSurface::ValueKey,
+                "ValueAudit::hint_iter must tag every hint HintSurface::ValueKey",
+            );
+        }
+    }
+
+    #[test]
+    fn value_audit_hint_iter_carries_path_and_did_you_mean_from_source_list() {
+        // The field-shape invariant on the value-audit enumeration:
+        // every yielded `SurfaceHint` carries the `(path,
+        // did_you_mean)` pair from the underlying `ValueKeyHint` in
+        // `unknown` verbatim — the same `(entry, did_you_mean)` pair
+        // `assert_no_unknown_keys` feeds the shared
+        // `render_hint_pairs` renderer, so a consumer routed through
+        // `hint_iter` produces the same text as the panic path
+        // without having to parse it. Verified on a typo input that
+        // populates `did_you_mean` with a `Some`, so the field-shape
+        // invariant is exercised on the interesting arm.
+        let yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let audit = ConfigCoverage::audit_value::<Demo>(&value);
+        let hints: Vec<SurfaceHint<'_>> = audit.hint_iter().collect();
+        assert_eq!(hints.len(), audit.unknown.len());
+        for (hint, src) in hints.iter().zip(audit.unknown.iter()) {
+            assert_eq!(hint.entry, src.path.as_str());
+            assert_eq!(hint.did_you_mean, src.did_you_mean.as_deref());
+        }
+        let witdh = hints
+            .iter()
+            .find(|h| h.entry == "window.witdh")
+            .expect("window.witdh hint present");
+        assert_eq!(witdh.did_you_mean, Some("window.width"));
+    }
+
+    #[test]
+    fn env_var_audit_hint_iter_count_equals_hint_count() {
+        // The delegation-shape invariant on the env-var-audit
+        // enumeration primitive: `hint_iter().count()` equals
+        // `hint_count()` on any input. Welds the enumeration peer to
+        // the scalar-cardinality peer through the single underlying
+        // `unknown` list, so a future refactor that inlines one
+        // against the other keeps the two in lockstep. Verified on
+        // both the clean corner (zero-count) and a mixed corner with
+        // several unknown env vars, so no arm is vacuously covered.
+        let clean_env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WIDTH".into(), "1".into())];
+        let clean_audit = ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &clean_env);
+        assert_eq!(clean_audit.hint_iter().count(), clean_audit.hint_count());
+        assert_eq!(clean_audit.hint_iter().count(), 0);
+
+        let dirty_env: Vec<(String, String)> = vec![
+            ("MYAPP_WINDOW__WITDH".into(), "1".into()),
+            ("MYAPP_UNRELATED_KNOB".into(), "x".into()),
+            ("MYAPP_ANOTHER_STRAY".into(), "y".into()),
+        ];
+        let dirty_audit = ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &dirty_env);
+        assert_eq!(dirty_audit.hint_iter().count(), dirty_audit.hint_count());
+        assert_eq!(dirty_audit.hint_iter().count(), 3);
+    }
+
+    #[test]
+    fn env_var_audit_hint_iter_tags_every_hint_with_envvar_surface() {
+        // The surface-tag invariant on the env-var-audit enumeration:
+        // every yielded `SurfaceHint` carries `HintSurface::EnvVar`,
+        // matching the fourth variant of `HintSurface::ALL` and the
+        // sub-slice `HealthReport::hint_iter` emits for the env
+        // sub-report. Welds the sub-report enumeration surface tag to
+        // `HintSurface::EnvVar` so a future refactor that reassigns
+        // the tag turns red here.
+        let env: Vec<(String, String)> = vec![
+            ("MYAPP_WINDOW__WITDH".into(), "1".into()),
+            ("MYAPP_UNRELATED_KNOB".into(), "x".into()),
+        ];
+        let audit = ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &env);
+        assert!(audit.hint_count() >= 1, "{audit:?}");
+        for hint in audit.hint_iter() {
+            assert_eq!(
+                hint.surface,
+                HintSurface::EnvVar,
+                "EnvVarAudit::hint_iter must tag every hint HintSurface::EnvVar",
+            );
+        }
+    }
+
+    #[test]
+    fn env_var_audit_hint_iter_carries_env_var_and_did_you_mean_from_source_list() {
+        // The field-shape invariant on the env-var-audit enumeration:
+        // every yielded `SurfaceHint` carries the raw `env_var` name
+        // (case preserved) as `entry` and the env-var-form
+        // `did_you_mean` from the underlying `EnvVarHint` verbatim —
+        // the same `(entry, did_you_mean)` pair
+        // `assert_no_unknown_env_vars` feeds the shared
+        // `render_hint_pairs` renderer, so a consumer routed through
+        // `hint_iter` produces the same text as the panic path
+        // without having to parse it. Verified on a typo input that
+        // populates `did_you_mean` with a `Some`, so the field-shape
+        // invariant is exercised on the interesting arm.
+        let env: Vec<(String, String)> = vec![
+            ("MYAPP_WINDOW__WITDH".into(), "1".into()),
+            ("MYAPP_UNRELATED_KNOB".into(), "x".into()),
+        ];
+        let audit = ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &env);
+        let hints: Vec<SurfaceHint<'_>> = audit.hint_iter().collect();
+        assert_eq!(hints.len(), audit.unknown.len());
+        for (hint, src) in hints.iter().zip(audit.unknown.iter()) {
+            assert_eq!(hint.entry, src.env_var.as_str());
+            assert_eq!(hint.did_you_mean, src.did_you_mean.as_deref());
+        }
+        let witdh = hints
+            .iter()
+            .find(|h| h.entry == "MYAPP_WINDOW__WITDH")
+            .expect("MYAPP_WINDOW__WITDH hint present");
+        assert_eq!(witdh.did_you_mean, Some("MYAPP_WINDOW__WIDTH"));
+    }
+
+    #[test]
+    fn health_report_hint_iter_chains_sub_report_hint_iters() {
+        // The whole-report/three-sub-report compositional wiring: the
+        // sequence `HealthReport::hint_iter` yields equals the chain
+        // of the three sub-report enumeration primitives —
+        // `coverage.hint_iter()` then `value.hint_iter()` then
+        // `env.hint_iter()` — element-for-element, in that exact
+        // order. Welds the whole-report enumeration to its three
+        // sub-report peers, so any future refactor that reassigns a
+        // surface tag or reorders a chain arm on ONE side flows
+        // through to the other automatically (or turns red here).
+        // Verified on a mixed input where every one of the three
+        // sub-reports carries at least one hint, so no arm of the
+        // chain is vacuously covered.
+        let consumed = &["name", "tags", "window.witdh", "window.height"];
+        let yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+totally_unrelated: 1
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let env: Vec<(String, String)> = vec![
+            ("MYAPP_WINDOW__WITDH".into(), "1".into()),
+            ("MYAPP_UNRELATED_KNOB".into(), "x".into()),
+        ];
+        let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
+
+        // Non-vacuity: every sub-report contributes at least one hint.
+        assert!(health.coverage.hint_count() >= 1, "{health:?}");
+        assert!(health.value.hint_count() >= 1, "{health:?}");
+        assert!(health.env.hint_count() >= 1, "{health:?}");
+
+        let whole: Vec<SurfaceHint<'_>> = health.hint_iter().collect();
+        let chained: Vec<SurfaceHint<'_>> = health
+            .coverage
+            .hint_iter()
+            .chain(health.value.hint_iter())
+            .chain(health.env.hint_iter())
+            .collect();
+        assert_eq!(
+            whole, chained,
+            "HealthReport::hint_iter must fold through the three sub-report enumeration primitives \
+             in canonical order (coverage, value, env)",
+        );
+
+        // Cardinality corollary of the chain: whole-report count
+        // equals the sum of the three sub-report enumeration counts.
+        assert_eq!(
+            whole.len(),
+            health.coverage.hint_iter().count()
+                + health.value.hint_iter().count()
+                + health.env.hint_iter().count(),
+        );
     }
 
     #[test]
