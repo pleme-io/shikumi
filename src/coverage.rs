@@ -1084,6 +1084,53 @@ impl HealthReport {
         out
     }
 
+    /// The iterator primitive peer of [`Self::dirty_surfaces`] and
+    /// [`Self::dirty_surface_count`] — the [`HintSurface`] variants
+    /// that need attention on this report, yielded as a lazy stream
+    /// folded through [`HintSurface::ALL`] in canonical yield order
+    /// (dead knobs, stale entries, unknown value keys, unknown env
+    /// vars) with NO allocation of either the underlying variant list
+    /// or the returned filter-projection.
+    ///
+    /// The primitive [`Self::dirty_surfaces`] (the `Vec`-collect peer)
+    /// and [`Self::dirty_surface_count`] (the scalar-cardinality peer)
+    /// both delegate through — so their identical filter bodies
+    /// collapse to `self.dirty_surfaces_iter().collect()` and
+    /// `self.dirty_surfaces_iter().count()` respectively, and every
+    /// future refactor of the false-side selector rule (a fifth
+    /// [`HintSurface`] variant added to [`HintSurface::ALL`], or a
+    /// change to the per-surface predicate beneath) changes ONE call
+    /// site instead of two identical `.filter(|s| !is_clean_by_surface(*s))`
+    /// chains.
+    ///
+    /// `dirty_surfaces_iter().collect::<Vec<_>>()` equals
+    /// [`Self::dirty_surfaces`] element-for-element by construction,
+    /// and `dirty_surfaces_iter().count()` equals
+    /// [`Self::dirty_surface_count`] by construction — the two peers
+    /// share this single primitive and cannot drift from it nor from
+    /// the per-surface predicate [`Self::is_clean_by_surface`] beneath
+    /// the filter. Chained with [`Self::clean_surfaces_iter`] under
+    /// [`HintSurface::ALL`]'s canonical order the two iterators
+    /// partition [`HintSurface::ALL`] — same partition invariant the
+    /// four Vec/scalar peers already promise, promoted here to the
+    /// iterator layer beneath them.
+    ///
+    /// Consumers that want to walk the dirty surfaces without
+    /// allocating the intermediate `Vec` (a hot-path remediation loop
+    /// that early-exits on the first hit, a streaming JSON writer that
+    /// emits per-surface objects, a fold that accumulates a per-surface
+    /// severity into a scalar without materializing the variant list)
+    /// call this directly instead of `dirty_surfaces().into_iter()` —
+    /// the named peer says "this is the supported allocation-free
+    /// access pattern" and pairs with the collected form on the value
+    /// side of the same false-side axis.
+    pub fn dirty_surfaces_iter(&self) -> impl Iterator<Item = HintSurface> + '_ {
+        HintSurface::ALL
+            .iter()
+            .copied()
+            .filter(move |s| !self.is_clean_by_surface(*s))
+    }
+
     /// The filter-projection peer of [`Self::is_clean_by_surface`] and
     /// the false-side selector of [`Self::is_clean_by_surfaces`] — the
     /// [`HintSurface`] variants that need attention on this report,
@@ -1104,13 +1151,15 @@ impl HealthReport {
     /// ⇔ is_clean()` peer of the pointwise
     /// `is_clean_by_surface(s) ⇔ hint_count_by_surface(s) == 0`.
     ///
-    /// Delegates through [`Self::is_clean_by_surface`] pointwise, so
-    /// this filter-projection cannot drift from the scalar
-    /// per-surface predicate (nor from the count-side histogram
-    /// [`Self::hint_counts_by_surface`] beneath both). Canonical
-    /// order matches [`HintSurface::ALL`] and stays stable across
-    /// runs — a golden fixture that pins `dirty_surfaces()` sees the
-    /// same variant sequence on every run of the same corner.
+    /// Delegates through [`Self::dirty_surfaces_iter`], which itself
+    /// delegates through [`Self::is_clean_by_surface`] pointwise, so
+    /// this `Vec`-collect peer cannot drift from either the iterator
+    /// primitive beneath it, the scalar-cardinality peer
+    /// [`Self::dirty_surface_count`] that shares the same primitive,
+    /// or the per-surface predicate beneath all three. Canonical order
+    /// matches [`HintSurface::ALL`] and stays stable across runs — a
+    /// golden fixture that pins `dirty_surfaces()` sees the same
+    /// variant sequence on every run of the same corner.
     ///
     /// Consumers that want a per-surface remediation loop ("walk the
     /// surfaces that need attention, skip the clean ones"), a
@@ -1123,11 +1172,58 @@ impl HealthReport {
     /// pairs with the bool-side histogram on the truth-table side.
     #[must_use]
     pub fn dirty_surfaces(&self) -> Vec<HintSurface> {
+        self.dirty_surfaces_iter().collect()
+    }
+
+    /// The true-side iterator primitive peer of
+    /// [`Self::clean_surfaces`] and [`Self::clean_surface_count`] — the
+    /// [`HintSurface`] variants that are currently healthy on this
+    /// report, yielded as a lazy stream folded through
+    /// [`HintSurface::ALL`] in canonical yield order (dead knobs, stale
+    /// entries, unknown value keys, unknown env vars) with NO
+    /// allocation of either the underlying variant list or the
+    /// returned filter-projection. The true-side symmetric complement
+    /// of [`Self::dirty_surfaces_iter`] on the per-surface predicate
+    /// axis.
+    ///
+    /// The primitive [`Self::clean_surfaces`] (the `Vec`-collect peer)
+    /// and [`Self::clean_surface_count`] (the scalar-cardinality peer)
+    /// both delegate through — so their identical filter bodies
+    /// collapse to `self.clean_surfaces_iter().collect()` and
+    /// `self.clean_surfaces_iter().count()` respectively, and every
+    /// future refactor of the true-side selector rule (a fifth
+    /// [`HintSurface`] variant added to [`HintSurface::ALL`], or a
+    /// change to the per-surface predicate beneath) changes ONE call
+    /// site instead of two identical `.filter(|s| is_clean_by_surface(*s))`
+    /// chains.
+    ///
+    /// `clean_surfaces_iter().collect::<Vec<_>>()` equals
+    /// [`Self::clean_surfaces`] element-for-element by construction,
+    /// and `clean_surfaces_iter().count()` equals
+    /// [`Self::clean_surface_count`] by construction — the two peers
+    /// share this single primitive and cannot drift from it nor from
+    /// the per-surface predicate [`Self::is_clean_by_surface`] beneath
+    /// the filter. Chained with [`Self::dirty_surfaces_iter`] under
+    /// [`HintSurface::ALL`]'s canonical order the two iterators
+    /// partition [`HintSurface::ALL`] — same partition invariant the
+    /// four Vec/scalar peers already promise, promoted here to the
+    /// iterator layer beneath them and closing the dirty×clean ×
+    /// iter×collect×count 2×3 on the per-surface predicate axis.
+    ///
+    /// Consumers that want to walk the clean surfaces without
+    /// allocating the intermediate `Vec` (a hot-path success-ledger
+    /// loop, a streaming JSON writer that emits per-surface objects
+    /// for the healthy surfaces, a fold that accumulates a clean-side
+    /// gauge without materializing the variant list) call this
+    /// directly instead of `clean_surfaces().into_iter()` — the named
+    /// peer says "this is the supported allocation-free access
+    /// pattern" and pairs with the collected form on the value side of
+    /// the same true-side axis.
+    pub fn clean_surfaces_iter(&self) -> impl Iterator<Item = HintSurface> + '_ {
         HintSurface::ALL
             .iter()
             .copied()
-            .filter(|s| !self.is_clean_by_surface(*s))
-            .collect()
+            .filter(move |s| self.is_clean_by_surface(*s))
     }
 
     /// The true-side filter-projection peer of [`Self::is_clean_by_surface`]
@@ -1155,19 +1251,21 @@ impl HealthReport {
     /// the whole-report complement of `dirty_surfaces().is_empty() ⇔
     /// is_clean()`.
     ///
-    /// Delegates through [`Self::is_clean_by_surface`] pointwise, so
-    /// this filter-projection cannot drift from the scalar per-surface
-    /// predicate (nor from the false-side peer [`Self::dirty_surfaces`]
-    /// nor the count-side histogram [`Self::hint_counts_by_surface`]
-    /// beneath both). Canonical order matches [`HintSurface::ALL`] and
-    /// stays stable across runs — a golden fixture that pins
-    /// `clean_surfaces()` sees the same variant sequence on every run
-    /// of the same corner. Concatenated with [`Self::dirty_surfaces`]
-    /// under [`HintSurface::ALL`]'s canonical order, the two filter-
-    /// projections partition [`HintSurface::ALL`] with no duplicates
-    /// and no missing variants — the whole-report projection of the
-    /// pointwise `is_clean_by_surface(s) XOR !is_clean_by_surface(s)`
-    /// tautology.
+    /// Delegates through [`Self::clean_surfaces_iter`], which itself
+    /// delegates through [`Self::is_clean_by_surface`] pointwise, so
+    /// this `Vec`-collect peer cannot drift from either the iterator
+    /// primitive beneath it, the scalar-cardinality peer
+    /// [`Self::clean_surface_count`] that shares the same primitive,
+    /// the false-side peer [`Self::dirty_surfaces`], or the
+    /// per-surface predicate beneath all four. Canonical order matches
+    /// [`HintSurface::ALL`] and stays stable across runs — a golden
+    /// fixture that pins `clean_surfaces()` sees the same variant
+    /// sequence on every run of the same corner. Concatenated with
+    /// [`Self::dirty_surfaces`] under [`HintSurface::ALL`]'s canonical
+    /// order, the two filter-projections partition [`HintSurface::ALL`]
+    /// with no duplicates and no missing variants — the whole-report
+    /// projection of the pointwise `is_clean_by_surface(s) XOR
+    /// !is_clean_by_surface(s)` tautology.
     ///
     /// Consumers that want a per-surface success ledger ("record which
     /// surfaces are already green so we don't re-audit them next
@@ -1181,11 +1279,7 @@ impl HealthReport {
     /// same per-surface predicate axis.
     #[must_use]
     pub fn clean_surfaces(&self) -> Vec<HintSurface> {
-        HintSurface::ALL
-            .iter()
-            .copied()
-            .filter(|s| self.is_clean_by_surface(*s))
-            .collect()
+        self.clean_surfaces_iter().collect()
     }
 
     /// The scalar-cardinality peer of [`Self::dirty_surfaces`] — the
@@ -1230,11 +1324,7 @@ impl HealthReport {
     /// on the value side of the same false-side axis.
     #[must_use]
     pub fn dirty_surface_count(&self) -> usize {
-        HintSurface::ALL
-            .iter()
-            .copied()
-            .filter(|s| !self.is_clean_by_surface(*s))
-            .count()
+        self.dirty_surfaces_iter().count()
     }
 
     /// The scalar-cardinality peer of [`Self::clean_surfaces`] — the
@@ -1288,11 +1378,7 @@ impl HealthReport {
     /// predicate axis.
     #[must_use]
     pub fn clean_surface_count(&self) -> usize {
-        HintSurface::ALL
-            .iter()
-            .copied()
-            .filter(|s| self.is_clean_by_surface(*s))
-            .count()
+        self.clean_surfaces_iter().count()
     }
 }
 
@@ -5769,5 +5855,246 @@ value_only_leaf: 1
         );
         assert!(dirty_health.clean_surface_count() <= HintSurface::ALL.len());
         assert_eq!(dirty_health.clean_surface_count(), 0);
+    }
+
+    // ─── dirty_surfaces_iter / clean_surfaces_iter — the allocation-free
+    // ─── iterator primitives the four Vec/scalar per-surface predicate
+    // ─── peers now delegate through ─────────────────────────────────────
+
+    // Load-bearing mixed corner used by the iter-primitive welding tests:
+    // exactly one surface is dirty (env-var), the other three clean. This
+    // exercises both sides of the false/true selector, keeps the iter
+    // yield length nonzero and non-full for the false side, keeps the
+    // partition sum meaningful (no arm vacuous), and lands at least one
+    // yield on each of the count / collect consumer axes.
+    fn iter_primitive_mixed_health() -> HealthReport {
+        let mixed_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+";
+        let mixed_value: serde_yaml::Value = serde_yaml::from_str(mixed_yaml).unwrap();
+        let mixed_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        ConfigCoverage::health_report::<Demo, _, _>(
+            &["name", "tags", "window.width", "window.height"],
+            &mixed_value,
+            "MYAPP_",
+            &mixed_env,
+        )
+    }
+
+    fn iter_primitive_clean_health() -> HealthReport {
+        let clean_value: serde_yaml::Value =
+            serde_yaml::from_str("name: kanchi\nwindow:\n  width: 100\n  height: 40\ntags: []\n")
+                .unwrap();
+        ConfigCoverage::health_report::<Demo, _, _>(
+            &["name", "tags", "window.width", "window.height"],
+            &clean_value,
+            "MYAPP_",
+            &Vec::<(String, String)>::new(),
+        )
+    }
+
+    fn iter_primitive_dirty_health() -> HealthReport {
+        let dirty_value: serde_yaml::Value = serde_yaml::from_str(
+            "name: kanchi\nwindow:\n  width: 100\n  height: 40\ntags: []\nvalue_only_leaf: 1\n",
+        )
+        .unwrap();
+        let dirty_env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        ConfigCoverage::health_report::<Demo, _, _>(
+            &["name", "tags", "window.witdh", "window.height"],
+            &dirty_value,
+            "MYAPP_",
+            &dirty_env,
+        )
+    }
+
+    #[test]
+    fn dirty_surfaces_iter_collect_equals_dirty_surfaces() {
+        // The delegation identity welding the `Vec`-collect peer to
+        // the iterator primitive it now delegates through:
+        // `dirty_surfaces_iter().collect::<Vec<_>>() == dirty_surfaces()`
+        // element-for-element on the mixed corner. A future refactor
+        // that inlines one against the other must keep the two in
+        // lockstep — the collected form is now literally the iterator's
+        // `.collect()`, so any drift turns red here at the seam.
+        let mixed = iter_primitive_mixed_health();
+        let collected: Vec<HintSurface> = mixed.dirty_surfaces_iter().collect();
+        assert_eq!(collected, mixed.dirty_surfaces());
+        // Load-bear the mixed shape so a regression that returned the
+        // wrong iterator still turns red even if the identity happened
+        // to survive vacuously.
+        assert_eq!(
+            collected,
+            vec![HintSurface::EnvVar],
+            "mixed corner: exactly one dirty surface (env-var)",
+        );
+    }
+
+    #[test]
+    fn dirty_surfaces_iter_count_equals_dirty_surface_count() {
+        // The scalar-cardinality projection of the delegation identity
+        // welding the scalar peer to the iterator primitive it now
+        // delegates through: `dirty_surfaces_iter().count() ==
+        // dirty_surface_count()` on the mixed corner. Both the
+        // `.collect()` and the `.count()` consumers now flow through
+        // ONE `dirty_surfaces_iter()` primitive, so this identity holds
+        // by construction — verified here so a future refactor that
+        // desynchronizes the two consumers from the primitive turns
+        // red.
+        let mixed = iter_primitive_mixed_health();
+        assert_eq!(
+            mixed.dirty_surfaces_iter().count(),
+            mixed.dirty_surface_count(),
+        );
+        assert_eq!(
+            mixed.dirty_surfaces_iter().count(),
+            1,
+            "mixed corner: exactly one dirty surface (env-var)",
+        );
+    }
+
+    #[test]
+    fn clean_surfaces_iter_collect_equals_clean_surfaces() {
+        // True-side symmetric complement of
+        // `dirty_surfaces_iter_collect_equals_dirty_surfaces`:
+        // `clean_surfaces_iter().collect::<Vec<_>>() == clean_surfaces()`
+        // element-for-element on the mixed corner. Welds the true-side
+        // `Vec`-collect peer to the true-side iterator primitive.
+        let mixed = iter_primitive_mixed_health();
+        let collected: Vec<HintSurface> = mixed.clean_surfaces_iter().collect();
+        assert_eq!(collected, mixed.clean_surfaces());
+        assert_eq!(
+            collected,
+            vec![
+                HintSurface::DeadKnob,
+                HintSurface::StaleEntry,
+                HintSurface::ValueKey,
+            ],
+            "mixed corner: three clean surfaces (dead knob, stale entry, value key)",
+        );
+    }
+
+    #[test]
+    fn clean_surfaces_iter_count_equals_clean_surface_count() {
+        // True-side symmetric complement of
+        // `dirty_surfaces_iter_count_equals_dirty_surface_count`:
+        // `clean_surfaces_iter().count() == clean_surface_count()` on
+        // the mixed corner. Both the `.collect()` and the `.count()`
+        // consumers on the true side now flow through ONE
+        // `clean_surfaces_iter()` primitive.
+        let mixed = iter_primitive_mixed_health();
+        assert_eq!(
+            mixed.clean_surfaces_iter().count(),
+            mixed.clean_surface_count(),
+        );
+        assert_eq!(
+            mixed.clean_surfaces_iter().count(),
+            HintSurface::ALL.len() - 1,
+            "mixed corner: three clean surfaces (dead knob, stale entry, value key)",
+        );
+    }
+
+    #[test]
+    fn surfaces_iter_yield_order_is_hint_surface_all_filtered() {
+        // Canonical order welding: both iterator primitives yield in
+        // `HintSurface::ALL` order (filtered by the per-surface
+        // predicate), so a golden fixture that pins either iterator
+        // sees the same variant sequence on every run of the same
+        // corner. Verified by comparing each iterator to a hand-walk
+        // of `HintSurface::ALL` with the identical filter body.
+        let mixed = iter_primitive_mixed_health();
+        let expected_dirty: Vec<HintSurface> = HintSurface::ALL
+            .iter()
+            .copied()
+            .filter(|s| !mixed.is_clean_by_surface(*s))
+            .collect();
+        let expected_clean: Vec<HintSurface> = HintSurface::ALL
+            .iter()
+            .copied()
+            .filter(|s| mixed.is_clean_by_surface(*s))
+            .collect();
+        assert_eq!(
+            mixed.dirty_surfaces_iter().collect::<Vec<_>>(),
+            expected_dirty,
+        );
+        assert_eq!(
+            mixed.clean_surfaces_iter().collect::<Vec<_>>(),
+            expected_clean,
+        );
+    }
+
+    #[test]
+    fn surfaces_iter_chain_partitions_hint_surface_all() {
+        // Partition invariant welding at the iterator layer beneath
+        // the four Vec/scalar peers: on any input, chaining the two
+        // iterators yields exactly `HintSurface::ALL.len()` items
+        // (cardinality), no variant is duplicated (dedup), and the
+        // ordered union recovers `HintSurface::ALL` verbatim
+        // (canonical order). Verified on the mixed corner AND on both
+        // extremes so every arm of the partition survives — no arm is
+        // vacuously covered by a single-shape corner.
+        for health in [
+            iter_primitive_mixed_health(),
+            iter_primitive_clean_health(),
+            iter_primitive_dirty_health(),
+        ] {
+            let chained_count =
+                health.dirty_surfaces_iter().count() + health.clean_surfaces_iter().count();
+            assert_eq!(
+                chained_count,
+                HintSurface::ALL.len(),
+                "dirty_surfaces_iter + clean_surfaces_iter partition-sum cardinality",
+            );
+            let mut chained: Vec<HintSurface> = health
+                .dirty_surfaces_iter()
+                .chain(health.clean_surfaces_iter())
+                .collect();
+            let mut deduped = chained.clone();
+            deduped.sort_by_key(|s| HintSurface::ALL.iter().position(|a| a == s).unwrap());
+            deduped.dedup();
+            assert_eq!(
+                deduped.len(),
+                HintSurface::ALL.len(),
+                "no variant duplicated across dirty_surfaces_iter and clean_surfaces_iter",
+            );
+            // Canonical-order recovery: sorting the chained yield by
+            // `HintSurface::ALL` position recovers `HintSurface::ALL`
+            // verbatim, since each iterator preserves ALL order and
+            // the two together cover every variant exactly once.
+            chained.sort_by_key(|s| HintSurface::ALL.iter().position(|a| a == s).unwrap());
+            let all: Vec<HintSurface> = HintSurface::ALL.to_vec();
+            assert_eq!(
+                chained, all,
+                "ordered union of dirty_surfaces_iter and clean_surfaces_iter recovers HintSurface::ALL",
+            );
+        }
+    }
+
+    #[test]
+    fn surfaces_iter_extremes_pin_endpoints() {
+        // Extreme-corner endpoint pin: on the fully-clean corner the
+        // dirty iterator yields nothing and the clean iterator yields
+        // every variant in `HintSurface::ALL`; on the fully-dirty
+        // corner the roles swap. Welds each iterator primitive to
+        // both endpoints of the `0 ≤ count ≤ HintSurface::ALL.len()`
+        // range at once, so a regression that flipped the filter
+        // negation (or grew a spurious yield) turns red on one side
+        // or the other.
+        let clean = iter_primitive_clean_health();
+        assert_eq!(clean.dirty_surfaces_iter().count(), 0);
+        assert_eq!(
+            clean.clean_surfaces_iter().collect::<Vec<_>>(),
+            HintSurface::ALL.to_vec(),
+        );
+
+        let dirty = iter_primitive_dirty_health();
+        assert_eq!(dirty.clean_surfaces_iter().count(), 0);
+        assert_eq!(
+            dirty.dirty_surfaces_iter().collect::<Vec<_>>(),
+            HintSurface::ALL.to_vec(),
+        );
     }
 }
