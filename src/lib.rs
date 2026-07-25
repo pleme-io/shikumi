@@ -64,7 +64,7 @@ mod watcher;
 
 pub use coverage::{
     ConfigCoverage, CoverageHint, CoverageReport, EnvVarAudit, EnvVarHint, HealthReport,
-    HintedCoverageReport, PathHint, ValueAudit, ValueKeyHint,
+    HintSurface, HintedCoverageReport, PathHint, SurfaceHint, ValueAudit, ValueKeyHint,
 };
 pub use cube::{
     AxisHistogram, AxisHistogramIntoIter, AxisHistogramIter, AxisHistogramIterMut,

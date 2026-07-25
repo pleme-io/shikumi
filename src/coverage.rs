@@ -658,6 +658,63 @@ impl HintedCoverageReport {
     }
 }
 
+/// Which of the four coverage surfaces a [`SurfaceHint`] came from —
+/// the tag [`HealthReport::hint_iter`] pairs with every hint so
+/// programmatic consumers can route each hint by surface (into a
+/// JSON row, a dashboard column, a per-surface remediation counter)
+/// without re-walking the four underlying hint lists themselves.
+///
+/// Variants map one-to-one to the four hint lists a [`HealthReport`]
+/// carries: two on the schema-vs-consumer surface (dead knobs, stale
+/// entries — the two directions of that surface's bidirectional
+/// diff), one on the file-value surface, one on the env-var surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HintSurface {
+    /// From [`HintedCoverageReport::dead_knobs`] — a schema leaf
+    /// declared in [`TieredConfig::prescribed_default`] with no
+    /// matching entry in the consumer-declared field-path list
+    /// (declared but unwired).
+    DeadKnob,
+    /// From [`HintedCoverageReport::stale_entries`] — a
+    /// consumer-declared field path with no matching schema leaf
+    /// (consumer entry that outlived its schema field).
+    StaleEntry,
+    /// From [`ValueAudit::unknown`] — a dotted leaf path present in
+    /// the operator's deserialized config value that does not
+    /// correspond to any schema leaf.
+    ValueKey,
+    /// From [`EnvVarAudit::unknown`] — a prefixed env var whose
+    /// normalized dotted path does not correspond to any schema
+    /// leaf.
+    EnvVar,
+}
+
+/// Surface-tagged view of one coverage hint, borrowed from a
+/// [`HealthReport`]. Produced by [`HealthReport::hint_iter`].
+///
+/// `entry` is the operator-facing string the hint pertains to,
+/// rendered the same way the panic path renders it: the dotted path
+/// for [`HintSurface::DeadKnob`], [`HintSurface::StaleEntry`], and
+/// [`HintSurface::ValueKey`]; the raw env-var name with case
+/// preserved for [`HintSurface::EnvVar`]. `did_you_mean` is the
+/// closest counterpart under the typo threshold, rendered in the
+/// same form as `entry` — matching exactly the `(entry,
+/// did_you_mean)` shape [`ConfigCoverage::assert_healthy`] feeds into
+/// the shared `render_hint_pairs` renderer for each of its four
+/// per-surface panic-sub-strings, so a consumer that renders through
+/// `hint_iter` produces the same text as the panic path without
+/// having to parse it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SurfaceHint<'a> {
+    /// Which coverage surface this hint came from.
+    pub surface: HintSurface,
+    /// The operator-facing string the hint pertains to.
+    pub entry: &'a str,
+    /// Closest counterpart under the typo threshold, in the same
+    /// form as `entry`. [`None`] when nothing lies within.
+    pub did_you_mean: Option<&'a str>,
+}
+
 /// Combined coverage-and-typo-audit result across all three
 /// operator-controllable input surfaces: consumer-declared field list,
 /// deserialized config value, prefixed process environment. Produced by
@@ -708,6 +765,63 @@ impl HealthReport {
     #[must_use]
     pub fn is_clean(&self) -> bool {
         self.hint_count() == 0
+    }
+
+    /// Iterate every hint across every surface as [`SurfaceHint`]
+    /// values, tagged with the [`HintSurface`] each came from — the
+    /// enumeration behind [`Self::hint_count`], and the programmatic
+    /// peer of the merged panic message [`ConfigCoverage::assert_healthy`]
+    /// emits.
+    ///
+    /// Yields in canonical order — dead knobs, then stale entries,
+    /// then unknown value keys, then unknown env vars — matching
+    /// the four sub-string order of `assert_healthy`'s panic message.
+    /// Within each surface, hints follow the order of their
+    /// underlying hint list (sorted by entry / raw env-var name per
+    /// the audit primitives, so the enumeration is deterministic
+    /// end-to-end).
+    ///
+    /// `hint_iter().count()` equals [`Self::hint_count`] by
+    /// construction — the two share the four underlying hint lists
+    /// and cannot drift. Each yielded [`SurfaceHint`]'s
+    /// `(entry, did_you_mean)` pair is exactly what
+    /// `assert_healthy` would feed the shared `render_hint_pairs`
+    /// renderer for that hint, so a consumer routing this iterator
+    /// through the same renderer produces the same text as the panic
+    /// path — without having to parse the panic string.
+    ///
+    /// Consumers that want to render the merged unhealthy diff
+    /// programmatically (a structured JSON row per hint for a
+    /// diagnostics endpoint; a dashboard table grouped by
+    /// [`HintSurface`]; a machine-readable golden fixture that
+    /// compares clean and dirty runs across a fleet of consumers)
+    /// iterate this directly instead of walking the four hint lists
+    /// by hand.
+    pub fn hint_iter(&self) -> impl Iterator<Item = SurfaceHint<'_>> {
+        let dead_knobs = self.coverage.dead_knobs.iter().map(|h| SurfaceHint {
+            surface: HintSurface::DeadKnob,
+            entry: h.entry.as_str(),
+            did_you_mean: h.did_you_mean.as_deref(),
+        });
+        let stale_entries = self.coverage.stale_entries.iter().map(|h| SurfaceHint {
+            surface: HintSurface::StaleEntry,
+            entry: h.entry.as_str(),
+            did_you_mean: h.did_you_mean.as_deref(),
+        });
+        let value_keys = self.value.unknown.iter().map(|h| SurfaceHint {
+            surface: HintSurface::ValueKey,
+            entry: h.path.as_str(),
+            did_you_mean: h.did_you_mean.as_deref(),
+        });
+        let env_vars = self.env.unknown.iter().map(|h| SurfaceHint {
+            surface: HintSurface::EnvVar,
+            entry: h.env_var.as_str(),
+            did_you_mean: h.did_you_mean.as_deref(),
+        });
+        dead_knobs
+            .chain(stale_entries)
+            .chain(value_keys)
+            .chain(env_vars)
     }
 }
 
@@ -2538,5 +2652,269 @@ totally_unrelated: 1
         // Every hint must show up in the total — bound the sum from
         // below.
         assert!(health.hint_count() >= 3, "{health:?}");
+    }
+
+    // ─── hint_iter — surface-tagged programmatic enumeration ────────
+
+    #[test]
+    fn health_report_hint_iter_count_equals_hint_count() {
+        // The construction-true invariant that welds the enumeration
+        // to the number: `hint_iter().count()` equals `hint_count()`
+        // on both the clean and the fully-dirty corner. A future
+        // refactor that drops or duplicates any hint list in either
+        // method turns this red on the clean corner (both must be 0)
+        // and on the dirty corner (both must be strictly positive and
+        // equal).
+        let clean_consumed = &["name", "tags", "window.width", "window.height"];
+        let clean_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+";
+        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WIDTH".into(), "100".into())];
+        let clean_health = ConfigCoverage::health_report::<Demo, _, _>(
+            clean_consumed,
+            &clean_value,
+            "MYAPP_",
+            &clean_env,
+        );
+        assert_eq!(clean_health.hint_iter().count(), clean_health.hint_count());
+        assert_eq!(clean_health.hint_iter().count(), 0);
+
+        let dirty_consumed = &[
+            "name",
+            "tags",
+            "window.witdh",
+            "window.height",
+            "consumer_only_leaf",
+        ];
+        let dirty_yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+value_only_leaf: 1
+";
+        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_env: Vec<(String, String)> = vec![
+            ("MYAPP_WINDOW__WITDH".into(), "1".into()),
+            ("MYAPP_ENV_ONLY_LEAF".into(), "x".into()),
+        ];
+        let dirty_health = ConfigCoverage::health_report::<Demo, _, _>(
+            dirty_consumed,
+            &dirty_value,
+            "MYAPP_",
+            &dirty_env,
+        );
+        assert_eq!(dirty_health.hint_iter().count(), dirty_health.hint_count());
+        assert!(dirty_health.hint_iter().count() > 0);
+    }
+
+    #[test]
+    fn health_report_hint_iter_yields_every_hint_tagged_by_surface_of_origin() {
+        // Dirty each surface with a distinct entry so the four
+        // surface tags each appear exactly once and every entry is
+        // uniquely identifiable — pins the routing invariant that
+        // hint_iter tags every hint with the surface of its
+        // underlying hint list (no cross-surface confusion).
+        //
+        // `window.witdh` in consumed → StaleEntry (typo).
+        // `window.width` missing from consumed → DeadKnob.
+        // `value_only_leaf` in YAML → ValueKey.
+        // `MYAPP_ENV_ONLY_LEAF` in env → EnvVar.
+        let consumed = &["name", "tags", "window.witdh", "window.height"];
+        let yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+value_only_leaf: 1
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
+        let hints: Vec<SurfaceHint<'_>> = health.hint_iter().collect();
+        // Exactly one hint per surface, so the count is 4.
+        assert_eq!(hints.len(), 4, "{hints:?}");
+        // Each surface tag paired with the expected entry — one and
+        // only one per surface.
+        let dead: Vec<_> = hints
+            .iter()
+            .filter(|h| h.surface == HintSurface::DeadKnob)
+            .collect();
+        assert_eq!(dead.len(), 1, "{hints:?}");
+        assert_eq!(dead[0].entry, "window.width");
+        let stale: Vec<_> = hints
+            .iter()
+            .filter(|h| h.surface == HintSurface::StaleEntry)
+            .collect();
+        assert_eq!(stale.len(), 1, "{hints:?}");
+        assert_eq!(stale[0].entry, "window.witdh");
+        let value_hints: Vec<_> = hints
+            .iter()
+            .filter(|h| h.surface == HintSurface::ValueKey)
+            .collect();
+        assert_eq!(value_hints.len(), 1, "{hints:?}");
+        assert_eq!(value_hints[0].entry, "value_only_leaf");
+        let env_hints: Vec<_> = hints
+            .iter()
+            .filter(|h| h.surface == HintSurface::EnvVar)
+            .collect();
+        assert_eq!(env_hints.len(), 1, "{hints:?}");
+        assert_eq!(env_hints[0].entry, "MYAPP_ENV_ONLY_LEAF");
+    }
+
+    #[test]
+    fn health_report_hint_iter_canonical_order_is_dead_stale_value_env() {
+        // Pin the canonical yield order: all DeadKnob hints first,
+        // then all StaleEntry, then all ValueKey, then all EnvVar.
+        // Mirrors the four sub-string order of assert_healthy's panic
+        // message — a future refactor that reorders one against the
+        // other turns this red so the two paths cannot drift.
+        //
+        // Dirty all four surfaces at once.
+        let consumed = &[
+            "name",
+            "tags",
+            "window.witdh",
+            "window.height",
+            "consumer_only_leaf",
+        ];
+        let yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+value_only_leaf: 1
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
+        let surfaces: Vec<HintSurface> = health.hint_iter().map(|h| h.surface).collect();
+        // Walk the yielded surfaces and check the four groups appear
+        // in the canonical order — every occurrence of surface k+1
+        // must come strictly after every occurrence of surface k.
+        let order = [
+            HintSurface::DeadKnob,
+            HintSurface::StaleEntry,
+            HintSurface::ValueKey,
+            HintSurface::EnvVar,
+        ];
+        let mut last_rank_seen: Option<usize> = None;
+        for surface in &surfaces {
+            let rank = order
+                .iter()
+                .position(|s| s == surface)
+                .expect("hint_iter yielded an unknown HintSurface variant");
+            if let Some(prev) = last_rank_seen {
+                assert!(
+                    rank >= prev,
+                    "hint_iter must yield surfaces in canonical order dead→stale→value→env, \
+                     but saw {surface:?} (rank {rank}) after rank {prev} in {surfaces:?}",
+                );
+            }
+            last_rank_seen = Some(rank);
+        }
+    }
+
+    #[test]
+    fn health_report_hint_iter_pairs_route_through_render_hint_pairs_identically_to_assert_healthy()
+    {
+        // The routing theorem that welds hint_iter to the panic path:
+        // grouping hint_iter by surface and rendering each group
+        // through render_hint_pairs produces byte-for-byte the same
+        // four sub-strings assert_healthy emits from its per-surface
+        // *_hint_pairs adapters. A future refactor that drifts either
+        // path — hint_iter picking the normalized_path for env vars,
+        // assert_healthy switching to a bespoke renderer, either side
+        // reordering entries — turns this red on the mismatched
+        // sub-string.
+        let consumed = &[
+            "name",
+            "tags",
+            "window.width",
+            "window.height",
+            "window.heigth", // typo → nearest schema leaf is window.height
+        ];
+        let yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WITDH".into(), "100".into())];
+        let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
+        // Route hint_iter through render_hint_pairs, grouped by
+        // surface, into the four sub-strings the panic path emits.
+        let render_surface = |surface: HintSurface| -> String {
+            render_hint_pairs(
+                health
+                    .hint_iter()
+                    .filter(|h| h.surface == surface)
+                    .map(|h| (h.entry, h.did_you_mean)),
+            )
+        };
+        // And route each per-surface *_hint_pairs adapter through
+        // render_hint_pairs the way assert_healthy does — this is the
+        // canonical source of truth.
+        assert_eq!(
+            render_surface(HintSurface::DeadKnob),
+            render_hint_pairs(coverage_hint_pairs(&health.coverage.dead_knobs)),
+        );
+        assert_eq!(
+            render_surface(HintSurface::StaleEntry),
+            render_hint_pairs(coverage_hint_pairs(&health.coverage.stale_entries)),
+        );
+        assert_eq!(
+            render_surface(HintSurface::ValueKey),
+            render_hint_pairs(value_key_hint_pairs(&health.value.unknown)),
+        );
+        assert_eq!(
+            render_surface(HintSurface::EnvVar),
+            render_hint_pairs(env_var_hint_pairs(&health.env.unknown)),
+        );
+    }
+
+    #[test]
+    fn health_report_hint_iter_env_entry_is_raw_env_var_not_normalized_path() {
+        // Pin the env-surface entry choice: hint_iter yields the raw
+        // env-var name (case preserved) — the same string the operator
+        // typed and the same string env_var_hint_pairs feeds into
+        // render_hint_pairs — not the intermediate normalized dotted
+        // path. A future refactor that flips to normalized_path would
+        // regress operator UX (they see a synthetic path they never
+        // set) and turns this red.
+        let env: Vec<(String, String)> = vec![("MYAPP_TOTALLY_MADE_UP".into(), "x".into())];
+        let health = ConfigCoverage::health_report::<Demo, _, _>(
+            &["name", "tags", "window.width", "window.height"],
+            &serde_yaml::Value::Mapping(serde_yaml::Mapping::new()),
+            "MYAPP_",
+            &env,
+        );
+        let env_hint = health
+            .hint_iter()
+            .find(|h| h.surface == HintSurface::EnvVar)
+            .expect("dirty env surface must yield an EnvVar hint");
+        assert_eq!(env_hint.entry, "MYAPP_TOTALLY_MADE_UP");
+        // Sanity: the underlying EnvVarHint's normalized_path is
+        // NOT what hint_iter surfaces.
+        let underlying = health
+            .env
+            .unknown
+            .iter()
+            .find(|h| h.env_var == "MYAPP_TOTALLY_MADE_UP")
+            .expect("env audit must carry the hint");
+        assert_ne!(
+            env_hint.entry, underlying.normalized_path,
+            "hint_iter must surface raw env-var, not normalized path",
+        );
     }
 }
