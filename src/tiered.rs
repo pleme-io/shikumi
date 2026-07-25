@@ -719,6 +719,80 @@ impl Provenance {
     pub fn tier_ordinal(&self) -> usize {
         crate::axis_ordinal(self.tier)
     }
+
+    /// Consume `self`, yielding the owned `(tier, source)` pair the
+    /// provenance carries — the consuming destructuring dual of the
+    /// borrow-side [`Self::tier`] / [`Self::source`] accessor pair.
+    ///
+    /// Peer of [`ProgressiveLayer::into_parts`] /
+    /// [`ProgressiveResolution::into_parts`] one seam down: the two
+    /// container types close their atomic-pair ownership boundary by
+    /// exposing an inherent `into_parts` alongside a [`From`] std-trait
+    /// facade; this method extends the same closure to the primitive
+    /// [`Provenance`] their `provenance` field carries. Before this
+    /// constructor, a caller wanting to move the `(tier, source)` pair
+    /// out of a [`Provenance`] (a `ConfigPlane` broadcast surface encoding
+    /// a wire message, a per-tenant map keyed by tier that stores the
+    /// source detail separately, an FFI boundary that owns its inputs)
+    /// paid a per-field `.clone()` through the borrow accessors —
+    /// [`Self::source`] hands out `&ConfigSource`, which the caller
+    /// then had to clone even when the provenance itself was being
+    /// dropped after the read.
+    ///
+    /// Round-trips through [`Self::new`] on the same pair — a caller
+    /// that destructures a [`Provenance`] via [`Self::into_parts`] and
+    /// rebuilds it via [`Self::new`] (or via the
+    /// [`From<(ConfigTierKind, ConfigSource)>`] facade below) recovers
+    /// `self` byte-identically. Symmetric with the
+    /// [`From<Provenance> for (ConfigTierKind, ConfigSource)`] impl,
+    /// which is the std-trait facade over this method —
+    /// `<(ConfigTierKind, ConfigSource)>::from(prov)` and
+    /// `prov.into_parts()` produce identical pairs on every input.
+    #[must_use]
+    pub fn into_parts(self) -> (ConfigTierKind, ConfigSource) {
+        (self.tier, self.source)
+    }
+}
+
+/// Std-trait facade over [`Provenance::into_parts`]: the same consuming
+/// destructuring, spelled `<(ConfigTierKind, ConfigSource)>::from(prov)`
+/// for callers routing through the [`From`] blanket ([`Into::into`]
+/// chains, generic bounds `T: Into<(ConfigTierKind, ConfigSource)>`).
+///
+/// Pointwise equal to [`Provenance::into_parts`] on every input — pinned
+/// by [`tests::provenance_from_tuple_agrees_with_into_parts`]. Peer of
+/// [`From<ProgressiveLayer> for (Provenance, Dict)`] and
+/// [`From<ProgressiveResolution<T>> for (T, ProvenanceMap)`] one seam
+/// down: the atomic-pair ownership boundary now carries the same
+/// `(inherent into_parts, From std-trait facade)` closure on all three
+/// levels of the tiered algebra — the two containers plus the
+/// [`Provenance`] primitive their `provenance` field holds.
+impl From<Provenance> for (ConfigTierKind, ConfigSource) {
+    fn from(prov: Provenance) -> Self {
+        prov.into_parts()
+    }
+}
+
+/// Std-trait facade over [`Provenance::new`]: rebuild a [`Provenance`]
+/// from an owned `(tier, source)` pair, spelled `Provenance::from((t, s))`
+/// for callers routing through the [`From`] blanket ([`Into::into`]
+/// chains, generic bounds `T: Into<Provenance>`).
+///
+/// Pointwise equal to [`Provenance::new`] on every input — pinned by
+/// [`tests::provenance_from_pair_agrees_with_new`]. The reconstruction
+/// dual of [`From<Provenance> for (ConfigTierKind, ConfigSource)`]:
+/// together they close both directions of the atomic-pair ownership
+/// boundary on [`Provenance`], so a `Provenance` round-trips through
+/// the `(tier, source)` pair byte-identically via either the inherent
+/// [`Self::new`] / [`Self::into_parts`] pair or the two [`From`] facades.
+/// A `ConfigPlane` broadcast surface receiving a wire-encoded `(tier,
+/// source)` tuple decodes it to [`Provenance`] via one `From::from` /
+/// `.into()` call, and no caller has to reach for the inherent
+/// constructor name to satisfy a generic `T: Into<Provenance>` bound.
+impl From<(ConfigTierKind, ConfigSource)> for Provenance {
+    fn from((tier, source): (ConfigTierKind, ConfigSource)) -> Self {
+        Self::new(tier, source)
+    }
 }
 
 impl std::fmt::Display for Provenance {
@@ -49062,6 +49136,93 @@ mod progressive_tests {
             &ConfigSource::Defaults
         );
         assert_eq!(Provenance::prescribed_default().to_string(), "default");
+    }
+
+    #[test]
+    fn provenance_into_parts_round_trips_through_new() {
+        // The consuming destructuring accessor is the exact inverse of
+        // Provenance::new on the same (tier, source) pair: destructuring
+        // a Provenance via into_parts and rebuilding it via new recovers
+        // the original provenance byte-identically. The pair is atomic on
+        // the ownership boundary — the two fields move together out of
+        // the struct and back in, mirroring the round-trip
+        // ProgressiveLayer::into_parts + ProgressiveLayer::new already
+        // pins one seam up on the atomic-pair boundary the container
+        // level carries.
+        let prov = Provenance::file("/etc/into_parts_prim.yaml");
+        let (out_tier, out_source) = prov.clone().into_parts();
+        assert_eq!(out_tier, ConfigTierKind::Custom);
+        assert_eq!(
+            out_source,
+            ConfigSource::File(PathBuf::from("/etc/into_parts_prim.yaml"))
+        );
+        let rebuilt = Provenance::new(out_tier, out_source);
+        assert_eq!(rebuilt, prov);
+    }
+
+    #[test]
+    fn provenance_into_parts_matches_field_accessors() {
+        // The load-bearing pointwise invariant behind the atomic-pair
+        // ownership-boundary closure on the primitive: `prov.clone().into_parts()`
+        // is equal to `(prov.tier(), prov.source().clone())` — the two
+        // spellings a caller has for taking the (tier, source) pair out
+        // of a Provenance, one hand-rolled through the borrow accessors,
+        // one named on the atomic-pair boundary. Same field-wise clone
+        // cost (source is owned; tier is Copy), same output pair. Without
+        // this pin, a future edit to `Clone for Provenance` (e.g. adding
+        // an interned identity or a source watermark) could silently
+        // diverge the two paths and callers routing through into_parts
+        // would see a different pair than callers doing the manual
+        // accessor-clone dance.
+        let prov = Provenance::env("SHIKUMI_PROVENANCE_INTO_PARTS_");
+        let via_into_parts = prov.clone().into_parts();
+        let via_accessors = (prov.tier(), prov.source().clone());
+        assert_eq!(via_into_parts, via_accessors);
+    }
+
+    #[test]
+    fn provenance_from_tuple_agrees_with_into_parts() {
+        // The std-trait facade on the primitive's ownership boundary:
+        // the `From<Provenance> for (ConfigTierKind, ConfigSource)` impl
+        // and the inherent `into_parts` method produce the same pair on
+        // every input. Callers routing through `Into::into` /
+        // `<(ConfigTierKind, ConfigSource)>::from(prov)` hit the same
+        // destructuring as callers naming the inherent method — the two
+        // spellings are one operation, not a facade with drift, so a
+        // downstream generic bound `T: Into<(ConfigTierKind, ConfigSource)>`
+        // picks up Provenance for free.
+        let prov = Provenance::file("/etc/from_tuple_prim.yaml");
+        let via_method = prov.clone().into_parts();
+        let via_from: (ConfigTierKind, ConfigSource) = prov.into();
+        assert_eq!(via_method, via_from);
+    }
+
+    #[test]
+    fn provenance_from_pair_agrees_with_new() {
+        // The reconstruction dual of provenance_from_tuple_agrees_with_into_parts:
+        // the `From<(ConfigTierKind, ConfigSource)> for Provenance` impl
+        // and the inherent `Provenance::new` constructor produce the same
+        // provenance on every input pair. Together with the two
+        // destructuring-side impls above, this closes BOTH directions of
+        // the atomic-pair ownership boundary on the primitive — a
+        // Provenance round-trips through the (tier, source) pair via
+        // either the inherent [new, into_parts] pair or the two From
+        // facades and lands at the identical byte-image. A ConfigPlane
+        // broadcast surface receiving a wire-encoded (tier, source)
+        // tuple can decode it via one `.into()` call and no caller has to
+        // reach for the inherent constructor name to satisfy a generic
+        // `T: Into<Provenance>` bound.
+        let pair = (
+            ConfigTierKind::Custom,
+            ConfigSource::File(PathBuf::from("/etc/from_pair_prim.yaml")),
+        );
+        let via_new = Provenance::new(pair.0, pair.1.clone());
+        let via_from: Provenance = pair.clone().into();
+        assert_eq!(via_new, via_from);
+        // And round-tripping in both directions lands byte-identically —
+        // proof the two From impls are inverses on the atomic pair.
+        let round_tripped: (ConfigTierKind, ConfigSource) = via_from.into();
+        assert_eq!(round_tripped, pair);
     }
 
     #[test]
