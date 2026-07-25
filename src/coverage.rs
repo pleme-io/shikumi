@@ -109,24 +109,31 @@ impl ConfigCoverage {
     /// likely intended consumer). Hints are only produced when the
     /// nearest counterpart is within the automatic typo-threshold
     /// documented on [`Self::did_you_mean`].
+    ///
+    /// Both arms route through the shared [`Self::audit_paths_against`]
+    /// fold — the coverage-audit family collapses to one primitive with
+    /// two applications: `audit_paths_against(schema, &consumed)`
+    /// surfaces dead knobs; `audit_paths_against(consumed_deduped,
+    /// &schema)` surfaces stale entries. The two directions are the
+    /// symmetry of one fold, not two separate set-difference
+    /// implementations.
     #[must_use]
     pub fn hinted_report<T: TieredConfig>(consumed: &[&str]) -> HintedCoverageReport {
         let schema = Self::schema_leaf_paths::<T>();
         let consumed_owned: Vec<String> = consumed.iter().map(|s| (*s).to_string()).collect();
-        let schema_set: BTreeSet<String> = schema.iter().cloned().collect();
         let consumed_set: BTreeSet<String> = consumed_owned.iter().cloned().collect();
-        let dead_knobs = schema_set
-            .difference(&consumed_set)
-            .map(|entry| CoverageHint {
-                entry: entry.clone(),
-                did_you_mean: Self::did_you_mean(entry, &consumed_owned).map(str::to_owned),
+        let dead_knobs = Self::audit_paths_against(schema.iter().cloned(), &consumed_owned)
+            .into_iter()
+            .map(|PathHint { path, did_you_mean }| CoverageHint {
+                entry: path,
+                did_you_mean,
             })
             .collect();
-        let stale_entries = consumed_set
-            .difference(&schema_set)
-            .map(|entry| CoverageHint {
-                entry: entry.clone(),
-                did_you_mean: Self::did_you_mean(entry, &schema).map(str::to_owned),
+        let stale_entries = Self::audit_paths_against(consumed_set.iter().cloned(), &schema)
+            .into_iter()
+            .map(|PathHint { path, did_you_mean }| CoverageHint {
+                entry: path,
+                did_you_mean,
             })
             .collect();
         HintedCoverageReport {
@@ -255,18 +262,55 @@ impl ConfigCoverage {
     /// surface-specific rendering (rejoining raw env-var names,
     /// wrapping in [`ValueKeyHint`] / [`EnvVarHint`], etc.) is a thin
     /// layer above this primitive.
+    ///
+    /// This is the schema-keyed convenience over the fully general
+    /// [`Self::audit_paths_against`] — it wires `known` to the schema
+    /// leaves of `T` so the common case (schema-vs-input) is one call.
+    /// [`Self::hinted_report`] takes the general form directly to
+    /// audit in both directions (schema-vs-consumed for dead knobs;
+    /// consumed-vs-schema for stale entries).
     #[must_use]
     pub fn audit_paths<T: TieredConfig, I>(paths: I) -> Vec<PathHint>
     where
         I: IntoIterator<Item = String>,
     {
-        let schema = Self::schema_leaf_paths::<T>();
-        let schema_set: BTreeSet<&str> = schema.iter().map(String::as_str).collect();
+        Self::audit_paths_against(paths, &Self::schema_leaf_paths::<T>())
+    }
+
+    /// The fully general "diff paths against a known set + hint each
+    /// unknown" fold. Given an iterator of dotted paths and an
+    /// explicit `known` set of strings: silently drop every path that
+    /// is present in `known` (legitimate matches, not typos); return
+    /// each remainder paired with its closest neighbour in `known`
+    /// under the typo threshold documented on [`Self::did_you_mean`]
+    /// (or [`None`] when nothing lies within the threshold).
+    ///
+    /// The result is sorted by path for diagnostic determinism. The
+    /// input is not deduplicated (see [`Self::audit_paths`] for the
+    /// dedup convention). Tie-breaking in `did_you_mean` follows the
+    /// order of `known` as passed in — callers control that by
+    /// choosing to pass an already-sorted vec (schema leaves) or an
+    /// original-order vec (consumer-declared paths).
+    ///
+    /// This is the primitive [`Self::audit_paths`] (schema-keyed) and
+    /// both arms of [`Self::hinted_report`] (schema-vs-consumed for
+    /// dead knobs; consumed-vs-schema for stale entries) route
+    /// through. The coverage-audit family is one fold under three
+    /// keyings — the surface-specific rendering
+    /// ([`ValueKeyHint`] / [`EnvVarHint`] / [`CoverageHint`]) is a
+    /// thin layer above this primitive.
+    #[must_use]
+    pub fn audit_paths_against<I, S>(paths: I, known: &[S]) -> Vec<PathHint>
+    where
+        I: IntoIterator<Item = String>,
+        S: AsRef<str>,
+    {
+        let known_set: BTreeSet<&str> = known.iter().map(AsRef::as_ref).collect();
         let mut unknown: Vec<PathHint> = paths
             .into_iter()
-            .filter(|p| !schema_set.contains(p.as_str()))
+            .filter(|p| !known_set.contains(p.as_str()))
             .map(|path| PathHint {
-                did_you_mean: Self::did_you_mean(&path, &schema).map(str::to_owned),
+                did_you_mean: Self::did_you_mean(&path, known).map(str::to_owned),
                 path,
             })
             .collect();
@@ -1271,6 +1315,155 @@ totally_unrelated: x
         assert_eq!(
             env_pairs, manual_pairs,
             "audit_env_vars must equal audit_paths on its normalized paths (up to env-var-form hint rendering)",
+        );
+    }
+
+    #[test]
+    fn audit_paths_against_filters_known_and_hints_unknown_over_arbitrary_known_set() {
+        // The primitive over an arbitrary `known` set (not derived
+        // from a schema). Every path present in `known` drops silently;
+        // every remainder pairs with its closest known-neighbour under
+        // the typo threshold, sorted by path.
+        let known = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
+        let paths = vec![
+            "alpha".to_string(),             // known — filtered
+            "betta".to_string(),             // typo — surfaces with hint
+            "totally.different".to_string(), // unknown — no hint
+        ];
+        let audits = ConfigCoverage::audit_paths_against(paths, &known);
+        assert_eq!(audits.len(), 2);
+        // Sorted by path: "betta" < "totally.different"
+        assert_eq!(audits[0].path, "betta");
+        assert_eq!(audits[0].did_you_mean.as_deref(), Some("beta"));
+        assert_eq!(audits[1].path, "totally.different");
+        assert!(audits[1].did_you_mean.is_none());
+    }
+
+    #[test]
+    fn audit_paths_against_returns_empty_when_every_path_is_known() {
+        let known = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let paths = vec!["a".to_string(), "b".to_string()];
+        let audits = ConfigCoverage::audit_paths_against(paths, &known);
+        assert!(audits.is_empty());
+    }
+
+    #[test]
+    fn audit_paths_equals_audit_paths_against_on_schema_leaf_set() {
+        // The routing invariant on the schema-keyed convenience:
+        // audit_paths::<T>(paths) must equal audit_paths_against(paths,
+        // &schema_leaf_paths::<T>()) pointwise. A future refactor that
+        // drifts the two (e.g. audit_paths adds a second filter pass,
+        // or changes tie-break ordering) turns this red at the
+        // earliest possible seam.
+        let paths: Vec<String> = vec![
+            "name".into(),
+            "window.witdh".into(),
+            "totally.unrelated".into(),
+            "tags".into(),
+        ];
+        let via_convenience = ConfigCoverage::audit_paths::<Demo, _>(paths.clone());
+        let via_general = ConfigCoverage::audit_paths_against(
+            paths,
+            &ConfigCoverage::schema_leaf_paths::<Demo>(),
+        );
+        assert_eq!(
+            via_convenience, via_general,
+            "audit_paths must equal audit_paths_against on the schema leaves — the primitive is one fold with the schema pre-wired",
+        );
+    }
+
+    #[test]
+    fn hinted_report_stale_entries_equal_audit_paths_against_consumed_vs_schema() {
+        // The routing invariant on the stale-entries arm of the
+        // coverage report: after deduping consumed via BTreeSet, the
+        // stale entries must equal audit_paths_against(consumed_set,
+        // &schema) pointwise (modulo the PathHint -> CoverageHint
+        // field rename). The two-way relationship between "declared"
+        // and "consumed" collapses to symmetry through the shared
+        // fold.
+        let consumed = &[
+            "name",
+            "tags",
+            "window.width",
+            "window.witdh", // typo — stale
+            "window.height",
+            "totally_unrelated", // unknown — stale, no hint
+        ];
+        let hinted = ConfigCoverage::hinted_report::<Demo>(consumed);
+        let schema = ConfigCoverage::schema_leaf_paths::<Demo>();
+        let consumed_set: BTreeSet<String> = consumed.iter().map(|s| (*s).to_string()).collect();
+        let manual = ConfigCoverage::audit_paths_against(consumed_set.iter().cloned(), &schema);
+        let via_report: Vec<(String, Option<String>)> = hinted
+            .stale_entries
+            .into_iter()
+            .map(|h| (h.entry, h.did_you_mean))
+            .collect();
+        let via_general: Vec<(String, Option<String>)> = manual
+            .into_iter()
+            .map(|PathHint { path, did_you_mean }| (path, did_you_mean))
+            .collect();
+        assert_eq!(
+            via_report, via_general,
+            "hinted_report::stale_entries must equal audit_paths_against(consumed_deduped, &schema) — one fold, one keying",
+        );
+    }
+
+    #[test]
+    fn hinted_report_dead_knobs_equal_audit_paths_against_schema_vs_consumed() {
+        // The routing invariant on the dead-knobs arm: schema leaves
+        // NOT present in consumed must equal audit_paths_against(
+        // schema, &consumed) pointwise. The tie-break for
+        // did_you_mean follows consumed's original order (as passed
+        // to hinted_report), so pass the same &consumed_owned to the
+        // manual call. The mirror direction of the coverage report is
+        // the same fold with (paths, known) swapped.
+        let consumed = &["name", "tags", "window.witdh"]; // window.width and window.height dead
+        let hinted = ConfigCoverage::hinted_report::<Demo>(consumed);
+        let schema = ConfigCoverage::schema_leaf_paths::<Demo>();
+        let consumed_owned: Vec<String> = consumed.iter().map(|s| (*s).to_string()).collect();
+        let manual = ConfigCoverage::audit_paths_against(schema.iter().cloned(), &consumed_owned);
+        let via_report: Vec<(String, Option<String>)> = hinted
+            .dead_knobs
+            .into_iter()
+            .map(|h| (h.entry, h.did_you_mean))
+            .collect();
+        let via_general: Vec<(String, Option<String>)> = manual
+            .into_iter()
+            .map(|PathHint { path, did_you_mean }| (path, did_you_mean))
+            .collect();
+        assert_eq!(
+            via_report, via_general,
+            "hinted_report::dead_knobs must equal audit_paths_against(schema, &consumed) — the mirror direction of the same fold",
+        );
+    }
+
+    #[test]
+    fn hinted_report_symmetry_a_typo_paired_across_both_arms() {
+        // The clearest demonstration of the collapsed symmetry: a
+        // typoed consumed entry produces BOTH a stale entry (the typo,
+        // hinted at the schema leaf) AND a dead knob (the schema
+        // leaf, hinted at the typo). Both come from the same primitive
+        // with (paths, known) swapped — the two-way pairing is not a
+        // bespoke double-set-difference, it is the fold applied twice
+        // with the arguments transposed.
+        let hinted = ConfigCoverage::hinted_report::<Demo>(&[
+            "name",
+            "tags",
+            "window.witdh", // typo — schema leaf window.width is now dead
+            "window.height",
+        ]);
+        assert_eq!(hinted.stale_entries.len(), 1);
+        assert_eq!(hinted.stale_entries[0].entry, "window.witdh");
+        assert_eq!(
+            hinted.stale_entries[0].did_you_mean.as_deref(),
+            Some("window.width"),
+        );
+        assert_eq!(hinted.dead_knobs.len(), 1);
+        assert_eq!(hinted.dead_knobs[0].entry, "window.width");
+        assert_eq!(
+            hinted.dead_knobs[0].did_you_mean.as_deref(),
+            Some("window.witdh"),
+            "the mirror direction must pair the dead knob with the typo it lost consumer coverage to",
         );
     }
 
