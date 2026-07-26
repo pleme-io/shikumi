@@ -75,6 +75,15 @@ impl<T> std::ops::Deref for ValidatedTieredConfig<T> {
 /// breathe-provider's Sighup/Reload/Restart-gated-write pattern
 /// (`ConfigReload` → `DisruptionClass` → `DisruptionPolicy::permits()`)
 /// — the TYPE is native to shikumi, never imported.
+///
+/// The two class-scoped hashes ([`Self::restart_required`] and
+/// [`Self::free`]) close the [`HotSwapClass`] partition (theory/CALHA.md
+/// §5.1 — `Free | RequiresRestart` is 2-arm-total): every serialized
+/// top-level field feeds exactly one half, and each half moves iff a
+/// field of that class changed. This lets a per-replica observer answer
+/// both "is a restart pending?" (`restart_required` moved) AND "did any
+/// live-editable knob drift?" (`free` moved) from one watermark, without
+/// re-scanning the full serialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConfigWatermark {
     /// Hash of the whole resolved config value.
@@ -84,12 +93,22 @@ pub struct ConfigWatermark {
     /// exactly the signal `calha`'s split watermark (theory/CALHA.md §2)
     /// polls to decide whether a running process is missing a restart.
     pub restart_required: blake3::Hash,
+    /// Hash of ONLY the fields classified [`HotSwapClass::Free`] — the
+    /// symmetric class-partition peer of [`Self::restart_required`]. A
+    /// `RequiresRestart`-field-only edit leaves this hash unchanged;
+    /// moves exactly when a live-swappable field's value changed. Lets a
+    /// `/healthz/config` surface distinguish "a Free field drifted since
+    /// last observation" (interesting to an operator watching live-edit
+    /// activity) from "a RequiresRestart field drifted" (the existing
+    /// pending-restart signal) without recomputing either half.
+    pub free: blake3::Hash,
 }
 
 impl ConfigWatermark {
     /// Compute the split watermark for `value`, using `field_classes`
     /// (a `T::FIELD_CLASSES`-shaped slice) to partition which serialized
-    /// top-level fields feed the `restart_required` half.
+    /// top-level fields feed the class-scoped halves ([`Self::restart_required`]
+    /// and [`Self::free`]).
     ///
     /// Serialization failure (a well-formed `TieredConfig` value should
     /// never hit this — `TieredConfig: Serialize` is a supertrait bound)
@@ -103,30 +122,54 @@ impl ConfigWatermark {
         let full_bytes = serde_json::to_vec(value).unwrap_or_default();
         let full = blake3::hash(&full_bytes);
 
-        let restart_required = match serde_json::to_value(value) {
-            Ok(serde_json::Value::Object(map)) => {
-                // Re-sorted into a BTreeMap so the hash is deterministic
-                // regardless of `serde_json`'s `preserve_order` feature
-                // being unified on elsewhere in the dependency tree —
-                // BTreeMap's own Serialize impl always emits sorted keys.
-                let restart_map: std::collections::BTreeMap<String, serde_json::Value> =
-                    field_classes
-                        .iter()
-                        .filter(|(_, class)| matches!(class, HotSwapClass::RequiresRestart { .. }))
-                        .filter_map(|(field, _)| {
-                            map.get(*field).map(|v| ((*field).to_owned(), v.clone()))
-                        })
-                        .collect();
-                let bytes = serde_json::to_vec(&restart_map).unwrap_or_default();
-                blake3::hash(&bytes)
-            }
-            _ => blake3::hash(&[]),
+        // One serialization drives both class-scoped halves, so a future
+        // `HotSwapClass` variant added to the partition needs exactly one
+        // new call site (a new `class_scoped_hash` invocation) rather
+        // than a second full round-trip through `serde_json::to_value`.
+        let object = match serde_json::to_value(value) {
+            Ok(serde_json::Value::Object(map)) => Some(map),
+            _ => None,
         };
+        let restart_required = Self::class_scoped_hash(object.as_ref(), field_classes, |c| {
+            matches!(c, HotSwapClass::RequiresRestart { .. })
+        });
+        let free = Self::class_scoped_hash(object.as_ref(), field_classes, |c| {
+            matches!(c, HotSwapClass::Free)
+        });
 
         Self {
             full,
             restart_required,
+            free,
         }
+    }
+
+    /// The one primitive both class-scoped halves fold through: hash the
+    /// deterministic (`BTreeMap`-sorted) sub-object of `object` whose
+    /// top-level keys are the members of `field_classes` matching
+    /// `include`. Absent object (serialization non-`Object` result)
+    /// degrades to `blake3::hash(&[])` uniformly across every class arm,
+    /// so a class-partition peer cannot silently disagree with its
+    /// sibling on the failure path.
+    fn class_scoped_hash(
+        object: Option<&serde_json::Map<String, serde_json::Value>>,
+        field_classes: &[(&'static str, HotSwapClass)],
+        include: impl Fn(&HotSwapClass) -> bool,
+    ) -> blake3::Hash {
+        let Some(map) = object else {
+            return blake3::hash(&[]);
+        };
+        // Re-sorted into a BTreeMap so the hash is deterministic
+        // regardless of `serde_json`'s `preserve_order` feature being
+        // unified on elsewhere in the dependency tree — BTreeMap's own
+        // Serialize impl always emits sorted keys.
+        let scoped: std::collections::BTreeMap<String, serde_json::Value> = field_classes
+            .iter()
+            .filter(|(_, class)| include(class))
+            .filter_map(|(field, _)| map.get(*field).map(|v| ((*field).to_owned(), v.clone())))
+            .collect();
+        let bytes = serde_json::to_vec(&scoped).unwrap_or_default();
+        blake3::hash(&bytes)
     }
 }
 
@@ -249,6 +292,99 @@ mod tests {
         let b = ConfigWatermark::compute(&base(), FIELD_CLASSES);
         assert_eq!(a.full, b.full);
         assert_eq!(a.restart_required, b.restart_required);
+        assert_eq!(
+            a.free, b.free,
+            "the free half must be deterministic across repeated computation \
+             just like the full and restart_required halves"
+        );
+    }
+
+    #[test]
+    fn watermark_free_changes_when_a_free_field_changes() {
+        let a = ConfigWatermark::compute(&base(), FIELD_CLASSES);
+        let mut c2 = base();
+        c2.log_level = "debug".into();
+        let b = ConfigWatermark::compute(&c2, FIELD_CLASSES);
+        assert_ne!(
+            a.free, b.free,
+            "the free watermark must move when a Free-classified field changed \
+             -- symmetric peer of restart_required_changes_when_a_restart_field_changes"
+        );
+    }
+
+    #[test]
+    fn watermark_free_is_stable_across_a_restart_required_field_edit() {
+        let a = ConfigWatermark::compute(&base(), FIELD_CLASSES);
+        let mut c2 = base();
+        c2.bind_addr = "0.0.0.0:9090".into();
+        let b = ConfigWatermark::compute(&c2, FIELD_CLASSES);
+        assert_eq!(
+            a.free, b.free,
+            "the free watermark must NOT change when only a RequiresRestart field changed \
+             -- the symmetric peer of the restart_required-is-stable-under-Free-edit invariant \
+             that welds the HotSwapClass partition at the watermark shape"
+        );
+    }
+
+    #[test]
+    fn watermark_both_class_halves_move_on_a_mixed_edit() {
+        // Weld the class-partition disjointness at both halves in one
+        // test: when a Free field AND a RequiresRestart field both edit,
+        // both class-scoped halves must move (and the full half too, by
+        // the pre-existing invariant). A regression that folded the
+        // wrong class into `free` (e.g. filtering by RequiresRestart on
+        // both sides) would leave `free` stable across a Free edit and
+        // this whole-corner check turns red at the seam.
+        let a = ConfigWatermark::compute(&base(), FIELD_CLASSES);
+        let mut c2 = base();
+        c2.log_level = "debug".into();
+        c2.bind_addr = "0.0.0.0:9090".into();
+        let b = ConfigWatermark::compute(&c2, FIELD_CLASSES);
+        assert_ne!(a.full, b.full, "the full half must move on any edit");
+        assert_ne!(
+            a.restart_required, b.restart_required,
+            "the restart_required half must move on a mixed edit"
+        );
+        assert_ne!(a.free, b.free, "the free half must move on a mixed edit");
+    }
+
+    #[test]
+    fn watermark_class_halves_partition_disagree_only_on_matching_class() {
+        // A single edit to a Free field: free moves, restart_required
+        // does NOT (and full does). A single edit to a RequiresRestart
+        // field: restart_required moves, free does NOT (and full does).
+        // This is the load-bearing partition weld -- any future refactor
+        // that mixes the two class predicates (e.g. copy-paste bug
+        // classing Free as RequiresRestart) turns red on exactly one
+        // side of this test even if the sibling test's endpoint checks
+        // happened to survive vacuously.
+        let baseline = ConfigWatermark::compute(&base(), FIELD_CLASSES);
+
+        let mut only_free = base();
+        only_free.log_level = "debug".into();
+        let after_free = ConfigWatermark::compute(&only_free, FIELD_CLASSES);
+        assert_ne!(after_free.free, baseline.free, "Free edit moves free");
+        assert_eq!(
+            after_free.restart_required, baseline.restart_required,
+            "Free edit leaves restart_required stable"
+        );
+        assert_ne!(after_free.full, baseline.full, "Free edit moves full");
+
+        let mut only_restart = base();
+        only_restart.bind_addr = "0.0.0.0:9090".into();
+        let after_restart = ConfigWatermark::compute(&only_restart, FIELD_CLASSES);
+        assert_ne!(
+            after_restart.restart_required, baseline.restart_required,
+            "RequiresRestart edit moves restart_required"
+        );
+        assert_eq!(
+            after_restart.free, baseline.free,
+            "RequiresRestart edit leaves free stable"
+        );
+        assert_ne!(
+            after_restart.full, baseline.full,
+            "RequiresRestart edit moves full"
+        );
     }
 
     // Sanity: pleme_hotswap types are reachable through this module's
