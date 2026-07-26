@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "cargo_lock_sha256": "d2b993b53d9bb6e16855ce6315a2df2d688c0dfcd43e1cbd5b251dfe8c4ed973",
+  "cargo_lock_sha256": "92fa5bba4c5df50531b59b720b16d273f7d20d343814e421cc554402904a5b37",
   "target_resolves": {
     "base": {
       "arc-swap-1.9.2": {

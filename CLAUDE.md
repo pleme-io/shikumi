@@ -10,38 +10,54 @@
 
 - **Pillar 2** (Configuration): Shikumi IS Pillar 2. Every service, tool, daemon in pleme-io discovers config via `ConfigDiscovery::new("app")`, loads strongly-typed structs via `ConfigStore::<T>::load`, hot-reloads through ArcSwap. No ad-hoc env parsing, no HashMap configs.
 
-## Destination — shikumi is ConfigPlane's default resolver (named, not shipped)
+## Destination — shikumi is ConfigPlane's default resolver
 
 New shikumi work aims at one destination: shikumi FULLY SUPPORTS the
 **ConfigPlane** default-config behavior by default. ConfigPlane is the reusable
 pleme-io configuration control plane (surface + API + tool; camelot the first
 consumer) — one central authority owns/discovers/reconciles config for services
 *and* per-tick controllers and pushes/syncs it down, while each component
-resolves its own slice the shikumi progressive-discovery way. Three pieces, all
-NAMED-not-shipped (a `Result::Err` is mitigation, not a guarantee):
+resolves its own slice the shikumi progressive-discovery way. Three pieces —
+(a) + (b) are now **shipped**, (c) remains destination (tier-honest: a
+`Result::Err` is mitigation, not a guarantee):
 
-**(a) `resolve_progressive` — the sealed fold.** Fuse today's two separate
-pieces — the `TieredConfig` tier selector (`tiered.rs`) and the `ProviderChain`
-figment fold (`provider.rs`, incl. `with_discovered`) — into ONE canonical
-sealed fold in `ClosedAxis` precedence order, every resolved value carrying a
-typed `Provenance { tier, source }`:
+**(a) `resolve_progressive` — the sealed fold. SHIPPED (v0.1.180).** The
+`TieredConfig` tier selector (`tiered.rs`) and the `ProviderChain` figment fold
+(`provider.rs`) are fused into ONE canonical sealed fold in `ClosedAxis`
+precedence order, every resolved value carrying a typed
+`Provenance { tier, source }`:
 
 ```text
 bare → discovered[kanchi] → prescribed_default → file → env → runtime
 ```
 
-Today neither exists: selector and fold are unfused, and per-value
-`Provenance{tier,source}` is absent (`FormatProvenance` = format origin;
-`compose_with_provenance` = intra-discovered layer attribution — not whole-chain).
-`resolve_progressive` becomes the default entry for every new config.
+`resolve_progressive` / `resolve_progressive_with` (computed tiers + injected
+overlays) shipped in v0.1.180; `resolve_progressive_full(file, env_prefix)` is
+the end-to-end fusion — it reads the file + env tiers through `ProviderChain`
+and folds them with `Provenance::file` / `Provenance::env`. Tier-honest seal
+grades in `docs/PROGRESSIVE-DISCOVERY-VERIFICATION.md` (precedence-order +
+discovery-totality truly-unrep; provenance construction-complete with a
+path-keyed side-map ceiling — file/env/runtime share the `Custom` tier rank and
+are told apart by `Provenance::source`, not tier). `resolve_progressive` is the
+default entry for every new config.
 
-**(b) kanchi runtime-discovery layers (the DISCOVERED tier).** New
-`DiscoveryLayer` impls (`discovered.rs`) whose `discover()` reads the *running
-cluster* via new kanchi probes: k8s downward API (`POD_NAMESPACE`/`POD_NAME`),
-service DNS (peer / `db_host_name` / `auth_dns_internal`), k8s `Secret` reads
-(DEK / db_pwd / uam-shared-key), the MySQL `Service`, per-svc S3 buckets. Today
-kanchi carries only host + env/cloud-classification probes (screen/DPR/RAM,
-`in_cluster` / cgroup-limit, OS/arch) — no cluster-wiring discovery yet.
+**(b) kanchi runtime-discovery layers (the DISCOVERED tier). SHIPPED (layer +
+seam; real Secret client mock-proven).** `KubeClusterDiscovery`
+(`kube_discovery.rs`, `kube-discovery` feature) is a `DiscoveryLayer` whose
+`discover()` reads the *running cluster* through the `kanchi::ClusterEnv` seam:
+downward API (`POD_NAMESPACE`/`POD_NAME`), service DNS (`db_host_name` /
+`auth_dns_internal` — resolvable ⇒ emit the FQDN), and named `Secret` keys
+(`db_pwd` / DEK / `uam-shared-key`). kanchi's `src/cluster.rs` owns the probes +
+the `ClusterEnv` trait (std-only: `HostClusterEnv` real for env/DNS, `None` for
+secrets; `MockClusterEnv` the test double). The layer is fully exercised against
+the mock (empty `Dict` off-cluster = the clean degenerate); the **real**
+in-cluster Secret client (`KubeSecretReader`, `kube` feature — reqwest-blocking
+GET + SA token + CA cert + base64) is compiled + type-checked but **proven only
+structurally + by mock — no live cluster in CI** (`pending-configplane`: the
+shadow-first live proof is the M0 gate). The MySQL `Service` / per-svc S3
+buckets are expressible via the generic `service()`/`secret()` plan, not
+hard-coded. `kanchi` is an INTERIM git rev-pin (Cargo.toml) until it merges +
+auto-releases.
 
 **(c) central-authority + hot-reload-broadcast.** shikumi is the *per-component*
 resolver + hot-reload store (`ConfigStore` ArcSwap + `ConfigWatcher`); ConfigPlane
@@ -83,8 +99,9 @@ for Nix-managed desktop applications. Four modules, each independently testable:
 | `provider.rs` | Figment provider chain builder | `ProviderChain` |
 | `store.rs` | ArcSwap hot-reload store | `ConfigStore<T>` |
 | `watcher.rs` | Symlink-aware file watcher | `ConfigWatcher`, `symlink_target` |
-| `tiered.rs` | Tiered progressive-discovery resolution (the default) | `TieredConfig`, `ConfigTier`, `resolve_progressive`, `Provenance`, `ProgressiveResolution`, `ConfigDiff` |
+| `tiered.rs` | Tiered progressive-discovery resolution (the default) | `TieredConfig`, `ConfigTier`, `resolve_progressive`, `resolve_progressive_full`, `Provenance`, `ProgressiveResolution`, `ConfigDiff` |
 | `discovered.rs` | Per-leaf attributed deep-merge fold (kanchi discovery composition) | `discovered_from_layers`, `deep_merge_attributed`, `LayerAttribution` |
+| `kube_discovery.rs` (`kube-discovery` feat) | ConfigPlane DISCOVERED-tier cluster `DiscoveryLayer` over the `kanchi::ClusterEnv` seam | `KubeClusterDiscovery`, `KubeSecretReader` (`kube` feat) |
 | `error.rs` | Error types | `ShikumiError` |
 
 ### Config Discovery Precedence
