@@ -827,13 +827,13 @@ dependencies = [
 
 [[package]]
 name = "displaydoc"
-version = "0.2.6"
+version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ac70aa55017e108007fbaf5aa0f54b021c98f92ff8af59d42eda9da96e3dd4f"
+checksum = "c6232dd377dcc64799954cbd3a9bb882e9cdc1308ccd87b1c098f1fb2eaf82a8"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -969,8 +969,8 @@ dependencies = [
 
 [[package]]
 name = "gen-macros"
-version = "0.1.26"
-source = "git+https://github.com/pleme-io/gen#0f4db0c195b72239016b96ea306d6a32d26550f9"
+version = "0.1.27"
+source = "git+https://github.com/pleme-io/gen#09830b6e7d840ac63c20144c38c42c9af635e044"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -979,8 +979,8 @@ dependencies = [
 
 [[package]]
 name = "gen-platform"
-version = "0.1.26"
-source = "git+https://github.com/pleme-io/gen#0f4db0c195b72239016b96ea306d6a32d26550f9"
+version = "0.1.27"
+source = "git+https://github.com/pleme-io/gen#09830b6e7d840ac63c20144c38c42c9af635e044"
 dependencies = [
  "gen-macros",
  "gen-types",
@@ -992,8 +992,8 @@ dependencies = [
 
 [[package]]
 name = "gen-types"
-version = "0.1.26"
-source = "git+https://github.com/pleme-io/gen#0f4db0c195b72239016b96ea306d6a32d26550f9"
+version = "0.1.27"
+source = "git+https://github.com/pleme-io/gen#09830b6e7d840ac63c20144c38c42c9af635e044"
 dependencies = [
  "blake3",
  "chrono",
@@ -2275,9 +2275,9 @@ dependencies = [
 
 [[package]]
 name = "schemars"
-version = "1.2.1"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2b42f36aa1cd011945615b92222f6bf73c599a102a300334cd7f8dbeec726cc"
+checksum = "687274d293b6cdc6e73e0fee520bf2049650090d7164f87672d212a3c530cf4a"
 dependencies = [
  "dyn-clone",
  "ref-cast",
@@ -2412,7 +2412,7 @@ dependencies = [
  "indexmap 1.9.3",
  "indexmap 2.14.0",
  "schemars 0.9.0",
- "schemars 1.2.1",
+ "schemars 1.2.2",
  "serde_core",
  "serde_json",
  "serde_with_macros",
@@ -2457,7 +2457,7 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.413"
+version = "0.1.414"
 dependencies = [
  "akeyless-api",
  "arc-swap",
