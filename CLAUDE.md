@@ -82,9 +82,89 @@ this destination advances a tier or leaves a `pending-configplane:` note.
 ## Build & Test
 
 ```bash
-cargo build          # compile
-cargo test           # 77 unit tests + 1 doc-test
+cargo build                                   # compile
+cargo test --all-features --no-fail-fast      # the gate CI runs
 ```
+
+### Test counts — MEASURED, not remembered
+
+The count below is re-derivable; do not hand-edit it. Reproduce with:
+
+```bash
+cargo test --lib --all-features -- --list | grep -c ': test$'
+```
+
+Measured 2026-07-27 on `aarch64-darwin` (`cargo test`, exit 0, zero failures):
+
+| target | `cargo test` (default features) | `cargo test --all-features` |
+|---|---|---|
+| lib unit tests (`src/`) | 6,437 | **6,489** |
+| `tests/dispatcher_registration.rs` | 7 | 7 |
+| doctests | 16 collected · 12 run · 4 ignored | 18 collected · 12 run · 6 ignored |
+| **executed total** | **6,456** | **6,508** |
+
+Three things this table exists to stop:
+
+1. **The stale-count tell.** Until this edit the line above read
+   `77 unit tests + 1 doc-test`. That number was written 2026-03-15 (`6fedc77`)
+   and never revisited, while `CLAUDE.md` itself was edited as recently as
+   2026-07-09 — an **84×** understatement, the worst found in a 95-repo fleet
+   sweep. Across four repos checked that day a wrong test count was a reliable
+   tell for a suite that no longer *compiled*; shikumi is the benign case
+   (compiles, 0 failures), and that is a measurement, not a default.
+2. **`--all-targets` excludes doctests.** `cargo test --all-targets` reports
+   6,489 + 7 and silently omits all 18 doctests. Both legs must be run, or
+   counted separately, to state a total.
+3. **Default features skip 52 lib tests + 2 doctests.** The `cli`, `hotswap`,
+   `kube-discovery`/`kube` and `lisp` arms — i.e. the newest, least-proven
+   ConfigPlane code — are exactly what a bare `cargo test` drops. That is why
+   the gate runs `--all-features`, matching substrate `cargo-ci.yml`'s own
+   default `test-args` and the measured reason behind it.
+
+Known, unfixed, deliberately not hidden: one dead-code warning
+(`src/lisp_provider.rs:336`, `ValueHelpers::{to_i128,to_bool}` under the `lisp`
+feature). `cargo clippy -- -D warnings` is **not** wired into CI — the crate
+sets `[lints.clippy] pedantic = "warn"`, and no clippy was available on this
+workstation to measure the real count first. Wiring an unmeasured `-D warnings`
+gate would be a guess; the burn-down needs its own measured pass
+(`pending-shikumi-clippy`).
+
+## CI
+
+| workflow | reusable | what it actually verifies |
+|---|---|---|
+| `ci.yml` | — | `cargo fmt --check` + `cargo test --workspace --all-features --no-fail-fast` on push + PR. **The only thing that runs a test.** |
+| `auto-release.yml` | substrate `cargo-auto-release.yml` | bump · commit · tag · publish to crates.io. **Zero test steps.** |
+| `gen-spec.yml` | substrate `reusable-gen-spec.yml` | `Cargo.gen.lock` delta freshness. Never compiles or tests the crate. |
+
+`ci.yml` landed 2026-07-27. Before it this repo — which ~90 fleet repos depend
+on — had **no test CI at all**: a crate could be published to crates.io by
+`auto-release.yml` with a suite nothing had run.
+
+**Why `ci.yml` is not the 2-line substrate `cargo-ci.yml` shim.** Four blockers,
+each measured rather than assumed; the full write-up with reproducing commands
+is in `ci.yml`'s own header. Recheck them before rewriting it — if they have
+closed, delete the job in favour of the shim:
+
+1. `cargo-ci.yml@main` on GitHub is still the pre-`1d2b971` version (no
+   cargo-test leg, no zero-check gate).
+2. `nix flake check` here builds exactly one check —
+   `nix eval .#checks.aarch64-darwin --apply builtins.attrNames` → `["gen-confirm"]`
+   — which is the freshness gate `gen-spec.yml` already runs. The crate is never
+   compiled by it.
+3. **`substrate.rust.library`'s `shape` argument is inert.** It is declared at
+   `mk-rust-tool-flake.nix:30` and never read again, so this flake is built by
+   the *tool* builder, not `library.nix`. shikumi is therefore neither of the
+   two categories the fleet checks-rollout assumed: it inherits neither
+   `library.nix`'s new `checks.tests` nor the one-line `checks = forEachSystem …`
+   forward that direct importers need. On the tool path `checks.tests` is
+   deliberately absent for the `lockfile` buildMode (substrate's own
+   `pending-rust-test-check: lockfile-dev-deps`).
+4. **This repo's only devShell cannot be entered**, so any `nix develop`-based
+   gate is red on arrival. Pure → devenv's "could not determine the current
+   directory"; `--impure` → `languages.rust.channel` demands an
+   `inputs.rust-overlay` this flake never declares. The second is a real missing
+   input, so `--impure` alone does not fix it (`pending-shikumi-devshell`).
 
 ## Architecture
 

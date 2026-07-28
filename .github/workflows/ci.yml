@@ -1,0 +1,111 @@
+name: ci
+
+# The test gate for shikumi. Until this file landed (2026-07-27) this repo had
+# NO test CI whatsoever — a SUBSTRATE-TIER crate that ~90 fleet repos depend on
+# was shipping 6,508 tests that nothing ever ran on push or PR.
+#
+# What existed before, and why neither one is a test gate:
+#   auto-release.yml -> substrate cargo-auto-release.yml: bump, commit, tag,
+#                       publish to crates.io. Zero test steps. It publishes
+#                       whatever is on main, tested or not.
+#   gen-spec.yml     -> substrate reusable-gen-spec.yml: regenerates and
+#                       validates the Cargo.gen.lock delta. A build-spec
+#                       freshness check, never a compile or a test run.
+#
+# ── WHY THIS IS NOT `cargo-ci.yml` / `rust-gate`, MEASURED ────────────────
+#
+# The fleet-standard adoption would be a 2-line shim over substrate's
+# `cargo-ci.yml`. Four blockers were measured on 2026-07-27, not assumed, and
+# each must close before that swap is honest. Recheck them before rewriting
+# this file; if they have closed, DELETE this job in favour of the shim.
+#
+#   1. `cargo-ci.yml@main` on GitHub is still the pre-1d2b971 version: one
+#      `nix flake check` job, no cargo-test leg, no zero-check gate. The fix
+#      exists only in an unpushed local substrate tree.
+#   2. `nix flake check` on THIS repo builds exactly one check — measured:
+#      `nix eval .#checks.aarch64-darwin --apply builtins.attrNames`
+#      -> [ "gen-confirm" ]. That is the Cargo.gen.lock freshness gate
+#      gen-spec.yml already runs; the crate itself is never compiled by it.
+#      Adding a `nix flake check` job today would be a second job verifying
+#      the same thing, dressed as a build check (UNREPRESENTABILITY tier ⊥).
+#   3. `substrate.rust.library`'s `shape` argument is INERT — grep
+#      `mk-rust-tool-flake.nix` for `shape`: it is declared on line 30 and
+#      never read again, so this flake is built by the TOOL builder, not
+#      `library.nix`. shikumi therefore inherits neither the `checks.tests`
+#      that library.nix gained, nor the one-line `checks = forEachSystem …`
+#      forward that direct library.nix importers need. On the tool path
+#      `checks.tests` is deliberately absent for the `lockfile` buildMode
+#      (gen's spec carries no dev-dependency graph — substrate's own
+#      `pending-rust-test-check: lockfile-dev-deps`).
+#   4. The `cargo-test` leg of the fixed `cargo-ci.yml` runs
+#      `nix develop ".#default" -c cargo test` — and this repo's only
+#      devShell cannot be entered AT ALL. Both failures reproduced locally:
+#        pure   -> "devenv was not able to determine the current directory"
+#        impure -> "To use 'languages.rust.channel', Add the following to
+#                   flake.nix: inputs.rust-overlay.url = …"
+#      The second is a genuine missing flake input, unrelated to purity, so
+#      `--impure` alone does not rescue it. A `nix develop`-based gate would
+#      be red on arrival for reasons that have nothing to do with the tests.
+#
+# `pleme-io/actions/rust-gate` was also rejected, for one reason: its test
+# step is a fixed `cargo test --workspace` with no way to pass
+# `--all-features`, which silently drops 52 lib tests + 2 doctests (the
+# `cli` / `hotswap` / `kube-discovery` / `kube` / `lisp` arms — the newest
+# and least-proven ConfigPlane code). Its clippy step is also
+# `--all-targets -- -D warnings`, and this crate sets
+# `[lints.clippy] pedantic = "warn"`; no clippy binary was available on the
+# authoring workstation to measure that first, and an unmeasured `-D warnings`
+# gate is a guess. Tracked as `pending-shikumi-clippy`.
+#
+# So the two commands below are deliberate, and each mirrors a
+# fleet-documented invocation rather than inventing one: the test args are
+# substrate `cargo-ci.yml`'s own default `test-args`, and `--all-features` is
+# there for the same measured reason substrate made it the default.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-test:
+    # Public repo -> ubuntu-latest, matching the fleet visibility-default
+    # that runner-resolve applies (private -> camelot-builder-pleme-eks).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # shikumi resolves several pleme-io git dependencies (gen-platform,
+      # gen-types, tatara-lisp, kanchi, pleme-hotswap, akeyless-api). The
+      # action owns the BOT_PAT > GITHUB_TOKEN order AND the unset of
+      # checkout's this-repo-scoped extraheader, which otherwise wins over
+      # url.insteadOf by prefix match and breaks private-dep resolution.
+      - uses: pleme-io/actions/git-credentials@main
+        with:
+          bot-pat: ${{ secrets.BOT_PAT }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      # Cheap and first: the two hunks this gate was born fixing were
+      # introduced by the most recent src/ commit and had gone unnoticed
+      # precisely because nothing checked.
+      - name: cargo fmt --check
+        run: cargo fmt --check
+
+      # --all-features: measured 6,489 lib + 7 integration + 18 doctests
+      #   (12 run, 6 ignored) = 6,508 executed, vs 6,456 at default features.
+      # --no-fail-fast: report every failing target in one run, not the first.
+      - name: cargo test --all-features
+        env:
+          # cargo's bundled libgit2 ignores url.insteadOf; this forces the
+          # real git binary, which honours the rewrite set above.
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+          CARGO_INCREMENTAL: "0"
+        run: cargo test --workspace --all-features --no-fail-fast

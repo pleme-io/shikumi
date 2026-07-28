@@ -305,11 +305,7 @@ impl ClusterEnv for KubeSecretReader {
         self.host.pod_name()
     }
 
-    fn resolve_service(
-        &self,
-        dns: &ClusterServiceDns,
-        port: u16,
-    ) -> Option<std::net::SocketAddr> {
+    fn resolve_service(&self, dns: &ClusterServiceDns, port: u16) -> Option<std::net::SocketAddr> {
         self.host.resolve_service(dns, port)
     }
 
@@ -383,7 +379,10 @@ mod tests {
             .service("db_host_name", dns("mysql", "prod"), 3306)
             .secret("db_pwd", "db-credentials", "password");
 
-        assert!(layer.discover().is_empty(), "off-cluster ⇒ empty contribution");
+        assert!(
+            layer.discover().is_empty(),
+            "off-cluster ⇒ empty contribution"
+        );
     }
 
     #[test]
