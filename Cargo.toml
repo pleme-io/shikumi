@@ -115,7 +115,7 @@ thiserror = "2.0"
 tracing = "0.1"
 # Object-safe async trait — needed for SecretClient in secret_client.rs.
 async-trait = "0.1"
-tatara-lisp = { git = "https://github.com/pleme-io/tatara", package = "tatara-lisp", optional = true , version = "0.2" }
+tatara-lisp = { git = "https://github.com/pleme-io/tatara", rev = "ab81b9a98a2c248f833a92ae34d864273da9b02c", package = "tatara-lisp", optional = true , version = "0.2" }
 # Feature-gated `hotswap`: the HotSwapClassifier trait + HotSwapClass/
 # SwapDecision runtime types a T: TieredConfig implementor's derived
 # impl (via the sibling `pleme-hotswap-derive` proc-macro crate) must
