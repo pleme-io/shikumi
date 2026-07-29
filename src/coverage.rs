@@ -709,6 +709,52 @@ impl HintedCoverageReport {
         });
         dead_knobs.chain(stale_entries)
     }
+
+    /// The head-projection peer of [`Self::hint_iter`] at the coverage
+    /// sub-report scope — the first [`SurfaceHint`] this sub-report
+    /// contributes to [`HealthReport::hint_iter`] (a
+    /// [`HintSurface::DeadKnob`]-tagged hint if any dead knob exists,
+    /// else the first [`HintSurface::StaleEntry`]-tagged hint, else
+    /// [`None`]), or [`None`] if the report is clean. Defined as
+    /// `self.hint_iter().next()` — one method call, no [`Vec`]
+    /// allocation, no full walk of the remaining hints once the first
+    /// one lands. The `Option<SurfaceHint<'_>>` head-projection peer of
+    /// the enumeration-primitive [`Self::hint_iter`] at the sub-report
+    /// scope, the sub-report analogue of [`HealthReport::first_hint`].
+    ///
+    /// Where [`Self::hint_iter`] enumerates *every* hint this
+    /// sub-report contributes (an unbounded iterator a caller must
+    /// walk even to read the first entry as a side-effect-free
+    /// [`Option`]), this returns *which hint on the coverage sub-report
+    /// to fix first* as one [`Option<SurfaceHint<'_>>`] — the shape a
+    /// per-sub-report "primary failure" diagnostics field, a
+    /// coverage-only alerting rule that pages with the loaded hint,
+    /// or a fast per-sub-report liveness probe actually wants.
+    /// `first_hint() == None ⇔ is_clean()` by construction, since
+    /// `hint_iter().count() == hint_count()` and `is_clean() ⇔
+    /// hint_count() == 0` on this sub-report.
+    ///
+    /// Composes with [`ValueAudit::first_hint`] /
+    /// [`EnvVarAudit::first_hint`] as the coverage-sub-report slice of
+    /// [`HealthReport::first_hint`], which folds through the three
+    /// sub-report head-projections as
+    /// `coverage.first_hint().or_else(|| value.first_hint()).or_else(||
+    /// env.first_hint())` — mirroring the way [`Self::hint_iter`] folds
+    /// through the [`HealthReport::hint_iter`] chain and the way
+    /// [`Self::hint_count`] folds through
+    /// [`HealthReport::hint_count`]'s sum. The composition is welded by
+    /// `health_report_first_hint_chains_sub_report_first_hints`.
+    ///
+    /// Delegates through [`Self::hint_iter`], the same primitive
+    /// [`Self::hint_count`] and every sub-report peer share — so this
+    /// [`Option`]-shaped peer cannot drift from the enumeration
+    /// primitive beneath, from the sibling scalar-cardinality peer
+    /// [`Self::hint_count`], or from the whole-report head-projection
+    /// [`HealthReport::first_hint`] one scope up.
+    #[must_use]
+    pub fn first_hint(&self) -> Option<SurfaceHint<'_>> {
+        self.hint_iter().next()
+    }
 }
 
 /// Which of the four coverage surfaces a [`SurfaceHint`] came from —
@@ -1664,6 +1710,51 @@ impl EnvVarAudit {
             did_you_mean: h.did_you_mean.as_deref(),
         })
     }
+
+    /// The head-projection peer of [`Self::hint_iter`] at the env-var
+    /// sub-report scope — the first [`SurfaceHint`] this sub-report
+    /// contributes to [`HealthReport::hint_iter`] (always
+    /// [`HintSurface::EnvVar`]-tagged, carrying the first raw env-var
+    /// name from [`Self::unknown`]), or [`None`] if the report is
+    /// clean. Defined as `self.hint_iter().next()` — one method call,
+    /// no [`Vec`] allocation, no full walk of the remaining hints once
+    /// the first one lands. The `Option<SurfaceHint<'_>>`
+    /// head-projection peer of the enumeration-primitive
+    /// [`Self::hint_iter`] at the sub-report scope, the env-var
+    /// sub-report analogue of [`HealthReport::first_hint`] (and of the
+    /// sibling [`HintedCoverageReport::first_hint`] /
+    /// [`ValueAudit::first_hint`] on the other two sub-reports).
+    ///
+    /// Where [`Self::hint_iter`] enumerates *every* env-var hint (an
+    /// unbounded iterator a caller must walk even to read the first
+    /// entry as a side-effect-free [`Option`]), this returns *which
+    /// env-var-surface hint to fix first* as one
+    /// [`Option<SurfaceHint<'_>>`] — the shape a per-sub-report
+    /// "primary env-var typo" diagnostics field, an env-var-only
+    /// alerting rule that pages with the loaded hint, or a fast
+    /// per-sub-report liveness probe actually wants.
+    /// `first_hint() == None ⇔ is_clean()` by construction, since
+    /// `hint_iter().count() == hint_count()` and `is_clean() ⇔
+    /// hint_count() == 0` on this sub-report.
+    ///
+    /// Composes with [`HintedCoverageReport::first_hint`] /
+    /// [`ValueAudit::first_hint`] as the env-var-sub-report slice of
+    /// [`HealthReport::first_hint`], which folds through the three
+    /// sub-report head-projections as
+    /// `coverage.first_hint().or_else(|| value.first_hint()).or_else(||
+    /// env.first_hint())`. The composition is welded by
+    /// `health_report_first_hint_chains_sub_report_first_hints`.
+    ///
+    /// Delegates through [`Self::hint_iter`], the same primitive
+    /// [`Self::hint_count`] and every sub-report peer share — so this
+    /// [`Option`]-shaped peer cannot drift from the enumeration
+    /// primitive beneath, from the sibling scalar-cardinality peer
+    /// [`Self::hint_count`], or from the whole-report head-projection
+    /// [`HealthReport::first_hint`] one scope up.
+    #[must_use]
+    pub fn first_hint(&self) -> Option<SurfaceHint<'_>> {
+        self.hint_iter().next()
+    }
 }
 
 /// One config-value-shaped typo hint: a dotted leaf path present in the
@@ -1751,6 +1842,52 @@ impl ValueAudit {
             entry: h.path.as_str(),
             did_you_mean: h.did_you_mean.as_deref(),
         })
+    }
+
+    /// The head-projection peer of [`Self::hint_iter`] at the
+    /// file-value sub-report scope — the first [`SurfaceHint`] this
+    /// sub-report contributes to [`HealthReport::hint_iter`] (always
+    /// [`HintSurface::ValueKey`]-tagged, carrying the first dotted
+    /// unknown leaf path from [`Self::unknown`]), or [`None`] if the
+    /// report is clean. Defined as `self.hint_iter().next()` — one
+    /// method call, no [`Vec`] allocation, no full walk of the
+    /// remaining hints once the first one lands. The
+    /// `Option<SurfaceHint<'_>>` head-projection peer of the
+    /// enumeration-primitive [`Self::hint_iter`] at the sub-report
+    /// scope, the file-value sub-report analogue of
+    /// [`HealthReport::first_hint`] (and of the sibling
+    /// [`HintedCoverageReport::first_hint`] /
+    /// [`EnvVarAudit::first_hint`] on the other two sub-reports).
+    ///
+    /// Where [`Self::hint_iter`] enumerates *every* file-value hint
+    /// (an unbounded iterator a caller must walk even to read the
+    /// first entry as a side-effect-free [`Option`]), this returns
+    /// *which file-value-surface hint to fix first* as one
+    /// [`Option<SurfaceHint<'_>>`] — the shape a per-sub-report
+    /// "primary file-value typo" diagnostics field, a file-value-only
+    /// alerting rule that pages with the loaded hint, or a fast
+    /// per-sub-report liveness probe actually wants.
+    /// `first_hint() == None ⇔ is_clean()` by construction, since
+    /// `hint_iter().count() == hint_count()` and `is_clean() ⇔
+    /// hint_count() == 0` on this sub-report.
+    ///
+    /// Composes with [`HintedCoverageReport::first_hint`] /
+    /// [`EnvVarAudit::first_hint`] as the file-value-sub-report slice
+    /// of [`HealthReport::first_hint`], which folds through the three
+    /// sub-report head-projections as
+    /// `coverage.first_hint().or_else(|| value.first_hint()).or_else(||
+    /// env.first_hint())`. The composition is welded by
+    /// `health_report_first_hint_chains_sub_report_first_hints`.
+    ///
+    /// Delegates through [`Self::hint_iter`], the same primitive
+    /// [`Self::hint_count`] and every sub-report peer share — so this
+    /// [`Option`]-shaped peer cannot drift from the enumeration
+    /// primitive beneath, from the sibling scalar-cardinality peer
+    /// [`Self::hint_count`], or from the whole-report head-projection
+    /// [`HealthReport::first_hint`] one scope up.
+    #[must_use]
+    pub fn first_hint(&self) -> Option<SurfaceHint<'_>> {
+        self.hint_iter().next()
     }
 }
 
@@ -6702,6 +6839,193 @@ tags: []
                 health.first_hint().map(|h| h.surface),
                 health.first_dirty_surface(),
                 "first_hint's surface tag equals first_dirty_surface on every corner",
+            );
+        }
+    }
+
+    // ─── first_hint on the three sub-reports —
+    // ─── HintedCoverageReport / ValueAudit / EnvVarAudit head-
+    // ─── projection peers of hint_iter, jointly welded to
+    // ─── HealthReport::first_hint through the three-sub-report
+    // ─── or_else composition below. ───
+
+    #[test]
+    fn hinted_coverage_first_hint_equals_hint_iter_next() {
+        // The delegation identity welding the coverage sub-report's
+        // `Option<SurfaceHint>` head-projection peer to the
+        // enumeration primitive it now delegates through:
+        // `first_hint() == hint_iter().next()` on a mixed input where
+        // both arms of the bidirectional diff are nonzero, so the head
+        // lands on the DeadKnob arm and no arm is vacuously covered.
+        let consumed = &["name", "tags", "window.witdh", "window.height"];
+        let hinted = ConfigCoverage::hinted_report::<Demo>(consumed);
+        assert_eq!(hinted.first_hint(), hinted.hint_iter().next());
+        let head = hinted
+            .first_hint()
+            .expect("mixed hinted corner is non-clean");
+        assert_eq!(
+            head.surface,
+            HintSurface::DeadKnob,
+            "coverage sub-report: dead-knob arm yields first",
+        );
+    }
+
+    #[test]
+    fn hinted_coverage_first_hint_is_none_iff_is_clean() {
+        // Sub-report Some/None boundary at the hint level: on the
+        // fully-clean corner `first_hint()` returns `None`; on any
+        // non-clean corner it returns `Some`. The coverage-sub-report
+        // peer of the whole-report `first_hint_is_none_iff_is_clean`
+        // at the same head-projection layer.
+        let clean_consumed = &["name", "tags", "window.width", "window.height"];
+        let clean_hinted = ConfigCoverage::hinted_report::<Demo>(clean_consumed);
+        assert_eq!(clean_hinted.first_hint(), None);
+        assert!(clean_hinted.is_clean());
+
+        let dirty_consumed = &["name", "tags", "window.witdh", "window.height"];
+        let dirty_hinted = ConfigCoverage::hinted_report::<Demo>(dirty_consumed);
+        assert!(dirty_hinted.first_hint().is_some());
+        assert!(!dirty_hinted.is_clean());
+    }
+
+    #[test]
+    fn value_audit_first_hint_equals_hint_iter_next() {
+        // The delegation identity welding the value-audit sub-report's
+        // `Option<SurfaceHint>` head-projection peer to the
+        // enumeration primitive it now delegates through:
+        // `first_hint() == hint_iter().next()` on a dirty input with
+        // several unknown paths, and the surface tag pin verifies the
+        // yield is `HintSurface::ValueKey`-tagged.
+        let yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let audit = ConfigCoverage::audit_value::<Demo>(&value);
+        assert_eq!(audit.first_hint(), audit.hint_iter().next());
+        let head = audit.first_hint().expect("dirty value audit is non-clean");
+        assert_eq!(
+            head.surface,
+            HintSurface::ValueKey,
+            "value-audit sub-report: every yielded head is ValueKey-tagged",
+        );
+    }
+
+    #[test]
+    fn value_audit_first_hint_is_none_iff_is_clean() {
+        // Sub-report Some/None boundary at the hint level for
+        // `ValueAudit`: `first_hint == None ⇔ is_clean`, verified on
+        // both a clean corner and a dirty corner so no arm is
+        // vacuously covered.
+        let clean_yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+";
+        let clean_value: serde_yaml::Value = serde_yaml::from_str(clean_yaml).unwrap();
+        let clean_audit = ConfigCoverage::audit_value::<Demo>(&clean_value);
+        assert_eq!(clean_audit.first_hint(), None);
+        assert!(clean_audit.is_clean());
+
+        let dirty_yaml = "\
+name: kanchi
+window:
+  witdh: 100
+  height: 40
+tags: []
+";
+        let dirty_value: serde_yaml::Value = serde_yaml::from_str(dirty_yaml).unwrap();
+        let dirty_audit = ConfigCoverage::audit_value::<Demo>(&dirty_value);
+        assert!(dirty_audit.first_hint().is_some());
+        assert!(!dirty_audit.is_clean());
+    }
+
+    #[test]
+    fn env_var_audit_first_hint_equals_hint_iter_next() {
+        // The delegation identity welding the env-var-audit
+        // sub-report's `Option<SurfaceHint>` head-projection peer to
+        // the enumeration primitive it now delegates through:
+        // `first_hint() == hint_iter().next()` on a dirty input with
+        // several unknown env vars, and the surface tag pin verifies
+        // the yield is `HintSurface::EnvVar`-tagged.
+        let env: Vec<(String, String)> = vec![
+            ("MYAPP_WINDOW__WITDH".into(), "1".into()),
+            ("MYAPP_UNRELATED_KNOB".into(), "x".into()),
+        ];
+        let audit = ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &env);
+        assert_eq!(audit.first_hint(), audit.hint_iter().next());
+        let head = audit
+            .first_hint()
+            .expect("dirty env-var audit is non-clean");
+        assert_eq!(
+            head.surface,
+            HintSurface::EnvVar,
+            "env-var-audit sub-report: every yielded head is EnvVar-tagged",
+        );
+    }
+
+    #[test]
+    fn env_var_audit_first_hint_is_none_iff_is_clean() {
+        // Sub-report Some/None boundary at the hint level for
+        // `EnvVarAudit`: `first_hint == None ⇔ is_clean`, verified on
+        // both a clean corner and a dirty corner so no arm is
+        // vacuously covered.
+        let clean_env: Vec<(String, String)> = vec![("MYAPP_WINDOW__WIDTH".into(), "1".into())];
+        let clean_audit = ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &clean_env);
+        assert_eq!(clean_audit.first_hint(), None);
+        assert!(clean_audit.is_clean());
+
+        let dirty_env: Vec<(String, String)> = vec![
+            ("MYAPP_WINDOW__WITDH".into(), "1".into()),
+            ("MYAPP_UNRELATED_KNOB".into(), "x".into()),
+        ];
+        let dirty_audit = ConfigCoverage::audit_env_vars::<Demo, _, _>("MYAPP_", &dirty_env);
+        assert!(dirty_audit.first_hint().is_some());
+        assert!(!dirty_audit.is_clean());
+    }
+
+    #[test]
+    fn health_report_first_hint_chains_sub_report_first_hints() {
+        // The whole-report/three-sub-report compositional wiring at
+        // the head-projection layer: `HealthReport::first_hint()`
+        // equals `coverage.first_hint().or_else(|| value.first_hint())
+        // .or_else(|| env.first_hint())` — the sub-report analogue of
+        // `health_report_hint_iter_chains_sub_report_hint_iters` at
+        // one axis up the collect/count/head fan. Verified on all
+        // three iter-primitive corners so no arm is vacuously covered:
+        //
+        // - the fully-clean corner pins the `None`-terminal end of
+        //   the `or_else` chain (every sub-report returns `None`),
+        // - the mixed corner (env-only) pins the tail branch (coverage
+        //   None, value None, env `Some`),
+        // - the fully-dirty corner pins the head branch (coverage
+        //   `Some`, short-circuiting the remaining arms).
+        //
+        // A regression that reshuffled one enumeration's yield order
+        // without the other — or that recomposed `HealthReport::hint_iter`
+        // in a way that no longer starts at `coverage.hint_iter()` —
+        // turns red here at the head-projection seam, in lockstep with
+        // the `chain` composition test one axis down.
+        for health in [
+            iter_primitive_mixed_health(),
+            iter_primitive_clean_health(),
+            iter_primitive_dirty_health(),
+        ] {
+            let composed = health
+                .coverage
+                .first_hint()
+                .or_else(|| health.value.first_hint())
+                .or_else(|| health.env.first_hint());
+            assert_eq!(
+                health.first_hint(),
+                composed,
+                "HealthReport::first_hint must fold through the three sub-report head-projections \
+                 in canonical order (coverage → value → env)",
             );
         }
     }
