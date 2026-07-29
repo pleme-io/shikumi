@@ -1525,6 +1525,54 @@ impl HealthReport {
     pub fn first_clean_surface(&self) -> Option<HintSurface> {
         self.clean_surfaces_iter().next()
     }
+
+    /// The head-projection peer of [`Self::hint_iter`] — the first
+    /// [`SurfaceHint`] on this report in canonical [`Self::hint_iter`]
+    /// order (dead knobs, stale entries, unknown value keys, unknown
+    /// env vars — [`HintSurface::ALL`] verbatim, then per-surface
+    /// deterministic order), or [`None`] if the report is clean.
+    /// Defined as `self.hint_iter().next()` — one method call, no
+    /// [`Vec`] allocation, no full walk of the remaining hints once
+    /// the first one lands. The `Option<SurfaceHint<'_>>` head-projection
+    /// peer of the enumeration-primitive [`Self::hint_iter`] at the
+    /// hint level — one axis deeper than [`Self::first_dirty_surface`]
+    /// (which head-projects at the surface level).
+    ///
+    /// Where [`Self::hint_iter`] enumerates *every* hint (an unbounded
+    /// iterator a caller must walk even to read the first entry as a
+    /// side-effect-free `Option`) and [`Self::first_dirty_surface`]
+    /// names *which surface to fix first* (a `HintSurface` that
+    /// discards the identity of any single hint on it), this returns
+    /// *which hint to fix first* as one [`Option<SurfaceHint<'_>>`] —
+    /// the shape a "primary failure" diagnostics field on
+    /// `/healthz/config` that names both the surface AND the offending
+    /// entry, a first-fail alerting rule that pages with the loaded
+    /// hint (not just its surface), or a fast liveness probe that
+    /// only needs the identity of one broken entry actually wants.
+    /// `first_hint() == None ⇔ is_clean()` by construction, since
+    /// `hint_iter().count() == hint_count()` and `is_clean() ⇔
+    /// hint_count() == 0` — the head-projection layer projection of
+    /// the whole-report `hint_iter().count() == 0` boundary above.
+    ///
+    /// `first_hint().map(|h| h.surface) == first_dirty_surface()` by
+    /// construction — [`Self::hint_iter`] yields hints in
+    /// `hint_iter_by_surface(s)` order across [`HintSurface::ALL`], so
+    /// the surface tag of the head hint IS the head of the dirty
+    /// surface iterator. The two head-projections (hint-level and
+    /// surface-level) cannot drift: one is `.next()` on the enumeration
+    /// primitive, the other is `.next()` on its surface-mapped
+    /// projection.
+    ///
+    /// Delegates through [`Self::hint_iter`], the same primitive
+    /// [`Self::hint_count`] and every `by_surface` peer share — so this
+    /// [`Option`]-shaped peer cannot drift from the enumeration
+    /// primitive beneath, from the sibling scalar-cardinality peer
+    /// [`Self::hint_count`], or from the surface-level head-projection
+    /// [`Self::first_dirty_surface`] one axis up.
+    #[must_use]
+    pub fn first_hint(&self) -> Option<SurfaceHint<'_>> {
+        self.hint_iter().next()
+    }
 }
 
 /// One env-var-shaped typo hint: an env var carrying the shikumi prefix
@@ -6586,5 +6634,75 @@ tags: []
             dirty.first_dirty_surface(),
             HintSurface::ALL.first().copied()
         );
+    }
+
+    // ─── first_hint — the head-projection (`.next()`) peer of
+    // ─── hint_iter at one axis deeper than first_dirty_surface ─────────
+
+    #[test]
+    fn first_hint_equals_hint_iter_next() {
+        // The delegation identity welding the `Option<SurfaceHint>`
+        // head-projection peer to the enumeration primitive it now
+        // delegates through: `first_hint() == hint_iter().next()` on
+        // the mixed corner. A future refactor that inlines one against
+        // the other must keep the two in lockstep — the head-projection
+        // peer is now literally the iterator's `.next()`, so any drift
+        // turns red here at the seam.
+        let mixed = iter_primitive_mixed_health();
+        assert_eq!(mixed.first_hint(), mixed.hint_iter().next());
+        // Load-bear the mixed shape so a regression that returned the
+        // wrong iterator still turns red even if the identity happened
+        // to survive vacuously: the mixed corner has exactly one hint
+        // and it lives on the env-var surface (`MYAPP_ENV_ONLY_LEAF`),
+        // so the head hint's surface tag is `HintSurface::EnvVar`.
+        let head = mixed.first_hint().expect("mixed corner is non-clean");
+        assert_eq!(
+            head.surface,
+            HintSurface::EnvVar,
+            "mixed corner: the single hint is on the env-var surface",
+        );
+    }
+
+    #[test]
+    fn first_hint_is_none_iff_is_clean() {
+        // Whole-report Some/None boundary at the hint level: on the
+        // fully-clean corner `first_hint()` returns `None` (no hint to
+        // fix); on any non-clean corner it returns `Some`. The
+        // hint-level peer of `first_dirty_surface_is_none_iff_is_clean`
+        // at the head-projection layer — both project the same
+        // `is_clean ⇔ hint_count == 0` invariant.
+        let clean = iter_primitive_clean_health();
+        assert_eq!(clean.first_hint(), None);
+        assert!(clean.is_clean());
+
+        let dirty = iter_primitive_dirty_health();
+        assert!(dirty.first_hint().is_some());
+        assert!(!dirty.is_clean());
+
+        let mixed = iter_primitive_mixed_health();
+        assert!(mixed.first_hint().is_some());
+        assert!(!mixed.is_clean());
+    }
+
+    #[test]
+    fn first_hint_surface_equals_first_dirty_surface() {
+        // Cross-axis welding at the head-projection layer: the surface
+        // tag of the head hint IS the head of the dirty-surface
+        // iterator, because `hint_iter()` yields hints in
+        // `hint_iter_by_surface(s)` order across `HintSurface::ALL` —
+        // so `first_hint().map(|h| h.surface) == first_dirty_surface()`
+        // by construction on every input. A regression that reshuffled
+        // one enumeration without the other turns red here.
+        for health in [
+            iter_primitive_mixed_health(),
+            iter_primitive_clean_health(),
+            iter_primitive_dirty_health(),
+        ] {
+            assert_eq!(
+                health.first_hint().map(|h| h.surface),
+                health.first_dirty_surface(),
+                "first_hint's surface tag equals first_dirty_surface on every corner",
+            );
+        }
     }
 }
