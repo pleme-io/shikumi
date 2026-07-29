@@ -8772,6 +8772,186 @@ pub trait ConfigSourceChain {
         self.file_format_histogram().unobserved().next()
     }
 
+    /// The **first-present file format** — the earliest
+    /// [`crate::discovery::Format`] (in [`crate::discovery::Format::ALL`]
+    /// declaration order — `Yaml → Toml → Lisp → Nix`) whose entries
+    /// produced ≥1 recognized-extension file layer on this chain, or
+    /// [`None`] on any chain whose [`Self::file_format_histogram`] is
+    /// empty (the empty chain, and every non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::Env`] /
+    /// unrecognized-extension [`ConfigSource::File`] layers).
+    ///
+    /// The **head-projection peer** of [`Self::present_file_formats`]
+    /// (the observed-cells `Vec` peer) and
+    /// [`Self::present_file_formats_count`] (the observed-cells scalar-
+    /// count peer) on the file-format sub-axis of the chain altitude —
+    /// the [`Option`]-shaped projection of the same support that the
+    /// two sibling peers materialise in full. The observed-side
+    /// symmetric peer of [`Self::first_absent_file_format`] on the
+    /// coverage-gap side; the pair
+    /// `(first_present_file_format, first_absent_file_format)` closes
+    /// the head-projection triangle at the chain altitude's file-format
+    /// sub-axis, mirroring the vector / scalar-count triangles
+    /// `(present_file_formats, present_file_formats_count)` /
+    /// `(absent_file_formats, absent_file_formats_count)`. Direct
+    /// chain-altitude sister of [`Self::first_present_layer_kind`] on
+    /// the layer-kind sub-axis one axis over, and observed-side sister
+    /// of [`crate::ProvenanceMap::first_contributing_tier`] one altitude
+    /// up on the tier axis: all three project the support head of their
+    /// local closed-axis histogram off the shared
+    /// [`crate::AxisHistogram::observed`] iterator's [`Iterator::next`]
+    /// head.
+    ///
+    /// **Distinct from [`Self::dominant_file_format`] and
+    /// [`Self::recessive_file_format`].** The two existing observed-
+    /// side [`Option`]-shaped peers select by observation *count* —
+    /// [`Self::dominant_file_format`] returns the argmax (modal) cell
+    /// and [`Self::recessive_file_format`] returns the argmin (anti-
+    /// modal) cell. This peer selects by axis-declaration *order* —
+    /// the earliest observed cell regardless of its observation count.
+    /// On a chain with `Yaml = 1`, `Toml = 5`, `Lisp = 3`,
+    /// [`Self::dominant_file_format`] reports
+    /// [`Some(crate::discovery::Format::Toml)`][crate::discovery::Format::Toml]
+    /// (argmax = 5), [`Self::recessive_file_format`] reports
+    /// [`Some(crate::discovery::Format::Yaml)`][crate::discovery::Format::Yaml]
+    /// (argmin = 1), and `first_present_file_format()` reports
+    /// [`Some(crate::discovery::Format::Yaml)`][crate::discovery::Format::Yaml]
+    /// (the axis begins at `Yaml`, whose count is nonzero, so `Yaml` is
+    /// the support head). All three seams pin the same fixtures under
+    /// distinct semantics — a future refactor collapsing any pair into
+    /// the same walk would light one of them.
+    ///
+    /// Where [`Self::present_file_formats`] returns *every* contributing
+    /// format (a `Vec<crate::discovery::Format>` a caller must allocate
+    /// even to read the first entry) and
+    /// [`Self::present_file_formats_count`] returns *how many* formats
+    /// contributed (a `usize` that discards the identity of any single
+    /// format), this returns *which format contributed first* as one
+    /// [`Option<crate::discovery::Format>`] — the shape a leading-edge
+    /// diagnostic (*"report the earliest contributing file format and
+    /// stop"*), an attestation manifest field (*"record the primary
+    /// contributing format on this recipe snapshot"*), or a compact
+    /// `/healthz/config` payload (*"first contributing file format in
+    /// precedence order, or null if no recognized file layer"*) actually
+    /// wants (no need to allocate the observed-format list only to read
+    /// its head, no need to walk the rest once the first hit lands).
+    ///
+    /// Routes through [`Self::file_format_histogram`]:
+    /// [`crate::AxisHistogram::observed`] iterates the histogram's
+    /// support cells in [`crate::ClosedAxis::ALL`] declaration order
+    /// (the [`crate::discovery::Format`] canonical order
+    /// `Yaml → Toml → Lisp → Nix`), and [`Iterator::next`] reads its
+    /// head — the closed-axis discipline provides deterministic
+    /// first-cell selection automatically, so this method reads
+    /// directly off the shikumi cube-native primitive instead of
+    /// hand-rolling `crate::discovery::Format::ALL.iter().copied()
+    /// .find(|f| self.file_format_histogram().count(*f) > 0)` at every
+    /// operator-facing consumer asking *"which file format is the
+    /// earliest to have surfaced on this recipe?"*.
+    ///
+    /// **Empty-histogram convention** — returns [`None`], matching the
+    /// [`Self::present_file_formats`] empty-cover convention: an empty
+    /// histogram has no observed cell, so the head of the observed
+    /// iterator is [`None`]. Unlike [`Self::first_present_layer_kind`],
+    /// the [`None`] boundary is tied to the histogram's own emptiness,
+    /// **not** the chain's: a non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::Env`] /
+    /// unrecognized-extension [`ConfigSource::File`] layers still
+    /// reports [`None`] because every entry projects to [`None`]
+    /// through [`ConfigSource::file_format`], leaving the histogram
+    /// empty. Contrast [`Self::first_absent_file_format`], which is
+    /// [`Some(crate::discovery::Format::Yaml)`][crate::discovery::Format::Yaml]
+    /// on that same chain (every cell absent, the axis head is `Yaml`)
+    /// — the two head-projection peers report the empty-histogram chain
+    /// from opposite sides of the observed / coverage-gap partition,
+    /// exactly matching their vector peers' empty-vector / full-axis
+    /// reporting.
+    ///
+    /// # Invariants
+    ///
+    /// - `first_present_file_format() == file_format_histogram().observed().next()`
+    ///   — both project the same support head off the same primitive;
+    ///   the named seam is the cube-native routing of the chain-shape
+    ///   surface. Pinned by
+    ///   [`tests::first_present_file_format_matches_file_format_histogram_observed_next`].
+    /// - `first_present_file_format() == present_file_formats().first().copied()`
+    ///   — the head-projection peer of the observed-cells `Vec` peer;
+    ///   both name the same first-contributing cell without
+    ///   materialising the full vector. Pinned by
+    ///   [`tests::first_present_file_format_matches_present_file_formats_first_copied`].
+    /// - `first_present_file_format().is_none() ==
+    ///   file_format_histogram().is_empty()` — the [`None`] boundary is
+    ///   the empty-histogram boundary: no support head means no
+    ///   recognized-extension file layer surfaced. The head-projection
+    ///   peer of the [`Self::present_file_formats_count`] `== 0 ⇔
+    ///   file_format_histogram().is_empty()` boundary. Unlike
+    ///   [`Self::first_present_layer_kind`], the presence bound is NOT
+    ///   tied to `self.as_ref().is_empty()`. Pinned by
+    ///   [`tests::first_present_file_format_is_none_iff_file_format_histogram_is_empty`].
+    /// - `first_present_file_format().is_some() ==
+    ///   !file_format_histogram().is_empty()` — the [`Some`] boundary
+    ///   is the non-empty-histogram boundary; the contrapositive of the
+    ///   [`None`] boundary above, welded separately as a positive-form
+    ///   fact. Pinned by
+    ///   [`tests::first_present_file_format_is_some_iff_file_format_histogram_is_not_empty`].
+    /// - When `Some(f)`, `f` is a member of
+    ///   [`Self::present_file_formats`] — the support head is by
+    ///   definition an observed cell. Pinned by
+    ///   [`tests::first_present_file_format_is_member_of_present_file_formats_when_some`].
+    /// - When `Some(f)`, `f` is **not** a member of
+    ///   [`Self::absent_file_formats`] — the observed / coverage-gap
+    ///   partition is disjoint; the head-projection peer of the
+    ///   [`tests::absent_file_formats_and_present_file_formats_partition_axis`]
+    ///   disjointness law, from the observed side. Pinned by
+    ///   [`tests::first_present_file_format_is_not_member_of_absent_file_formats_when_some`].
+    /// - `first_present_file_format()` on an empty chain equals
+    ///   [`None`] — the empty-chain / empty-histogram / empty-support
+    ///   boundary head; contrasts [`Self::first_absent_file_format`]'s
+    ///   [`Some(crate::discovery::Format::Yaml)`][crate::discovery::Format::Yaml]
+    ///   on the same chain. Pinned by
+    ///   [`tests::first_present_file_format_empty_chain_is_none`].
+    /// - `first_present_file_format()` on a non-empty chain of only
+    ///   [`ConfigSource::Defaults`] / [`ConfigSource::Env`] /
+    ///   unrecognized-extension [`ConfigSource::File`] layers equals
+    ///   [`None`] — the non-empty-chain / empty-histogram divergence
+    ///   from [`Self::first_present_layer_kind`], which is
+    ///   [`Some(ConfigSourceKind::Defaults)`][ConfigSourceKind::Defaults]
+    ///   on the same chain (its histogram is non-empty because every
+    ///   `ConfigSource` projects to some `ConfigSourceKind`). Pinned by
+    ///   [`tests::first_present_file_format_no_recognized_files_is_none`].
+    /// - `first_present_file_format()` on a chain whose sole layer is a
+    ///   `.toml` [`ConfigSource::File`] equals
+    ///   [`Some(crate::discovery::Format::Toml)`][crate::discovery::Format::Toml]
+    ///   — the singleton support `{Toml}` has a NON-`Yaml` head,
+    ///   witnessing the declaration-order head semantics distinctly
+    ///   from a chain whose support includes `Yaml`. Pinned by
+    ///   [`tests::first_present_file_format_toml_only_chain_is_toml`].
+    /// - `first_present_file_format()` yields the minimum format by
+    ///   [`crate::axis_ordinal`] on [`crate::discovery::Format`] — the
+    ///   head of a strictly-ascending list is the minimum, so the
+    ///   format returned is minimal by axis ordinal among contributing
+    ///   formats. Pinned by
+    ///   [`tests::first_present_file_format_is_minimum_present_file_format_by_axis_ordinal`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::discovery::Format>()`
+    /// (the support scan, short-circuited on the first nonzero cell).
+    /// Both are `O(n)` in practice since the file-format axis carries a
+    /// fixed four-cell cardinality; the returned
+    /// [`Option<crate::discovery::Format>`] reads one cell. Elides the
+    /// `Vec<crate::discovery::Format>` allocation the previous
+    /// `present_file_formats().first().copied()` idiom paid on every
+    /// call site.
+    #[must_use]
+    fn first_present_file_format(&self) -> Option<crate::discovery::Format>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.file_format_histogram().observed().next()
+    }
+
     /// The [`crate::discovery::Format`] whose entries produced the greatest
     /// number of recognized-extension file layers on this chain — the modal
     /// cell of [`Self::file_format_histogram`] on the chain altitude. `None`
@@ -31497,6 +31677,326 @@ mod tests {
                 .into_iter()
                 .min_by_key(|f| crate::axis_ordinal(*f));
             assert_eq!(head, min_by_ordinal);
+        }
+    }
+
+    // ---- ConfigSourceChain::first_present_file_format ----
+
+    fn first_present_file_format_fixtures() -> Vec<Vec<ConfigSource>> {
+        // Fixture cohort covering every reachable shape of the observed-
+        // side head-projection peer on the chain-altitude file-format
+        // axis:
+        // - `sample_chain`: two `.yaml` + one Env → support is {Yaml} →
+        //   Some(Yaml) (singleton-support corner at the axis head).
+        // - defaults-only singleton: histogram empty → None (empty
+        //   support divergence from `first_present_layer_kind`, whose
+        //   support is {Defaults} on the same chain).
+        // - env-only singleton: histogram empty → None (empty support
+        //   divergence — the layer-kind sub-axis reports {Env}).
+        // - yaml-only singleton: support is {Yaml} → Some(Yaml)
+        //   (singleton-support corner at the axis head).
+        // - toml-only singleton: support is {Toml} → Some(Toml)
+        //   (singleton-support corner one cell past the axis head —
+        //   head is *not* Yaml, distinguishing this seam from any
+        //   implementation unconditionally returning the axis head on
+        //   a non-empty histogram).
+        // - lisp-only singleton: support is {Lisp} → Some(Lisp)
+        //   (singleton-support corner two cells past the axis head).
+        // - nix-only singleton: support is {Nix} → Some(Nix)
+        //   (singleton-support corner at the axis tail).
+        // - unrecognized-only singleton: histogram empty → None (the
+        //   non-empty-chain / empty-histogram divergence witness).
+        // - empty chain: histogram empty → None.
+        // - full-cover: one file layer per recognized format → support
+        //   is the full axis → Some(Yaml) (declaration-order head).
+        vec![
+            sample_chain(),
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![ConfigSource::File(PathBuf::from("/a.toml"))],
+            vec![ConfigSource::File(PathBuf::from("/a.lisp"))],
+            vec![ConfigSource::File(PathBuf::from("/a.nix"))],
+            vec![ConfigSource::File(PathBuf::from("/a.unknown"))],
+            vec![],
+            vec![
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+                ConfigSource::File(PathBuf::from("/b.toml")),
+                ConfigSource::File(PathBuf::from("/c.lisp")),
+                ConfigSource::File(PathBuf::from("/d.nix")),
+            ],
+        ]
+    }
+
+    #[test]
+    fn first_present_file_format_matches_file_format_histogram_observed_next() {
+        // The delegation pin: `first_present_file_format` routes
+        // through `file_format_histogram().observed().next()`, so the
+        // two seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Sister
+        // of `first_present_layer_kind_matches_layer_kind_histogram_observed_next`
+        // one sub-axis over on the same chain altitude.
+        for chain in first_present_file_format_fixtures() {
+            let via_histogram = chain.as_slice().file_format_histogram().observed().next();
+            assert_eq!(chain.as_slice().first_present_file_format(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn first_present_file_format_matches_present_file_formats_first_copied() {
+        // The head-projection pin: `first_present_file_format` is the
+        // `Option`-shaped head of the observed-cells `Vec` peer —
+        // reading it through the named seam must return the same cell
+        // as `present_file_formats().first().copied()`, on every
+        // fixture. The Vec-first peer of the histogram-next delegation
+        // pin. Sister of `first_present_layer_kind_matches_present_layer_kinds_first_copied`
+        // one sub-axis over.
+        for chain in first_present_file_format_fixtures() {
+            assert_eq!(
+                chain.as_slice().first_present_file_format(),
+                chain.as_slice().present_file_formats().first().copied(),
+            );
+        }
+    }
+
+    #[test]
+    fn first_present_file_format_is_none_iff_file_format_histogram_is_empty() {
+        // The [`None`] boundary law: no support head means no
+        // recognized-extension file layer surfaced (the histogram is
+        // empty). Unlike `first_present_layer_kind`, this is NOT the
+        // empty-chain boundary — a non-empty chain of only Defaults /
+        // Env / unrecognized File layers still yields `None` because
+        // every entry projects to `None` through `file_format()`. The
+        // head-projection peer of the
+        // `present_file_formats_count == 0 ⇔ file_format_histogram().is_empty()`
+        // boundary. Sister of
+        // `first_present_layer_kind_is_none_iff_chain_is_empty` one
+        // sub-axis over, diverging on the presence-bound identity.
+        for chain in first_present_file_format_fixtures() {
+            assert_eq!(
+                chain.as_slice().first_present_file_format().is_none(),
+                chain.as_slice().file_format_histogram().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn first_present_file_format_is_some_iff_file_format_histogram_is_not_empty() {
+        // The [`Some`] boundary law (contrapositive of the [`None`]
+        // boundary above), welded as a positive-form fact so a future
+        // refactor to a differently-signed `is_empty` predicate has to
+        // touch both welds. Sister of
+        // `first_present_layer_kind_is_some_iff_chain_is_not_empty`
+        // one sub-axis over.
+        for chain in first_present_file_format_fixtures() {
+            assert_eq!(
+                chain.as_slice().first_present_file_format().is_some(),
+                !chain.as_slice().file_format_histogram().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn first_present_file_format_empty_chain_is_none() {
+        // Empty-chain convention: no observed cell, so the head of the
+        // observed iterator is `None`. Contrasts
+        // `first_absent_file_format_empty_chain_is_yaml` on the same
+        // chain — the two head-projection peers report the empty chain
+        // from opposite sides of the observed / coverage-gap partition.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.first_present_file_format(), None);
+    }
+
+    #[test]
+    fn first_present_file_format_no_recognized_files_is_none() {
+        // Presence-bound divergence from `first_present_layer_kind`:
+        // the chain is non-empty but every entry projects to `None`
+        // through `file_format()`, leaving the histogram empty and no
+        // support head — the head is still `None`. The non-empty-chain
+        // / empty-histogram divergence witness. On the layer-kind sub-
+        // axis the same chain would yield `Some(Defaults)` because
+        // every `ConfigSource` projects to some `ConfigSourceKind`.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+            ConfigSource::File(PathBuf::from("/a.unknown")),
+            ConfigSource::File(PathBuf::from("/b")),
+        ];
+        assert!(!chain.is_empty());
+        assert!(chain.as_slice().file_format_histogram().is_empty());
+        assert_eq!(chain.as_slice().first_present_file_format(), None);
+    }
+
+    #[test]
+    fn first_present_file_format_sample_chain_is_yaml() {
+        // Direct fixture pin: `sample_chain` carries two `.yaml` File
+        // layers + one Env, so the support is exactly {Yaml} and the
+        // head is `Yaml` — the axis head. Companion to
+        // `first_absent_file_format_sample_chain_is_toml` on the same
+        // fixture: observed-side head = Yaml, coverage-gap-side head
+        // = Toml, mutually disjoint by construction.
+        use crate::discovery::Format;
+        let chain = sample_chain();
+        assert_eq!(
+            chain.as_slice().first_present_file_format(),
+            Some(Format::Yaml),
+        );
+    }
+
+    #[test]
+    fn first_present_file_format_yaml_only_chain_is_yaml() {
+        // Direct fixture pin on the singleton-support corner at the
+        // axis head: a yaml-only chain has support {Yaml} and the head
+        // is Yaml. Companion to
+        // `first_absent_file_format_yaml_only_chain_is_toml`.
+        use crate::discovery::Format;
+        let chain = vec![ConfigSource::File(PathBuf::from("/a.yaml"))];
+        assert_eq!(
+            chain.as_slice().first_present_file_format(),
+            Some(Format::Yaml),
+        );
+    }
+
+    #[test]
+    fn first_present_file_format_toml_only_chain_is_toml() {
+        // Direct fixture pin on the singleton-support corner one cell
+        // past the axis head: a toml-only chain has support {Toml} and
+        // the head is Toml — witnesses the declaration-order semantics
+        // *without* the axis head being observed, so a future drift
+        // that returned `Yaml` whenever the histogram was non-empty
+        // would light here. Companion to
+        // `first_absent_file_format_toml_only_chain_is_yaml` on the
+        // opposite side of the partition.
+        use crate::discovery::Format;
+        let chain = vec![ConfigSource::File(PathBuf::from("/a.toml"))];
+        assert_eq!(
+            chain.as_slice().first_present_file_format(),
+            Some(Format::Toml),
+        );
+    }
+
+    #[test]
+    fn first_present_file_format_nix_only_chain_is_nix() {
+        // Direct fixture pin on the singleton-support corner at the
+        // axis tail: a nix-only chain has support {Nix} and the head
+        // is Nix — the four-cell file-format axis's axis-tail witness,
+        // analogous to `first_present_layer_kind_file_only_chain_is_file`
+        // on the three-cell layer-kind axis.
+        use crate::discovery::Format;
+        let chain = vec![ConfigSource::File(PathBuf::from("/a.nix"))];
+        assert_eq!(
+            chain.as_slice().first_present_file_format(),
+            Some(Format::Nix),
+        );
+    }
+
+    #[test]
+    fn first_present_file_format_full_cover_chain_is_yaml() {
+        // Direct fixture pin on the full-cover corner: a chain with one
+        // file layer per recognized format has support = the whole axis
+        // and the head is `Yaml` — the axis-head declaration-order
+        // witness on the full-support boundary. Companion to
+        // `first_absent_file_format_is_none_iff_file_format_histogram_is_full_cover`
+        // on the same corner (observed head = Yaml, coverage-gap head
+        // = None).
+        use crate::discovery::Format;
+        let chain = vec![
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.lisp")),
+            ConfigSource::File(PathBuf::from("/d.nix")),
+        ];
+        assert!(chain.as_slice().file_format_histogram().is_full_cover());
+        assert_eq!(
+            chain.as_slice().first_present_file_format(),
+            Some(Format::Yaml),
+        );
+    }
+
+    #[test]
+    fn first_present_file_format_is_member_of_present_file_formats_when_some() {
+        // Membership pin: when the support head is present, it is
+        // definitionally a member of the observed-cells vector. A
+        // future drift where the head-projection reads off a different
+        // set (say, `Format::ALL` head or `absent_file_formats` head)
+        // would light this. Sister of
+        // `first_present_layer_kind_is_member_of_present_layer_kinds_when_some`
+        // one sub-axis over.
+        for chain in first_present_file_format_fixtures() {
+            if let Some(f) = chain.as_slice().first_present_file_format() {
+                assert!(
+                    chain.as_slice().present_file_formats().contains(&f),
+                    "first_present_file_format {f:?} not in present_file_formats {:?}",
+                    chain.as_slice().present_file_formats(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn first_present_file_format_is_not_member_of_absent_file_formats_when_some() {
+        // Disjointness pin: the observed / coverage-gap partition is
+        // disjoint on the file-format axis, and the head-projection
+        // peer of the observed side must not report a member of the
+        // coverage-gap side. The head-projection peer of
+        // `absent_file_formats_and_present_file_formats_partition_axis`
+        // from the observed side. Sister of
+        // `first_present_layer_kind_is_not_member_of_absent_layer_kinds_when_some`
+        // one sub-axis over.
+        for chain in first_present_file_format_fixtures() {
+            if let Some(f) = chain.as_slice().first_present_file_format() {
+                assert!(
+                    !chain.as_slice().absent_file_formats().contains(&f),
+                    "first_present_file_format {f:?} appears in absent_file_formats {:?}",
+                    chain.as_slice().absent_file_formats(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn first_present_file_format_is_minimum_present_file_format_by_axis_ordinal() {
+        // The declaration-order head pin: the returned format (when
+        // `Some`) has the minimum `axis_ordinal` among all contributing
+        // formats. The observed-cells iterator yields in
+        // `ClosedAxis::ALL` declaration order (which is axis-ordinal
+        // order by construction), so the head is the argmin — a future
+        // drift where the support walk reversed order (or picked
+        // argmax instead) would light this. Sister of
+        // `first_present_layer_kind_is_minimum_present_layer_kind_by_axis_ordinal`
+        // one sub-axis over.
+        for chain in first_present_file_format_fixtures() {
+            let head = chain.as_slice().first_present_file_format();
+            let min_by_ordinal = chain
+                .as_slice()
+                .present_file_formats()
+                .into_iter()
+                .min_by_key(|f| crate::axis_ordinal(*f));
+            assert_eq!(head, min_by_ordinal);
+        }
+    }
+
+    #[test]
+    fn first_present_file_format_and_first_absent_file_format_are_disjoint_on_partial_cover() {
+        // The observed-side / coverage-gap-side head-projection pair
+        // is disjoint whenever both are `Some` — the file-format axis
+        // partitions into (observed, coverage-gap), so when both heads
+        // exist they land in disjoint sides. Under the `sample_chain`
+        // fixture (support = {Yaml}, gap = {Toml, Lisp, Nix}) both are
+        // `Some` and the pair is `(Yaml, Toml)` — distinct. Sister of
+        // `first_present_layer_kind_and_first_absent_layer_kind_are_disjoint_on_partial_cover`
+        // one sub-axis over.
+        for chain in first_present_file_format_fixtures() {
+            let first_p = chain.as_slice().first_present_file_format();
+            let first_a = chain.as_slice().first_absent_file_format();
+            if let (Some(p), Some(a)) = (first_p, first_a) {
+                assert_ne!(
+                    p, a,
+                    "first_present_file_format {p:?} and first_absent_file_format {a:?} collide",
+                );
+            }
         }
     }
 
