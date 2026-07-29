@@ -1074,6 +1074,165 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().unobserved().next()
     }
 
+    /// The **first-present layer kind** — the earliest
+    /// [`ConfigSourceKind`] (in [`ConfigSourceKind::ALL`] declaration
+    /// order — `Defaults → Env → File`) whose entries produced ≥1
+    /// contributing layer on this chain, or [`None`] on the empty chain
+    /// (no layer contributed at all).
+    ///
+    /// The **head-projection peer** of [`Self::present_layer_kinds`]
+    /// (the observed-cells `Vec` peer) and
+    /// [`Self::present_layer_kinds_count`] (the observed-cells scalar-
+    /// count peer) on the layer-kind sub-axis of the chain altitude —
+    /// the [`Option`]-shaped projection of the same support that the
+    /// two sibling peers materialise in full. The observed-side
+    /// symmetric peer of [`Self::first_absent_layer_kind`] on the
+    /// coverage-gap side; the pair
+    /// `(first_present_layer_kind, first_absent_layer_kind)` closes the
+    /// head-projection triangle at the chain altitude's layer-kind
+    /// sub-axis, mirroring the vector / scalar-count triangles
+    /// `(present_layer_kinds, present_layer_kinds_count)` /
+    /// `(absent_layer_kinds, absent_layer_kinds_count)`. Direct chain-
+    /// altitude sister of
+    /// [`crate::ProvenanceMap::first_contributing_tier`] on the tier
+    /// altitude: both project the support head of their local closed-
+    /// axis histogram off the shared
+    /// [`crate::AxisHistogram::observed`] iterator's [`Iterator::next`]
+    /// head.
+    ///
+    /// **Distinct from [`Self::dominant_layer_kind`] and
+    /// [`Self::recessive_layer_kind`].** The two existing observed-
+    /// side [`Option`]-shaped peers select by observation *count* —
+    /// [`Self::dominant_layer_kind`] returns the argmax (modal) cell
+    /// and [`Self::recessive_layer_kind`] returns the argmin (anti-
+    /// modal) cell. This peer selects by axis-declaration *order* —
+    /// the earliest observed cell regardless of its observation count.
+    /// On a chain with `Defaults = 1`, `Env = 5`, `File = 3`,
+    /// [`Self::dominant_layer_kind`] reports
+    /// [`Some(ConfigSourceKind::Env)`][ConfigSourceKind::Env]
+    /// (argmax = 5), [`Self::recessive_layer_kind`] reports
+    /// [`Some(ConfigSourceKind::Defaults)`][ConfigSourceKind::Defaults]
+    /// (argmin = 1), and `first_present_layer_kind()` reports
+    /// [`Some(ConfigSourceKind::Defaults)`][ConfigSourceKind::Defaults]
+    /// (the axis begins at `Defaults`, whose count is nonzero, so
+    /// `Defaults` is the support head). All three seams pin the same
+    /// fixtures under distinct semantics — a future refactor collapsing
+    /// any pair into the same walk would light one of them.
+    ///
+    /// Where [`Self::present_layer_kinds`] returns *every* contributing
+    /// layer kind (a `Vec<ConfigSourceKind>` a caller must allocate
+    /// even to read the first entry) and
+    /// [`Self::present_layer_kinds_count`] returns *how many* kinds
+    /// contributed (a `usize` that discards the identity of any single
+    /// kind), this returns *which kind contributed first* as one
+    /// [`Option<ConfigSourceKind>`] — the shape a leading-edge
+    /// diagnostic (*"report the earliest contributing layer kind and
+    /// stop"*), an attestation manifest field (*"record the primary
+    /// contributing layer kind on this recipe snapshot"*), or a
+    /// compact `/healthz/config` payload (*"first contributing layer
+    /// kind in precedence order, or null if empty"*) actually wants
+    /// (no need to allocate the observed-kind list only to read its
+    /// head, no need to walk the rest once the first hit lands).
+    ///
+    /// Routes through [`Self::layer_kind_histogram`]:
+    /// [`crate::AxisHistogram::observed`] iterates the histogram's
+    /// support cells in [`crate::ClosedAxis::ALL`] declaration order
+    /// (the [`ConfigSourceKind`] canonical order
+    /// `Defaults → Env → File`), and [`Iterator::next`] reads its
+    /// head — the closed-axis discipline provides deterministic
+    /// first-cell selection automatically, so this method reads
+    /// directly off the shikumi cube-native primitive instead of
+    /// hand-rolling `ConfigSourceKind::ALL.iter().copied().find(|k|
+    /// self.layer_kind_histogram().count(*k) > 0)` at every operator-
+    /// facing consumer asking *"which layer kind is the earliest to
+    /// have surfaced on this recipe?"*.
+    ///
+    /// **Empty-chain convention** — returns [`None`], matching the
+    /// [`Self::present_layer_kinds`] empty-cover convention: an empty
+    /// chain has no observed cell, so the head of the observed
+    /// iterator is [`None`]. Contrast [`Self::first_absent_layer_kind`],
+    /// which is
+    /// [`Some(ConfigSourceKind::Defaults)`][ConfigSourceKind::Defaults]
+    /// on the empty chain (every cell absent, the axis head is
+    /// `Defaults`) — the two head-projection peers report the empty
+    /// chain from opposite sides of the observed / coverage-gap
+    /// partition, exactly matching their vector peers' empty-vector /
+    /// full-axis reporting.
+    ///
+    /// # Invariants
+    ///
+    /// - `first_present_layer_kind() == layer_kind_histogram().observed().next()`
+    ///   — both project the same support head off the same primitive;
+    ///   the named seam is the cube-native routing of the chain-shape
+    ///   surface. Pinned by
+    ///   [`tests::first_present_layer_kind_matches_layer_kind_histogram_observed_next`].
+    /// - `first_present_layer_kind() == present_layer_kinds().first().copied()`
+    ///   — the head-projection peer of the observed-cells `Vec` peer;
+    ///   both name the same first-contributing cell without
+    ///   materialising the full vector. Pinned by
+    ///   [`tests::first_present_layer_kind_matches_present_layer_kinds_first_copied`].
+    /// - `first_present_layer_kind().is_none() ==
+    ///   self.as_ref().is_empty()` — the [`None`] boundary is the
+    ///   empty-chain boundary: no support head means no layer
+    ///   contributed. The head-projection peer of the
+    ///   [`Self::present_layer_kinds_count`] `== 0 ⇔ is_empty()`
+    ///   boundary. Pinned by
+    ///   [`tests::first_present_layer_kind_is_none_iff_chain_is_empty`].
+    /// - `first_present_layer_kind().is_some() ==
+    ///   !self.as_ref().is_empty()` — the [`Some`] boundary is the
+    ///   non-empty boundary; the contrapositive of the [`None`]
+    ///   boundary above, welded separately as a positive-form fact.
+    ///   Pinned by
+    ///   [`tests::first_present_layer_kind_is_some_iff_chain_is_not_empty`].
+    /// - When `Some(k)`, `k` is a member of
+    ///   [`Self::present_layer_kinds`] — the support head is by
+    ///   definition an observed cell. Pinned by
+    ///   [`tests::first_present_layer_kind_is_member_of_present_layer_kinds_when_some`].
+    /// - When `Some(k)`, `k` is **not** a member of
+    ///   [`Self::absent_layer_kinds`] — the observed / coverage-gap
+    ///   partition is disjoint; the head-projection peer of the
+    ///   [`tests::absent_layer_kinds_and_present_layer_kinds_partition_axis`]
+    ///   disjointness law, from the observed side. Pinned by
+    ///   [`tests::first_present_layer_kind_is_not_member_of_absent_layer_kinds_when_some`].
+    /// - `first_present_layer_kind()` on an empty chain equals
+    ///   [`None`] — the empty-chain / empty-support boundary head;
+    ///   contrasts [`Self::first_absent_layer_kind`]'s
+    ///   [`Some(ConfigSourceKind::Defaults)`][ConfigSourceKind::Defaults]
+    ///   on the same chain. Pinned by
+    ///   [`tests::first_present_layer_kind_empty_chain_is_none`].
+    /// - `first_present_layer_kind()` on a chain whose sole layer is a
+    ///   [`ConfigSource::File`] equals
+    ///   [`Some(ConfigSourceKind::File)`][ConfigSourceKind::File] —
+    ///   the singleton support `{File}` has a NON-Defaults head,
+    ///   witnessing the declaration-order head semantics distinctly
+    ///   from a chain whose support includes `Defaults`. Pinned by
+    ///   [`tests::first_present_layer_kind_file_only_chain_is_file`].
+    /// - `first_present_layer_kind()` yields the minimum kind by
+    ///   [`crate::axis_ordinal`] on [`ConfigSourceKind`] — the head
+    ///   of a strictly-ascending list is the minimum, so the kind
+    ///   returned is minimal by axis ordinal among contributing kinds.
+    ///   Pinned by
+    ///   [`tests::first_present_layer_kind_is_minimum_present_layer_kind_by_axis_ordinal`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigSourceKind>()` (the
+    /// support scan, short-circuited on the first nonzero cell). Both
+    /// are `O(n)` in practice since the layer-kind axis carries a
+    /// fixed three-cell cardinality; the returned
+    /// [`Option<ConfigSourceKind>`] reads one cell. Elides the
+    /// `Vec<ConfigSourceKind>` allocation the previous
+    /// `present_layer_kinds().first().copied()` idiom paid on every
+    /// call site.
+    #[must_use]
+    fn first_present_layer_kind(&self) -> Option<ConfigSourceKind>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().observed().next()
+    }
+
     /// The layer kind whose entries produced the greatest number of
     /// contributing layers on this chain — the modal cell of
     /// [`Self::layer_kind_histogram`] on the chain altitude. `None`
@@ -28700,6 +28859,255 @@ mod tests {
                 .into_iter()
                 .min_by_key(|k| crate::axis_ordinal(*k));
             assert_eq!(head, min_by_ordinal);
+        }
+    }
+
+    // ---- ConfigSourceChain::first_present_layer_kind ----
+
+    fn first_present_layer_kind_fixtures() -> Vec<Vec<ConfigSource>> {
+        // Fixture cohort covering every reachable shape of the
+        // observed-side head-projection peer on the chain-altitude
+        // layer-kind axis:
+        // - `sample_chain`: two File + one Env → support is {Env,
+        //   File} → Some(Env) (two-cell support with head after
+        //   Defaults, witnessing the declaration-order semantics).
+        // - defaults-only singleton: support is {Defaults} →
+        //   Some(Defaults) (singleton-support corner at the axis
+        //   head).
+        // - env-only singleton: support is {Env} → Some(Env)
+        //   (singleton-support corner one cell past the axis head).
+        // - file-only singleton: support is {File} → Some(File)
+        //   (singleton-support corner at the axis tail — head is
+        //   *not* Defaults, distinguishing this seam from
+        //   `first_absent_layer_kind`).
+        // - empty chain: support is the empty set → None.
+        // - full-cover: one layer per kind → support is the full
+        //   axis → Some(Defaults) (declaration-order head).
+        vec![
+            sample_chain(),
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+        ]
+    }
+
+    #[test]
+    fn first_present_layer_kind_matches_layer_kind_histogram_observed_next() {
+        // The delegation pin: `first_present_layer_kind` routes
+        // through `layer_kind_histogram().observed().next()`, so the
+        // two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either
+        // implementation stops projecting through the shared cube-
+        // native primitive. Chain-altitude observed-side peer of
+        // `first_contributing_tier_matches_tier_histogram_observed_next`
+        // one altitude up.
+        for chain in first_present_layer_kind_fixtures() {
+            let via_histogram = chain.as_slice().layer_kind_histogram().observed().next();
+            assert_eq!(chain.as_slice().first_present_layer_kind(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn first_present_layer_kind_matches_present_layer_kinds_first_copied() {
+        // The head-projection pin: `first_present_layer_kind` is the
+        // `Option`-shaped head of the observed-cells `Vec` peer —
+        // reading it through the named seam must return the same
+        // cell as `present_layer_kinds().first().copied()`, on every
+        // fixture. The Vec-first peer of the histogram-next
+        // delegation pin. Chain-altitude observed-side peer of
+        // `first_contributing_tier_matches_contributing_tiers_first_copied`
+        // one altitude up.
+        for chain in first_present_layer_kind_fixtures() {
+            assert_eq!(
+                chain.as_slice().first_present_layer_kind(),
+                chain.as_slice().present_layer_kinds().first().copied(),
+            );
+        }
+    }
+
+    #[test]
+    fn first_present_layer_kind_is_none_iff_chain_is_empty() {
+        // The [`None`] boundary law: no support head means the chain
+        // is empty (every entry projects to exactly one layer-kind
+        // cell through `ConfigSource::kind`, so a zero-support chain
+        // has zero entries). Chain-altitude observed-side peer of
+        // `first_contributing_tier_is_none_iff_map_is_empty` one
+        // altitude up.
+        for chain in first_present_layer_kind_fixtures() {
+            assert_eq!(
+                chain.as_slice().first_present_layer_kind().is_none(),
+                chain.as_slice().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn first_present_layer_kind_is_some_iff_chain_is_not_empty() {
+        // The [`Some`] boundary law (contrapositive of the [`None`]
+        // boundary above), welded as a positive-form fact so a
+        // future refactor to a differently-signed `is_empty`
+        // predicate has to touch both welds. Chain-altitude
+        // observed-side peer of
+        // `first_contributing_tier_is_some_iff_map_is_not_empty` one
+        // altitude up.
+        for chain in first_present_layer_kind_fixtures() {
+            assert_eq!(
+                chain.as_slice().first_present_layer_kind().is_some(),
+                !chain.as_slice().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn first_present_layer_kind_empty_chain_is_none() {
+        // Empty-chain convention: no observed cell, so the head of
+        // the observed iterator is [`None`]. Contrasts
+        // `first_absent_layer_kind_empty_chain_is_defaults` on the
+        // same chain — the two head-projection peers report the
+        // empty chain from opposite sides of the observed / coverage-
+        // gap partition. Chain-altitude observed-side peer of
+        // `first_contributing_tier_empty_map_is_none` one altitude
+        // up.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.first_present_layer_kind(), None);
+    }
+
+    #[test]
+    fn first_present_layer_kind_sample_chain_is_env() {
+        // Direct fixture pin: `sample_chain` carries two File + one
+        // Env, so the support is exactly {Env, File} and the head
+        // in axis-declaration order (`Defaults → Env → File`) is
+        // Env — NON-Defaults, distinguishing the declaration-order
+        // head semantics from any implementation that unconditionally
+        // returned the axis head. Head-projection observed-side
+        // peer of the fixture pin.
+        let chain = sample_chain();
+        assert_eq!(
+            chain.as_slice().first_present_layer_kind(),
+            Some(ConfigSourceKind::Env),
+        );
+    }
+
+    #[test]
+    fn first_present_layer_kind_defaults_only_chain_is_defaults() {
+        // Direct fixture pin on the singleton-support corner at the
+        // axis head: a defaults-only chain has support {Defaults}
+        // and the head is Defaults.
+        let chain = vec![ConfigSource::Defaults];
+        assert_eq!(
+            chain.as_slice().first_present_layer_kind(),
+            Some(ConfigSourceKind::Defaults),
+        );
+    }
+
+    #[test]
+    fn first_present_layer_kind_file_only_chain_is_file() {
+        // Direct fixture pin on the singleton-support corner at the
+        // axis tail: a file-only chain has support {File} and the
+        // head is File — witnesses the declaration-order semantics
+        // *without* an early cell in the support, so a future drift
+        // that returned `Defaults` whenever the support was non-empty
+        // would light here.
+        let chain = vec![ConfigSource::File(PathBuf::from("/a.yaml"))];
+        assert_eq!(
+            chain.as_slice().first_present_layer_kind(),
+            Some(ConfigSourceKind::File),
+        );
+    }
+
+    #[test]
+    fn first_present_layer_kind_is_member_of_present_layer_kinds_when_some() {
+        // Membership pin: when the support head is present, it is
+        // definitionally a member of the observed-cells vector. A
+        // future drift where the head-projection reads off a
+        // different set (say, `ConfigSourceKind::ALL` head or
+        // `absent_layer_kinds` head) would light this. Chain-
+        // altitude observed-side peer of
+        // `first_contributing_tier_is_member_of_contributing_tiers_when_some`
+        // one altitude up.
+        for chain in first_present_layer_kind_fixtures() {
+            if let Some(k) = chain.as_slice().first_present_layer_kind() {
+                assert!(
+                    chain.as_slice().present_layer_kinds().contains(&k),
+                    "first_present_layer_kind {k:?} not in present_layer_kinds {:?}",
+                    chain.as_slice().present_layer_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn first_present_layer_kind_is_not_member_of_absent_layer_kinds_when_some() {
+        // Disjointness pin: the observed / coverage-gap partition is
+        // disjoint on the layer-kind axis, and the head-projection
+        // peer of the observed side must not report a member of the
+        // coverage-gap side. The head-projection peer of
+        // `absent_layer_kinds_and_present_layer_kinds_partition_axis`
+        // from the observed side, and chain-altitude observed-side
+        // peer of
+        // `first_contributing_tier_is_not_member_of_absent_tiers_when_some`
+        // one altitude up.
+        for chain in first_present_layer_kind_fixtures() {
+            if let Some(k) = chain.as_slice().first_present_layer_kind() {
+                assert!(
+                    !chain.as_slice().absent_layer_kinds().contains(&k),
+                    "first_present_layer_kind {k:?} appears in absent_layer_kinds {:?}",
+                    chain.as_slice().absent_layer_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn first_present_layer_kind_is_minimum_present_layer_kind_by_axis_ordinal() {
+        // The declaration-order head pin: the returned kind (when
+        // `Some`) has the minimum `axis_ordinal` among all
+        // contributing kinds. The observed-cells iterator yields in
+        // `ClosedAxis::ALL` declaration order (which is axis-ordinal
+        // order by construction), so the head is the argmin — a
+        // future drift where the support walk reversed order (or
+        // picked argmax instead) would light this. Chain-altitude
+        // observed-side peer of
+        // `first_contributing_tier_is_minimum_contributing_tier_by_axis_ordinal`
+        // one altitude up.
+        for chain in first_present_layer_kind_fixtures() {
+            let head = chain.as_slice().first_present_layer_kind();
+            let min_by_ordinal = chain
+                .as_slice()
+                .present_layer_kinds()
+                .into_iter()
+                .min_by_key(|k| crate::axis_ordinal(*k));
+            assert_eq!(head, min_by_ordinal);
+        }
+    }
+
+    #[test]
+    fn first_present_layer_kind_and_first_absent_layer_kind_are_disjoint_on_partial_cover() {
+        // The observed-side / coverage-gap-side head-projection
+        // pair is disjoint whenever both are `Some` — the layer-
+        // kind axis partitions into (observed, coverage-gap), so
+        // when both heads exist they land in disjoint sides. Under
+        // the `sample_chain` fixture (support = {Env, File}, gap =
+        // {Defaults}) both are `Some` and the pair is
+        // `(Env, Defaults)` — distinct. Chain-altitude observed-
+        // side peer of
+        // `first_contributing_tier_and_first_absent_tier_are_disjoint_on_nonempty_partial_cover`
+        // one altitude up.
+        for chain in first_present_layer_kind_fixtures() {
+            let first_p = chain.as_slice().first_present_layer_kind();
+            let first_a = chain.as_slice().first_absent_layer_kind();
+            if let (Some(p), Some(a)) = (first_p, first_a) {
+                assert_ne!(
+                    p, a,
+                    "first_present_layer_kind {p:?} and first_absent_layer_kind {a:?} collide",
+                );
+            }
         }
     }
 
