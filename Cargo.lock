@@ -969,8 +969,8 @@ dependencies = [
 
 [[package]]
 name = "gen-macros"
-version = "0.1.27"
-source = "git+https://github.com/pleme-io/gen#09830b6e7d840ac63c20144c38c42c9af635e044"
+version = "0.1.28"
+source = "git+https://github.com/pleme-io/gen#2e55ccccce7332086c95fe0bede28949f8f2326a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -979,8 +979,8 @@ dependencies = [
 
 [[package]]
 name = "gen-platform"
-version = "0.1.27"
-source = "git+https://github.com/pleme-io/gen#09830b6e7d840ac63c20144c38c42c9af635e044"
+version = "0.1.28"
+source = "git+https://github.com/pleme-io/gen#2e55ccccce7332086c95fe0bede28949f8f2326a"
 dependencies = [
  "gen-macros",
  "gen-types",
@@ -992,8 +992,8 @@ dependencies = [
 
 [[package]]
 name = "gen-types"
-version = "0.1.27"
-source = "git+https://github.com/pleme-io/gen#09830b6e7d840ac63c20144c38c42c9af635e044"
+version = "0.1.28"
+source = "git+https://github.com/pleme-io/gen#2e55ccccce7332086c95fe0bede28949f8f2326a"
 dependencies = [
  "blake3",
  "chrono",
@@ -2457,7 +2457,7 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.414"
+version = "0.1.415"
 dependencies = [
  "akeyless-api",
  "arc-swap",
@@ -2596,7 +2596,7 @@ dependencies = [
 [[package]]
 name = "tatara-lisp"
 version = "0.2.154"
-source = "git+https://github.com/pleme-io/tatara#ccccc4e0744f011b2fde91bcd71c750d8fdceace"
+source = "git+https://github.com/pleme-io/tatara#16b57f2b787e90da477e6b005f8d41c6f99658c8"
 dependencies = [
  "blake3",
  "serde",
@@ -2608,7 +2608,7 @@ dependencies = [
 [[package]]
 name = "tatara-lisp-derive"
 version = "0.2.154"
-source = "git+https://github.com/pleme-io/tatara#ccccc4e0744f011b2fde91bcd71c750d8fdceace"
+source = "git+https://github.com/pleme-io/tatara#16b57f2b787e90da477e6b005f8d41c6f99658c8"
 dependencies = [
  "proc-macro2",
  "quote",
