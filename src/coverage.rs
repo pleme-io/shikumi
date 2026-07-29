@@ -1440,6 +1440,91 @@ impl HealthReport {
     pub fn clean_surface_count(&self) -> usize {
         self.clean_surfaces_iter().count()
     }
+
+    /// The head-projection peer of [`Self::dirty_surfaces_iter`] — the
+    /// first [`HintSurface`] variant (in [`HintSurface::ALL`] canonical
+    /// order) that needs attention on this report, or [`None`] if every
+    /// surface is clean. Defined as `self.dirty_surfaces_iter().next()`
+    /// — one method call, no `Vec` allocation, no full walk of the
+    /// remaining variants. The `Option`-shaped peer of
+    /// [`Self::dirty_surface_count`] (the scalar-cardinality peer) and
+    /// [`Self::dirty_surfaces`] (the `Vec`-collect peer) on the same
+    /// false-side iterator primitive.
+    ///
+    /// Where [`Self::dirty_surfaces`] returns *every* surface to fix
+    /// (a `Vec<HintSurface>` a caller must allocate even to read the
+    /// first entry) and [`Self::dirty_surface_count`] returns *how
+    /// many* surfaces need attention (a `usize` that discards the
+    /// identity of any single surface), this returns *which surface
+    /// to fix first* as one `Option<HintSurface>` — the shape an
+    /// early-exit remediation loop, a "primary failure" diagnostics
+    /// field on a `/healthz/config` endpoint, or a first-fail alerting
+    /// rule ("page with the highest-priority dirty surface") actually
+    /// wants (no need to allocate the variant list only to read its
+    /// head, no need to walk the rest once the first hit lands).
+    /// `first_dirty_surface() == None ⇔ is_clean()` by construction,
+    /// since [`HintSurface`]'s four variants partition
+    /// [`Self::hint_iter`] and every dirty surface contributes at
+    /// least one hint — the whole-report projection of the pointwise
+    /// `is_clean_by_surface(s) ⇔ hint_count_by_surface(s) == 0` at
+    /// the head-projection layer.
+    ///
+    /// Delegates through [`Self::dirty_surfaces_iter`], the same
+    /// primitive [`Self::dirty_surfaces`] and [`Self::dirty_surface_count`]
+    /// delegate through — so this `Option`-shaped peer cannot drift
+    /// from either sibling peer, from the iterator primitive beneath
+    /// all three, or from the per-surface predicate
+    /// [`Self::is_clean_by_surface`] beneath the filter. Yields in
+    /// [`HintSurface::ALL`] canonical order, so a golden fixture that
+    /// pins `first_dirty_surface()` sees the same variant on every
+    /// run of the same corner. Closes the dirty×clean × iter×collect×
+    /// count×head 2×4 on the per-surface predicate axis at the
+    /// false-side head-projection corner.
+    #[must_use]
+    pub fn first_dirty_surface(&self) -> Option<HintSurface> {
+        self.dirty_surfaces_iter().next()
+    }
+
+    /// The true-side symmetric complement of
+    /// [`Self::first_dirty_surface`] and the head-projection peer of
+    /// [`Self::clean_surfaces_iter`] — the first [`HintSurface`]
+    /// variant (in [`HintSurface::ALL`] canonical order) that is
+    /// currently healthy on this report, or [`None`] if every surface
+    /// is dirty. Defined as `self.clean_surfaces_iter().next()` — one
+    /// method call, no `Vec` allocation, no full walk of the
+    /// remaining variants. The `Option`-shaped peer of
+    /// [`Self::clean_surface_count`] (the scalar-cardinality peer) and
+    /// [`Self::clean_surfaces`] (the `Vec`-collect peer) on the same
+    /// true-side iterator primitive.
+    ///
+    /// Where [`Self::clean_surfaces`] returns *every* surface already
+    /// OK (a `Vec<HintSurface>` a caller must allocate even to read
+    /// the first entry) and [`Self::clean_surface_count`] returns
+    /// *how many* surfaces are already OK (a `usize` that discards the
+    /// identity of any single surface), this returns *which surface
+    /// is OK first* as one `Option<HintSurface>` — the shape an
+    /// early-exit success-ledger walk, a "first healthy surface"
+    /// diagnostics field on a compact endpoint, or a fast liveness
+    /// probe ("is at least one surface clean, and which one?") actually
+    /// wants. `first_clean_surface() == None ⇔ clean_surface_count()
+    /// == 0` by construction, since [`HintSurface::ALL`] enumerates
+    /// every variant exactly once and the filter body preserves that
+    /// enumeration — the head-projection layer projection of the
+    /// scalar-cardinality identity beneath.
+    ///
+    /// Delegates through [`Self::clean_surfaces_iter`], the same
+    /// primitive [`Self::clean_surfaces`] and [`Self::clean_surface_count`]
+    /// delegate through — so this `Option`-shaped peer cannot drift
+    /// from either sibling peer, from the iterator primitive beneath
+    /// all three, or from the per-surface predicate
+    /// [`Self::is_clean_by_surface`] beneath the filter. Yields in
+    /// [`HintSurface::ALL`] canonical order, closing the dirty×clean
+    /// × iter×collect×count×head 2×4 on the per-surface predicate
+    /// axis at the true-side head-projection corner.
+    #[must_use]
+    pub fn first_clean_surface(&self) -> Option<HintSurface> {
+        self.clean_surfaces_iter().next()
+    }
 }
 
 /// One env-var-shaped typo hint: an env var carrying the shikumi prefix
@@ -6390,6 +6475,116 @@ tags: []
         assert_eq!(
             dirty.dirty_surfaces_iter().collect::<Vec<_>>(),
             HintSurface::ALL.to_vec(),
+        );
+    }
+
+    // ─── first_dirty_surface / first_clean_surface — the head-projection
+    // ─── (`.next()`) peers of the two iterator primitives ──────────────
+
+    #[test]
+    fn first_dirty_surface_equals_dirty_surfaces_iter_next() {
+        // The delegation identity welding the `Option`-shaped
+        // head-projection peer to the iterator primitive it now
+        // delegates through: `first_dirty_surface() ==
+        // dirty_surfaces_iter().next()` on the mixed corner. A future
+        // refactor that inlines one against the other must keep the
+        // two in lockstep — the head-projection peer is now literally
+        // the iterator's `.next()`, so any drift turns red here at the
+        // seam.
+        let mixed = iter_primitive_mixed_health();
+        assert_eq!(
+            mixed.first_dirty_surface(),
+            mixed.dirty_surfaces_iter().next(),
+        );
+        // Load-bear the mixed shape so a regression that returned the
+        // wrong iterator still turns red even if the identity happened
+        // to survive vacuously.
+        assert_eq!(
+            mixed.first_dirty_surface(),
+            Some(HintSurface::EnvVar),
+            "mixed corner: exactly one dirty surface (env-var)",
+        );
+    }
+
+    #[test]
+    fn first_clean_surface_equals_clean_surfaces_iter_next() {
+        // True-side symmetric complement of
+        // `first_dirty_surface_equals_dirty_surfaces_iter_next`:
+        // `first_clean_surface() == clean_surfaces_iter().next()` on
+        // the mixed corner. Welds the true-side head-projection peer
+        // to the true-side iterator primitive.
+        let mixed = iter_primitive_mixed_health();
+        assert_eq!(
+            mixed.first_clean_surface(),
+            mixed.clean_surfaces_iter().next(),
+        );
+        assert_eq!(
+            mixed.first_clean_surface(),
+            Some(HintSurface::DeadKnob),
+            "mixed corner: canonical-order first clean surface is DeadKnob",
+        );
+    }
+
+    #[test]
+    fn first_dirty_surface_is_none_iff_is_clean() {
+        // Whole-report Some/None boundary: on the fully-clean corner
+        // `first_dirty_surface()` returns `None` (no surface needs
+        // attention); on any non-clean corner it returns `Some`. Peer
+        // of `dirty_surface_count_is_zero_iff_is_clean` at the
+        // head-projection layer above the scalar cardinality — both
+        // sides project the same `is_clean_by_surface`-partition
+        // invariant.
+        let clean = iter_primitive_clean_health();
+        assert_eq!(clean.first_dirty_surface(), None);
+        assert!(clean.is_clean());
+
+        let dirty = iter_primitive_dirty_health();
+        assert!(dirty.first_dirty_surface().is_some());
+        assert!(!dirty.is_clean());
+
+        let mixed = iter_primitive_mixed_health();
+        assert!(mixed.first_dirty_surface().is_some());
+        assert!(!mixed.is_clean());
+    }
+
+    #[test]
+    fn first_clean_surface_is_none_iff_clean_surface_count_is_zero() {
+        // True-side symmetric complement of
+        // `first_dirty_surface_is_none_iff_is_clean` at the
+        // head-projection layer: `first_clean_surface() == None ⇔
+        // clean_surface_count() == 0`. Verified on the fully-dirty
+        // corner (`None`) and the fully-clean corner (`Some` head of
+        // `HintSurface::ALL`) so both endpoints of the boundary land.
+        let dirty = iter_primitive_dirty_health();
+        assert_eq!(dirty.first_clean_surface(), None);
+        assert_eq!(dirty.clean_surface_count(), 0);
+
+        let clean = iter_primitive_clean_health();
+        assert!(clean.first_clean_surface().is_some());
+        assert!(clean.clean_surface_count() > 0);
+    }
+
+    #[test]
+    fn first_surfaces_extremes_pin_head_of_hint_surface_all() {
+        // Extreme-corner endpoint pin at the head-projection layer:
+        // on the fully-clean corner the dirty head is `None` and the
+        // clean head is the head of `HintSurface::ALL`
+        // (`HintSurface::DeadKnob`); on the fully-dirty corner the
+        // roles swap. Peer of `surfaces_iter_extremes_pin_endpoints`
+        // at the head-projection layer above the `.count()`/`.collect()`
+        // consumers.
+        let clean = iter_primitive_clean_health();
+        assert_eq!(clean.first_dirty_surface(), None);
+        assert_eq!(
+            clean.first_clean_surface(),
+            HintSurface::ALL.first().copied()
+        );
+
+        let dirty = iter_primitive_dirty_health();
+        assert_eq!(dirty.first_clean_surface(), None);
+        assert_eq!(
+            dirty.first_dirty_surface(),
+            HintSurface::ALL.first().copied()
         );
     }
 }
