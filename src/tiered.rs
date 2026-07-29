@@ -1339,6 +1339,124 @@ impl ProvenanceMap {
         self.tier_histogram().unobserved_cells()
     }
 
+    /// The **first-absent tier** — the earliest [`ConfigTierKind`] (in
+    /// [`ClosedAxis::ALL`] / [`ConfigTier`] precedence order) whose
+    /// overlay produced **zero** surviving effective leaves on this
+    /// resolved fold, or [`None`] when every tier contributed at least
+    /// one leaf. Returns [`ConfigTierKind::Bare`] exactly on the empty
+    /// map (every cell absent, the first is the axis's first cell).
+    ///
+    /// The **head-projection peer** of [`Self::absent_tiers`] (the
+    /// coverage-gap `Vec` peer) and [`Self::absent_tiers_count`] (the
+    /// coverage-gap scalar-count peer) on the tier altitude — the
+    /// [`Option`]-shaped projection of the same coverage-gap that the
+    /// two sibling peers materialise in full. The tier-altitude peer of
+    /// [`crate::coverage::HealthReport::first_dirty_surface`] one axis
+    /// over (the head-projection peer of the coverage per-surface
+    /// predicate axis's dirty side); the coverage-gap dual of the
+    /// modal-observed pair [`Self::dominant_tier`] (argmax observed
+    /// cell) and [`Self::recessive_tier`] (argmin observed cell) which
+    /// already claim the observed-side [`Option`]-shaped peers.
+    ///
+    /// Where [`Self::absent_tiers`] returns *every* absent tier (a
+    /// `Vec<ConfigTierKind>` a caller must allocate even to read the
+    /// first entry) and [`Self::absent_tiers_count`] returns *how
+    /// many* tiers are absent (a `usize` that discards the identity of
+    /// any single tier), this returns *which tier is absent first* as
+    /// one [`Option<ConfigTierKind>`] — the shape an early-exit
+    /// coverage-gap diagnostic ("report the earliest absent tier and
+    /// stop"), a first-fail attestation manifest field ("record the
+    /// primary coverage-gap tier on this resolved-fold snapshot"), or
+    /// a compact `/healthz/config` endpoint payload ("first absent
+    /// tier in precedence order, or null if full cover") actually
+    /// wants (no need to allocate the absent-tier list only to read
+    /// its head, no need to walk the rest once the first hit lands).
+    ///
+    /// Routes through [`Self::tier_histogram`]:
+    /// [`crate::AxisHistogram::unobserved`] iterates the histogram's
+    /// coverage-gap cells in [`crate::ClosedAxis::ALL`] declaration
+    /// order (the [`ConfigTier`] precedence order), and
+    /// [`Iterator::next`] reads its head — the closed-axis discipline
+    /// provides deterministic first-cell selection automatically, so
+    /// this method reads directly off the shikumi cube-native
+    /// primitive instead of hand-rolling
+    /// `ConfigTierKind::ALL.iter().copied().find(|t|
+    /// self.tier_histogram().count(*t) == 0)` at every operator-facing
+    /// consumer asking *"which tier is the earliest to have been
+    /// silent on this fold?"*.
+    ///
+    /// **Empty-map convention** — returns
+    /// [`Some(ConfigTierKind::Bare)`][ConfigTierKind::Bare] (not
+    /// [`None`]), matching the [`Self::absent_tiers`] full-axis
+    /// convention: an empty map has every cell absent, and the head of
+    /// [`ConfigTierKind::ALL`] is [`ConfigTierKind::Bare`]. The
+    /// [`None`] boundary is *full cover*, not empty. Consumers
+    /// distinguishing "no fold happened yet" from "fold happened with
+    /// full cover" should gate on [`Self::is_empty`] separately — the
+    /// two boundaries are distinct.
+    ///
+    /// # Invariants
+    ///
+    /// - `first_absent_tier() == tier_histogram().unobserved().next()`
+    ///   — both project the same coverage-gap head off the same
+    ///   primitive; the named seam is the cube-native routing of the
+    ///   histogram surface. Pinned by
+    ///   [`tests::first_absent_tier_matches_tier_histogram_unobserved_next`].
+    /// - `first_absent_tier() == absent_tiers().first().copied()` —
+    ///   the head-projection peer of the coverage-gap `Vec` peer;
+    ///   both name the same first-absent cell without materialising
+    ///   the full vector. Pinned by
+    ///   [`tests::first_absent_tier_matches_absent_tiers_first_copied`].
+    /// - `first_absent_tier().is_none() ==
+    ///   tier_histogram().is_full_cover()` — the [`None`] boundary is
+    ///   the full-cover boundary: no coverage-gap head means every
+    ///   tier contributed. The head-projection peer of the
+    ///   [`Self::absent_tiers_count`] `== 0 ⇔ is_full_cover()`
+    ///   boundary. Pinned by
+    ///   [`tests::first_absent_tier_is_none_iff_tier_histogram_is_full_cover`].
+    /// - `first_absent_tier().is_some() == !tier_histogram().is_full_cover()`
+    ///   — the [`Some`] boundary is the non-full-cover boundary; the
+    ///   contrapositive of the [`None`] boundary above, welded
+    ///   separately as a positive-form fact. Pinned by
+    ///   [`tests::first_absent_tier_is_some_iff_tier_histogram_is_not_full_cover`].
+    /// - When `Some(t)`, `t` is a member of
+    ///   [`Self::absent_tiers`] — the coverage-gap head is by
+    ///   definition an absent cell. Pinned by
+    ///   [`tests::first_absent_tier_is_member_of_absent_tiers_when_some`].
+    /// - When `Some(t)`, `t` is **not** a member of
+    ///   [`Self::contributing_tiers`] — the observed / coverage-gap
+    ///   partition is disjoint; the head-projection peer of the
+    ///   [`tests::absent_tiers_and_contributing_tiers_partition_axis`]
+    ///   disjointness law. Pinned by
+    ///   [`tests::first_absent_tier_is_not_member_of_contributing_tiers_when_some`].
+    /// - `first_absent_tier()` on an empty [`ProvenanceMap`] equals
+    ///   [`Some(ConfigTierKind::Bare)`][ConfigTierKind::Bare] — the
+    ///   empty-map convention: every cell absent, head of
+    ///   [`ConfigTierKind::ALL`] is [`ConfigTierKind::Bare`]. The
+    ///   empty-map / full-coverage-gap boundary head. Pinned by
+    ///   [`tests::first_absent_tier_empty_map_is_bare`].
+    /// - `first_absent_tier()` yields in
+    ///   [`crate::axis_ordinal`] order on
+    ///   [`ConfigTierKind`] — the head of a strictly-ascending list
+    ///   is the minimum, so the tier returned is minimal by axis
+    ///   ordinal among absent tiers. Pinned by
+    ///   [`tests::first_absent_tier_is_minimum_absent_tier_by_axis_ordinal`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<ConfigTierKind>()` (the
+    /// coverage-gap scan, short-circuited on the first zero cell).
+    /// Both are `O(n)` in practice since the tier axis carries a fixed
+    /// four-cell cardinality; the returned [`Option<ConfigTierKind>`]
+    /// reads one cell. Elides the `Vec<ConfigTierKind>` allocation the
+    /// previous `absent_tiers().first().copied()` idiom paid on every
+    /// call site.
+    #[must_use]
+    pub fn first_absent_tier(&self) -> Option<ConfigTierKind> {
+        self.tier_histogram().unobserved().next()
+    }
+
     /// The tier whose overlay produced the greatest number of surviving
     /// effective leaves on this resolved fold — the modal cell of
     /// [`Self::tier_histogram`] on the tier altitude. `None` exactly
@@ -32160,6 +32278,208 @@ mod progressive_tests {
         // fixture and altitude.
         let r = Nested::resolve_progressive();
         assert_eq!(r.provenance().absent_tiers_count(), 2);
+    }
+
+    // ── ProvenanceMap::first_absent_tier — head-projection peer of
+    //    absent_tiers / absent_tiers_count on the tier altitude ──
+
+    #[test]
+    fn first_absent_tier_matches_tier_histogram_unobserved_next() {
+        // The delegation pin: `first_absent_tier` routes through
+        // `tier_histogram().unobserved().next()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops
+        // projecting through the shared cube-native primitive.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.tier_histogram().unobserved().next();
+            assert_eq!(map.first_absent_tier(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn first_absent_tier_matches_absent_tiers_first_copied() {
+        // The head-projection pin: `first_absent_tier` is the
+        // `Option`-shaped head of the coverage-gap `Vec` — reading it
+        // through the named seam must return the same cell as
+        // `absent_tiers().first().copied()`, on every fixture. The
+        // Vec-first peer of the histogram-next delegation pin above.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.first_absent_tier(), map.absent_tiers().first().copied());
+        }
+    }
+
+    #[test]
+    fn first_absent_tier_is_none_iff_tier_histogram_is_full_cover() {
+        // The [`None`] boundary law: no coverage-gap head means every
+        // tier contributed at least one leaf. Verified on the two
+        // fixtures (Prog: Custom absent → Some; Nested: Bare + Custom
+        // absent → Some; empty: all four absent → Some). The
+        // full-cover corner is unreachable through the current
+        // fixtures — a synthetic ProvenanceMap carrying one leaf per
+        // tier witnesses the `None` side.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.first_absent_tier().is_none(),
+                map.tier_histogram().is_full_cover()
+            );
+        }
+
+        // Synthetic full-cover fixture: one leaf per tier witnesses
+        // the [`None`] side of the boundary.
+        let mut full_cover = ProvenanceMap::default();
+        full_cover.extend([
+            (vec!["k1".to_string()], Provenance::bare()),
+            (vec!["k2".to_string()], Provenance::discovered()),
+            (vec!["k3".to_string()], Provenance::prescribed_default()),
+            (
+                vec!["k4".to_string()],
+                Provenance::new(ConfigTierKind::Custom, ConfigSource::Defaults),
+            ),
+        ]);
+        assert!(full_cover.tier_histogram().is_full_cover());
+        assert_eq!(full_cover.first_absent_tier(), None);
+    }
+
+    #[test]
+    fn first_absent_tier_is_some_iff_tier_histogram_is_not_full_cover() {
+        // The [`Some`] boundary law (contrapositive of the [`None`]
+        // boundary above), welded as a positive-form fact so a future
+        // refactor to a differently-signed `is_full_cover` predicate
+        // has to touch both welds.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.first_absent_tier().is_some(),
+                !map.tier_histogram().is_full_cover()
+            );
+        }
+    }
+
+    #[test]
+    fn first_absent_tier_empty_map_is_bare() {
+        // Empty-map convention: every cell absent, head of
+        // `ConfigTierKind::ALL` is `Bare`. The empty-map /
+        // full-coverage-gap boundary head — distinct from the
+        // full-cover boundary which yields `None`. Peer of
+        // `absent_tiers_empty_map_is_full_axis` on the head-projection
+        // axis.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.first_absent_tier(), Some(ConfigTierKind::Bare));
+    }
+
+    #[test]
+    fn first_absent_tier_prog_fixture_is_custom() {
+        // Direct fixture pin: Prog attributes 4 leaves across 3 tiers
+        // (Bare, Discovered, Default), so Custom is the sole
+        // coverage-gap cell and the first (and only) absent tier is
+        // Custom. Head-projection peer of
+        // `absent_tiers_prog_fixture_is_custom_only` on the same
+        // fixture and altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().first_absent_tier(),
+            Some(ConfigTierKind::Custom)
+        );
+    }
+
+    #[test]
+    fn first_absent_tier_nested_fixture_is_bare() {
+        // Direct fixture pin: Nested attributes 3 leaves across 2
+        // tiers (Discovered, Default), so Bare and Custom are the
+        // coverage-gap cells and the FIRST absent tier in declaration
+        // order is Bare (the head of `ConfigTierKind::ALL`).
+        // Head-projection peer of `absent_tiers` on Nested — the
+        // fixture whose two-absent-tier coverage-gap witnesses the
+        // head-projection semantics distinctly from Prog's
+        // singleton-absent gap.
+        let r = Nested::resolve_progressive();
+        assert_eq!(
+            r.provenance().first_absent_tier(),
+            Some(ConfigTierKind::Bare)
+        );
+    }
+
+    #[test]
+    fn first_absent_tier_is_member_of_absent_tiers_when_some() {
+        // Membership pin: when the coverage-gap head is present, it
+        // is definitionally a member of the coverage-gap vector. A
+        // future drift where the head-projection reads off a
+        // different set (say, `ConfigTierKind::ALL` head or
+        // `contributing_tiers` head) would light this.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some(t) = map.first_absent_tier() {
+                assert!(
+                    map.absent_tiers().contains(&t),
+                    "first_absent_tier {t:?} not in absent_tiers {:?}",
+                    map.absent_tiers()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn first_absent_tier_is_not_member_of_contributing_tiers_when_some() {
+        // Disjointness pin: the observed / coverage-gap partition is
+        // disjoint on the tier axis, and the head-projection peer of
+        // the coverage-gap side must not report a member of the
+        // observed side. The head-projection peer of
+        // `absent_tiers_and_contributing_tiers_partition_axis` on the
+        // false side.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if let Some(t) = map.first_absent_tier() {
+                assert!(
+                    !map.contributing_tiers().contains(&t),
+                    "first_absent_tier {t:?} appears in contributing_tiers {:?}",
+                    map.contributing_tiers()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn first_absent_tier_is_minimum_absent_tier_by_axis_ordinal() {
+        // The declaration-order head pin: the returned tier (when
+        // Some) has the minimum `axis_ordinal` among all absent
+        // tiers. The unobserved-cells iterator yields in
+        // `ClosedAxis::ALL` declaration order (which is axis-ordinal
+        // order by construction), so the head is the argmin — a
+        // future drift where the coverage-gap walk reversed order
+        // (or picked argmax instead) would light this.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            Nested::resolve_progressive().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let head = map.first_absent_tier();
+            let min_by_ordinal = map
+                .absent_tiers()
+                .into_iter()
+                .min_by_key(|t| crate::axis_ordinal(*t));
+            assert_eq!(head, min_by_ordinal);
+        }
     }
 
     #[test]
