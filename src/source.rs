@@ -17489,6 +17489,199 @@ pub trait ConfigSourceChain {
         self.env_prefix_kind_histogram().unobserved().next()
     }
 
+    /// The **first-present env-prefix kind** — the earliest
+    /// [`EnvMetadataTagKind`] (in [`EnvMetadataTagKind::ALL`]
+    /// declaration order — `Prefixed → Bare`) whose entries produced
+    /// ≥1 contributing [`ConfigSource::Env`] layer on this chain, or
+    /// [`None`] on any chain whose [`Self::env_prefix_kind_histogram`]
+    /// is empty (the empty chain, and every non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::File`] layers, each
+    /// of which projects to [`None`] through
+    /// [`ConfigSource::env_prefix_kind`]).
+    ///
+    /// The **head-projection peer** of [`Self::present_env_prefix_kinds`]
+    /// (the observed-cells `Vec` peer) and
+    /// [`Self::present_env_prefix_kinds_count`] (the observed-cells
+    /// scalar-count peer) on the env-prefix-presence sub-axis of the
+    /// chain altitude — the [`Option`]-shaped projection of the same
+    /// support that the two sibling peers materialise in full. The
+    /// observed-side symmetric peer of
+    /// [`Self::first_absent_env_prefix_kind`] on the coverage-gap side;
+    /// the pair
+    /// `(first_present_env_prefix_kind, first_absent_env_prefix_kind)`
+    /// closes the head-projection triangle at the chain altitude's
+    /// env-prefix-presence sub-axis, mirroring the vector / scalar-count
+    /// triangles
+    /// `(present_env_prefix_kinds, present_env_prefix_kinds_count)` /
+    /// `(absent_env_prefix_kinds, absent_env_prefix_kinds_count)`.
+    /// Direct chain-altitude sister of
+    /// [`Self::first_present_layer_kind`] on the layer-kind sub-axis
+    /// and [`Self::first_present_file_format`] on the file-format
+    /// sub-axis: all three project the support head of their local
+    /// closed-axis histogram off the shared
+    /// [`crate::AxisHistogram::observed`] iterator's [`Iterator::next`]
+    /// head. With this lift every chain-shape sub-axis (layer-kind,
+    /// file-format, env-prefix-presence) closes both head-projection
+    /// peers `(first_present, first_absent)` — the head-triangle
+    /// pattern the tier altitude carries via
+    /// [`crate::ProvenanceMap::first_contributing_tier`] /
+    /// [`crate::ProvenanceMap::first_absent_tier`] is now closed on
+    /// every chain-altitude sub-axis in parallel.
+    ///
+    /// **Distinct from [`Self::dominant_env_prefix_kind`] and
+    /// [`Self::recessive_env_prefix_kind`].** The two existing
+    /// observed-side [`Option`]-shaped peers select by observation
+    /// *count* — [`Self::dominant_env_prefix_kind`] returns the
+    /// argmax (modal) cell and [`Self::recessive_env_prefix_kind`]
+    /// returns the argmin (anti-modal) cell. This peer selects by
+    /// axis-declaration *order* — the earliest observed cell
+    /// regardless of its observation count. On a chain with
+    /// `Prefixed = 1`, `Bare = 5`,
+    /// [`Self::dominant_env_prefix_kind`] reports
+    /// [`Some(EnvMetadataTagKind::Bare)`][EnvMetadataTagKind::Bare]
+    /// (argmax = 5), [`Self::recessive_env_prefix_kind`] reports
+    /// [`Some(EnvMetadataTagKind::Prefixed)`][EnvMetadataTagKind::Prefixed]
+    /// (argmin = 1), and `first_present_env_prefix_kind()` reports
+    /// [`Some(EnvMetadataTagKind::Prefixed)`][EnvMetadataTagKind::Prefixed]
+    /// (the axis begins at `Prefixed`, whose count is nonzero, so
+    /// `Prefixed` is the support head). All three seams pin the same
+    /// fixtures under distinct semantics — a future refactor collapsing
+    /// any pair into the same walk would light one of them.
+    ///
+    /// Where [`Self::present_env_prefix_kinds`] returns *every*
+    /// contributing kind (a `Vec<EnvMetadataTagKind>` a caller must
+    /// allocate even to read the first entry) and
+    /// [`Self::present_env_prefix_kinds_count`] returns *how many*
+    /// kinds contributed (a `usize` that discards the identity of any
+    /// single kind), this returns *which kind contributed first* as
+    /// one [`Option<EnvMetadataTagKind>`] — the shape a leading-edge
+    /// diagnostic (*"report the earliest contributing env-prefix kind
+    /// and stop"*), an attestation manifest field (*"record the
+    /// primary contributing env-prefix kind on this recipe snapshot"*),
+    /// or a compact `/healthz/config` payload (*"first contributing
+    /// env-prefix kind in precedence order, or null if no `Env`
+    /// layer"*) actually wants (no need to allocate the observed-kind
+    /// list only to read its head, no need to walk the rest once the
+    /// first hit lands).
+    ///
+    /// Routes through [`Self::env_prefix_kind_histogram`]:
+    /// [`crate::AxisHistogram::observed`] iterates the histogram's
+    /// support cells in [`crate::ClosedAxis::ALL`] declaration order
+    /// (the [`EnvMetadataTagKind`] canonical order
+    /// `Prefixed → Bare`), and [`Iterator::next`] reads its head —
+    /// the closed-axis discipline provides deterministic first-cell
+    /// selection automatically, so this method reads directly off the
+    /// shikumi cube-native primitive instead of hand-rolling
+    /// `EnvMetadataTagKind::ALL.iter().copied().find(|k|
+    /// self.env_prefix_kind_histogram().count(*k) > 0)` at every
+    /// operator-facing consumer asking *"which env-prefix kind is the
+    /// earliest to have surfaced on this recipe?"*.
+    ///
+    /// **Empty-histogram convention** — returns [`None`], matching the
+    /// [`Self::present_env_prefix_kinds`] empty-cover convention: an
+    /// empty histogram has no observed cell, so the head of the
+    /// observed iterator is [`None`]. Like
+    /// [`Self::first_present_file_format`] and unlike
+    /// [`Self::first_present_layer_kind`], the [`None`] boundary is
+    /// tied to the histogram's own emptiness, **not** the chain's: a
+    /// non-empty chain of only [`ConfigSource::Defaults`] /
+    /// [`ConfigSource::File`] layers still reports [`None`] because
+    /// every entry projects to [`None`] through
+    /// [`ConfigSource::env_prefix_kind`], leaving the histogram empty.
+    /// Contrast [`Self::first_absent_env_prefix_kind`], which is
+    /// [`Some(EnvMetadataTagKind::Prefixed)`][EnvMetadataTagKind::Prefixed]
+    /// on that same chain (every cell absent, the axis head is
+    /// `Prefixed`) — the two head-projection peers report the empty-
+    /// histogram chain from opposite sides of the observed /
+    /// coverage-gap partition, exactly matching their vector peers'
+    /// empty-vector / full-axis reporting.
+    ///
+    /// # Invariants
+    ///
+    /// - `first_present_env_prefix_kind() == env_prefix_kind_histogram().observed().next()`
+    ///   — both project the same support head off the same primitive;
+    ///   the named seam is the cube-native routing of the chain-shape
+    ///   surface. Pinned by
+    ///   [`tests::first_present_env_prefix_kind_matches_env_prefix_kind_histogram_observed_next`].
+    /// - `first_present_env_prefix_kind() == present_env_prefix_kinds().first().copied()`
+    ///   — the head-projection peer of the observed-cells `Vec` peer;
+    ///   both name the same first-contributing cell without
+    ///   materialising the full vector. Pinned by
+    ///   [`tests::first_present_env_prefix_kind_matches_present_env_prefix_kinds_first_copied`].
+    /// - `first_present_env_prefix_kind().is_none() ==
+    ///   env_prefix_kind_histogram().is_empty()` — the [`None`]
+    ///   boundary is the empty-histogram boundary: no support head
+    ///   means no `Env` layer surfaced. The head-projection peer of
+    ///   the [`Self::present_env_prefix_kinds_count`] `== 0 ⇔
+    ///   env_prefix_kind_histogram().is_empty()` boundary. Unlike
+    ///   [`Self::first_present_layer_kind`], the presence bound is
+    ///   NOT tied to `self.as_ref().is_empty()`. Pinned by
+    ///   [`tests::first_present_env_prefix_kind_is_none_iff_env_prefix_kind_histogram_is_empty`].
+    /// - `first_present_env_prefix_kind().is_some() ==
+    ///   !env_prefix_kind_histogram().is_empty()` — the [`Some`]
+    ///   boundary is the non-empty-histogram boundary; the
+    ///   contrapositive of the [`None`] boundary above, welded
+    ///   separately as a positive-form fact. Pinned by
+    ///   [`tests::first_present_env_prefix_kind_is_some_iff_env_prefix_kind_histogram_is_not_empty`].
+    /// - When `Some(k)`, `k` is a member of
+    ///   [`Self::present_env_prefix_kinds`] — the support head is by
+    ///   definition an observed cell. Pinned by
+    ///   [`tests::first_present_env_prefix_kind_is_member_of_present_env_prefix_kinds_when_some`].
+    /// - When `Some(k)`, `k` is **not** a member of
+    ///   [`Self::absent_env_prefix_kinds`] — the observed / coverage-
+    ///   gap partition is disjoint; the head-projection peer of the
+    ///   [`tests::absent_env_prefix_kinds_and_present_env_prefix_kinds_partition_axis`]
+    ///   disjointness law, from the observed side. Pinned by
+    ///   [`tests::first_present_env_prefix_kind_is_not_member_of_absent_env_prefix_kinds_when_some`].
+    /// - `first_present_env_prefix_kind()` on an empty chain equals
+    ///   [`None`] — the empty-chain / empty-histogram / empty-support
+    ///   boundary head; contrasts
+    ///   [`Self::first_absent_env_prefix_kind`]'s
+    ///   [`Some(EnvMetadataTagKind::Prefixed)`][EnvMetadataTagKind::Prefixed]
+    ///   on the same chain. Pinned by
+    ///   [`tests::first_present_env_prefix_kind_empty_chain_is_none`].
+    /// - `first_present_env_prefix_kind()` on a non-empty chain of
+    ///   only [`ConfigSource::Defaults`] / [`ConfigSource::File`]
+    ///   layers equals [`None`] — the non-empty-chain / empty-
+    ///   histogram divergence from [`Self::first_present_layer_kind`],
+    ///   which is
+    ///   [`Some(ConfigSourceKind::Defaults)`][ConfigSourceKind::Defaults]
+    ///   on the same chain (its histogram is non-empty because every
+    ///   `ConfigSource` projects to some `ConfigSourceKind`). Pinned
+    ///   by [`tests::first_present_env_prefix_kind_no_env_layers_is_none`].
+    /// - `first_present_env_prefix_kind()` on a chain whose sole
+    ///   layer is a bare `Env(String::new())` equals
+    ///   [`Some(EnvMetadataTagKind::Bare)`][EnvMetadataTagKind::Bare]
+    ///   — the singleton support `{Bare}` has a NON-`Prefixed` head,
+    ///   witnessing the declaration-order head semantics distinctly
+    ///   from a chain whose support includes `Prefixed`. Pinned by
+    ///   [`tests::first_present_env_prefix_kind_bare_only_chain_is_bare`].
+    /// - `first_present_env_prefix_kind()` yields the minimum kind
+    ///   by [`crate::axis_ordinal`] on [`EnvMetadataTagKind`] — the
+    ///   head of a strictly-ascending list is the minimum, so the
+    ///   kind returned is minimal by axis ordinal among contributing
+    ///   kinds. Pinned by
+    ///   [`tests::first_present_env_prefix_kind_is_minimum_present_env_prefix_kind_by_axis_ordinal`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram
+    /// build) and `k = crate::axis_cardinality::<EnvMetadataTagKind>()`
+    /// (the support scan, short-circuited on the first nonzero
+    /// cell). Both are `O(n)` in practice since the env-prefix-
+    /// presence axis carries a fixed two-cell cardinality; the
+    /// returned [`Option<EnvMetadataTagKind>`] reads one cell. Elides
+    /// the `Vec<EnvMetadataTagKind>` allocation the previous
+    /// `present_env_prefix_kinds().first().copied()` idiom paid on
+    /// every call site.
+    #[must_use]
+    fn first_present_env_prefix_kind(&self) -> Option<EnvMetadataTagKind>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().observed().next()
+    }
+
     /// The [`EnvMetadataTagKind`] whose entries produced the greatest number
     /// of contributing [`ConfigSource::Env`] layers on this chain — the modal
     /// cell of [`Self::env_prefix_kind_histogram`] on the chain altitude.
@@ -35688,6 +35881,320 @@ mod tests {
                 .into_iter()
                 .min_by_key(|k| crate::axis_ordinal(*k));
             assert_eq!(head, min_by_ordinal);
+        }
+    }
+
+    // ---- ConfigSourceChain::first_present_env_prefix_kind — observed-
+    //      side head-projection peer of first_absent_env_prefix_kind on
+    //      the env-prefix-presence sub-axis of the chain altitude ----
+
+    fn first_present_env_prefix_kind_fixtures() -> Vec<Vec<ConfigSource>> {
+        // Fixture cohort covering every reachable shape of the observed-
+        // side head-projection peer on the chain-altitude env-prefix-
+        // presence sub-axis:
+        // - `sample_chain`: two `.yaml` + one `Env("APP_")` → support
+        //   is {Prefixed} → Some(Prefixed) (singleton-support corner
+        //   at the axis head).
+        // - defaults-only singleton: histogram empty → None (the
+        //   non-empty-chain / empty-histogram divergence witness the
+        //   layer-kind sub-axis does not carry — {Defaults} there).
+        // - file-only singleton: histogram empty → None (same non-
+        //   empty-chain / empty-histogram divergence witness the
+        //   file-format sub-axis shares).
+        // - prefixed-only singleton: support is {Prefixed} →
+        //   Some(Prefixed) (singleton-support corner at the axis
+        //   head).
+        // - bare-only singleton: support is {Bare} → Some(Bare)
+        //   (singleton-support corner one cell past the axis head —
+        //   head is *not* Prefixed, distinguishing this seam from any
+        //   implementation unconditionally returning the axis head on
+        //   a non-empty histogram).
+        // - empty chain: histogram empty → None.
+        // - full-cover: one bare + one prefixed → support is the
+        //   full axis → Some(Prefixed) (declaration-order head).
+        vec![
+            sample_chain(),
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![ConfigSource::Env(String::new())],
+            vec![],
+            vec![
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env(String::new()),
+            ],
+        ]
+    }
+
+    #[test]
+    fn first_present_env_prefix_kind_matches_env_prefix_kind_histogram_observed_next() {
+        // The delegation pin: `first_present_env_prefix_kind` routes
+        // through `env_prefix_kind_histogram().observed().next()`, so
+        // the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either
+        // implementation stops projecting through the shared cube-
+        // native primitive. Sister of
+        // `first_present_file_format_matches_file_format_histogram_observed_next`
+        // and `first_present_layer_kind_matches_layer_kind_histogram_observed_next`
+        // one sub-axis over on the same chain altitude.
+        for chain in first_present_env_prefix_kind_fixtures() {
+            let via_histogram = chain
+                .as_slice()
+                .env_prefix_kind_histogram()
+                .observed()
+                .next();
+            assert_eq!(
+                chain.as_slice().first_present_env_prefix_kind(),
+                via_histogram,
+            );
+        }
+    }
+
+    #[test]
+    fn first_present_env_prefix_kind_matches_present_env_prefix_kinds_first_copied() {
+        // The head-projection pin: `first_present_env_prefix_kind` is
+        // the `Option`-shaped head of the observed-cells `Vec` peer —
+        // reading it through the named seam must return the same
+        // cell as `present_env_prefix_kinds().first().copied()`, on
+        // every fixture. The Vec-first peer of the histogram-next
+        // delegation pin. Sister of
+        // `first_present_file_format_matches_present_file_formats_first_copied`
+        // one sub-axis over.
+        for chain in first_present_env_prefix_kind_fixtures() {
+            assert_eq!(
+                chain.as_slice().first_present_env_prefix_kind(),
+                chain.as_slice().present_env_prefix_kinds().first().copied(),
+            );
+        }
+    }
+
+    #[test]
+    fn first_present_env_prefix_kind_is_none_iff_env_prefix_kind_histogram_is_empty() {
+        // The [`None`] boundary law: no support head means no `Env`
+        // layer surfaced (the histogram is empty). Unlike
+        // `first_present_layer_kind`, this is NOT the empty-chain
+        // boundary — a non-empty chain of only Defaults / File
+        // layers still yields `None` because every entry projects to
+        // `None` through `env_prefix_kind()`. The head-projection
+        // peer of the
+        // `present_env_prefix_kinds_count == 0 ⇔ env_prefix_kind_histogram().is_empty()`
+        // boundary. Sister of
+        // `first_present_file_format_is_none_iff_file_format_histogram_is_empty`
+        // one sub-axis over, diverging on the presence-bound
+        // identity.
+        for chain in first_present_env_prefix_kind_fixtures() {
+            assert_eq!(
+                chain.as_slice().first_present_env_prefix_kind().is_none(),
+                chain.as_slice().env_prefix_kind_histogram().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn first_present_env_prefix_kind_is_some_iff_env_prefix_kind_histogram_is_not_empty() {
+        // The [`Some`] boundary law (contrapositive of the [`None`]
+        // boundary above), welded as a positive-form fact so a future
+        // refactor to a differently-signed `is_empty` predicate has
+        // to touch both welds. Sister of
+        // `first_present_file_format_is_some_iff_file_format_histogram_is_not_empty`
+        // one sub-axis over.
+        for chain in first_present_env_prefix_kind_fixtures() {
+            assert_eq!(
+                chain.as_slice().first_present_env_prefix_kind().is_some(),
+                !chain.as_slice().env_prefix_kind_histogram().is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn first_present_env_prefix_kind_empty_chain_is_none() {
+        // Empty-chain convention: no observed cell, so the head of
+        // the observed iterator is `None`. Contrasts
+        // `first_absent_env_prefix_kind_empty_chain_is_prefixed` on
+        // the same chain — the two head-projection peers report the
+        // empty chain from opposite sides of the observed /
+        // coverage-gap partition.
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(empty.first_present_env_prefix_kind(), None);
+    }
+
+    #[test]
+    fn first_present_env_prefix_kind_no_env_layers_is_none() {
+        // Presence-bound divergence from `first_present_layer_kind`:
+        // the chain is non-empty but every entry projects to `None`
+        // through `env_prefix_kind()`, leaving the histogram empty
+        // and no support head — the head is still `None`. The non-
+        // empty-chain / empty-histogram divergence witness shared
+        // with the file-format sub-axis. On the layer-kind sub-axis
+        // the same chain would yield `Some(Defaults)` because every
+        // `ConfigSource` projects to some `ConfigSourceKind`.
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.unknown")),
+        ];
+        assert!(!chain.is_empty());
+        assert!(chain.as_slice().env_prefix_kind_histogram().is_empty());
+        assert_eq!(chain.as_slice().first_present_env_prefix_kind(), None);
+    }
+
+    #[test]
+    fn first_present_env_prefix_kind_sample_chain_is_prefixed() {
+        // Direct fixture pin: `sample_chain` carries two `.yaml` File
+        // layers + one `Env("APP_")`, so the support is exactly
+        // {Prefixed} and the head is `Prefixed` — the axis head.
+        // Companion to `first_absent_env_prefix_kind_sample_chain_is_bare`
+        // on the same fixture: observed-side head = Prefixed,
+        // coverage-gap-side head = Bare, mutually disjoint by
+        // construction.
+        let chain = sample_chain();
+        assert_eq!(
+            chain.as_slice().first_present_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+    }
+
+    #[test]
+    fn first_present_env_prefix_kind_prefixed_only_chain_is_prefixed() {
+        // Direct fixture pin on the singleton-support corner at the
+        // axis head: a prefixed-only chain has support {Prefixed}
+        // and the head is Prefixed. Companion to
+        // `first_absent_env_prefix_kind_prefixed_only_chain_is_bare`.
+        let chain = vec![ConfigSource::Env("APP_".to_owned())];
+        assert_eq!(
+            chain.as_slice().first_present_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+    }
+
+    #[test]
+    fn first_present_env_prefix_kind_bare_only_chain_is_bare() {
+        // Direct fixture pin on the singleton-support corner one cell
+        // past the axis head: a bare-only chain has support {Bare}
+        // and the head is Bare — witnesses the declaration-order
+        // semantics *without* the axis head being observed, so a
+        // future drift that returned `Prefixed` whenever the
+        // histogram was non-empty would light here. Companion to
+        // `first_absent_env_prefix_kind_bare_only_chain_is_prefixed`
+        // on the opposite side of the partition. The env-prefix-
+        // presence sub-axis sister of
+        // `first_present_file_format_toml_only_chain_is_toml`.
+        let chain = vec![ConfigSource::Env(String::new())];
+        assert_eq!(
+            chain.as_slice().first_present_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Bare),
+        );
+    }
+
+    #[test]
+    fn first_present_env_prefix_kind_full_cover_chain_is_prefixed() {
+        // Direct fixture pin on the full-cover corner: a chain with
+        // one bare + one prefixed `Env` layer has support = the
+        // whole axis and the head is `Prefixed` — the axis-head
+        // declaration-order witness on the full-support boundary.
+        // Companion to
+        // `first_absent_env_prefix_kind_is_none_iff_env_prefix_kind_histogram_is_full_cover`
+        // on the same corner (observed head = Prefixed, coverage-
+        // gap head = None).
+        let chain = vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ];
+        assert!(chain.as_slice().env_prefix_kind_histogram().is_full_cover());
+        assert_eq!(
+            chain.as_slice().first_present_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+    }
+
+    #[test]
+    fn first_present_env_prefix_kind_is_member_of_present_env_prefix_kinds_when_some() {
+        // Membership pin: when the support head is present, it is
+        // definitionally a member of the observed-cells vector. A
+        // future drift where the head-projection reads off a
+        // different set (say, `EnvMetadataTagKind::ALL` head or
+        // `absent_env_prefix_kinds` head) would light this. Sister
+        // of `first_present_file_format_is_member_of_present_file_formats_when_some`
+        // one sub-axis over.
+        for chain in first_present_env_prefix_kind_fixtures() {
+            if let Some(k) = chain.as_slice().first_present_env_prefix_kind() {
+                assert!(
+                    chain.as_slice().present_env_prefix_kinds().contains(&k),
+                    "first_present_env_prefix_kind {k:?} not in \
+                     present_env_prefix_kinds {:?}",
+                    chain.as_slice().present_env_prefix_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn first_present_env_prefix_kind_is_not_member_of_absent_env_prefix_kinds_when_some() {
+        // Disjointness pin: the observed / coverage-gap partition is
+        // disjoint on the env-prefix-presence axis, and the head-
+        // projection peer of the observed side must not report a
+        // member of the coverage-gap side. The head-projection peer
+        // of `absent_env_prefix_kinds_and_present_env_prefix_kinds_partition_axis`
+        // from the observed side. Sister of
+        // `first_present_file_format_is_not_member_of_absent_file_formats_when_some`
+        // one sub-axis over.
+        for chain in first_present_env_prefix_kind_fixtures() {
+            if let Some(k) = chain.as_slice().first_present_env_prefix_kind() {
+                assert!(
+                    !chain.as_slice().absent_env_prefix_kinds().contains(&k),
+                    "first_present_env_prefix_kind {k:?} appears in \
+                     absent_env_prefix_kinds {:?}",
+                    chain.as_slice().absent_env_prefix_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn first_present_env_prefix_kind_is_minimum_present_env_prefix_kind_by_axis_ordinal() {
+        // The declaration-order head pin: the returned kind (when
+        // `Some`) has the minimum `axis_ordinal` among all
+        // contributing kinds. The observed-cells iterator yields in
+        // `ClosedAxis::ALL` declaration order (which is axis-ordinal
+        // order by construction), so the head is the argmin — a
+        // future drift where the support walk reversed order (or
+        // picked argmax instead) would light this. Sister of
+        // `first_present_file_format_is_minimum_present_file_format_by_axis_ordinal`
+        // one sub-axis over.
+        for chain in first_present_env_prefix_kind_fixtures() {
+            let head = chain.as_slice().first_present_env_prefix_kind();
+            let min_by_ordinal = chain
+                .as_slice()
+                .present_env_prefix_kinds()
+                .into_iter()
+                .min_by_key(|k| crate::axis_ordinal(*k));
+            assert_eq!(head, min_by_ordinal);
+        }
+    }
+
+    #[test]
+    fn first_present_env_prefix_kind_and_first_absent_env_prefix_kind_are_disjoint_on_partial_cover()
+     {
+        // The observed-side / coverage-gap-side head-projection pair
+        // is disjoint whenever both are `Some` — the env-prefix-
+        // presence axis partitions into (observed, coverage-gap), so
+        // when both heads exist they land in disjoint sides. Under
+        // the `sample_chain` fixture (support = {Prefixed}, gap =
+        // {Bare}) both are `Some` and the pair is `(Prefixed, Bare)`
+        // — distinct. Sister of
+        // `first_present_file_format_and_first_absent_file_format_are_disjoint_on_partial_cover`
+        // one sub-axis over.
+        for chain in first_present_env_prefix_kind_fixtures() {
+            let first_p = chain.as_slice().first_present_env_prefix_kind();
+            let first_a = chain.as_slice().first_absent_env_prefix_kind();
+            if let (Some(p), Some(a)) = (first_p, first_a) {
+                assert_ne!(
+                    p, a,
+                    "first_present_env_prefix_kind {p:?} and \
+                     first_absent_env_prefix_kind {a:?} collide",
+                );
+            }
         }
     }
 
