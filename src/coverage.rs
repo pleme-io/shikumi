@@ -908,6 +908,75 @@ impl HintedCoverageReport {
         out
     }
 
+    /// The plural batch peer of [`Self::is_clean_by_surface`] and the
+    /// bool-side histogram of [`Self::hint_iter`] at the coverage
+    /// sub-report scope — every [`HintSurface`] variant paired with its
+    /// per-surface cleanness predicate on this sub-report, folded through
+    /// [`HintSurface::ALL`] in canonical yield order (dead knobs, stale
+    /// entries, unknown value keys, unknown env vars). The sub-report
+    /// analogue of [`HealthReport::is_clean_by_surfaces`], and the
+    /// bool-side batch peer of [`Self::hint_counts_by_surface`] on the
+    /// count-side axis over.
+    ///
+    /// Returns a fixed-size
+    /// `[(HintSurface, bool); HintSurface::ALL.len()]` array so the
+    /// "one entry per surface, no missing surface, no duplicate
+    /// surface" claim is a fact of the type — no runtime length check,
+    /// no room for a caller to see a partial histogram, no room for a
+    /// `BTreeMap`-shaped alternative to silently drop a clean surface
+    /// (a variant added to [`HintSurface`] with its
+    /// [`HintSurface::ALL`] entry — welded by
+    /// `hint_surface_all_covers_every_variant_exactly_once` —
+    /// automatically grows the returned array's cardinality, and every
+    /// consumer picks up the new surface without a code change).
+    ///
+    /// The tag order matches [`HintSurface::ALL`] verbatim, and the
+    /// AND of the array's predicates equals [`Self::is_clean`] since
+    /// [`HintSurface`]'s four variants partition [`Self::hint_iter`] —
+    /// the same fold-composition invariant [`Self::is_clean_by_surface`]
+    /// promises pointwise, promoted here to a whole-histogram fact so a
+    /// consumer that emits the full per-sub-report cleanness table (a
+    /// Prometheus gauge vector with `surface` as the label and a `0`/`1`
+    /// value scoped to the coverage sub-report, a coverage-only
+    /// dashboard tile row with one traffic-light per surface, a
+    /// coverage-only golden fixture that pins the sub-report's
+    /// per-surface cleanness table across clean and dirty runs) has ONE
+    /// call site instead of a hand-walked loop over
+    /// [`HintSurface::ALL`].
+    ///
+    /// The two foreign-to-this-sub-report entries
+    /// ([`HintSurface::ValueKey`], [`HintSurface::EnvVar`]) are ALWAYS
+    /// `true` here — the sub-report-bounded fact
+    /// [`Self::is_clean_by_surface`] promises pointwise on those two
+    /// variants, promoted to a whole-histogram fact and welded by
+    /// `hinted_coverage_is_clean_by_surfaces_is_true_on_foreign_surfaces`.
+    /// On the two own-surface variants ([`HintSurface::DeadKnob`],
+    /// [`HintSurface::StaleEntry`]) this equals the corresponding entry
+    /// of [`HealthReport::is_clean_by_surfaces`] on shared inputs — the
+    /// whole-report/sub-report compositional wiring welded pointwise by
+    /// `hinted_coverage_is_clean_by_surfaces_matches_health_report_on_own_surfaces`,
+    /// the bool-side plural-batch peer of the identity
+    /// [`Self::is_clean_by_surface`] promises on the scalar per-surface
+    /// layer.
+    ///
+    /// Delegates through [`Self::is_clean_by_surface`] pointwise so this
+    /// whole-histogram peer cannot drift from its scalar per-surface
+    /// peer, cannot drift from the count-side sibling
+    /// [`Self::hint_counts_by_surface`] on the same axis, and cannot
+    /// drift from the enumeration primitive [`Self::hint_iter`] beneath
+    /// all three.
+    #[must_use]
+    pub fn is_clean_by_surfaces(&self) -> [(HintSurface, bool); HintSurface::ALL.len()] {
+        let mut out = [(HintSurface::DeadKnob, true); HintSurface::ALL.len()];
+        let mut i = 0;
+        while i < HintSurface::ALL.len() {
+            let surface = HintSurface::ALL[i];
+            out[i] = (surface, self.is_clean_by_surface(surface));
+            i += 1;
+        }
+        out
+    }
+
     /// The head-projection peer of [`Self::hint_iter`] at the coverage
     /// sub-report scope — the first [`SurfaceHint`] this sub-report
     /// contributes to [`HealthReport::hint_iter`] (a
@@ -4466,6 +4535,303 @@ value_only_leaf: 1
             assert!(
                 whole_hist[i].1 > 0,
                 "foreign position {i}: whole-report count must be nonzero for this test's premise",
+            );
+        }
+    }
+
+    #[test]
+    fn hinted_coverage_is_clean_by_surfaces_pairs_agree_with_is_clean_by_surface_pointwise() {
+        // The pointwise delegation invariant on the sub-report bool-side
+        // plural batch peer: for every (surface, clean) pair returned,
+        // the tag equals HintSurface::ALL[i] verbatim (order welded to
+        // the canonical listing) and the predicate equals
+        // `is_clean_by_surface(surface)` verbatim (delegation welded to
+        // the scalar sub-report peer, so a future refactor that inlines
+        // one against the other must keep the two in lockstep). Direct
+        // sub-report peer of
+        // `is_clean_by_surfaces_pairs_agree_with_is_clean_by_surface_pointwise`
+        // one scope up. Verified on the clean corner (every predicate
+        // true) and a mixed corner where BOTH own-surface arms of the
+        // bidirectional diff carry one hint each (own-surface predicates
+        // false, foreign-surface predicates true), so no per-surface arm
+        // is vacuously covered.
+        let clean_consumed = &["name", "tags", "window.width", "window.height"];
+        let clean_hinted = ConfigCoverage::hinted_report::<Demo>(clean_consumed);
+        let clean_hist = clean_hinted.is_clean_by_surfaces();
+        assert_eq!(
+            clean_hist.len(),
+            HintSurface::ALL.len(),
+            "is_clean_by_surfaces must return one entry per HintSurface::ALL variant",
+        );
+        for (i, (surface, clean)) in clean_hist.iter().enumerate() {
+            assert_eq!(*surface, HintSurface::ALL[i], "position {i}");
+            assert_eq!(*clean, clean_hinted.is_clean_by_surface(*surface));
+            assert!(*clean, "clean corner: every per-surface predicate is true");
+        }
+
+        let mixed_consumed = &["name", "tags", "window.witdh", "window.height"];
+        let mixed_hinted = ConfigCoverage::hinted_report::<Demo>(mixed_consumed);
+        let mixed_hist = mixed_hinted.is_clean_by_surfaces();
+        assert_eq!(mixed_hist.len(), HintSurface::ALL.len());
+        for (i, (surface, clean)) in mixed_hist.iter().enumerate() {
+            assert_eq!(*surface, HintSurface::ALL[i], "position {i}");
+            assert_eq!(*clean, mixed_hinted.is_clean_by_surface(*surface));
+        }
+        assert_eq!(mixed_hist[0], (HintSurface::DeadKnob, false));
+        assert_eq!(mixed_hist[1], (HintSurface::StaleEntry, false));
+        assert_eq!(mixed_hist[2], (HintSurface::ValueKey, true));
+        assert_eq!(mixed_hist[3], (HintSurface::EnvVar, true));
+    }
+
+    #[test]
+    fn hinted_coverage_is_clean_by_surfaces_and_equals_is_clean() {
+        // The fold-composition invariant on the sub-report bool-side
+        // batch peer, promoted from `is_clean_by_surface`'s pointwise
+        // AND-back-to-`is_clean`
+        // (`hinted_coverage_is_clean_iff_every_is_clean_by_surface`) to
+        // a whole-histogram fact: the AND of the array's predicates
+        // equals `is_clean()`. Verified across the sub-report's joint
+        // predicate lattice — clean corner (whole clean / every entry
+        // true), both-own-surfaces-dirty corner (whole dirty / both
+        // own-surface entries false, both foreign entries still true),
+        // dead-knob-only corner (whole dirty / only DeadKnob false),
+        // stale-entry-only corner (whole dirty / only StaleEntry false)
+        // — so no arm is vacuously covered and the shape of the array
+        // (not just its total) matters most.
+        let clean_consumed = &["name", "tags", "window.width", "window.height"];
+        let clean_hinted = ConfigCoverage::hinted_report::<Demo>(clean_consumed);
+        let clean_and: bool = clean_hinted.is_clean_by_surfaces().iter().all(|(_, c)| *c);
+        assert_eq!(clean_and, clean_hinted.is_clean());
+        assert!(clean_and, "clean corner: whole-histogram AND must be true");
+
+        let mixed_consumed = &["name", "tags", "window.witdh", "window.height"];
+        let mixed_hinted = ConfigCoverage::hinted_report::<Demo>(mixed_consumed);
+        let mixed_hist = mixed_hinted.is_clean_by_surfaces();
+        let mixed_and: bool = mixed_hist.iter().all(|(_, c)| *c);
+        assert_eq!(mixed_and, mixed_hinted.is_clean());
+        assert!(
+            !mixed_and,
+            "mixed corner: whole-histogram AND must be false when any surface is dirty",
+        );
+        // Sub-report-bounded shape: both own surfaces false, both
+        // foreign surfaces true.
+        assert_eq!(mixed_hist[0], (HintSurface::DeadKnob, false));
+        assert_eq!(mixed_hist[1], (HintSurface::StaleEntry, false));
+        assert_eq!(mixed_hist[2], (HintSurface::ValueKey, true));
+        assert_eq!(mixed_hist[3], (HintSurface::EnvVar, true));
+
+        // Dead-knob-only corner: only DeadKnob false, every other
+        // surface stays true (StaleEntry clean at the sub-report scope,
+        // ValueKey / EnvVar clean by the sub-report-bounded fact).
+        let dead_only_consumed = &["window.width"];
+        let dead_only_hinted = ConfigCoverage::hinted_report::<Demo>(dead_only_consumed);
+        let dead_only_hist = dead_only_hinted.is_clean_by_surfaces();
+        let dead_only_and: bool = dead_only_hist.iter().all(|(_, c)| *c);
+        assert_eq!(dead_only_and, dead_only_hinted.is_clean());
+        assert!(
+            !dead_only_and,
+            "dead-only corner: whole-histogram AND must be false"
+        );
+        assert_eq!(dead_only_hist[0], (HintSurface::DeadKnob, false));
+        assert_eq!(dead_only_hist[1], (HintSurface::StaleEntry, true));
+        assert_eq!(dead_only_hist[2], (HintSurface::ValueKey, true));
+        assert_eq!(dead_only_hist[3], (HintSurface::EnvVar, true));
+
+        // Stale-entry-only corner: only StaleEntry false, every other
+        // surface stays true.
+        let stale_only_consumed = &["name", "tags", "window.width", "window.height", "bogus"];
+        let stale_only_hinted = ConfigCoverage::hinted_report::<Demo>(stale_only_consumed);
+        let stale_only_hist = stale_only_hinted.is_clean_by_surfaces();
+        let stale_only_and: bool = stale_only_hist.iter().all(|(_, c)| *c);
+        assert_eq!(stale_only_and, stale_only_hinted.is_clean());
+        assert!(
+            !stale_only_and,
+            "stale-only corner: whole-histogram AND must be false",
+        );
+        assert_eq!(stale_only_hist[0], (HintSurface::DeadKnob, true));
+        assert_eq!(stale_only_hist[1], (HintSurface::StaleEntry, false));
+        assert_eq!(stale_only_hist[2], (HintSurface::ValueKey, true));
+        assert_eq!(stale_only_hist[3], (HintSurface::EnvVar, true));
+    }
+
+    #[test]
+    fn hinted_coverage_is_clean_by_surfaces_tag_sequence_equals_hint_surface_all() {
+        // The tag-order invariant on the sub-report bool-side batch
+        // peer, verified independently of the predicates: the sequence
+        // of surface tags in the returned array equals `HintSurface::ALL`
+        // verbatim on any corner (a clean sub-report reveals ordering
+        // regressions even when every predicate is true). Direct
+        // sub-report peer of
+        // `is_clean_by_surfaces_tag_sequence_equals_hint_surface_all`
+        // one scope up — a future reorder on any of the three (batch
+        // peer, ALL const, is_clean_by_surface) turns red at the
+        // earliest seam.
+        let hinted = ConfigCoverage::hinted_report::<Demo>(&[
+            "name",
+            "tags",
+            "window.width",
+            "window.height",
+        ]);
+        let observed: Vec<HintSurface> = hinted
+            .is_clean_by_surfaces()
+            .iter()
+            .map(|(s, _)| *s)
+            .collect();
+        assert_eq!(observed, HintSurface::ALL.to_vec());
+    }
+
+    #[test]
+    fn hinted_coverage_is_clean_by_surfaces_length_matches_hint_surface_all_length() {
+        // The array's type-level cardinality — const-evaluated from
+        // `HintSurface::ALL.len()` at the return-type declaration —
+        // must equal the const's own length at runtime, so a consumer
+        // that destructures the array via a
+        // `[(_, a), (_, b), (_, c), (_, d)]` pattern (or reserves a
+        // fixed-size buffer sized by the const) never sees a partial
+        // histogram. Guaranteed by construction; pinned here at read
+        // time so a future refactor that switches the return type to
+        // `Vec<...>` or a `BTreeMap<...>` (either of which could
+        // silently return fewer than every surface) turns red — the
+        // sub-report peer of
+        // `is_clean_by_surfaces_length_matches_hint_surface_all_length`
+        // one scope up.
+        let hinted = ConfigCoverage::hinted_report::<Demo>(&[
+            "name",
+            "tags",
+            "window.width",
+            "window.height",
+        ]);
+        assert_eq!(hinted.is_clean_by_surfaces().len(), HintSurface::ALL.len());
+    }
+
+    #[test]
+    fn hinted_coverage_is_clean_by_surfaces_is_true_on_foreign_surfaces() {
+        // The sub-report-bounded fact promoted from the scalar peer's
+        // `hinted_coverage_is_clean_by_surface_is_true_on_foreign_surfaces`
+        // to the plural batch peer: at the HintedCoverageReport scope,
+        // the two [`HintSurface::ValueKey`] / [`HintSurface::EnvVar`]
+        // entries of the returned array are ALWAYS `(surface, true)`,
+        // on the dirtiest sub-report corner available (both own-surface
+        // arms nonzero, both `did_you_mean`-populated). The whole-report
+        // batch peer's per-surface predicates depend on the whole-report
+        // count on those surfaces (nonzero ValueKey / EnvVar counts flip
+        // them false in its histogram); the sub-report batch peer is
+        // BOUNDED to true on those two entries by the sub-report's
+        // structure. So the sub-report histogram carries a
+        // `(true, true)` foreign pair on ANY sub-report — a golden
+        // fixture that pins the two foreign entries as `true` cannot be
+        // defeated by a whole-report input.
+        let consumed = &["name", "tags", "window.witdh", "window.height"];
+        let hinted = ConfigCoverage::hinted_report::<Demo>(consumed);
+        assert_eq!(hinted.hint_count(), 2);
+        let hist = hinted.is_clean_by_surfaces();
+        // Own-surface entries are false (the sub-report scope carries
+        // hints on both own arms), so the two foreign trues are a
+        // bounded fact and not vacuous.
+        assert!(!hist[0].1, "DeadKnob entry must be false: {hist:?}");
+        assert!(!hist[1].1, "StaleEntry entry must be false: {hist:?}");
+        assert_eq!(hist[2], (HintSurface::ValueKey, true));
+        assert_eq!(hist[3], (HintSurface::EnvVar, true));
+    }
+
+    #[test]
+    fn hinted_coverage_is_clean_by_surfaces_matches_health_report_on_own_surfaces() {
+        // The whole-report/sub-report compositional wiring at the
+        // bool-side plural batch layer: for `s ∈ {HintSurface::DeadKnob,
+        // HintSurface::StaleEntry}` — the two own surfaces of this
+        // sub-report — the corresponding entry of
+        // `hinted.is_clean_by_surfaces()` equals the corresponding entry
+        // of `health.is_clean_by_surfaces()` on shared inputs. The
+        // direct bool-side batch peer of
+        // `hinted_coverage_is_clean_by_surface_matches_health_report_on_own_surfaces`
+        // one axis over on the surface-projected scalar peer, and the
+        // plural batch peer of the identity
+        // `hinted_coverage_hint_counts_by_surface_matches_health_report_on_own_surfaces`
+        // welds on the count side. A future refactor of either side
+        // that reroutes a coverage-surface tag away from the coverage
+        // sub-report breaks this weld on whichever corner exposes it.
+        // Verified on a construction where BOTH the whole-report and
+        // sub-report corners have real hints on both own surfaces AND
+        // the whole-report carries additional hints on ValueKey /
+        // EnvVar (so the identity is a real own-surface fact, not a
+        // vacuous whole-equals-whole with both scopes trivially clean,
+        // and the two foreign-surface predicates flip apart across
+        // scopes — true at the sub-report scope, false at the whole-
+        // report scope — which the test also pins as a live premise).
+        let consumed = &["name", "tags", "window.witdh", "window.height"];
+        let yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+value_only_leaf: 1
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
+        let sub_hist = health.coverage.is_clean_by_surfaces();
+        let whole_hist = health.is_clean_by_surfaces();
+        // Same tag order (both fold through HintSurface::ALL), so
+        // pointwise indexing lines up own-surface (i=0,1) with
+        // own-surface and foreign-surface (i=2,3) with foreign-surface
+        // across the two scopes.
+        for i in 0..HintSurface::ALL.len() {
+            assert_eq!(sub_hist[i].0, whole_hist[i].0, "position {i}: tag");
+        }
+        // Own-surface positions (DeadKnob, StaleEntry): sub-report
+        // predicate equals whole-report predicate and both are false.
+        for i in 0..2 {
+            assert_eq!(sub_hist[i].1, whole_hist[i].1, "own position {i}");
+            assert!(
+                !sub_hist[i].1,
+                "own position {i}: sub-report predicate must be false for this test's premise",
+            );
+        }
+        // Foreign-surface positions (ValueKey, EnvVar): sub-report
+        // predicate is true (bounded fact) while whole-report predicate
+        // is false — the sub-report's foreign true holds on a whole-
+        // report carrying hints on every surface, not just on a
+        // coverage-only construction.
+        for i in 2..HintSurface::ALL.len() {
+            assert!(sub_hist[i].1, "foreign position {i}: sub-report");
+            assert!(
+                !whole_hist[i].1,
+                "foreign position {i}: whole-report predicate must be false for this test's premise",
+            );
+        }
+    }
+
+    #[test]
+    fn hinted_coverage_is_clean_by_surfaces_pairs_agree_with_hint_counts_by_surface_pointwise() {
+        // The bool-side vs count-side agreement of the two sub-report
+        // histogram peers: for every surface, the bool entry equals the
+        // count entry being zero (both projections of `hint_iter`
+        // partitioned by surface at the coverage sub-report scope).
+        // Pins the two sub-report histograms — which could otherwise
+        // silently drift if one is refactored to a shortcut that skips
+        // a surface — to the same underlying per-surface fold. Direct
+        // sub-report peer of
+        // `is_clean_by_surfaces_pairs_agree_with_hint_counts_by_surface_pointwise`
+        // one scope up. Verified on a mixed corner where both
+        // own-surface arms are dirty, so at least one entry lands on
+        // the dirty side of the zero-count / clean-predicate boundary
+        // (the two foreign entries always land on the clean side by
+        // the sub-report-bounded fact).
+        let mixed_consumed = &["name", "tags", "window.witdh", "window.height"];
+        let mixed_hinted = ConfigCoverage::hinted_report::<Demo>(mixed_consumed);
+        let bools = mixed_hinted.is_clean_by_surfaces();
+        let counts = mixed_hinted.hint_counts_by_surface();
+        assert_eq!(bools.len(), counts.len());
+        for ((b_surface, b_clean), (c_surface, c_count)) in bools.iter().zip(counts.iter()) {
+            assert_eq!(
+                b_surface, c_surface,
+                "histograms must yield surfaces in the same order",
+            );
+            assert_eq!(
+                *b_clean,
+                *c_count == 0,
+                "surface={b_surface:?}: is_clean must equal (hint_count == 0)",
             );
         }
     }
