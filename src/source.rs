@@ -938,6 +938,142 @@ pub trait ConfigSourceChain {
         self.layer_kind_histogram().unobserved_cells()
     }
 
+    /// The **first-absent layer kind** — the earliest
+    /// [`ConfigSourceKind`] (in [`ConfigSourceKind::ALL`] declaration
+    /// order — `Defaults → Env → File`) whose entries produced
+    /// **zero** contributing layers on this chain, or [`None`] when
+    /// every kind contributed at least one layer. Returns
+    /// [`Some(ConfigSourceKind::Defaults)`][ConfigSourceKind::Defaults]
+    /// exactly on the empty chain (every cell absent, the first is the
+    /// axis's first cell).
+    ///
+    /// The **head-projection peer** of [`Self::absent_layer_kinds`]
+    /// (the coverage-gap `Vec` peer) and
+    /// [`Self::absent_layer_kinds_count`] (the coverage-gap scalar-
+    /// count peer) on the layer-kind sub-axis of the chain altitude —
+    /// the [`Option`]-shaped projection of the same coverage-gap that
+    /// the two sibling peers materialise in full. Direct chain-
+    /// altitude sister of [`crate::ProvenanceMap::first_absent_tier`]
+    /// on the tier altitude: both project the coverage-gap head of
+    /// their local closed-axis histogram off the shared
+    /// [`crate::AxisHistogram::unobserved`] iterator's
+    /// [`Iterator::next`] head. The coverage-gap dual of the modal-
+    /// observed pair [`Self::dominant_layer_kind`] (argmax observed
+    /// cell) and [`Self::recessive_layer_kind`] (argmin observed cell)
+    /// which already claim the observed-side [`Option`]-shaped peers.
+    ///
+    /// Where [`Self::absent_layer_kinds`] returns *every* absent kind
+    /// (a `Vec<ConfigSourceKind>` a caller must allocate even to read
+    /// the first entry) and [`Self::absent_layer_kinds_count`] returns
+    /// *how many* kinds are absent (a `usize` that discards the
+    /// identity of any single kind), this returns *which kind is
+    /// absent first* as one [`Option<ConfigSourceKind>`] — the shape
+    /// an early-exit coverage-gap diagnostic (*"report the earliest
+    /// missing layer kind and stop"*), a first-fail attestation
+    /// manifest field (*"record the primary missing kind on this
+    /// recipe snapshot"*), or a compact `/healthz/config` endpoint
+    /// payload (*"first absent layer kind in declaration order, or
+    /// null if full cover"*) actually wants (no need to allocate the
+    /// absent-kind list only to read its head, no need to walk the
+    /// rest once the first hit lands).
+    ///
+    /// Routes through [`Self::layer_kind_histogram`]:
+    /// [`crate::AxisHistogram::unobserved`] iterates the histogram's
+    /// coverage-gap cells in [`crate::ClosedAxis::ALL`] declaration
+    /// order (the [`ConfigSourceKind`] canonical order
+    /// `Defaults → Env → File`), and [`Iterator::next`] reads its
+    /// head — the closed-axis discipline provides deterministic
+    /// first-cell selection automatically, so this method reads
+    /// directly off the shikumi cube-native primitive instead of
+    /// hand-rolling `ConfigSourceKind::ALL.iter().copied().find(|k|
+    /// self.layer_kind_histogram().count(*k) == 0)` at every
+    /// operator-facing consumer asking *"which layer kind is the
+    /// earliest to be silent on this recipe?"*.
+    ///
+    /// **Empty-chain convention** — returns
+    /// [`Some(ConfigSourceKind::Defaults)`][ConfigSourceKind::Defaults]
+    /// (not [`None`]), matching the [`Self::absent_layer_kinds`]
+    /// full-axis convention: an empty chain has every cell absent, and
+    /// the head of [`ConfigSourceKind::ALL`] is
+    /// [`ConfigSourceKind::Defaults`]. The [`None`] boundary is
+    /// *full cover*, not empty. Consumers distinguishing *"no chain
+    /// built yet"* from *"chain built with full cover"* should gate on
+    /// `self.as_ref().is_empty()` separately — the two boundaries are
+    /// distinct.
+    ///
+    /// # Invariants
+    ///
+    /// - `first_absent_layer_kind() == layer_kind_histogram().unobserved().next()`
+    ///   — both project the same coverage-gap head off the same
+    ///   primitive; the named seam is the cube-native routing of the
+    ///   chain-shape surface. Pinned by
+    ///   [`tests::first_absent_layer_kind_matches_layer_kind_histogram_unobserved_next`].
+    /// - `first_absent_layer_kind() == absent_layer_kinds().first().copied()`
+    ///   — the head-projection peer of the coverage-gap `Vec` peer;
+    ///   both name the same first-absent cell without materialising
+    ///   the full vector. Pinned by
+    ///   [`tests::first_absent_layer_kind_matches_absent_layer_kinds_first_copied`].
+    /// - `first_absent_layer_kind().is_none() ==
+    ///   layer_kind_histogram().is_full_cover()` — the [`None`]
+    ///   boundary is the full-cover boundary: no coverage-gap head
+    ///   means every kind contributed. The head-projection peer of
+    ///   the [`Self::absent_layer_kinds_count`] `== 0 ⇔
+    ///   is_full_cover()` boundary. Pinned by
+    ///   [`tests::first_absent_layer_kind_is_none_iff_layer_kind_histogram_is_full_cover`].
+    /// - `first_absent_layer_kind().is_some() ==
+    ///   !layer_kind_histogram().is_full_cover()` — the [`Some`]
+    ///   boundary is the non-full-cover boundary; the contrapositive
+    ///   of the [`None`] boundary above, welded separately as a
+    ///   positive-form fact. Pinned by
+    ///   [`tests::first_absent_layer_kind_is_some_iff_layer_kind_histogram_is_not_full_cover`].
+    /// - When `Some(k)`, `k` is a member of
+    ///   [`Self::absent_layer_kinds`] — the coverage-gap head is by
+    ///   definition an absent cell. Pinned by
+    ///   [`tests::first_absent_layer_kind_is_member_of_absent_layer_kinds_when_some`].
+    /// - When `Some(k)`, `k` is **not** a member of
+    ///   [`Self::present_layer_kinds`] — the observed / coverage-gap
+    ///   partition is disjoint; the head-projection peer of the
+    ///   [`tests::absent_layer_kinds_and_present_layer_kinds_partition_axis`]
+    ///   disjointness law. Pinned by
+    ///   [`tests::first_absent_layer_kind_is_not_member_of_present_layer_kinds_when_some`].
+    /// - `first_absent_layer_kind()` on an empty chain equals
+    ///   [`Some(ConfigSourceKind::Defaults)`][ConfigSourceKind::Defaults]
+    ///   — the empty-chain convention: every cell absent, head of
+    ///   [`ConfigSourceKind::ALL`] is
+    ///   [`ConfigSourceKind::Defaults`]. The empty-chain / full-
+    ///   coverage-gap boundary head. Pinned by
+    ///   [`tests::first_absent_layer_kind_empty_chain_is_defaults`].
+    /// - `first_absent_layer_kind()` on a chain whose sole layer is a
+    ///   [`ConfigSource::Defaults`] equals
+    ///   [`Some(ConfigSourceKind::Env)`][ConfigSourceKind::Env] — the
+    ///   FIRST cell of the two-cell coverage gap `{Env, File}` in
+    ///   declaration order. Pinned by
+    ///   [`tests::first_absent_layer_kind_defaults_only_chain_is_env`].
+    /// - `first_absent_layer_kind()` yields in [`crate::axis_ordinal`]
+    ///   order on [`ConfigSourceKind`] — the head of a strictly-
+    ///   ascending list is the minimum, so the kind returned is
+    ///   minimal by axis ordinal among absent kinds. Pinned by
+    ///   [`tests::first_absent_layer_kind_is_minimum_absent_layer_kind_by_axis_ordinal`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram
+    /// build) and `k = crate::axis_cardinality::<ConfigSourceKind>()`
+    /// (the coverage-gap scan, short-circuited on the first zero
+    /// cell). Both are `O(n)` in practice since the layer-kind axis
+    /// carries a fixed three-cell cardinality; the returned
+    /// [`Option<ConfigSourceKind>`] reads one cell. Elides the
+    /// `Vec<ConfigSourceKind>` allocation the previous
+    /// `absent_layer_kinds().first().copied()` idiom paid on every
+    /// call site.
+    #[must_use]
+    fn first_absent_layer_kind(&self) -> Option<ConfigSourceKind>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.layer_kind_histogram().unobserved().next()
+    }
+
     /// The layer kind whose entries produced the greatest number of
     /// contributing layers on this chain — the modal cell of
     /// [`Self::layer_kind_histogram`] on the chain altitude. `None`
@@ -28340,6 +28476,230 @@ mod tests {
             vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
         ] {
             assert_eq!(chain.as_slice().absent_layer_kinds_count(), axis_size - 1);
+        }
+    }
+
+    // ---- ConfigSourceChain::first_absent_layer_kind ----
+
+    fn first_absent_layer_kind_fixtures() -> Vec<Vec<ConfigSource>> {
+        // Fixture cohort covering every reachable shape of the head-
+        // projection peer on the chain-altitude layer-kind axis:
+        // - `sample_chain`: two File + one Env → gap is {Defaults} →
+        //   Some(Defaults) (singleton-gap corner).
+        // - defaults-only singleton: gap is {Env, File} → Some(Env)
+        //   (two-cell gap with head after Defaults).
+        // - env-only singleton: gap is {Defaults, File} → Some(Defaults)
+        //   (two-cell gap with head at Defaults).
+        // - file-only singleton: gap is {Defaults, Env} → Some(Defaults)
+        //   (two-cell gap with head at Defaults).
+        // - empty chain: gap is the entire axis → Some(Defaults).
+        // - full-cover: one layer per kind → gap is empty → None.
+        vec![
+            sample_chain(),
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![],
+            vec![
+                ConfigSource::Defaults,
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::File(PathBuf::from("/a.yaml")),
+            ],
+        ]
+    }
+
+    fn first_absent_layer_kind_full_cover_chain() -> Vec<ConfigSource> {
+        // Synthetic uniform-cover chain witnessing the `None` corner of
+        // the head-projection peer explicitly (also present in
+        // `first_absent_layer_kind_fixtures` as the last entry, but
+        // named separately so the direct positive pin can spell it).
+        vec![
+            ConfigSource::Defaults,
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+        ]
+    }
+
+    #[test]
+    fn first_absent_layer_kind_matches_layer_kind_histogram_unobserved_next() {
+        // The delegation pin: `first_absent_layer_kind` routes through
+        // `layer_kind_histogram().unobserved().next()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Chain-
+        // altitude peer of
+        // `first_absent_tier_matches_tier_histogram_unobserved_next`
+        // one altitude up.
+        for chain in first_absent_layer_kind_fixtures() {
+            let via_histogram = chain.as_slice().layer_kind_histogram().unobserved().next();
+            assert_eq!(chain.as_slice().first_absent_layer_kind(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn first_absent_layer_kind_matches_absent_layer_kinds_first_copied() {
+        // The head-projection pin: `first_absent_layer_kind` is the
+        // `Option`-shaped head of the coverage-gap `Vec` peer —
+        // reading it through the named seam must return the same cell
+        // as `absent_layer_kinds().first().copied()`, on every
+        // fixture. The Vec-first peer of the histogram-next delegation
+        // pin. Chain-altitude peer of
+        // `first_absent_tier_matches_absent_tiers_first_copied` one
+        // altitude up.
+        for chain in first_absent_layer_kind_fixtures() {
+            assert_eq!(
+                chain.as_slice().first_absent_layer_kind(),
+                chain.as_slice().absent_layer_kinds().first().copied(),
+            );
+        }
+    }
+
+    #[test]
+    fn first_absent_layer_kind_is_none_iff_layer_kind_histogram_is_full_cover() {
+        // The [`None`] boundary law: no coverage-gap head means every
+        // layer kind contributed at least one layer. Verified across
+        // the base fixture cohort (all non-full-cover) plus the
+        // synthetic `full_cover_chain` (one layer per kind) so the
+        // [`None`] side of the biconditional is a bounded fact rather
+        // than vacuous. Chain-altitude peer of
+        // `first_absent_tier_is_none_iff_tier_histogram_is_full_cover`
+        // one altitude up.
+        for chain in first_absent_layer_kind_fixtures() {
+            assert_eq!(
+                chain.as_slice().first_absent_layer_kind().is_none(),
+                chain.as_slice().layer_kind_histogram().is_full_cover(),
+            );
+        }
+        // Direct positive pin on the synthetic full-cover corner.
+        let full = first_absent_layer_kind_full_cover_chain();
+        assert!(full.as_slice().layer_kind_histogram().is_full_cover());
+        assert_eq!(full.as_slice().first_absent_layer_kind(), None);
+    }
+
+    #[test]
+    fn first_absent_layer_kind_is_some_iff_layer_kind_histogram_is_not_full_cover() {
+        // The [`Some`] boundary law (contrapositive of the [`None`]
+        // boundary above), welded as a positive-form fact so a future
+        // refactor to a differently-signed `is_full_cover` predicate
+        // has to touch both welds. Chain-altitude peer of
+        // `first_absent_tier_is_some_iff_tier_histogram_is_not_full_cover`
+        // one altitude up.
+        for chain in first_absent_layer_kind_fixtures() {
+            assert_eq!(
+                chain.as_slice().first_absent_layer_kind().is_some(),
+                !chain.as_slice().layer_kind_histogram().is_full_cover(),
+            );
+        }
+    }
+
+    #[test]
+    fn first_absent_layer_kind_empty_chain_is_defaults() {
+        // Empty-chain convention: every cell absent, head of
+        // `ConfigSourceKind::ALL` is `Defaults`. The empty-chain /
+        // full-coverage-gap boundary head — distinct from the full-
+        // cover boundary which yields `None`. Chain-altitude peer of
+        // `first_absent_tier_empty_map_is_bare` one altitude up (whose
+        // axis head is `Bare` on the tier axis).
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(
+            empty.first_absent_layer_kind(),
+            Some(ConfigSourceKind::Defaults),
+        );
+    }
+
+    #[test]
+    fn first_absent_layer_kind_sample_chain_is_defaults() {
+        // Direct fixture pin: `sample_chain` carries two File + one
+        // Env, so the coverage gap is exactly {Defaults} and the
+        // (only) absent kind is Defaults. Head-projection peer of
+        // `absent_layer_kinds_defaults_only_chain_is_env_and_file` on
+        // the counterpart chain shape, and chain-altitude peer of
+        // `first_absent_tier_prog_fixture_is_custom` one altitude up.
+        let chain = sample_chain();
+        assert_eq!(
+            chain.as_slice().first_absent_layer_kind(),
+            Some(ConfigSourceKind::Defaults),
+        );
+    }
+
+    #[test]
+    fn first_absent_layer_kind_defaults_only_chain_is_env() {
+        // Direct fixture pin on the two-absent-cell corner where the
+        // gap {Env, File} has a NON-Defaults head. Witnesses the
+        // declaration-order head semantics distinctly from the
+        // singleton-gap `sample_chain` fixture (whose gap is
+        // {Defaults}, so the head is trivially the axis head). Chain-
+        // altitude peer of `first_absent_tier_nested_fixture_is_bare`
+        // one altitude up.
+        let chain = vec![ConfigSource::Defaults];
+        assert_eq!(
+            chain.as_slice().first_absent_layer_kind(),
+            Some(ConfigSourceKind::Env),
+        );
+    }
+
+    #[test]
+    fn first_absent_layer_kind_is_member_of_absent_layer_kinds_when_some() {
+        // Membership pin: when the coverage-gap head is present, it
+        // is definitionally a member of the coverage-gap vector. A
+        // future drift where the head-projection reads off a
+        // different set (say, `ConfigSourceKind::ALL` head or
+        // `present_layer_kinds` head) would light this. Chain-
+        // altitude peer of
+        // `first_absent_tier_is_member_of_absent_tiers_when_some` one
+        // altitude up.
+        for chain in first_absent_layer_kind_fixtures() {
+            if let Some(k) = chain.as_slice().first_absent_layer_kind() {
+                assert!(
+                    chain.as_slice().absent_layer_kinds().contains(&k),
+                    "first_absent_layer_kind {k:?} not in absent_layer_kinds {:?}",
+                    chain.as_slice().absent_layer_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn first_absent_layer_kind_is_not_member_of_present_layer_kinds_when_some() {
+        // Disjointness pin: the observed / coverage-gap partition is
+        // disjoint on the layer-kind axis, and the head-projection
+        // peer of the coverage-gap side must not report a member of
+        // the observed side. The head-projection peer of
+        // `absent_layer_kinds_and_present_layer_kinds_partition_axis`
+        // on the false side, and chain-altitude peer of
+        // `first_absent_tier_is_not_member_of_contributing_tiers_when_some`
+        // one altitude up.
+        for chain in first_absent_layer_kind_fixtures() {
+            if let Some(k) = chain.as_slice().first_absent_layer_kind() {
+                assert!(
+                    !chain.as_slice().present_layer_kinds().contains(&k),
+                    "first_absent_layer_kind {k:?} appears in present_layer_kinds {:?}",
+                    chain.as_slice().present_layer_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn first_absent_layer_kind_is_minimum_absent_layer_kind_by_axis_ordinal() {
+        // The declaration-order head pin: the returned kind (when
+        // `Some`) has the minimum `axis_ordinal` among all absent
+        // kinds. The unobserved-cells iterator yields in
+        // `ClosedAxis::ALL` declaration order (which is axis-ordinal
+        // order by construction), so the head is the argmin — a
+        // future drift where the coverage-gap walk reversed order (or
+        // picked argmax instead) would light this. Chain-altitude
+        // peer of
+        // `first_absent_tier_is_minimum_absent_tier_by_axis_ordinal`
+        // one altitude up.
+        for chain in first_absent_layer_kind_fixtures() {
+            let head = chain.as_slice().first_absent_layer_kind();
+            let min_by_ordinal = chain
+                .as_slice()
+                .absent_layer_kinds()
+                .into_iter()
+                .min_by_key(|k| crate::axis_ordinal(*k));
+            assert_eq!(head, min_by_ordinal);
         }
     }
 
