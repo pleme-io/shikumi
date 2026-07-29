@@ -3103,6 +3103,110 @@ mod hotswap_tests {
         );
     }
 
+    #[test]
+    fn sync_proof_free_watermark_moves_on_a_free_swap() {
+        // The direct positive-side symmetric peer of
+        // `sync_proof_restart_required_watermark_is_stable_across_a_free_swap`
+        // above at the same `ConfigStore::sync_proof` scope. That test asserts
+        // the RequiresRestart half is STABLE on a Free-only swap; this one
+        // asserts the Free half MOVES on the same swap. Together they weld
+        // the class-partition (CALHA.md §5.1 `Free | RequiresRestart` is
+        // 2-arm-total) at the store scope by proving both sides of the
+        // partition matrix on the same event, mirroring the
+        // `watermark_class_halves_partition_disagree_only_on_matching_class`
+        // weld already welded at the `ConfigWatermark::compute` shape scope.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("hotcfg_proof_free_moves.yaml");
+        write_cfg(&path, "info", "0.0.0.0:8080");
+
+        let store = ConfigStore::<HotCfg>::load_and_watch_hotswap(
+            &path,
+            "HOTCFG_PROOF_FREE_MOVES_",
+            |_| {},
+        )
+        .unwrap();
+        let before = store.sync_proof();
+
+        write_cfg(&path, "debug", "0.0.0.0:8080");
+        store.reload_hotswap().unwrap();
+        let after = store.sync_proof();
+
+        assert_eq!(after.generation, before.generation + 1);
+        assert_ne!(
+            after.watermark.free, before.watermark.free,
+            "a Free-only swap must move the free watermark -- the positive-side \
+             symmetric peer of the restart_required-half stability assertion \
+             on the same event"
+        );
+    }
+
+    #[test]
+    fn sync_proof_is_fully_stable_across_a_restart_required_reload_attempt() {
+        // The RequiresRestart-side symmetric peer of
+        // `sync_proof_restart_required_watermark_is_stable_across_a_free_swap`
+        // -- that test welded a Free-only swap's effect on both halves; this
+        // welds a RequiresRestart-only reload attempt's effect on the WHOLE
+        // sync_proof shape. Since `apply_hotswap_candidate` blocks a
+        // RequiresRestart candidate (records the reasons via
+        // `pending_restart` but leaves `inner` untouched), the live value is
+        // unchanged and every observable-on-sync_proof field must be stable:
+        // generation, watermark.full, watermark.restart_required, and
+        // watermark.free (the specific peer called out in the b9bf8d6
+        // commit body as "the natural next composition at the sync_proof
+        // scope"). Load-bearing invariant: the pending-restart pathway must
+        // never leak into the observable watermark state a `/healthz/config`
+        // surface reads off `sync_proof` -- a regression that mutated the
+        // watermark on a blocked candidate would silently make an
+        // operator-visible `full`- or `free`-drift alert fire on a change
+        // the store never actually applied.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("hotcfg_proof_rr_blocked.yaml");
+        write_cfg(&path, "info", "0.0.0.0:8080");
+
+        let store = ConfigStore::<HotCfg>::load_and_watch_hotswap(
+            &path,
+            "HOTCFG_PROOF_RR_BLOCKED_",
+            |_| {},
+        )
+        .unwrap();
+        let before = store.sync_proof();
+        assert!(store.pending_restart().is_none());
+
+        write_cfg(&path, "info", "0.0.0.0:9090");
+        store.reload_hotswap().unwrap();
+        let after = store.sync_proof();
+
+        assert_eq!(
+            after.generation, before.generation,
+            "a RequiresRestart-only candidate must NOT swap -- generation stays put"
+        );
+        assert_eq!(
+            after.watermark.full, before.watermark.full,
+            "the full watermark must NOT move when the swap was blocked -- \
+             the live value never changed"
+        );
+        assert_eq!(
+            after.watermark.restart_required, before.watermark.restart_required,
+            "the restart_required watermark must NOT move on a blocked candidate \
+             either -- it hashes the LIVE value's restart-required fields, not \
+             the rejected candidate's"
+        );
+        assert_eq!(
+            after.watermark.free, before.watermark.free,
+            "the free watermark must NOT move on a blocked candidate -- the \
+             symmetric class-partition peer at the sync_proof scope of the \
+             restart_required-stability-across-a-free-swap invariant, the \
+             specific peer called out in b9bf8d6's commit body as the natural \
+             next composition"
+        );
+        assert_eq!(
+            store.pending_restart(),
+            Some(vec!["bound at process start"]),
+            "the pending-restart pathway must be the ONLY observable side-effect \
+             of the blocked candidate -- sync_proof is invariant across it"
+        );
+    }
+
     // Best-effort: the watcher path reaches the same
     // apply_hotswap_candidate logic as reload_hotswap above. Tolerant
     // of CI filesystem-watch timing, matching
