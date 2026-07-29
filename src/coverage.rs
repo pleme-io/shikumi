@@ -710,6 +710,96 @@ impl HintedCoverageReport {
         dead_knobs.chain(stale_entries)
     }
 
+    /// Iterate every hint on ONE [`HintSurface`] as [`SurfaceHint`]
+    /// values — the surface-filtered projection of [`Self::hint_iter`]
+    /// (and the enumeration behind [`Self::hint_count_by_surface`]) at
+    /// the coverage sub-report scope, and the sub-report analogue of
+    /// [`HealthReport::hint_iter_by_surface`].
+    ///
+    /// Yields exactly the hints whose surface tag matches `surface`,
+    /// in the same order [`Self::hint_iter`] would yield them —
+    /// dead knobs first when `surface == HintSurface::DeadKnob`, stale
+    /// entries when `surface == HintSurface::StaleEntry`, and the empty
+    /// iterator for the two variants this sub-report carries no hints
+    /// on ([`HintSurface::ValueKey`], [`HintSurface::EnvVar`]) — the
+    /// sub-report-bounded fact welded to the type: any surface not in
+    /// the sub-report's own two-variant sub-partition of
+    /// [`HintSurface::ALL`] yields empty here by construction, so the
+    /// summed histogram across [`HintSurface::ALL`] collapses to the
+    /// two own-surface counts without ever double-counting a foreign
+    /// surface. Within each own surface, hints follow the order of
+    /// their underlying hint list (sorted by entry per the audit
+    /// primitives, so the enumeration is deterministic end-to-end).
+    ///
+    /// `hint_iter_by_surface(s).count()` equals
+    /// [`Self::hint_count_by_surface`]`(s)` by construction, and
+    /// summing across [`HintSurface::ALL`] recovers [`Self::hint_count`]
+    /// with NO cross-surface dedup — the same fold-composition
+    /// invariant [`Self::hint_count`] promises across the sub-report's
+    /// two hint lists, projected here onto the four hint surfaces (the
+    /// two foreign surfaces contributing zero terms).
+    ///
+    /// Delegates through [`Self::hint_iter`] itself — a
+    /// `.filter(|h| h.surface == surface)` — so the two enumerations
+    /// cannot drift, and the peer folds up to
+    /// [`HealthReport::hint_iter_by_surface`] on its own-surface
+    /// prefix: for `s ∈ {HintSurface::DeadKnob, HintSurface::StaleEntry}`,
+    /// `hinted.hint_iter_by_surface(s)` yields the same sequence as
+    /// `health.hint_iter_by_surface(s)` on shared inputs, since the
+    /// whole-report peer's coverage-arm prefix IS this sub-report's
+    /// own enumeration (welded by
+    /// `hinted_coverage_hint_iter_matches_health_report_coverage_prefix`
+    /// one axis up on the un-filtered pair).
+    ///
+    /// Consumers holding only a [`HintedCoverageReport`] (a `#[test]`
+    /// that only runs [`ConfigCoverage::hinted_report`] without a full
+    /// [`ConfigCoverage::health_report`], a coverage-only dashboard
+    /// tile that separates dead-knob and stale-entry columns, a
+    /// per-surface JSON row array on a coverage-only diagnostics
+    /// endpoint) call this directly instead of
+    /// `hint_iter().filter(...)` — the named peer says "this is the
+    /// supported access pattern at the sub-report scope" and pairs
+    /// with [`Self::hint_count_by_surface`] on the count side.
+    pub fn hint_iter_by_surface(
+        &self,
+        surface: HintSurface,
+    ) -> impl Iterator<Item = SurfaceHint<'_>> {
+        self.hint_iter().filter(move |h| h.surface == surface)
+    }
+
+    /// Count of hints on ONE [`HintSurface`] at the coverage sub-report
+    /// scope — the surface-projected peer of [`Self::hint_count`] (and
+    /// the count-side peer of [`Self::hint_iter_by_surface`]), the
+    /// sub-report analogue of [`HealthReport::hint_count_by_surface`].
+    ///
+    /// Equals `hint_iter_by_surface(surface).count()` by construction,
+    /// since it delegates through that iterator so the two peers cannot
+    /// drift. Summing across [`HintSurface::ALL`] recovers
+    /// [`Self::hint_count`] with NO cross-surface dedup — the same
+    /// fold-composition invariant [`Self::hint_count`] promises across
+    /// the sub-report's two hint lists, projected here onto the four
+    /// hint surfaces (the two foreign-to-this-sub-report surfaces
+    /// [`HintSurface::ValueKey`] and [`HintSurface::EnvVar`]
+    /// contributing zero terms by construction).
+    ///
+    /// For `s ∈ {HintSurface::DeadKnob, HintSurface::StaleEntry}`
+    /// this equals [`HealthReport::hint_count_by_surface`]`(s)` on
+    /// shared inputs — the two sub-report own-surface counts are the
+    /// whole-report own-surface counts, since the whole-report count
+    /// folds through the three sub-report enumerations and only the
+    /// coverage sub-report contributes to those two surfaces.
+    ///
+    /// Consumers that want to prioritise remediation on ONE own
+    /// surface at the sub-report scope ("only page on dead knobs, not
+    /// stale entries"), gate CI on a per-surface hint-count budget on
+    /// this sub-report alone, or feed a per-surface severity number to
+    /// a coverage-only diagnostics endpoint call this directly instead
+    /// of hand-walking [`Self::dead_knobs`] / [`Self::stale_entries`].
+    #[must_use]
+    pub fn hint_count_by_surface(&self, surface: HintSurface) -> usize {
+        self.hint_iter_by_surface(surface).count()
+    }
+
     /// The head-projection peer of [`Self::hint_iter`] at the coverage
     /// sub-report scope — the first [`SurfaceHint`] this sub-report
     /// contributes to [`HealthReport::hint_iter`] (a
@@ -3652,6 +3742,190 @@ tags: []
             .take(health.coverage.hint_count())
             .collect();
         assert_eq!(sub_report_seq, whole_report_prefix);
+    }
+
+    // ─── HintedCoverageReport::hint_iter_by_surface /
+    // ─── hint_count_by_surface — the surface-projected pair of the
+    // ─── sub-report enumeration primitive, jointly welded to
+    // ─── HealthReport's own-surface projections on the two coverage
+    // ─── surfaces (DeadKnob, StaleEntry) and pinned to zero on the two
+    // ─── surfaces this sub-report carries no hints on (ValueKey,
+    // ─── EnvVar). ───
+
+    #[test]
+    fn hinted_coverage_hint_iter_by_surface_count_equals_hint_count_by_surface() {
+        // The delegation-shape invariant on the sub-report
+        // surface-projected pair: `hint_iter_by_surface(s).count()`
+        // equals `hint_count_by_surface(s)` on any input, for every
+        // `s ∈ HintSurface::ALL`. Welds the sub-report iter-side peer
+        // to its count-side peer through the shared `.filter(|h|
+        // h.surface == s)` on the enumeration primitive `hint_iter`,
+        // so a future refactor that inlines one against the other
+        // must keep the two in lockstep. Verified on BOTH the clean
+        // corner (every surface count 0) and a mixed corner where
+        // BOTH own-surface arms of the bidirectional diff are nonzero
+        // (so neither DeadKnob nor StaleEntry is vacuously covered),
+        // and on every one of HintSurface::ALL's four variants (so
+        // the two foreign-surface arms are not vacuously covered).
+        let clean_consumed = &["name", "tags", "window.width", "window.height"];
+        let clean_hinted = ConfigCoverage::hinted_report::<Demo>(clean_consumed);
+        for &surface in HintSurface::ALL {
+            assert_eq!(
+                clean_hinted.hint_iter_by_surface(surface).count(),
+                clean_hinted.hint_count_by_surface(surface),
+                "clean corner surface={surface:?}",
+            );
+        }
+
+        let mixed_consumed = &["name", "tags", "window.witdh", "window.height"];
+        let mixed_hinted = ConfigCoverage::hinted_report::<Demo>(mixed_consumed);
+        for &surface in HintSurface::ALL {
+            assert_eq!(
+                mixed_hinted.hint_iter_by_surface(surface).count(),
+                mixed_hinted.hint_count_by_surface(surface),
+                "mixed corner surface={surface:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn hinted_coverage_hint_count_by_surface_sums_to_hint_count_over_hint_surface_all() {
+        // The fold-composition invariant on the sub-report count-side
+        // peer: summing `hint_count_by_surface(s)` across
+        // `HintSurface::ALL` recovers `hint_count()` with NO
+        // cross-surface dedup — the same partition invariant the
+        // whole-report `HealthReport::hint_count_by_surface_folds_to_hint_count`
+        // test welds one scope up, projected here onto the sub-report's
+        // two-variant sub-partition of HintSurface::ALL (with the two
+        // foreign-to-this-sub-report surfaces contributing zero terms).
+        // Verified on both the clean corner (sum = 0) and a mixed
+        // corner where BOTH own-surface arms carry exactly one hint
+        // (sum = 2), so no arm is vacuously covered and the partition
+        // fact is real, not trivially green on a single-arm shape.
+        let clean_consumed = &["name", "tags", "window.width", "window.height"];
+        let clean_hinted = ConfigCoverage::hinted_report::<Demo>(clean_consumed);
+        let clean_sum: usize = HintSurface::ALL
+            .iter()
+            .map(|s| clean_hinted.hint_count_by_surface(*s))
+            .sum();
+        assert_eq!(clean_sum, clean_hinted.hint_count());
+        assert_eq!(clean_sum, 0);
+
+        let mixed_consumed = &["name", "tags", "window.witdh", "window.height"];
+        let mixed_hinted = ConfigCoverage::hinted_report::<Demo>(mixed_consumed);
+        let mixed_sum: usize = HintSurface::ALL
+            .iter()
+            .map(|s| mixed_hinted.hint_count_by_surface(*s))
+            .sum();
+        assert_eq!(mixed_sum, mixed_hinted.hint_count());
+        assert_eq!(mixed_sum, 2);
+        assert_eq!(
+            mixed_hinted.hint_count_by_surface(HintSurface::DeadKnob),
+            mixed_hinted.dead_knobs.len(),
+        );
+        assert_eq!(
+            mixed_hinted.hint_count_by_surface(HintSurface::StaleEntry),
+            mixed_hinted.stale_entries.len(),
+        );
+    }
+
+    #[test]
+    fn hinted_coverage_hint_count_by_surface_is_zero_on_foreign_surfaces() {
+        // The sub-report-bounded fact welded to the type: at the
+        // HintedCoverageReport scope, `hint_count_by_surface(s)` is
+        // ALWAYS 0 for `s ∈ {HintSurface::ValueKey, HintSurface::EnvVar}`
+        // — the two variants of HintSurface::ALL this sub-report
+        // carries no hints on (since `hint_iter` only ever tags with
+        // DeadKnob or StaleEntry per the canonical yield order welded
+        // by `hinted_coverage_hint_iter_yields_dead_knobs_first_then_stale_entries`).
+        // The whole-report count-side peer accepts all four variants
+        // uniformly (returning per-surface counts across the entire
+        // HealthReport, including nonzero for ValueKey / EnvVar); the
+        // sub-report count-side peer accepts the same four variants for
+        // API symmetry but is BOUNDED to two by the sub-report's
+        // structure. Verified on the dirtiest sub-report corner
+        // available (both own-surface arms nonzero, both
+        // `did_you_mean`-populated), so the zero on the two foreign
+        // surfaces is a fact of the sub-report's shape and not a
+        // vacuous consequence of a clean input.
+        let consumed = &["name", "tags", "window.witdh", "window.height"];
+        let hinted = ConfigCoverage::hinted_report::<Demo>(consumed);
+        assert_eq!(hinted.hint_count(), 2);
+        assert!(hinted.hint_count_by_surface(HintSurface::DeadKnob) > 0);
+        assert!(hinted.hint_count_by_surface(HintSurface::StaleEntry) > 0);
+        assert_eq!(hinted.hint_count_by_surface(HintSurface::ValueKey), 0);
+        assert_eq!(hinted.hint_count_by_surface(HintSurface::EnvVar), 0);
+        assert_eq!(
+            hinted.hint_iter_by_surface(HintSurface::ValueKey).count(),
+            0
+        );
+        assert_eq!(hinted.hint_iter_by_surface(HintSurface::EnvVar).count(), 0);
+    }
+
+    #[test]
+    fn hinted_coverage_hint_iter_by_surface_matches_health_report_on_own_surfaces() {
+        // The whole-report/sub-report compositional wiring at the
+        // surface-projected layer: for `s ∈ {HintSurface::DeadKnob,
+        // HintSurface::StaleEntry}` — the two own surfaces of this
+        // sub-report — `hinted.hint_iter_by_surface(s)` yields the same
+        // sequence as `health.hint_iter_by_surface(s)` on shared inputs.
+        // The direct head-projection peer of
+        // `hinted_coverage_hint_iter_matches_health_report_coverage_prefix`
+        // one scope over on the surface-projected pair: the coverage
+        // sub-report enumeration prefix identity, folded through the
+        // per-surface `.filter` beneath both scopes. Welds
+        // `HintedCoverageReport::hint_iter_by_surface` to its whole-
+        // report peer, so a future refactor of either side that reroutes
+        // a coverage-surface tag away from the coverage sub-report
+        // breaks this weld on whichever corner exposes it. Verified
+        // on a construction where BOTH the whole-report and sub-report
+        // corners have real hints on both own surfaces (window.width
+        // dead knob, window.witdh stale entry) AND the whole-report
+        // carries additional hints on ValueKey / EnvVar (so the identity
+        // is a real prefix, not a vacuous whole-equals-whole).
+        let consumed = &["name", "tags", "window.witdh", "window.height"];
+        let yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+value_only_leaf: 1
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
+        for &surface in &[HintSurface::DeadKnob, HintSurface::StaleEntry] {
+            let sub: Vec<SurfaceHint<'_>> = health.coverage.hint_iter_by_surface(surface).collect();
+            let whole: Vec<SurfaceHint<'_>> = health.hint_iter_by_surface(surface).collect();
+            assert_eq!(sub, whole, "own surface={surface:?}");
+            assert!(!sub.is_empty(), "own surface={surface:?}");
+            assert_eq!(
+                health.coverage.hint_count_by_surface(surface),
+                health.hint_count_by_surface(surface),
+                "own surface={surface:?}",
+            );
+        }
+        // The two foreign surfaces still yield empty at the sub-report
+        // scope even when the whole-report populates them — the sub-
+        // report-bounded fact holds on a whole-report with hints on
+        // every surface, not just on a coverage-only construction.
+        for &surface in &[HintSurface::ValueKey, HintSurface::EnvVar] {
+            assert_eq!(
+                health.coverage.hint_iter_by_surface(surface).count(),
+                0,
+                "foreign surface={surface:?}",
+            );
+            assert_eq!(
+                health.coverage.hint_count_by_surface(surface),
+                0,
+                "foreign surface={surface:?}",
+            );
+            assert!(
+                health.hint_count_by_surface(surface) > 0,
+                "foreign surface={surface:?} must carry a whole-report hint for this test's premise",
+            );
+        }
     }
 
     // ─── ValueAudit::hint_iter / EnvVarAudit::hint_iter — the
