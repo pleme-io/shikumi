@@ -977,6 +977,85 @@ impl HintedCoverageReport {
         out
     }
 
+    /// The plural batch peer of [`Self::hint_iter_by_surface`] and the
+    /// enumeration-side histogram of [`Self::hint_iter`] at the coverage
+    /// sub-report scope — every [`HintSurface`] variant paired with its
+    /// per-surface [`SurfaceHint`] list collected into a `Vec`, folded
+    /// through [`HintSurface::ALL`] in canonical yield order (dead
+    /// knobs, stale entries, unknown value keys, unknown env vars). The
+    /// sub-report analogue of [`HealthReport::hints_by_surface`], and the
+    /// enumeration-side sibling of [`Self::hint_counts_by_surface`]
+    /// (count side) and [`Self::is_clean_by_surfaces`] (bool side),
+    /// closing the count×bool×enum triangle at the plural batch layer on
+    /// [`HintedCoverageReport`] to match the whole-report peer one scope
+    /// up.
+    ///
+    /// Returns a fixed-size
+    /// `[(HintSurface, Vec<SurfaceHint<'_>>); HintSurface::ALL.len()]`
+    /// array so the "one entry per surface, no missing surface, no
+    /// duplicate surface" claim is a fact of the type — no runtime
+    /// length check, no room for a caller to see a partial histogram, no
+    /// room for a `BTreeMap`-shaped alternative to silently drop a
+    /// hint-empty surface (a variant added to [`HintSurface`] with its
+    /// [`HintSurface::ALL`] entry — welded by
+    /// `hint_surface_all_covers_every_variant_exactly_once` —
+    /// automatically grows the returned array's cardinality, and every
+    /// consumer picks up the new surface without a code change).
+    ///
+    /// The tag order matches [`HintSurface::ALL`] verbatim. Every
+    /// bucket's `.len()` equals the corresponding entry of
+    /// [`Self::hint_counts_by_surface`] pointwise (welded by
+    /// `hinted_coverage_hints_by_surface_bucket_len_agrees_with_hint_counts_by_surface_pointwise`),
+    /// every bucket's `.is_empty()` equals the corresponding entry of
+    /// [`Self::is_clean_by_surfaces`] pointwise (welded by
+    /// `hinted_coverage_hints_by_surface_bucket_is_empty_agrees_with_is_clean_by_surfaces_pointwise`),
+    /// and the flat concatenation of the four buckets in
+    /// [`HintSurface::ALL`] order equals [`Self::hint_iter`]
+    /// element-for-element (welded by
+    /// `hinted_coverage_hints_by_surface_concat_equals_hint_iter`) —
+    /// the same fold-composition invariant [`Self::hint_iter_by_surface`]
+    /// promises pointwise, promoted here to a whole-histogram fact so a
+    /// consumer that emits the full per-sub-report hint groups (a
+    /// coverage-only diagnostics endpoint that returns one JSON array
+    /// per surface for this sub-report alone, a coverage-only dashboard
+    /// with four grouped panels listing hints under each surface tile, a
+    /// coverage-only golden fixture that compares clean and dirty runs
+    /// across a fleet of consumers by surface bucket) has ONE call site
+    /// instead of a hand-walked loop over [`HintSurface::ALL`] with a
+    /// [`Self::hint_iter_by_surface`] call per iteration.
+    ///
+    /// The two foreign-to-this-sub-report entries
+    /// ([`HintSurface::ValueKey`], [`HintSurface::EnvVar`]) are ALWAYS
+    /// empty here — the sub-report-bounded fact
+    /// [`Self::hint_iter_by_surface`] promises pointwise on those two
+    /// variants, promoted to a whole-histogram fact and welded by
+    /// `hinted_coverage_hints_by_surface_is_empty_on_foreign_surfaces`.
+    /// On the two own-surface variants ([`HintSurface::DeadKnob`],
+    /// [`HintSurface::StaleEntry`]) this equals the corresponding entry
+    /// of [`HealthReport::hints_by_surface`] on shared inputs — the
+    /// whole-report/sub-report compositional wiring welded pointwise by
+    /// `hinted_coverage_hints_by_surface_matches_health_report_on_own_surfaces`,
+    /// the enumeration-side plural-batch peer of the identity
+    /// [`Self::hint_iter_by_surface`] promises on the scalar per-surface
+    /// layer.
+    ///
+    /// Delegates through [`Self::hint_iter_by_surface`] pointwise (which
+    /// itself delegates through [`Self::hint_iter`]), so this
+    /// whole-histogram peer cannot drift from its per-surface iterator
+    /// peer, from the count-side sibling
+    /// [`Self::hint_counts_by_surface`], or from the bool-side sibling
+    /// [`Self::is_clean_by_surfaces`] — the three plural batch peers
+    /// share one underlying fold and cannot desynchronize.
+    #[must_use]
+    pub fn hints_by_surface(
+        &self,
+    ) -> [(HintSurface, Vec<SurfaceHint<'_>>); HintSurface::ALL.len()] {
+        std::array::from_fn(|i| {
+            let surface = HintSurface::ALL[i];
+            (surface, self.hint_iter_by_surface(surface).collect())
+        })
+    }
+
     /// The head-projection peer of [`Self::hint_iter`] at the coverage
     /// sub-report scope — the first [`SurfaceHint`] this sub-report
     /// contributes to [`HealthReport::hint_iter`] (a
@@ -4832,6 +4911,337 @@ value_only_leaf: 1
                 *b_clean,
                 *c_count == 0,
                 "surface={b_surface:?}: is_clean must equal (hint_count == 0)",
+            );
+        }
+    }
+
+    // ─── hinted_coverage hints_by_surface — enumeration-side plural
+    // ─── batch peer of hint_iter_by_surface at the sub-report scope;
+    // ─── closes the count×bool×enum plural-batch triangle on
+    // ─── HintedCoverageReport to match the whole-report peer ─────────
+
+    #[test]
+    fn hinted_coverage_hints_by_surface_pairs_agree_with_hint_iter_by_surface_pointwise() {
+        // The pointwise delegation invariant on the sub-report
+        // enumeration-side plural batch peer: for every returned
+        // (surface, bucket) pair, the tag equals HintSurface::ALL[i]
+        // verbatim (order welded to the canonical listing) and the
+        // bucket equals `hint_iter_by_surface(surface).collect::<Vec<_>>()`
+        // verbatim (delegation welded to the surface-projected iterator
+        // peer, so a future refactor that inlines one against the other
+        // must keep the two in lockstep). Direct sub-report peer of
+        // `hints_by_surface_pairs_agree_with_hint_iter_by_surface_pointwise`
+        // one scope up. Verified on the clean corner (every bucket
+        // empty) and a mixed corner where BOTH own-surface arms of the
+        // bidirectional diff carry one hint each (own-surface buckets
+        // one-hint, foreign-surface buckets empty), so no per-surface
+        // arm is vacuously covered and every arm of the SurfaceHint
+        // field-shape is exercised.
+        let clean_consumed = &["name", "tags", "window.width", "window.height"];
+        let clean_hinted = ConfigCoverage::hinted_report::<Demo>(clean_consumed);
+        let clean_hist = clean_hinted.hints_by_surface();
+        assert_eq!(
+            clean_hist.len(),
+            HintSurface::ALL.len(),
+            "hints_by_surface must return one entry per HintSurface::ALL variant",
+        );
+        for (i, (surface, bucket)) in clean_hist.iter().enumerate() {
+            assert_eq!(*surface, HintSurface::ALL[i], "position {i}");
+            let expected: Vec<SurfaceHint<'_>> =
+                clean_hinted.hint_iter_by_surface(*surface).collect();
+            assert_eq!(*bucket, expected);
+            assert!(
+                bucket.is_empty(),
+                "clean corner: {surface:?} bucket must be empty",
+            );
+        }
+
+        let mixed_consumed = &["name", "tags", "window.witdh", "window.height"];
+        let mixed_hinted = ConfigCoverage::hinted_report::<Demo>(mixed_consumed);
+        let mixed_hist = mixed_hinted.hints_by_surface();
+        assert_eq!(mixed_hist.len(), HintSurface::ALL.len());
+        for (i, (surface, bucket)) in mixed_hist.iter().enumerate() {
+            assert_eq!(*surface, HintSurface::ALL[i], "position {i}");
+            let expected: Vec<SurfaceHint<'_>> =
+                mixed_hinted.hint_iter_by_surface(*surface).collect();
+            assert_eq!(*bucket, expected);
+        }
+        // Sub-report-bounded shape: one own-surface hint on each of
+        // the two own arms; foreign arms empty by construction.
+        assert_eq!(mixed_hist[0].0, HintSurface::DeadKnob);
+        assert_eq!(mixed_hist[0].1.len(), 1);
+        assert!(
+            mixed_hist[0]
+                .1
+                .iter()
+                .all(|h| h.surface == HintSurface::DeadKnob)
+        );
+        assert_eq!(mixed_hist[1].0, HintSurface::StaleEntry);
+        assert_eq!(mixed_hist[1].1.len(), 1);
+        assert!(
+            mixed_hist[1]
+                .1
+                .iter()
+                .all(|h| h.surface == HintSurface::StaleEntry)
+        );
+        assert_eq!(mixed_hist[2].0, HintSurface::ValueKey);
+        assert!(mixed_hist[2].1.is_empty());
+        assert_eq!(mixed_hist[3].0, HintSurface::EnvVar);
+        assert!(mixed_hist[3].1.is_empty());
+    }
+
+    #[test]
+    fn hinted_coverage_hints_by_surface_concat_equals_hint_iter() {
+        // The fold-composition invariant on the sub-report
+        // enumeration-side batch peer, promoted from the whole-report
+        // `hints_by_surface_concat_equals_hint_iter` to a sub-report
+        // fact: the flat concatenation of the four buckets in
+        // HintSurface::ALL order equals `hint_iter()`
+        // element-for-element (both direction and yield order
+        // preserved). The load-bearing weld — a future refactor that
+        // drops, duplicates, reorders, or reshapes any one bucket at
+        // the sub-report scope turns this red. Verified on a mixed
+        // corner where BOTH own-surface arms carry one hint each so the
+        // two own buckets are non-vacuous (the two foreign buckets are
+        // empty by the sub-report-bounded fact, so the concatenation
+        // reduces to the own-surface prefix — the sub-report's
+        // hint_iter yields exactly those two arms in ALL order).
+        let mixed_consumed = &["name", "tags", "window.witdh", "window.height"];
+        let mixed_hinted = ConfigCoverage::hinted_report::<Demo>(mixed_consumed);
+        let concat: Vec<SurfaceHint<'_>> = mixed_hinted
+            .hints_by_surface()
+            .into_iter()
+            .flat_map(|(_, bucket)| bucket)
+            .collect();
+        let straight: Vec<SurfaceHint<'_>> = mixed_hinted.hint_iter().collect();
+        assert_eq!(concat, straight);
+        assert_eq!(concat.len(), mixed_hinted.hint_count());
+        assert_eq!(concat.len(), 2, "mixed corner: both own arms contribute");
+    }
+
+    #[test]
+    fn hinted_coverage_hints_by_surface_bucket_len_agrees_with_hint_counts_by_surface_pointwise() {
+        // The enumeration-side vs count-side agreement of the two
+        // sub-report histogram peers: for every surface, the bucket's
+        // `.len()` equals the count histogram entry (both projections
+        // of `hint_iter` partitioned by surface at the coverage
+        // sub-report scope). Pins the two sub-report histograms — which
+        // could otherwise silently drift if one is refactored to a
+        // shortcut that skips a surface — to the same underlying
+        // per-surface fold. Direct sub-report peer of
+        // `hints_by_surface_bucket_len_agrees_with_hint_counts_by_surface_pointwise`
+        // one scope up. Verified on a mixed corner where BOTH own arms
+        // are dirty, so at least one entry lands on each side of the
+        // zero-count boundary (the two foreign entries always land on
+        // the empty/zero side by the sub-report-bounded fact).
+        let mixed_consumed = &["name", "tags", "window.witdh", "window.height"];
+        let mixed_hinted = ConfigCoverage::hinted_report::<Demo>(mixed_consumed);
+        let buckets = mixed_hinted.hints_by_surface();
+        let counts = mixed_hinted.hint_counts_by_surface();
+        assert_eq!(buckets.len(), counts.len());
+        for ((b_surface, bucket), (c_surface, c_count)) in buckets.iter().zip(counts.iter()) {
+            assert_eq!(
+                b_surface, c_surface,
+                "histograms must yield surfaces in the same order",
+            );
+            assert_eq!(
+                bucket.len(),
+                *c_count,
+                "surface={b_surface:?}: bucket len must equal hint_count entry",
+            );
+        }
+    }
+
+    #[test]
+    fn hinted_coverage_hints_by_surface_bucket_is_empty_agrees_with_is_clean_by_surfaces_pointwise()
+    {
+        // The enumeration-side vs bool-side agreement of the two
+        // sub-report histogram peers, closing the count×bool×enum
+        // triangle at the sub-report scope: for every surface, the
+        // bucket's `.is_empty()` equals the is_clean histogram entry
+        // (both projections of `hint_iter` partitioned by surface at
+        // the coverage sub-report scope). Pins the three sub-report
+        // histograms to the same underlying per-surface fold. Direct
+        // sub-report peer of
+        // `hints_by_surface_bucket_is_empty_agrees_with_is_clean_by_surfaces_pointwise`
+        // one scope up. Verified on a mixed corner where BOTH own arms
+        // are dirty, so at least one entry lands on each side of the
+        // empty/clean boundary (the two foreign entries always land on
+        // the empty/clean side by the sub-report-bounded fact).
+        let mixed_consumed = &["name", "tags", "window.witdh", "window.height"];
+        let mixed_hinted = ConfigCoverage::hinted_report::<Demo>(mixed_consumed);
+        let buckets = mixed_hinted.hints_by_surface();
+        let bools = mixed_hinted.is_clean_by_surfaces();
+        assert_eq!(buckets.len(), bools.len());
+        for ((b_surface, bucket), (i_surface, clean)) in buckets.iter().zip(bools.iter()) {
+            assert_eq!(
+                b_surface, i_surface,
+                "histograms must yield surfaces in the same order",
+            );
+            assert_eq!(
+                bucket.is_empty(),
+                *clean,
+                "surface={b_surface:?}: bucket.is_empty() must equal is_clean entry",
+            );
+        }
+    }
+
+    #[test]
+    fn hinted_coverage_hints_by_surface_tag_sequence_equals_hint_surface_all() {
+        // The tag-order invariant on the sub-report enumeration-side
+        // batch peer, verified independently of the buckets: the
+        // sequence of surface tags in the returned array equals
+        // `HintSurface::ALL` verbatim on any corner (a clean sub-report
+        // reveals ordering regressions even when every bucket is
+        // empty). Direct sub-report peer of
+        // `hints_by_surface_tag_sequence_equals_hint_surface_all` one
+        // scope up — a future reorder on any of the three (batch peer,
+        // ALL const, hint_iter_by_surface) turns red at the earliest
+        // seam.
+        let hinted = ConfigCoverage::hinted_report::<Demo>(&[
+            "name",
+            "tags",
+            "window.width",
+            "window.height",
+        ]);
+        let observed: Vec<HintSurface> =
+            hinted.hints_by_surface().iter().map(|(s, _)| *s).collect();
+        assert_eq!(observed, HintSurface::ALL.to_vec());
+    }
+
+    #[test]
+    fn hinted_coverage_hints_by_surface_length_matches_hint_surface_all_length() {
+        // The array's type-level cardinality — const-evaluated from
+        // `HintSurface::ALL.len()` at the return-type declaration —
+        // must equal the const's own length at runtime, so a consumer
+        // that destructures the array via a
+        // `[(_, a), (_, b), (_, c), (_, d)]` pattern (or reserves a
+        // fixed-size buffer sized by the const) never sees a partial
+        // histogram. Guaranteed by construction; pinned here at read
+        // time so a future refactor that switches the return type to
+        // `Vec<...>` or a `BTreeMap<...>` (either of which could
+        // silently return fewer than every surface) turns red.
+        let hinted = ConfigCoverage::hinted_report::<Demo>(&[
+            "name",
+            "tags",
+            "window.width",
+            "window.height",
+        ]);
+        assert_eq!(hinted.hints_by_surface().len(), HintSurface::ALL.len());
+    }
+
+    #[test]
+    fn hinted_coverage_hints_by_surface_is_empty_on_foreign_surfaces() {
+        // The sub-report-bounded fact promoted from the scalar peer's
+        // `hint_iter_by_surface` foreign-empty pointwise fact to the
+        // plural batch peer's enumeration side: at the
+        // HintedCoverageReport scope, the two [`HintSurface::ValueKey`]
+        // / [`HintSurface::EnvVar`] entries of the returned array are
+        // ALWAYS `(surface, <empty vec>)`, on the dirtiest sub-report
+        // corner available (both own-surface arms nonzero, both
+        // `did_you_mean`-populated). The whole-report batch peer's
+        // per-surface buckets depend on the whole-report iter on those
+        // surfaces (nonzero ValueKey / EnvVar buckets show up in its
+        // histogram); the sub-report batch peer is BOUNDED to empty on
+        // those two buckets by the sub-report's structure. So the
+        // sub-report histogram carries an `(empty, empty)` foreign pair
+        // on ANY sub-report — a golden fixture that pins the two
+        // foreign entries as empty cannot be defeated by a whole-report
+        // input. Direct enumeration-side peer of
+        // `hinted_coverage_hint_counts_by_surface_is_zero_on_foreign_surfaces`
+        // (count side) and
+        // `hinted_coverage_is_clean_by_surfaces_is_true_on_foreign_surfaces`
+        // (bool side).
+        let consumed = &["name", "tags", "window.witdh", "window.height"];
+        let hinted = ConfigCoverage::hinted_report::<Demo>(consumed);
+        assert_eq!(hinted.hint_count(), 2);
+        let hist = hinted.hints_by_surface();
+        // Own-surface buckets are nonempty (the sub-report scope
+        // carries hints on both own arms), so the two foreign empties
+        // are a bounded fact and not vacuous.
+        assert_eq!(hist[0].0, HintSurface::DeadKnob);
+        assert!(
+            !hist[0].1.is_empty(),
+            "DeadKnob bucket must be nonempty: {hist:?}"
+        );
+        assert_eq!(hist[1].0, HintSurface::StaleEntry);
+        assert!(
+            !hist[1].1.is_empty(),
+            "StaleEntry bucket must be nonempty: {hist:?}"
+        );
+        assert_eq!(hist[2].0, HintSurface::ValueKey);
+        assert!(hist[2].1.is_empty());
+        assert_eq!(hist[3].0, HintSurface::EnvVar);
+        assert!(hist[3].1.is_empty());
+    }
+
+    #[test]
+    fn hinted_coverage_hints_by_surface_matches_health_report_on_own_surfaces() {
+        // The whole-report/sub-report compositional wiring at the
+        // enumeration-side plural batch layer: for `s ∈
+        // {HintSurface::DeadKnob, HintSurface::StaleEntry}` — the two
+        // own surfaces of this sub-report — the corresponding entry of
+        // `hinted.hints_by_surface()` equals the corresponding entry of
+        // `health.hints_by_surface()` on shared inputs. The direct
+        // enumeration-side batch peer of
+        // `hinted_coverage_hint_counts_by_surface_matches_health_report_on_own_surfaces`
+        // one axis over on the count side and
+        // `hinted_coverage_is_clean_by_surfaces_matches_health_report_on_own_surfaces`
+        // one axis over on the bool side. Together the three axis
+        // peers close the count×bool×enum plural-batch compositional
+        // triangle across the whole-report/sub-report boundary. A
+        // future refactor of either side that reroutes a
+        // coverage-surface tag away from the coverage sub-report breaks
+        // this weld on whichever corner exposes it. Verified on a
+        // construction where BOTH the whole-report and sub-report
+        // corners have real hints on both own surfaces AND the
+        // whole-report carries additional hints on ValueKey / EnvVar
+        // (so the identity is a real own-surface fact, not a vacuous
+        // whole-equals-whole with both scopes trivially clean, and the
+        // two foreign-surface buckets diverge across scopes — empty at
+        // the sub-report scope, nonempty at the whole-report scope —
+        // which the test also pins as a live premise).
+        let consumed = &["name", "tags", "window.witdh", "window.height"];
+        let yaml = "\
+name: kanchi
+window:
+  width: 100
+  height: 40
+tags: []
+value_only_leaf: 1
+";
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let env: Vec<(String, String)> = vec![("MYAPP_ENV_ONLY_LEAF".into(), "x".into())];
+        let health = ConfigCoverage::health_report::<Demo, _, _>(consumed, &value, "MYAPP_", &env);
+        let sub_hist = health.coverage.hints_by_surface();
+        let whole_hist = health.hints_by_surface();
+        // Same tag order (both fold through HintSurface::ALL), so
+        // pointwise indexing lines up own-surface (i=0,1) with
+        // own-surface and foreign-surface (i=2,3) with foreign-surface
+        // across the two scopes.
+        for i in 0..HintSurface::ALL.len() {
+            assert_eq!(sub_hist[i].0, whole_hist[i].0, "position {i}: tag");
+        }
+        // Own-surface positions (DeadKnob, StaleEntry): sub-report
+        // bucket equals whole-report bucket element-for-element and
+        // both are nonempty.
+        for i in 0..2 {
+            assert_eq!(sub_hist[i].1, whole_hist[i].1, "own position {i}");
+            assert!(
+                !sub_hist[i].1.is_empty(),
+                "own position {i}: sub-report bucket must be nonempty for this test's premise",
+            );
+        }
+        // Foreign-surface positions (ValueKey, EnvVar): sub-report
+        // bucket is empty (bounded fact) while whole-report bucket is
+        // nonempty — the sub-report's foreign empty holds on a
+        // whole-report carrying hints on every surface, not just on a
+        // coverage-only construction.
+        for i in 2..HintSurface::ALL.len() {
+            assert!(sub_hist[i].1.is_empty(), "foreign position {i}: sub-report");
+            assert!(
+                !whole_hist[i].1.is_empty(),
+                "foreign position {i}: whole-report bucket must be nonempty for this test's premise",
             );
         }
     }
