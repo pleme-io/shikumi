@@ -9607,6 +9607,114 @@ impl ConfigDiff {
         self.kind_histogram().unobserved_cells()
     }
 
+    /// The **first-absent kind** — the earliest [`DiffLineKind`] (in
+    /// [`ClosedAxis::ALL`] / [`DiffLineKind::ALL`] declaration order —
+    /// `Removed → Added → Context`) whose count is zero on this diff,
+    /// or [`None`] on the full-cover diff (every kind has ≥1 line).
+    ///
+    /// The **head-projection peer** of [`Self::absent_kinds`] (the
+    /// coverage-gap `Vec` peer) and [`Self::absent_kinds_count`] (the
+    /// coverage-gap scalar-count peer) on the diff altitude — the
+    /// [`Option`]-shaped projection of the same coverage gap that the
+    /// two sibling peers materialise in full. The diff-altitude peer of
+    /// [`crate::ProvenanceMap::first_absent_tier`] on the tier altitude
+    /// and of [`crate::ConfigSourceChain::first_absent_layer_kind`] /
+    /// [`crate::ConfigSourceChain::first_absent_file_format`] /
+    /// [`crate::ConfigSourceChain::first_absent_env_prefix_kind`] on
+    /// the three chain sub-axes; the coverage-gap side of the pair
+    /// closed on the observed side by
+    /// [`crate::ProvenanceMap::first_contributing_tier`] and the three
+    /// `ConfigSourceChain::first_present_*` chain sub-axis peers.
+    ///
+    /// Where [`Self::absent_kinds`] returns *every* absent kind (a
+    /// `Vec<DiffLineKind>` a caller must allocate even to read the
+    /// first entry) and [`Self::absent_kinds_count`] returns *how many*
+    /// kinds are absent (a `usize` that discards the identity of any
+    /// single kind), this returns *which kind is absent first* as one
+    /// [`Option<DiffLineKind>`] — the shape an early-exit coverage-gap
+    /// diagnostic ("report the earliest absent kind and stop"), a
+    /// first-fail attestation manifest field ("record the primary
+    /// coverage-gap kind on this diff snapshot"), or a compact
+    /// `/healthz/diff` endpoint payload ("first absent kind in
+    /// declaration order, or null if full cover") actually wants (no
+    /// need to allocate the absent-kind list only to read its head, no
+    /// need to walk the rest once the first hit lands).
+    ///
+    /// Routes through [`Self::kind_histogram`]:
+    /// [`crate::AxisHistogram::unobserved`] iterates the histogram's
+    /// coverage-gap cells in [`crate::ClosedAxis::ALL`] declaration
+    /// order (the [`DiffLineKind`] canonical order), and
+    /// [`Iterator::next`] reads its head — the closed-axis discipline
+    /// provides deterministic first-cell selection automatically, so
+    /// this method reads directly off the shikumi cube-native primitive
+    /// instead of hand-rolling
+    /// `DiffLineKind::ALL.iter().copied().find(|k|
+    /// self.kind_histogram().count(*k) == 0)` at every operator-facing
+    /// consumer asking *"which diff kind is the earliest to have been
+    /// silent on this render?"*.
+    ///
+    /// **Empty-diff convention** — returns
+    /// [`Some(DiffLineKind::Removed)`][DiffLineKind::Removed] (not
+    /// [`None`]), matching the [`Self::absent_kinds`] full-axis
+    /// convention: an empty diff has every cell absent, and the head of
+    /// [`DiffLineKind::ALL`] is [`DiffLineKind::Removed`]. The [`None`]
+    /// boundary is *full cover*, not empty. Consumers distinguishing
+    /// "no diff has been rendered yet" from "diff rendered with full
+    /// cover" should gate on `self.lines.is_empty()` separately — the
+    /// two boundaries are distinct.
+    ///
+    /// # Invariants
+    ///
+    /// - `first_absent_kind() == kind_histogram().unobserved().next()`
+    ///   — both project the same coverage-gap head off the same
+    ///   primitive; the named seam is the cube-native routing of the
+    ///   histogram surface.
+    /// - `first_absent_kind() == absent_kinds().first().copied()` —
+    ///   the head-projection peer of the coverage-gap `Vec` peer;
+    ///   both name the same first-absent cell without materialising
+    ///   the full vector.
+    /// - `first_absent_kind().is_none() ==
+    ///   kind_histogram().is_full_cover()` — the [`None`] boundary is
+    ///   the full-cover boundary: no coverage-gap head means every
+    ///   diff kind is observed. The head-projection peer of the
+    ///   [`Self::absent_kinds_count`] `== 0 ⇔ is_full_cover()`
+    ///   boundary.
+    /// - `first_absent_kind().is_some() ==
+    ///   !kind_histogram().is_full_cover()` — the [`Some`] boundary is
+    ///   the non-full-cover boundary; the contrapositive of the
+    ///   [`None`] boundary above, welded separately as a positive-form
+    ///   fact.
+    /// - When `Some(k)`, `k` is a member of [`Self::absent_kinds`] —
+    ///   the coverage-gap head is by definition an absent cell.
+    /// - When `Some(k)`, `k` is **not** a member of
+    ///   [`Self::present_kinds`] — the observed / coverage-gap
+    ///   partition is disjoint; the head-projection peer of the
+    ///   [`tests::absent_kinds_and_present_kinds_partition_axis`]
+    ///   disjointness law.
+    /// - `first_absent_kind()` on an empty [`ConfigDiff`] equals
+    ///   [`Some(DiffLineKind::Removed)`][DiffLineKind::Removed] — the
+    ///   empty-diff convention: every cell absent, head of
+    ///   [`DiffLineKind::ALL`] is [`DiffLineKind::Removed`].
+    /// - `first_absent_kind()` yields in [`crate::axis_ordinal`] order
+    ///   on [`DiffLineKind`] — the head of a strictly-ascending list
+    ///   is the minimum, so the kind returned is minimal by axis
+    ///   ordinal among absent kinds.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the
+    /// coverage-gap scan, short-circuited on the first zero cell). Both
+    /// are `O(n)` in practice since the diff-cell axis carries a fixed
+    /// three-cell cardinality; the returned [`Option<DiffLineKind>`]
+    /// reads one cell. Elides the `Vec<DiffLineKind>` allocation the
+    /// previous `absent_kinds().first().copied()` idiom paid on every
+    /// call site.
+    #[must_use]
+    pub fn first_absent_kind(&self) -> Option<DiffLineKind> {
+        self.kind_histogram().unobserved().next()
+    }
+
     /// The [`DiffLineKind`] whose lines dominate this diff by count —
     /// the modal cell of [`Self::kind_histogram`] on the diff altitude.
     /// `None` exactly when the diff is empty (no lines).
@@ -17868,6 +17976,244 @@ mod tests {
             ],
         };
         assert_eq!(two_kind.absent_kinds_count(), 1);
+    }
+
+    // ── ConfigDiff::first_absent_kind — head-projection peer of
+    //    absent_kinds / absent_kinds_count on the diff altitude ──
+
+    fn first_absent_kind_fixtures() -> [ConfigDiff; 6] {
+        [
+            // Empty diff — every cell absent, full coverage-gap:
+            // `first_absent_kind() == Some(Removed)` (head of ALL).
+            ConfigDiff::default(),
+            // Context-only — {Removed, Added} absent, head is Removed.
+            ConfigDiff {
+                lines: vec![DiffLine::Context("a".into()), DiffLine::Context("b".into())],
+            },
+            // Removed-only — {Added, Context} absent, head is Added.
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Removed("r2".into()),
+                ],
+            },
+            // Added-only — {Removed, Context} absent, head is Removed.
+            ConfigDiff {
+                lines: vec![DiffLine::Added("a".into())],
+            },
+            // Removed + Added — {Context} absent, head is Context.
+            ConfigDiff {
+                lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+            },
+            // Full cover (all three kinds present) — coverage-gap empty,
+            // head is None.
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Added("a".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ]
+    }
+
+    #[test]
+    fn first_absent_kind_matches_kind_histogram_unobserved_next() {
+        // The delegation pin: `first_absent_kind` routes through
+        // `kind_histogram().unobserved().next()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Diff-altitude peer
+        // of `first_absent_tier_matches_tier_histogram_unobserved_next`
+        // on the tier altitude.
+        for diff in first_absent_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().unobserved().next();
+            assert_eq!(diff.first_absent_kind(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn first_absent_kind_matches_absent_kinds_first_copied() {
+        // The head-projection pin: `first_absent_kind` is the
+        // `Option`-shaped head of the coverage-gap `Vec` — reading it
+        // through the named seam must return the same cell as
+        // `absent_kinds().first().copied()`, on every fixture. The
+        // Vec-first peer of the histogram-next delegation pin above.
+        // Diff-altitude peer of
+        // `first_absent_tier_matches_absent_tiers_first_copied` on the
+        // tier altitude.
+        for diff in first_absent_kind_fixtures() {
+            assert_eq!(
+                diff.first_absent_kind(),
+                diff.absent_kinds().first().copied(),
+            );
+        }
+    }
+
+    #[test]
+    fn first_absent_kind_is_none_iff_kind_histogram_is_full_cover() {
+        // The [`None`] boundary law: no coverage-gap head means every
+        // diff kind is observed at least once. Verified on every
+        // fixture including the synthetic full-cover fixture that
+        // witnesses the [`None`] side (Removed + Added + Context all
+        // present). Peer of
+        // `first_absent_tier_is_none_iff_tier_histogram_is_full_cover`
+        // on the tier altitude.
+        for diff in first_absent_kind_fixtures() {
+            assert_eq!(
+                diff.first_absent_kind().is_none(),
+                diff.kind_histogram().is_full_cover(),
+            );
+        }
+    }
+
+    #[test]
+    fn first_absent_kind_is_some_iff_kind_histogram_is_not_full_cover() {
+        // The [`Some`] boundary law (contrapositive of the [`None`]
+        // boundary above), welded as a positive-form fact so a future
+        // refactor to a differently-signed `is_full_cover` predicate
+        // has to touch both welds. Peer of
+        // `first_absent_tier_is_some_iff_tier_histogram_is_not_full_cover`
+        // on the tier altitude.
+        for diff in first_absent_kind_fixtures() {
+            assert_eq!(
+                diff.first_absent_kind().is_some(),
+                !diff.kind_histogram().is_full_cover(),
+            );
+        }
+    }
+
+    #[test]
+    fn first_absent_kind_empty_diff_is_removed() {
+        // Empty-diff convention: every cell absent, head of
+        // `DiffLineKind::ALL` is `Removed`. The empty-diff /
+        // full-coverage-gap boundary head — distinct from the
+        // full-cover boundary which yields `None`. Peer of
+        // `first_absent_tier_empty_map_is_bare` on the tier altitude
+        // and of `absent_kinds_empty_diff_is_full_axis` on the same
+        // altitude.
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.first_absent_kind(), Some(DiffLineKind::Removed));
+    }
+
+    #[test]
+    fn first_absent_kind_context_only_diff_is_removed() {
+        // Direct fixture pin: a diff composed only of Context lines
+        // has {Removed, Added} as its coverage gap, and the FIRST
+        // absent kind in declaration order is Removed (head of
+        // `DiffLineKind::ALL`). Head-projection peer of
+        // `absent_kinds_context_only_diff_is_added_and_removed` on the
+        // same altitude.
+        let ctx_only = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("a".into()),
+                DiffLine::Context("b".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(ctx_only.first_absent_kind(), Some(DiffLineKind::Removed));
+    }
+
+    #[test]
+    fn first_absent_kind_removed_and_added_diff_is_context() {
+        // Direct fixture pin: a diff with only Removed + Added lines
+        // (no Context) has {Context} as its sole coverage-gap cell —
+        // the FIRST (and only) absent kind is Context, the last cell
+        // in `DiffLineKind::ALL` declaration order. Witnesses that the
+        // head-projection walks the full axis when the coverage gap
+        // sits at the tail, not just the head.
+        let changes_only = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a1".into()),
+                DiffLine::Added("a2".into()),
+            ],
+        };
+        assert_eq!(
+            changes_only.first_absent_kind(),
+            Some(DiffLineKind::Context),
+        );
+    }
+
+    #[test]
+    fn first_absent_kind_full_cover_diff_is_none() {
+        // Direct pin on the full-cover diff: every DiffLineKind
+        // (Removed, Added, Context) has ≥1 line, so the coverage gap
+        // is empty and the head-projection returns None. The
+        // synthetic-fixture peer of the [`None`]-boundary law above
+        // that witnesses the True side of the full-cover predicate
+        // through the current fixture set.
+        let full_cover = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(full_cover.kind_histogram().is_full_cover());
+        assert_eq!(full_cover.first_absent_kind(), None);
+    }
+
+    #[test]
+    fn first_absent_kind_is_member_of_absent_kinds_when_some() {
+        // Membership pin: when the coverage-gap head is present, it is
+        // definitionally a member of the coverage-gap vector. A future
+        // drift where the head-projection reads off a different set
+        // (say, `DiffLineKind::ALL` head or `present_kinds` head)
+        // would light this. Peer of
+        // `first_absent_tier_is_member_of_absent_tiers_when_some` on
+        // the tier altitude.
+        for diff in first_absent_kind_fixtures() {
+            if let Some(k) = diff.first_absent_kind() {
+                assert!(
+                    diff.absent_kinds().contains(&k),
+                    "first_absent_kind {k:?} not in absent_kinds {:?}",
+                    diff.absent_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn first_absent_kind_is_not_member_of_present_kinds_when_some() {
+        // Disjointness pin: the observed / coverage-gap partition is
+        // disjoint on the diff-kind axis, and the head-projection peer
+        // of the coverage-gap side must not report a member of the
+        // observed side. The head-projection peer of
+        // `absent_kinds_and_present_kinds_partition_axis` on the
+        // false side. Peer of
+        // `first_absent_tier_is_not_member_of_contributing_tiers_when_some`
+        // on the tier altitude.
+        for diff in first_absent_kind_fixtures() {
+            if let Some(k) = diff.first_absent_kind() {
+                assert!(
+                    !diff.present_kinds().contains(&k),
+                    "first_absent_kind {k:?} appears in present_kinds {:?}",
+                    diff.present_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn first_absent_kind_is_minimum_absent_kind_by_axis_ordinal() {
+        // The declaration-order head pin: the returned kind (when
+        // Some) has the minimum `axis_ordinal` among all absent
+        // kinds. The unobserved-cells iterator yields in
+        // `ClosedAxis::ALL` declaration order (which is axis-ordinal
+        // order by construction), so the head is the argmin — a
+        // future drift where the coverage-gap walk reversed order (or
+        // picked argmax instead) would light this. Peer of
+        // `first_absent_tier_is_minimum_absent_tier_by_axis_ordinal`
+        // on the tier altitude.
+        for diff in first_absent_kind_fixtures() {
+            let head = diff.first_absent_kind();
+            let min_by_ordinal = diff
+                .absent_kinds()
+                .into_iter()
+                .min_by_key(|k| crate::axis_ordinal(*k));
+            assert_eq!(head, min_by_ordinal);
+        }
     }
 
     // ── ConfigDiff::dominant_kind — modal-cell scalar peer on the diff altitude ──
