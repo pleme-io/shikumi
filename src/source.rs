@@ -17318,6 +17318,177 @@ pub trait ConfigSourceChain {
         self.env_prefix_kind_histogram().unobserved_cells()
     }
 
+    /// The **first-absent env-prefix kind** — the earliest
+    /// [`EnvMetadataTagKind`] (in [`EnvMetadataTagKind::ALL`]
+    /// declaration order — `Prefixed → Bare`) whose entries produced
+    /// **zero** contributing [`ConfigSource::Env`] layers on this
+    /// chain, or [`None`] when every kind contributed at least one
+    /// `Env` layer. Returns
+    /// [`Some(EnvMetadataTagKind::Prefixed)`][EnvMetadataTagKind::Prefixed]
+    /// on any chain whose [`Self::env_prefix_kind_histogram`] is empty
+    /// — the empty chain, and every non-empty chain of only
+    /// [`ConfigSource::Defaults`] / [`ConfigSource::File`] layers (each
+    /// of which projects to [`None`] through
+    /// [`ConfigSource::env_prefix_kind`], leaving the histogram empty
+    /// and every kind in the coverage gap).
+    ///
+    /// The **head-projection peer** of [`Self::absent_env_prefix_kinds`]
+    /// (the coverage-gap `Vec` peer) and
+    /// [`Self::absent_env_prefix_kinds_count`] (the coverage-gap
+    /// scalar-count peer) on the env-prefix-presence sub-axis of the
+    /// chain altitude — the [`Option`]-shaped projection of the same
+    /// coverage-gap that the two sibling peers materialise in full.
+    /// Sister of [`Self::first_absent_file_format`] and
+    /// [`Self::first_absent_layer_kind`] on the sibling sub-axes of
+    /// the same chain-shape surface: all three project the coverage-
+    /// gap head of their local closed-axis histogram off the shared
+    /// [`crate::AxisHistogram::unobserved`] iterator's
+    /// [`Iterator::next`] head. Direct chain-altitude sister of
+    /// [`crate::ProvenanceMap::first_absent_tier`] on the tier
+    /// altitude one altitude above. The coverage-gap dual of the
+    /// modal-observed pair [`Self::dominant_env_prefix_kind`] (argmax
+    /// observed cell) and [`Self::recessive_env_prefix_kind`] (argmin
+    /// observed cell) which already claim the observed-side
+    /// [`Option`]-shaped peers on this sub-axis.
+    ///
+    /// Where [`Self::absent_env_prefix_kinds`] returns *every* absent
+    /// kind (a `Vec<EnvMetadataTagKind>` a caller must allocate even
+    /// to read the first entry) and
+    /// [`Self::absent_env_prefix_kinds_count`] returns *how many* kinds
+    /// are absent (a `usize` that discards the identity of any single
+    /// kind), this returns *which kind is absent first* as one
+    /// [`Option<EnvMetadataTagKind>`] — the shape an early-exit
+    /// coverage-gap diagnostic (*"report the earliest missing env-
+    /// prefix kind and stop"*), a first-fail attestation manifest
+    /// field (*"record the primary missing env-prefix kind on this
+    /// recipe snapshot"*), or a compact `/healthz/config` endpoint
+    /// payload (*"first absent env-prefix kind in declaration order,
+    /// or null if full cover"*) actually wants (no need to allocate
+    /// the absent-kind list only to read its head, no need to walk
+    /// the rest once the first hit lands).
+    ///
+    /// Routes through [`Self::env_prefix_kind_histogram`]:
+    /// [`crate::AxisHistogram::unobserved`] iterates the histogram's
+    /// coverage-gap cells in [`crate::ClosedAxis::ALL`] declaration
+    /// order (the [`EnvMetadataTagKind`] canonical order
+    /// `Prefixed → Bare`), and [`Iterator::next`] reads its head —
+    /// the closed-axis discipline provides deterministic first-cell
+    /// selection automatically, so this method reads directly off the
+    /// shikumi cube-native primitive instead of hand-rolling
+    /// `EnvMetadataTagKind::ALL.iter().copied().find(|k|
+    /// self.env_prefix_kind_histogram().count(*k) == 0)` at every
+    /// operator-facing consumer asking *"which env-prefix kind is the
+    /// earliest to be silent on this recipe?"*.
+    ///
+    /// **Empty-histogram convention** — returns
+    /// [`Some(EnvMetadataTagKind::Prefixed)`][EnvMetadataTagKind::Prefixed]
+    /// (not [`None`]), matching the [`Self::absent_env_prefix_kinds`]
+    /// full-axis convention: an empty histogram has every cell absent,
+    /// and the head of [`EnvMetadataTagKind::ALL`] is
+    /// [`EnvMetadataTagKind::Prefixed`]. The [`None`] boundary is
+    /// *full cover*, not empty-histogram. Like
+    /// [`Self::first_absent_file_format`] and unlike
+    /// [`Self::first_absent_layer_kind`], the full-axis boundary is
+    /// tied to the histogram's own emptiness, **not** the chain's: a
+    /// non-empty chain of only [`ConfigSource::Defaults`] /
+    /// [`ConfigSource::File`] layers still reports
+    /// [`Some(EnvMetadataTagKind::Prefixed)`][EnvMetadataTagKind::Prefixed]
+    /// because every entry projects to [`None`] through
+    /// [`ConfigSource::env_prefix_kind`], leaving the histogram empty
+    /// and every env-prefix kind in the coverage gap.
+    ///
+    /// # Invariants
+    ///
+    /// - `first_absent_env_prefix_kind() == env_prefix_kind_histogram().unobserved().next()`
+    ///   — both project the same coverage-gap head off the same
+    ///   primitive; the named seam is the cube-native routing of the
+    ///   chain-shape surface. Pinned by
+    ///   [`tests::first_absent_env_prefix_kind_matches_env_prefix_kind_histogram_unobserved_next`].
+    /// - `first_absent_env_prefix_kind() == absent_env_prefix_kinds().first().copied()`
+    ///   — the head-projection peer of the coverage-gap `Vec` peer;
+    ///   both name the same first-absent cell without materialising
+    ///   the full vector. Pinned by
+    ///   [`tests::first_absent_env_prefix_kind_matches_absent_env_prefix_kinds_first_copied`].
+    /// - `first_absent_env_prefix_kind().is_none() ==
+    ///   env_prefix_kind_histogram().is_full_cover()` — the [`None`]
+    ///   boundary is the full-cover boundary: no coverage-gap head
+    ///   means every kind contributed. The head-projection peer of
+    ///   the [`Self::absent_env_prefix_kinds_count`] `== 0 ⇔
+    ///   is_full_cover()` boundary. Pinned by
+    ///   [`tests::first_absent_env_prefix_kind_is_none_iff_env_prefix_kind_histogram_is_full_cover`].
+    /// - `first_absent_env_prefix_kind().is_some() ==
+    ///   !env_prefix_kind_histogram().is_full_cover()` — the [`Some`]
+    ///   boundary is the non-full-cover boundary; the contrapositive
+    ///   of the [`None`] boundary above, welded separately as a
+    ///   positive-form fact. Pinned by
+    ///   [`tests::first_absent_env_prefix_kind_is_some_iff_env_prefix_kind_histogram_is_not_full_cover`].
+    /// - When `Some(k)`, `k` is a member of
+    ///   [`Self::absent_env_prefix_kinds`] — the coverage-gap head is
+    ///   by definition an absent cell. Pinned by
+    ///   [`tests::first_absent_env_prefix_kind_is_member_of_absent_env_prefix_kinds_when_some`].
+    /// - When `Some(k)`, `k` is **not** a member of
+    ///   [`Self::present_env_prefix_kinds`] — the observed / coverage-
+    ///   gap partition is disjoint; the head-projection peer of the
+    ///   [`tests::absent_env_prefix_kinds_and_present_env_prefix_kinds_partition_axis`]
+    ///   disjointness law. Pinned by
+    ///   [`tests::first_absent_env_prefix_kind_is_not_member_of_present_env_prefix_kinds_when_some`].
+    /// - `first_absent_env_prefix_kind()` on an empty chain equals
+    ///   [`Some(EnvMetadataTagKind::Prefixed)`][EnvMetadataTagKind::Prefixed]
+    ///   — the empty-chain / empty-histogram / full-coverage-gap
+    ///   boundary head. Pinned by
+    ///   [`tests::first_absent_env_prefix_kind_empty_chain_is_prefixed`].
+    /// - `first_absent_env_prefix_kind()` on a non-empty chain of only
+    ///   [`ConfigSource::Defaults`] / [`ConfigSource::File`] layers
+    ///   equals
+    ///   [`Some(EnvMetadataTagKind::Prefixed)`][EnvMetadataTagKind::Prefixed]
+    ///   — the non-empty-chain / empty-histogram / full-coverage-gap
+    ///   boundary the env-prefix-presence sub-axis pins that the
+    ///   layer-kind sub-axis does not (divergent presence-bound, same
+    ///   divergence as the file-format sub-axis). Pinned by
+    ///   [`tests::first_absent_env_prefix_kind_no_env_layers_is_prefixed`].
+    /// - `first_absent_env_prefix_kind()` on the prefixed-only chain
+    ///   (`Env("APP_")` layers only) equals
+    ///   [`Some(EnvMetadataTagKind::Bare)`][EnvMetadataTagKind::Bare]
+    ///   — the singleton-observed corner one past the axis head, the
+    ///   coverage-gap head being NON-axis-head. Distinguishes the
+    ///   declaration-order semantics from any implementation
+    ///   unconditionally returning the axis head on a non-empty
+    ///   histogram. Pinned by
+    ///   [`tests::first_absent_env_prefix_kind_prefixed_only_chain_is_bare`].
+    /// - `first_absent_env_prefix_kind()` on the bare-only chain
+    ///   (`Env("")` layers only) equals
+    ///   [`Some(EnvMetadataTagKind::Prefixed)`][EnvMetadataTagKind::Prefixed]
+    ///   — the singleton-observed corner where the NON-empty
+    ///   histogram still yields the axis-head coverage-gap-head (the
+    ///   observed cell was one past the axis head, so the axis head
+    ///   remains absent). Pinned by
+    ///   [`tests::first_absent_env_prefix_kind_bare_only_chain_is_prefixed`].
+    /// - `first_absent_env_prefix_kind()` yields in
+    ///   [`crate::axis_ordinal`] order on [`EnvMetadataTagKind`] —
+    ///   the head of a strictly-ascending list is the minimum, so the
+    ///   kind returned is minimal by axis ordinal among absent kinds.
+    ///   Pinned by
+    ///   [`tests::first_absent_env_prefix_kind_is_minimum_absent_env_prefix_kind_by_axis_ordinal`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.as_ref().len()` (the histogram
+    /// build) and `k = crate::axis_cardinality::<EnvMetadataTagKind>()`
+    /// (the coverage-gap scan, short-circuited on the first zero
+    /// cell). Both are `O(n)` in practice since the env-prefix-
+    /// presence axis carries a fixed two-cell cardinality; the
+    /// returned [`Option<EnvMetadataTagKind>`] reads one cell. Elides
+    /// the `Vec<EnvMetadataTagKind>` allocation the previous
+    /// `absent_env_prefix_kinds().first().copied()` idiom paid on
+    /// every call site.
+    #[must_use]
+    fn first_absent_env_prefix_kind(&self) -> Option<EnvMetadataTagKind>
+    where
+        Self: AsRef<[ConfigSource]>,
+    {
+        self.env_prefix_kind_histogram().unobserved().next()
+    }
+
     /// The [`EnvMetadataTagKind`] whose entries produced the greatest number
     /// of contributing [`ConfigSource::Env`] layers on this chain — the modal
     /// cell of [`Self::env_prefix_kind_histogram`] on the chain altitude.
@@ -35221,6 +35392,303 @@ mod tests {
             chain.as_slice().absent_env_prefix_kinds_count(),
             crate::axis_cardinality::<EnvMetadataTagKind>(),
         );
+    }
+
+    // ---- ConfigSourceChain::first_absent_env_prefix_kind — head-
+    //      projection peer of absent_env_prefix_kinds /
+    //      absent_env_prefix_kinds_count on the env-prefix-presence
+    //      sub-axis of the chain altitude ----
+
+    fn first_absent_env_prefix_kind_fixtures() -> Vec<Vec<ConfigSource>> {
+        // Fixture cohort covering every reachable shape of the
+        // coverage-gap head-projection peer on the chain-altitude
+        // env-prefix-presence sub-axis:
+        // - `sample_chain`: two `.yaml` + one `Env("APP_")` → support
+        //   is {Prefixed} → gap is {Bare} → Some(Bare) (singleton-
+        //   gap, head one past the axis head).
+        // - defaults-only singleton: histogram empty → gap is the
+        //   whole axis → Some(Prefixed).
+        // - file-only singleton: histogram empty → gap is the whole
+        //   axis → Some(Prefixed) (the non-empty-chain / empty-
+        //   histogram / full-coverage-gap boundary shared with the
+        //   file-format sub-axis).
+        // - prefixed-only singleton: gap is {Bare} → Some(Bare)
+        //   (singleton-observed corner one past axis head, NON-axis-
+        //   head coverage-gap-head witness).
+        // - bare-only singleton: gap is {Prefixed} → Some(Prefixed)
+        //   (singleton-observed corner where the NON-empty histogram
+        //   still yields the axis-head coverage-gap-head — the
+        //   observed cell is one past the axis head, so the axis
+        //   head remains absent).
+        // - empty chain: gap is the entire axis → Some(Prefixed).
+        // - full-cover: one bare + one prefixed → gap is empty →
+        //   None.
+        vec![
+            sample_chain(),
+            vec![ConfigSource::Defaults],
+            vec![ConfigSource::File(PathBuf::from("/a.yaml"))],
+            vec![ConfigSource::Env("APP_".to_owned())],
+            vec![ConfigSource::Env(String::new())],
+            vec![],
+            vec![
+                ConfigSource::Env("APP_".to_owned()),
+                ConfigSource::Env(String::new()),
+            ],
+        ]
+    }
+
+    fn first_absent_env_prefix_kind_full_cover_chain() -> Vec<ConfigSource> {
+        // Synthetic uniform-cover chain witnessing the `None` corner
+        // of the head-projection peer explicitly (also present in
+        // `first_absent_env_prefix_kind_fixtures` as the last entry,
+        // but named separately so the direct positive pin can spell
+        // it).
+        vec![
+            ConfigSource::Env("APP_".to_owned()),
+            ConfigSource::Env(String::new()),
+        ]
+    }
+
+    #[test]
+    fn first_absent_env_prefix_kind_matches_env_prefix_kind_histogram_unobserved_next() {
+        // The delegation pin: `first_absent_env_prefix_kind` routes
+        // through `env_prefix_kind_histogram().unobserved().next()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either
+        // implementation stops projecting through the shared cube-
+        // native primitive. Sister of
+        // `first_absent_file_format_matches_file_format_histogram_unobserved_next`
+        // and `first_absent_layer_kind_matches_layer_kind_histogram_unobserved_next`
+        // one sub-axis over on the same chain altitude.
+        for chain in first_absent_env_prefix_kind_fixtures() {
+            let via_histogram = chain
+                .as_slice()
+                .env_prefix_kind_histogram()
+                .unobserved()
+                .next();
+            assert_eq!(
+                chain.as_slice().first_absent_env_prefix_kind(),
+                via_histogram,
+            );
+        }
+    }
+
+    #[test]
+    fn first_absent_env_prefix_kind_matches_absent_env_prefix_kinds_first_copied() {
+        // The head-projection pin: `first_absent_env_prefix_kind` is
+        // the `Option`-shaped head of the coverage-gap `Vec` peer —
+        // reading it through the named seam must return the same
+        // cell as `absent_env_prefix_kinds().first().copied()`, on
+        // every fixture. The Vec-first peer of the histogram-next
+        // delegation pin. Sister of
+        // `first_absent_file_format_matches_absent_file_formats_first_copied`
+        // one sub-axis over.
+        for chain in first_absent_env_prefix_kind_fixtures() {
+            assert_eq!(
+                chain.as_slice().first_absent_env_prefix_kind(),
+                chain.as_slice().absent_env_prefix_kinds().first().copied(),
+            );
+        }
+    }
+
+    #[test]
+    fn first_absent_env_prefix_kind_is_none_iff_env_prefix_kind_histogram_is_full_cover() {
+        // The [`None`] boundary law: no coverage-gap head means every
+        // env-prefix kind contributed at least one `Env` layer.
+        // Verified across the base fixture cohort (all non-full-
+        // cover) plus the synthetic `full_cover_chain` (one bare +
+        // one prefixed `Env` layer) so the [`None`] side of the
+        // biconditional is a bounded fact rather than vacuous.
+        // Sister of `first_absent_file_format_is_none_iff_file_format_histogram_is_full_cover`
+        // one sub-axis over.
+        for chain in first_absent_env_prefix_kind_fixtures() {
+            assert_eq!(
+                chain.as_slice().first_absent_env_prefix_kind().is_none(),
+                chain.as_slice().env_prefix_kind_histogram().is_full_cover(),
+            );
+        }
+        // Direct positive pin on the synthetic full-cover corner.
+        let full = first_absent_env_prefix_kind_full_cover_chain();
+        assert!(full.as_slice().env_prefix_kind_histogram().is_full_cover());
+        assert_eq!(full.as_slice().first_absent_env_prefix_kind(), None);
+    }
+
+    #[test]
+    fn first_absent_env_prefix_kind_is_some_iff_env_prefix_kind_histogram_is_not_full_cover() {
+        // The [`Some`] boundary law (contrapositive of the [`None`]
+        // boundary above), welded as a positive-form fact so a future
+        // refactor to a differently-signed `is_full_cover` predicate
+        // has to touch both welds. Sister of
+        // `first_absent_file_format_is_some_iff_file_format_histogram_is_not_full_cover`
+        // one sub-axis over.
+        for chain in first_absent_env_prefix_kind_fixtures() {
+            assert_eq!(
+                chain.as_slice().first_absent_env_prefix_kind().is_some(),
+                !chain.as_slice().env_prefix_kind_histogram().is_full_cover(),
+            );
+        }
+    }
+
+    #[test]
+    fn first_absent_env_prefix_kind_empty_chain_is_prefixed() {
+        // Empty-chain convention: histogram empty, every cell absent,
+        // head of `EnvMetadataTagKind::ALL` is `Prefixed`. The empty-
+        // chain / full-coverage-gap boundary head — distinct from the
+        // full-cover boundary which yields `None`. Sister of
+        // `first_absent_file_format_empty_chain_is_yaml` one sub-axis
+        // over (the env-prefix-presence axis begins at `Prefixed`,
+        // not `Yaml`).
+        let empty: [ConfigSource; 0] = [];
+        assert_eq!(
+            empty.first_absent_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+    }
+
+    #[test]
+    fn first_absent_env_prefix_kind_no_env_layers_is_prefixed() {
+        // Presence-bound divergence from `first_absent_layer_kind`:
+        // the chain is non-empty but every entry projects to `None`
+        // through `env_prefix_kind()`, leaving the histogram empty
+        // and every kind in the coverage gap — the head is still
+        // `Prefixed`. The non-empty-chain / empty-histogram / full-
+        // coverage-gap boundary the env-prefix-presence sub-axis
+        // pins that the layer-kind sub-axis does not (shared with
+        // the file-format sub-axis). Head-projection peer of
+        // `absent_env_prefix_kinds_no_env_layers_is_full_axis` on
+        // the coverage-gap `Vec` side (via
+        // `absent_env_prefix_kinds_count_no_env_layers_is_axis_cardinality`).
+        let chain = vec![
+            ConfigSource::Defaults,
+            ConfigSource::File(PathBuf::from("/a.yaml")),
+            ConfigSource::File(PathBuf::from("/b.toml")),
+            ConfigSource::File(PathBuf::from("/c.unknown")),
+        ];
+        assert!(!chain.is_empty());
+        assert!(chain.as_slice().env_prefix_kind_histogram().is_empty());
+        assert_eq!(
+            chain.as_slice().first_absent_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+    }
+
+    #[test]
+    fn first_absent_env_prefix_kind_sample_chain_is_bare() {
+        // Direct fixture pin: `sample_chain` covers only prefixed
+        // env (`Env("APP_")`), so the coverage gap is `{Bare}` and
+        // its head is `Bare`. Witnesses a coverage-gap head one past
+        // the axis head — the declaration-order semantics distinctly
+        // from any fixture whose gap starts at `Prefixed`. Head-
+        // projection peer of
+        // `absent_env_prefix_kinds_prefixed_only_chain_is_bare_only`
+        // on the counterpart chain shape.
+        let chain = sample_chain();
+        assert_eq!(
+            chain.as_slice().first_absent_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Bare),
+        );
+    }
+
+    #[test]
+    fn first_absent_env_prefix_kind_prefixed_only_chain_is_bare() {
+        // Direct fixture pin on the singleton-observed corner where
+        // the gap `{Bare}` has a NON-Prefixed head. Together with
+        // `first_absent_env_prefix_kind_sample_chain_is_bare`
+        // exercises the "prefixed-only recipe" — the common shikumi
+        // default where discovery injects only
+        // `figment::providers::Env::prefixed` — from two directions
+        // (multi-prefixed and single-prefixed). Head-projection peer
+        // of `absent_env_prefix_kinds_prefixed_only_chain_is_bare_only`
+        // on the singleton chain.
+        let chain = vec![ConfigSource::Env("APP_".to_owned())];
+        assert_eq!(
+            chain.as_slice().first_absent_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Bare),
+        );
+    }
+
+    #[test]
+    fn first_absent_env_prefix_kind_bare_only_chain_is_prefixed() {
+        // Direct fixture pin on the singleton-observed corner where
+        // the gap `{Prefixed}` has the axis-head cell (Prefixed) as
+        // its head — witnesses that a NON-empty histogram can still
+        // yield the axis-head coverage-gap-head (the observed cell
+        // was one past the axis head, so the axis head remains
+        // absent). Head-projection peer of
+        // `absent_env_prefix_kinds_bare_only_chain_is_prefixed_only`
+        // on the same fixture. The env-prefix-presence sub-axis
+        // sister of `first_absent_file_format_toml_only_chain_is_yaml`
+        // one sub-axis over.
+        let chain = vec![ConfigSource::Env(String::new())];
+        assert_eq!(
+            chain.as_slice().first_absent_env_prefix_kind(),
+            Some(EnvMetadataTagKind::Prefixed),
+        );
+    }
+
+    #[test]
+    fn first_absent_env_prefix_kind_is_member_of_absent_env_prefix_kinds_when_some() {
+        // Membership pin: when the coverage-gap head is present, it
+        // is definitionally a member of the coverage-gap vector. A
+        // future drift where the head-projection reads off a
+        // different set (say, `EnvMetadataTagKind::ALL` head or
+        // `present_env_prefix_kinds` head) would light this. Sister
+        // of `first_absent_file_format_is_member_of_absent_file_formats_when_some`
+        // one sub-axis over.
+        for chain in first_absent_env_prefix_kind_fixtures() {
+            if let Some(k) = chain.as_slice().first_absent_env_prefix_kind() {
+                assert!(
+                    chain.as_slice().absent_env_prefix_kinds().contains(&k),
+                    "first_absent_env_prefix_kind {k:?} not in \
+                     absent_env_prefix_kinds {:?}",
+                    chain.as_slice().absent_env_prefix_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn first_absent_env_prefix_kind_is_not_member_of_present_env_prefix_kinds_when_some() {
+        // Disjointness pin: the observed / coverage-gap partition is
+        // disjoint on the env-prefix-presence axis, and the head-
+        // projection peer of the coverage-gap side must not report a
+        // member of the observed side. The head-projection peer of
+        // `absent_env_prefix_kinds_and_present_env_prefix_kinds_partition_axis`
+        // on the false side. Sister of
+        // `first_absent_file_format_is_not_member_of_present_file_formats_when_some`
+        // one sub-axis over.
+        for chain in first_absent_env_prefix_kind_fixtures() {
+            if let Some(k) = chain.as_slice().first_absent_env_prefix_kind() {
+                assert!(
+                    !chain.as_slice().present_env_prefix_kinds().contains(&k),
+                    "first_absent_env_prefix_kind {k:?} appears in \
+                     present_env_prefix_kinds {:?}",
+                    chain.as_slice().present_env_prefix_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn first_absent_env_prefix_kind_is_minimum_absent_env_prefix_kind_by_axis_ordinal() {
+        // The declaration-order head pin: the returned kind (when
+        // `Some`) has the minimum `axis_ordinal` among all absent
+        // kinds. The unobserved-cells iterator yields in
+        // `ClosedAxis::ALL` declaration order (which is axis-ordinal
+        // order by construction), so the head is the argmin — a
+        // future drift where the coverage-gap walk reversed order
+        // (or picked argmax instead) would light this. Sister of
+        // `first_absent_file_format_is_minimum_absent_file_format_by_axis_ordinal`
+        // one sub-axis over.
+        for chain in first_absent_env_prefix_kind_fixtures() {
+            let head = chain.as_slice().first_absent_env_prefix_kind();
+            let min_by_ordinal = chain
+                .as_slice()
+                .absent_env_prefix_kinds()
+                .into_iter()
+                .min_by_key(|k| crate::axis_ordinal(*k));
+            assert_eq!(head, min_by_ordinal);
+        }
     }
 
     // ---- ConfigSourceChain::dominant_env_prefix_kind — modal-cell
