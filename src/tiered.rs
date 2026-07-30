@@ -3357,6 +3357,125 @@ impl ProvenanceMap {
         self.source_kind_peak_trough_sum_of_powers(5)
     }
 
+    /// The **joint-extremes-sextic-magnitude of source-kind counts** —
+    /// the sum of the sixth powers of the modal and anti-modal per-
+    /// source-kind leaf counts on this resolved fold. Routes through
+    /// [`crate::AxisHistogram::peak_trough_sum_of_sixth_powers`] one
+    /// altitude down via the parametric seam
+    /// [`Self::source_kind_peak_trough_sum_of_powers`] at `n == 6`:
+    /// the fused `peak_count().pow(6) + trough_count().pow(6)` sum-of-
+    /// sixth-powers on the source-kind histogram surface, halving the
+    /// cost of the inline `peak_source_kind_count().pow(6) +
+    /// trough_source_kind_count().pow(6)` idiom which walked the counts
+    /// vector twice.
+    ///
+    /// The **sum-of-sixth-powers / power-sum `p_6` sibling** of the
+    /// shipped source-kind altitude
+    /// [`Self::source_kind_spread`] subtraction-form,
+    /// [`Self::source_kind_peak_trough_sum`] addition-form,
+    /// [`Self::source_kind_peak_trough_product`] multiplication-form,
+    /// [`Self::source_kind_peak_trough_sum_of_squares`] quadratic-
+    /// power-sum `p_2`, [`Self::source_kind_peak_trough_sum_of_cubes`]
+    /// cubic-power-sum `p_3`,
+    /// [`Self::source_kind_peak_trough_sum_of_fourth_powers`] quartic-
+    /// power-sum `p_4`, and
+    /// [`Self::source_kind_peak_trough_sum_of_fifth_powers`] quintic-
+    /// power-sum `p_5` scalars on the same closed count-endpoint pair —
+    /// extending the symmetric-polynomial `(e₁, e₂) =
+    /// (peak+trough, peak*trough)` / power-sum
+    /// `(p_2, p_3, p_4, p_5, p_6)` representation of the
+    /// `(peak_source_kind_count, trough_source_kind_count)` endpoint
+    /// pair at the source-kind altitude through Newton's two-variable
+    /// identity `p_6 == e_1 * p_5 - e_2 * p_4` (specialized to
+    /// `sum · sum_of_fifth_powers - product · sum_of_fourth_powers`)
+    /// and the sum-of-two-cubes-squared factorization
+    /// `p_6 == p_3² - 2 * e_2³` (equivalently
+    /// `sum_of_cubes.pow(2) - 2 * product.pow(3)`).
+    ///
+    /// The **source-altitude climb** of the "peak⁶ + trough⁶ sums-of-
+    /// sixth-powers across altitudes" projection seeded on the scalar
+    /// altitude by
+    /// [`crate::AxisHistogram::peak_trough_sum_of_sixth_powers`],
+    /// lifted to the diff altitude by
+    /// [`ConfigDiff::kind_peak_trough_sum_of_sixth_powers`], and lifted
+    /// to the tier altitude by
+    /// [`Self::tier_peak_trough_sum_of_sixth_powers`] — the source-kind
+    /// altitude peer closing the sextic-power-sum peer at the fourth of
+    /// the four altitudes in the fully-closed cube. Parallels the
+    /// sibling source-kind altitude "spread", "peak+trough sum",
+    /// "peak×trough product", "peak² + trough² sum-of-squares", "peak³
+    /// + trough³ sum-of-cubes", "peak⁴ + trough⁴ sum-of-fourth-powers",
+    /// and "peak⁵ + trough⁵ sum-of-fifth-powers" projections on the
+    /// same closed-endpoint pair.
+    ///
+    /// **AM-sextic / power-mean bound.** `32 *
+    /// source_kind_peak_trough_sum_of_sixth_powers() >=
+    /// source_kind_peak_trough_sum().pow(6)` always — the power-mean
+    /// inequality `p⁶ + t⁶ >= (p + t)⁶ / 32`. Equality holds iff
+    /// `peak_source_kind_count() == trough_source_kind_count()` (the
+    /// balanced-source-kind-counts shape). Peer to the AM-quintic bound
+    /// `16 * source_kind_peak_trough_sum_of_fifth_powers >=
+    /// source_kind_peak_trough_sum⁵` on `p_5` — all power-mean bounds
+    /// collapse to the same `(p - t)² >= 0` witness on the closed
+    /// endpoint pair at the source-kind altitude.
+    ///
+    /// **Empty-map convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::peak_trough_sum_of_sixth_powers`] empty
+    /// convention one altitude down. Every non-empty resolved fold has
+    /// `source_kind_peak_trough_sum_of_sixth_powers() >= 2`.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_peak_trough_sum_of_sixth_powers() ==
+    ///   source_kind_histogram().peak_trough_sum_of_sixth_powers()` —
+    ///   both project the same scalar off the same primitive.
+    /// - `source_kind_peak_trough_sum_of_sixth_powers() ==
+    ///   peak_source_kind_count().pow(6) +
+    ///   trough_source_kind_count().pow(6)` — the fused-pair identity.
+    /// - `source_kind_peak_trough_sum_of_sixth_powers() ==
+    ///   source_kind_peak_trough_sum_of_powers(6)` — routes through
+    ///   the parametric seam at `n = 6`.
+    /// - `source_kind_peak_trough_sum_of_sixth_powers() == 0` ⇔
+    ///   `self.is_empty()` — the empty-boundary equivalence peer.
+    /// - `source_kind_peak_trough_sum_of_sixth_powers() >= 2` whenever
+    ///   `!self.is_empty()` — non-empty floor.
+    /// - `32 * source_kind_peak_trough_sum_of_sixth_powers() >=
+    ///   source_kind_peak_trough_sum().pow(6)` always (AM-sextic;
+    ///   equality iff `peak_source_kind_count() ==
+    ///   trough_source_kind_count()`).
+    /// - `source_kind_peak_trough_sum_of_sixth_powers() <=
+    ///   2 * peak_source_kind_count().pow(6)` always (equality iff
+    ///   `peak_source_kind_count() == trough_source_kind_count()`).
+    /// - `source_kind_peak_trough_sum_of_sixth_powers() ==
+    ///   source_kind_peak_trough_sum() *
+    ///   source_kind_peak_trough_sum_of_fifth_powers() -
+    ///   source_kind_peak_trough_product() *
+    ///   source_kind_peak_trough_sum_of_fourth_powers()` always —
+    ///   Newton's identity `p_6 = e_1 * p_5 - e_2 * p_4` on the
+    ///   `(sum, sum_of_fifth_powers, product, sum_of_fourth_powers)`
+    ///   surface.
+    /// - `source_kind_peak_trough_sum_of_sixth_powers() ==
+    ///   source_kind_peak_trough_sum_of_cubes().pow(2) -
+    ///   2 * source_kind_peak_trough_product().pow(3)` always — the
+    ///   sum-of-two-cubes-squared factorization on the `(soc, product)`
+    ///   surface (`p⁶ + t⁶ = (p³ + t³)² - 2·(pt)³`).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    /// (the peak⁶ + trough⁶ fused scan through
+    /// [`crate::AxisHistogram::peak_trough_sum_of_sixth_powers`]). Both
+    /// are `O(n)` in practice since the source-kind axis carries a
+    /// fixed three-cell cardinality; the returned `usize` reads one
+    /// scalar. Halves the cost of the previous inline
+    /// `map.peak_source_kind_count().pow(6) +
+    /// map.trough_source_kind_count().pow(6)` idiom.
+    #[must_use]
+    pub fn source_kind_peak_trough_sum_of_sixth_powers(&self) -> usize {
+        self.source_kind_peak_trough_sum_of_powers(6)
+    }
+
     /// The **joint-extremes-Lⁿ-magnitude of source-kind counts at runtime
     /// exponent `n`** — the sum of the `n`th powers of the modal and
     /// anti-modal per-source-kind leaf counts on this resolved fold.
@@ -3369,15 +3488,16 @@ impl ProvenanceMap {
     /// vector twice.
     ///
     /// The **runtime-exponent generalization** of the source-kind-altitude
-    /// power-sum family: the four shipped fixed-exponent siblings —
+    /// power-sum family: the five shipped fixed-exponent siblings —
     /// [`Self::source_kind_peak_trough_sum_of_squares`] (`n = 2`),
     /// [`Self::source_kind_peak_trough_sum_of_cubes`] (`n = 3`),
     /// [`Self::source_kind_peak_trough_sum_of_fourth_powers`] (`n = 4`),
-    /// and [`Self::source_kind_peak_trough_sum_of_fifth_powers`]
-    /// (`n = 5`) — each route through this primitive at their fixed
+    /// [`Self::source_kind_peak_trough_sum_of_fifth_powers`] (`n = 5`),
+    /// and [`Self::source_kind_peak_trough_sum_of_sixth_powers`]
+    /// (`n = 6`) — each route through this primitive at their fixed
     /// `N`, so the joint-extremes `p_n` at the source-kind altitude
     /// reads off ONE typed scalar at a runtime-chosen exponent instead
-    /// of dispatching over the named table or growing a sixth / n-th
+    /// of dispatching over the named table or growing a seventh / n-th
     /// named source-kind-altitude sibling to extend the ladder. The
     /// scalar-altitude peer
     /// [`crate::AxisHistogram::peak_trough_sum_of_powers`] closes the
@@ -59125,6 +59245,261 @@ mod progressive_tests {
         }
     }
 
+    // ── ProvenanceMap::source_kind_peak_trough_sum_of_sixth_powers —
+    //    joint-extremes-sextic-magnitude peer on the source-kind
+    //    altitude, sum-of-sixth-powers / power-sum p_6 sibling of the
+    //    shipped `source_kind_spread`,
+    //    `source_kind_peak_trough_sum`,
+    //    `source_kind_peak_trough_product`,
+    //    `source_kind_peak_trough_sum_of_squares`,
+    //    `source_kind_peak_trough_sum_of_cubes`,
+    //    `source_kind_peak_trough_sum_of_fourth_powers`, and
+    //    `source_kind_peak_trough_sum_of_fifth_powers` scalars on the
+    //    same closed count-endpoint pair. Routes through the parametric
+    //    seam `source_kind_peak_trough_sum_of_powers(6)` one method
+    //    down and through
+    //    `AxisHistogram::peak_trough_sum_of_sixth_powers` one altitude
+    //    down. Source-altitude peer of
+    //    `tier_peak_trough_sum_of_sixth_powers` and diff-altitude
+    //    `ConfigDiff::kind_peak_trough_sum_of_sixth_powers`.
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_sixth_powers_matches_source_kind_histogram_peak_trough_sum_of_sixth_powers_pointwise()
+     {
+        // Routing pin: `source_kind_peak_trough_sum_of_sixth_powers`
+        // routes through
+        // `source_kind_histogram().peak_trough_sum_of_sixth_powers()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Source-altitude peer of
+        // `tier_peak_trough_sum_of_sixth_powers_matches_tier_histogram_peak_trough_sum_of_sixth_powers_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map
+                .source_kind_histogram()
+                .peak_trough_sum_of_sixth_powers();
+            assert_eq!(
+                map.source_kind_peak_trough_sum_of_sixth_powers(),
+                via_histogram,
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_sixth_powers_equals_peak_sextic_plus_trough_sextic_pointwise()
+    {
+        // Fused-pair pin: `source_kind_peak_trough_sum_of_sixth_powers
+        // == peak_source_kind_count⁶ + trough_source_kind_count⁶` on
+        // every fixture — the defining equivalence on the underlying
+        // scalar pair. Source-altitude peer of
+        // `tier_peak_trough_sum_of_sixth_powers_equals_peak_sextic_plus_trough_sextic_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let peak = map.peak_source_kind_count();
+            let trough = map.trough_source_kind_count();
+            assert_eq!(
+                map.source_kind_peak_trough_sum_of_sixth_powers(),
+                peak.pow(6) + trough.pow(6),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_sixth_powers_prog_fixture_is_eight_thousand_one_hundred_ninety_two()
+     {
+        // Prog attributes 4 leaves, all with source-kind `Defaults`
+        // (singleton-support fold on the source-kind axis). Peak lands
+        // on Defaults at 4; trough over support {Defaults} lands at 4.
+        // Sum-of-sixth-powers = 4⁶ + 4⁶ = 4096 + 4096 = 8192. Direct
+        // pin — the `(peak_source_kind_count, trough_source_kind_count,
+        // source_kind_spread, source_kind_peak_trough_sum,
+        // source_kind_peak_trough_product,
+        // source_kind_peak_trough_sum_of_squares,
+        // source_kind_peak_trough_sum_of_cubes,
+        // source_kind_peak_trough_sum_of_fourth_powers,
+        // source_kind_peak_trough_sum_of_fifth_powers,
+        // source_kind_peak_trough_sum_of_sixth_powers)` 10-tuple reads
+        // `(4, 4, 0, 8, 16, 32, 128, 512, 2048, 8192)`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().source_kind_peak_trough_sum_of_sixth_powers(),
+            8192,
+        );
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_sixth_powers_mixed_fixture_is_sixty_five() {
+        // Mixed fixture attributes 4 leaves: a→Defaults, b→File,
+        // c→Env, d→Defaults. Counts: Defaults=2, Env=1, File=1. Peak
+        // lands on Defaults at 2; trough over support {Defaults, Env,
+        // File} lands at 1. Sum-of-sixth-powers = 2⁶ + 1⁶ = 64 + 1 =
+        // 65. Also witnesses the (soc, product) sixth-power
+        // factorization in-place: sofsp = soc² - 2·product³ =
+        // 9² - 2·2³ = 81 - 16 = 65.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            r.provenance().source_kind_peak_trough_sum_of_sixth_powers(),
+            65,
+        );
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_sixth_powers_empty_map_is_zero() {
+        // An empty ProvenanceMap has no leaves and therefore zero joint
+        // sextic magnitude — reads `0` per the
+        // AxisHistogram::peak_trough_sum_of_sixth_powers empty
+        // convention one altitude down.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.source_kind_peak_trough_sum_of_sixth_powers(), 0);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_sixth_powers_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence pin:
+        // `source_kind_peak_trough_sum_of_sixth_powers() == 0` iff the
+        // map is empty. Both endpoints are structurally `>= 1` on every
+        // non-empty map, and sixth-powering cannot introduce a zero
+        // from non-zero operands, so the sum-of-sixth-powers is zero
+        // exactly on the empty map.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.source_kind_peak_trough_sum_of_sixth_powers() == 0,
+                map.is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_sixth_powers_non_empty_bounded_below_by_two() {
+        // Non-empty floor pin: every non-empty map has
+        // `source_kind_peak_trough_sum_of_sixth_powers >= 2` — both
+        // sixth-powered endpoints are structurally `>= 1` on every non-
+        // empty map, so their sum-of-sixth-powers is at least
+        // `1 + 1 == 2`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            assert!(map.source_kind_peak_trough_sum_of_sixth_powers() >= 2);
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_sixth_powers_am_sextic_bounded_below_by_thirty_second_sum_sextic()
+     {
+        // AM-sextic bound: `32 *
+        // source_kind_peak_trough_sum_of_sixth_powers >=
+        // source_kind_peak_trough_sum⁶` on every fixture — the power-
+        // mean inequality `p⁶ + t⁶ >= (p + t)⁶ / 32`. Equality holds
+        // iff `peak_source_kind_count == trough_source_kind_count`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofsp = map.source_kind_peak_trough_sum_of_sixth_powers();
+            let sum = map.source_kind_peak_trough_sum();
+            let sum_sextic = sum.pow(6);
+            assert!(32 * sofsp >= sum_sextic);
+            assert_eq!(
+                32 * sofsp == sum_sextic,
+                map.peak_source_kind_count() == map.trough_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_sixth_powers_bounded_above_by_twice_peak_sextic() {
+        // Structural bound:
+        // `source_kind_peak_trough_sum_of_sixth_powers() <= 2 *
+        // peak_source_kind_count()⁶` on every fixture — `p⁶ + t⁶ <=
+        // 2p⁶` reduces to `trough <= peak`, the structural
+        // `trough_source_kind_count <= peak_source_kind_count`
+        // invariant. Equality holds iff `peak_source_kind_count ==
+        // trough_source_kind_count`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofsp = map.source_kind_peak_trough_sum_of_sixth_powers();
+            let peak = map.peak_source_kind_count();
+            let twice_peak_sextic = 2 * peak.pow(6);
+            assert!(sofsp <= twice_peak_sextic);
+            assert_eq!(
+                sofsp == twice_peak_sextic,
+                map.peak_source_kind_count() == map.trough_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_sixth_powers_newton_identity_with_sum_sofip_product_sofp_pointwise()
+     {
+        // Newton's identity `p_6 = e_1 * p_5 - e_2 * p_4` read-off on
+        // the (sum, sum_of_fifth_powers, product, sum_of_fourth_powers)
+        // surface: `source_kind_peak_trough_sum_of_sixth_powers ==
+        // source_kind_peak_trough_sum *
+        // source_kind_peak_trough_sum_of_fifth_powers -
+        // source_kind_peak_trough_product *
+        // source_kind_peak_trough_sum_of_fourth_powers` on every
+        // fixture. The subtraction is non-negative: expanding
+        // `(p+t)(p⁵+t⁵) = p⁶+t⁶+pt(p⁴+t⁴)`, the second term is exactly
+        // `product * sofp`, so LHS - RHS = p⁶+t⁶ = sofsp >= 0. Source-
+        // altitude peer of
+        // `tier_peak_trough_sum_of_sixth_powers_newton_identity_with_sum_sofip_product_sofp_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofsp = map.source_kind_peak_trough_sum_of_sixth_powers();
+            let sum = map.source_kind_peak_trough_sum();
+            let sofip = map.source_kind_peak_trough_sum_of_fifth_powers();
+            let product = map.source_kind_peak_trough_product();
+            let sofp = map.source_kind_peak_trough_sum_of_fourth_powers();
+            let lhs = sum * sofip;
+            let rhs = product * sofp;
+            assert!(rhs <= lhs);
+            assert_eq!(sofsp, lhs - rhs);
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_sixth_powers_factorization_with_soc_product_pointwise() {
+        // (soc, product) surface factorization:
+        // `source_kind_peak_trough_sum_of_sixth_powers ==
+        // source_kind_peak_trough_sum_of_cubes.pow(2) -
+        // 2 * source_kind_peak_trough_product.pow(3)` on every fixture
+        // — the identity `p⁶ + t⁶ = (p³ + t³)² - 2·(pt)³`. Non-negative
+        // subtraction since `(p³+t³)² = p⁶+t⁶+2·p³t³` so LHS - RHS =
+        // p⁶+t⁶ = sofsp. Source-altitude peer of
+        // `tier_peak_trough_sum_of_sixth_powers_factorization_with_soc_product_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofsp = map.source_kind_peak_trough_sum_of_sixth_powers();
+            let soc = map.source_kind_peak_trough_sum_of_cubes();
+            let product = map.source_kind_peak_trough_product();
+            let lhs = soc.pow(2);
+            let rhs = 2 * product.pow(3);
+            assert!(rhs <= lhs);
+            assert_eq!(sofsp, lhs - rhs);
+        }
+    }
+
     // ── ProvenanceMap::source_kind_peak_trough_sum_of_powers —
     //    runtime-exponent power-sum generalization on the source-kind
     //    altitude, closing the "peak^n + trough^n across altitudes"
@@ -59139,10 +59514,10 @@ mod progressive_tests {
     //    degenerating the linear power-sum to the shipped addition-form
     //    scalar.
     // 3. Routing the shipped fixed-exponent siblings at n in
-    //    {2, 3, 4, 5} pointwise — proves the delegation the fold
+    //    {2, 3, 4, 5, 6} pointwise — proves the delegation the fold
     //    installs and pins every named sibling as
     //    `source_kind_peak_trough_sum_of_powers(N)` at its N.
-    // 4. Newton's two-variable recurrence at n in 2..=5: `p_n == e_1 *
+    // 4. Newton's two-variable recurrence at n in 2..=6: `p_n == e_1 *
     //    p_(n-1) - e_2 * p_(n-2)` where `e_1 =
     //    source_kind_peak_trough_sum` and `e_2 =
     //    source_kind_peak_trough_product`, proving the primitive closes
@@ -59192,10 +59567,10 @@ mod progressive_tests {
 
     #[test]
     fn source_kind_peak_trough_sum_of_powers_routes_named_siblings_pointwise() {
-        // Routing pin: each of the four shipped named exponents
-        // (squares, cubes, fourth_powers, fifth_powers) equals
-        // `source_kind_peak_trough_sum_of_powers(N)` pointwise across
-        // every canonical fixture. Seals the delegation the fold
+        // Routing pin: each of the five shipped named exponents
+        // (squares, cubes, fourth_powers, fifth_powers, sixth_powers)
+        // equals `source_kind_peak_trough_sum_of_powers(N)` pointwise
+        // across every canonical fixture. Seals the delegation the fold
         // installs — a future drift between the primitive and any named
         // sibling surfaces here. Source-altitude peer of
         // `tier_peak_trough_sum_of_powers_routes_named_siblings_pointwise`.
@@ -59220,12 +59595,16 @@ mod progressive_tests {
                 map.source_kind_peak_trough_sum_of_fifth_powers(),
                 map.source_kind_peak_trough_sum_of_powers(5),
             );
+            assert_eq!(
+                map.source_kind_peak_trough_sum_of_sixth_powers(),
+                map.source_kind_peak_trough_sum_of_powers(6),
+            );
         }
     }
 
     #[test]
     fn source_kind_peak_trough_sum_of_powers_satisfies_newton_recurrence_pointwise() {
-        // Newton's two-variable recurrence pin at n in 2..=5: `p_n ==
+        // Newton's two-variable recurrence pin at n in 2..=6: `p_n ==
         // e_1 * p_(n-1) - e_2 * p_(n-2)` where `e_1 =
         // source_kind_peak_trough_sum` and `e_2 =
         // source_kind_peak_trough_product`. Proves the primitive closes
@@ -59245,7 +59624,7 @@ mod progressive_tests {
         ] {
             let e1 = map.source_kind_peak_trough_sum();
             let e2 = map.source_kind_peak_trough_product();
-            for n in 2u32..=5 {
+            for n in 2u32..=6 {
                 let p_n = map.source_kind_peak_trough_sum_of_powers(n);
                 let p_n_minus_1 = map.source_kind_peak_trough_sum_of_powers(n - 1);
                 let p_n_minus_2 = map.source_kind_peak_trough_sum_of_powers(n - 2);
