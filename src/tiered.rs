@@ -1770,6 +1770,114 @@ impl ProvenanceMap {
         self.source_kind_histogram().unobserved_cells()
     }
 
+    /// The [`crate::ConfigSourceKind`] whose layer class produced the
+    /// greatest number of surviving effective leaves on this resolved fold
+    /// — the modal cell of [`Self::source_kind_histogram`] on the source-
+    /// kind altitude. `None` exactly when the map is empty (no leaf
+    /// contributed).
+    ///
+    /// The **source-altitude peer** of [`Self::dominant_tier`] on the tier
+    /// altitude: [`Self::dominant_tier`] picks the argmax cell of
+    /// [`Self::tier_histogram`] (tier altitude); this method picks the
+    /// argmax cell of [`Self::source_kind_histogram`] (source-kind
+    /// altitude). The two altitudes now name the modal-cell projection of
+    /// the atomic `(tier, source)` pair each leaf's [`Provenance`] carries
+    /// — matched by name, by return-type shape ([`Option`] of the axis
+    /// type), by delegation seam ([`crate::AxisHistogram::dominant_cell`]
+    /// on the local histogram), and by ordering discipline
+    /// ([`crate::ClosedAxis::ALL`] declaration order under a strict-`>`
+    /// argmax that pins the first-tied cell as the tiebreak).
+    ///
+    /// Routes through [`Self::source_kind_histogram`]:
+    /// [`crate::AxisHistogram::dominant_cell`] picks the argmax cell in
+    /// [`crate::ClosedAxis::ALL`] declaration order (the
+    /// [`crate::ConfigSourceKind`] canonical order:
+    /// [`Defaults`][crate::ConfigSourceKind::Defaults] →
+    /// [`Env`][crate::ConfigSourceKind::Env] →
+    /// [`File`][crate::ConfigSourceKind::File]) — the closed-axis
+    /// discipline provides deterministic tie-breaking automatically, so
+    /// this method reads directly off the shikumi cube-native primitive
+    /// instead of hand-rolling
+    /// `hist.iter().filter(|&(_, c)| c > 0).max_by_key(|&(_, c)| c).map(|(v, _)| v)`
+    /// — the inline `max_by_key` form silently picks the *last* tied
+    /// cell (per [`Iterator::max_by_key`]'s contract), so two consumers
+    /// reading "the dominant source-kind" off the same fold would
+    /// disagree under ties unless every one carefully reversed the
+    /// comparison. The lift names the scalar at one site with a
+    /// documented tie-breaking rule.
+    ///
+    /// The source-altitude scalar-mode peer of
+    /// [`Self::contributing_source_kinds`] (the observed-cells vector
+    /// peer) and [`Self::absent_source_kinds`] (the coverage-gap vector
+    /// peer): the histogram surface now carries the natural triple of
+    /// "*which* source-kinds surfaced" / "*which* source-kinds didn't" /
+    /// "*which single* source-kind dominated" projections at the source-
+    /// kind altitude, each a named seam over the shared
+    /// [`Self::source_kind_histogram`] primitive. Operator-facing
+    /// consumers answering *"which layer class dominated this resolved
+    /// fold?"* — the fleet dashboard headlining *"File overlay owns 12 of
+    /// 47 leaves this rebuild window"*, the attestation manifest
+    /// recording the modal layer class of a resolved fold, the
+    /// diagnostic dump reading *"layer-class dominance: Env"* to explain
+    /// why an operator env overlay is steering the resolution — now
+    /// route through this named seam instead of a per-consumer
+    /// `max_by_key` walk.
+    ///
+    /// **Tie-breaking is deterministic by precedence order.** When
+    /// multiple source-kinds share the maximum leaf count, the source-
+    /// kind earliest in [`crate::ConfigSourceKind::ALL`] wins — the
+    /// same [`crate::ConfigSourceKind`] precedence order
+    /// [`Self::contributing_source_kinds`], [`Self::absent_source_kinds`],
+    /// and [`Self::first_contributing_source_kind`] walk. A uniform-cover
+    /// fold (each source-kind producing the same nonzero leaf count)
+    /// therefore reports
+    /// `Some(crate::ConfigSourceKind::Defaults)` — the first cell in
+    /// declaration order — pointwise stable regardless of the insertion
+    /// order of individual leaves into the underlying [`BTreeMap`].
+    ///
+    /// # Invariants
+    ///
+    /// - `dominant_source_kind().is_some() == !is_empty()` — the dominant
+    ///   source-kind is defined exactly when the fold has at least one
+    ///   leaf. Peer to the [`Self::is_empty`] boundary
+    ///   [`Self::contributing_source_kinds`] and
+    ///   [`Self::absent_source_kinds`] both witness.
+    /// - `dominant_source_kind() ==
+    ///   source_kind_histogram().dominant_cell()` — both project the same
+    ///   modal cell off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - When `Some(k)`, `k` is a member of
+    ///   [`Self::contributing_source_kinds`] — the modal cell is by
+    ///   definition observed.
+    /// - When `Some(k)`, `k` is **not** a member of
+    ///   [`Self::absent_source_kinds`] — the observed / coverage-gap
+    ///   partition is disjoint.
+    /// - `source_kind_histogram().count(dominant_source_kind().unwrap())
+    ///   == source_kind_histogram().peak_count()` whenever the map is
+    ///   non-empty — the modal cell carries the peak observation count.
+    ///   Peer to the (`dominant_cell`, `peak_count`) modal pair
+    ///   invariant on [`crate::AxisHistogram`].
+    /// - `dominant_source_kind()` on a uniform per-source-kind fold (one
+    ///   leaf per source-kind) equals
+    ///   `Some(crate::ConfigSourceKind::Defaults)` — declaration-order
+    ///   tie-breaking on the three-cell axis picks the first cell.
+    /// - `dominant_source_kind()` on an empty [`ProvenanceMap`] equals
+    ///   `None` — the empty-map / empty-histogram boundary. Peer to
+    ///   [`Self::dominant_tier`]'s empty-map boundary on the tier
+    ///   altitude.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// argmax scan). Both are `O(n)` in practice since the source-kind
+    /// axis carries a fixed three-cell cardinality; the returned
+    /// `Option<crate::ConfigSourceKind>` reads one cell.
+    #[must_use]
+    pub fn dominant_source_kind(&self) -> Option<crate::ConfigSourceKind> {
+        self.source_kind_histogram().dominant_cell()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -53174,9 +53282,7 @@ mod progressive_tests {
             source_kind_histogram_mixed_fixture().provenance().clone(),
             ProvenanceMap::default(),
         ] {
-            assert!(
-                map.contributing_source_kinds_count() <= map.source_kind_histogram().total()
-            );
+            assert!(map.contributing_source_kinds_count() <= map.source_kind_histogram().total());
         }
     }
 
@@ -53213,13 +53319,21 @@ mod progressive_tests {
         // `ConfigSource::Defaults` — every leaf's source-kind projects
         // to `Defaults`, collapsing support to one cell.
         let r = Prog::resolve_progressive();
-        assert!(r.provenance().source_kind_histogram().has_singular_support());
+        assert!(
+            r.provenance()
+                .source_kind_histogram()
+                .has_singular_support()
+        );
         assert_eq!(r.provenance().contributing_source_kinds_count(), 1);
 
         // Non-singleton-support: the mixed fixture spans three source-
         // kinds, so support size is > 1 and singular_support is false.
         let r = source_kind_histogram_mixed_fixture();
-        assert!(!r.provenance().source_kind_histogram().has_singular_support());
+        assert!(
+            !r.provenance()
+                .source_kind_histogram()
+                .has_singular_support()
+        );
         assert!(r.provenance().contributing_source_kinds_count() > 1);
     }
 
@@ -53437,13 +53551,21 @@ mod progressive_tests {
         // Singleton-support: Prog collapses every leaf to `Defaults` —
         // two source-kinds absent.
         let r = Prog::resolve_progressive();
-        assert!(r.provenance().source_kind_histogram().has_singular_support());
+        assert!(
+            r.provenance()
+                .source_kind_histogram()
+                .has_singular_support()
+        );
         assert_eq!(r.provenance().absent_source_kinds_count(), axis_size - 1);
 
         // Non-singleton-support: the mixed fixture spans three source-
         // kinds — coverage gap strictly less than `axis_cardinality - 1`.
         let r = source_kind_histogram_mixed_fixture();
-        assert!(!r.provenance().source_kind_histogram().has_singular_support());
+        assert!(
+            !r.provenance()
+                .source_kind_histogram()
+                .has_singular_support()
+        );
         assert!(r.provenance().absent_source_kinds_count() < axis_size - 1);
 
         // Empty map: no support, coverage gap = full axis (strictly
@@ -53507,5 +53629,252 @@ mod progressive_tests {
         // `absent_tiers_count_prog_fixture_is_one` on the tier altitude.
         let r = Prog::resolve_progressive();
         assert_eq!(r.provenance().absent_source_kinds_count(), 2);
+    }
+
+    // ── ProvenanceMap::dominant_source_kind — modal-cell scalar peer of
+    //    ProvenanceMap::source_kind_histogram on the source-kind
+    //    altitude, source-altitude peer of dominant_tier on the tier
+    //    altitude ──
+
+    #[test]
+    fn dominant_source_kind_matches_source_kind_histogram_dominant_cell_pointwise() {
+        // The modal-cell pin: `dominant_source_kind` routes through
+        // `source_kind_histogram().dominant_cell()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches
+        // any future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Source-altitude peer
+        // of `dominant_tier_matches_tier_histogram_dominant_cell_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().dominant_cell();
+            assert_eq!(map.dominant_source_kind(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn dominant_source_kind_prog_fixture_is_defaults() {
+        // Prog attributes 4 leaves, all with source-kind `Defaults` (the
+        // pure-progressive fold uses only computed-tier constructors,
+        // each pinning `ConfigSource::Defaults`). Singleton-support fold
+        // on the source-kind axis: the sole observed cell is the modal
+        // cell. Direct pin — the named seam answers the operator's
+        // *"which layer class dominated this resolved fold?"* question
+        // at one call.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().dominant_source_kind(),
+            Some(crate::ConfigSourceKind::Defaults),
+        );
+    }
+
+    #[test]
+    fn dominant_source_kind_mixed_fixture_is_defaults() {
+        // Mixed fixture: a→Defaults, b→File, c→Env, d→Defaults. The
+        // Defaults cell holds 2 of 4 leaves — strictly dominant on the
+        // three-cell source-kind axis (Env and File each hold 1). The
+        // modal cell reads through the seam whether the fixture is
+        // singleton-support (Prog) or full-cover with a strict maximum
+        // (mixed).
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            r.provenance().dominant_source_kind(),
+            Some(crate::ConfigSourceKind::Defaults),
+        );
+    }
+
+    #[test]
+    fn dominant_source_kind_empty_map_is_none() {
+        // An empty ProvenanceMap has no leaves and therefore no modal
+        // source-kind cell — the empty-map / empty-histogram boundary of
+        // the dominant-cell projection. Source-altitude peer of
+        // `dominant_tier_empty_map_is_none` on the tier altitude, and
+        // observed-side peer of `absent_source_kinds_count_empty_map_is_axis_cardinality`
+        // on the same altitude.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.dominant_source_kind(), None);
+    }
+
+    #[test]
+    fn dominant_source_kind_is_some_iff_map_is_nonempty() {
+        // Cross-surface pin: the presence-of-modal-cell predicate
+        // agrees with the non-emptiness of the underlying map.
+        // Structural completeness of the `(is_empty, dominant_source_kind)`
+        // boundary — a well-formed fold with ≥1 leaf always has a modal
+        // cell, and an empty fold never does. Source-altitude peer of
+        // `dominant_tier_is_some_iff_map_is_nonempty` on the tier
+        // altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.dominant_source_kind().is_some(), !map.is_empty());
+        }
+    }
+
+    #[test]
+    fn dominant_source_kind_is_member_of_contributing_source_kinds() {
+        // Structural pin: whenever `dominant_source_kind()` is `Some(k)`,
+        // `k` must appear in `contributing_source_kinds()` (the modal
+        // cell is by definition observed). The support / dominance
+        // partition on the source-kind altitude reads consistently
+        // between the two named seams. Source-altitude peer of
+        // `dominant_tier_is_member_of_contributing_tiers` on the tier
+        // altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            let dominant = map
+                .dominant_source_kind()
+                .expect("non-empty map has dominant source-kind");
+            assert!(
+                map.contributing_source_kinds().contains(&dominant),
+                "dominant source-kind {dominant:?} must appear in contributing_source_kinds",
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_source_kind_is_not_member_of_absent_source_kinds() {
+        // Structural pin: whenever `dominant_source_kind()` is `Some(k)`,
+        // `k` must NOT appear in `absent_source_kinds()` — the modal
+        // cell lies on the observed side of the observed / coverage-gap
+        // partition. Disjointness pin between the two named seams.
+        // Source-altitude peer of
+        // `dominant_tier_is_not_member_of_absent_tiers` on the tier
+        // altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            let dominant = map
+                .dominant_source_kind()
+                .expect("non-empty map has dominant source-kind");
+            assert!(
+                !map.absent_source_kinds().contains(&dominant),
+                "dominant source-kind {dominant:?} must not appear in absent_source_kinds",
+            );
+        }
+    }
+
+    #[test]
+    fn dominant_source_kind_count_equals_peak_count_on_nonempty_map() {
+        // The (dominant_cell, peak_count) modal-pair invariant lifted to
+        // the source-kind altitude: the observation count of the
+        // dominant source-kind equals the histogram's peak count. Pins
+        // the fused form of the modal-pair the AxisHistogram surface
+        // carries as (dominant_cell(), peak_count()). Source-altitude
+        // peer of `dominant_tier_count_equals_peak_count_on_nonempty_map`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            let hist = map.source_kind_histogram();
+            let dominant = map
+                .dominant_source_kind()
+                .expect("non-empty map has dominant source-kind");
+            assert_eq!(hist.count(dominant), hist.peak_count());
+        }
+    }
+
+    #[test]
+    fn dominant_source_kind_ties_broken_by_declaration_order() {
+        // Structural tie-breaking pin: on a uniform per-source-kind fold
+        // (each of the three `ConfigSourceKind` cells contributing
+        // exactly one leaf), `dominant_source_kind` reports
+        // `Some(ConfigSourceKind::Defaults)` — the first cell in
+        // `ConfigSourceKind::ALL` declaration order. Constructed
+        // directly via `FromIterator` over the three axis cells, one
+        // leaf per source-kind via the three source-distinct
+        // constructors (`computed`/`bare` pins `Defaults`; `env` pins
+        // `Env`; `file` pins `File`). Any future switch to a
+        // nondeterministic `max_by_key` walk (which silently picks the
+        // LAST tied cell) would flip this pin to
+        // `Some(File)` — the seam names the tiebreak once.
+        let m: ProvenanceMap = [
+            (vec!["a".to_owned()], Provenance::bare()),
+            (vec!["b".to_owned()], Provenance::env("SHIKUMI_TIEBREAK_")),
+            (vec!["c".to_owned()], Provenance::file("/etc/tiebreak.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        // Sanity: this construction produces the intended per-source-kind
+        // distribution (each cell owns exactly one leaf).
+        let hist = m.source_kind_histogram();
+        assert_eq!(hist.count(crate::ConfigSourceKind::Defaults), 1);
+        assert_eq!(hist.count(crate::ConfigSourceKind::Env), 1);
+        assert_eq!(hist.count(crate::ConfigSourceKind::File), 1);
+        assert!(hist.is_full_cover());
+        // Tiebreak lands on the first cell in declaration order.
+        assert_eq!(
+            m.dominant_source_kind(),
+            Some(crate::ConfigSourceKind::Defaults),
+        );
+    }
+
+    #[test]
+    fn dominant_source_kind_agrees_with_open_coded_argmax_walk() {
+        // Parity against the exact `hist.iter().filter(|&(_, c)| c > 0)
+        // .max_by(count-then-declaration-order)` walk this lift replaces
+        // — both the named seam and the hand-rolled argmax must
+        // pointwise agree over every fixture in the module. The
+        // hand-rolled form spells the declaration-order tiebreak
+        // explicitly (fold-forward with strict `>` inequality — the
+        // first tied cell wins, mirroring `AxisHistogram::dominant_cell`
+        // — rather than `max_by_key`'s LAST-tied-cell semantics).
+        // Source-altitude peer of
+        // `dominant_tier_agrees_with_open_coded_argmax_walk` on the tier
+        // altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.dominant_source_kind();
+            let hist = map.source_kind_histogram();
+            let mut iter = hist.iter().filter(|&(_, c)| c > 0);
+            let hand_rolled = iter.next().map(|first| {
+                iter.fold(
+                    first,
+                    |best, current| {
+                        if current.1 > best.1 { current } else { best }
+                    },
+                )
+                .0
+            });
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn dominant_source_kind_uniform_cover_picks_first_cell() {
+        // Trait-uniform invariant: on a full-cover fold where every
+        // source-kind observes the same nonzero count, the dominant cell
+        // is the first cell of `ConfigSourceKind::ALL` — the
+        // declaration-order tiebreak reduces to `Some(Defaults)`. Peer
+        // of the trait-uniform
+        // `axis_histogram_dominant_cell_axis_cover_picks_first_*` laws
+        // in cube tests, and source-altitude peer of
+        // `dominant_tier_uniform_cover_picks_first_cell` on the tier
+        // altitude. Direct construction via `FromIterator`: one leaf per
+        // source-kind cell, full-cover with uniform count 1.
+        let m: ProvenanceMap = [
+            (vec!["a".to_owned()], Provenance::bare()),
+            (vec!["b".to_owned()], Provenance::env("SHIKUMI_UNIFORM_")),
+            (vec!["c".to_owned()], Provenance::file("/etc/uniform.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert!(m.source_kind_histogram().is_full_cover());
+        assert_eq!(
+            m.dominant_source_kind(),
+            Some(crate::ConfigSourceKind::Defaults),
+        );
     }
 }
