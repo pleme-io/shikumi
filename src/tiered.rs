@@ -2027,6 +2027,260 @@ impl ProvenanceMap {
         self.source_kind_histogram().recessive_cell()
     }
 
+    /// The **peak leaf count on the source-kind altitude** — the number of
+    /// surviving effective leaves contributed by the most-observed
+    /// (dominant) [`crate::ConfigSourceKind`] on this resolved fold.
+    /// Returns `0` exactly when the map is empty; otherwise returns the
+    /// count carried by [`Self::dominant_source_kind`] (pointwise equal
+    /// to it, and always `>= 1` by the histogram-support definition).
+    ///
+    /// The **source-altitude peer** of [`Self::peak_tier_count`] on the
+    /// tier altitude: [`Self::peak_tier_count`] reads the modal-count
+    /// scalar off [`Self::tier_histogram`]; this method reads the modal-
+    /// count scalar off [`Self::source_kind_histogram`]. The two altitudes
+    /// now name the modal-count projection of the atomic `(tier, source)`
+    /// pair each leaf's [`Provenance`] carries — matched by name, by
+    /// return-type shape (`usize`), by delegation seam
+    /// ([`crate::AxisHistogram::peak_count`] on the local histogram), and
+    /// by empty-map convention (both return `0`, not `Option<usize>`).
+    ///
+    /// The natural typed primitive for diagnostic dumps, dashboards, and
+    /// attestation manifests asking *"how many leaves did the dominant
+    /// layer class collect?"*: the fleet dashboard headline *"File overlay
+    /// owns 12 of 47 leaves"* (where 12 is this scalar), the attestation
+    /// manifest recording the peak-source-kind observation count between
+    /// two resolved-fold snapshots, the alerting policy reading *"peak
+    /// source-kind count = 12"* to flag a rebuild window where one layer
+    /// class dwarfed the others. Before this lift, every such consumer
+    /// re-derived the projection inline as
+    /// `map.source_kind_histogram().peak_count()` or (equivalently but at
+    /// twice the cost) `map.dominant_source_kind().map_or(0, |k|
+    /// map.source_kind_histogram().count(k))` — which walked the
+    /// histogram *twice* (once to argmax, once to read the count back
+    /// through [`crate::AxisHistogram::count`] indexing) and re-built the
+    /// histogram at every site. Routes through
+    /// [`Self::source_kind_histogram`]:
+    /// [`crate::AxisHistogram::peak_count`] reads a single pass over the
+    /// fixed-cardinality counts vector.
+    ///
+    /// The source-altitude scalar-count peer of [`Self::dominant_source_kind`]
+    /// (the modal-cell scalar peer of [`Self::source_kind_histogram`]) —
+    /// the histogram surface now carries the fused
+    /// `(dominant_source_kind, peak_source_kind_count)` modal pair on the
+    /// source-kind altitude, matching the
+    /// ([`crate::AxisHistogram::dominant_cell`],
+    /// [`crate::AxisHistogram::peak_count`]) pair on the shared
+    /// [`crate::AxisHistogram`] primitive one altitude down and the fused
+    /// `(dominant_tier, peak_tier_count)` modal pair on the tier altitude.
+    /// Consumers answering *"which layer class dominated and by how
+    /// much?"* now read a single `(dominant_source_kind(),
+    /// peak_source_kind_count())` pair — one method each, both routing
+    /// through the same primitive — instead of re-deriving the count off
+    /// the modal cell.
+    ///
+    /// **Empty-map convention** — returns `0` (not `Option<usize>`)
+    /// matching the [`Self::len`] empty convention, the
+    /// [`Self::peak_tier_count`] empty convention on the tier altitude,
+    /// and the [`crate::AxisHistogram::peak_count`] convention one
+    /// altitude down; the scalar `(len, peak_source_kind_count)` pair
+    /// reads uniformly `(0, 0)` on the empty map. The dual-form
+    /// [`Self::dominant_source_kind`] carries
+    /// `Option<crate::ConfigSourceKind>` because the *source-kind* is
+    /// undefined when no leaf contributes; the *count* is well-defined as
+    /// zero. The asymmetry is intentional and matches the tier-altitude
+    /// convention: every scalar projection reads zero on empty; every
+    /// cell projection reads `None`.
+    ///
+    /// # Invariants
+    ///
+    /// - `peak_source_kind_count() == 0` ⇔ [`Self::is_empty`] is `true` —
+    ///   peer to the empty-map boundary [`Self::dominant_source_kind`]
+    ///   and [`Self::recessive_source_kind`] both witness on the cell
+    ///   side.
+    /// - `peak_source_kind_count() == source_kind_histogram().peak_count()`
+    ///   — both project the same scalar off the same primitive; the
+    ///   named seam is the cube-native routing of the histogram surface.
+    /// - `peak_source_kind_count() == dominant_source_kind().map_or(0,
+    ///   |k| source_kind_histogram().count(k))` — the count projection
+    ///   of the `(dominant_source_kind, peak_source_kind_count)` modal
+    ///   pair equals [`Self::peak_source_kind_count`] pointwise on every
+    ///   map (empty: `None.map_or(0, …) == 0 == peak_source_kind_count`;
+    ///   non-empty: `Some(k).map_or(0, |k| count(k)) ==
+    ///   peak_source_kind_count`, since `count(dominant_source_kind()) ==
+    ///   peak_count()`).
+    /// - `peak_source_kind_count() <= len()` always: the peak is bounded
+    ///   above by the total leaf count (every source-kind contributes at
+    ///   most every leaf, the others contribute zero). Equality holds
+    ///   when `contributing_source_kinds().len() <= 1`.
+    /// - `peak_source_kind_count() == len()` iff
+    ///   `contributing_source_kinds().len() <= 1`: a single observed
+    ///   source-kind carries every leaf, so the peak equals the total.
+    ///   Zero observed source-kinds (empty) reads 0 == 0; one observed
+    ///   source-kind reads N == N; two or more reads peak < total
+    ///   strictly.
+    /// - `peak_source_kind_count() >= 1` whenever `!is_empty()` — a
+    ///   non-empty map always has at least one leaf on the dominant
+    ///   source-kind.
+    /// - `peak_source_kind_count()` on a uniform per-source-kind fold
+    ///   (one leaf per source-kind) equals `1` — every observed source-
+    ///   kind collects one leaf, dominant included.
+    /// - `peak_source_kind_count()` on a singleton-support fold (every
+    ///   leaf on the same source-kind) equals `len()` — the dominant
+    ///   source-kind collects every leaf. Singleton-support pin.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// argmax scan). Both are `O(n)` in practice since the source-kind
+    /// axis carries a fixed three-cell cardinality; the returned `usize`
+    /// reads one scalar. Halves the cost of the previous
+    /// `dominant_source_kind().map_or(0, |k|
+    /// source_kind_histogram().count(k))` idiom (which walked the
+    /// histogram twice — once to argmax, once to read the count back).
+    #[must_use]
+    pub fn peak_source_kind_count(&self) -> usize {
+        self.source_kind_histogram().peak_count()
+    }
+
+    /// The **trough leaf count on the source-kind altitude** — the number
+    /// of surviving effective leaves contributed by the rarest-observed
+    /// (recessive) [`crate::ConfigSourceKind`] on this resolved fold.
+    /// Returns `0` exactly when the map is empty; otherwise returns the
+    /// count carried by [`Self::recessive_source_kind`] (pointwise equal
+    /// to it, and always `>= 1` by the histogram-support definition).
+    ///
+    /// The **source-altitude peer** of [`Self::trough_tier_count`] on the
+    /// tier altitude: [`Self::trough_tier_count`] reads the anti-modal-
+    /// count scalar off [`Self::tier_histogram`]; this method reads the
+    /// anti-modal-count scalar off [`Self::source_kind_histogram`]. The
+    /// two altitudes now name the anti-modal-count projection of the
+    /// atomic `(tier, source)` pair each leaf's [`Provenance`] carries —
+    /// matched by name, by return-type shape (`usize`), by delegation
+    /// seam ([`crate::AxisHistogram::trough_count`] on the local
+    /// histogram), and by empty-map convention (both return `0`, not
+    /// `Option<usize>`).
+    ///
+    /// The **scalar peer** of [`Self::recessive_source_kind`] on the count
+    /// side — the natural typed primitive for diagnostic dumps,
+    /// dashboards, and attestation manifests asking *"how many leaves did
+    /// the runt layer class collect?"*: the fleet dashboard headline
+    /// *"runt layer class: Env owns 1 of 47 leaves"* (where 1 is this
+    /// scalar), the attestation manifest recording the trough-source-kind
+    /// observation count between two resolved-fold snapshots, the
+    /// alerting policy reading *"trough source-kind count = 1"* to flag a
+    /// rebuild window where a layer class barely contributed. Before this
+    /// lift, every such consumer re-derived the projection inline as
+    /// `map.source_kind_histogram().trough_count()` or (equivalently but
+    /// at twice the cost) `map.recessive_source_kind().map_or(0, |k|
+    /// map.source_kind_histogram().count(k))` — which walked the
+    /// histogram *twice* (once to argmin over the support, once to read
+    /// the count back through [`crate::AxisHistogram::count`] indexing)
+    /// and re-built the histogram at every site. Routes through
+    /// [`Self::source_kind_histogram`]:
+    /// [`crate::AxisHistogram::trough_count`] reads a single pass over
+    /// the fixed-cardinality counts vector (filtering the zero-count
+    /// cells out of the argmin search).
+    ///
+    /// The source-altitude scalar-count peer of
+    /// [`Self::recessive_source_kind`] (the anti-modal-cell scalar peer
+    /// of [`Self::source_kind_histogram`]) — the histogram surface now
+    /// carries the fused `(recessive_source_kind, trough_source_kind_count)`
+    /// anti-modal pair on the source-kind altitude, matching the
+    /// ([`crate::AxisHistogram::recessive_cell`],
+    /// [`crate::AxisHistogram::trough_count`]) pair on the shared
+    /// [`crate::AxisHistogram`] primitive one altitude down and the fused
+    /// `(recessive_tier, trough_tier_count)` anti-modal pair on the tier
+    /// altitude. Consumers answering *"which layer class is the runt and
+    /// by how much?"* now read a single `(recessive_source_kind(),
+    /// trough_source_kind_count())` pair — one method each, both routing
+    /// through the same primitive — instead of re-deriving the count off
+    /// the anti-modal cell.
+    ///
+    /// The 2×2 `(dominant, recessive) × (cell, count)` scalar grid on
+    /// the source-kind altitude closes with this lift: the four seams
+    /// ([`Self::dominant_source_kind`], [`Self::peak_source_kind_count`],
+    /// [`Self::recessive_source_kind`], [`Self::trough_source_kind_count`])
+    /// now each route through the same [`Self::source_kind_histogram`]
+    /// primitive at one pass per projection, matching the
+    /// `(dominant_cell, peak_count, recessive_cell, trough_count)` quad
+    /// on the shared [`crate::AxisHistogram`] primitive one altitude
+    /// down and the same 2×2 grid on the tier altitude
+    /// ([`Self::dominant_tier`], [`Self::peak_tier_count`],
+    /// [`Self::recessive_tier`], [`Self::trough_tier_count`]).
+    ///
+    /// **Empty-map convention** — returns `0` (not `Option<usize>`)
+    /// matching the [`Self::len`] empty convention, the
+    /// [`Self::peak_source_kind_count`] empty convention on the same
+    /// altitude, the [`Self::trough_tier_count`] empty convention on the
+    /// tier altitude, and the [`crate::AxisHistogram::trough_count`]
+    /// convention one altitude down; the scalar
+    /// `(peak_source_kind_count, trough_source_kind_count)` pair reads
+    /// uniformly `(0, 0)` on the empty map. The dual-form
+    /// [`Self::recessive_source_kind`] carries
+    /// `Option<crate::ConfigSourceKind>` because the *source-kind* is
+    /// undefined when no leaf contributes; the *count* is well-defined as
+    /// zero. The asymmetry is intentional: every scalar projection reads
+    /// zero on empty; every cell projection reads `None`.
+    ///
+    /// # Invariants
+    ///
+    /// - `trough_source_kind_count() == 0` ⇔ [`Self::is_empty`] is `true`
+    ///   — peer to the empty-map boundary [`Self::dominant_source_kind`],
+    ///   [`Self::recessive_source_kind`], and
+    ///   [`Self::peak_source_kind_count`] all witness on the cell / count
+    ///   sides.
+    /// - `trough_source_kind_count() ==
+    ///   source_kind_histogram().trough_count()` — both project the same
+    ///   scalar off the same primitive; the named seam is the cube-native
+    ///   routing of the histogram surface.
+    /// - `trough_source_kind_count() == recessive_source_kind().map_or(0,
+    ///   |k| source_kind_histogram().count(k))` — the count projection
+    ///   of the `(recessive_source_kind, trough_source_kind_count)`
+    ///   anti-modal pair equals [`Self::trough_source_kind_count`]
+    ///   pointwise on every map (empty: `None.map_or(0, …) == 0 ==
+    ///   trough_source_kind_count`; non-empty: `Some(k).map_or(0, |k|
+    ///   count(k)) == trough_source_kind_count`, since
+    ///   `count(recessive_source_kind()) == trough_count()`).
+    /// - `trough_source_kind_count() <= peak_source_kind_count()` always:
+    ///   the trough is bounded above by the peak (lifted from the
+    ///   trait-uniform `trough_count() <= peak_count()` law on
+    ///   [`crate::AxisHistogram`]). The empty-map case reads `0 <= 0`;
+    ///   the non-empty case reads the trough-of-support bounded above by
+    ///   the peak-of-support.
+    /// - `trough_source_kind_count() == peak_source_kind_count()` iff
+    ///   `contributing_source_kinds().len() <= 1`: on the empty map both
+    ///   are 0; on a singleton-support fold both equal `len()`; on two or
+    ///   more observed source-kinds with distinct counts the trough is
+    ///   strictly below the peak.
+    /// - `trough_source_kind_count() >= 1` whenever `!is_empty()` — the
+    ///   argmin is taken over the histogram's *support* (nonzero cells),
+    ///   so the trough of a non-empty histogram is always at least one.
+    /// - `trough_source_kind_count()` on a uniform per-source-kind fold
+    ///   (one leaf per source-kind) equals `1` — every observed source-
+    ///   kind collects one leaf; the trough coincides with the peak on
+    ///   the uniform-cover degenerate (the singleton-modality analogue
+    ///   on the count side).
+    /// - `trough_source_kind_count()` on a singleton-support fold (every
+    ///   leaf on the same source-kind) equals `len()` — the sole
+    ///   observed source-kind is both the modal and anti-modal cell, so
+    ///   trough == peak == len.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// argmin scan over the support). Both are `O(n)` in practice since
+    /// the source-kind axis carries a fixed three-cell cardinality; the
+    /// returned `usize` reads one scalar. Halves the cost of the previous
+    /// `recessive_source_kind().map_or(0, |k|
+    /// source_kind_histogram().count(k))` idiom (which walked the
+    /// histogram twice — once to argmin, once to read the count back).
+    #[must_use]
+    pub fn trough_source_kind_count(&self) -> usize {
+        self.source_kind_histogram().trough_count()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -54325,6 +54579,599 @@ mod progressive_tests {
                 )
                 .0
             });
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ProvenanceMap::peak_source_kind_count — modal-count scalar peer
+    //      of ProvenanceMap::source_kind_histogram on the source-kind
+    //      altitude, fusing with dominant_source_kind into the (cell,
+    //      count) modal pair and porting peak_tier_count one axis over ----
+
+    #[test]
+    fn peak_source_kind_count_matches_source_kind_histogram_peak_count_pointwise() {
+        // The scalar-count pin: `peak_source_kind_count` routes through
+        // `source_kind_histogram().peak_count()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Source-altitude peer
+        // of `peak_tier_count_matches_tier_histogram_peak_count_pointwise`
+        // on the tier altitude, and count-side peer of
+        // `dominant_source_kind_matches_source_kind_histogram_dominant_cell_pointwise`
+        // on the same altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().peak_count();
+            assert_eq!(map.peak_source_kind_count(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn peak_source_kind_count_prog_fixture_is_four() {
+        // Prog attributes 4 leaves, all with source-kind `Defaults` (the
+        // pure-progressive fold uses only computed-tier constructors,
+        // each pinning `ConfigSource::Defaults`). Singleton-support fold
+        // on the source-kind axis: the sole observed cell carries every
+        // leaf, so the peak lands on `Defaults` at count 4. Direct pin —
+        // the named seam answers the operator's *"how many leaves did
+        // the dominant layer class collect?"* at one call, no
+        // `peak_count` re-derivation in the dashboard.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().peak_source_kind_count(), 4);
+    }
+
+    #[test]
+    fn peak_source_kind_count_mixed_fixture_is_two() {
+        // Mixed fixture: a→Defaults, b→File, c→Env, d→Defaults. Counts:
+        // Defaults=2, Env=1, File=1. The peak lands on Defaults at count
+        // 2 — the scalar reads through the seam whether the fixture is a
+        // singleton-support fold (`Prog`) or a full-cover mixed-overlay
+        // fold.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().peak_source_kind_count(), 2);
+    }
+
+    #[test]
+    fn peak_source_kind_count_empty_map_is_zero() {
+        // An empty ProvenanceMap has no leaves and therefore no peak —
+        // the empty-map / empty-histogram boundary of the scalar-count
+        // projection reads `0` (matching the [`AxisHistogram::peak_count`]
+        // empty convention one altitude down, and the `Self::len` empty
+        // convention on the same altitude). Peer to
+        // `dominant_source_kind_empty_map_is_none` on the cell side and
+        // `peak_tier_count_empty_map_is_zero` on the tier altitude — the
+        // fused pair `(dominant_source_kind(), peak_source_kind_count())`
+        // reads `(None, 0)` uniformly on the empty map.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.peak_source_kind_count(), 0);
+    }
+
+    #[test]
+    fn peak_source_kind_count_is_zero_iff_map_is_empty() {
+        // Cross-surface pin: the zero-peak predicate agrees with the
+        // emptiness of the underlying map. Structural completeness of
+        // the `(is_empty, peak_source_kind_count == 0)` boundary — a
+        // well-formed fold with ≥1 leaf always has a positive peak, and
+        // an empty fold always has zero peak. The count-side dual of
+        // `dominant_source_kind_is_some_iff_map_is_nonempty` and the
+        // source-altitude peer of `peak_tier_count_is_zero_iff_map_is_empty`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.peak_source_kind_count() == 0, map.is_empty());
+        }
+    }
+
+    #[test]
+    fn peak_source_kind_count_equals_count_at_dominant_source_kind_on_nonempty_map() {
+        // The (dominant_cell, peak_count) modal-pair invariant lifted to
+        // the source-kind altitude on the ProvenanceMap surface: the
+        // scalar-count reads pointwise identical to
+        // `count(dominant_source_kind)`. Peer of
+        // `dominant_source_kind_count_equals_peak_count_on_nonempty_map`
+        // — that test pins the histogram-side identity
+        // `hist.count(dominant_source_kind) == hist.peak_count()`; this
+        // test pins the ProvenanceMap-side identity
+        // `count(dominant_source_kind) == peak_source_kind_count()` at
+        // the fused-pair seam. Source-altitude peer of
+        // `peak_tier_count_equals_count_at_dominant_tier_on_nonempty_map`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            let hist = map.source_kind_histogram();
+            let dominant = map
+                .dominant_source_kind()
+                .expect("non-empty map has dominant source-kind");
+            assert_eq!(hist.count(dominant), map.peak_source_kind_count());
+        }
+    }
+
+    #[test]
+    fn peak_source_kind_count_equals_dominant_source_kind_map_or_count() {
+        // The fused-pair identity `peak_source_kind_count() ==
+        // dominant_source_kind().map_or(0, |k|
+        // source_kind_histogram().count(k))` on every input — the count
+        // projection of the (dominant_source_kind, peak_source_kind_count)
+        // modal pair reads through the seam uniformly across the empty-
+        // map / non-empty-map partition. Includes the empty map
+        // (`None.map_or(0, …) == 0 == peak_source_kind_count`) — this is
+        // the pin that the fused-pair identity is boundary-complete.
+        // Source-altitude peer of
+        // `peak_tier_count_equals_dominant_tier_map_or_count`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let hist = map.source_kind_histogram();
+            let via_fused_pair = map.dominant_source_kind().map_or(0, |k| hist.count(k));
+            assert_eq!(map.peak_source_kind_count(), via_fused_pair);
+        }
+    }
+
+    #[test]
+    fn peak_source_kind_count_is_bounded_by_len() {
+        // Structural bound `peak_source_kind_count() <= len()` on every
+        // input — the peak is bounded above by the total leaf count
+        // (every source-kind contributes at most every leaf, the others
+        // contribute zero). Lifted from the trait-uniform `peak_count()
+        // <= total()` law on AxisHistogram. Source-altitude peer of
+        // `peak_tier_count_is_bounded_by_len`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(
+                map.peak_source_kind_count() <= map.len(),
+                "peak_source_kind_count()={p} must be <= len()={n}",
+                p = map.peak_source_kind_count(),
+                n = map.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_source_kind_count_equals_len_iff_at_most_one_contributing_source_kind() {
+        // Structural bound `peak_source_kind_count() == len()` iff
+        // `contributing_source_kinds().len() <= 1` — the peak equals the
+        // total exactly when zero or one source-kind is observed. Zero:
+        // empty map, both zero. One: singleton-support fold (Prog: every
+        // leaf on Defaults). Two or more: peak strictly below total
+        // (Mixed: Defaults=2, Env=1, File=1 → peak=2 < len=4). Lifted
+        // from the trait-uniform `peak_count() == total()` law on
+        // AxisHistogram. Source-altitude peer of
+        // `peak_tier_count_equals_len_iff_at_most_one_contributing_tier`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.peak_source_kind_count() == map.len(),
+                map.contributing_source_kinds().len() <= 1,
+                "peak_source_kind_count == len iff contributing_source_kinds.len() <= 1 (peak={p}, len={n}, contribs={c})",
+                p = map.peak_source_kind_count(),
+                n = map.len(),
+                c = map.contributing_source_kinds().len(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_source_kind_count_is_at_least_one_on_nonempty_map() {
+        // Structural pin: whenever `!is_empty()`, `peak_source_kind_count()
+        // >= 1` — a non-empty map always has at least one leaf on the
+        // dominant source-kind. Combined with the `<= len()` bound above,
+        // this pins `1 <= peak_source_kind_count() <= len()` on every
+        // non-empty map. Source-altitude peer of
+        // `peak_tier_count_is_at_least_one_on_nonempty_map`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            assert!(
+                map.peak_source_kind_count() >= 1,
+                "non-empty map must have peak_source_kind_count >= 1 (peak={p})",
+                p = map.peak_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn peak_source_kind_count_uniform_cover_is_one() {
+        // Trait-uniform invariant lifted to the ProvenanceMap surface:
+        // on a full-cover fold where every source-kind observes the same
+        // nonzero count of one, the peak count is `1`. Direct
+        // construction: one leaf per source-kind, full-cover with
+        // uniform count 1. Peer of
+        // `dominant_source_kind_uniform_cover_picks_first_cell` on the
+        // count side (that test pins the *cell*; this test pins the
+        // *count*). Together the pair `(dominant_source_kind,
+        // peak_source_kind_count)` reads `(Some(Defaults), 1)` on the
+        // uniform-cover fold. Source-altitude peer of
+        // `peak_tier_count_uniform_cover_is_one`.
+        let m: ProvenanceMap = crate::ConfigSourceKind::ALL
+            .iter()
+            .copied()
+            .map(|k| {
+                let p = match k {
+                    crate::ConfigSourceKind::Defaults => Provenance::bare(),
+                    crate::ConfigSourceKind::Env => Provenance::env("PFX_"),
+                    crate::ConfigSourceKind::File => Provenance::file("/etc/x.yaml"),
+                };
+                (vec![k.as_str().to_owned()], p)
+            })
+            .collect();
+        assert!(m.source_kind_histogram().is_full_cover());
+        assert_eq!(m.peak_source_kind_count(), 1);
+    }
+
+    #[test]
+    fn peak_source_kind_count_singleton_support_equals_len() {
+        // Singleton-support degenerate: when only one source-kind
+        // contributes, every leaf lands on that source-kind, so the peak
+        // equals the total. Direct construction: Prog is a singleton-
+        // support fold on the source-kind axis (every leaf on Defaults),
+        // so peak_source_kind_count() == len(). The scalar peer of the
+        // singleton-support cell degenerate `dominant_source_kind() ==
+        // recessive_source_kind()` in
+        // `recessive_source_kind_singleton_support_agrees_with_dominant_source_kind`
+        // — that test pins the *cell*; this test pins the *count*
+        // through the `peak_source_kind_count() == len()` equality on
+        // the singleton-support boundary. Source-altitude peer of
+        // `peak_tier_count_singleton_support_equals_len`.
+        let r = Prog::resolve_progressive();
+        let m = r.provenance();
+        assert_eq!(m.contributing_source_kinds().len(), 1);
+        assert_eq!(m.peak_source_kind_count(), m.len());
+        assert_eq!(m.peak_source_kind_count(), 4);
+    }
+
+    #[test]
+    fn peak_source_kind_count_agrees_with_open_coded_max_over_axis_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()`
+        // walk this lift replaces — both the named seam and the hand-
+        // rolled max must pointwise agree over every fixture in the
+        // module. The `.max().unwrap_or(0)` idiom mirrors the empty-
+        // histogram convention on `AxisHistogram::peak_count` one
+        // altitude down (both read 0 on empty). Source-altitude peer of
+        // `peak_tier_count_agrees_with_open_coded_max_over_axis_walk`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.peak_source_kind_count();
+            let hand_rolled = map
+                .source_kind_histogram()
+                .iter()
+                .map(|(_, c)| c)
+                .max()
+                .unwrap_or(0);
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ---- ProvenanceMap::trough_source_kind_count — anti-modal-count
+    //      scalar peer of ProvenanceMap::source_kind_histogram on the
+    //      source-kind altitude, fusing with recessive_source_kind into
+    //      the (cell, count) anti-modal pair and closing the (dominant,
+    //      recessive) × (cell, count) 2×2 scalar grid on the source-kind
+    //      altitude, porting trough_tier_count one axis over ----
+
+    #[test]
+    fn trough_source_kind_count_matches_source_kind_histogram_trough_count_pointwise() {
+        // The scalar-count pin: `trough_source_kind_count` routes
+        // through `source_kind_histogram().trough_count()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Source-
+        // altitude peer of
+        // `trough_tier_count_matches_tier_histogram_trough_count_pointwise`
+        // on the tier altitude, and anti-modal peer of
+        // `recessive_source_kind_matches_source_kind_histogram_recessive_cell_pointwise`
+        // on the same altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().trough_count();
+            assert_eq!(map.trough_source_kind_count(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_count_prog_fixture_is_four() {
+        // Prog attributes 4 leaves, all with source-kind `Defaults`
+        // (singleton-support fold on the source-kind axis). The sole
+        // observed cell is both the modal and the anti-modal cell (the
+        // singleton-support count-side degenerate), so trough == peak ==
+        // len == 4. Direct pin — the named seam answers the operator's
+        // *"how many leaves did the runt layer class collect?"* at one
+        // call, no `trough_count` re-derivation in the dashboard. On
+        // this fold the runt and the champion collect the same 4 leaves
+        // because there is only one observed cell.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().trough_source_kind_count(), 4);
+    }
+
+    #[test]
+    fn trough_source_kind_count_mixed_fixture_is_one() {
+        // Mixed fixture: a→Defaults, b→File, c→Env, d→Defaults. Counts:
+        // Defaults=2, Env=1, File=1. The trough over the support
+        // {Defaults, Env, File} lands at count 1 (tied between Env and
+        // File — the tie-break picks the *cell*, but the scalar count is
+        // `1` either way). The named seam reads the anti-modal count
+        // through the source-kind histogram whether the fold is full-
+        // cover or singleton-support.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().trough_source_kind_count(), 1);
+    }
+
+    #[test]
+    fn trough_source_kind_count_empty_map_is_zero() {
+        // An empty ProvenanceMap has no leaves and therefore no trough
+        // — the empty-map / empty-histogram boundary of the scalar-count
+        // projection reads `0` (matching the [`AxisHistogram::trough_count`]
+        // empty convention one altitude down, and the `Self::len` empty
+        // convention on the same altitude). Peer to
+        // `recessive_source_kind_empty_map_is_none` on the cell side and
+        // `peak_source_kind_count_empty_map_is_zero` on the modal side
+        // — the fused quad `(dominant_source_kind, peak_source_kind_count,
+        // recessive_source_kind, trough_source_kind_count)` reads
+        // `(None, 0, None, 0)` uniformly on the empty map. Source-
+        // altitude peer of `trough_tier_count_empty_map_is_zero`.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.trough_source_kind_count(), 0);
+    }
+
+    #[test]
+    fn trough_source_kind_count_is_zero_iff_map_is_empty() {
+        // Cross-surface pin: the zero-trough predicate agrees with the
+        // emptiness of the underlying map. Structural completeness of
+        // the `(is_empty, trough_source_kind_count == 0)` boundary — a
+        // well-formed fold with ≥1 leaf always has a positive trough
+        // (the argmin is taken over the *support*), and an empty fold
+        // always has zero trough. The count-side dual of
+        // `recessive_source_kind_is_some_iff_map_is_nonempty` and the
+        // anti-modal dual of `peak_source_kind_count_is_zero_iff_map_is_empty`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.trough_source_kind_count() == 0, map.is_empty());
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_count_equals_count_at_recessive_source_kind_on_nonempty_map() {
+        // The (recessive_cell, trough_count) anti-modal-pair invariant
+        // lifted to the source-kind altitude on the ProvenanceMap
+        // surface: the scalar-count reads pointwise identical to
+        // `count(recessive_source_kind)`. Peer of
+        // `recessive_source_kind_count_equals_trough_count_on_nonempty_map`
+        // — that test pins the histogram-side identity
+        // `hist.count(recessive_source_kind) == hist.trough_count()`;
+        // this test pins the ProvenanceMap-side identity
+        // `count(recessive_source_kind) == trough_source_kind_count()`
+        // at the fused-pair seam. Source-altitude peer of
+        // `trough_tier_count_equals_count_at_recessive_tier_on_nonempty_map`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            let hist = map.source_kind_histogram();
+            let recessive = map
+                .recessive_source_kind()
+                .expect("non-empty map has recessive source-kind");
+            assert_eq!(hist.count(recessive), map.trough_source_kind_count());
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_count_equals_recessive_source_kind_map_or_count() {
+        // The fused-pair identity `trough_source_kind_count() ==
+        // recessive_source_kind().map_or(0, |k|
+        // source_kind_histogram().count(k))` on every input — the count
+        // projection of the (recessive_source_kind, trough_source_kind_count)
+        // anti-modal pair reads through the seam uniformly across the
+        // empty-map / non-empty-map partition. Includes the empty map
+        // (`None.map_or(0, …) == 0 == trough_source_kind_count`) — this
+        // is the pin that the fused-pair identity is boundary-complete.
+        // Peer of `peak_source_kind_count_equals_dominant_source_kind_map_or_count`
+        // on the modal side and source-altitude peer of
+        // `trough_tier_count_equals_recessive_tier_map_or_count`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let hist = map.source_kind_histogram();
+            let via_fused_pair = map.recessive_source_kind().map_or(0, |k| hist.count(k));
+            assert_eq!(map.trough_source_kind_count(), via_fused_pair);
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_count_is_bounded_by_peak_source_kind_count() {
+        // Structural bound `trough_source_kind_count() <=
+        // peak_source_kind_count()` on every input — the trough is
+        // bounded above by the peak. Lifted from the trait-uniform
+        // `trough_count() <= peak_count()` law on AxisHistogram. The
+        // empty-map case reads `0 <= 0`; the non-empty case reads the
+        // trough-of-support bounded above by the peak-of-support. Closes
+        // the `(trough, peak)` scalar lattice on the source-kind
+        // altitude — both projections read through the same seam pair.
+        // Source-altitude peer of
+        // `trough_tier_count_is_bounded_by_peak_tier_count`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(
+                map.trough_source_kind_count() <= map.peak_source_kind_count(),
+                "trough_source_kind_count()={t} must be <= peak_source_kind_count()={p}",
+                t = map.trough_source_kind_count(),
+                p = map.peak_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_count_equals_peak_source_kind_count_iff_at_most_one_contributing_source_kind()
+     {
+        // Structural bound `trough_source_kind_count() ==
+        // peak_source_kind_count()` iff `contributing_source_kinds().len()
+        // <= 1` — the trough equals the peak exactly when zero or one
+        // source-kind is observed. Zero: empty map, both zero. One:
+        // singleton-support fold (Prog: every leaf on Defaults, both
+        // equal `len()=4`). Two or more with distinct counts: trough
+        // strictly below peak (Mixed: Defaults=2, Env=1, File=1 →
+        // trough=1 < peak=2). Peer of
+        // `peak_source_kind_count_equals_len_iff_at_most_one_contributing_source_kind`
+        // on the trough-side identity and source-altitude peer of
+        // `trough_tier_count_equals_peak_tier_count_iff_at_most_one_contributing_tier`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let equal = map.trough_source_kind_count() == map.peak_source_kind_count();
+            let at_most_one_contributing = map.contributing_source_kinds().len() <= 1;
+            assert_eq!(
+                equal,
+                at_most_one_contributing,
+                "trough == peak iff contributing_source_kinds.len() <= 1 (trough={t}, peak={p}, contribs={c})",
+                t = map.trough_source_kind_count(),
+                p = map.peak_source_kind_count(),
+                c = map.contributing_source_kinds().len(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_count_is_at_least_one_on_nonempty_map() {
+        // Structural pin: whenever `!is_empty()`,
+        // `trough_source_kind_count() >= 1` — the argmin is taken over
+        // the histogram's *support* (nonzero cells), so a non-empty map
+        // always has at least one leaf on the recessive source-kind.
+        // Combined with the `<= peak_source_kind_count()` bound above,
+        // this pins `1 <= trough_source_kind_count() <=
+        // peak_source_kind_count() <= len()` on every non-empty map —
+        // the complete inequality chain on the source-kind altitude
+        // scalar-count surface. Source-altitude peer of
+        // `trough_tier_count_is_at_least_one_on_nonempty_map`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            assert!(
+                map.trough_source_kind_count() >= 1,
+                "non-empty map must have trough_source_kind_count >= 1 (trough={t})",
+                t = map.trough_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_count_uniform_cover_is_one() {
+        // Trait-uniform invariant lifted to the ProvenanceMap surface:
+        // on a full-cover fold where every source-kind observes the
+        // same nonzero count of one, the trough count is `1` (and
+        // equals the peak — the singleton-modality count-side
+        // degenerate). Direct construction: one leaf per source-kind,
+        // full-cover with uniform count 1. Peer of
+        // `peak_source_kind_count_uniform_cover_is_one` — together the
+        // pair `(peak_source_kind_count, trough_source_kind_count)`
+        // reads `(1, 1)` on the uniform-cover fold, and the quad
+        // `(dominant_source_kind, peak_source_kind_count,
+        // recessive_source_kind, trough_source_kind_count)` reads
+        // `(Some(Defaults), 1, Some(Defaults), 1)` — the tie-break
+        // picks the first-declared cell on both projections. Source-
+        // altitude peer of `trough_tier_count_uniform_cover_is_one`.
+        let m: ProvenanceMap = crate::ConfigSourceKind::ALL
+            .iter()
+            .copied()
+            .map(|k| {
+                let p = match k {
+                    crate::ConfigSourceKind::Defaults => Provenance::bare(),
+                    crate::ConfigSourceKind::Env => Provenance::env("PFX_"),
+                    crate::ConfigSourceKind::File => Provenance::file("/etc/x.yaml"),
+                };
+                (vec![k.as_str().to_owned()], p)
+            })
+            .collect();
+        assert!(m.source_kind_histogram().is_full_cover());
+        assert_eq!(m.trough_source_kind_count(), 1);
+        assert_eq!(m.trough_source_kind_count(), m.peak_source_kind_count());
+    }
+
+    #[test]
+    fn trough_source_kind_count_singleton_support_equals_len() {
+        // Singleton-support degenerate: when only one source-kind
+        // contributes, every leaf lands on that source-kind, so the
+        // trough equals the total (and equals the peak — the singleton-
+        // support count-side degenerate). Prog is such a fold on the
+        // source-kind axis (every leaf on Defaults). The scalar peer of
+        // the singleton-support cell degenerate `dominant_source_kind()
+        // == recessive_source_kind()` in
+        // `recessive_source_kind_singleton_support_agrees_with_dominant_source_kind`
+        // — that test pins the *cell*; this test pins the *count*
+        // through the `trough_source_kind_count() == len()` equality on
+        // the singleton-support boundary. Peer of
+        // `peak_source_kind_count_singleton_support_equals_len` and
+        // source-altitude peer of
+        // `trough_tier_count_singleton_support_equals_len`.
+        let r = Prog::resolve_progressive();
+        let m = r.provenance();
+        assert_eq!(m.contributing_source_kinds().len(), 1);
+        assert_eq!(m.trough_source_kind_count(), m.len());
+        assert_eq!(m.trough_source_kind_count(), 4);
+        assert_eq!(m.trough_source_kind_count(), m.peak_source_kind_count());
+    }
+
+    #[test]
+    fn trough_source_kind_count_agrees_with_open_coded_min_over_support_walk() {
+        // Parity against the exact `hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0)` walk this lift replaces
+        // — both the named seam and the hand-rolled min over the
+        // support must pointwise agree over every fixture in the
+        // module. The `.filter(c > 0)` step is essential: without it
+        // the argmin would silently pick a zero-count cell (any source-
+        // kind the fold did not credit), shadowing the *rarest observed*
+        // count with a "trivial minimum" over the full axis. The
+        // `.min().unwrap_or(0)` idiom mirrors the empty-histogram
+        // convention on `AxisHistogram::trough_count` one altitude down
+        // (both read 0 on empty). Peer of
+        // `peak_source_kind_count_agrees_with_open_coded_max_over_axis_walk`
+        // on the anti-modal side (that walk does NOT filter, since
+        // `AxisHistogram::peak_count` operates over the full axis — the
+        // trough side does, since a zero-count cell would otherwise
+        // dominate the min). Source-altitude peer of
+        // `trough_tier_count_agrees_with_open_coded_min_over_support_walk`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.trough_source_kind_count();
+            let hand_rolled = map
+                .source_kind_histogram()
+                .iter()
+                .filter(|&(_, c)| c > 0)
+                .map(|(_, c)| c)
+                .min()
+                .unwrap_or(0);
             assert_eq!(via_seam, hand_rolled);
         }
     }
