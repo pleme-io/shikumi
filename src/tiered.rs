@@ -3240,6 +3240,123 @@ impl ProvenanceMap {
         self.source_kind_peak_trough_sum_of_powers(4)
     }
 
+    /// The **joint-extremes-quintic-magnitude of source-kind counts** —
+    /// the sum of the fifth powers of the modal and anti-modal per-
+    /// source-kind leaf counts on this resolved fold. Routes through
+    /// [`crate::AxisHistogram::peak_trough_sum_of_fifth_powers`] one
+    /// altitude down via the parametric seam
+    /// [`Self::source_kind_peak_trough_sum_of_powers`] at `n == 5`:
+    /// the fused `peak_count().pow(5) + trough_count().pow(5)` sum-of-
+    /// fifth-powers on the source-kind histogram surface, halving the
+    /// cost of the inline `peak_source_kind_count().pow(5) +
+    /// trough_source_kind_count().pow(5)` idiom which walked the counts
+    /// vector twice.
+    ///
+    /// The **sum-of-fifth-powers / power-sum `p_5` sibling** of the
+    /// shipped source-kind altitude
+    /// [`Self::source_kind_spread`] subtraction-form,
+    /// [`Self::source_kind_peak_trough_sum`] addition-form,
+    /// [`Self::source_kind_peak_trough_product`] multiplication-form,
+    /// [`Self::source_kind_peak_trough_sum_of_squares`] quadratic-
+    /// power-sum `p_2`, [`Self::source_kind_peak_trough_sum_of_cubes`]
+    /// cubic-power-sum `p_3`, and
+    /// [`Self::source_kind_peak_trough_sum_of_fourth_powers`] quartic-
+    /// power-sum `p_4` scalars on the same closed count-endpoint pair —
+    /// extending the symmetric-polynomial `(e₁, e₂) =
+    /// (peak+trough, peak*trough)` / power-sum `(p_2, p_3, p_4, p_5)`
+    /// representation of the `(peak_source_kind_count,
+    /// trough_source_kind_count)` endpoint pair at the source-kind
+    /// altitude through Newton's two-variable identity
+    /// `p_5 == e_1 * p_4 - e_2 * p_3` (specialized to
+    /// `sum · sum_of_fourth_powers - product · sum_of_cubes`) and the
+    /// quintic factorization `p_5 == p_2 * p_3 - e_2² * e_1`
+    /// (equivalently `sum_of_squares · sum_of_cubes - product² · sum`).
+    ///
+    /// The **source-altitude climb** of the "peak⁵ + trough⁵ sums-of-
+    /// fifth-powers across altitudes" projection seeded on the scalar
+    /// altitude by
+    /// [`crate::AxisHistogram::peak_trough_sum_of_fifth_powers`],
+    /// lifted to the diff altitude by
+    /// [`ConfigDiff::kind_peak_trough_sum_of_fifth_powers`], and
+    /// lifted to the tier altitude by
+    /// [`Self::tier_peak_trough_sum_of_fifth_powers`] — the source-kind
+    /// altitude peer closing the quintic-power-sum peer at the fourth
+    /// of the four altitudes in the fully-closed cube. Parallels the
+    /// sibling source-kind altitude "spread", "peak+trough sum",
+    /// "peak×trough product", "peak² + trough² sum-of-squares",
+    /// "peak³ + trough³ sum-of-cubes", and "peak⁴ + trough⁴
+    /// sum-of-fourth-powers" projections on the same closed-endpoint
+    /// pair.
+    ///
+    /// **AM-quintic / power-mean bound.** `16 *
+    /// source_kind_peak_trough_sum_of_fifth_powers() >=
+    /// source_kind_peak_trough_sum().pow(5)` always — the power-mean
+    /// inequality `p⁵ + t⁵ >= (p + t)⁵ / 16`. Equality holds iff
+    /// `peak_source_kind_count() == trough_source_kind_count()` (the
+    /// balanced-source-kind-counts shape). Peer to the AM-quartic bound
+    /// `8 * source_kind_peak_trough_sum_of_fourth_powers >=
+    /// source_kind_peak_trough_sum⁴` on `p_4` — all
+    /// power-mean bounds collapse to the same `(p - t)² >= 0` witness
+    /// on the closed endpoint pair at the source-kind altitude.
+    ///
+    /// **Empty-map convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::peak_trough_sum_of_fifth_powers`] empty
+    /// convention one altitude down. Every non-empty resolved fold has
+    /// `source_kind_peak_trough_sum_of_fifth_powers() >= 2`.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_peak_trough_sum_of_fifth_powers() ==
+    ///   source_kind_histogram().peak_trough_sum_of_fifth_powers()` —
+    ///   both project the same scalar off the same primitive.
+    /// - `source_kind_peak_trough_sum_of_fifth_powers() ==
+    ///   peak_source_kind_count().pow(5) +
+    ///   trough_source_kind_count().pow(5)` — the fused-pair identity.
+    /// - `source_kind_peak_trough_sum_of_fifth_powers() ==
+    ///   source_kind_peak_trough_sum_of_powers(5)` — routes through
+    ///   the parametric seam at `n = 5`.
+    /// - `source_kind_peak_trough_sum_of_fifth_powers() == 0` ⇔
+    ///   `self.is_empty()` — the empty-boundary equivalence peer.
+    /// - `source_kind_peak_trough_sum_of_fifth_powers() >= 2` whenever
+    ///   `!self.is_empty()` — non-empty floor.
+    /// - `16 * source_kind_peak_trough_sum_of_fifth_powers() >=
+    ///   source_kind_peak_trough_sum().pow(5)` always (AM-quintic;
+    ///   equality iff `peak_source_kind_count() ==
+    ///   trough_source_kind_count()`).
+    /// - `source_kind_peak_trough_sum_of_fifth_powers() <=
+    ///   2 * peak_source_kind_count().pow(5)` always (equality iff
+    ///   `peak_source_kind_count() == trough_source_kind_count()`).
+    /// - `source_kind_peak_trough_sum_of_fifth_powers() ==
+    ///   source_kind_peak_trough_sum() *
+    ///   source_kind_peak_trough_sum_of_fourth_powers() -
+    ///   source_kind_peak_trough_product() *
+    ///   source_kind_peak_trough_sum_of_cubes()` always — Newton's
+    ///   identity `p_5 = e_1 * p_4 - e_2 * p_3` on the
+    ///   `(sum, sum_of_fourth_powers, product, sum_of_cubes)` surface.
+    /// - `source_kind_peak_trough_sum_of_fifth_powers() ==
+    ///   source_kind_peak_trough_sum_of_squares() *
+    ///   source_kind_peak_trough_sum_of_cubes() -
+    ///   source_kind_peak_trough_product().pow(2) *
+    ///   source_kind_peak_trough_sum()` always — the sum-of-fifth-
+    ///   powers factorization on the `(sos, soc, product, sum)` surface
+    ///   (`p⁵ + t⁵ = (p² + t²)(p³ + t³) - p²t²(p + t)`).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    /// (the peak⁵ + trough⁵ fused scan through
+    /// [`crate::AxisHistogram::peak_trough_sum_of_fifth_powers`]). Both
+    /// are `O(n)` in practice since the source-kind axis carries a
+    /// fixed three-cell cardinality; the returned `usize` reads one
+    /// scalar. Halves the cost of the previous inline
+    /// `map.peak_source_kind_count().pow(5) +
+    /// map.trough_source_kind_count().pow(5)` idiom.
+    #[must_use]
+    pub fn source_kind_peak_trough_sum_of_fifth_powers(&self) -> usize {
+        self.source_kind_peak_trough_sum_of_powers(5)
+    }
+
     /// The **joint-extremes-Lⁿ-magnitude of source-kind counts at runtime
     /// exponent `n`** — the sum of the `n`th powers of the modal and
     /// anti-modal per-source-kind leaf counts on this resolved fold.
@@ -3252,15 +3369,16 @@ impl ProvenanceMap {
     /// vector twice.
     ///
     /// The **runtime-exponent generalization** of the source-kind-altitude
-    /// power-sum family: the three shipped fixed-exponent siblings —
+    /// power-sum family: the four shipped fixed-exponent siblings —
     /// [`Self::source_kind_peak_trough_sum_of_squares`] (`n = 2`),
-    /// [`Self::source_kind_peak_trough_sum_of_cubes`] (`n = 3`), and
-    /// [`Self::source_kind_peak_trough_sum_of_fourth_powers`] (`n = 4`)
-    /// — each route through this primitive at their fixed `N`, so the
-    /// joint-extremes `p_n` at the source-kind altitude reads off ONE
-    /// typed scalar at a runtime-chosen exponent instead of dispatching
-    /// over the named table or growing a fifth / sixth / n-th named
-    /// source-kind-altitude sibling to extend the ladder. The
+    /// [`Self::source_kind_peak_trough_sum_of_cubes`] (`n = 3`),
+    /// [`Self::source_kind_peak_trough_sum_of_fourth_powers`] (`n = 4`),
+    /// and [`Self::source_kind_peak_trough_sum_of_fifth_powers`]
+    /// (`n = 5`) — each route through this primitive at their fixed
+    /// `N`, so the joint-extremes `p_n` at the source-kind altitude
+    /// reads off ONE typed scalar at a runtime-chosen exponent instead
+    /// of dispatching over the named table or growing a sixth / n-th
+    /// named source-kind-altitude sibling to extend the ladder. The
     /// scalar-altitude peer
     /// [`crate::AxisHistogram::peak_trough_sum_of_powers`] closes the
     /// exponent axis on the histogram surface; this method lifts that
@@ -58755,6 +58873,258 @@ mod progressive_tests {
         }
     }
 
+    // ── ProvenanceMap::source_kind_peak_trough_sum_of_fifth_powers —
+    //    joint-extremes-quintic-magnitude peer on the source-kind
+    //    altitude, sum-of-fifth-powers sibling closing the (spread, sum,
+    //    product, sos, soc, sofp, sofip) septuple. Routes through the
+    //    parametric seam `source_kind_peak_trough_sum_of_powers(5)` one
+    //    method down and through
+    //    `AxisHistogram::peak_trough_sum_of_fifth_powers` one altitude
+    //    down. Source-altitude peer of
+    //    `tier_peak_trough_sum_of_fifth_powers` and diff-altitude
+    //    `ConfigDiff::kind_peak_trough_sum_of_fifth_powers`.
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fifth_powers_matches_source_kind_histogram_peak_trough_sum_of_fifth_powers_pointwise()
+     {
+        // Routing pin: `source_kind_peak_trough_sum_of_fifth_powers`
+        // routes through
+        // `source_kind_histogram().peak_trough_sum_of_fifth_powers()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Source-altitude peer of
+        // `tier_peak_trough_sum_of_fifth_powers_matches_tier_histogram_peak_trough_sum_of_fifth_powers_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map
+                .source_kind_histogram()
+                .peak_trough_sum_of_fifth_powers();
+            assert_eq!(
+                map.source_kind_peak_trough_sum_of_fifth_powers(),
+                via_histogram,
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fifth_powers_equals_peak_quintic_plus_trough_quintic_pointwise()
+     {
+        // Fused-pair pin: `source_kind_peak_trough_sum_of_fifth_powers
+        // == peak_source_kind_count⁵ + trough_source_kind_count⁵` on
+        // every fixture — the defining equivalence on the underlying
+        // scalar pair. Source-altitude peer of
+        // `tier_peak_trough_sum_of_fifth_powers_equals_peak_quintic_plus_trough_quintic_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let peak = map.peak_source_kind_count();
+            let trough = map.trough_source_kind_count();
+            assert_eq!(
+                map.source_kind_peak_trough_sum_of_fifth_powers(),
+                peak.pow(5) + trough.pow(5),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fifth_powers_prog_fixture_is_two_thousand_forty_eight() {
+        // Prog attributes 4 leaves, all with source-kind `Defaults`
+        // (singleton-support fold on the source-kind axis). Peak lands
+        // on Defaults at 4; trough over support {Defaults} lands at 4.
+        // Sum-of-fifth-powers = 4⁵ + 4⁵ = 1024 + 1024 = 2048. Direct
+        // pin — the `(peak_source_kind_count, trough_source_kind_count,
+        // source_kind_spread, source_kind_peak_trough_sum,
+        // source_kind_peak_trough_product,
+        // source_kind_peak_trough_sum_of_squares,
+        // source_kind_peak_trough_sum_of_cubes,
+        // source_kind_peak_trough_sum_of_fourth_powers,
+        // source_kind_peak_trough_sum_of_fifth_powers)` nonuple reads
+        // `(4, 4, 0, 8, 16, 32, 128, 512, 2048)`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().source_kind_peak_trough_sum_of_fifth_powers(),
+            2048,
+        );
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fifth_powers_mixed_fixture_is_thirty_three() {
+        // Mixed fixture attributes 4 leaves: a→Defaults, b→File,
+        // c→Env, d→Defaults. Counts: Defaults=2, Env=1, File=1. Peak
+        // lands on Defaults at 2; trough over support {Defaults, Env,
+        // File} lands at 1. Sum-of-fifth-powers = 2⁵ + 1⁵ = 32 + 1 =
+        // 33. Also witnesses the (sos, soc, product, sum)
+        // factorization in-place: sofip = sos·soc - product²·sum =
+        // 5·9 - 4·3 = 45 - 12 = 33.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            r.provenance().source_kind_peak_trough_sum_of_fifth_powers(),
+            33,
+        );
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fifth_powers_empty_map_is_zero() {
+        // An empty ProvenanceMap has no leaves and therefore zero joint
+        // quintic magnitude — reads `0` per the
+        // AxisHistogram::peak_trough_sum_of_fifth_powers empty
+        // convention one altitude down.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.source_kind_peak_trough_sum_of_fifth_powers(), 0);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fifth_powers_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence pin:
+        // `source_kind_peak_trough_sum_of_fifth_powers() == 0` iff the
+        // map is empty. Both endpoints are structurally `>= 1` on every
+        // non-empty map, and fifth-powering cannot introduce a zero
+        // from non-zero operands, so the sum-of-fifth-powers is zero
+        // exactly on the empty map.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.source_kind_peak_trough_sum_of_fifth_powers() == 0,
+                map.is_empty(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fifth_powers_non_empty_bounded_below_by_two() {
+        // Non-empty floor pin: every non-empty map has
+        // `source_kind_peak_trough_sum_of_fifth_powers >= 2` — both
+        // fifth-powered endpoints are structurally `>= 1` on every non-
+        // empty map, so their sum-of-fifth-powers is at least
+        // `1 + 1 == 2`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            assert!(map.source_kind_peak_trough_sum_of_fifth_powers() >= 2);
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fifth_powers_am_quintic_bounded_below_by_sixteenth_sum_quintic()
+     {
+        // AM-quintic bound: `16 *
+        // source_kind_peak_trough_sum_of_fifth_powers >=
+        // source_kind_peak_trough_sum⁵` on every fixture — the power-
+        // mean inequality `p⁵ + t⁵ >= (p + t)⁵ / 16`. Equality holds
+        // iff `peak_source_kind_count == trough_source_kind_count`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofip = map.source_kind_peak_trough_sum_of_fifth_powers();
+            let sum = map.source_kind_peak_trough_sum();
+            let sum_quintic = sum.pow(5);
+            assert!(16 * sofip >= sum_quintic);
+            assert_eq!(
+                16 * sofip == sum_quintic,
+                map.peak_source_kind_count() == map.trough_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fifth_powers_bounded_above_by_twice_peak_quintic() {
+        // Structural bound:
+        // `source_kind_peak_trough_sum_of_fifth_powers() <= 2 *
+        // peak_source_kind_count()⁵` on every fixture — `p⁵ + t⁵ <=
+        // 2p⁵` reduces to `trough <= peak`, the structural
+        // `trough_source_kind_count <= peak_source_kind_count`
+        // invariant. Equality holds iff `peak_source_kind_count ==
+        // trough_source_kind_count`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofip = map.source_kind_peak_trough_sum_of_fifth_powers();
+            let peak = map.peak_source_kind_count();
+            let twice_peak_quintic = 2 * peak.pow(5);
+            assert!(sofip <= twice_peak_quintic);
+            assert_eq!(
+                sofip == twice_peak_quintic,
+                map.peak_source_kind_count() == map.trough_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fifth_powers_newton_identity_with_sum_sofp_product_soc_pointwise()
+     {
+        // Newton's identity `p_5 = e_1 * p_4 - e_2 * p_3` read-off on
+        // the (sum, sum_of_fourth_powers, product, sum_of_cubes)
+        // surface: `source_kind_peak_trough_sum_of_fifth_powers ==
+        // source_kind_peak_trough_sum *
+        // source_kind_peak_trough_sum_of_fourth_powers -
+        // source_kind_peak_trough_product *
+        // source_kind_peak_trough_sum_of_cubes` on every fixture. The
+        // subtraction is non-negative: expanding
+        // `(p+t)(p⁴+t⁴) = p⁵ + t⁵ + pt(p³+t³)`, the second term is
+        // exactly `product * soc`, so LHS - RHS = p⁵ + t⁵ = sofip >= 0.
+        // Source-altitude peer of
+        // `tier_peak_trough_sum_of_fifth_powers_newton_identity_with_sum_sofp_product_soc_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofip = map.source_kind_peak_trough_sum_of_fifth_powers();
+            let sum = map.source_kind_peak_trough_sum();
+            let sofp = map.source_kind_peak_trough_sum_of_fourth_powers();
+            let product = map.source_kind_peak_trough_product();
+            let soc = map.source_kind_peak_trough_sum_of_cubes();
+            let lhs = sum * sofp;
+            let rhs = product * soc;
+            assert!(rhs <= lhs);
+            assert_eq!(sofip, lhs - rhs);
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fifth_powers_factorization_with_sos_soc_product_sum_pointwise()
+     {
+        // Sum-of-fifth-powers factorization on the
+        // (sos, soc, product, sum) surface:
+        // `source_kind_peak_trough_sum_of_fifth_powers ==
+        // source_kind_peak_trough_sum_of_squares *
+        // source_kind_peak_trough_sum_of_cubes -
+        // source_kind_peak_trough_product² *
+        // source_kind_peak_trough_sum` on every fixture — the identity
+        // `p⁵ + t⁵ = (p² + t²)(p³ + t³) - p²t²(p + t)`. Non-negative
+        // subtraction since expanding `(p²+t²)(p³+t³) = p⁵ + t⁵ +
+        // p²t²(p+t)`. Source-altitude peer of
+        // `tier_peak_trough_sum_of_fifth_powers_factorization_with_sos_soc_product_sum_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofip = map.source_kind_peak_trough_sum_of_fifth_powers();
+            let sos = map.source_kind_peak_trough_sum_of_squares();
+            let soc = map.source_kind_peak_trough_sum_of_cubes();
+            let product = map.source_kind_peak_trough_product();
+            let sum = map.source_kind_peak_trough_sum();
+            let lhs = sos * soc;
+            let rhs = product * product * sum;
+            assert!(rhs <= lhs);
+            assert_eq!(sofip, lhs - rhs);
+        }
+    }
+
     // ── ProvenanceMap::source_kind_peak_trough_sum_of_powers —
     //    runtime-exponent power-sum generalization on the source-kind
     //    altitude, closing the "peak^n + trough^n across altitudes"
@@ -58768,11 +59138,11 @@ mod progressive_tests {
     // 2. Boundary at n == 1 == `source_kind_peak_trough_sum` pointwise,
     //    degenerating the linear power-sum to the shipped addition-form
     //    scalar.
-    // 3. Routing the shipped fixed-exponent siblings at n in {2, 3, 4}
-    //    pointwise — proves the delegation the fold installs and pins
-    //    every named sibling as `source_kind_peak_trough_sum_of_powers(N)`
-    //    at its N.
-    // 4. Newton's two-variable recurrence at n in 2..=4: `p_n == e_1 *
+    // 3. Routing the shipped fixed-exponent siblings at n in
+    //    {2, 3, 4, 5} pointwise — proves the delegation the fold
+    //    installs and pins every named sibling as
+    //    `source_kind_peak_trough_sum_of_powers(N)` at its N.
+    // 4. Newton's two-variable recurrence at n in 2..=5: `p_n == e_1 *
     //    p_(n-1) - e_2 * p_(n-2)` where `e_1 =
     //    source_kind_peak_trough_sum` and `e_2 =
     //    source_kind_peak_trough_product`, proving the primitive closes
@@ -58822,8 +59192,8 @@ mod progressive_tests {
 
     #[test]
     fn source_kind_peak_trough_sum_of_powers_routes_named_siblings_pointwise() {
-        // Routing pin: each of the three shipped named exponents
-        // (squares, cubes, fourth_powers) equals
+        // Routing pin: each of the four shipped named exponents
+        // (squares, cubes, fourth_powers, fifth_powers) equals
         // `source_kind_peak_trough_sum_of_powers(N)` pointwise across
         // every canonical fixture. Seals the delegation the fold
         // installs — a future drift between the primitive and any named
@@ -58846,12 +59216,16 @@ mod progressive_tests {
                 map.source_kind_peak_trough_sum_of_fourth_powers(),
                 map.source_kind_peak_trough_sum_of_powers(4),
             );
+            assert_eq!(
+                map.source_kind_peak_trough_sum_of_fifth_powers(),
+                map.source_kind_peak_trough_sum_of_powers(5),
+            );
         }
     }
 
     #[test]
     fn source_kind_peak_trough_sum_of_powers_satisfies_newton_recurrence_pointwise() {
-        // Newton's two-variable recurrence pin at n in 2..=4: `p_n ==
+        // Newton's two-variable recurrence pin at n in 2..=5: `p_n ==
         // e_1 * p_(n-1) - e_2 * p_(n-2)` where `e_1 =
         // source_kind_peak_trough_sum` and `e_2 =
         // source_kind_peak_trough_product`. Proves the primitive closes
@@ -58871,7 +59245,7 @@ mod progressive_tests {
         ] {
             let e1 = map.source_kind_peak_trough_sum();
             let e2 = map.source_kind_peak_trough_product();
-            for n in 2u32..=4 {
+            for n in 2u32..=5 {
                 let p_n = map.source_kind_peak_trough_sum_of_powers(n);
                 let p_n_minus_1 = map.source_kind_peak_trough_sum_of_powers(n - 1);
                 let p_n_minus_2 = map.source_kind_peak_trough_sum_of_powers(n - 2);
