@@ -1000,6 +1000,105 @@ impl ProvenanceMap {
         crate::axis_histogram(self.inner.values().map(|prov| prov.tier))
     }
 
+    /// Per-layer-kind leaf-count histogram — the shikumi cube-native
+    /// [`AxisHistogram<ConfigSourceKind>`][crate::AxisHistogram] view over
+    /// the layer-kind attribution of each resolved leaf. Every leaf's
+    /// [`Provenance::source_kind`] is one observation on the
+    /// [`crate::ConfigSourceKind`] closed axis, so the histogram
+    /// bucketizes the full [`ProvenanceMap`] over the three layer-kind
+    /// cells ([`crate::ConfigSourceKind::Defaults`] |
+    /// [`crate::ConfigSourceKind::Env`] |
+    /// [`crate::ConfigSourceKind::File`]) in one pass.
+    ///
+    /// Source-altitude peer of [`Self::tier_histogram`] on the same
+    /// primitive: [`Self::tier_histogram`] bucketizes the same
+    /// [`ProvenanceMap`] by tier ([`ConfigTierKind::Bare`] |
+    /// [`ConfigTierKind::Discovered`] | [`ConfigTierKind::Default`] |
+    /// [`ConfigTierKind::Custom`]); this method bucketizes by
+    /// layer-kind ([`crate::ConfigSourceKind::Defaults`] |
+    /// [`crate::ConfigSourceKind::Env`] |
+    /// [`crate::ConfigSourceKind::File`]). The two altitudes name the
+    /// closed-enum coordinates of the atomic `(tier, source)` pair each
+    /// leaf's [`Provenance`] carries: `tier_histogram` reads
+    /// [`Provenance::tier`] at the leaf, `source_kind_histogram` reads
+    /// [`Provenance::source_kind`] — the two matched scalar
+    /// projections on [`Provenance`] closing the pair's coordinate
+    /// space at one seam each. Before this seam, a consumer wanting a
+    /// per-kind leaf-count summary (dashboards keying per-kind
+    /// counters, attestation manifests recording per-leaf layer-kind
+    /// distribution, `/healthz/provenance` payloads emitting the
+    /// layer-class histogram without the file path or env prefix
+    /// payload) reached through `let mut n = [0usize; 3]; for (_, prov)
+    /// in map.entries() { n[crate::axis_ordinal(prov.source_kind())] +=
+    /// 1; }` at every render/attestation/dashboard call site — the
+    /// named histogram collapses the fold to one method call, routing
+    /// through the shipped [`Provenance::source_kind`] scalar
+    /// projection on every leaf without touching the heavier
+    /// [`ConfigSource`] payload the leaf also carries.
+    ///
+    /// # Full [`crate::AxisHistogram`] surface, for free
+    ///
+    /// Because [`crate::ConfigSourceKind`] is a [`crate::ClosedAxis`],
+    /// the returned histogram carries the full per-cell / per-axis
+    /// surface [`crate::AxisHistogram`] provides at trait-uniform
+    /// altitude: [`count`][crate::AxisHistogram::count] /
+    /// [`total`][crate::AxisHistogram::total] /
+    /// [`distinct_cells`][crate::AxisHistogram::distinct_cells] /
+    /// [`is_full_cover`][crate::AxisHistogram::is_full_cover] (per-kind
+    /// shape), [`dominant_cell`][crate::AxisHistogram::dominant_cell] /
+    /// [`recessive_cell`][crate::AxisHistogram::recessive_cell] /
+    /// [`peak_count`][crate::AxisHistogram::peak_count] /
+    /// [`trough_count`][crate::AxisHistogram::trough_count]
+    /// (argmax/argmin), [`observed`][crate::AxisHistogram::observed] /
+    /// [`unobserved`][crate::AxisHistogram::unobserved] (support /
+    /// coverage-gap partition),
+    /// [`modality_class`][crate::AxisHistogram::modality_class]
+    /// (multiplicity classification). Operators asking "which layer
+    /// class contributed the most surviving leaves?", "was every
+    /// layer-class heard from?", or "is the surviving-leaf distribution
+    /// tied at the top on the source-kind axis?" route through the
+    /// shikumi-native primitive without a per-consumer tally.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_histogram().total() == self.len()` — every leaf
+    ///   projects to exactly one layer-kind, so summing the histogram
+    ///   cells recovers the total leaf count. Peer of
+    ///   `tier_histogram().total() == self.len()` on the tier altitude.
+    /// - `source_kind_histogram().count(k) == self.entries().filter(|(_,
+    ///   p)| p.source_kind() == k).count()` — the per-kind bucket equals
+    ///   the entries walk restricted to that layer-kind. Peer of the
+    ///   analogous invariant on `tier_histogram`.
+    /// - `source_kind_histogram().is_empty() == self.is_empty()` — the
+    ///   empty histogram / empty map boundary agrees at both sites, peer
+    ///   of the analogous invariant on `tier_histogram`.
+    /// - Pure-progressive `resolve_progressive()` (no operator overlays)
+    ///   pins the histogram's support to the single
+    ///   [`crate::ConfigSourceKind::Defaults`] cell: every computed-tier
+    ///   constructor ([`Provenance::bare`] / [`Provenance::discovered`] /
+    ///   [`Provenance::prescribed_default`] / [`Provenance::computed`])
+    ///   pins [`ConfigSource::Defaults`] regardless of its tier, so
+    ///   every leaf's [`Provenance::source_kind`] projects to
+    ///   [`crate::ConfigSourceKind::Defaults`]. The two histograms
+    ///   partition the same [`ProvenanceMap`] on orthogonal axes: the
+    ///   tier axis (whose support fans across the four `ConfigTierKind`
+    ///   cells) and the source axis (whose support collapses to the
+    ///   single `Defaults` cell in the no-overlay case).
+    ///
+    /// # Cost
+    ///
+    /// `O(n)` — one pass over `self.inner.values()`, one
+    /// [`Provenance::source_kind`] projection + closed-axis ordinal
+    /// increment per leaf. The backing store is a fixed
+    /// `axis_cardinality::<ConfigSourceKind>()`-sized `Vec<usize>`
+    /// (three cells today), so there is no per-leaf allocation and the
+    /// histogram size is constant in the axis cardinality regardless of
+    /// leaf count.
+    #[must_use]
+    pub fn source_kind_histogram(&self) -> crate::AxisHistogram<crate::ConfigSourceKind> {
+        crate::axis_histogram(self.inner.values().map(Provenance::source_kind))
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -51368,6 +51467,225 @@ mod progressive_tests {
                 "source_kind {:?} not in ConfigSourceKind::ALL",
                 prov.source_kind(),
             );
+        }
+    }
+
+    // ── ProvenanceMap::source_kind_histogram — cube-native per-layer-kind
+    //    leaf-count histogram over the ConfigSourceKind closed axis; the
+    //    source-altitude peer of `tier_histogram` on the same primitive ──
+
+    /// Build a mixed-overlay Prog resolution that exercises all three
+    /// `ConfigSourceKind` cells: a file overlay covers `b` (File cell),
+    /// an env overlay covers `c` (Env cell), and the untouched leaves
+    /// `a` (Discovered tier) + `d` (Default tier) keep their
+    /// computed-tier `Defaults` source_kind. The overlays touch
+    /// disjoint leaves, so the same-tier caller-order stability rule
+    /// documented at `resolve_progressive_with` is not exercised — the
+    /// leaf-wise attribution is unambiguous regardless of overlay order.
+    fn source_kind_histogram_mixed_fixture() -> ProgressiveResolution<Prog> {
+        let mut d_file = Dict::new();
+        d_file.insert("b".to_owned(), Value::from(99_u32));
+        let mut d_env = Dict::new();
+        d_env.insert("c".to_owned(), Value::from(77_u32));
+        Prog::resolve_progressive_with(&[
+            ProgressiveLayer::env("SHIKUMI_SOURCE_KIND_HIST_MIX_", d_env),
+            ProgressiveLayer::file("/etc/source_kind_hist_mix.yaml", d_file),
+        ])
+    }
+
+    #[test]
+    fn source_kind_histogram_total_matches_provenance_map_len() {
+        // Every leaf projects to exactly one source_kind cell, so the
+        // histogram total is the total leaf count verbatim. Peer of
+        // `tier_histogram_total_matches_provenance_map_len` on the
+        // source-kind altitude.
+        let r = Prog::resolve_progressive();
+        let hist = r.provenance().source_kind_histogram();
+        assert_eq!(hist.total(), r.provenance().len());
+        assert_eq!(hist.total(), 4); // Prog has 4 leaves a,b,c,d
+    }
+
+    #[test]
+    fn source_kind_histogram_pure_progressive_prog_is_all_defaults() {
+        // The pure-progressive fold uses only the three computed-tier
+        // constructors (`bare` / `discovered` / `prescribed_default`),
+        // each of which pins `ConfigSource::Defaults`. So every leaf's
+        // source_kind projects to `Defaults`, collapsing the histogram
+        // support to the single `Defaults` cell. This is the source-kind
+        // altitude's analogue of the tier-histogram's per-tier fan-out
+        // on the same fixture: `Prog` fans across three tiers but
+        // collapses to one source-kind on the no-overlay side.
+        let r = Prog::resolve_progressive();
+        let hist = r.provenance().source_kind_histogram();
+        assert_eq!(hist.count(crate::ConfigSourceKind::Defaults), 4);
+        assert_eq!(hist.count(crate::ConfigSourceKind::Env), 0);
+        assert_eq!(hist.count(crate::ConfigSourceKind::File), 0);
+        assert_eq!(
+            hist.observed().collect::<Vec<_>>(),
+            vec![crate::ConfigSourceKind::Defaults],
+        );
+    }
+
+    #[test]
+    fn source_kind_histogram_mixed_overlays_cover_every_cell() {
+        // The mixed-overlay fixture layers one env overlay (touching
+        // only `c`) and one file overlay (touching only `b`) onto Prog's
+        // progressive fold. The resulting per-leaf source_kinds are:
+        //   a → Defaults (Discovered tier, computed constructor)
+        //   b → File     (Custom tier, file overlay)
+        //   c → Env      (Custom tier, env overlay)
+        //   d → Defaults (Default tier, computed constructor)
+        // Every cell of the closed axis observes ≥1 leaf, so the
+        // histogram is full-cover on the source-kind axis — the
+        // saturation boundary case.
+        let r = source_kind_histogram_mixed_fixture();
+        let hist = r.provenance().source_kind_histogram();
+        assert_eq!(hist.count(crate::ConfigSourceKind::Defaults), 2); // a, d
+        assert_eq!(hist.count(crate::ConfigSourceKind::Env), 1); // c
+        assert_eq!(hist.count(crate::ConfigSourceKind::File), 1); // b
+        assert_eq!(hist.total(), 4);
+        assert!(
+            hist.is_full_cover(),
+            "mixed overlays must saturate every ConfigSourceKind cell",
+        );
+        assert_eq!(hist.distinct_cells(), 3);
+    }
+
+    #[test]
+    fn source_kind_histogram_per_kind_count_matches_entries_walk() {
+        // The trait-uniform equality against the entries-walk group-by,
+        // as documented in the doc-comment invariant table:
+        // `source_kind_histogram().count(k) ==
+        // self.entries().filter(|(_, p)| p.source_kind() == k).count()`
+        // must hold pointwise for every source_kind cell on every
+        // fixture — pinned across three representative shapes (the
+        // pure-progressive collapse, the mixed-overlay saturation, and
+        // the empty degenerate).
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let hist = map.source_kind_histogram();
+            for kind in crate::ConfigSourceKind::ALL.iter().copied() {
+                let manual = map
+                    .entries()
+                    .filter(|(_, p)| p.source_kind() == kind)
+                    .count();
+                assert_eq!(
+                    hist.count(kind),
+                    manual,
+                    "per-kind bucket must equal manual entries-walk tally on {kind:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_kind_histogram_routes_through_provenance_source_kind_pointwise() {
+        // The delegation pin: `source_kind_histogram` reads
+        // `Provenance::source_kind` on every leaf, so the histogram
+        // equals `axis_histogram(map.entries().map(|(_, p)|
+        // p.source_kind()))` verbatim. Guards against a future
+        // re-implementation of either seam that projects through the
+        // heavier `source().kind()` two-hop borrow chain instead of the
+        // shipped scalar accessor — the two must stay pointwise
+        // equivalent across every fixture.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_method: Vec<usize> = crate::ConfigSourceKind::ALL
+                .iter()
+                .map(|&k| map.source_kind_histogram().count(k))
+                .collect();
+            let via_entries: Vec<usize> = crate::ConfigSourceKind::ALL
+                .iter()
+                .map(|&k| map.entries().filter(|(_, p)| p.source_kind() == k).count())
+                .collect();
+            assert_eq!(via_method, via_entries);
+        }
+    }
+
+    #[test]
+    fn source_kind_histogram_is_empty_iff_provenance_map_is_empty() {
+        // The empty-boundary invariant: an empty ProvenanceMap yields
+        // the monoid-identity histogram, and vice versa. Peer of
+        // `tier_histogram_is_empty_iff_provenance_map_is_empty` on the
+        // source-kind altitude — both altitudes agree the empty map is
+        // the neutral element for their respective closed-axis
+        // bucketization.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert!(empty.source_kind_histogram().is_empty());
+        assert_eq!(empty.source_kind_histogram().total(), 0);
+
+        let r = Prog::resolve_progressive();
+        assert!(!r.provenance().is_empty());
+        assert!(!r.provenance().source_kind_histogram().is_empty());
+    }
+
+    #[test]
+    fn source_kind_histogram_dominant_cell_names_widest_kind() {
+        // In the mixed-overlay fixture `Defaults` wins the most leaves
+        // (a + d = 2, versus Env=1 and File=1); the histogram's argmax
+        // picks `Defaults` without a per-consumer scan. Peer of
+        // `tier_histogram_dominant_cell_names_widest_tier` on the
+        // source-kind altitude — both altitudes surface their argmax
+        // through the same `AxisHistogram::dominant_cell` primitive.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            r.provenance().source_kind_histogram().dominant_cell(),
+            Some(crate::ConfigSourceKind::Defaults),
+        );
+    }
+
+    #[test]
+    fn source_kind_histogram_unobserved_names_absent_kinds_on_pure_progressive() {
+        // On the pure-progressive Prog fixture the source-kind support
+        // collapses to the single `Defaults` cell (see the pure-
+        // progressive pin above), so `unobserved()` names the two
+        // coverage-gap cells — `Env` and `File`, in
+        // `ConfigSourceKind::ALL` declaration order — that never
+        // contributed a surviving leaf. Peer of
+        // `tier_histogram_unobserved_names_the_absent_tiers` on the
+        // source-kind altitude: both altitudes read the same
+        // observed/coverage-gap partition primitive off their local
+        // histogram.
+        let r = Prog::resolve_progressive();
+        let unobserved: Vec<crate::ConfigSourceKind> = r
+            .provenance()
+            .source_kind_histogram()
+            .unobserved()
+            .collect();
+        assert_eq!(
+            unobserved,
+            vec![crate::ConfigSourceKind::Env, crate::ConfigSourceKind::File],
+        );
+    }
+
+    #[test]
+    fn source_kind_histogram_and_tier_histogram_share_total_on_every_fixture() {
+        // Cross-altitude invariant: the two per-leaf histograms
+        // partition the same underlying `ProvenanceMap` on orthogonal
+        // axes, so their totals must agree — both equal `self.len()` by
+        // construction. Any future edit that changed one side's
+        // iteration base (e.g. skipping leaves whose provenance carries
+        // a specific tier or source-kind) would silently drift the two
+        // totals apart before touching any per-cell count. Pinned
+        // across the three representative fixtures.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.source_kind_histogram().total(),
+                map.tier_histogram().total(),
+                "source-kind and tier histograms must share `total() == self.len()`",
+            );
+            assert_eq!(map.source_kind_histogram().total(), map.len());
         }
     }
 }
