@@ -9715,6 +9715,137 @@ impl ConfigDiff {
         self.kind_histogram().unobserved().next()
     }
 
+    /// The **first-present kind** — the earliest [`DiffLineKind`] (in
+    /// [`ClosedAxis::ALL`] / [`DiffLineKind::ALL`] declaration order —
+    /// `Removed → Added → Context`) whose count is nonzero on this diff,
+    /// or [`None`] on the empty diff (no lines at all).
+    ///
+    /// The **head-projection peer** of [`Self::present_kinds`] (the
+    /// observed-cells `Vec` peer) and [`Self::present_kinds_count`] (the
+    /// observed-cells scalar-count peer) on the diff altitude — the
+    /// [`Option`]-shaped projection of the same support that the two
+    /// sibling peers materialise in full. The **observed-side symmetric
+    /// peer** of [`Self::first_absent_kind`] on the coverage-gap side;
+    /// the pair `(first_present_kind, first_absent_kind)` closes the
+    /// head-projection triangle at the diff altitude, mirroring the
+    /// closed tier-altitude pair
+    /// `(first_contributing_tier, first_absent_tier)` and the three
+    /// closed chain-altitude sub-axis pairs
+    /// `(first_present_layer_kind, first_absent_layer_kind)`,
+    /// `(first_present_file_format, first_absent_file_format)`,
+    /// `(first_present_env_prefix_kind, first_absent_env_prefix_kind)`
+    /// on [`crate::ConfigSourceChain`].
+    ///
+    /// **Distinct from [`Self::dominant_kind`] and
+    /// [`Self::recessive_kind`].** The two existing observed-side
+    /// [`Option`]-shaped peers select by observation *count* —
+    /// [`Self::dominant_kind`] returns the argmax (modal) cell and
+    /// [`Self::recessive_kind`] returns the argmin (anti-modal) cell.
+    /// This peer selects by axis-declaration *order* — the earliest
+    /// observed cell regardless of its observation count. On a diff
+    /// where `Removed = 0`, `Added = 5`, `Context = 1`,
+    /// [`Self::dominant_kind`] reports
+    /// [`Some(DiffLineKind::Added)`][DiffLineKind::Added] (argmax = 5),
+    /// [`Self::recessive_kind`] reports
+    /// [`Some(DiffLineKind::Context)`][DiffLineKind::Context] (argmin = 1
+    /// among observed cells), and `first_present_kind()` reports
+    /// [`Some(DiffLineKind::Added)`][DiffLineKind::Added] (the axis begins
+    /// at `Removed`, which is absent; the next cell `Added` is observed,
+    /// so `Added` is the support head). All three seams pin the same
+    /// fixtures under distinct semantics — a future refactor collapsing
+    /// any pair into the same walk would light one of them.
+    ///
+    /// Where [`Self::present_kinds`] returns *every* observed kind (a
+    /// `Vec<DiffLineKind>` a caller must allocate even to read the first
+    /// entry) and [`Self::present_kinds_count`] returns *how many* kinds
+    /// are observed (a `usize` that discards the identity of any single
+    /// kind), this returns *which kind is observed first* as one
+    /// [`Option<DiffLineKind>`] — the shape a leading-edge diagnostic
+    /// ("report the earliest observed kind and stop"), a first-hit
+    /// attestation manifest field ("record the primary observed kind on
+    /// this diff snapshot"), or a compact `/healthz/diff` endpoint
+    /// payload ("first observed kind in declaration order, or null if
+    /// empty") actually wants (no need to allocate the observed-kind
+    /// list only to read its head, no need to walk the rest once the
+    /// first hit lands).
+    ///
+    /// Routes through [`Self::kind_histogram`]:
+    /// [`crate::AxisHistogram::observed`] iterates the histogram's
+    /// support cells in [`crate::ClosedAxis::ALL`] declaration order
+    /// (the [`DiffLineKind`] canonical order), and
+    /// [`Iterator::next`] reads its head — the closed-axis discipline
+    /// provides deterministic first-cell selection automatically, so
+    /// this method reads directly off the shikumi cube-native primitive
+    /// instead of hand-rolling `DiffLineKind::ALL.iter().copied()
+    /// .find(|k| self.kind_histogram().count(*k) > 0)` at every
+    /// operator-facing consumer asking *"which diff kind is the earliest
+    /// to have surfaced on this render?"*.
+    ///
+    /// **Empty-diff convention** — returns [`None`], matching the
+    /// [`Self::present_kinds`] empty-support convention: an empty diff
+    /// has no observed cell, so the head of the observed iterator is
+    /// [`None`]. Contrast [`Self::first_absent_kind`], which is
+    /// [`Some(DiffLineKind::Removed)`][DiffLineKind::Removed] on the
+    /// empty diff (every cell absent, the axis head is `Removed`) — the
+    /// two head-projection peers report the empty diff from opposite
+    /// sides of the observed / coverage-gap partition, exactly matching
+    /// their vector peers' empty-vector / full-axis reporting.
+    ///
+    /// # Invariants
+    ///
+    /// - `first_present_kind() == kind_histogram().observed().next()`
+    ///   — both project the same support head off the same primitive;
+    ///   the named seam is the cube-native routing of the histogram
+    ///   surface.
+    /// - `first_present_kind() == present_kinds().first().copied()` —
+    ///   the head-projection peer of the observed-cells `Vec` peer;
+    ///   both name the same first-observed cell without materialising
+    ///   the full vector.
+    /// - `first_present_kind().is_none() == self.lines.is_empty()` — the
+    ///   [`None`] boundary is the empty-diff boundary: no support head
+    ///   means no line has been rendered. The head-projection peer of
+    ///   the [`Self::present_kinds_count`] `== 0 ⇔ is_empty()` boundary
+    ///   (line 9474). Distinct from the [`Self::first_absent_kind`]
+    ///   [`None`] boundary, which is `is_full_cover()`, not
+    ///   `is_empty()` — the two head-projection peers gate on distinct
+    ///   emptiness predicates because the observed / coverage-gap
+    ///   partition is asymmetric on the diff altitude (an empty diff
+    ///   has empty support AND full coverage-gap; a full-cover diff has
+    ///   full support AND empty coverage-gap).
+    /// - `first_present_kind().is_some() == !self.lines.is_empty()` —
+    ///   the [`Some`] boundary is the non-empty boundary; the
+    ///   contrapositive of the [`None`] boundary above, welded
+    ///   separately as a positive-form fact.
+    /// - When `Some(k)`, `k` is a member of [`Self::present_kinds`] —
+    ///   the support head is by definition an observed cell.
+    /// - When `Some(k)`, `k` is **not** a member of
+    ///   [`Self::absent_kinds`] — the observed / coverage-gap partition
+    ///   is disjoint; the head-projection peer of the
+    ///   [`tests::absent_kinds_and_present_kinds_partition_axis`]
+    ///   disjointness law, from the observed side.
+    /// - `first_present_kind()` on an empty [`ConfigDiff`] equals
+    ///   [`None`] — the empty-diff convention: no observed cell, empty
+    ///   support head.
+    /// - `first_present_kind()` yields in [`crate::axis_ordinal`] order
+    ///   on [`DiffLineKind`] — the head of a strictly-ascending list is
+    ///   the minimum, so the kind returned is minimal by axis ordinal
+    ///   among observed kinds.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.lines.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<DiffLineKind>()` (the support
+    /// scan, short-circuited on the first nonzero cell). Both are
+    /// `O(n)` in practice since the diff-cell axis carries a fixed
+    /// three-cell cardinality; the returned [`Option<DiffLineKind>`]
+    /// reads one cell. Elides the `Vec<DiffLineKind>` allocation the
+    /// previous `present_kinds().first().copied()` idiom paid on every
+    /// call site.
+    #[must_use]
+    pub fn first_present_kind(&self) -> Option<DiffLineKind> {
+        self.kind_histogram().observed().next()
+    }
+
     /// The [`DiffLineKind`] whose lines dominate this diff by count —
     /// the modal cell of [`Self::kind_histogram`] on the diff altitude.
     /// `None` exactly when the diff is empty (no lines).
@@ -18213,6 +18344,328 @@ mod tests {
                 .into_iter()
                 .min_by_key(|k| crate::axis_ordinal(*k));
             assert_eq!(head, min_by_ordinal);
+        }
+    }
+
+    // ── ConfigDiff::first_present_kind — head-projection peer of
+    //    present_kinds / present_kinds_count on the diff altitude;
+    //    observed-side symmetric of first_absent_kind ──
+
+    fn first_present_kind_fixtures() -> [ConfigDiff; 6] {
+        [
+            // Empty diff — no observed cell, empty support head:
+            // `first_present_kind() == None`.
+            ConfigDiff::default(),
+            // Context-only — {Context} observed, head is Context (the
+            // support head walks the full axis when the earliest
+            // observed cell sits at the tail).
+            ConfigDiff {
+                lines: vec![DiffLine::Context("a".into()), DiffLine::Context("b".into())],
+            },
+            // Removed-only — {Removed} observed, head is Removed
+            // (head of `DiffLineKind::ALL`).
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r1".into()),
+                    DiffLine::Removed("r2".into()),
+                ],
+            },
+            // Added-only — {Added} observed, head is Added (the
+            // support head is the sole observed cell).
+            ConfigDiff {
+                lines: vec![DiffLine::Added("a".into())],
+            },
+            // Removed + Added — {Removed, Added} observed, head is
+            // Removed (head of the two-observed-cell support in
+            // declaration order).
+            ConfigDiff {
+                lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+            },
+            // Full cover (all three kinds present) — support = axis,
+            // head is Removed (axis head).
+            ConfigDiff {
+                lines: vec![
+                    DiffLine::Removed("r".into()),
+                    DiffLine::Added("a".into()),
+                    DiffLine::Context("c".into()),
+                ],
+            },
+        ]
+    }
+
+    #[test]
+    fn first_present_kind_matches_kind_histogram_observed_next() {
+        // The delegation pin: `first_present_kind` routes through
+        // `kind_histogram().observed().next()`, so the two seams must
+        // stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Observed-side
+        // symmetric of
+        // `first_absent_kind_matches_kind_histogram_unobserved_next`,
+        // diff-altitude peer of
+        // `first_contributing_tier_matches_tier_histogram_observed_next`
+        // on the tier altitude.
+        for diff in first_present_kind_fixtures() {
+            let via_histogram = diff.kind_histogram().observed().next();
+            assert_eq!(diff.first_present_kind(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn first_present_kind_matches_present_kinds_first_copied() {
+        // The head-projection pin: `first_present_kind` is the
+        // `Option`-shaped head of the observed-cells `Vec` — reading
+        // it through the named seam must return the same cell as
+        // `present_kinds().first().copied()`, on every fixture. The
+        // Vec-first peer of the histogram-next delegation pin above.
+        // Observed-side symmetric of
+        // `first_absent_kind_matches_absent_kinds_first_copied`,
+        // diff-altitude peer of
+        // `first_contributing_tier_matches_contributing_tiers_first_copied`
+        // on the tier altitude.
+        for diff in first_present_kind_fixtures() {
+            assert_eq!(
+                diff.first_present_kind(),
+                diff.present_kinds().first().copied(),
+            );
+        }
+    }
+
+    #[test]
+    fn first_present_kind_is_none_iff_lines_is_empty() {
+        // The [`None`] boundary law: no support head means no line has
+        // been rendered. Verified on every fixture including the empty
+        // diff that witnesses the [`None`] side. Distinct from
+        // `first_absent_kind_is_none_iff_kind_histogram_is_full_cover`
+        // — this gate is `self.lines.is_empty()`, not `is_full_cover()`;
+        // the observed / coverage-gap partition is asymmetric on the
+        // diff altitude (an empty diff has empty support AND full
+        // coverage-gap; a full-cover diff has full support AND empty
+        // coverage-gap). Observed-side symmetric of
+        // `first_absent_kind_is_none_iff_kind_histogram_is_full_cover`
+        // on the coverage-gap side; diff-altitude peer of
+        // `first_contributing_tier_is_none_iff_map_is_empty` on the
+        // tier altitude.
+        for diff in first_present_kind_fixtures() {
+            assert_eq!(diff.first_present_kind().is_none(), diff.lines.is_empty());
+        }
+    }
+
+    #[test]
+    fn first_present_kind_is_some_iff_lines_is_not_empty() {
+        // The [`Some`] boundary law (contrapositive of the [`None`]
+        // boundary above), welded as a positive-form fact so a future
+        // refactor to a differently-signed emptiness predicate has to
+        // touch both welds. Observed-side symmetric of
+        // `first_absent_kind_is_some_iff_kind_histogram_is_not_full_cover`,
+        // diff-altitude peer of
+        // `first_contributing_tier_is_some_iff_map_is_not_empty` on
+        // the tier altitude.
+        for diff in first_present_kind_fixtures() {
+            assert_eq!(diff.first_present_kind().is_some(), !diff.lines.is_empty());
+        }
+    }
+
+    #[test]
+    fn first_present_kind_empty_diff_is_none() {
+        // Empty-diff convention: no observed cell, empty support head.
+        // The empty-diff / empty-support boundary head — distinct from
+        // the full-cover boundary which yields `Some(Removed)` (every
+        // cell observed, axis head is Removed). Contrasts
+        // `first_absent_kind_empty_diff_is_removed` on the coverage-gap
+        // side (empty diff has every cell absent, coverage-gap head is
+        // `Some(Removed)`). Together they pin the empty-diff partition
+        // boundary from both sides. Diff-altitude peer of
+        // `first_contributing_tier_empty_map_is_none` on the tier
+        // altitude.
+        let empty = ConfigDiff::default();
+        assert_eq!(empty.first_present_kind(), None);
+    }
+
+    #[test]
+    fn first_present_kind_context_only_diff_is_context() {
+        // Direct fixture pin: a diff composed only of Context lines
+        // has {Context} as its support, and the FIRST (and only)
+        // observed kind in declaration order is Context — the last
+        // cell in `DiffLineKind::ALL`. Witnesses that the
+        // head-projection walks the full axis when the support sits
+        // at the tail, not just the head. The dual of
+        // `first_absent_kind_removed_and_added_diff_is_context` on the
+        // observed side: same axis-tail traversal, different partition
+        // side.
+        let ctx_only = ConfigDiff {
+            lines: vec![
+                DiffLine::Context("a".into()),
+                DiffLine::Context("b".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert_eq!(ctx_only.first_present_kind(), Some(DiffLineKind::Context));
+    }
+
+    #[test]
+    fn first_present_kind_removed_only_diff_is_removed() {
+        // Direct fixture pin: a diff with only Removed lines has
+        // {Removed} as its sole observed cell — the FIRST (and only)
+        // observed kind is Removed, the head of `DiffLineKind::ALL`.
+        // Head-projection peer of `present_kinds` on the singleton-
+        // Removed support.
+        let removed_only = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r1".into()),
+                DiffLine::Removed("r2".into()),
+            ],
+        };
+        assert_eq!(
+            removed_only.first_present_kind(),
+            Some(DiffLineKind::Removed),
+        );
+    }
+
+    #[test]
+    fn first_present_kind_added_only_diff_is_added() {
+        // Direct fixture pin: a diff with only Added lines has
+        // {Added} as its sole observed cell — the FIRST (and only)
+        // observed kind is Added, the mid cell of
+        // `DiffLineKind::ALL`. Witnesses the axis-mid support case
+        // (Removed absent, Added observed, Context absent) —
+        // distinguishes head-of-axis (Removed-only) from tail-of-axis
+        // (Context-only) from mid-of-axis (Added-only) on the
+        // singleton-support side.
+        let added_only = ConfigDiff {
+            lines: vec![DiffLine::Added("a".into())],
+        };
+        assert_eq!(added_only.first_present_kind(), Some(DiffLineKind::Added));
+    }
+
+    #[test]
+    fn first_present_kind_full_cover_diff_is_removed() {
+        // Direct pin on the full-cover diff: every DiffLineKind
+        // (Removed, Added, Context) has ≥1 line, so the support is the
+        // full axis and the head-projection returns the axis head
+        // Removed. The dual of `first_absent_kind_full_cover_diff_is_none`
+        // on the observed side: same full-cover diff, observed-side
+        // head equals the axis head instead of `None`.
+        let full_cover = ConfigDiff {
+            lines: vec![
+                DiffLine::Removed("r".into()),
+                DiffLine::Added("a".into()),
+                DiffLine::Context("c".into()),
+            ],
+        };
+        assert!(full_cover.kind_histogram().is_full_cover());
+        assert_eq!(full_cover.first_present_kind(), Some(DiffLineKind::Removed));
+    }
+
+    #[test]
+    fn first_present_kind_is_member_of_present_kinds_when_some() {
+        // Membership pin: when the support head is present, it is
+        // definitionally a member of the observed-cells vector. A
+        // future drift where the head-projection reads off a
+        // different set (say, `DiffLineKind::ALL` head or
+        // `absent_kinds` head) would light this. Observed-side
+        // symmetric of
+        // `first_absent_kind_is_member_of_absent_kinds_when_some`,
+        // diff-altitude peer of
+        // `first_contributing_tier_is_member_of_contributing_tiers_when_some`
+        // on the tier altitude.
+        for diff in first_present_kind_fixtures() {
+            if let Some(k) = diff.first_present_kind() {
+                assert!(
+                    diff.present_kinds().contains(&k),
+                    "first_present_kind {k:?} not in present_kinds {:?}",
+                    diff.present_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn first_present_kind_is_not_member_of_absent_kinds_when_some() {
+        // Disjointness pin: the observed / coverage-gap partition is
+        // disjoint on the diff-kind axis, and the head-projection peer
+        // of the observed side must not report a member of the
+        // coverage-gap side. The head-projection peer of
+        // `absent_kinds_and_present_kinds_partition_axis` from the
+        // observed side. Observed-side symmetric of
+        // `first_absent_kind_is_not_member_of_present_kinds_when_some`,
+        // diff-altitude peer of
+        // `first_contributing_tier_is_not_member_of_absent_tiers_when_some`
+        // on the tier altitude.
+        for diff in first_present_kind_fixtures() {
+            if let Some(k) = diff.first_present_kind() {
+                assert!(
+                    !diff.absent_kinds().contains(&k),
+                    "first_present_kind {k:?} appears in absent_kinds {:?}",
+                    diff.absent_kinds(),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn first_present_kind_is_minimum_present_kind_by_axis_ordinal() {
+        // The declaration-order head pin: the returned kind (when
+        // Some) has the minimum `axis_ordinal` among all observed
+        // kinds. The observed-cells iterator yields in
+        // `ClosedAxis::ALL` declaration order (which is axis-ordinal
+        // order by construction), so the head is the argmin — a
+        // future drift where the support walk reversed order (or
+        // picked argmax instead — which is `dominant_kind`'s job)
+        // would light this. Observed-side symmetric of
+        // `first_absent_kind_is_minimum_absent_kind_by_axis_ordinal`,
+        // diff-altitude peer of
+        // `first_contributing_tier_is_minimum_contributing_tier_by_axis_ordinal`
+        // on the tier altitude.
+        for diff in first_present_kind_fixtures() {
+            let head = diff.first_present_kind();
+            let min_by_ordinal = diff
+                .present_kinds()
+                .into_iter()
+                .min_by_key(|k| crate::axis_ordinal(*k));
+            assert_eq!(head, min_by_ordinal);
+        }
+    }
+
+    #[test]
+    fn first_present_kind_and_first_absent_kind_are_disjoint_on_nonempty_partial_cover() {
+        // The paired partition pin: on a non-empty diff that is *not*
+        // full cover, both head-projection peers are `Some`, and they
+        // must name distinct kinds — the observed / coverage-gap
+        // partition is disjoint, so the two heads cannot coincide.
+        // Removed-only: observed = {Removed}, absent = {Added, Context}
+        // → heads (Removed, Added). Added-only: observed = {Added},
+        // absent = {Removed, Context} → heads (Added, Removed).
+        // Removed + Added: observed = {Removed, Added}, absent =
+        // {Context} → heads (Removed, Context). The diff-altitude peer
+        // of
+        // `first_contributing_tier_and_first_absent_tier_are_disjoint_on_nonempty_partial_cover`
+        // on the tier altitude.
+        for diff in [
+            ConfigDiff {
+                lines: vec![DiffLine::Removed("r".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Added("a".into())],
+            },
+            ConfigDiff {
+                lines: vec![DiffLine::Removed("r".into()), DiffLine::Added("a".into())],
+            },
+        ] {
+            let first_p = diff.first_present_kind();
+            let first_a = diff.first_absent_kind();
+            assert!(
+                first_p.is_some(),
+                "non-empty diff should have a support head",
+            );
+            assert!(
+                first_a.is_some(),
+                "non-full-cover diff should have a coverage-gap head",
+            );
+            assert_ne!(
+                first_p, first_a,
+                "the two head-projection peers must not name the same kind",
+            );
         }
     }
 
