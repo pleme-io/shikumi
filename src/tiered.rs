@@ -2281,6 +2281,127 @@ impl ProvenanceMap {
         self.source_kind_histogram().trough_count()
     }
 
+    /// The **scalar dispersion** of the leaf-count distribution across the
+    /// observed [`crate::ConfigSourceKind`] cells on this resolved fold —
+    /// the source-altitude peer of [`Self::tier_spread`] on the tier
+    /// altitude. Returns `0` exactly on every empty map, every singleton-
+    /// support fold (only one observed source-kind, trivially balanced),
+    /// and every uniform per-source-kind fold (each observed source-kind
+    /// contributing the same nonzero leaf count, dominant included).
+    ///
+    /// The **scalar dispersion peer** of the fused
+    /// `(peak_source_kind_count, trough_source_kind_count)` modal-count
+    /// pair on the source-kind altitude — the natural typed primitive for
+    /// fleet dashboards, attestation manifests, and alerting policies
+    /// asking *"how unevenly distributed are the leaves across the
+    /// observed layer classes?"*: the fleet dashboard headline *"layer-
+    /// class skew 11: File overlay owns 12 of 47 leaves, Env 1 of 47"*
+    /// (where 11 is this scalar), the attestation manifest recording the
+    /// source-kind spread between two resolved-fold snapshots, the
+    /// alerting policy reading *"source-kind spread = 11"* to flag a
+    /// rebuild window where one layer class dwarfed the others. Before
+    /// this lift, every such consumer re-derived the projection inline
+    /// as `map.peak_source_kind_count() - map.trough_source_kind_count()`
+    /// — two method calls plus a subtraction at every site, each site
+    /// having to reason independently about the structural non-negativity
+    /// of the difference (`peak_count >= trough_count` holds on every
+    /// histogram but not on the inline subtraction surface, so an
+    /// unwitnessed refactor swapping the operands would silently
+    /// underflow). Routes through [`crate::AxisHistogram::spread`] one
+    /// altitude down — the underflow-safe named seam whose docs pin the
+    /// monotonicity invariant explicitly.
+    ///
+    /// The source-altitude scalar-dispersion peer in the "spread across
+    /// altitudes" projection seeded on the diff altitude by
+    /// [`ConfigDiff::kind_spread`] and climbed to the tier altitude by
+    /// [`Self::tier_spread`]. The pattern is the same at every altitude:
+    /// fuse the (`peak_count`, `trough_count`) modal-count pair into a
+    /// single dispersion scalar named at the surface, routed through the
+    /// shared [`crate::AxisHistogram::spread`] primitive one altitude
+    /// down. The chain altitude's three sub-axes (`layer_kind_spread`,
+    /// `file_format_spread`, `env_prefix_kind_spread` over the
+    /// corresponding chain histograms) are the natural next sideways
+    /// lifts.
+    ///
+    /// **Empty-map convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::spread`] empty convention one altitude
+    /// down and the [`Self::peak_source_kind_count`] /
+    /// [`Self::trough_source_kind_count`] empty conventions on the same
+    /// altitude. The scalar-count triple `(peak_source_kind_count,
+    /// trough_source_kind_count, source_kind_spread)` reads uniformly
+    /// `(0, 0, 0)` on the empty map — every observation scalar reads
+    /// zero on empty; every cell projection ([`Self::dominant_source_kind`],
+    /// [`Self::recessive_source_kind`]) reads `None`. The asymmetry is
+    /// intentional and matches the [`crate::AxisHistogram`] convention
+    /// one altitude down.
+    ///
+    /// **Structural-skew predicate.** `source_kind_spread() == 0` is the
+    /// typed *balanced-source-kind-counts* predicate at the source-kind
+    /// altitude — every observed [`crate::ConfigSourceKind`] contributed
+    /// the same number of leaves. Pointwise equivalent to
+    /// `peak_source_kind_count() == trough_source_kind_count()` on the
+    /// scalar-count pair and to `dominant_source_kind() ==
+    /// recessive_source_kind()` on the modal-cell pair whenever the map
+    /// is non-empty (both branches reduce to `Some(first) == Some(first)`
+    /// on singleton-support and uniform folds, and to `false` on skewed
+    /// folds). Together with [`Self::is_empty`] and the full-cover
+    /// predicate on [`Self::source_kind_histogram`], the source-kind
+    /// altitude's scalar surface now carries the natural boundary triple
+    /// *"did any layer class contribute?"* / *"did every layer class
+    /// fire?"* / *"did the layer classes fire equally?"* — each a single
+    /// method call.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_spread() == source_kind_histogram().spread()` —
+    ///   both project the same scalar off the same primitive; the named
+    ///   seam is the cube-native routing of the histogram surface.
+    /// - `source_kind_spread() == peak_source_kind_count() -
+    ///   trough_source_kind_count()` — the fused-pair identity of the
+    ///   scalar-dispersion peer. The subtraction is underflow-safe
+    ///   because `peak_source_kind_count() >= trough_source_kind_count()`
+    ///   holds structurally on every map (lifted from the trait-uniform
+    ///   `peak_count() >= trough_count()` law on
+    ///   [`crate::AxisHistogram`]).
+    /// - `source_kind_spread() == 0` on the empty map — the vacuous
+    ///   uniformity boundary, matching the
+    ///   [`crate::AxisHistogram::spread`] empty convention one altitude
+    ///   down. The `(peak_source_kind_count, trough_source_kind_count,
+    ///   source_kind_spread)` triple reads `(0, 0, 0)` uniformly on the
+    ///   empty map.
+    /// - `source_kind_spread() == 0` whenever
+    ///   `contributing_source_kinds().len() <= 1` — singleton-support
+    ///   folds are trivially balanced (the one observed source-kind's
+    ///   count is both the peak and the trough). Also holds on every
+    ///   uniform per-source-kind fold (each observed source-kind
+    ///   contributing the same nonzero count).
+    /// - `source_kind_spread() <= peak_source_kind_count()` always — the
+    ///   trough is non-negative, so the subtraction is bounded above by
+    ///   the minuend. Equality holds iff the trough is zero — i.e. on
+    ///   the empty map. Lifted from the trait-uniform `spread() <=
+    ///   peak_count()` law on [`crate::AxisHistogram`].
+    /// - `source_kind_spread() <= self.len()` always — composition of
+    ///   `source_kind_spread() <= peak_source_kind_count()` (this method)
+    ///   with `peak_source_kind_count() <= self.len()` (documented on
+    ///   [`Self::peak_source_kind_count`]).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// peak + trough scan). Both are `O(n)` in practice since the source-
+    /// kind axis carries a fixed three-cell cardinality; the returned
+    /// `usize` reads one scalar. Halves the cost of the previous inline
+    /// `map.peak_source_kind_count() - map.trough_source_kind_count()`
+    /// idiom (which walked the counts vector twice — once for the max,
+    /// once for the min-over-support — where
+    /// [`crate::AxisHistogram::spread`] can fuse both into a single walk
+    /// with a running-max/min pair).
+    #[must_use]
+    pub fn source_kind_spread(&self) -> usize {
+        self.source_kind_histogram().spread()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -55173,6 +55294,345 @@ mod progressive_tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::source_kind_spread — scalar-dispersion peer on
+    //    the source-kind altitude, fusing peak_source_kind_count and
+    //    trough_source_kind_count into one dispersion scalar and porting
+    //    tier_spread one axis over onto the source-kind altitude ──
+
+    #[test]
+    fn source_kind_spread_matches_source_kind_histogram_spread_pointwise() {
+        // The scalar-dispersion pin: `source_kind_spread` routes through
+        // `source_kind_histogram().spread()`, so the two seams must stay
+        // pointwise equivalent under every fixture. Catches any future
+        // drift where either implementation stops projecting through the
+        // shared cube-native primitive. Source-altitude peer of
+        // `tier_spread_matches_tier_histogram_spread_pointwise` on the
+        // tier altitude in the "spread across altitudes" projection.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().spread();
+            assert_eq!(map.source_kind_spread(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn source_kind_spread_equals_peak_minus_trough_pointwise() {
+        // The fused-pair pin: `source_kind_spread == peak_source_kind_count
+        // - trough_source_kind_count` on every fixture. The subtraction is
+        // underflow-safe because `peak_source_kind_count >=
+        // trough_source_kind_count` holds structurally on every map
+        // (lifted from the trait-uniform `peak_count >= trough_count` law
+        // on AxisHistogram). Closes the identity of the scalar-dispersion
+        // peer against the two count seams it fuses. Source-altitude
+        // peer of `tier_spread_equals_peak_minus_trough_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let peak = map.peak_source_kind_count();
+            let trough = map.trough_source_kind_count();
+            assert!(
+                peak >= trough,
+                "peak_source_kind_count ({peak}) must be >= \
+                 trough_source_kind_count ({trough}) for source_kind_spread \
+                 to be underflow-safe",
+            );
+            assert_eq!(map.source_kind_spread(), peak - trough);
+        }
+    }
+
+    #[test]
+    fn source_kind_spread_prog_fixture_is_zero() {
+        // Prog attributes 4 leaves, all with source-kind `Defaults`
+        // (singleton-support fold on the source-kind axis). Peak lands
+        // on Defaults at 4; trough over support {Defaults} lands at 4.
+        // Spread = 4 - 4 = 0. Direct pin — the paired
+        // `(peak_source_kind_count, trough_source_kind_count,
+        // source_kind_spread)` dispersion triple reads `(4, 4, 0)`.
+        // Source-altitude peer of `tier_spread_prog_fixture_is_one` on
+        // the same fixture (the tier axis fans across three tiers, the
+        // source-kind axis collapses to one — hence tier_spread=1,
+        // source_kind_spread=0 on the same map).
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().peak_source_kind_count(), 4);
+        assert_eq!(r.provenance().trough_source_kind_count(), 4);
+        assert_eq!(r.provenance().source_kind_spread(), 0);
+    }
+
+    #[test]
+    fn source_kind_spread_mixed_fixture_is_one() {
+        // Mixed fixture attributes 4 leaves: a→Defaults, b→File,
+        // c→Env, d→Defaults. Counts: Defaults=2, Env=1, File=1. Peak
+        // lands on Defaults at 2; trough over support {Defaults, Env,
+        // File} lands at 1. Spread = 2 - 1 = 1. Direct pin — the
+        // `(peak_source_kind_count, trough_source_kind_count,
+        // source_kind_spread)` dispersion triple reads `(2, 1, 1)`.
+        // The scalar reads through the seam whether the fixture is
+        // singleton-support (Prog) or full-cover on the source-kind
+        // axis (mixed).
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().peak_source_kind_count(), 2);
+        assert_eq!(r.provenance().trough_source_kind_count(), 1);
+        assert_eq!(r.provenance().source_kind_spread(), 1);
+    }
+
+    #[test]
+    fn source_kind_spread_empty_map_is_zero() {
+        // An empty ProvenanceMap has no leaves and therefore zero
+        // spread — reads `0` per the AxisHistogram::spread empty
+        // convention one altitude down; the `(peak_source_kind_count,
+        // trough_source_kind_count, source_kind_spread)` triple reads
+        // `(0, 0, 0)` uniformly on the empty map. Peer of
+        // `peak_source_kind_count_empty_map_is_zero` and
+        // `trough_source_kind_count_empty_map_is_zero`, and source-
+        // altitude peer of `tier_spread_empty_map_is_zero`.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.peak_source_kind_count(), 0);
+        assert_eq!(empty.trough_source_kind_count(), 0);
+        assert_eq!(empty.source_kind_spread(), 0);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn source_kind_spread_singleton_support_is_zero() {
+        // Singleton-support pin: every leaf lands on the same source-
+        // kind, so the dominant source-kind is both peak and trough of
+        // the support, and the spread is zero — the balanced-source-
+        // kind-counts boundary on the singleton-support side. Prog is
+        // the natural singleton-support fixture on the source-kind axis
+        // (every leaf's provenance carries `ConfigSource::Defaults` by
+        // construction of the three computed-tier constructors). Source-
+        // altitude peer of `tier_spread_singleton_support_is_zero`.
+        let r = Prog::resolve_progressive();
+        let m = r.provenance();
+        assert_eq!(m.contributing_source_kinds().len(), 1);
+        assert_eq!(m.source_kind_spread(), 0);
+    }
+
+    #[test]
+    fn source_kind_spread_uniform_cover_is_zero() {
+        // Uniform-cover pin: every observed source-kind contributes the
+        // same nonzero count (one leaf each here), so peak == trough ==
+        // 1 and the spread is zero — the balanced-source-kind-counts
+        // boundary on the uniform-cover side. Peer of
+        // `peak_source_kind_count_uniform_cover_is_one` and
+        // `trough_source_kind_count_uniform_cover_is_one` on the count
+        // sides, and source-altitude peer of
+        // `tier_spread_uniform_cover_is_zero`.
+        let m: ProvenanceMap = crate::ConfigSourceKind::ALL
+            .iter()
+            .copied()
+            .map(|k| {
+                let p = match k {
+                    crate::ConfigSourceKind::Defaults => Provenance::bare(),
+                    crate::ConfigSourceKind::Env => Provenance::env("PFX_"),
+                    crate::ConfigSourceKind::File => Provenance::file("/etc/x.yaml"),
+                };
+                (vec![k.as_str().to_owned()], p)
+            })
+            .collect();
+        assert!(m.source_kind_histogram().is_full_cover());
+        assert_eq!(m.peak_source_kind_count(), 1);
+        assert_eq!(m.trough_source_kind_count(), 1);
+        assert_eq!(m.source_kind_spread(), 0);
+    }
+
+    #[test]
+    fn source_kind_spread_is_zero_iff_peak_equals_trough() {
+        // Structural-skew boundary: `source_kind_spread() == 0` iff
+        // every observed source-kind carries the same count — the
+        // balanced-source-kind-counts shape. On every fixture, the
+        // predicate agrees with the scalar-pair form
+        // `peak_source_kind_count == trough_source_kind_count`
+        // pointwise. The empty map, the singleton-support fold, and
+        // every uniform-cover fold all read `true`; every skewed fold
+        // reads `false`. Source-altitude peer of
+        // `tier_spread_is_zero_iff_peak_equals_trough`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let spread_zero = map.source_kind_spread() == 0;
+            let counts_equal = map.peak_source_kind_count() == map.trough_source_kind_count();
+            assert_eq!(
+                spread_zero,
+                counts_equal,
+                "source_kind_spread == 0 must agree with \
+                 peak_source_kind_count == trough_source_kind_count \
+                 for map with peak={p}, trough={t}, spread={s}",
+                p = map.peak_source_kind_count(),
+                t = map.trough_source_kind_count(),
+                s = map.source_kind_spread(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_spread_agrees_with_modal_pair_equality_on_nonempty_map() {
+        // Cross-surface pin: on every non-empty map,
+        // `source_kind_spread() == 0` agrees with
+        // `dominant_source_kind() == recessive_source_kind()` — the
+        // modal-pair equality form of the balanced-source-kind-counts
+        // predicate. Lifted from the trait-uniform
+        // `spread() == 0 <=> dominant_cell() == recessive_cell()` law
+        // on AxisHistogram (non-empty case). The empty-map case is
+        // separately pinned on both surfaces. Source-altitude peer of
+        // `tier_spread_agrees_with_modal_pair_equality_on_nonempty_map`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            let spread_zero = map.source_kind_spread() == 0;
+            let modal_pair_equal = map.dominant_source_kind() == map.recessive_source_kind();
+            assert_eq!(
+                spread_zero, modal_pair_equal,
+                "source_kind_spread == 0 must agree with \
+                 dominant_source_kind == recessive_source_kind on non-empty map",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_spread_bounded_above_by_peak_source_kind_count() {
+        // Structural bound: `source_kind_spread() <=
+        // peak_source_kind_count()` on every fixture — the trough is
+        // non-negative, so the subtraction is bounded above by the
+        // minuend. Lifted from the trait-uniform `spread() <=
+        // peak_count()` law on AxisHistogram. Equality holds exactly
+        // when the trough is zero — i.e. on the empty map (both sides
+        // read 0). Source-altitude peer of
+        // `tier_spread_bounded_above_by_peak_tier_count`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(
+                map.source_kind_spread() <= map.peak_source_kind_count(),
+                "source_kind_spread ({s}) must not exceed \
+                 peak_source_kind_count ({p})",
+                s = map.source_kind_spread(),
+                p = map.peak_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_spread_equals_peak_iff_map_is_empty() {
+        // Equality-case pin of the `source_kind_spread <=
+        // peak_source_kind_count` bound: equality holds iff the trough
+        // is zero, which by `trough_source_kind_count == 0 <=>
+        // is_empty()` holds iff the map is empty. The two projections
+        // agree on the (0, 0) empty corner and disagree strictly on
+        // every non-empty map (where the trough is >= 1, so `spread <
+        // peak`). Source-altitude peer of
+        // `tier_spread_equals_peak_iff_map_is_empty`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let equality = map.source_kind_spread() == map.peak_source_kind_count();
+            let is_empty = map.is_empty();
+            assert_eq!(
+                equality,
+                is_empty,
+                "source_kind_spread == peak_source_kind_count must agree \
+                 with is_empty() for map with peak={p}, trough={t}, spread={s}",
+                p = map.peak_source_kind_count(),
+                t = map.trough_source_kind_count(),
+                s = map.source_kind_spread(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_spread_bounded_above_by_len() {
+        // Composition bound: `source_kind_spread() <= self.len()` on
+        // every fixture — chaining `source_kind_spread <=
+        // peak_source_kind_count` (previous pin) with
+        // `peak_source_kind_count <= len()` (documented on
+        // `peak_source_kind_count_is_bounded_by_len`). The scalar
+        // dispersion of a resolved fold on the source-kind altitude is
+        // bounded above by the total leaf count. Source-altitude peer
+        // of `tier_spread_bounded_above_by_len`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(
+                map.source_kind_spread() <= map.len(),
+                "source_kind_spread ({s}) must not exceed len ({n})",
+                s = map.source_kind_spread(),
+                n = map.len(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_spread_singleton_support_multi_leaf_is_zero() {
+        // Direct pin at a singleton-support fold with three leaves all
+        // on `Defaults` (via computed-tier constructors). Peak ==
+        // trough == 3 == len; spread == 0. The dispersion scalar reads
+        // zero on every singleton-support fold regardless of the leaf
+        // count — the "one layer class owns everything" shape is
+        // trivially balanced by construction. Peer of
+        // `peak_source_kind_count_singleton_support_equals_len` and
+        // `trough_source_kind_count_singleton_support_equals_len`, and
+        // source-altitude peer of
+        // `tier_spread_singleton_support_multi_leaf_is_zero`.
+        let m: ProvenanceMap = ["a", "b", "c"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.peak_source_kind_count(), 3);
+        assert_eq!(m.trough_source_kind_count(), 3);
+        assert_eq!(m.source_kind_spread(), 0);
+    }
+
+    #[test]
+    fn source_kind_spread_agrees_with_open_coded_max_minus_min_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0) - hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0)` walk this lift replaces
+        // — both the named seam and the hand-rolled dispersion must
+        // pointwise agree over every fixture. The `.filter(c > 0)` on
+        // the min side is essential (mirroring `trough_count`'s support
+        // discipline); the `.max()` on the peak side operates over the
+        // full axis (mirroring `peak_count`). The subtraction is
+        // underflow-safe on the histogram because `peak >= trough`
+        // holds structurally. Source-altitude peer of
+        // `tier_spread_agrees_with_open_coded_max_minus_min_walk`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kind_spread();
+            let hist = map.source_kind_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .filter(|&(_, c)| c > 0)
+                .map(|(_, c)| c)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(via_seam, peak - trough);
         }
     }
 }
