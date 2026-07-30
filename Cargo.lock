@@ -2457,7 +2457,7 @@ dependencies = [
 
 [[package]]
 name = "shikumi"
-version = "0.1.441"
+version = "0.1.442"
 dependencies = [
  "akeyless-api",
  "arc-swap",
@@ -2595,18 +2595,18 @@ dependencies = [
 
 [[package]]
 name = "tatara-closed-set"
-version = "0.3.11"
+version = "0.3.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6ff2da8b60f72e2cb7b712079b6d85f065ab605498e2003299a50c242831a5a"
+checksum = "364be0a5d6bfd14d92794c9ef42e6b41dd9acb13a23d35eec7ceeda9c90b0b46"
 dependencies = [
  "tatara-closed-set-derive",
 ]
 
 [[package]]
 name = "tatara-closed-set-derive"
-version = "0.3.11"
+version = "0.3.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a44dc828916dd17496382bc1157027a2e197320a6d6c533a0bfef9c6281e3065"
+checksum = "a5c7130f57d1260a2edd9b48d31bf4d0976ce82266a5a453fb55d907f2d3a59d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2615,9 +2615,9 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp"
-version = "0.3.11"
+version = "0.3.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6411938c655693773567ab1cde565a41b8e859dcdd023acb5493488a03da24f7"
+checksum = "fea77b78f7bbed09f86971c2157a5f5adb4e61be30399f2bf887ecb08dfec60a"
 dependencies = [
  "blake3",
  "serde",
@@ -2629,9 +2629,9 @@ dependencies = [
 
 [[package]]
 name = "tatara-lisp-derive"
-version = "0.3.11"
+version = "0.3.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5480f30b37e95bcccbfad17eb7a95fe97a5e0861c18fdab4de9060abc436115b"
+checksum = "c090e870921b2b5ac5d2aaa3632772ebc4cc00829da56ab90cc3d8da49768210"
 dependencies = [
  "proc-macro2",
  "quote",
