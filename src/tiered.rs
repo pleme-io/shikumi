@@ -249,19 +249,14 @@ impl crate::ClosedAxisLabel for ConfigTierKind {
 /// The variant-tag projection — "which tier kind did the operator
 /// ask for, ignoring any `Custom` path payload?" — is exposed as the
 /// typed [`ConfigTierKind`] primitive through [`Self::kind`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ConfigTier {
     Bare,
     Discovered,
+    #[default]
     #[allow(clippy::module_name_repetitions)]
     Default,
     Custom(std::path::PathBuf),
-}
-
-impl Default for ConfigTier {
-    fn default() -> Self {
-        Self::Default
-    }
 }
 
 impl ConfigTier {
