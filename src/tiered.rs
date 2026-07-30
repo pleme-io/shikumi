@@ -712,6 +712,42 @@ impl Provenance {
         crate::axis_ordinal(self.tier)
     }
 
+    /// The [`crate::ConfigSourceKind`] this provenance's source belongs
+    /// to — the scalar layer-kind projection of [`Self::source`], mirroring
+    /// [`Self::tier`] on the tier axis of the atomic `(tier, source)` pair.
+    /// [`crate::ConfigSourceKind::Defaults`] for every computed-defaults
+    /// constructor ([`Self::computed`] / [`Self::bare`] /
+    /// [`Self::discovered`] / [`Self::prescribed_default`], all of which
+    /// pin [`ConfigSource::Defaults`]); [`crate::ConfigSourceKind::File`]
+    /// for [`Self::file`]; [`crate::ConfigSourceKind::Env`] for
+    /// [`Self::env`].
+    ///
+    /// Equal to `self.source().kind()` by construction — one method call
+    /// answers "what layer-kind produced this?" without borrowing the
+    /// heavier [`ConfigSource`] enum (which also carries the full path /
+    /// prefix payload). Peer of [`crate::Attribution::layer_kind`] one
+    /// altitude up in the diagnostic surface: that method threads the
+    /// same `source.kind()` projection through the error envelope; this
+    /// one threads it through the resolved-provenance surface every
+    /// [`ProvenanceMap`] leaf carries. Before this seam, a caller wanting
+    /// just the scalar layer-kind identity (dashboards keying per-kind
+    /// counters, attestation manifests recording per-leaf layer-kind
+    /// distribution, `/healthz/provenance` payloads emitting the layer
+    /// class without the file path or env prefix) reached through
+    /// `prov.source().kind()` — a two-hop borrow chain that read the
+    /// heavier [`ConfigSource`] payload just to project the scalar tag.
+    ///
+    /// Copy-return over [`crate::ConfigSourceKind`] (allocation-free,
+    /// `Copy`), symmetric with [`Self::tier`]'s copy-return over
+    /// [`ConfigTierKind`] — both scalar projections of the underlying
+    /// `(tier, source)` pair name a single closed-enum tag without
+    /// touching heap or lifetime, and together they name the pair's
+    /// closed-axis coordinates on both altitudes at one seam each.
+    #[must_use]
+    pub fn source_kind(&self) -> crate::ConfigSourceKind {
+        self.source.kind()
+    }
+
     /// Consume `self`, yielding the owned `(tier, source)` pair the
     /// provenance carries — the consuming destructuring dual of the
     /// borrow-side [`Self::tier`] / [`Self::source`] accessor pair.
@@ -51181,5 +51217,157 @@ mod progressive_tests {
             prov.source(),
             &ConfigSource::File(PathBuf::from("/etc/end_to_end.yaml"))
         );
+    }
+
+    #[test]
+    fn provenance_source_kind_matches_source_kind_projection() {
+        // The scalar layer-kind projection of a Provenance is by
+        // construction equal to `self.source().kind()` on every input.
+        // Pinned across every constructor row: the four computed-defaults
+        // constructors all pin ConfigSource::Defaults (so
+        // ConfigSourceKind::Defaults); Provenance::file pins File;
+        // Provenance::env pins Env. Without this pin, a future edit that
+        // adds a ConfigSource variant (a future Discovered / Http /
+        // Vault / ConfigMap source) could silently drift the two spellings
+        // and callers routing through source_kind would see a different
+        // kind than callers doing the manual borrow-and-project dance.
+        for prov in [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::computed(ConfigTierKind::Custom),
+            Provenance::file("/etc/source_kind_projection.yaml"),
+            Provenance::env("SHIKUMI_SOURCE_KIND_PROJECTION_"),
+        ] {
+            assert_eq!(prov.source_kind(), prov.source().kind());
+        }
+    }
+
+    #[test]
+    fn provenance_source_kind_computed_defaults_row_is_defaults() {
+        // Every computed-defaults constructor pins ConfigSource::Defaults;
+        // its scalar layer-kind projection is therefore
+        // ConfigSourceKind::Defaults on all four rows. The row's identity
+        // is that the source is machine-derived (Defaults), independent
+        // of which tier the constructor stamps — `computed(Custom)`
+        // reports Defaults on the source-kind axis even though its tier
+        // is Custom, because `computed` pins ConfigSource::Defaults by
+        // construction.
+        assert_eq!(
+            Provenance::bare().source_kind(),
+            crate::ConfigSourceKind::Defaults
+        );
+        assert_eq!(
+            Provenance::discovered().source_kind(),
+            crate::ConfigSourceKind::Defaults
+        );
+        assert_eq!(
+            Provenance::prescribed_default().source_kind(),
+            crate::ConfigSourceKind::Defaults
+        );
+        assert_eq!(
+            Provenance::computed(ConfigTierKind::Custom).source_kind(),
+            crate::ConfigSourceKind::Defaults
+        );
+    }
+
+    #[test]
+    fn provenance_source_kind_file_is_file() {
+        // The operator-file overlay constructor pins ConfigSource::File
+        // and reports ConfigSourceKind::File without depending on the
+        // specific PathBuf payload — absolute, relative, or extensionless
+        // paths all project to the same scalar layer-kind tag.
+        assert_eq!(
+            Provenance::file("/etc/file_kind.yaml").source_kind(),
+            crate::ConfigSourceKind::File
+        );
+        assert_eq!(
+            Provenance::file("relative/other.toml").source_kind(),
+            crate::ConfigSourceKind::File
+        );
+        assert_eq!(
+            Provenance::file("no_extension").source_kind(),
+            crate::ConfigSourceKind::File
+        );
+    }
+
+    #[test]
+    fn provenance_source_kind_env_is_env() {
+        // The operator-env overlay constructor pins ConfigSource::Env
+        // and reports ConfigSourceKind::Env without depending on the
+        // specific prefix payload — including the empty prefix that
+        // routes through figment::providers::Env::raw-shape emission.
+        assert_eq!(
+            Provenance::env("SHIKUMI_ENV_KIND_").source_kind(),
+            crate::ConfigSourceKind::Env
+        );
+        assert_eq!(
+            Provenance::env("").source_kind(),
+            crate::ConfigSourceKind::Env
+        );
+    }
+
+    #[test]
+    fn provenance_source_kind_survives_new_round_trip() {
+        // The scalar projection survives the atomic-pair reconstruction:
+        // a Provenance destructured via into_parts and rebuilt via new
+        // reports the identical source_kind. Guards against a future
+        // Clone / new-side edit that could silently drift the projection
+        // relative to the borrow-accessor spelling.
+        for prov in [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::file("/etc/source_kind_round_trip.yaml"),
+            Provenance::env("SHIKUMI_SOURCE_KIND_RT_"),
+        ] {
+            let (tier, source) = prov.clone().into_parts();
+            let rebuilt = Provenance::new(tier, source);
+            assert_eq!(prov.source_kind(), rebuilt.source_kind());
+        }
+    }
+
+    #[test]
+    fn provenance_source_kind_agrees_with_from_pair_reconstruction() {
+        // The std-trait facade preserves the scalar projection: a
+        // Provenance reconstructed from a `(tier, source)` pair via
+        // `From::from` reports the same source_kind as one built
+        // through the inherent `new` constructor. Together with
+        // `provenance_source_kind_survives_new_round_trip` this closes
+        // both spellings of the reconstruction seam on the source_kind
+        // projection.
+        let pair = (
+            ConfigTierKind::Custom,
+            ConfigSource::File(PathBuf::from("/etc/from_pair_source_kind.yaml")),
+        );
+        let via_new = Provenance::new(pair.0, pair.1.clone());
+        let via_from: Provenance = pair.into();
+        assert_eq!(via_new.source_kind(), via_from.source_kind());
+        assert_eq!(via_new.source_kind(), crate::ConfigSourceKind::File);
+    }
+
+    #[test]
+    fn provenance_source_kind_partitions_axis_cardinality() {
+        // Cross-constructor pin: the set of source_kinds reachable
+        // through the shipped constructor surface is a subset of
+        // `ConfigSourceKind::ALL`. Guards against a future edit that
+        // adds a ConfigSource variant without extending ConfigSourceKind
+        // or its `ALL` constant in lockstep — the new-variant provenance
+        // would silently project to a kind outside `ALL`, breaking every
+        // dashboard / manifest keyed by that constant.
+        for prov in [
+            Provenance::bare(),
+            Provenance::discovered(),
+            Provenance::prescribed_default(),
+            Provenance::computed(ConfigTierKind::Custom),
+            Provenance::file("/etc/partition_source_kind.yaml"),
+            Provenance::env("SHIKUMI_PARTITION_"),
+        ] {
+            assert!(
+                crate::ConfigSourceKind::ALL.contains(&prov.source_kind()),
+                "source_kind {:?} not in ConfigSourceKind::ALL",
+                prov.source_kind(),
+            );
+        }
     }
 }
