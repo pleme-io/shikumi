@@ -9164,7 +9164,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.437";
+        version = "0.1.438";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -9605,11 +9605,55 @@ rec {
         };
         resolvedDefaultFeatures = [ "default" "proc-macro" ];
       };
+      "tatara-closed-set" = rec {
+        crateName = "tatara-closed-set";
+        version = "0.3.7";
+        edition = "2021";
+        sha256 = "1i72bilxkapifvs9vkdpvawygmyjsbb9hr2fjm8bzk4bpjhm7rga";
+        libName = "tatara_closed_set";
+        authors = [
+          "Pleme.io <engineering@pleme.io>"
+        ];
+        dependencies = [
+          {
+            name = "tatara-closed-set-derive";
+            packageId = "tatara-closed-set-derive";
+          }
+        ];
+
+      };
+      "tatara-closed-set-derive" = rec {
+        crateName = "tatara-closed-set-derive";
+        version = "0.3.7";
+        edition = "2021";
+        sha256 = "0ncdy49afisqgggwgnl8jl9gflgjsspkx6hq12jjlgfnvbfshcqx";
+        procMacro = true;
+        libName = "tatara_closed_set_derive";
+        authors = [
+          "Pleme.io <engineering@pleme.io>"
+        ];
+        dependencies = [
+          {
+            name = "proc-macro2";
+            packageId = "proc-macro2";
+          }
+          {
+            name = "quote";
+            packageId = "quote";
+          }
+          {
+            name = "syn";
+            packageId = "syn 2.0.119";
+            features = [ "full" ];
+          }
+        ];
+
+      };
       "tatara-lisp" = rec {
         crateName = "tatara-lisp";
-        version = "0.3.4";
+        version = "0.3.7";
         edition = "2021";
-        sha256 = "1jffa0xgsjqv6m9ng0v12jh7kk2wl6rbhl14kc8fdaj03l64ra80";
+        sha256 = "16b6nvl82xx9v4vnl3inv84fy5cw2zrch4pwxqjil3jvc97i9m2b";
         libName = "tatara_lisp";
         authors = [
           "Pleme.io <engineering@pleme.io>"
@@ -9629,6 +9673,10 @@ rec {
             packageId = "serde_json";
           }
           {
+            name = "tatara-closed-set";
+            packageId = "tatara-closed-set";
+          }
+          {
             name = "tatara-lisp-derive";
             packageId = "tatara-lisp-derive";
           }
@@ -9643,9 +9691,9 @@ rec {
       };
       "tatara-lisp-derive" = rec {
         crateName = "tatara-lisp-derive";
-        version = "0.3.4";
+        version = "0.3.7";
         edition = "2021";
-        sha256 = "1a9nh17nxsp04xpcmysfmijyy8khh9xgdlszw3yj5w9kv9l57c5x";
+        sha256 = "0y4nf5cy5mnn6169ndzgip730y5savrviypmyzxgxj963mcfkyw1";
         procMacro = true;
         libName = "tatara_lisp_derive";
         authors = [
