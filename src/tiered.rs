@@ -2402,6 +2402,138 @@ impl ProvenanceMap {
         self.source_kind_histogram().spread()
     }
 
+    /// The **joint-extremes-magnitude of source-kind counts** — the sum of
+    /// the modal and anti-modal per-source-kind leaf counts on this
+    /// resolved fold. Routes through
+    /// [`crate::AxisHistogram::peak_trough_sum`] one altitude down: the
+    /// fused `peak_count() + trough_count()` addition on the histogram
+    /// surface, halving the cost of the inline `peak_source_kind_count() +
+    /// trough_source_kind_count()` idiom which walked the counts vector
+    /// twice.
+    ///
+    /// The **addition-form sibling** of the [`Self::source_kind_spread`]
+    /// subtraction-form scalar on the same count surface, closing the
+    /// `(sum, difference)` pair of the extreme-endpoint algebra at the
+    /// source-kind altitude. Together with [`Self::source_kind_spread`],
+    /// the pair `(source_kind_peak_trough_sum, source_kind_spread)` reads
+    /// off `(peak_source_kind_count, trough_source_kind_count)` bijectively
+    /// through two halving-additions:
+    /// - `peak_source_kind_count() == (source_kind_peak_trough_sum() +
+    ///   source_kind_spread()) / 2`
+    /// - `trough_source_kind_count() == (source_kind_peak_trough_sum() -
+    ///   source_kind_spread()) / 2`
+    ///
+    /// Both divisions are exact — `source_kind_peak_trough_sum ±
+    /// source_kind_spread` is always even by construction, since
+    /// `(peak + trough) + (peak - trough) == 2 * peak` and `(peak + trough)
+    /// - (peak - trough) == 2 * trough`. The source-kind altitude's scalar-
+    /// count surface now carries `(peak, trough)` in two orthogonal forms:
+    /// as separate endpoints via [`Self::peak_source_kind_count`] /
+    /// [`Self::trough_source_kind_count`], and as `(sum, difference)` via
+    /// [`Self::source_kind_peak_trough_sum`] / [`Self::source_kind_spread`].
+    ///
+    /// The **source-altitude joint-extremes-magnitude peer** — the natural
+    /// typed primitive for fleet dashboards, attestation manifests, and
+    /// alerting policies asking *"how large are the two extreme layer-
+    /// class buckets together?"*: the fleet dashboard headline *"peak-plus-
+    /// trough layer-class load: 13 leaves (peak File 12 + trough Env 1)"*
+    /// (where 13 is this scalar), the attestation manifest recording the
+    /// joint extreme magnitude of a resolved fold by source-kind between
+    /// two rebuild windows, the alerting policy reading
+    /// *"`source_kind_peak_trough_sum` >= threshold"* to gate on the joint
+    /// two-sided magnitude on the source-kind altitude. Before this lift,
+    /// every such consumer re-derived the projection inline as
+    /// `map.peak_source_kind_count() + map.trough_source_kind_count()` —
+    /// two method calls plus an addition at every site, each site walking
+    /// the counts vector twice with no named surface for the joint scalar.
+    ///
+    /// The source-altitude climb of the "peak+trough sums across
+    /// altitudes" projection seeded on the scalar altitude by
+    /// [`crate::AxisHistogram::peak_trough_sum`], lifted to the diff
+    /// altitude by [`ConfigDiff::kind_peak_trough_sum`], and lifted to the
+    /// tier altitude by [`Self::tier_peak_trough_sum`]. The pattern is the
+    /// same at every altitude: surface the
+    /// [`crate::AxisHistogram::peak_trough_sum`] scalar directly at the
+    /// local histogram altitude, routing through the shared primitive one
+    /// seam down instead of every consumer pulling the histogram temporary
+    /// and inlining the addition. Parallels the "spread across altitudes"
+    /// projection climbed on the same altitude by
+    /// [`Self::source_kind_spread`] (the subtraction-form sibling on the
+    /// same closed-endpoint pair).
+    ///
+    /// **Empty-map convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::peak_trough_sum`] empty convention one
+    /// altitude down and the [`Self::peak_source_kind_count`] /
+    /// [`Self::trough_source_kind_count`] / [`Self::source_kind_spread`]
+    /// empty conventions on the same altitude. The scalar-count quadruple
+    /// `(peak_source_kind_count, trough_source_kind_count,
+    /// source_kind_spread, source_kind_peak_trough_sum)` reads uniformly
+    /// `(0, 0, 0, 0)` on the empty map.
+    ///
+    /// **Empty-boundary equivalence.** `source_kind_peak_trough_sum() ==
+    /// 0` ⇔ `self.is_empty()` — both endpoints are structurally `>= 1` on
+    /// every non-empty map (by [`Self::peak_source_kind_count`]'s and
+    /// [`Self::trough_source_kind_count`]'s non-emptiness floors), so
+    /// their sum is zero exactly on the empty map. Contrapositively,
+    /// every non-empty map has `source_kind_peak_trough_sum() >= 2` — the
+    /// joint magnitude has a structural non-empty floor of `2` (both
+    /// endpoints contribute at least `1`).
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_peak_trough_sum() ==
+    ///   source_kind_histogram().peak_trough_sum()` — both project the
+    ///   same scalar off the same primitive; the named seam is the cube-
+    ///   native routing of the histogram surface.
+    /// - `source_kind_peak_trough_sum() == peak_source_kind_count() +
+    ///   trough_source_kind_count()` — the fused-pair identity of the
+    ///   joint-extremes-magnitude peer on the underlying scalar count
+    ///   pair.
+    /// - `source_kind_peak_trough_sum() == 0` ⇔ `self.is_empty()` — the
+    ///   empty-boundary equivalence peer to the two-endpoint surface.
+    /// - `source_kind_peak_trough_sum() >= 2` whenever `!self.is_empty()`
+    ///   — non-empty floor: both endpoints are at least `1` on every
+    ///   non-empty map.
+    /// - `source_kind_peak_trough_sum() >= source_kind_spread()` always —
+    ///   `peak + trough >= peak - trough` reduces to `2 * trough >= 0`,
+    ///   always true. Equality holds iff `trough_source_kind_count() ==
+    ///   0` — i.e. on the empty map, the sole shape with
+    ///   `trough_source_kind_count == 0`.
+    /// - `source_kind_peak_trough_sum() <= 2 * peak_source_kind_count()`
+    ///   always — `peak + trough <= 2 * peak` reduces to `trough <=
+    ///   peak`, the structural `trough <= peak` invariant. Equality
+    ///   holds iff `peak_source_kind_count() ==
+    ///   trough_source_kind_count()` (the balanced-source-kind-counts
+    ///   shape).
+    /// - `source_kind_peak_trough_sum() <= 2 * self.len()` always —
+    ///   composition of both endpoints being bounded above by
+    ///   `self.len()`.
+    /// - `source_kind_peak_trough_sum() + source_kind_spread() == 2 *
+    ///   peak_source_kind_count()` always — the peak-endpoint recovery
+    ///   identity through the `(sum, difference)` surface.
+    /// - `source_kind_peak_trough_sum() - source_kind_spread() == 2 *
+    ///   trough_source_kind_count()` always — the trough-endpoint
+    ///   recovery identity (non-negative by the `source_kind_peak_trough_sum
+    ///   >= source_kind_spread` invariant).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// peak + trough fused scan through
+    /// [`crate::AxisHistogram::peak_trough_sum`]). Both are `O(n)` in
+    /// practice since the source-kind axis carries a fixed three-cell
+    /// cardinality; the returned `usize` reads one scalar. Halves the
+    /// cost of the previous inline `map.peak_source_kind_count() +
+    /// map.trough_source_kind_count()` idiom (which walked the counts
+    /// vector twice — once for the max, once for the min-over-support),
+    /// where [`crate::AxisHistogram::peak_trough_sum`] routes both
+    /// through a single scalar read.
+    #[must_use]
+    pub fn source_kind_peak_trough_sum(&self) -> usize {
+        self.source_kind_histogram().peak_trough_sum()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -55633,6 +55765,387 @@ mod progressive_tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak - trough);
+        }
+    }
+
+    // ── ProvenanceMap::source_kind_peak_trough_sum — joint-extremes-
+    //    magnitude peer on the source-kind altitude, addition-form sibling
+    //    of `source_kind_spread` on the same closed-endpoint pair, and
+    //    source-altitude climb of the "peak+trough sums across altitudes"
+    //    projection ──
+
+    #[test]
+    fn source_kind_peak_trough_sum_matches_source_kind_histogram_peak_trough_sum_pointwise() {
+        // Routing pin: `source_kind_peak_trough_sum` routes through
+        // `source_kind_histogram().peak_trough_sum()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Catches any
+        // future drift where either implementation stops projecting
+        // through the shared cube-native primitive. Source-altitude peer
+        // of `tier_peak_trough_sum_matches_tier_histogram_peak_trough_sum_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().peak_trough_sum();
+            assert_eq!(map.source_kind_peak_trough_sum(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_equals_peak_plus_trough_pointwise() {
+        // Fused-pair pin: `source_kind_peak_trough_sum ==
+        // peak_source_kind_count + trough_source_kind_count` on every
+        // fixture — the defining equivalence on the underlying scalar
+        // pair. Overflow-safe: both summands are bounded above by
+        // `self.len()`. Source-altitude peer of
+        // `tier_peak_trough_sum_equals_peak_plus_trough_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let peak = map.peak_source_kind_count();
+            let trough = map.trough_source_kind_count();
+            assert_eq!(map.source_kind_peak_trough_sum(), peak + trough);
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_prog_fixture_is_eight() {
+        // Prog attributes 4 leaves, all with source-kind `Defaults`
+        // (singleton-support fold on the source-kind axis). Peak lands
+        // on Defaults at 4; trough over support {Defaults} lands at 4
+        // (the sole observed source-kind is both modal and anti-modal).
+        // Sum = 4 + 4 = 8. Direct pin — the paired
+        // `(peak_source_kind_count, trough_source_kind_count,
+        // source_kind_spread, source_kind_peak_trough_sum)` quadruple
+        // reads `(4, 4, 0, 8)`. Peer of `source_kind_spread_prog_fixture_is_zero`
+        // on the addition-form side.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().peak_source_kind_count(), 4);
+        assert_eq!(r.provenance().trough_source_kind_count(), 4);
+        assert_eq!(r.provenance().source_kind_spread(), 0);
+        assert_eq!(r.provenance().source_kind_peak_trough_sum(), 8);
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_mixed_fixture_is_three() {
+        // Mixed fixture attributes 4 leaves: a→Defaults, b→File,
+        // c→Env, d→Defaults. Counts: Defaults=2, Env=1, File=1. Peak
+        // lands on Defaults at 2; trough over support {Defaults, Env,
+        // File} lands at 1. Sum = 2 + 1 = 3, spread = 2 - 1 = 1. Direct
+        // pin — the `(peak_source_kind_count, trough_source_kind_count,
+        // source_kind_spread, source_kind_peak_trough_sum)` quadruple
+        // reads `(2, 1, 1, 3)`. The scalar reads through the seam
+        // whether the fixture is singleton-support (Prog) or full-cover
+        // on the source-kind axis (mixed).
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().peak_source_kind_count(), 2);
+        assert_eq!(r.provenance().trough_source_kind_count(), 1);
+        assert_eq!(r.provenance().source_kind_spread(), 1);
+        assert_eq!(r.provenance().source_kind_peak_trough_sum(), 3);
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_empty_map_is_zero() {
+        // An empty ProvenanceMap has no leaves and therefore zero joint
+        // magnitude — reads `0` per the AxisHistogram::peak_trough_sum
+        // empty convention one altitude down; the
+        // `(peak_source_kind_count, trough_source_kind_count,
+        // source_kind_spread, source_kind_peak_trough_sum)` quadruple
+        // reads `(0, 0, 0, 0)` uniformly on the empty map. Source-altitude
+        // peer of `tier_peak_trough_sum_empty_map_is_zero`.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.peak_source_kind_count(), 0);
+        assert_eq!(empty.trough_source_kind_count(), 0);
+        assert_eq!(empty.source_kind_spread(), 0);
+        assert_eq!(empty.source_kind_peak_trough_sum(), 0);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_singleton_support_is_twice_len() {
+        // Singleton-support pin: every leaf lands on the same source-
+        // kind, so that one source-kind is both peak and trough of the
+        // observed support, and the joint sum is `2 * self.len()`.
+        // Source-altitude peer of
+        // `tier_peak_trough_sum_singleton_support_is_twice_len` on the
+        // tier altitude.
+        let m: ProvenanceMap = ["a", "b", "c"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_source_kinds().len(), 1);
+        assert_eq!(m.peak_source_kind_count(), 3);
+        assert_eq!(m.trough_source_kind_count(), 3);
+        assert_eq!(m.source_kind_peak_trough_sum(), 6);
+        assert_eq!(m.source_kind_peak_trough_sum(), 2 * m.len());
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_uniform_cover_is_twice_shared_count() {
+        // Uniform-cover pin: every observed source-kind contributes the
+        // same nonzero count (one leaf each here across all three
+        // source-kinds), so peak == trough == 1 and the joint sum is
+        // `2 * shared_count == 2`. On the uniform-cover shape,
+        // `source_kind_peak_trough_sum == 2 * peak_source_kind_count`
+        // (equality boundary of the `source_kind_peak_trough_sum <= 2 *
+        // peak_source_kind_count` invariant). Source-altitude peer of
+        // `tier_peak_trough_sum_uniform_cover_is_twice_shared_count`.
+        let m: ProvenanceMap = crate::ConfigSourceKind::ALL
+            .iter()
+            .copied()
+            .map(|k| {
+                let p = match k {
+                    crate::ConfigSourceKind::Defaults => Provenance::bare(),
+                    crate::ConfigSourceKind::Env => Provenance::env("PFX_"),
+                    crate::ConfigSourceKind::File => Provenance::file("/etc/x.yaml"),
+                };
+                (vec![k.as_str().to_owned()], p)
+            })
+            .collect();
+        assert!(m.source_kind_histogram().is_full_cover());
+        assert_eq!(m.peak_source_kind_count(), 1);
+        assert_eq!(m.trough_source_kind_count(), 1);
+        assert_eq!(m.source_kind_peak_trough_sum(), 2);
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence pin: `source_kind_peak_trough_sum()
+        // == 0` iff the map is empty. Both endpoints are structurally
+        // `>= 1` on every non-empty map, so the sum is zero exactly on
+        // the empty map. Contrapositively, every non-empty map has
+        // `source_kind_peak_trough_sum >= 2`. Source-altitude peer of
+        // `tier_peak_trough_sum_zero_iff_empty_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sum_zero = map.source_kind_peak_trough_sum() == 0;
+            let is_empty = map.is_empty();
+            assert_eq!(
+                sum_zero,
+                is_empty,
+                "source_kind_peak_trough_sum == 0 must agree with \
+                 is_empty() for map with peak={p}, trough={t}, sum={s}",
+                p = map.peak_source_kind_count(),
+                t = map.trough_source_kind_count(),
+                s = map.source_kind_peak_trough_sum(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_non_empty_bounded_below_by_two() {
+        // Non-empty floor pin: every non-empty map has
+        // `source_kind_peak_trough_sum >= 2` — the joint magnitude is
+        // at least `2` because both endpoints are structurally `>= 1`
+        // on every non-empty map. Source-altitude peer of
+        // `tier_peak_trough_sum_non_empty_bounded_below_by_two`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            assert!(
+                map.source_kind_peak_trough_sum() >= 2,
+                "source_kind_peak_trough_sum ({s}) must be >= 2 on \
+                 non-empty map (peak={p}, trough={t})",
+                s = map.source_kind_peak_trough_sum(),
+                p = map.peak_source_kind_count(),
+                t = map.trough_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_bounded_below_by_source_kind_spread() {
+        // Structural bound: `source_kind_peak_trough_sum() >=
+        // source_kind_spread()` on every fixture — `peak + trough >=
+        // peak - trough` reduces to `2 * trough >= 0`, always true.
+        // Equality holds iff `trough_source_kind_count == 0` — i.e. on
+        // the empty map, the sole shape with
+        // `trough_source_kind_count == 0`. Source-altitude peer of
+        // `tier_peak_trough_sum_bounded_below_by_tier_spread`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sum = map.source_kind_peak_trough_sum();
+            let spread = map.source_kind_spread();
+            assert!(
+                sum >= spread,
+                "source_kind_peak_trough_sum ({sum}) must be >= \
+                 source_kind_spread ({spread})",
+            );
+            let equality = sum == spread;
+            let trough_zero = map.trough_source_kind_count() == 0;
+            assert_eq!(
+                equality,
+                trough_zero,
+                "source_kind_peak_trough_sum == source_kind_spread \
+                 must agree with trough_source_kind_count == 0 for map \
+                 with peak={p}, trough={t}",
+                p = map.peak_source_kind_count(),
+                t = map.trough_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_bounded_above_by_twice_peak_source_kind_count() {
+        // Structural bound: `source_kind_peak_trough_sum() <= 2 *
+        // peak_source_kind_count()` on every fixture — `peak + trough
+        // <= 2 * peak` reduces to `trough <= peak`, the structural
+        // `trough_source_kind_count <= peak_source_kind_count`
+        // invariant. Equality holds iff `peak_source_kind_count ==
+        // trough_source_kind_count` (the balanced-source-kind-counts
+        // shape). Source-altitude peer of
+        // `tier_peak_trough_sum_bounded_above_by_twice_peak_tier_count`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sum = map.source_kind_peak_trough_sum();
+            let peak = map.peak_source_kind_count();
+            assert!(
+                sum <= 2 * peak,
+                "source_kind_peak_trough_sum ({sum}) must be <= 2 * \
+                 peak_source_kind_count ({peak})",
+            );
+            let equality = sum == 2 * peak;
+            let balanced = map.peak_source_kind_count() == map.trough_source_kind_count();
+            assert_eq!(
+                equality,
+                balanced,
+                "source_kind_peak_trough_sum == 2 * peak_source_kind_count \
+                 must agree with peak == trough for map with peak={peak}, \
+                 trough={t}, sum={sum}",
+                t = map.trough_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_bounded_above_by_twice_len() {
+        // Composition bound: `source_kind_peak_trough_sum() <= 2 *
+        // self.len()` on every fixture — chaining
+        // `source_kind_peak_trough_sum <= 2 * peak_source_kind_count`
+        // (previous pin) with `peak_source_kind_count <= self.len()`.
+        // The joint magnitude of a resolved fold is bounded above by
+        // twice the total leaf count. Source-altitude peer of
+        // `tier_peak_trough_sum_bounded_above_by_twice_len`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sum = map.source_kind_peak_trough_sum();
+            let n = map.len();
+            assert!(
+                sum <= 2 * n,
+                "source_kind_peak_trough_sum ({sum}) must not exceed \
+                 2 * len ({twice})",
+                twice = 2 * n,
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_plus_spread_recovers_twice_peak_pointwise() {
+        // Peak-endpoint recovery identity: `source_kind_peak_trough_sum()
+        // + source_kind_spread() == 2 * peak_source_kind_count()` on
+        // every fixture. Together with the trough-endpoint recovery
+        // identity, the `(sum, difference)` pair fully witnesses the
+        // `(peak, trough)` endpoint pair through two halving-additions.
+        // Bijective `(sum, difference) ↔ (peak, trough)` algebra on the
+        // closed scalar-count surface at the source-kind altitude.
+        // Source-altitude peer of
+        // `tier_peak_trough_sum_plus_spread_recovers_twice_peak_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sum = map.source_kind_peak_trough_sum();
+            let spread = map.source_kind_spread();
+            let peak = map.peak_source_kind_count();
+            assert_eq!(sum + spread, 2 * peak);
+            assert_eq!((sum + spread) % 2, 0, "sum + spread must be even");
+            assert_eq!((sum + spread) / 2, peak);
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_minus_spread_recovers_twice_trough_pointwise() {
+        // Trough-endpoint recovery identity: `source_kind_peak_trough_sum()
+        // - source_kind_spread() == 2 * trough_source_kind_count()` on
+        // every fixture. The subtraction is underflow-safe because
+        // `source_kind_peak_trough_sum >= source_kind_spread` holds
+        // structurally on every map (the previous invariant pin).
+        // Together with the peak-endpoint recovery, closes the
+        // bijective `(sum, difference) ↔ (peak, trough)` algebra on the
+        // closed scalar-count surface at the source-kind altitude.
+        // Source-altitude peer of
+        // `tier_peak_trough_sum_minus_spread_recovers_twice_trough_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sum = map.source_kind_peak_trough_sum();
+            let spread = map.source_kind_spread();
+            let trough = map.trough_source_kind_count();
+            assert!(
+                sum >= spread,
+                "sum ({sum}) >= spread ({spread}) precondition for \
+                 underflow-safe subtraction",
+            );
+            assert_eq!(sum - spread, 2 * trough);
+            assert_eq!((sum - spread) % 2, 0, "sum - spread must be even");
+            assert_eq!((sum - spread) / 2, trough);
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_agrees_with_open_coded_max_plus_min_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0) + hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0)` walk this lift replaces
+        // — both the named seam and the hand-rolled joint magnitude
+        // must pointwise agree over every fixture. The `.filter(c > 0)`
+        // on the min side is essential (mirroring `trough_count`'s
+        // support discipline); the `.max()` on the peak side operates
+        // over the full axis (mirroring `peak_count`). Source-altitude
+        // peer of `tier_peak_trough_sum_agrees_with_open_coded_max_plus_min_walk`
+        // and addition-form peer of
+        // `source_kind_spread_agrees_with_open_coded_max_minus_min_walk`
+        // on the same fixture set.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kind_peak_trough_sum();
+            let hist = map.source_kind_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .filter(|&(_, c)| c > 0)
+                .map(|(_, c)| c)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(via_seam, peak + trough);
         }
     }
 }
