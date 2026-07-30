@@ -2854,7 +2854,7 @@ impl ProvenanceMap {
     /// through a single scalar read.
     #[must_use]
     pub fn source_kind_peak_trough_sum_of_squares(&self) -> usize {
-        self.source_kind_histogram().peak_trough_sum_of_squares()
+        self.source_kind_peak_trough_sum_of_powers(2)
     }
 
     /// The **joint-extremes-cube-magnitude of source-kind counts** — the
@@ -3042,7 +3042,7 @@ impl ProvenanceMap {
     /// through a single scalar read.
     #[must_use]
     pub fn source_kind_peak_trough_sum_of_cubes(&self) -> usize {
-        self.source_kind_histogram().peak_trough_sum_of_cubes()
+        self.source_kind_peak_trough_sum_of_powers(3)
     }
 
     /// The **joint-extremes-quartic-magnitude of source-kind counts** —
@@ -3237,8 +3237,72 @@ impl ProvenanceMap {
     /// both through a single scalar read.
     #[must_use]
     pub fn source_kind_peak_trough_sum_of_fourth_powers(&self) -> usize {
-        self.source_kind_histogram()
-            .peak_trough_sum_of_fourth_powers()
+        self.source_kind_peak_trough_sum_of_powers(4)
+    }
+
+    /// The **joint-extremes-Lⁿ-magnitude of source-kind counts at runtime
+    /// exponent `n`** — the sum of the `n`th powers of the modal and
+    /// anti-modal per-source-kind leaf counts on this resolved fold.
+    /// Routes through [`crate::AxisHistogram::peak_trough_sum_of_powers`]
+    /// one altitude down: the fused `peak_count().pow(n) +
+    /// trough_count().pow(n)` runtime-exponent power-sum on the
+    /// source-kind histogram surface, halving the cost of the inline
+    /// `peak_source_kind_count().pow(n) +
+    /// trough_source_kind_count().pow(n)` idiom which walked the counts
+    /// vector twice.
+    ///
+    /// The **runtime-exponent generalization** of the source-kind-altitude
+    /// power-sum family: the three shipped fixed-exponent siblings —
+    /// [`Self::source_kind_peak_trough_sum_of_squares`] (`n = 2`),
+    /// [`Self::source_kind_peak_trough_sum_of_cubes`] (`n = 3`), and
+    /// [`Self::source_kind_peak_trough_sum_of_fourth_powers`] (`n = 4`)
+    /// — each route through this primitive at their fixed `N`, so the
+    /// joint-extremes `p_n` at the source-kind altitude reads off ONE
+    /// typed scalar at a runtime-chosen exponent instead of dispatching
+    /// over the named table or growing a fifth / sixth / n-th named
+    /// source-kind-altitude sibling to extend the ladder. The
+    /// scalar-altitude peer
+    /// [`crate::AxisHistogram::peak_trough_sum_of_powers`] closes the
+    /// exponent axis on the histogram surface; this method lifts that
+    /// closure one altitude up to the source-kind count-endpoint pair.
+    ///
+    /// The **source-kind-altitude peer** of
+    /// [`Self::tier_peak_trough_sum_of_powers`] on the tier altitude and
+    /// [`ConfigDiff::kind_peak_trough_sum_of_powers`] on the diff
+    /// altitude — the same parametric primitive at three altitudes on
+    /// the same shared `AxisHistogram::peak_trough_sum_of_powers` scalar-
+    /// altitude seed, closing the "peak^n + trough^n across altitudes"
+    /// projection at its runtime-exponent generalization.
+    ///
+    /// # Boundary conventions
+    ///
+    /// Inherited from the scalar-altitude primitive:
+    /// - `source_kind_peak_trough_sum_of_powers(0) == 2` for every
+    ///   resolved fold (even the empty map) since `usize::pow(0) == 1`
+    ///   per operand — the closed `1 + 1 == 2` boundary of the
+    ///   two-operand power-sum family.
+    /// - `source_kind_peak_trough_sum_of_powers(1) ==
+    ///   source_kind_peak_trough_sum()` — the linear-power-sum
+    ///   degenerates to the shipped addition-form scalar
+    ///   [`Self::source_kind_peak_trough_sum`].
+    /// - `source_kind_peak_trough_sum_of_powers(n) == 0` for `n >= 1`
+    ///   iff `self.is_empty()` — every non-empty resolved fold has both
+    ///   source-kind endpoints `>= 1`, so `p_n >= 2` on any non-empty
+    ///   fold at `n >= 1`.
+    ///
+    /// # Newton's two-variable recurrence
+    ///
+    /// For `n >= 2`, the source-kind-altitude primitive satisfies
+    /// Newton's identity `p_n == e_1 * p_(n-1) - e_2 * p_(n-2)` where
+    /// `e_1 = source_kind_peak_trough_sum()` and `e_2 =
+    /// source_kind_peak_trough_product()` — the same two
+    /// elementary-symmetric-polynomial scalars that close the entire
+    /// power-sum family on the source-kind count-endpoint pair. The
+    /// identity holds without underflow on `usize` by the same
+    /// rearrangement the scalar-altitude primitive uses.
+    #[must_use]
+    pub fn source_kind_peak_trough_sum_of_powers(&self, n: u32) -> usize {
+        self.source_kind_histogram().peak_trough_sum_of_powers(n)
     }
 
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
@@ -58688,6 +58752,137 @@ mod progressive_tests {
                 via_seam,
                 peak * peak * peak * peak + trough * trough * trough * trough,
             );
+        }
+    }
+
+    // ── ProvenanceMap::source_kind_peak_trough_sum_of_powers —
+    //    runtime-exponent power-sum generalization on the source-kind
+    //    altitude, closing the "peak^n + trough^n across altitudes"
+    //    projection at the source-kind altitude peer to the shipped
+    //    tier-altitude `tier_peak_trough_sum_of_powers` and diff-altitude
+    //    `ConfigDiff::kind_peak_trough_sum_of_powers`. Four invariants
+    //    pinned pointwise:
+    //
+    // 1. Boundary at n == 0 → 2 uniformly (including empty), inheriting
+    //    the scalar-altitude `usize::pow(0) == 1` per operand.
+    // 2. Boundary at n == 1 == `source_kind_peak_trough_sum` pointwise,
+    //    degenerating the linear power-sum to the shipped addition-form
+    //    scalar.
+    // 3. Routing the shipped fixed-exponent siblings at n in {2, 3, 4}
+    //    pointwise — proves the delegation the fold installs and pins
+    //    every named sibling as `source_kind_peak_trough_sum_of_powers(N)`
+    //    at its N.
+    // 4. Newton's two-variable recurrence at n in 2..=4: `p_n == e_1 *
+    //    p_(n-1) - e_2 * p_(n-2)` where `e_1 =
+    //    source_kind_peak_trough_sum` and `e_2 =
+    //    source_kind_peak_trough_product`, proving the primitive closes
+    //    the whole source-kind-altitude power-sum family under one
+    //    identity — not just at any single fixed exponent.
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_powers_at_zero_is_two_on_every_fold_including_empty() {
+        // Boundary pin at n == 0: for every resolved fold — non-empty or
+        // empty — `peak_source_kind_count().pow(0) == 1` and
+        // `trough_source_kind_count().pow(0) == 1` (usize's
+        // `0.pow(0) == 1` per operand), so `p_0 == 1 + 1 == 2`
+        // uniformly. The closed convention that lets
+        // `source_kind_peak_trough_sum_of_powers(0)` read the "two
+        // operands are present" cardinality without a nonempty guard,
+        // lifted from the scalar-altitude primitive. Source-altitude peer
+        // of
+        // `tier_peak_trough_sum_of_powers_at_zero_is_two_on_every_fold_including_empty`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.source_kind_peak_trough_sum_of_powers(0), 2);
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_powers_at_one_equals_source_kind_peak_trough_sum_pointwise() {
+        // Boundary pin at n == 1: the linear-power-sum degenerates to
+        // the shipped addition-form scalar
+        // `source_kind_peak_trough_sum`. Pinned pointwise across every
+        // canonical fixture so a future regression in either side
+        // surfaces here. Source-altitude peer of
+        // `tier_peak_trough_sum_of_powers_at_one_equals_tier_peak_trough_sum_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.source_kind_peak_trough_sum_of_powers(1),
+                map.source_kind_peak_trough_sum(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_powers_routes_named_siblings_pointwise() {
+        // Routing pin: each of the three shipped named exponents
+        // (squares, cubes, fourth_powers) equals
+        // `source_kind_peak_trough_sum_of_powers(N)` pointwise across
+        // every canonical fixture. Seals the delegation the fold
+        // installs — a future drift between the primitive and any named
+        // sibling surfaces here. Source-altitude peer of
+        // `tier_peak_trough_sum_of_powers_routes_named_siblings_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.source_kind_peak_trough_sum_of_squares(),
+                map.source_kind_peak_trough_sum_of_powers(2),
+            );
+            assert_eq!(
+                map.source_kind_peak_trough_sum_of_cubes(),
+                map.source_kind_peak_trough_sum_of_powers(3),
+            );
+            assert_eq!(
+                map.source_kind_peak_trough_sum_of_fourth_powers(),
+                map.source_kind_peak_trough_sum_of_powers(4),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_powers_satisfies_newton_recurrence_pointwise() {
+        // Newton's two-variable recurrence pin at n in 2..=4: `p_n ==
+        // e_1 * p_(n-1) - e_2 * p_(n-2)` where `e_1 =
+        // source_kind_peak_trough_sum` and `e_2 =
+        // source_kind_peak_trough_product`. Proves the primitive closes
+        // the whole source-kind-altitude power-sum family under one
+        // identity — not just at any single fixed exponent. The
+        // identity holds without underflow on `usize` by the same
+        // rearrangement the scalar-altitude primitive uses
+        // (`(p+t)(p^(n-1)+t^(n-1)) = p^n + t^n +
+        // p*t*(p^(n-2)+t^(n-2))` on non-negative `p`, `t`). Rearranged
+        // as `p_n + e_2 * p_(n-2) == e_1 * p_(n-1)` for the
+        // usize-safe equality check. Source-altitude peer of
+        // `tier_peak_trough_sum_of_powers_satisfies_newton_recurrence_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let e1 = map.source_kind_peak_trough_sum();
+            let e2 = map.source_kind_peak_trough_product();
+            for n in 2u32..=4 {
+                let p_n = map.source_kind_peak_trough_sum_of_powers(n);
+                let p_n_minus_1 = map.source_kind_peak_trough_sum_of_powers(n - 1);
+                let p_n_minus_2 = map.source_kind_peak_trough_sum_of_powers(n - 2);
+                assert_eq!(
+                    p_n + e2 * p_n_minus_2,
+                    e1 * p_n_minus_1,
+                    "Newton p_{n} + e_2 * p_{prev2} == e_1 * p_{prev1}",
+                    prev2 = n - 2,
+                    prev1 = n - 1,
+                );
+            }
         }
     }
 }
