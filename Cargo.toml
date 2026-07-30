@@ -17,10 +17,11 @@ pedantic = "warn"
 
 [features]
 default = []
-# tatara-lisp config file support. Off by default because tatara-lisp is
-# a monorepo-local crate (path = "../tatara/tatara-lisp") and including
-# it unconditionally breaks git-based consumption of shikumi. Apps that
-# need Lisp configs opt in explicitly.
+# tatara-lisp config file support. Off by default to keep the default
+# dependency closure minimal — apps that author Lisp configs opt in
+# explicitly. Sourced from crates.io (`tatara-lisp` 0.3.3, the canonical
+# pleme-io/tatara-lisp workspace); the retired pleme-io/tatara git pin is
+# gone.
 lisp = ["dep:tatara-lisp"]
 
 # clap-based `<app> config-show <tier>` subcommand. The Pillar 12 dual
@@ -115,7 +116,7 @@ thiserror = "2.0"
 tracing = "0.1"
 # Object-safe async trait — needed for SecretClient in secret_client.rs.
 async-trait = "0.1"
-tatara-lisp = { git = "https://github.com/pleme-io/tatara", rev = "ab81b9a98a2c248f833a92ae34d864273da9b02c", package = "tatara-lisp", optional = true , version = "0.2" }
+tatara-lisp = { version = "0.3.3", optional = true }
 # Feature-gated `hotswap`: the HotSwapClassifier trait + HotSwapClass/
 # SwapDecision runtime types a T: TieredConfig implementor's derived
 # impl (via the sibling `pleme-hotswap-derive` proc-macro crate) must
