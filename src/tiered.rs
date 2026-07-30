@@ -3543,6 +3543,248 @@ impl ProvenanceMap {
         self.source_kind_histogram().peak_trough_sum_of_powers(n)
     }
 
+    /// The **modal-multiplicity of source-kind counts** — the number of
+    /// [`crate::ConfigSourceKind`] cells that hold the peak (positive-max)
+    /// leaf count on this resolved fold. Equal to `1` on every strictly-
+    /// modally-unique fold (a unique dominant source-kind, singleton-
+    /// support included), `>= 2` on every modally-tied fold (two or more
+    /// source-kinds sharing the maximum count), and `0` exactly on the
+    /// empty map (no observed cell, no peak). Routes through
+    /// [`Self::source_kind_histogram`]:
+    /// [`crate::AxisHistogram::peak_multiplicity`] reads the same scalar
+    /// off the fixed-cardinality counts vector in one pass over the
+    /// histogram's *support* (nonzero cells).
+    ///
+    /// The **source-altitude peer** of [`Self::peak_tier_multiplicity`]
+    /// on the tier altitude: both read the modal-multiplicity scalar off
+    /// the same shared [`crate::AxisHistogram::peak_multiplicity`]
+    /// primitive one altitude down, matched by name, by return-type
+    /// shape (`usize`), and by empty-map convention (both return `0`,
+    /// not `Option<usize>`). The **scalar-multiplicity peer** of
+    /// [`Self::peak_source_kind_count`] on the count side: the
+    /// count/multiplicity pair `(peak_source_kind_count,
+    /// peak_source_kind_multiplicity)` fuses the *"which peak count?"*
+    /// and *"how many cells hold it?"* projections into one
+    /// (`usize`, `usize`) reading off the same underlying histogram
+    /// scan. Consumers previously re-derived this projection inline as
+    /// `map.source_kind_histogram().peak_multiplicity()` (one method
+    /// call at every consumer site, pulling in the histogram temporary
+    /// at each site) or reconstructed it from the fused
+    /// `(peak_multiplicity, trough_multiplicity)` pair via
+    /// `map.source_kind_histogram().modality_degree().0` (a pair-
+    /// component projection that pays for the trough side consumers on
+    /// the modal side never use). The named seam surfaces the underlying
+    /// `usize` scalar for fleet dashboards, attestation manifests, and
+    /// alerting policies asking *"how many layer classes are tied at the
+    /// peak?"* — the fleet dashboard headline *"2 layer classes tied at
+    /// peak count 3: File and Env both fired thrice as the champion"*
+    /// (where 2 is this scalar), the attestation manifest recording the
+    /// modal-multiplicity of the resolved fold, and the alerting policy
+    /// reading *"peak-source-kind multiplicity = 2"* to flag a rebuild
+    /// window where the dominant layer class is ambiguous.
+    ///
+    /// **Cardinality-`3` reachability at the source-kind altitude — the
+    /// modal-multiplicity scalar carries witnesses across every support
+    /// cardinality on the source-kind axis.** [`crate::ConfigSourceKind`]
+    /// carries three cells ([`crate::ConfigSourceKind::Defaults`],
+    /// [`crate::ConfigSourceKind::Env`], [`crate::ConfigSourceKind::File`]),
+    /// so `peak_source_kind_multiplicity()` reads `0` on the empty map,
+    /// `1` on every singleton-support fold and every strictly-modally-
+    /// unique fold, `2` on every two-source-kind tied-at-peak fold, and
+    /// `3` on the uniform three-source-kind cover where every cell sits
+    /// at a shared positive count.
+    ///
+    /// **Empty-map convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::peak_multiplicity`] empty convention one
+    /// altitude down and the [`Self::peak_tier_multiplicity`] empty
+    /// convention on the tier altitude. The paired
+    /// `(peak_source_kind_count, peak_source_kind_multiplicity)` scalar
+    /// reads uniformly `(0, 0)` on the empty map, alongside the
+    /// `(trough_source_kind_count, trough_source_kind_multiplicity)`
+    /// pair on the anti-modal side and the `(peak_source_kind_count,
+    /// trough_source_kind_count, source_kind_spread)` dispersion triple's
+    /// uniform `(0, 0, 0)` reading.
+    ///
+    /// **Singleton-support convention** — returns `1` on every fold
+    /// whose observed support is a single [`crate::ConfigSourceKind`]
+    /// cell (every leaf lands on the same layer class): the lone
+    /// observed cell is simultaneously the unique peak *and* the unique
+    /// trough, both multiplicities read `1`.
+    ///
+    /// **Uniform per-source-kind convention** — returns
+    /// `crate::axis_cardinality::<crate::ConfigSourceKind>()` = `3` on
+    /// every uniform three-source-kind cover (all three cells at the
+    /// same nonzero count) — the maximum reachable value on the three-
+    /// cell source-kind axis. Every observed cell is tied at the peak
+    /// (and simultaneously at the trough, since they coincide on the
+    /// uniform-count shape), so the multiplicity walks the full support.
+    ///
+    /// # Invariants
+    ///
+    /// - `peak_source_kind_multiplicity() ==
+    ///   source_kind_histogram().peak_multiplicity()` — both project the
+    ///   same scalar off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `peak_source_kind_multiplicity() ==
+    ///   source_kind_histogram().modality_degree().0` — the modal
+    ///   component of the fused `(peak_multiplicity, trough_multiplicity)`
+    ///   pair.
+    /// - `peak_source_kind_multiplicity() == 0` ⇔ [`Self::is_empty`] is
+    ///   `true` — the empty-map / empty-histogram boundary. Peer to the
+    ///   `peak_source_kind_count() == 0` boundary on the count side, both
+    ///   witnessed by the same emptiness of the observed support.
+    /// - `peak_source_kind_multiplicity() >= 1` whenever `!is_empty()` —
+    ///   every non-empty map has at least one cell at the peak.
+    /// - `peak_source_kind_multiplicity() <=
+    ///   crate::axis_cardinality::<crate::ConfigSourceKind>()` always —
+    ///   bounded above by the axis cardinality `3` on the three-cell
+    ///   source-kind axis. Lifted from the trait-uniform
+    ///   `peak_multiplicity() <= axis_cardinality::<A>()` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `peak_source_kind_multiplicity() <= contributing_source_kinds_count()`
+    ///   always — the modal set is a subset of the observed support, so
+    ///   its size is bounded by the support size.
+    /// - `peak_source_kind_multiplicity() == contributing_source_kinds_count()`
+    ///   whenever the histogram's observed cells all carry the same
+    ///   positive count (uniform per-source-kind cover, singleton support
+    ///   included) — every observed cell ties at the peak.
+    /// - `peak_source_kind_multiplicity() == 3` ⇒ every
+    ///   [`crate::ConfigSourceKind`] cell is observed at a shared
+    ///   positive count (the uniform full-cover degenerate).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// peak-plus-multiplicity scan). Both are `O(n)` in practice since
+    /// the source-kind axis carries a fixed three-cell cardinality; the
+    /// returned `usize` reads one scalar. Fuses the two-scan
+    /// `.modality_degree().0` idiom (which walks the counts vector twice
+    /// — once for the peak, once for the trough multiplicity consumers
+    /// on the modal side never use) into a single-scan projection
+    /// through the shared primitive.
+    #[must_use]
+    pub fn peak_source_kind_multiplicity(&self) -> usize {
+        self.source_kind_histogram().peak_multiplicity()
+    }
+
+    /// The **antimodal-multiplicity of source-kind counts** — the number
+    /// of [`crate::ConfigSourceKind`] cells that hold the trough
+    /// (positive-min) leaf count on this resolved fold. Equal to `1` on
+    /// every strictly-antimodally-unique fold (a unique recessive
+    /// source-kind, singleton-support included), `>= 2` on every
+    /// antimodally-tied fold (two or more source-kinds sharing the
+    /// minimum positive count), and `0` exactly on the empty map (no
+    /// observed cell, no trough). Routes through
+    /// [`Self::source_kind_histogram`]:
+    /// [`crate::AxisHistogram::trough_multiplicity`] reads the same
+    /// scalar off the fixed-cardinality counts vector in one pass over
+    /// the histogram's *support* (nonzero cells).
+    ///
+    /// The **source-altitude peer** of [`Self::trough_tier_multiplicity`]
+    /// on the tier altitude and the **scalar-multiplicity peer** of
+    /// [`Self::trough_source_kind_count`] on the count side. The fused
+    /// `(trough_source_kind_count, trough_source_kind_multiplicity)` pair
+    /// carries the anti-modal *"which trough count?"* +
+    /// *"how many cells hold it?"* projections on the same underlying
+    /// histogram scan, matching the `(peak_source_kind_count,
+    /// peak_source_kind_multiplicity)` pair on the modal side.
+    /// Consumers previously re-derived the projection inline as
+    /// `map.source_kind_histogram().trough_multiplicity()` at every site
+    /// or reconstructed it from the fused
+    /// `(peak_multiplicity, trough_multiplicity)` pair via
+    /// `map.source_kind_histogram().modality_degree().1` (pair-component
+    /// projection that pays for the modal side consumers on the anti-
+    /// modal side never use). The named seam surfaces the underlying
+    /// `usize` scalar for fleet dashboards, attestation manifests, and
+    /// alerting policies asking *"how many layer classes are tied at the
+    /// trough?"* — the fleet dashboard headline *"2 layer classes tied
+    /// at trough count 1: Env and File both fired once as the runt"*
+    /// (where 2 is this scalar), the attestation manifest recording the
+    /// antimodal-multiplicity of the resolved fold, and the alerting
+    /// policy reading *"trough-source-kind multiplicity = 2"* to flag a
+    /// rebuild window where the recessive layer class is ambiguous.
+    ///
+    /// **Cardinality-`3` reachability at the source-kind altitude.**
+    /// [`crate::ConfigSourceKind`] carries three cells, so
+    /// `trough_source_kind_multiplicity()` reads `0` on the empty map,
+    /// `1` on every singleton-support fold and every strictly-
+    /// antimodally-unique fold, `2` on every two-source-kind tied-at-
+    /// trough fold, and `3` on the uniform three-source-kind cover where
+    /// every cell sits at a shared positive count.
+    ///
+    /// **Empty-map convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::trough_multiplicity`] empty convention one
+    /// altitude down; the empty map has no observed cells, so no cell
+    /// holds the trough count. The scalar-count / scalar-multiplicity
+    /// pair `(trough_source_kind_count, trough_source_kind_multiplicity)`
+    /// reads uniformly `(0, 0)` on the empty map. The empty map sits on
+    /// the `0` singular boundary of the multiplicity scalar — strictly
+    /// below the `1` singleton-support boundary and the `>= 2`
+    /// antimodally-tied boundary that partition the non-empty support.
+    ///
+    /// **Singleton-support convention** — returns `1` on every fold
+    /// whose observed support is a single [`crate::ConfigSourceKind`]
+    /// cell: the lone observed cell is simultaneously the unique peak
+    /// *and* the unique trough (peak count = trough count = `len`, both
+    /// multiplicities = `1`).
+    ///
+    /// **Uniform per-source-kind convention** — returns
+    /// `crate::axis_cardinality::<crate::ConfigSourceKind>()` = `3` on
+    /// every uniform three-source-kind cover — the maximum reachable
+    /// value on the three-cell source-kind axis. Every observed cell is
+    /// tied at the trough (and simultaneously at the peak).
+    ///
+    /// # Invariants
+    ///
+    /// - `trough_source_kind_multiplicity() ==
+    ///   source_kind_histogram().trough_multiplicity()` — both project
+    ///   the same scalar off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `trough_source_kind_multiplicity() ==
+    ///   source_kind_histogram().modality_degree().1` — the antimodal
+    ///   component of the fused `(peak_multiplicity, trough_multiplicity)`
+    ///   pair.
+    /// - `trough_source_kind_multiplicity() == 0` ⇔ [`Self::is_empty`] is
+    ///   `true` — the empty-map / empty-histogram boundary. Peer to the
+    ///   `trough_source_kind_count() == 0` boundary on the count side.
+    /// - `trough_source_kind_multiplicity() >= 1` whenever `!is_empty()` —
+    ///   every non-empty map has at least one cell at the trough (the
+    ///   recessive cell witnesses one member of the antimodal level set).
+    /// - `trough_source_kind_multiplicity() <=
+    ///   crate::axis_cardinality::<crate::ConfigSourceKind>()` always —
+    ///   bounded above by the axis cardinality `3` on the three-cell
+    ///   source-kind axis.
+    /// - `trough_source_kind_multiplicity() <= contributing_source_kinds_count()`
+    ///   always — the antimodal set is a subset of the observed support.
+    /// - `trough_source_kind_multiplicity() == peak_source_kind_multiplicity()`
+    ///   whenever every observed source-kind cell carries the same
+    ///   positive count (uniform per-source-kind cover, singleton support
+    ///   included) — peak and trough coincide, both multiplicities read
+    ///   off the same shared level set.
+    /// - `trough_source_kind_multiplicity() == contributing_source_kinds_count()`
+    ///   whenever every observed source-kind cell carries the same
+    ///   positive count — every observed cell ties at the trough on such
+    ///   a fold.
+    /// - `trough_source_kind_multiplicity() == 3` ⇒ every
+    ///   [`crate::ConfigSourceKind`] cell is observed at a shared
+    ///   positive count (the uniform full-cover degenerate; the only way
+    ///   for all three cells to tie at the trough).
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// trough-plus-multiplicity scan). Both are `O(n)` in practice since
+    /// the source-kind axis carries a fixed three-cell cardinality; the
+    /// returned `usize` reads one scalar. Fuses the two-scan
+    /// `.modality_degree().1` idiom into a single-scan projection through
+    /// the shared primitive.
+    #[must_use]
+    pub fn trough_source_kind_multiplicity(&self) -> usize {
+        self.source_kind_histogram().trough_multiplicity()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -59636,6 +59878,430 @@ mod progressive_tests {
                     prev1 = n - 1,
                 );
             }
+        }
+    }
+
+    // ── ProvenanceMap::peak_source_kind_multiplicity — modal-multiplicity
+    //    scalar peer on the source-kind altitude, fusing with
+    //    peak_source_kind_count into the (count, multiplicity) modal pair
+    //    and porting peak_tier_multiplicity one axis over onto the
+    //    cardinality-`3` source-kind axis ──
+
+    #[test]
+    fn peak_source_kind_multiplicity_matches_source_kind_histogram_peak_multiplicity_pointwise() {
+        // Routing pin: `peak_source_kind_multiplicity` routes through
+        // `source_kind_histogram().peak_multiplicity()`, so the two seams
+        // must stay pointwise equivalent under every fixture. Source-
+        // altitude peer of
+        // `peak_tier_multiplicity_matches_tier_histogram_peak_multiplicity_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().peak_multiplicity();
+            assert_eq!(map.peak_source_kind_multiplicity(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn peak_source_kind_multiplicity_agrees_with_modality_degree_first_component() {
+        // Fused-pair pin: `peak_source_kind_multiplicity` equals the
+        // modal component of the fused `(peak_multiplicity,
+        // trough_multiplicity)` pair on every fixture — both routings
+        // read the same underlying primitive.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (peak_mult, _trough_mult) = map.source_kind_histogram().modality_degree();
+            assert_eq!(map.peak_source_kind_multiplicity(), peak_mult);
+        }
+    }
+
+    #[test]
+    fn peak_source_kind_multiplicity_empty_map_is_zero() {
+        // Empty-map convention: no observed cells, no peak, so the
+        // multiplicity reads `0`. Peer of
+        // `peak_source_kind_count_empty_map_is_zero` on the count side;
+        // the paired `(peak_source_kind_count,
+        // peak_source_kind_multiplicity)` scalar reads uniformly `(0, 0)`
+        // on the empty map.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert_eq!(empty.peak_source_kind_count(), 0);
+        assert_eq!(empty.peak_source_kind_multiplicity(), 0);
+    }
+
+    #[test]
+    fn peak_source_kind_multiplicity_prog_fixture_is_one() {
+        // Prog: singleton-support all-Defaults fold (4 leaves, only
+        // Defaults observed) — Defaults is the unique peak at count `4`,
+        // multiplicity reads `1`. Strictly-modally-unique via the
+        // singleton-support degenerate.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().peak_source_kind_count(), 4);
+        assert_eq!(r.provenance().peak_source_kind_multiplicity(), 1);
+    }
+
+    #[test]
+    fn peak_source_kind_multiplicity_mixed_fixture_is_one() {
+        // Mixed fixture: Defaults=2, Env=1, File=1 — Defaults uniquely
+        // peaks at count `2`, so multiplicity reads `1`. Strictly-
+        // modally-unique on a full-cover fold.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().peak_source_kind_count(), 2);
+        assert_eq!(r.provenance().peak_source_kind_multiplicity(), 1);
+    }
+
+    #[test]
+    fn peak_source_kind_multiplicity_two_kind_tie_is_two() {
+        // Two-source-kind-tied pin: one File leaf + one Env leaf, both
+        // at count `1`, both tied at the peak. Multiplicity reads `2` —
+        // the modally-tied boundary at the smallest non-trivial tied
+        // support on the source-kind axis.
+        let m: ProvenanceMap = [
+            (vec!["b".to_owned()], Provenance::file("/f.yaml")),
+            (vec!["c".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.peak_source_kind_count(), 1);
+        assert_eq!(m.peak_source_kind_multiplicity(), 2);
+    }
+
+    #[test]
+    fn peak_source_kind_multiplicity_uniform_full_cover_is_three() {
+        // Uniform three-source-kind cover pin: one leaf per
+        // ConfigSourceKind cell (Defaults + Env + File), all at count
+        // `1`. All three cells tie at the peak — multiplicity reads `3`
+        // = axis cardinality, the maximum reachable value on the three-
+        // cell source-kind axis.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.peak_source_kind_multiplicity(), 3);
+        assert_eq!(
+            m.peak_source_kind_multiplicity(),
+            crate::axis_cardinality::<crate::ConfigSourceKind>()
+        );
+    }
+
+    #[test]
+    fn peak_source_kind_multiplicity_is_zero_iff_map_is_empty() {
+        // Emptiness boundary: `peak_source_kind_multiplicity == 0` iff
+        // the map is empty. Peer of `peak_source_kind_count == 0 iff
+        // is_empty` on the count side.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.peak_source_kind_multiplicity() == 0, map.is_empty());
+        }
+    }
+
+    #[test]
+    fn peak_source_kind_multiplicity_ge_one_iff_map_is_nonempty() {
+        // Non-emptiness boundary: every non-empty map has at least one
+        // cell at the peak. The strict complement of the
+        // `peak_source_kind_multiplicity == 0 ⇔ is_empty` boundary.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.peak_source_kind_multiplicity() >= 1, !map.is_empty());
+        }
+    }
+
+    #[test]
+    fn peak_source_kind_multiplicity_bounded_by_axis_cardinality() {
+        // Structural bound: `peak_source_kind_multiplicity() <=
+        // axis_cardinality::<ConfigSourceKind>()` (= 3) on every
+        // fixture. Lifted from the trait-uniform `peak_multiplicity() <=
+        // axis_cardinality::<A>()` law on AxisHistogram.
+        let card = crate::axis_cardinality::<crate::ConfigSourceKind>();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.peak_source_kind_multiplicity() <= card);
+        }
+    }
+
+    #[test]
+    fn peak_source_kind_multiplicity_bounded_above_by_contributing_source_kinds_count() {
+        // Support bound: the modal set is a subset of the observed
+        // support, so `peak_source_kind_multiplicity() <=
+        // contributing_source_kinds_count()` on every fixture.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.peak_source_kind_multiplicity() <= map.contributing_source_kinds_count());
+        }
+    }
+
+    #[test]
+    fn peak_source_kind_multiplicity_agrees_with_open_coded_peak_multiplicity_walk() {
+        // Parity against the hand-rolled peak-multiplicity walk this
+        // lift surfaces at a named seam: walk every cell of the
+        // histogram and count how many carry the maximum observed
+        // count; empty histogram has max `0` and no cells above zero,
+        // so multiplicity reads `0`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.peak_source_kind_multiplicity();
+            let hist = map.source_kind_histogram();
+            let max = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let hand_rolled = if max == 0 {
+                0
+            } else {
+                hist.iter().filter(|(_, c)| *c == max).count()
+            };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::trough_source_kind_multiplicity —
+    //    antimodal-multiplicity scalar peer on the source-kind altitude,
+    //    fusing with trough_source_kind_count into the (count,
+    //    multiplicity) anti-modal pair and porting trough_tier_multiplicity
+    //    one axis over onto the cardinality-`3` source-kind axis ──
+
+    #[test]
+    fn trough_source_kind_multiplicity_matches_source_kind_histogram_trough_multiplicity_pointwise()
+    {
+        // Routing pin: `trough_source_kind_multiplicity` routes through
+        // `source_kind_histogram().trough_multiplicity()`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().trough_multiplicity();
+            assert_eq!(map.trough_source_kind_multiplicity(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_multiplicity_agrees_with_modality_degree_second_component() {
+        // Fused-pair pin: `trough_source_kind_multiplicity` equals the
+        // antimodal component of the fused `(peak_multiplicity,
+        // trough_multiplicity)` pair on every fixture.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (_peak_mult, trough_mult) = map.source_kind_histogram().modality_degree();
+            assert_eq!(map.trough_source_kind_multiplicity(), trough_mult);
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_multiplicity_empty_map_is_zero() {
+        // Empty-map convention: no observed cells, no trough, so the
+        // multiplicity reads `0`. Paired `(trough_source_kind_count,
+        // trough_source_kind_multiplicity)` reads uniformly `(0, 0)`.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert_eq!(empty.trough_source_kind_count(), 0);
+        assert_eq!(empty.trough_source_kind_multiplicity(), 0);
+    }
+
+    #[test]
+    fn trough_source_kind_multiplicity_prog_fixture_is_one() {
+        // Prog: singleton-support all-Defaults fold — Defaults is
+        // simultaneously the unique peak and unique trough at count `4`,
+        // multiplicity reads `1`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().trough_source_kind_count(), 4);
+        assert_eq!(r.provenance().trough_source_kind_multiplicity(), 1);
+    }
+
+    #[test]
+    fn trough_source_kind_multiplicity_mixed_fixture_is_two() {
+        // Mixed fixture: Defaults=2, Env=1, File=1 — Env and File tie
+        // at the trough count `1`, so multiplicity reads `2`. The
+        // antimodally-tied case on the cardinality-`3` source-kind axis.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().trough_source_kind_count(), 1);
+        assert_eq!(r.provenance().trough_source_kind_multiplicity(), 2);
+    }
+
+    #[test]
+    fn trough_source_kind_multiplicity_uniform_full_cover_is_three() {
+        // Uniform three-source-kind cover: all three cells at count `1`,
+        // all tied at the trough (and simultaneously at the peak).
+        // Multiplicity reads `3` = axis cardinality on the source-kind
+        // axis.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.trough_source_kind_multiplicity(), 3);
+        assert_eq!(
+            m.trough_source_kind_multiplicity(),
+            crate::axis_cardinality::<crate::ConfigSourceKind>()
+        );
+    }
+
+    #[test]
+    fn trough_source_kind_multiplicity_strictly_ordered_fixture_is_one() {
+        // Strictly-ordered pin: two Defaults leaves + one Env leaf —
+        // Env uniquely troughs at count `1`, Defaults uniquely peaks at
+        // count `2`. Both multiplicities read `1`. The strictly-
+        // antimodally-unique case on a two-cell support.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (
+                vec!["b".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["c".to_owned()], Provenance::env("E_")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.trough_source_kind_count(), 1);
+        assert_eq!(m.trough_source_kind_multiplicity(), 1);
+        assert_eq!(m.peak_source_kind_multiplicity(), 1);
+    }
+
+    #[test]
+    fn trough_source_kind_multiplicity_is_zero_iff_map_is_empty() {
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.trough_source_kind_multiplicity() == 0, map.is_empty());
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_multiplicity_ge_one_iff_map_is_nonempty() {
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.trough_source_kind_multiplicity() >= 1, !map.is_empty());
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_multiplicity_bounded_by_axis_cardinality() {
+        let card = crate::axis_cardinality::<crate::ConfigSourceKind>();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.trough_source_kind_multiplicity() <= card);
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_multiplicity_bounded_above_by_contributing_source_kinds_count() {
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.trough_source_kind_multiplicity() <= map.contributing_source_kinds_count());
+        }
+    }
+
+    #[test]
+    fn trough_source_kind_multiplicity_equals_peak_on_uniform_per_kind_folds() {
+        // Uniform per-source-kind cover: every observed cell carries the
+        // same positive count, so peak and trough coincide and both
+        // multiplicities read the same shared level set. Pinned on the
+        // singleton-support degenerate (Prog: peak == trough == 1) and
+        // the three-cell uniform full cover (built here). The
+        // `uniform ⇒ peak_multiplicity == trough_multiplicity ==
+        // contributing_source_kinds_count()` chain lifted from
+        // AxisHistogram.
+        let prog = Prog::resolve_progressive().provenance().clone();
+        assert_eq!(
+            prog.peak_source_kind_multiplicity(),
+            prog.trough_source_kind_multiplicity()
+        );
+        assert_eq!(
+            prog.trough_source_kind_multiplicity(),
+            prog.contributing_source_kinds_count()
+        );
+
+        let uniform: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(
+            uniform.peak_source_kind_multiplicity(),
+            uniform.trough_source_kind_multiplicity()
+        );
+        assert_eq!(
+            uniform.trough_source_kind_multiplicity(),
+            uniform.contributing_source_kinds_count()
+        );
+    }
+
+    #[test]
+    fn trough_source_kind_multiplicity_agrees_with_open_coded_trough_multiplicity_walk() {
+        // Parity against the hand-rolled trough-multiplicity walk:
+        // the argmin is taken over the histogram's *support* (nonzero
+        // cells), so zero-count cells are excluded from the min search.
+        // Empty histogram has no support so the multiplicity reads `0`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.trough_source_kind_multiplicity();
+            let hist = map.source_kind_histogram();
+            let min = hist
+                .iter()
+                .filter(|&(_, c)| c > 0)
+                .map(|(_, c)| c)
+                .min()
+                .unwrap_or(0);
+            let hand_rolled = if min == 0 {
+                0
+            } else {
+                hist.iter().filter(|(_, c)| *c == min).count()
+            };
+            assert_eq!(via_seam, hand_rolled);
         }
     }
 }
