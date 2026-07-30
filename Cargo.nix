@@ -3342,13 +3342,13 @@ rec {
       };
       "gen-macros" = rec {
         crateName = "gen-macros";
-        version = "0.1.29";
+        version = "0.1.30";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/gen";
-          rev = "25797adf022275255528d545a2deba8d6b748b96";
-          sha256 = "1vr35sci2yirv0yhkkwgc17m7mzkazzjzxfl7gshkpinp2xdhaq1";
+          rev = "52883694820f96fc8822bd9d0dc187e3e95c71f9";
+          sha256 = "08yd4xc6w2bynajrsgzrlmmw49rmrgmk66183r3hhcpskbw3zw8q";
         };
         procMacro = true;
         libName = "gen_macros";
@@ -3374,13 +3374,13 @@ rec {
       };
       "gen-platform" = rec {
         crateName = "gen-platform";
-        version = "0.1.29";
+        version = "0.1.30";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/gen";
-          rev = "25797adf022275255528d545a2deba8d6b748b96";
-          sha256 = "1vr35sci2yirv0yhkkwgc17m7mzkazzjzxfl7gshkpinp2xdhaq1";
+          rev = "52883694820f96fc8822bd9d0dc187e3e95c71f9";
+          sha256 = "08yd4xc6w2bynajrsgzrlmmw49rmrgmk66183r3hhcpskbw3zw8q";
         };
         libName = "gen_platform";
         authors = [
@@ -3417,13 +3417,13 @@ rec {
       };
       "gen-types" = rec {
         crateName = "gen-types";
-        version = "0.1.29";
+        version = "0.1.30";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/gen";
-          rev = "25797adf022275255528d545a2deba8d6b748b96";
-          sha256 = "1vr35sci2yirv0yhkkwgc17m7mzkazzjzxfl7gshkpinp2xdhaq1";
+          rev = "52883694820f96fc8822bd9d0dc187e3e95c71f9";
+          sha256 = "08yd4xc6w2bynajrsgzrlmmw49rmrgmk66183r3hhcpskbw3zw8q";
         };
         libName = "gen_types";
         authors = [
@@ -9164,7 +9164,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.435";
+        version = "0.1.436";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
