@@ -1491,6 +1491,285 @@ impl ProvenanceMap {
         self.source_kind_histogram().observed().next()
     }
 
+    /// The **support size** on the source-kind altitude — the number of
+    /// distinct [`crate::ConfigSourceKind`] cells that produced ≥1
+    /// surviving effective leaf on this resolved fold. Returns `0`
+    /// exactly when the map is empty, `1` on a singleton-support fold
+    /// (every leaf's [`Provenance::source`] projects to one source-kind),
+    /// and
+    /// [`crate::axis_cardinality::<crate::ConfigSourceKind>()`][crate::axis_cardinality]
+    /// on a full-cover fold (every source-kind heard from at least once).
+    ///
+    /// The **scalar-count peer** of [`Self::contributing_source_kinds`]
+    /// on the support-size projection:
+    /// [`Self::contributing_source_kinds`] materialises the observed-
+    /// cells `Vec<crate::ConfigSourceKind>`, this method returns its
+    /// cardinality as a `usize` scalar, and both project the same axis
+    /// support off the shared [`Self::source_kind_histogram`] primitive.
+    /// Every operator-facing consumer answering *"how many source-kinds
+    /// contributed to this resolved fold?"* — the fleet dashboard
+    /// summary line *"2 of 3 layer classes contributed this rebuild
+    /// window"* (where 2 is this scalar and 3 is the axis cardinality),
+    /// the attestation manifest recording the source-kind support
+    /// cardinality between two resolved-fold snapshots, the alerting
+    /// policy reading *"source-kind support size = 1"* to flag a rebuild
+    /// window where only one layer class surfaced — now route through
+    /// this named seam instead of the previous
+    /// `contributing_source_kinds().len()` idiom, which paid for a
+    /// `Vec<crate::ConfigSourceKind>` allocation of length ≤
+    /// [`crate::axis_cardinality::<crate::ConfigSourceKind>()`][crate::axis_cardinality]
+    /// on every call site and walked the histogram's support twice (once
+    /// through [`crate::AxisHistogram::observed`] to build the vector,
+    /// once through [`Vec::len`] to read its length back). Routes through
+    /// [`Self::source_kind_histogram`]:
+    /// [`crate::AxisHistogram::distinct_cells`] reads the nonzero-cell
+    /// count in a single pass over the fixed-cardinality counts vector,
+    /// so this method returns the size of the support without
+    /// materialising the observed-cells `Vec` — one histogram build
+    /// followed by one nonzero-count walk instead of the full
+    /// `.observed().collect::<Vec<_>>().len()` chain the prior idiom
+    /// paid.
+    ///
+    /// The **source-altitude peer** of [`Self::contributing_tiers_count`]
+    /// on the tier altitude: the two altitudes now close the same
+    /// scalar-count support-size projection on the two closed coordinates
+    /// of the `(tier, source)` pair each leaf's [`Provenance`] carries.
+    /// Together with [`Self::contributing_source_kinds`],
+    /// [`Self::absent_source_kinds`], and [`Self::absent_source_kinds_count`],
+    /// this seam closes the `(observed, unobserved) × (cells, count)`
+    /// 2×2 support / coverage-gap grid on the source-kind altitude
+    /// explicitly — every quadrant of the grid is now a named seam:
+    ///
+    /// | | cells (Vec) | count (usize) |
+    /// |---|---|---|
+    /// | observed | [`Self::contributing_source_kinds`] | **`contributing_source_kinds_count`** |
+    /// | unobserved | [`Self::absent_source_kinds`] | [`Self::absent_source_kinds_count`] |
+    ///
+    /// **Empty-map convention** — returns `0` (not `Option<usize>`)
+    /// matching the [`Self::len`] empty convention on the same altitude
+    /// and the [`crate::AxisHistogram::distinct_cells`] convention one
+    /// altitude down. The support-size scalar is well-defined as zero on
+    /// the empty map: the observed-cells set is empty, its cardinality
+    /// is zero, and the coverage-gap sum
+    /// [`Self::contributing_source_kinds_count`] +
+    /// [`Self::absent_source_kinds_count`] still balances the axis
+    /// cardinality (`0 + axis_cardinality::<ConfigSourceKind>() ==
+    /// axis_cardinality::<ConfigSourceKind>()`).
+    ///
+    /// # Invariants
+    ///
+    /// - `contributing_source_kinds_count() ==
+    ///   source_kind_histogram().distinct_cells()` — both project the
+    ///   same nonzero-cell count off the same primitive; the named seam
+    ///   is the cube-native routing of the histogram surface. Pinned by
+    ///   [`tests::contributing_source_kinds_count_matches_source_kind_histogram_distinct_cells_pointwise`].
+    /// - `contributing_source_kinds_count() ==
+    ///   contributing_source_kinds().len()` — the scalar-count peer of
+    ///   the observed-cells `Vec` peer; both name the same support
+    ///   cardinality without materialising the vector. Pinned by
+    ///   [`tests::contributing_source_kinds_count_equals_contributing_source_kinds_len_pointwise`].
+    /// - `contributing_source_kinds_count() + absent_source_kinds().len()
+    ///   == crate::axis_cardinality::<crate::ConfigSourceKind>()` — the
+    ///   observed / coverage-gap partition on the source-kind axis
+    ///   without remainder, the scalar dual of the
+    ///   [`tests::contributing_and_absent_source_kinds_partition_axis`]
+    ///   set-level partition law. Pinned by
+    ///   [`tests::contributing_source_kinds_count_and_absent_source_kinds_len_partition_axis_cardinality`].
+    /// - `contributing_source_kinds_count() == 0` ⇔ [`Self::is_empty`]
+    ///   is `true` — the empty-map / empty-support boundary
+    ///   equivalence (every leaf projects to one source-kind, so a
+    ///   zero-support fold has zero leaves and vice versa). Pinned by
+    ///   [`tests::contributing_source_kinds_count_is_zero_iff_map_is_empty`].
+    /// - `contributing_source_kinds_count() >= 1` whenever
+    ///   `!is_empty()` — the support of a non-empty map is at least the
+    ///   singleton of the first-leaf source-kind. Pinned by
+    ///   [`tests::contributing_source_kinds_count_is_at_least_one_on_nonempty_map`].
+    /// - `contributing_source_kinds_count() <=
+    ///   crate::axis_cardinality::<crate::ConfigSourceKind>()` — the
+    ///   support of a histogram over a closed axis is bounded above by
+    ///   the axis cardinality (the observed-cells set is a subset of
+    ///   [`crate::ConfigSourceKind::ALL`]). Pinned by
+    ///   [`tests::contributing_source_kinds_count_is_bounded_by_axis_cardinality`].
+    /// - `contributing_source_kinds_count() <=
+    ///   source_kind_histogram().total()` — the support of a histogram
+    ///   is bounded above by the total observation count (every distinct
+    ///   cell contributes at least one observation to the total). Pinned
+    ///   by
+    ///   [`tests::contributing_source_kinds_count_is_bounded_by_source_kind_histogram_total`].
+    /// - `contributing_source_kinds_count() ==
+    ///   crate::axis_cardinality::<crate::ConfigSourceKind>()` ⇔
+    ///   `absent_source_kinds().is_empty()` ⇔
+    ///   `source_kind_histogram().is_full_cover()` — the full-cover
+    ///   boundary equivalence on the support-size scalar, the source-
+    ///   altitude peer of the [`crate::AxisHistogram::is_full_cover`]
+    ///   boundary law. Pinned by
+    ///   [`tests::contributing_source_kinds_count_equals_axis_cardinality_iff_is_full_cover`].
+    /// - `contributing_source_kinds_count() == 1` ⇔
+    ///   `source_kind_histogram().has_singular_support()` — the
+    ///   singleton-support boundary equivalence, the source-altitude
+    ///   peer of the [`crate::AxisHistogram::has_singular_support`]
+    ///   boundary law. Pinned by
+    ///   [`tests::contributing_source_kinds_count_is_one_iff_has_singular_support`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// nonzero-cell scan). Both are `O(n)` in practice since the source-
+    /// kind axis carries a fixed three-cell cardinality; the returned
+    /// `usize` reads one scalar. Halves the wall-cost of the previous
+    /// `contributing_source_kinds().len()` idiom by eliding the
+    /// `Vec<crate::ConfigSourceKind>` allocation the observed-cells
+    /// collect paid on every call site.
+    #[must_use]
+    pub fn contributing_source_kinds_count(&self) -> usize {
+        self.source_kind_histogram().distinct_cells()
+    }
+
+    /// The **coverage-gap size** on the source-kind altitude — the
+    /// number of distinct [`crate::ConfigSourceKind`] cells that produced
+    /// **zero** surviving effective leaves on this resolved fold. Returns
+    /// [`crate::axis_cardinality::<crate::ConfigSourceKind>()`][crate::axis_cardinality]
+    /// exactly when the map is empty (every source-kind absent),
+    /// [`crate::axis_cardinality::<crate::ConfigSourceKind>()`][crate::axis_cardinality]
+    /// `- 1` on a singleton-support fold (every leaf attributed to one
+    /// source-kind, two source-kinds absent), and `0` on a full-cover
+    /// fold (every source-kind heard from at least once, no coverage
+    /// gap).
+    ///
+    /// The **scalar-count peer** of [`Self::absent_source_kinds`] on the
+    /// coverage-gap projection: [`Self::absent_source_kinds`] materialises
+    /// the unobserved-cells `Vec<crate::ConfigSourceKind>`, this method
+    /// returns its cardinality as a `usize` scalar, and both project the
+    /// same axis coverage-gap off the shared
+    /// [`Self::source_kind_histogram`] primitive. Every operator-facing
+    /// consumer answering *"how many source-kinds were never heard from
+    /// on this resolved fold?"* — the fleet dashboard summary line *"1 of
+    /// 3 layer classes absent this rebuild window"* (where 1 is this
+    /// scalar and 3 is the axis cardinality), the attestation manifest
+    /// recording the source-kind coverage-gap size between two resolved-
+    /// fold snapshots, the alerting policy reading *"source-kind
+    /// coverage-gap size = 2"* to flag a rebuild window where only one
+    /// layer class surfaced — now route through this named seam instead
+    /// of the previous `absent_source_kinds().len()` idiom, which paid
+    /// for a `Vec<crate::ConfigSourceKind>` allocation of length ≤
+    /// [`crate::axis_cardinality::<crate::ConfigSourceKind>()`][crate::axis_cardinality]
+    /// on every call site and walked the histogram's coverage gap twice
+    /// (once through [`crate::AxisHistogram::unobserved`] to build the
+    /// vector, once through [`Vec::len`] to read its length back). Routes
+    /// through [`Self::source_kind_histogram`]:
+    /// [`crate::AxisHistogram::unobserved_cells`] reads the zero-cell
+    /// count in a single pass over the fixed-cardinality counts vector,
+    /// so this method returns the size of the coverage gap without
+    /// materialising the unobserved-cells `Vec` — one histogram build
+    /// followed by one zero-count walk instead of the full
+    /// `.unobserved().collect::<Vec<_>>().len()` chain the prior idiom
+    /// paid.
+    ///
+    /// The **source-altitude peer** of [`Self::absent_tiers_count`] on
+    /// the tier altitude: the two altitudes now close the same
+    /// scalar-count coverage-gap projection on the two closed
+    /// coordinates of the `(tier, source)` pair each leaf's
+    /// [`Provenance`] carries. Together with
+    /// [`Self::contributing_source_kinds`], [`Self::absent_source_kinds`],
+    /// and [`Self::contributing_source_kinds_count`], this seam closes
+    /// the `(observed, unobserved) × (cells, count)` 2×2 support /
+    /// coverage-gap grid on the source-kind altitude explicitly — every
+    /// quadrant of the grid is now a named seam:
+    ///
+    /// | | cells (Vec) | count (usize) |
+    /// |---|---|---|
+    /// | observed | [`Self::contributing_source_kinds`] | [`Self::contributing_source_kinds_count`] |
+    /// | unobserved | [`Self::absent_source_kinds`] | **`absent_source_kinds_count`** |
+    ///
+    /// **Empty-map convention** — returns
+    /// [`crate::axis_cardinality::<crate::ConfigSourceKind>()`][crate::axis_cardinality]
+    /// (not `Option<usize>`) matching the [`Self::absent_source_kinds`]
+    /// full-axis convention and the
+    /// [`crate::AxisHistogram::unobserved_cells`] convention one altitude
+    /// down. The coverage-gap-size scalar is well-defined as the axis
+    /// cardinality on the empty map: the unobserved-cells set is the
+    /// entire axis, its cardinality is
+    /// [`crate::axis_cardinality::<crate::ConfigSourceKind>()`][crate::axis_cardinality],
+    /// and the coverage-partition sum
+    /// [`Self::contributing_source_kinds_count`] +
+    /// `absent_source_kinds_count()` still balances the axis cardinality
+    /// (`0 + axis_cardinality::<ConfigSourceKind>() ==
+    /// axis_cardinality::<ConfigSourceKind>()`).
+    ///
+    /// # Invariants
+    ///
+    /// - `absent_source_kinds_count() ==
+    ///   source_kind_histogram().unobserved_cells()` — both project the
+    ///   same coverage-gap cardinality off the same primitive; the named
+    ///   seam is the cube-native routing of the histogram surface.
+    ///   Pinned by
+    ///   [`tests::absent_source_kinds_count_matches_source_kind_histogram_unobserved_cells_pointwise`].
+    /// - `absent_source_kinds_count() == absent_source_kinds().len()` —
+    ///   the scalar-count peer of the coverage-gap `Vec` peer; both name
+    ///   the same coverage-gap cardinality without materialising the
+    ///   vector. Pinned by
+    ///   [`tests::absent_source_kinds_count_equals_absent_source_kinds_len_pointwise`].
+    /// - `contributing_source_kinds_count() + absent_source_kinds_count()
+    ///   == crate::axis_cardinality::<crate::ConfigSourceKind>()` — the
+    ///   observed / coverage-gap partition on the source-kind axis
+    ///   without remainder, the fully-scalar dual of
+    ///   [`tests::contributing_and_absent_source_kinds_partition_axis`]
+    ///   (both sides now scalar, no `.len()` on either). Pinned by
+    ///   [`tests::contributing_source_kinds_count_and_absent_source_kinds_count_partition_axis_cardinality`].
+    /// - `absent_source_kinds_count() ==
+    ///   crate::axis_cardinality::<crate::ConfigSourceKind>() -
+    ///   contributing_source_kinds_count()` — the algebraic rearrangement
+    ///   of the partition, useful for consumers that already hold the
+    ///   support-size scalar. Pinned by
+    ///   [`tests::absent_source_kinds_count_equals_axis_cardinality_minus_contributing_source_kinds_count`].
+    /// - `absent_source_kinds_count() ==
+    ///   crate::axis_cardinality::<crate::ConfigSourceKind>()` ⇔
+    ///   [`Self::is_empty`] is `true` — the empty-map /
+    ///   full-coverage-gap boundary, the scalar peer of
+    ///   `absent_source_kinds() == ConfigSourceKind::ALL`. Pinned by
+    ///   [`tests::absent_source_kinds_count_is_axis_cardinality_iff_map_is_empty`].
+    /// - `absent_source_kinds_count() == 0` ⇔
+    ///   `source_kind_histogram().is_full_cover()` — the full-cover
+    ///   boundary equivalence, the source-altitude scalar-count
+    ///   coverage-gap peer of the [`crate::AxisHistogram::is_full_cover`]
+    ///   boundary law and the coverage-gap dual of
+    ///   `contributing_source_kinds_count() ==
+    ///   crate::axis_cardinality::<crate::ConfigSourceKind>()`. Pinned by
+    ///   [`tests::absent_source_kinds_count_is_zero_iff_is_full_cover`].
+    /// - `absent_source_kinds_count() <=
+    ///   crate::axis_cardinality::<crate::ConfigSourceKind>()` — the
+    ///   coverage gap of a histogram over a closed axis is bounded above
+    ///   by the axis cardinality (the unobserved-cells set is a subset
+    ///   of [`crate::ConfigSourceKind::ALL`]). Pinned by
+    ///   [`tests::absent_source_kinds_count_is_bounded_by_axis_cardinality`].
+    /// - `absent_source_kinds_count() >= 1` whenever
+    ///   `!source_kind_histogram().is_full_cover()` — a non-full-cover
+    ///   fold carries at least one absent source-kind. Pinned by
+    ///   [`tests::absent_source_kinds_count_is_at_least_one_when_not_full_cover`].
+    /// - `absent_source_kinds_count() ==
+    ///   crate::axis_cardinality::<crate::ConfigSourceKind>() - 1` ⇔
+    ///   `source_kind_histogram().has_singular_support()` — the
+    ///   singleton-support boundary in coverage-gap form: when exactly
+    ///   one source-kind is observed, exactly `axis_cardinality - 1` are
+    ///   absent. Pinned by
+    ///   [`tests::absent_source_kinds_count_is_axis_cardinality_minus_one_iff_has_singular_support`].
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// coverage-gap scan). Both are `O(n)` in practice since the source-
+    /// kind axis carries a fixed three-cell cardinality; the returned
+    /// `usize` reads one scalar. Halves the wall-cost of the previous
+    /// `absent_source_kinds().len()` idiom by eliding the
+    /// `Vec<crate::ConfigSourceKind>` allocation the coverage-gap collect
+    /// paid on every call site.
+    #[must_use]
+    pub fn absent_source_kinds_count(&self) -> usize {
+        self.source_kind_histogram().unobserved_cells()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -52775,5 +53054,458 @@ mod progressive_tests {
             assert!(gap_head.is_some());
             assert_ne!(obs_head, gap_head);
         }
+    }
+
+    // ── ProvenanceMap::contributing_source_kinds_count — support-size
+    //    scalar peer of contributing_source_kinds on the source-kind
+    //    altitude ──
+
+    #[test]
+    fn contributing_source_kinds_count_matches_source_kind_histogram_distinct_cells_pointwise() {
+        // The support-size pin: `contributing_source_kinds_count` routes
+        // through `source_kind_histogram().distinct_cells()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Source-altitude peer of
+        // `contributing_tiers_count_matches_tier_histogram_distinct_cells_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().distinct_cells();
+            assert_eq!(map.contributing_source_kinds_count(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn contributing_source_kinds_count_equals_contributing_source_kinds_len_pointwise() {
+        // The Vec-peer identity: the scalar-count seam equals the length
+        // of the observed-cells `Vec` peer. Source-altitude peer of
+        // `contributing_tiers_count_equals_contributing_tiers_len_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.contributing_source_kinds_count(),
+                map.contributing_source_kinds().len(),
+            );
+        }
+    }
+
+    #[test]
+    fn contributing_source_kinds_count_and_absent_source_kinds_len_partition_axis_cardinality() {
+        // The partition law: the scalar dual of
+        // `contributing_and_absent_source_kinds_partition_axis` with the
+        // observed side scalar and the coverage-gap side still `.len()`.
+        // Every source-kind cell lies in exactly one of {contributing,
+        // absent}, so the two scalars sum to the axis cardinality
+        // without remainder — including the empty map (`0 + 3 == 3`) and
+        // any full-cover map (`3 + 0 == 3`).
+        let axis_size = crate::axis_cardinality::<crate::ConfigSourceKind>();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.contributing_source_kinds_count() + map.absent_source_kinds().len(),
+                axis_size,
+            );
+        }
+    }
+
+    #[test]
+    fn contributing_source_kinds_count_is_zero_iff_map_is_empty() {
+        // The empty-boundary equivalence: a zero-support fold has zero
+        // leaves and vice versa. Source-altitude peer of
+        // `contributing_tiers_count_is_zero_iff_map_is_empty`.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.contributing_source_kinds_count(), 0);
+        assert!(empty.is_empty());
+
+        // Prog fixture is non-empty: only Defaults contributes, so the
+        // support-size scalar reads 1.
+        let r = Prog::resolve_progressive();
+        assert!(!r.provenance().is_empty());
+        assert!(r.provenance().contributing_source_kinds_count() > 0);
+    }
+
+    #[test]
+    fn contributing_source_kinds_count_is_at_least_one_on_nonempty_map() {
+        // The lower-bound invariant: the support of a non-empty map
+        // carries at least the singleton of the first-leaf source-kind.
+        // Source-altitude peer of
+        // `contributing_tiers_count_is_at_least_one_on_nonempty_map`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            assert!(!map.is_empty());
+            assert!(map.contributing_source_kinds_count() >= 1);
+        }
+    }
+
+    #[test]
+    fn contributing_source_kinds_count_is_bounded_by_axis_cardinality() {
+        // The upper-bound invariant: the support of a closed-axis
+        // histogram is at most the axis cardinality (the observed-cells
+        // set is a subset of `ConfigSourceKind::ALL`). Source-altitude
+        // peer of `contributing_tiers_count_is_bounded_by_axis_cardinality`.
+        let axis_size = crate::axis_cardinality::<crate::ConfigSourceKind>();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.contributing_source_kinds_count() <= axis_size);
+        }
+    }
+
+    #[test]
+    fn contributing_source_kinds_count_is_bounded_by_source_kind_histogram_total() {
+        // The support ≤ total invariant: every distinct cell contributes
+        // at least one observation to the total, so the support size is
+        // bounded above by the total observation count. Source-altitude
+        // peer of `contributing_tiers_count_is_bounded_by_tier_histogram_total`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(
+                map.contributing_source_kinds_count() <= map.source_kind_histogram().total()
+            );
+        }
+    }
+
+    #[test]
+    fn contributing_source_kinds_count_equals_axis_cardinality_iff_is_full_cover() {
+        // The full-cover boundary equivalence: the support size equals
+        // the axis cardinality iff every source-kind contributed ≥1
+        // leaf iff the coverage gap is empty. Source-altitude peer of
+        // `contributing_tiers_count_equals_axis_cardinality_iff_is_full_cover`.
+        let axis_size = crate::axis_cardinality::<crate::ConfigSourceKind>();
+
+        // Full-cover: the mixed fixture layers env + file overlays so
+        // every source-kind cell observes ≥1 leaf.
+        let r = source_kind_histogram_mixed_fixture();
+        assert!(r.provenance().source_kind_histogram().is_full_cover());
+        assert_eq!(r.provenance().contributing_source_kinds_count(), axis_size);
+
+        // Non-full-cover: Prog has no overlays, so only Defaults
+        // contributes — support strictly less than axis cardinality.
+        let r = Prog::resolve_progressive();
+        assert!(!r.provenance().source_kind_histogram().is_full_cover());
+        assert!(r.provenance().contributing_source_kinds_count() < axis_size);
+    }
+
+    #[test]
+    fn contributing_source_kinds_count_is_one_iff_has_singular_support() {
+        // The singleton-support boundary equivalence: the support size
+        // equals 1 iff exactly one source-kind contributes iff the
+        // histogram has singular support. Source-altitude peer of
+        // `contributing_tiers_count_is_one_iff_has_singular_support`.
+        //
+        // Singleton-support fixture: the pure-progressive Prog fold uses
+        // only computed-tier constructors, each pinning
+        // `ConfigSource::Defaults` — every leaf's source-kind projects
+        // to `Defaults`, collapsing support to one cell.
+        let r = Prog::resolve_progressive();
+        assert!(r.provenance().source_kind_histogram().has_singular_support());
+        assert_eq!(r.provenance().contributing_source_kinds_count(), 1);
+
+        // Non-singleton-support: the mixed fixture spans three source-
+        // kinds, so support size is > 1 and singular_support is false.
+        let r = source_kind_histogram_mixed_fixture();
+        assert!(!r.provenance().source_kind_histogram().has_singular_support());
+        assert!(r.provenance().contributing_source_kinds_count() > 1);
+    }
+
+    #[test]
+    fn contributing_source_kinds_count_agrees_with_open_coded_nonzero_walk() {
+        // Parity against the exact
+        // `ConfigSourceKind::ALL.iter().filter(|k|
+        // source_kind_histogram().count(*k) > 0).count()` walk this
+        // lift replaces. Source-altitude peer of
+        // `contributing_tiers_count_agrees_with_open_coded_nonzero_walk`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.contributing_source_kinds_count();
+            let hist = map.source_kind_histogram();
+            let hand_rolled = crate::ConfigSourceKind::ALL
+                .iter()
+                .copied()
+                .filter(|k| hist.count(*k) > 0)
+                .count();
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn contributing_source_kinds_count_prog_fixture_is_one() {
+        // Direct fixture pin: Prog attributes 4 leaves, all with
+        // computed-tier source-kind `Defaults`, so the support size on
+        // the source-kind altitude reads 1. Source-altitude peer of
+        // `contributing_tiers_count_prog_fixture_is_three` on the same
+        // fixture.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().contributing_source_kinds_count(), 1);
+    }
+
+    #[test]
+    fn contributing_source_kinds_count_mixed_fixture_is_three() {
+        // Direct fixture pin: the mixed fixture layers env + file
+        // overlays so every source-kind cell observes ≥1 leaf — support
+        // size reads 3, the axis cardinality.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().contributing_source_kinds_count(), 3);
+    }
+
+    // ── ProvenanceMap::absent_source_kinds_count — coverage-gap-size
+    //    scalar peer on the source-kind altitude ──
+
+    #[test]
+    fn absent_source_kinds_count_matches_source_kind_histogram_unobserved_cells_pointwise() {
+        // The coverage-gap-size pin: `absent_source_kinds_count` routes
+        // through `source_kind_histogram().unobserved_cells()`, so the
+        // two seams must stay pointwise equivalent under every fixture.
+        // Source-altitude peer of
+        // `absent_tiers_count_matches_tier_histogram_unobserved_cells_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().unobserved_cells();
+            assert_eq!(
+                map.absent_source_kinds_count(),
+                via_histogram,
+                "absent_source_kinds_count must equal \
+                 source_kind_histogram().unobserved_cells() pointwise",
+            );
+        }
+    }
+
+    #[test]
+    fn absent_source_kinds_count_equals_absent_source_kinds_len_pointwise() {
+        // The Vec-peer identity: the scalar-count seam equals the length
+        // of the coverage-gap `Vec` peer. Source-altitude peer of
+        // `absent_tiers_count_equals_absent_tiers_len_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.absent_source_kinds_count(),
+                map.absent_source_kinds().len(),
+            );
+        }
+    }
+
+    #[test]
+    fn contributing_source_kinds_count_and_absent_source_kinds_count_partition_axis_cardinality() {
+        // The fully-scalar partition law: both sides now the scalar-count
+        // peers, no `.len()` on either. Every source-kind cell lies in
+        // exactly one of (observed, unobserved). Source-altitude peer of
+        // `contributing_tiers_count_and_absent_tiers_count_partition_axis_cardinality`.
+        let axis_size = crate::axis_cardinality::<crate::ConfigSourceKind>();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.contributing_source_kinds_count() + map.absent_source_kinds_count(),
+                axis_size,
+            );
+        }
+    }
+
+    #[test]
+    fn absent_source_kinds_count_equals_axis_cardinality_minus_contributing_source_kinds_count() {
+        // The algebraic rearrangement: the coverage-gap size equals the
+        // axis cardinality minus the support size. Source-altitude peer
+        // of `absent_tiers_count_equals_axis_cardinality_minus_contributing_tiers_count`.
+        let axis_size = crate::axis_cardinality::<crate::ConfigSourceKind>();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.absent_source_kinds_count(),
+                axis_size - map.contributing_source_kinds_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn absent_source_kinds_count_is_axis_cardinality_iff_map_is_empty() {
+        // The empty-map / full-coverage-gap boundary equivalence: an
+        // empty map has every source-kind absent (the coverage gap is
+        // the whole axis), and a non-empty map has at least one source-
+        // kind observed so the coverage gap is strictly smaller.
+        // Source-altitude peer of
+        // `absent_tiers_count_is_axis_cardinality_iff_map_is_empty`.
+        let axis_size = crate::axis_cardinality::<crate::ConfigSourceKind>();
+
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert_eq!(empty.absent_source_kinds_count(), axis_size);
+
+        // Non-empty fixtures: at least one source-kind surfaces, so the
+        // coverage gap is strictly less than the axis cardinality.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            assert!(!map.is_empty());
+            assert!(map.absent_source_kinds_count() < axis_size);
+        }
+    }
+
+    #[test]
+    fn absent_source_kinds_count_is_zero_iff_is_full_cover() {
+        // The full-cover boundary equivalence in coverage-gap form: the
+        // coverage gap is empty iff every source-kind contributed ≥1
+        // leaf iff the histogram is full-cover. Source-altitude peer of
+        // `absent_tiers_count_is_zero_iff_is_full_cover`.
+
+        // Full-cover: the mixed fixture layers env + file overlays.
+        let r = source_kind_histogram_mixed_fixture();
+        assert!(r.provenance().source_kind_histogram().is_full_cover());
+        assert_eq!(r.provenance().absent_source_kinds_count(), 0);
+
+        // Non-full-cover: Prog has no operator overlay, so Env + File
+        // are absent — coverage gap is nonempty.
+        let r = Prog::resolve_progressive();
+        assert!(!r.provenance().source_kind_histogram().is_full_cover());
+        assert!(r.provenance().absent_source_kinds_count() > 0);
+
+        // Empty map: coverage gap is the entire axis, strictly > 0.
+        let empty = ProvenanceMap::default();
+        assert!(!empty.source_kind_histogram().is_full_cover());
+        assert!(empty.absent_source_kinds_count() > 0);
+    }
+
+    #[test]
+    fn absent_source_kinds_count_is_bounded_by_axis_cardinality() {
+        // The upper-bound invariant: the coverage gap of a closed-axis
+        // histogram is at most the axis cardinality. Source-altitude
+        // peer of `absent_tiers_count_is_bounded_by_axis_cardinality`.
+        let axis_size = crate::axis_cardinality::<crate::ConfigSourceKind>();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.absent_source_kinds_count() <= axis_size);
+        }
+    }
+
+    #[test]
+    fn absent_source_kinds_count_is_at_least_one_when_not_full_cover() {
+        // A non-full-cover fold carries at least one absent source-kind.
+        // Source-altitude peer of
+        // `absent_tiers_count_is_at_least_one_when_not_full_cover`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kind_histogram().is_full_cover() {
+                continue;
+            }
+            assert!(map.absent_source_kinds_count() >= 1);
+        }
+    }
+
+    #[test]
+    fn absent_source_kinds_count_is_axis_cardinality_minus_one_iff_has_singular_support() {
+        // The singleton-support boundary in coverage-gap form: when
+        // exactly one source-kind is observed, exactly `axis_cardinality
+        // - 1` are absent. Source-altitude peer of
+        // `absent_tiers_count_is_axis_cardinality_minus_one_iff_has_singular_support`.
+        let axis_size = crate::axis_cardinality::<crate::ConfigSourceKind>();
+
+        // Singleton-support: Prog collapses every leaf to `Defaults` —
+        // two source-kinds absent.
+        let r = Prog::resolve_progressive();
+        assert!(r.provenance().source_kind_histogram().has_singular_support());
+        assert_eq!(r.provenance().absent_source_kinds_count(), axis_size - 1);
+
+        // Non-singleton-support: the mixed fixture spans three source-
+        // kinds — coverage gap strictly less than `axis_cardinality - 1`.
+        let r = source_kind_histogram_mixed_fixture();
+        assert!(!r.provenance().source_kind_histogram().has_singular_support());
+        assert!(r.provenance().absent_source_kinds_count() < axis_size - 1);
+
+        // Empty map: no support, coverage gap = full axis (strictly
+        // greater than `axis_cardinality - 1`).
+        let empty = ProvenanceMap::default();
+        assert!(!empty.source_kind_histogram().has_singular_support());
+        assert!(empty.absent_source_kinds_count() > axis_size - 1);
+    }
+
+    #[test]
+    fn absent_source_kinds_count_agrees_with_open_coded_zero_walk() {
+        // Parity against the exact
+        // `ConfigSourceKind::ALL.iter().filter(|k|
+        // source_kind_histogram().count(*k) == 0).count()` walk this
+        // lift replaces on the coverage-gap side. Source-altitude peer
+        // of `absent_tiers_count_agrees_with_open_coded_zero_walk`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.absent_source_kinds_count();
+            let hist = map.source_kind_histogram();
+            let hand_rolled = crate::ConfigSourceKind::ALL
+                .iter()
+                .copied()
+                .filter(|k| hist.count(*k) == 0)
+                .count();
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    #[test]
+    fn absent_source_kinds_count_empty_map_is_axis_cardinality() {
+        // Direct fixture pin: an empty ProvenanceMap has full coverage
+        // gap so `absent_source_kinds_count` reads the axis cardinality
+        // (3 = |{Defaults, Env, File}|).
+        let empty = ProvenanceMap::default();
+        assert_eq!(
+            empty.absent_source_kinds_count(),
+            crate::axis_cardinality::<crate::ConfigSourceKind>(),
+        );
+    }
+
+    #[test]
+    fn absent_source_kinds_count_full_cover_is_zero() {
+        // Direct fixture pin: the mixed fixture has ≥1 leaf on every
+        // source-kind cell, so the coverage gap is empty and
+        // `absent_source_kinds_count` reads 0.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().absent_source_kinds_count(), 0);
+    }
+
+    #[test]
+    fn absent_source_kinds_count_prog_fixture_is_two() {
+        // Direct fixture pin: Prog attributes 4 leaves, all with source-
+        // kind `Defaults`, so `Env` and `File` are the coverage-gap
+        // cells and `absent_source_kinds_count` reads 2. Coverage-gap
+        // peer of `contributing_source_kinds_count_prog_fixture_is_one`
+        // on the same fixture and altitude, and source-altitude peer of
+        // `absent_tiers_count_prog_fixture_is_one` on the tier altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().absent_source_kinds_count(), 2);
     }
 }
