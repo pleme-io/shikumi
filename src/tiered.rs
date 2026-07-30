@@ -1878,6 +1878,155 @@ impl ProvenanceMap {
         self.source_kind_histogram().dominant_cell()
     }
 
+    /// The [`crate::ConfigSourceKind`] whose layer class produced the
+    /// fewest (but still ≥1) surviving effective leaves on this resolved
+    /// fold — the anti-modal (rarest observed) cell of
+    /// [`Self::source_kind_histogram`] on the source-kind altitude. `None`
+    /// exactly when the map is empty (no leaf contributed).
+    ///
+    /// The **source-altitude peer** of [`Self::recessive_tier`] on the
+    /// tier altitude: [`Self::recessive_tier`] picks the argmin cell of
+    /// [`Self::tier_histogram`] over its support; this method picks the
+    /// argmin cell of [`Self::source_kind_histogram`] over its support.
+    /// The two altitudes now name the anti-modal-cell projection of the
+    /// atomic `(tier, source)` pair each leaf's [`Provenance`] carries —
+    /// matched by name, by return-type shape ([`Option`] of the axis
+    /// type), by delegation seam
+    /// ([`crate::AxisHistogram::recessive_cell`] on the local histogram),
+    /// and by ordering discipline ([`crate::ClosedAxis::ALL`] declaration
+    /// order under a strict-`<` argmin that pins the first-tied cell as
+    /// the tiebreak).
+    ///
+    /// Routes through [`Self::source_kind_histogram`]:
+    /// [`crate::AxisHistogram::recessive_cell`] picks the argmin cell
+    /// over the histogram's *support* (the nonzero cells) in
+    /// [`crate::ClosedAxis::ALL`] declaration order (the
+    /// [`crate::ConfigSourceKind`] canonical order:
+    /// [`Defaults`][crate::ConfigSourceKind::Defaults] →
+    /// [`Env`][crate::ConfigSourceKind::Env] →
+    /// [`File`][crate::ConfigSourceKind::File]) — the closed-axis
+    /// discipline provides deterministic tie-breaking automatically, so
+    /// this method reads directly off the shikumi cube-native primitive
+    /// instead of hand-rolling
+    /// `hist.iter().filter(|&(_, c)| c > 0).min_by_key(|&(_, c)| c).map(|(v, _)| v)`
+    /// — the inline `min_by_key` form silently picks the *first* tied
+    /// cell (per [`Iterator::min_by_key`]'s contract, which reverses
+    /// [`Iterator::max_by_key`]'s "last on ties" behavior), so an
+    /// open-coded argmin and the open-coded argmax on the dominant side
+    /// would disagree on which tied cell to pick. The pair of lifts
+    /// ([`Self::dominant_source_kind`] and [`Self::recessive_source_kind`])
+    /// pins one consistent tie-breaking rule across both projections on
+    /// the source-kind altitude.
+    ///
+    /// **Zero-count source-kinds are excluded from the search.** The
+    /// argmin is taken over the histogram's support, not over the full
+    /// axis. Source-kinds that contributed no surviving leaf are
+    /// trivially the minimum over the full axis and would shadow the
+    /// rarest *observed* source-kind; excluding them surfaces the rarest
+    /// source-kind some leaf actually credited — the question the fleet
+    /// dashboard, attestation manifest, and diagnostic dump ask when they
+    /// surface *"the runt layer class this resolved fold saw"*. This
+    /// matches [`Self::dominant_source_kind`]'s symmetry on the maximum
+    /// side: both projections operate over the nonzero support, so the
+    /// empty-map convention is identical (both return `None`) and the
+    /// singleton-support case is identical (both return the sole observed
+    /// source-kind).
+    ///
+    /// The source-kind altitude anti-modal peer of
+    /// [`Self::dominant_source_kind`] (the modal-cell scalar peer of the
+    /// same [`Self::source_kind_histogram`] primitive) — the histogram
+    /// surface now carries the fused (dominant, recessive) cell pair on
+    /// the source-kind altitude, matching the
+    /// ([`crate::AxisHistogram::dominant_cell`],
+    /// [`crate::AxisHistogram::recessive_cell`]) pair on the shared
+    /// [`crate::AxisHistogram`] primitive one altitude down. Operator-
+    /// facing consumers answering *"which layer class is the runt of
+    /// this resolved fold?"* — the fleet dashboard headlining *"runt
+    /// layer class: Env, 1 of 47 leaves this rebuild window"*, the
+    /// attestation manifest recording the anti-modal layer class between
+    /// two resolved-fold snapshots, the alerting policy reading *"runt
+    /// layer class: Env"* to flag a rebuild window where operator env
+    /// overlays contributed almost nothing — now route through this
+    /// named seam instead of a per-consumer `min_by_key` walk.
+    ///
+    /// **Tie-breaking is deterministic by precedence order.** When
+    /// multiple observed source-kinds share the minimum leaf count, the
+    /// source-kind earliest in [`crate::ConfigSourceKind::ALL`] wins —
+    /// the same [`crate::ConfigSourceKind`] precedence order
+    /// [`Self::contributing_source_kinds`],
+    /// [`Self::absent_source_kinds`], and
+    /// [`Self::dominant_source_kind`] walk. A uniform-cover fold (each
+    /// source-kind producing the same nonzero leaf count) therefore
+    /// reports `Some(crate::ConfigSourceKind::Defaults)` — the first
+    /// cell in declaration order — pointwise identical to
+    /// [`Self::dominant_source_kind`] on the same input (the singleton-
+    /// modality degenerate where the modal and anti-modal cells
+    /// coincide).
+    ///
+    /// # Invariants
+    ///
+    /// - `recessive_source_kind().is_some() == !is_empty()` — the
+    ///   recessive source-kind is defined exactly when the fold has at
+    ///   least one leaf. Peer to the [`Self::is_empty`] boundary
+    ///   [`Self::dominant_source_kind`],
+    ///   [`Self::contributing_source_kinds`], and
+    ///   [`Self::absent_source_kinds`] all witness.
+    /// - `recessive_source_kind().is_some() ==
+    ///   dominant_source_kind().is_some()` — both projections are
+    ///   defined on the same support (`!is_empty()`), lifted from the
+    ///   [`crate::AxisHistogram::recessive_cell`] /
+    ///   [`crate::AxisHistogram::dominant_cell`] presence-bound law.
+    /// - `recessive_source_kind() ==
+    ///   source_kind_histogram().recessive_cell()` — both project the
+    ///   same anti-modal cell off the same primitive; the named seam is
+    ///   the cube-native routing of the histogram surface.
+    /// - When `Some(k)`, `k` is a member of
+    ///   [`Self::contributing_source_kinds`] — the anti-modal cell is
+    ///   taken over the support, so it is by definition observed.
+    /// - When `Some(k)`, `k` is **not** a member of
+    ///   [`Self::absent_source_kinds`] — the observed / coverage-gap
+    ///   partition is disjoint, and the argmin over the *support* never
+    ///   coincides with a zero-count cell.
+    /// - `source_kind_histogram().count(recessive_source_kind().unwrap())
+    ///   == source_kind_histogram().trough_count()` whenever the map is
+    ///   non-empty — the anti-modal cell carries the trough-of-support
+    ///   observation count. Peer to the (`recessive_cell`,
+    ///   `trough_count`) anti-modal pair invariant on
+    ///   [`crate::AxisHistogram`].
+    /// - `source_kind_histogram().count(recessive_source_kind().unwrap())
+    ///   <=
+    ///   source_kind_histogram().count(dominant_source_kind().unwrap())`
+    ///   whenever the map is non-empty — the trough-of-support count is
+    ///   bounded above by the peak count. Lifted from the trait-uniform
+    ///   `count(recessive_cell) <= count(dominant_cell)` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `recessive_source_kind() == dominant_source_kind()` whenever
+    ///   `contributing_source_kinds().len() == 1` — a single observed
+    ///   source-kind is both the modal and the anti-modal cell (the
+    ///   singleton-support degenerate).
+    /// - `recessive_source_kind()` on a uniform per-source-kind fold
+    ///   (one leaf per source-kind) equals
+    ///   `Some(crate::ConfigSourceKind::Defaults)` — declaration-order
+    ///   tie-breaking on the three-cell axis picks the first cell,
+    ///   pointwise identical to `dominant_source_kind()` on the same
+    ///   input.
+    /// - `recessive_source_kind()` on an empty [`ProvenanceMap`] equals
+    ///   `None` — the empty-map / empty-histogram boundary. Peer to
+    ///   [`Self::recessive_tier`]'s empty-map boundary on the tier
+    ///   altitude.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// argmin scan). Both are `O(n)` in practice since the source-kind
+    /// axis carries a fixed three-cell cardinality; the returned
+    /// `Option<crate::ConfigSourceKind>` reads one cell.
+    #[must_use]
+    pub fn recessive_source_kind(&self) -> Option<crate::ConfigSourceKind> {
+        self.source_kind_histogram().recessive_cell()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -53876,5 +54025,307 @@ mod progressive_tests {
             m.dominant_source_kind(),
             Some(crate::ConfigSourceKind::Defaults),
         );
+    }
+
+    // ── ProvenanceMap::recessive_source_kind — anti-modal-cell scalar
+    //    peer of ProvenanceMap::source_kind_histogram on the source-kind
+    //    altitude, source-altitude peer of recessive_tier on the tier
+    //    altitude ──
+
+    #[test]
+    fn recessive_source_kind_matches_source_kind_histogram_recessive_cell_pointwise() {
+        // The anti-modal-cell pin: `recessive_source_kind` routes
+        // through `source_kind_histogram().recessive_cell()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native primitive. Source-
+        // altitude peer of
+        // `recessive_tier_matches_tier_histogram_recessive_cell_pointwise`
+        // on the tier altitude, and anti-modal peer of
+        // `dominant_source_kind_matches_source_kind_histogram_dominant_cell_pointwise`
+        // on the same altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().recessive_cell();
+            assert_eq!(map.recessive_source_kind(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_prog_fixture_is_defaults() {
+        // Prog attributes 4 leaves, all with source-kind `Defaults` (the
+        // pure-progressive fold uses only computed-tier constructors,
+        // each pinning `ConfigSource::Defaults`). Singleton-support fold
+        // on the source-kind axis: the sole observed cell is both the
+        // modal and the anti-modal cell (the singleton-support
+        // degenerate). Direct pin — pointwise identical to
+        // `dominant_source_kind` on the same input.
+        let r = Prog::resolve_progressive();
+        assert_eq!(
+            r.provenance().recessive_source_kind(),
+            Some(crate::ConfigSourceKind::Defaults),
+        );
+    }
+
+    #[test]
+    fn recessive_source_kind_mixed_fixture_is_env() {
+        // Mixed fixture: a→Defaults, b→File, c→Env, d→Defaults. Counts:
+        // Defaults=2, Env=1, File=1. The argmin over the support
+        // {Defaults, Env, File} ties at 1 between Env and File;
+        // declaration-order tiebreak on `ConfigSourceKind::ALL` picks
+        // the earlier cell → `Some(Env)`. The named seam answers the
+        // operator's *"which layer class is the runt of this resolved
+        // fold?"* question at one call, no `min_by_key` walk in the
+        // dashboard.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(
+            r.provenance().recessive_source_kind(),
+            Some(crate::ConfigSourceKind::Env),
+        );
+    }
+
+    #[test]
+    fn recessive_source_kind_empty_map_is_none() {
+        // An empty ProvenanceMap has no leaves and therefore no anti-
+        // modal source-kind cell — the empty-map / empty-histogram
+        // boundary of the recessive-cell projection. Peer to
+        // `dominant_source_kind_empty_map_is_none` on the modal side,
+        // and source-altitude peer of `recessive_tier_empty_map_is_none`
+        // on the tier altitude.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.recessive_source_kind(), None);
+    }
+
+    #[test]
+    fn recessive_source_kind_is_some_iff_map_is_nonempty() {
+        // Cross-surface pin: the presence-of-anti-modal-cell predicate
+        // agrees with the non-emptiness of the underlying map.
+        // Structural completeness of the `(is_empty,
+        // recessive_source_kind)` boundary — a well-formed fold with ≥1
+        // leaf always has an anti-modal cell, and an empty fold never
+        // does. Source-altitude peer of
+        // `recessive_tier_is_some_iff_map_is_nonempty` on the tier
+        // altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(map.recessive_source_kind().is_some(), !map.is_empty());
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_is_some_iff_dominant_source_kind_is_some() {
+        // Cross-projection pin lifted from the trait-uniform
+        // `recessive_cell().is_some() == dominant_cell().is_some()` law
+        // on AxisHistogram: both projections operate over the same
+        // nonzero support, so they agree on presence at every input.
+        // Source-altitude peer of
+        // `recessive_tier_is_some_iff_dominant_tier_is_some` on the tier
+        // altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.recessive_source_kind().is_some(),
+                map.dominant_source_kind().is_some(),
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_is_member_of_contributing_source_kinds() {
+        // Structural pin: whenever `recessive_source_kind()` is
+        // `Some(k)`, `k` must appear in `contributing_source_kinds()`
+        // (the anti-modal cell is taken over the support, so it is by
+        // definition observed). The support / anti-modal-cell partition
+        // on the source-kind altitude reads consistently between the
+        // two named seams. Source-altitude peer of
+        // `recessive_tier_is_member_of_contributing_tiers` on the tier
+        // altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            let recessive = map
+                .recessive_source_kind()
+                .expect("non-empty map has recessive source-kind");
+            assert!(
+                map.contributing_source_kinds().contains(&recessive),
+                "recessive source-kind {recessive:?} must appear in contributing_source_kinds",
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_is_not_member_of_absent_source_kinds() {
+        // Structural pin: whenever `recessive_source_kind()` is
+        // `Some(k)`, `k` must NOT appear in `absent_source_kinds()` —
+        // the anti-modal cell lies on the observed side of the observed
+        // / coverage-gap partition by construction (argmin taken over
+        // the nonzero support). Disjointness pin between the two named
+        // seams. Source-altitude peer of
+        // `recessive_tier_is_not_member_of_absent_tiers` on the tier
+        // altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            let recessive = map
+                .recessive_source_kind()
+                .expect("non-empty map has recessive source-kind");
+            assert!(
+                !map.absent_source_kinds().contains(&recessive),
+                "recessive source-kind {recessive:?} must not appear in absent_source_kinds",
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_count_equals_trough_count_on_nonempty_map() {
+        // The (recessive_cell, trough_count) anti-modal-pair invariant
+        // lifted to the source-kind altitude: the observation count of
+        // the recessive source-kind equals the histogram's trough count
+        // over the support. Source-altitude peer of
+        // `recessive_tier_count_equals_trough_count_on_nonempty_map` on
+        // the tier altitude, and anti-modal peer of
+        // `dominant_source_kind_count_equals_peak_count_on_nonempty_map`
+        // on the same altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            let hist = map.source_kind_histogram();
+            let recessive = map
+                .recessive_source_kind()
+                .expect("non-empty map has recessive source-kind");
+            assert_eq!(hist.count(recessive), hist.trough_count());
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_count_bounded_by_dominant_source_kind_count() {
+        // Structural bound lifted from the trait-uniform
+        // `count(recessive_cell) <= count(dominant_cell)` law on
+        // AxisHistogram: the trough-of-support is bounded above by the
+        // peak-of-support at every fixture. Cross-projection pin
+        // between `recessive_source_kind` and `dominant_source_kind`,
+        // source-altitude peer of
+        // `recessive_tier_count_bounded_by_dominant_tier_count` on the
+        // tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            let hist = map.source_kind_histogram();
+            let recessive = map
+                .recessive_source_kind()
+                .expect("non-empty map has recessive source-kind");
+            let dominant = map
+                .dominant_source_kind()
+                .expect("non-empty map has dominant source-kind");
+            assert!(
+                hist.count(recessive) <= hist.count(dominant),
+                "count(recessive={recessive:?})={r} must be <= count(dominant={dominant:?})={d}",
+                r = hist.count(recessive),
+                d = hist.count(dominant),
+            );
+        }
+    }
+
+    #[test]
+    fn recessive_source_kind_ties_broken_by_declaration_order() {
+        // Structural tie-breaking pin: on a uniform per-source-kind
+        // fold (each of the three `ConfigSourceKind` cells contributing
+        // exactly one leaf), `recessive_source_kind` reports
+        // `Some(ConfigSourceKind::Defaults)` — the first cell in
+        // `ConfigSourceKind::ALL` declaration order (the singleton-
+        // modality degenerate where the modal and anti-modal cells
+        // coincide). Any future switch to a nondeterministic
+        // `min_by_key` walk that reversed the tie orientation would
+        // flip this pin — the seam names the tiebreak once. Source-
+        // altitude peer of `recessive_tier_ties_broken_by_declaration_order`
+        // on the tier altitude.
+        let m: ProvenanceMap = [
+            (vec!["a".to_owned()], Provenance::bare()),
+            (vec!["b".to_owned()], Provenance::env("SHIKUMI_TIEBREAK_")),
+            (vec!["c".to_owned()], Provenance::file("/etc/tiebreak.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        // Sanity: this construction produces the intended per-source-kind
+        // distribution (each cell owns exactly one leaf).
+        let hist = m.source_kind_histogram();
+        assert_eq!(hist.count(crate::ConfigSourceKind::Defaults), 1);
+        assert_eq!(hist.count(crate::ConfigSourceKind::Env), 1);
+        assert_eq!(hist.count(crate::ConfigSourceKind::File), 1);
+        assert!(hist.is_full_cover());
+        // Tiebreak lands on the first cell in declaration order —
+        // pointwise identical to `dominant_source_kind` on the same
+        // uniform input (the singleton-modality degenerate).
+        assert_eq!(
+            m.recessive_source_kind(),
+            Some(crate::ConfigSourceKind::Defaults),
+        );
+        assert_eq!(m.recessive_source_kind(), m.dominant_source_kind());
+    }
+
+    #[test]
+    fn recessive_source_kind_singleton_support_agrees_with_dominant_source_kind() {
+        // Singleton-support degenerate lifted from the trait-uniform
+        // `distinct_cells() == 1 → dominant_cell() == recessive_cell()`
+        // law on AxisHistogram: when only one source-kind contributes,
+        // that source-kind is both the modal and the anti-modal cell.
+        // Direct pin on Prog (singleton support: only Defaults). Source-
+        // altitude peer of
+        // `recessive_tier_singleton_support_agrees_with_dominant_tier`
+        // on the tier altitude.
+        let r = Prog::resolve_progressive();
+        let m = r.provenance();
+        assert_eq!(m.contributing_source_kinds().len(), 1);
+        assert_eq!(m.recessive_source_kind(), m.dominant_source_kind());
+        assert_eq!(
+            m.recessive_source_kind(),
+            Some(crate::ConfigSourceKind::Defaults),
+        );
+    }
+
+    #[test]
+    fn recessive_source_kind_agrees_with_open_coded_argmin_walk() {
+        // Parity against the exact `hist.iter().filter(|&(_, c)| c > 0)
+        // .min_by(count-then-declaration-order)` walk this lift replaces
+        // — both the named seam and the hand-rolled argmin must
+        // pointwise agree over every fixture in the module. The
+        // hand-rolled form spells the declaration-order tiebreak
+        // explicitly (fold-forward with strict `<` inequality — the
+        // first tied cell wins, mirroring `AxisHistogram::recessive_cell`).
+        // Source-altitude peer of
+        // `recessive_tier_agrees_with_open_coded_argmin_walk` on the
+        // tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.recessive_source_kind();
+            let hist = map.source_kind_histogram();
+            let mut iter = hist.iter().filter(|&(_, c)| c > 0);
+            let hand_rolled = iter.next().map(|first| {
+                iter.fold(
+                    first,
+                    |best, current| {
+                        if current.1 < best.1 { current } else { best }
+                    },
+                )
+                .0
+            });
+            assert_eq!(via_seam, hand_rolled);
+        }
     }
 }
