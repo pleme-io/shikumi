@@ -482,7 +482,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
           }
           {
             name = "ring";
@@ -723,7 +723,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
             rename = "http-1x";
           }
           {
@@ -845,7 +845,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
             rename = "http-1x";
           }
           {
@@ -941,7 +941,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
             rename = "http-1x";
           }
           {
@@ -1036,7 +1036,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
             rename = "http-1x";
           }
           {
@@ -1135,7 +1135,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
             rename = "http-1x";
           }
           {
@@ -1240,7 +1240,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
             optional = true;
           }
           {
@@ -1371,7 +1371,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
             rename = "http-1x";
           }
           {
@@ -1455,7 +1455,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
             rename = "http-1x";
             optional = true;
           }
@@ -1512,7 +1512,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.42";
+            packageId = "rustls 0.23.43";
             optional = true;
             usesDefaultFeatures = false;
           }
@@ -1707,7 +1707,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
             rename = "http-1x";
           }
           {
@@ -1811,7 +1811,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
             rename = "http-1x";
           }
           {
@@ -1881,7 +1881,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
             rename = "http-1x";
           }
           {
@@ -2155,6 +2155,35 @@ rec {
           }
         ];
 
+      };
+      "block2" = rec {
+        crateName = "block2";
+        version = "0.6.2";
+        edition = "2021";
+        sha256 = "1xcfllzx6c3jc554nmb5qy6xmlkl6l6j5ib4wd11800n0n3rvsyd";
+        authors = [
+          "Mads Marquart <mads@marquart.dk>"
+        ];
+        dependencies = [
+          {
+            name = "objc2";
+            packageId = "objc2";
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+        ];
+        features = {
+          "compiler-rt" = [ "objc2/unstable-compiler-rt" ];
+          "default" = [ "std" ];
+          "gnustep-1-7" = [ "objc2/gnustep-1-7" ];
+          "gnustep-1-8" = [ "gnustep-1-7" "objc2/gnustep-1-8" ];
+          "gnustep-1-9" = [ "gnustep-1-8" "objc2/gnustep-1-9" ];
+          "gnustep-2-0" = [ "gnustep-1-9" "objc2/gnustep-2-0" ];
+          "gnustep-2-1" = [ "gnustep-2-0" "objc2/gnustep-2-1" ];
+          "std" = [ "alloc" ];
+          "unstable-winobjc" = [ "gnustep-1-8" ];
+        };
+        resolvedDefaultFeatures = [ "alloc" ];
       };
       "bs58" = rec {
         crateName = "bs58";
@@ -2884,11 +2913,44 @@ rec {
         };
         resolvedDefaultFeatures = [ "alloc" "block-buffer" "core-api" "default" "mac" "std" "subtle" ];
       };
+      "dispatch2" = rec {
+        crateName = "dispatch2";
+        version = "0.3.1";
+        edition = "2021";
+        sha256 = "0f5xmnbzpaz1g80m27kd804p75nswh0ikb6wvqh4ba3x9rz3c3hy";
+        authors = [
+          "Mads Marquart <mads@marquart.dk>"
+          "Mary <mary@mary.zone>"
+        ];
+        dependencies = [
+          {
+            name = "bitflags";
+            packageId = "bitflags";
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2";
+            packageId = "objc2";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+        ];
+        features = {
+          "block2" = [ "dep:block2" ];
+          "default" = [ "std" "block2" "libc" "objc2" ];
+          "libc" = [ "dep:libc" ];
+          "objc2" = [ "dep:objc2" ];
+          "std" = [ "alloc" ];
+        };
+        resolvedDefaultFeatures = [ "alloc" "objc2" ];
+      };
       "displaydoc" = rec {
         crateName = "displaydoc";
-        version = "0.2.6";
+        version = "0.2.7";
         edition = "2021";
-        sha256 = "0kyxwfbdmagd8afzb2pzja7wj8dhah7smxdsgw00iq8pa2jhmiqs";
+        sha256 = "1a42mwpgpwcqq2qqgkcc630wvsc2p2dkmgacjnclginwfz9js8y6";
         procMacro = true;
         authors = [
           "Jane Lusby <jlusby@yaah.dev>"
@@ -2904,7 +2966,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.119";
+            packageId = "syn 3.0.3";
           }
         ];
         features = {
@@ -3139,6 +3201,12 @@ rec {
             packageId = "futures-core";
             usesDefaultFeatures = false;
           }
+          {
+            name = "futures-sink";
+            packageId = "futures-sink";
+            optional = true;
+            usesDefaultFeatures = false;
+          }
         ];
         features = {
           "alloc" = [ "futures-core/alloc" ];
@@ -3147,7 +3215,7 @@ rec {
           "sink" = [ "futures-sink" ];
           "std" = [ "alloc" "futures-core/std" ];
         };
-        resolvedDefaultFeatures = [ "alloc" "default" "std" ];
+        resolvedDefaultFeatures = [ "alloc" "default" "futures-sink" "sink" "std" ];
       };
       "futures-core" = rec {
         crateName = "futures-core";
@@ -3161,6 +3229,17 @@ rec {
           "std" = [ "alloc" ];
         };
         resolvedDefaultFeatures = [ "alloc" "default" "std" ];
+      };
+      "futures-io" = rec {
+        crateName = "futures-io";
+        version = "0.3.33";
+        edition = "2018";
+        sha256 = "0yjx13qdm9b2p4w00ddw85k6yccnnmqrlrrz8yfmi5jg7jmfqxs5";
+        libName = "futures_io";
+        features = {
+          "default" = [ "std" ];
+        };
+        resolvedDefaultFeatures = [ "std" ];
       };
       "futures-sink" = rec {
         crateName = "futures-sink";
@@ -3199,9 +3278,27 @@ rec {
             usesDefaultFeatures = false;
           }
           {
+            name = "futures-io";
+            packageId = "futures-io";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "futures-sink";
+            packageId = "futures-sink";
+            optional = true;
+            usesDefaultFeatures = false;
+          }
+          {
             name = "futures-task";
             packageId = "futures-task";
             usesDefaultFeatures = false;
+          }
+          {
+            name = "memchr";
+            packageId = "memchr";
+            optional = true;
           }
           {
             name = "pin-project-lite";
@@ -3241,17 +3338,17 @@ rec {
           "unstable" = [ "futures-core/unstable" "futures-task/unstable" ];
           "write-all-vectored" = [ "io" ];
         };
-        resolvedDefaultFeatures = [ "alloc" "slab" "std" ];
+        resolvedDefaultFeatures = [ "alloc" "futures-io" "futures-sink" "io" "memchr" "sink" "slab" "std" ];
       };
       "gen-macros" = rec {
         crateName = "gen-macros";
-        version = "0.1.26";
+        version = "0.1.29";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/gen";
-          rev = "d511897c493df0e7f7574759f17c8bf467a0d88c";
-          sha256 = "1ks19d5zxipgaf6gi3jp23qyq0rf4blda73z7qrzxpwvnrpgyzh8";
+          rev = "25797adf022275255528d545a2deba8d6b748b96";
+          sha256 = "1vr35sci2yirv0yhkkwgc17m7mzkazzjzxfl7gshkpinp2xdhaq1";
         };
         procMacro = true;
         libName = "gen_macros";
@@ -3277,13 +3374,13 @@ rec {
       };
       "gen-platform" = rec {
         crateName = "gen-platform";
-        version = "0.1.26";
+        version = "0.1.29";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/gen";
-          rev = "d511897c493df0e7f7574759f17c8bf467a0d88c";
-          sha256 = "1ks19d5zxipgaf6gi3jp23qyq0rf4blda73z7qrzxpwvnrpgyzh8";
+          rev = "25797adf022275255528d545a2deba8d6b748b96";
+          sha256 = "1vr35sci2yirv0yhkkwgc17m7mzkazzjzxfl7gshkpinp2xdhaq1";
         };
         libName = "gen_platform";
         authors = [
@@ -3320,13 +3417,13 @@ rec {
       };
       "gen-types" = rec {
         crateName = "gen-types";
-        version = "0.1.26";
+        version = "0.1.29";
         edition = "2024";
         workspace_member = null;
         src = pkgs.fetchgit {
           url = "https://github.com/pleme-io/gen";
-          rev = "d511897c493df0e7f7574759f17c8bf467a0d88c";
-          sha256 = "1ks19d5zxipgaf6gi3jp23qyq0rf4blda73z7qrzxpwvnrpgyzh8";
+          rev = "25797adf022275255528d545a2deba8d6b748b96";
+          sha256 = "1vr35sci2yirv0yhkkwgc17m7mzkazzjzxfl7gshkpinp2xdhaq1";
         };
         libName = "gen_types";
         authors = [
@@ -3644,7 +3741,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
           }
           {
             name = "indexmap";
@@ -3796,11 +3893,11 @@ rec {
         ];
 
       };
-      "http 1.4.2" = rec {
+      "http 1.5.0" = rec {
         crateName = "http";
-        version = "1.4.2";
+        version = "1.5.0";
         edition = "2021";
-        sha256 = "09b4p8fiivkg7wm0b59fyrn1jkm7px298ci7zb9igz6n647gaw39";
+        sha256 = "1q4wpz5hb4cf37g3jrdyffrpa6ngidmd9wrfph92fddzprl3b3ci";
         authors = [
           "Alex Crichton <alex@alexcrichton.com>"
           "Carl Lerche <me@carllerche.com>"
@@ -3866,7 +3963,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
           }
         ];
 
@@ -3894,7 +3991,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
           }
           {
             name = "http-body";
@@ -4076,7 +4173,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
           }
           {
             name = "http-body";
@@ -4226,7 +4323,7 @@ rec {
         dependencies = [
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
           }
           {
             name = "hyper";
@@ -4241,7 +4338,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.42";
+            packageId = "rustls 0.23.43";
             usesDefaultFeatures = false;
           }
           {
@@ -4277,7 +4374,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.42";
+            packageId = "rustls 0.23.43";
             usesDefaultFeatures = false;
             features = [ "tls12" ];
           }
@@ -4337,7 +4434,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
           }
           {
             name = "http-body";
@@ -5120,6 +5217,57 @@ rec {
         };
         resolvedDefaultFeatures = [ "default" "std" "unsafe-eval" ];
       };
+      "kanchi" = rec {
+        crateName = "kanchi";
+        version = "0.1.0";
+        edition = "2024";
+        workspace_member = null;
+        src = pkgs.fetchgit {
+          url = "https://github.com/pleme-io/kanchi";
+          rev = "0569d9655ac9ab0784b9b82a61bc873fbf69ad14";
+          sha256 = "0mh6g06180q7iwx4jyhvdhmaxx9270ysbrj4rwhw3zdgw849wmk4";
+        };
+        dependencies = [
+          {
+            name = "libc";
+            packageId = "libc";
+          }
+          {
+            name = "objc2";
+            packageId = "objc2";
+            target = { target, features }: ("macos" == target."os" or null);
+          }
+          {
+            name = "objc2-app-kit";
+            packageId = "objc2-app-kit";
+            target = { target, features }: ("macos" == target."os" or null);
+            features = [ "NSScreen" "NSApplication" ];
+          }
+          {
+            name = "objc2-core-foundation";
+            packageId = "objc2-core-foundation";
+            target = { target, features }: ("macos" == target."os" or null);
+            features = [ "CFBase" "CFArray" ];
+          }
+          {
+            name = "objc2-core-graphics";
+            packageId = "objc2-core-graphics";
+            target = { target, features }: ("macos" == target."os" or null);
+            features = [ "CGDirectDisplay" ];
+          }
+          {
+            name = "objc2-foundation";
+            packageId = "objc2-foundation";
+            target = { target, features }: ("macos" == target."os" or null);
+            features = [ "NSString" "NSUserDefaults" ];
+          }
+          {
+            name = "paste";
+            packageId = "paste";
+          }
+        ];
+
+      };
       "kqueue" = rec {
         crateName = "kqueue";
         version = "1.2.0";
@@ -5259,7 +5407,7 @@ rec {
           "std" = [ "alloc" ];
           "use_std" = [ "std" ];
         };
-        resolvedDefaultFeatures = [ "alloc" "std" ];
+        resolvedDefaultFeatures = [ "alloc" "default" "std" ];
       };
       "mime" = rec {
         crateName = "mime";
@@ -5503,6 +5651,1342 @@ rec {
         };
         resolvedDefaultFeatures = [ "i128" "std" ];
       };
+      "objc2" = rec {
+        crateName = "objc2";
+        version = "0.6.4";
+        edition = "2021";
+        sha256 = "17x8qpl512frscfqbmgjr20kg3y4r0xdqxphja17dz5f0znsh4is";
+        authors = [
+          "Mads Marquart <mads@marquart.dk>"
+        ];
+        dependencies = [
+          {
+            name = "objc2-encode";
+            packageId = "objc2-encode";
+            usesDefaultFeatures = false;
+          }
+        ];
+        features = {
+          "alloc" = [ "objc2-encode/alloc" ];
+          "catch-all" = [ "exception" ];
+          "default" = [ "std" ];
+          "exception" = [ "dep:objc2-exception-helper" ];
+          "gnustep-1-7" = [ "unstable-static-class" "objc2-exception-helper?/gnustep-1-7" ];
+          "gnustep-1-8" = [ "gnustep-1-7" "objc2-exception-helper?/gnustep-1-8" ];
+          "gnustep-1-9" = [ "gnustep-1-8" "objc2-exception-helper?/gnustep-1-9" ];
+          "gnustep-2-0" = [ "gnustep-1-9" "objc2-exception-helper?/gnustep-2-0" ];
+          "gnustep-2-1" = [ "gnustep-2-0" "objc2-exception-helper?/gnustep-2-1" ];
+          "std" = [ "alloc" "objc2-encode/std" ];
+          "unstable-compiler-rt" = [ "gnustep-1-7" ];
+          "unstable-gnustep-strict-apple-compat" = [ "gnustep-1-7" ];
+          "unstable-static-class" = [ "dep:objc2-proc-macros" ];
+          "unstable-static-class-inlined" = [ "unstable-static-class" ];
+          "unstable-static-sel" = [ "dep:objc2-proc-macros" ];
+          "unstable-static-sel-inlined" = [ "unstable-static-sel" ];
+          "unstable-winobjc" = [ "gnustep-1-8" ];
+        };
+        resolvedDefaultFeatures = [ "alloc" "default" "std" ];
+      };
+      "objc2-app-kit" = rec {
+        crateName = "objc2-app-kit";
+        version = "0.3.2";
+        edition = "2021";
+        sha256 = "132ijwni8lsi8phq7wnmialkxp46zx998fns3zq5np0ya1mr77nl";
+        libName = "objc2_app_kit";
+        dependencies = [
+          {
+            name = "bitflags";
+            packageId = "bitflags";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "block2";
+            packageId = "block2";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "alloc" ];
+          }
+          {
+            name = "libc";
+            packageId = "libc";
+            optional = true;
+            usesDefaultFeatures = false;
+          }
+          {
+            name = "objc2";
+            packageId = "objc2";
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2-cloud-kit";
+            packageId = "objc2-cloud-kit";
+            optional = true;
+            usesDefaultFeatures = false;
+            target = { target, features }: ("apple" == target."vendor" or null);
+            features = [ "CKContainer" "CKRecord" "CKShare" "CKShareMetadata" ];
+          }
+          {
+            name = "objc2-core-data";
+            packageId = "objc2-core-data";
+            optional = true;
+            usesDefaultFeatures = false;
+            target = { target, features }: ("apple" == target."vendor" or null);
+            features = [ "NSAttributeDescription" "NSEntityDescription" "NSFetchRequest" "NSManagedObjectContext" "NSManagedObjectModel" "NSPersistentStoreRequest" "NSPropertyDescription" ];
+          }
+          {
+            name = "objc2-core-foundation";
+            packageId = "objc2-core-foundation";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "CFCGTypes" "CFDate" "objc2" ];
+          }
+          {
+            name = "objc2-core-graphics";
+            packageId = "objc2-core-graphics";
+            optional = true;
+            usesDefaultFeatures = false;
+            target = { target, features }: ("apple" == target."vendor" or null);
+            features = [ "CGColor" "CGColorSpace" "CGContext" "CGDirectDisplay" "CGEventTypes" "CGFont" "CGImage" "CGPath" "objc2" ];
+          }
+          {
+            name = "objc2-core-image";
+            packageId = "objc2-core-image";
+            optional = true;
+            usesDefaultFeatures = false;
+            target = { target, features }: ("apple" == target."vendor" or null);
+            features = [ "CIColor" "CIContext" "CIFilter" "CIImage" ];
+          }
+          {
+            name = "objc2-core-text";
+            packageId = "objc2-core-text";
+            optional = true;
+            usesDefaultFeatures = false;
+            target = { target, features }: ("apple" == target."vendor" or null);
+            features = [ "CTFont" "CTFontCollection" "CTFontDescriptor" "CTGlyphInfo" "objc2" ];
+          }
+          {
+            name = "objc2-core-video";
+            packageId = "objc2-core-video";
+            optional = true;
+            usesDefaultFeatures = false;
+            target = { target, features }: ("apple" == target."vendor" or null);
+            features = [ "CVBase" "objc2" ];
+          }
+          {
+            name = "objc2-foundation";
+            packageId = "objc2-foundation";
+            usesDefaultFeatures = false;
+            features = [ "alloc" ];
+          }
+          {
+            name = "objc2-quartz-core";
+            packageId = "objc2-quartz-core";
+            optional = true;
+            usesDefaultFeatures = false;
+            target = { target, features }: ("apple" == target."vendor" or null);
+            features = [ "CADisplayLink" "CALayer" "CAMediaTiming" "CAMediaTimingFunction" "CAOpenGLLayer" ];
+          }
+        ];
+        features = {
+          "NSATSTypesetter" = [ "objc2-foundation/NSAttributedString" "objc2-foundation/NSGeometry" "objc2-foundation/NSRange" "objc2-foundation/objc2-core-foundation" ];
+          "NSAccessibility" = [ "objc2-foundation/NSArray" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSAccessibilityColor" = [ "objc2-foundation/NSString" ];
+          "NSAccessibilityConstants" = [ "objc2-foundation/NSAttributedString" "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSAccessibilityCustomAction" = [ "objc2-foundation/NSString" ];
+          "NSAccessibilityCustomRotor" = [ "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" ];
+          "NSAccessibilityElement" = [ "objc2-foundation/NSGeometry" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSAccessibilityProtocols" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSData" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/NSValue" "objc2-foundation/objc2-core-foundation" ];
+          "NSActionCell" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSAdaptiveImageGlyph" = [ "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSAffineTransform" = [ "objc2-foundation/NSAffineTransform" ];
+          "NSAlert" = [ "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSString" ];
+          "NSAlignmentFeedbackFilter" = [ "objc2-foundation/NSArray" "objc2-foundation/NSGeometry" "objc2-foundation/objc2-core-foundation" ];
+          "NSAnimation" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSDate" "objc2-foundation/NSDictionary" "objc2-foundation/NSNotification" "objc2-foundation/NSObjCRuntime" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSValue" ];
+          "NSAnimationContext" = [ "objc2-foundation/NSDate" ];
+          "NSAppearance" = [ "objc2-foundation/NSArray" "objc2-foundation/NSBundle" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSAppleScriptExtensions" = [ "objc2-foundation/NSAppleScript" "objc2-foundation/NSAttributedString" ];
+          "NSApplication" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSData" "objc2-foundation/NSDate" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSException" "objc2-foundation/NSNotification" "objc2-foundation/NSObjCRuntime" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/NSUserActivity" ];
+          "NSApplicationScripting" = [ "objc2-foundation/NSArray" ];
+          "NSArrayController" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSIndexSet" "objc2-foundation/NSObject" "objc2-foundation/NSPredicate" "objc2-foundation/NSSortDescriptor" "objc2-foundation/NSString" ];
+          "NSAttributedString" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSFileWrapper" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSBackgroundExtensionView" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSBezierPath" = [ "objc2-foundation/NSAffineTransform" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSBitmapImageRep" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSBox" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSBrowser" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSIndexPath" "objc2-foundation/NSIndexSet" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/objc2-core-foundation" ];
+          "NSBrowserCell" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSButton" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSButtonCell" = [ "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSButtonTouchBarItem" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSCIImageRep" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSCachedImageRep" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSCandidateListTouchBarItem" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" ];
+          "NSCell" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSFormatter" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObjCRuntime" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSClickGestureRecognizer" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSObject" ];
+          "NSClipView" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSCollectionView" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSBundle" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSIndexPath" "objc2-foundation/NSIndexSet" "objc2-foundation/NSObjCRuntime" "objc2-foundation/NSObject" "objc2-foundation/NSSet" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/objc2-core-foundation" ];
+          "NSCollectionViewCompositionalLayout" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSGeometry" "objc2-foundation/NSIndexPath" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSCollectionViewFlowLayout" = [ "objc2-foundation/NSGeometry" "objc2-foundation/NSIndexPath" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSCollectionViewGridLayout" = [ "objc2-foundation/NSArray" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSCollectionViewLayout" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSIndexPath" "objc2-foundation/NSObject" "objc2-foundation/NSSet" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSCollectionViewTransitionLayout" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSColor" = [ "objc2-foundation/NSArray" "objc2-foundation/NSBundle" "objc2-foundation/NSCoder" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSColorList" = [ "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSColorPanel" = [ "bitflags" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSColorPicker" = [ "objc2-foundation/NSGeometry" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSColorPickerTouchBarItem" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSColorPicking" = [ "objc2-foundation/NSGeometry" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSColorSpace" = [ "objc2-foundation/NSArray" "objc2-foundation/NSData" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSColorWell" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSComboBox" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSComboBoxCell" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSComboButton" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSControl" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSFormatter" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSController" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSObject" ];
+          "NSCursor" = [ "bitflags" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSCustomImageRep" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSCustomTouchBarItem" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSDataAsset" = [ "objc2-foundation/NSBundle" "objc2-foundation/NSData" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSDatePicker" = [ "objc2-foundation/NSCalendar" "objc2-foundation/NSCoder" "objc2-foundation/NSDate" "objc2-foundation/NSGeometry" "objc2-foundation/NSLocale" "objc2-foundation/NSObject" "objc2-foundation/NSTimeZone" "objc2-foundation/objc2-core-foundation" ];
+          "NSDatePickerCell" = [ "bitflags" "objc2-foundation/NSCalendar" "objc2-foundation/NSCoder" "objc2-foundation/NSDate" "objc2-foundation/NSLocale" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSTimeZone" ];
+          "NSDictionaryController" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSDiffableDataSource" = [ "objc2-foundation/NSArray" "objc2-foundation/NSIndexPath" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSDirection" = [ "bitflags" ];
+          "NSDockTile" = [ "objc2-foundation/NSGeometry" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSDocument" = [ "objc2-foundation/NSArray" "objc2-foundation/NSData" "objc2-foundation/NSDate" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSFilePresenter" "objc2-foundation/NSFileVersion" "objc2-foundation/NSFileWrapper" "objc2-foundation/NSSet" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/NSUndoManager" ];
+          "NSDocumentController" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSDate" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSDocumentScripting" = [ "objc2-foundation/NSScriptCommand" "objc2-foundation/NSScriptObjectSpecifiers" "objc2-foundation/NSScriptStandardSuiteCommands" "objc2-foundation/NSString" ];
+          "NSDragging" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSObjCRuntime" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/objc2-core-foundation" ];
+          "NSDraggingItem" = [ "objc2-foundation/NSArray" "objc2-foundation/NSGeometry" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSDraggingSession" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSDrawer" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSEPSImageRep" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSData" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSErrors" = [ "objc2-foundation/NSObjCRuntime" "objc2-foundation/NSString" ];
+          "NSEvent" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSDate" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSSet" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSFilePromiseProvider" = [ "objc2-foundation/NSError" "objc2-foundation/NSOperation" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSFilePromiseReceiver" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSOperation" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSFileWrapperExtensions" = [ "objc2-foundation/NSFileWrapper" ];
+          "NSFont" = [ "objc2-foundation/NSAffineTransform" "objc2-foundation/NSCharacterSet" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSFontAssetRequest" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSProgress" ];
+          "NSFontCollection" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSLocale" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSValue" ];
+          "NSFontDescriptor" = [ "bitflags" "objc2-foundation/NSAffineTransform" "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSSet" "objc2-foundation/NSString" ];
+          "NSFontManager" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSString" ];
+          "NSFontPanel" = [ "bitflags" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSForm" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSFormCell" = [ "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSGestureRecognizer" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSGlassEffectView" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSGlyphGenerator" = [ "objc2-foundation/NSAttributedString" ];
+          "NSGlyphInfo" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSGradient" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSGraphics" = [ "objc2-foundation/NSGeometry" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSGraphicsContext" = [ "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSGridView" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/objc2-core-foundation" ];
+          "NSGroupTouchBarItem" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSHelpManager" = [ "objc2-foundation/NSAttributedString" "objc2-foundation/NSBundle" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSImage" = [ "objc2-foundation/NSArray" "objc2-foundation/NSBundle" "objc2-foundation/NSCoder" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSItemProvider" "objc2-foundation/NSLocale" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/objc2-core-foundation" ];
+          "NSImageCell" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSImageRep" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/objc2-core-foundation" ];
+          "NSImageView" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSInputManager" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSGeometry" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSInputServer" = [ "objc2-foundation/NSGeometry" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSInterfaceStyle" = [ "objc2-foundation/NSString" ];
+          "NSItemBadge" = [ "objc2-foundation/NSString" ];
+          "NSItemProvider" = [ "objc2-foundation/NSGeometry" "objc2-foundation/NSItemProvider" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSKeyValueBinding" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSLayoutAnchor" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSLayoutConstraint" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSLayoutGuide" = [ "objc2-foundation/NSArray" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSLayoutManager" = [ "bitflags" "objc2-foundation/NSAffineTransform" "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSLevelIndicator" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSLevelIndicatorCell" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSMagnificationGestureRecognizer" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSObject" ];
+          "NSMatrix" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSMediaLibraryBrowserController" = [ "bitflags" "objc2-foundation/NSGeometry" "objc2-foundation/objc2-core-foundation" ];
+          "NSMenu" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSZone" "objc2-foundation/objc2-core-foundation" ];
+          "NSMenuItem" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSMenuItemBadge" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSMenuItemCell" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSMenuToolbarItem" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSMovie" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSObject" ];
+          "NSNib" = [ "objc2-foundation/NSArray" "objc2-foundation/NSBundle" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSNibConnector" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSNibControlConnector" = [ "objc2-foundation/NSObject" ];
+          "NSNibOutletConnector" = [ "objc2-foundation/NSObject" ];
+          "NSObjectController" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSPredicate" "objc2-foundation/NSString" ];
+          "NSOpenGL" = [ "objc2-foundation/NSData" "objc2-foundation/NSLock" "objc2-foundation/NSObject" ];
+          "NSOpenGLLayer" = [ "objc2-foundation/NSObject" ];
+          "NSOpenGLView" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSOpenPanel" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/objc2-core-foundation" ];
+          "NSOutlineView" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSIndexSet" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSSortDescriptor" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/objc2-core-foundation" ];
+          "NSPDFImageRep" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSData" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSPDFInfo" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/objc2-core-foundation" ];
+          "NSPDFPanel" = [ "bitflags" "objc2-foundation/NSString" ];
+          "NSPICTImageRep" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSData" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSPageController" = [ "objc2-foundation/NSArray" "objc2-foundation/NSBundle" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSPageLayout" = [ "objc2-foundation/NSArray" ];
+          "NSPanGestureRecognizer" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSPanel" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSParagraphStyle" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSCharacterSet" "objc2-foundation/NSDictionary" "objc2-foundation/NSLocale" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSPasteboard" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSFileWrapper" "objc2-foundation/NSSet" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSPasteboardItem" = [ "objc2-foundation/NSArray" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSSet" "objc2-foundation/NSString" ];
+          "NSPathCell" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/objc2-core-foundation" ];
+          "NSPathComponentCell" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSPathControl" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/objc2-core-foundation" ];
+          "NSPathControlItem" = [ "objc2-foundation/NSAttributedString" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSPersistentDocument" = [ "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSFilePresenter" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSPickerTouchBarItem" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSPopUpButton" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSPopUpButtonCell" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSPopover" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSPopoverTouchBarItem" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSPredicateEditor" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSPredicateEditorRowTemplate" = [ "objc2-foundation/NSArray" "objc2-foundation/NSComparisonPredicate" "objc2-foundation/NSExpression" "objc2-foundation/NSObject" "objc2-foundation/NSPredicate" "objc2-foundation/NSString" "objc2-foundation/NSValue" ];
+          "NSPressGestureRecognizer" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSDate" "objc2-foundation/NSObject" ];
+          "NSPreviewRepresentingActivityItem" = [ "objc2-foundation/NSItemProvider" "objc2-foundation/NSString" ];
+          "NSPrintInfo" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSPrintOperation" = [ "objc2-foundation/NSData" "objc2-foundation/NSGeometry" "objc2-foundation/NSObjCRuntime" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSPrintPanel" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSSet" "objc2-foundation/NSString" ];
+          "NSPrinter" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSProgressIndicator" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSDate" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSProgress" "objc2-foundation/objc2-core-foundation" ];
+          "NSResponder" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSUndoManager" ];
+          "NSRotationGestureRecognizer" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSObject" ];
+          "NSRuleEditor" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSIndexSet" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSPredicate" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSRulerMarker" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSRulerView" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSValue" "objc2-foundation/objc2-core-foundation" ];
+          "NSRunningApplication" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSDate" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSSavePanel" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSError" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/objc2-core-foundation" ];
+          "NSScreen" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDate" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSScrollView" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSScroller" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSScrubber" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSIndexSet" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSScrubberItemView" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSScrubberLayout" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSIndexSet" "objc2-foundation/NSObject" "objc2-foundation/NSSet" "objc2-foundation/objc2-core-foundation" ];
+          "NSSearchField" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSSearchFieldCell" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSSearchToolbarItem" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSSecureTextField" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSSegmentedCell" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSSegmentedControl" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSShadow" = [ "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSSharingCollaborationModeRestriction" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSSharingService" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSGeometry" "objc2-foundation/NSItemProvider" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/objc2-core-foundation" ];
+          "NSSharingServicePickerToolbarItem" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSSharingServicePickerTouchBarItem" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSSlider" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSSliderAccessory" = [ "objc2-foundation/NSObject" ];
+          "NSSliderCell" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSSliderTouchBarItem" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSSound" = [ "objc2-foundation/NSArray" "objc2-foundation/NSBundle" "objc2-foundation/NSData" "objc2-foundation/NSDate" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSSpeechRecognizer" = [ "objc2-foundation/NSArray" "objc2-foundation/NSString" ];
+          "NSSpeechSynthesizer" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSSpellChecker" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSOrthography" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/NSTextCheckingResult" "objc2-foundation/objc2-core-foundation" ];
+          "NSSplitView" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSSplitViewController" = [ "objc2-foundation/NSArray" "objc2-foundation/NSBundle" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSSplitViewItem" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" ];
+          "NSSplitViewItemAccessoryViewController" = [ "objc2-foundation/NSBundle" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSStackView" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSStatusBarButton" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSStatusItem" = [ "bitflags" "objc2-foundation/NSAttributedString" "objc2-foundation/NSGeometry" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSStepper" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSStepperCell" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSStepperTouchBarItem" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSFormatter" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSStoryboard" = [ "objc2-foundation/NSBundle" "objc2-foundation/NSCoder" "objc2-foundation/NSString" ];
+          "NSStoryboardSegue" = [ "objc2-foundation/NSString" ];
+          "NSStringDrawing" = [ "bitflags" "objc2-foundation/NSAttributedString" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSSwitch" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSTabView" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSTabViewController" = [ "objc2-foundation/NSArray" "objc2-foundation/NSBundle" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSTabViewItem" = [ "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSTableCellView" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSTableColumn" = [ "bitflags" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSSortDescriptor" "objc2-foundation/NSString" ];
+          "NSTableHeaderCell" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSTableHeaderView" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSTableRowView" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSTableView" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSDictionary" "objc2-foundation/NSEnumerator" "objc2-foundation/NSGeometry" "objc2-foundation/NSIndexSet" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSSortDescriptor" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/objc2-core-foundation" ];
+          "NSTableViewRowAction" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSText" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSData" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSTextAlternatives" = [ "objc2-foundation/NSArray" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSTextAttachment" = [ "objc2-foundation/NSAttributedString" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSFileWrapper" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSTextAttachmentCell" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSTextCheckingClient" = [ "bitflags" "objc2-foundation/NSAttributedString" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSTextCheckingController" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSDictionary" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/NSTextCheckingResult" ];
+          "NSTextContainer" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSTextContent" = [ "objc2-foundation/NSString" ];
+          "NSTextContentManager" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSError" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" ];
+          "NSTextElement" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" ];
+          "NSTextField" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/NSTextCheckingResult" "objc2-foundation/objc2-core-foundation" ];
+          "NSTextFieldCell" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSTextFinder" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/NSValue" "objc2-foundation/objc2-core-foundation" ];
+          "NSTextInputClient" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSGeometry" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSTextInputContext" = [ "objc2-foundation/NSArray" "objc2-foundation/NSNotification" "objc2-foundation/NSString" ];
+          "NSTextInsertionIndicator" = [ "bitflags" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSTextLayoutFragment" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSOperation" ];
+          "NSTextLayoutManager" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSOperation" "objc2-foundation/NSString" ];
+          "NSTextLineFragment" = [ "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" ];
+          "NSTextList" = [ "bitflags" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSTextListElement" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSDictionary" "objc2-foundation/NSString" ];
+          "NSTextRange" = [ "objc2-foundation/NSObjCRuntime" ];
+          "NSTextSelection" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSTextSelectionNavigation" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSString" ];
+          "NSTextStorage" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" ];
+          "NSTextStorageScripting" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" ];
+          "NSTextTable" = [ "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/objc2-core-foundation" ];
+          "NSTextView" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSOrthography" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/NSTextCheckingResult" "objc2-foundation/NSURL" "objc2-foundation/NSUndoManager" "objc2-foundation/NSValue" "objc2-foundation/objc2-core-foundation" ];
+          "NSTintConfiguration" = [ "objc2-foundation/NSObject" ];
+          "NSTitlebarAccessoryViewController" = [ "objc2-foundation/NSBundle" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSTokenField" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCharacterSet" "objc2-foundation/NSCoder" "objc2-foundation/NSDate" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSTokenFieldCell" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCharacterSet" "objc2-foundation/NSCoder" "objc2-foundation/NSDate" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSToolbar" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSNotification" "objc2-foundation/NSSet" "objc2-foundation/NSString" ];
+          "NSToolbarItem" = [ "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSSet" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSToolbarItemGroup" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSTouch" = [ "bitflags" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSTouchBar" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSSet" "objc2-foundation/NSString" ];
+          "NSTouchBarItem" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSTrackingArea" = [ "bitflags" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSTrackingSeparatorToolbarItem" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSTreeController" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSIndexPath" "objc2-foundation/NSObject" "objc2-foundation/NSSortDescriptor" "objc2-foundation/NSString" ];
+          "NSTreeNode" = [ "objc2-foundation/NSArray" "objc2-foundation/NSIndexPath" "objc2-foundation/NSSortDescriptor" ];
+          "NSTypesetter" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSUserActivity" = [ "objc2-foundation/NSString" "objc2-foundation/NSUserActivity" ];
+          "NSUserDefaultsController" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSUserDefaults" ];
+          "NSUserInterfaceCompression" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSSet" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSUserInterfaceItemIdentification" = [ "objc2-foundation/NSString" ];
+          "NSUserInterfaceItemSearching" = [ "objc2-foundation/NSArray" "objc2-foundation/NSRange" "objc2-foundation/NSString" ];
+          "NSView" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSCoder" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObjCRuntime" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSViewController" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSBundle" "objc2-foundation/NSCoder" "objc2-foundation/NSExtensionContext" "objc2-foundation/NSExtensionRequestHandling" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/objc2-core-foundation" ];
+          "NSViewLayoutRegion" = [ "objc2-foundation/NSGeometry" "objc2-foundation/objc2-core-foundation" ];
+          "NSVisualEffectView" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSGeometry" "objc2-foundation/NSObject" "objc2-foundation/objc2-core-foundation" ];
+          "NSWindow" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSData" "objc2-foundation/NSDate" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObjCRuntime" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/NSUndoManager" "objc2-foundation/NSValue" "objc2-foundation/objc2-core-foundation" ];
+          "NSWindowController" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSWindowRestoration" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSError" "objc2-foundation/NSNotification" "objc2-foundation/NSOperation" "objc2-foundation/NSString" ];
+          "NSWindowScripting" = [ "objc2-foundation/NSScriptCommand" "objc2-foundation/NSScriptStandardSuiteCommands" ];
+          "NSWindowTab" = [ "objc2-foundation/NSAttributedString" "objc2-foundation/NSString" ];
+          "NSWindowTabGroup" = [ "objc2-foundation/NSArray" "objc2-foundation/NSString" ];
+          "NSWorkspace" = [ "bitflags" "objc2-foundation/NSAppleEventDescriptor" "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSFileManager" "objc2-foundation/NSGeometry" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/NSValue" "objc2-foundation/objc2-core-foundation" ];
+          "NSWritingToolsCoordinator" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSGeometry" "objc2-foundation/NSRange" "objc2-foundation/NSUUID" "objc2-foundation/NSValue" "objc2-foundation/objc2-core-foundation" ];
+          "NSWritingToolsCoordinatorContext" = [ "objc2-foundation/NSAttributedString" "objc2-foundation/NSRange" "objc2-foundation/NSUUID" ];
+          "bitflags" = [ "dep:bitflags" ];
+          "block2" = [ "dep:block2" ];
+          "default" = [ "std" "AppKitDefines" "AppKitErrors" "NSATSTypesetter" "NSAccessibility" "NSAccessibilityColor" "NSAccessibilityConstants" "NSAccessibilityCustomAction" "NSAccessibilityCustomRotor" "NSAccessibilityElement" "NSAccessibilityProtocols" "NSActionCell" "NSAdaptiveImageGlyph" "NSAffineTransform" "NSAlert" "NSAlignmentFeedbackFilter" "NSAnimation" "NSAnimationContext" "NSAppearance" "NSAppleScriptExtensions" "NSApplication" "NSApplicationScripting" "NSArrayController" "NSAttributedString" "NSBackgroundExtensionView" "NSBezierPath" "NSBitmapImageRep" "NSBox" "NSBrowser" "NSBrowserCell" "NSButton" "NSButtonCell" "NSButtonTouchBarItem" "NSCIImageRep" "NSCachedImageRep" "NSCandidateListTouchBarItem" "NSCell" "NSClickGestureRecognizer" "NSClipView" "NSCollectionView" "NSCollectionViewCompositionalLayout" "NSCollectionViewFlowLayout" "NSCollectionViewGridLayout" "NSCollectionViewLayout" "NSCollectionViewTransitionLayout" "NSColor" "NSColorList" "NSColorPanel" "NSColorPicker" "NSColorPickerTouchBarItem" "NSColorPicking" "NSColorSampler" "NSColorSpace" "NSColorWell" "NSComboBox" "NSComboBoxCell" "NSComboButton" "NSControl" "NSController" "NSCursor" "NSCustomImageRep" "NSCustomTouchBarItem" "NSDataAsset" "NSDatePicker" "NSDatePickerCell" "NSDictionaryController" "NSDiffableDataSource" "NSDirection" "NSDockTile" "NSDocument" "NSDocumentController" "NSDocumentScripting" "NSDragging" "NSDraggingItem" "NSDraggingSession" "NSDrawer" "NSEPSImageRep" "NSErrors" "NSEvent" "NSFilePromiseProvider" "NSFilePromiseReceiver" "NSFileWrapperExtensions" "NSFont" "NSFontAssetRequest" "NSFontCollection" "NSFontDescriptor" "NSFontManager" "NSFontPanel" "NSForm" "NSFormCell" "NSGestureRecognizer" "NSGlassEffectView" "NSGlyphGenerator" "NSGlyphInfo" "NSGradient" "NSGraphics" "NSGraphicsContext" "NSGridView" "NSGroupTouchBarItem" "NSHapticFeedback" "NSHelpManager" "NSImage" "NSImageCell" "NSImageRep" "NSImageView" "NSInputManager" "NSInputServer" "NSInterfaceStyle" "NSItemBadge" "NSItemProvider" "NSKeyValueBinding" "NSLayoutAnchor" "NSLayoutConstraint" "NSLayoutGuide" "NSLayoutManager" "NSLevelIndicator" "NSLevelIndicatorCell" "NSMagnificationGestureRecognizer" "NSMatrix" "NSMediaLibraryBrowserController" "NSMenu" "NSMenuItem" "NSMenuItemBadge" "NSMenuItemCell" "NSMenuToolbarItem" "NSMovie" "NSNib" "NSNibConnector" "NSNibControlConnector" "NSNibDeclarations" "NSNibLoading" "NSNibOutletConnector" "NSObjectController" "NSOpenGL" "NSOpenGLLayer" "NSOpenGLView" "NSOpenPanel" "NSOutlineView" "NSPDFImageRep" "NSPDFInfo" "NSPDFPanel" "NSPICTImageRep" "NSPageController" "NSPageLayout" "NSPanGestureRecognizer" "NSPanel" "NSParagraphStyle" "NSPasteboard" "NSPasteboardItem" "NSPathCell" "NSPathComponentCell" "NSPathControl" "NSPathControlItem" "NSPersistentDocument" "NSPickerTouchBarItem" "NSPopUpButton" "NSPopUpButtonCell" "NSPopover" "NSPopoverTouchBarItem" "NSPredicateEditor" "NSPredicateEditorRowTemplate" "NSPressGestureRecognizer" "NSPressureConfiguration" "NSPreviewRepresentingActivityItem" "NSPrintInfo" "NSPrintOperation" "NSPrintPanel" "NSPrinter" "NSProgressIndicator" "NSResponder" "NSRotationGestureRecognizer" "NSRuleEditor" "NSRulerMarker" "NSRulerView" "NSRunningApplication" "NSSavePanel" "NSScreen" "NSScrollView" "NSScroller" "NSScrubber" "NSScrubberItemView" "NSScrubberLayout" "NSSearchField" "NSSearchFieldCell" "NSSearchToolbarItem" "NSSecureTextField" "NSSegmentedCell" "NSSegmentedControl" "NSShadow" "NSSharingCollaborationModeRestriction" "NSSharingService" "NSSharingServicePickerToolbarItem" "NSSharingServicePickerTouchBarItem" "NSSlider" "NSSliderAccessory" "NSSliderCell" "NSSliderTouchBarItem" "NSSound" "NSSpeechRecognizer" "NSSpeechSynthesizer" "NSSpellChecker" "NSSpellProtocol" "NSSplitView" "NSSplitViewController" "NSSplitViewItem" "NSSplitViewItemAccessoryViewController" "NSStackView" "NSStatusBar" "NSStatusBarButton" "NSStatusItem" "NSStepper" "NSStepperCell" "NSStepperTouchBarItem" "NSStoryboard" "NSStoryboardSegue" "NSStringDrawing" "NSSwitch" "NSTabView" "NSTabViewController" "NSTabViewItem" "NSTableCellView" "NSTableColumn" "NSTableHeaderCell" "NSTableHeaderView" "NSTableRowView" "NSTableView" "NSTableViewDiffableDataSource" "NSTableViewRowAction" "NSText" "NSTextAlternatives" "NSTextAttachment" "NSTextAttachmentCell" "NSTextCheckingClient" "NSTextCheckingController" "NSTextContainer" "NSTextContent" "NSTextContentManager" "NSTextElement" "NSTextField" "NSTextFieldCell" "NSTextFinder" "NSTextInputClient" "NSTextInputContext" "NSTextInsertionIndicator" "NSTextLayoutFragment" "NSTextLayoutManager" "NSTextLineFragment" "NSTextList" "NSTextListElement" "NSTextRange" "NSTextSelection" "NSTextSelectionNavigation" "NSTextStorage" "NSTextStorageScripting" "NSTextTable" "NSTextView" "NSTextViewportLayoutController" "NSTintConfiguration" "NSTintProminence" "NSTitlebarAccessoryViewController" "NSTokenField" "NSTokenFieldCell" "NSToolbar" "NSToolbarItem" "NSToolbarItemGroup" "NSTouch" "NSTouchBar" "NSTouchBarItem" "NSTrackingArea" "NSTrackingSeparatorToolbarItem" "NSTreeController" "NSTreeNode" "NSTypesetter" "NSUserActivity" "NSUserDefaultsController" "NSUserInterfaceCompression" "NSUserInterfaceItemIdentification" "NSUserInterfaceItemSearching" "NSUserInterfaceLayout" "NSUserInterfaceValidation" "NSView" "NSViewController" "NSViewLayoutRegion" "NSVisualEffectView" "NSWindow" "NSWindowController" "NSWindowRestoration" "NSWindowScripting" "NSWindowTab" "NSWindowTabGroup" "NSWorkspace" "NSWritingToolsCoordinator" "NSWritingToolsCoordinatorAnimationParameters" "NSWritingToolsCoordinatorContext" "bitflags" "block2" "libc" "objc2-cloud-kit" "objc2-core-data" "objc2-core-foundation" "objc2-core-graphics" "objc2-core-image" "objc2-core-text" "objc2-core-video" "objc2-quartz-core" ];
+          "gnustep-1-7" = [ "objc2/gnustep-1-7" "block2?/gnustep-1-7" "objc2-foundation/gnustep-1-7" "objc2-core-data?/gnustep-1-7" "objc2-quartz-core?/gnustep-1-7" ];
+          "gnustep-1-8" = [ "gnustep-1-7" "objc2/gnustep-1-8" "block2?/gnustep-1-8" "objc2-foundation/gnustep-1-8" "objc2-core-data?/gnustep-1-8" "objc2-quartz-core?/gnustep-1-8" ];
+          "gnustep-1-9" = [ "gnustep-1-8" "objc2/gnustep-1-9" "block2?/gnustep-1-9" "objc2-foundation/gnustep-1-9" "objc2-core-data?/gnustep-1-9" "objc2-quartz-core?/gnustep-1-9" ];
+          "gnustep-2-0" = [ "gnustep-1-9" "objc2/gnustep-2-0" "block2?/gnustep-2-0" "objc2-foundation/gnustep-2-0" "objc2-core-data?/gnustep-2-0" "objc2-quartz-core?/gnustep-2-0" ];
+          "gnustep-2-1" = [ "gnustep-2-0" "objc2/gnustep-2-1" "block2?/gnustep-2-1" "objc2-foundation/gnustep-2-1" "objc2-core-data?/gnustep-2-1" "objc2-quartz-core?/gnustep-2-1" ];
+          "libc" = [ "dep:libc" ];
+          "objc2-cloud-kit" = [ "dep:objc2-cloud-kit" ];
+          "objc2-core-data" = [ "dep:objc2-core-data" ];
+          "objc2-core-foundation" = [ "dep:objc2-core-foundation" ];
+          "objc2-core-graphics" = [ "dep:objc2-core-graphics" ];
+          "objc2-core-image" = [ "dep:objc2-core-image" ];
+          "objc2-core-text" = [ "dep:objc2-core-text" ];
+          "objc2-core-video" = [ "dep:objc2-core-video" ];
+          "objc2-open-gl" = [ "dep:objc2-open-gl" ];
+          "objc2-quartz-core" = [ "dep:objc2-quartz-core" ];
+          "objc2-uniform-type-identifiers" = [ "dep:objc2-uniform-type-identifiers" ];
+          "std" = [ "alloc" ];
+        };
+        resolvedDefaultFeatures = [ "AppKitDefines" "AppKitErrors" "NSATSTypesetter" "NSAccessibility" "NSAccessibilityColor" "NSAccessibilityConstants" "NSAccessibilityCustomAction" "NSAccessibilityCustomRotor" "NSAccessibilityElement" "NSAccessibilityProtocols" "NSActionCell" "NSAdaptiveImageGlyph" "NSAffineTransform" "NSAlert" "NSAlignmentFeedbackFilter" "NSAnimation" "NSAnimationContext" "NSAppearance" "NSAppleScriptExtensions" "NSApplication" "NSApplicationScripting" "NSArrayController" "NSAttributedString" "NSBackgroundExtensionView" "NSBezierPath" "NSBitmapImageRep" "NSBox" "NSBrowser" "NSBrowserCell" "NSButton" "NSButtonCell" "NSButtonTouchBarItem" "NSCIImageRep" "NSCachedImageRep" "NSCandidateListTouchBarItem" "NSCell" "NSClickGestureRecognizer" "NSClipView" "NSCollectionView" "NSCollectionViewCompositionalLayout" "NSCollectionViewFlowLayout" "NSCollectionViewGridLayout" "NSCollectionViewLayout" "NSCollectionViewTransitionLayout" "NSColor" "NSColorList" "NSColorPanel" "NSColorPicker" "NSColorPickerTouchBarItem" "NSColorPicking" "NSColorSampler" "NSColorSpace" "NSColorWell" "NSComboBox" "NSComboBoxCell" "NSComboButton" "NSControl" "NSController" "NSCursor" "NSCustomImageRep" "NSCustomTouchBarItem" "NSDataAsset" "NSDatePicker" "NSDatePickerCell" "NSDictionaryController" "NSDiffableDataSource" "NSDirection" "NSDockTile" "NSDocument" "NSDocumentController" "NSDocumentScripting" "NSDragging" "NSDraggingItem" "NSDraggingSession" "NSDrawer" "NSEPSImageRep" "NSErrors" "NSEvent" "NSFilePromiseProvider" "NSFilePromiseReceiver" "NSFileWrapperExtensions" "NSFont" "NSFontAssetRequest" "NSFontCollection" "NSFontDescriptor" "NSFontManager" "NSFontPanel" "NSForm" "NSFormCell" "NSGestureRecognizer" "NSGlassEffectView" "NSGlyphGenerator" "NSGlyphInfo" "NSGradient" "NSGraphics" "NSGraphicsContext" "NSGridView" "NSGroupTouchBarItem" "NSHapticFeedback" "NSHelpManager" "NSImage" "NSImageCell" "NSImageRep" "NSImageView" "NSInputManager" "NSInputServer" "NSInterfaceStyle" "NSItemBadge" "NSItemProvider" "NSKeyValueBinding" "NSLayoutAnchor" "NSLayoutConstraint" "NSLayoutGuide" "NSLayoutManager" "NSLevelIndicator" "NSLevelIndicatorCell" "NSMagnificationGestureRecognizer" "NSMatrix" "NSMediaLibraryBrowserController" "NSMenu" "NSMenuItem" "NSMenuItemBadge" "NSMenuItemCell" "NSMenuToolbarItem" "NSMovie" "NSNib" "NSNibConnector" "NSNibControlConnector" "NSNibDeclarations" "NSNibLoading" "NSNibOutletConnector" "NSObjectController" "NSOpenGL" "NSOpenGLLayer" "NSOpenGLView" "NSOpenPanel" "NSOutlineView" "NSPDFImageRep" "NSPDFInfo" "NSPDFPanel" "NSPICTImageRep" "NSPageController" "NSPageLayout" "NSPanGestureRecognizer" "NSPanel" "NSParagraphStyle" "NSPasteboard" "NSPasteboardItem" "NSPathCell" "NSPathComponentCell" "NSPathControl" "NSPathControlItem" "NSPersistentDocument" "NSPickerTouchBarItem" "NSPopUpButton" "NSPopUpButtonCell" "NSPopover" "NSPopoverTouchBarItem" "NSPredicateEditor" "NSPredicateEditorRowTemplate" "NSPressGestureRecognizer" "NSPressureConfiguration" "NSPreviewRepresentingActivityItem" "NSPrintInfo" "NSPrintOperation" "NSPrintPanel" "NSPrinter" "NSProgressIndicator" "NSResponder" "NSRotationGestureRecognizer" "NSRuleEditor" "NSRulerMarker" "NSRulerView" "NSRunningApplication" "NSSavePanel" "NSScreen" "NSScrollView" "NSScroller" "NSScrubber" "NSScrubberItemView" "NSScrubberLayout" "NSSearchField" "NSSearchFieldCell" "NSSearchToolbarItem" "NSSecureTextField" "NSSegmentedCell" "NSSegmentedControl" "NSShadow" "NSSharingCollaborationModeRestriction" "NSSharingService" "NSSharingServicePickerToolbarItem" "NSSharingServicePickerTouchBarItem" "NSSlider" "NSSliderAccessory" "NSSliderCell" "NSSliderTouchBarItem" "NSSound" "NSSpeechRecognizer" "NSSpeechSynthesizer" "NSSpellChecker" "NSSpellProtocol" "NSSplitView" "NSSplitViewController" "NSSplitViewItem" "NSSplitViewItemAccessoryViewController" "NSStackView" "NSStatusBar" "NSStatusBarButton" "NSStatusItem" "NSStepper" "NSStepperCell" "NSStepperTouchBarItem" "NSStoryboard" "NSStoryboardSegue" "NSStringDrawing" "NSSwitch" "NSTabView" "NSTabViewController" "NSTabViewItem" "NSTableCellView" "NSTableColumn" "NSTableHeaderCell" "NSTableHeaderView" "NSTableRowView" "NSTableView" "NSTableViewDiffableDataSource" "NSTableViewRowAction" "NSText" "NSTextAlternatives" "NSTextAttachment" "NSTextAttachmentCell" "NSTextCheckingClient" "NSTextCheckingController" "NSTextContainer" "NSTextContent" "NSTextContentManager" "NSTextElement" "NSTextField" "NSTextFieldCell" "NSTextFinder" "NSTextInputClient" "NSTextInputContext" "NSTextInsertionIndicator" "NSTextLayoutFragment" "NSTextLayoutManager" "NSTextLineFragment" "NSTextList" "NSTextListElement" "NSTextRange" "NSTextSelection" "NSTextSelectionNavigation" "NSTextStorage" "NSTextStorageScripting" "NSTextTable" "NSTextView" "NSTextViewportLayoutController" "NSTintConfiguration" "NSTintProminence" "NSTitlebarAccessoryViewController" "NSTokenField" "NSTokenFieldCell" "NSToolbar" "NSToolbarItem" "NSToolbarItemGroup" "NSTouch" "NSTouchBar" "NSTouchBarItem" "NSTrackingArea" "NSTrackingSeparatorToolbarItem" "NSTreeController" "NSTreeNode" "NSTypesetter" "NSUserActivity" "NSUserDefaultsController" "NSUserInterfaceCompression" "NSUserInterfaceItemIdentification" "NSUserInterfaceItemSearching" "NSUserInterfaceLayout" "NSUserInterfaceValidation" "NSView" "NSViewController" "NSViewLayoutRegion" "NSVisualEffectView" "NSWindow" "NSWindowController" "NSWindowRestoration" "NSWindowScripting" "NSWindowTab" "NSWindowTabGroup" "NSWorkspace" "NSWritingToolsCoordinator" "NSWritingToolsCoordinatorAnimationParameters" "NSWritingToolsCoordinatorContext" "alloc" "bitflags" "block2" "default" "libc" "objc2-cloud-kit" "objc2-core-data" "objc2-core-foundation" "objc2-core-graphics" "objc2-core-image" "objc2-core-text" "objc2-core-video" "objc2-quartz-core" "std" ];
+      };
+      "objc2-cloud-kit" = rec {
+        crateName = "objc2-cloud-kit";
+        version = "0.3.2";
+        edition = "2021";
+        sha256 = "0714xrydi9wvh25s2110sjfpx9mv4xs9p4ys71q8fhxvh3c79bbk";
+        libName = "objc2_cloud_kit";
+        dependencies = [
+          {
+            name = "bitflags";
+            packageId = "bitflags";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2";
+            packageId = "objc2";
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2-foundation";
+            packageId = "objc2-foundation";
+            usesDefaultFeatures = false;
+            features = [ "alloc" ];
+          }
+        ];
+        features = {
+          "CKAcceptSharesOperation" = [ "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSOperation" ];
+          "CKAllowedSharingOptions" = [ "bitflags" "objc2-foundation/NSObject" ];
+          "CKAsset" = [ "objc2-foundation/NSURL" ];
+          "CKContainer" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSOperation" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "CKDatabase" = [ "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSOperation" "objc2-foundation/NSString" ];
+          "CKDatabaseOperation" = [ "objc2-foundation/NSOperation" ];
+          "CKDiscoverAllUserIdentitiesOperation" = [ "objc2-foundation/NSError" "objc2-foundation/NSOperation" ];
+          "CKDiscoverUserIdentitiesOperation" = [ "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSOperation" ];
+          "CKError" = [ "objc2-foundation/NSString" ];
+          "CKFetchDatabaseChangesOperation" = [ "objc2-foundation/NSError" "objc2-foundation/NSOperation" ];
+          "CKFetchNotificationChangesOperation" = [ "objc2-foundation/NSOperation" ];
+          "CKFetchRecordChangesOperation" = [ "objc2-foundation/NSArray" "objc2-foundation/NSData" "objc2-foundation/NSError" "objc2-foundation/NSOperation" "objc2-foundation/NSString" ];
+          "CKFetchRecordZoneChangesOperation" = [ "objc2-foundation/NSArray" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSOperation" "objc2-foundation/NSString" ];
+          "CKFetchRecordZonesOperation" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSOperation" ];
+          "CKFetchRecordsOperation" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSOperation" "objc2-foundation/NSString" ];
+          "CKFetchShareMetadataOperation" = [ "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSOperation" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "CKFetchShareParticipantsOperation" = [ "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSOperation" ];
+          "CKFetchSubscriptionsOperation" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSOperation" "objc2-foundation/NSString" ];
+          "CKFetchWebAuthTokenOperation" = [ "objc2-foundation/NSError" "objc2-foundation/NSOperation" "objc2-foundation/NSString" ];
+          "CKLocationSortDescriptor" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSObjCRuntime" "objc2-foundation/NSObject" "objc2-foundation/NSSortDescriptor" "objc2-foundation/NSString" "objc2-foundation/block2" ];
+          "CKMarkNotificationsReadOperation" = [ "objc2-foundation/NSOperation" ];
+          "CKModifyBadgeOperation" = [ "objc2-foundation/NSOperation" ];
+          "CKModifyRecordZonesOperation" = [ "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSOperation" ];
+          "CKModifyRecordsOperation" = [ "objc2-foundation/NSArray" "objc2-foundation/NSData" "objc2-foundation/NSError" "objc2-foundation/NSOperation" ];
+          "CKModifySubscriptionsOperation" = [ "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSOperation" "objc2-foundation/NSString" ];
+          "CKNotification" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSValue" ];
+          "CKOperation" = [ "objc2-foundation/NSDate" "objc2-foundation/NSObjCRuntime" "objc2-foundation/NSOperation" "objc2-foundation/NSString" ];
+          "CKOperationGroup" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "CKQuery" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSPredicate" "objc2-foundation/NSSortDescriptor" "objc2-foundation/NSString" ];
+          "CKQueryOperation" = [ "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSOperation" "objc2-foundation/NSString" ];
+          "CKRecord" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSData" "objc2-foundation/NSDate" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSValue" ];
+          "CKRecordID" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "CKRecordZone" = [ "bitflags" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "CKRecordZoneID" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "CKReference" = [ "objc2-foundation/NSObject" ];
+          "CKServerChangeToken" = [ "objc2-foundation/NSObject" ];
+          "CKShare" = [ "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "CKShareAccessRequester" = [ "objc2-foundation/NSObject" ];
+          "CKShareBlockedIdentity" = [ "objc2-foundation/NSObject" ];
+          "CKShareMetadata" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "CKShareParticipant" = [ "objc2-foundation/NSDate" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "CKShareRequestAccessOperation" = [ "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSOperation" "objc2-foundation/NSURL" ];
+          "CKSubscription" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSCoder" "objc2-foundation/NSObject" "objc2-foundation/NSPredicate" "objc2-foundation/NSString" ];
+          "CKSyncEngine" = [ "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSSet" ];
+          "CKSyncEngineConfiguration" = [ "objc2-foundation/NSString" ];
+          "CKSyncEngineEvent" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSString" ];
+          "CKSyncEngineRecordZoneChangeBatch" = [ "objc2-foundation/NSArray" ];
+          "CKSyncEngineState" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" ];
+          "CKSystemSharingUIObserver" = [ "objc2-foundation/NSError" ];
+          "CKUserIdentity" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" "objc2-foundation/NSPersonNameComponents" "objc2-foundation/NSString" ];
+          "CKUserIdentityLookupInfo" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSItemProvider_CKSharingSupport" = [ "objc2-foundation/NSError" "objc2-foundation/NSItemProvider" ];
+          "bitflags" = [ "dep:bitflags" ];
+          "block2" = [ "dep:block2" ];
+          "default" = [ "std" "CKAcceptSharesOperation" "CKAllowedSharingOptions" "CKAsset" "CKContainer" "CKDatabase" "CKDatabaseOperation" "CKDefines" "CKDiscoverAllUserIdentitiesOperation" "CKDiscoverUserIdentitiesOperation" "CKError" "CKFetchDatabaseChangesOperation" "CKFetchNotificationChangesOperation" "CKFetchRecordChangesOperation" "CKFetchRecordZoneChangesOperation" "CKFetchRecordZonesOperation" "CKFetchRecordsOperation" "CKFetchShareMetadataOperation" "CKFetchShareParticipantsOperation" "CKFetchSubscriptionsOperation" "CKFetchWebAuthTokenOperation" "CKLocationSortDescriptor" "CKMarkNotificationsReadOperation" "CKModifyBadgeOperation" "CKModifyRecordZonesOperation" "CKModifyRecordsOperation" "CKModifySubscriptionsOperation" "CKNotification" "CKOperation" "CKOperationGroup" "CKQuery" "CKQueryOperation" "CKRecord" "CKRecordID" "CKRecordZone" "CKRecordZoneID" "CKReference" "CKServerChangeToken" "CKShare" "CKShareAccessRequester" "CKShareBlockedIdentity" "CKShareMetadata" "CKShareParticipant" "CKShareRequestAccessOperation" "CKSubscription" "CKSyncEngine" "CKSyncEngineConfiguration" "CKSyncEngineEvent" "CKSyncEngineRecordZoneChangeBatch" "CKSyncEngineState" "CKSystemSharingUIObserver" "CKUserIdentity" "CKUserIdentityLookupInfo" "NSItemProvider_CKSharingSupport" "bitflags" "block2" "objc2-contacts" "objc2-core-location" ];
+          "objc2-contacts" = [ "dep:objc2-contacts" ];
+          "objc2-core-location" = [ "dep:objc2-core-location" ];
+          "std" = [ "alloc" ];
+        };
+        resolvedDefaultFeatures = [ "CKContainer" "CKRecord" "CKShare" "CKShareMetadata" "bitflags" ];
+      };
+      "objc2-core-data" = rec {
+        crateName = "objc2-core-data";
+        version = "0.3.2";
+        edition = "2021";
+        sha256 = "1ylqsa6hpma7k4090pkil8b7c0i8dcxnh46zwhnfidgv7rjjlh0b";
+        libName = "objc2_core_data";
+        dependencies = [
+          {
+            name = "bitflags";
+            packageId = "bitflags";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2";
+            packageId = "objc2";
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2-foundation";
+            packageId = "objc2-foundation";
+            usesDefaultFeatures = false;
+            features = [ "alloc" ];
+          }
+        ];
+        features = {
+          "CloudKit" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSSet" ];
+          "CoreDataErrors" = [ "objc2-foundation/NSString" ];
+          "NSAtomicStore" = [ "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSSet" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSAtomicStoreCacheNode" = [ "objc2-foundation/NSDictionary" "objc2-foundation/NSString" ];
+          "NSAttributeDescription" = [ "objc2-foundation/NSData" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSBatchDeleteRequest" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" ];
+          "NSBatchInsertRequest" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSBatchUpdateRequest" = [ "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSPredicate" "objc2-foundation/NSString" ];
+          "NSCompositeAttributeDescription" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" ];
+          "NSCoreDataCoreSpotlightDelegate" = [ "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSNotification" "objc2-foundation/NSString" ];
+          "NSCustomMigrationStage" = [ "objc2-foundation/NSError" ];
+          "NSDerivedAttributeDescription" = [ "objc2-foundation/NSExpression" "objc2-foundation/NSObject" ];
+          "NSEntityDescription" = [ "objc2-foundation/NSArray" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSEnumerator" "objc2-foundation/NSExpression" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSEntityMapping" = [ "objc2-foundation/NSArray" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSExpression" "objc2-foundation/NSString" ];
+          "NSEntityMigrationPolicy" = [ "objc2-foundation/NSError" "objc2-foundation/NSString" ];
+          "NSExpressionDescription" = [ "objc2-foundation/NSExpression" "objc2-foundation/NSObject" ];
+          "NSFetchIndexDescription" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" "objc2-foundation/NSPredicate" "objc2-foundation/NSString" ];
+          "NSFetchIndexElementDescription" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSFetchRequest" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSPredicate" "objc2-foundation/NSSortDescriptor" "objc2-foundation/NSString" "objc2-foundation/NSValue" ];
+          "NSFetchRequestExpression" = [ "objc2-foundation/NSCoder" "objc2-foundation/NSExpression" "objc2-foundation/NSObject" ];
+          "NSFetchedPropertyDescription" = [ "objc2-foundation/NSObject" ];
+          "NSFetchedResultsController" = [ "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSIndexPath" "objc2-foundation/NSOrderedCollectionDifference" "objc2-foundation/NSString" "NSFetchRequest" ];
+          "NSIncrementalStore" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSIncrementalStoreNode" = [ "objc2-foundation/NSDictionary" "objc2-foundation/NSString" ];
+          "NSLightweightMigrationStage" = [ "objc2-foundation/NSArray" "objc2-foundation/NSString" ];
+          "NSManagedObject" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSKeyValueObserving" "objc2-foundation/NSSet" "objc2-foundation/NSString" ];
+          "NSManagedObjectContext" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDate" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSLock" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSSet" "objc2-foundation/NSString" "objc2-foundation/NSUndoManager" ];
+          "NSManagedObjectID" = [ "objc2-foundation/NSObject" "objc2-foundation/NSURL" ];
+          "NSManagedObjectModel" = [ "objc2-foundation/NSArray" "objc2-foundation/NSBundle" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSEnumerator" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSSet" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSManagedObjectModelReference" = [ "objc2-foundation/NSBundle" "objc2-foundation/NSDictionary" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSMappingModel" = [ "objc2-foundation/NSArray" "objc2-foundation/NSBundle" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSMergePolicy" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSString" ];
+          "NSMigrationManager" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSMigrationStage" = [ "objc2-foundation/NSString" ];
+          "NSPersistentCloudKitContainer" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSString" ];
+          "NSPersistentCloudKitContainerEvent" = [ "objc2-foundation/NSDate" "objc2-foundation/NSError" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSUUID" ];
+          "NSPersistentCloudKitContainerEventRequest" = [ "objc2-foundation/NSDate" "objc2-foundation/NSObject" ];
+          "NSPersistentCloudKitContainerOptions" = [ "objc2-foundation/NSString" ];
+          "NSPersistentContainer" = [ "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSPersistentHistoryChange" = [ "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSSet" ];
+          "NSPersistentHistoryChangeRequest" = [ "objc2-foundation/NSDate" "objc2-foundation/NSObject" ];
+          "NSPersistentHistoryToken" = [ "objc2-foundation/NSObject" ];
+          "NSPersistentHistoryTransaction" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDate" "objc2-foundation/NSNotification" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "NSPersistentStore" = [ "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSPersistentStoreCoordinator" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSLock" "objc2-foundation/NSString" "objc2-foundation/NSURL" "objc2-foundation/NSValue" ];
+          "NSPersistentStoreDescription" = [ "objc2-foundation/NSDate" "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "NSPersistentStoreRequest" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" ];
+          "NSPersistentStoreResult" = [ "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSProgress" "NSFetchRequest" ];
+          "NSPropertyDescription" = [ "objc2-foundation/NSArray" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSPredicate" "objc2-foundation/NSString" ];
+          "NSPropertyMapping" = [ "objc2-foundation/NSDictionary" "objc2-foundation/NSExpression" "objc2-foundation/NSString" ];
+          "NSQueryGenerationToken" = [ "objc2-foundation/NSObject" ];
+          "NSRelationshipDescription" = [ "objc2-foundation/NSData" "objc2-foundation/NSObject" ];
+          "NSSaveChangesRequest" = [ "objc2-foundation/NSObject" "objc2-foundation/NSSet" ];
+          "NSStagedMigrationManager" = [ "objc2-foundation/NSArray" ];
+          "bitflags" = [ "dep:bitflags" ];
+          "block2" = [ "dep:block2" ];
+          "default" = [ "std" "CloudKit" "CoreDataDefines" "CoreDataErrors" "NSAtomicStore" "NSAtomicStoreCacheNode" "NSAttributeDescription" "NSBatchDeleteRequest" "NSBatchInsertRequest" "NSBatchUpdateRequest" "NSCompositeAttributeDescription" "NSCoreDataCoreSpotlightDelegate" "NSCustomMigrationStage" "NSDerivedAttributeDescription" "NSEntityDescription" "NSEntityMapping" "NSEntityMigrationPolicy" "NSExpressionDescription" "NSFetchIndexDescription" "NSFetchIndexElementDescription" "NSFetchRequest" "NSFetchRequestExpression" "NSFetchedPropertyDescription" "NSFetchedResultsController" "NSIncrementalStore" "NSIncrementalStoreNode" "NSLightweightMigrationStage" "NSManagedObject" "NSManagedObjectContext" "NSManagedObjectID" "NSManagedObjectModel" "NSManagedObjectModelReference" "NSMappingModel" "NSMergePolicy" "NSMigrationManager" "NSMigrationStage" "NSPersistentCloudKitContainer" "NSPersistentCloudKitContainerEvent" "NSPersistentCloudKitContainerEventRequest" "NSPersistentCloudKitContainerOptions" "NSPersistentContainer" "NSPersistentHistoryChange" "NSPersistentHistoryChangeRequest" "NSPersistentHistoryToken" "NSPersistentHistoryTransaction" "NSPersistentStore" "NSPersistentStoreCoordinator" "NSPersistentStoreDescription" "NSPersistentStoreRequest" "NSPersistentStoreResult" "NSPropertyDescription" "NSPropertyMapping" "NSQueryGenerationToken" "NSRelationshipDescription" "NSSaveChangesRequest" "NSStagedMigrationManager" "bitflags" "block2" "objc2-cloud-kit" ];
+          "objc2-cloud-kit" = [ "dep:objc2-cloud-kit" ];
+          "objc2-core-spotlight" = [ "dep:objc2-core-spotlight" ];
+          "std" = [ "alloc" ];
+        };
+        resolvedDefaultFeatures = [ "NSAttributeDescription" "NSEntityDescription" "NSFetchRequest" "NSManagedObjectContext" "NSManagedObjectModel" "NSPersistentStoreRequest" "NSPropertyDescription" "bitflags" ];
+      };
+      "objc2-core-foundation" = rec {
+        crateName = "objc2-core-foundation";
+        version = "0.3.2";
+        edition = "2021";
+        sha256 = "0dnmg7606n4zifyjw4ff554xvjmi256cs8fpgpdmr91gckc0s61a";
+        libName = "objc2_core_foundation";
+        dependencies = [
+          {
+            name = "bitflags";
+            packageId = "bitflags";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "block2";
+            packageId = "block2";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "alloc" ];
+          }
+          {
+            name = "dispatch2";
+            packageId = "dispatch2";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "alloc" ];
+          }
+          {
+            name = "libc";
+            packageId = "libc";
+            optional = true;
+            usesDefaultFeatures = false;
+          }
+          {
+            name = "objc2";
+            packageId = "objc2";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+        ];
+        features = {
+          "CFCalendar" = [ "bitflags" ];
+          "CFData" = [ "bitflags" ];
+          "CFDate" = [ "bitflags" ];
+          "CFDateFormatter" = [ "bitflags" ];
+          "CFFileSecurity" = [ "bitflags" ];
+          "CFNumberFormatter" = [ "bitflags" ];
+          "CFPropertyList" = [ "bitflags" ];
+          "CFRunLoop" = [ "bitflags" ];
+          "CFSocket" = [ "bitflags" ];
+          "CFStream" = [ "bitflags" ];
+          "CFString" = [ "bitflags" ];
+          "CFStringTokenizer" = [ "bitflags" ];
+          "CFURL" = [ "bitflags" ];
+          "CFURLEnumerator" = [ "bitflags" ];
+          "CFXMLParser" = [ "bitflags" ];
+          "bitflags" = [ "dep:bitflags" ];
+          "block2" = [ "dep:block2" ];
+          "default" = [ "std" "CFArray" "CFAttributedString" "CFAvailability" "CFBag" "CFBinaryHeap" "CFBitVector" "CFBundle" "CFByteOrder" "CFCGTypes" "CFCalendar" "CFCharacterSet" "CFData" "CFDate" "CFDateFormatter" "CFDictionary" "CFError" "CFFileDescriptor" "CFFileSecurity" "CFLocale" "CFMachPort" "CFMessagePort" "CFNotificationCenter" "CFNumber" "CFNumberFormatter" "CFPlugIn" "CFPlugInCOM" "CFPreferences" "CFPropertyList" "CFRunLoop" "CFSet" "CFSocket" "CFStream" "CFString" "CFStringEncodingExt" "CFStringTokenizer" "CFTimeZone" "CFTree" "CFURL" "CFURLAccess" "CFURLEnumerator" "CFUUID" "CFUserNotification" "CFUtilities" "CFXMLNode" "CFXMLParser" "bitflags" "block2" "dispatch2" "libc" "objc2" ];
+          "dispatch2" = [ "dep:dispatch2" ];
+          "libc" = [ "dep:libc" ];
+          "objc2" = [ "dep:objc2" "dispatch2?/objc2" ];
+          "std" = [ "alloc" ];
+        };
+        resolvedDefaultFeatures = [ "CFArray" "CFAttributedString" "CFAvailability" "CFBag" "CFBase" "CFBinaryHeap" "CFBitVector" "CFBundle" "CFByteOrder" "CFCGTypes" "CFCalendar" "CFCharacterSet" "CFData" "CFDate" "CFDateFormatter" "CFDictionary" "CFError" "CFFileDescriptor" "CFFileSecurity" "CFLocale" "CFMachPort" "CFMessagePort" "CFNotificationCenter" "CFNumber" "CFNumberFormatter" "CFPlugIn" "CFPlugInCOM" "CFPreferences" "CFPropertyList" "CFRunLoop" "CFSet" "CFSocket" "CFStream" "CFString" "CFStringEncodingExt" "CFStringTokenizer" "CFTimeZone" "CFTree" "CFURL" "CFURLAccess" "CFURLEnumerator" "CFUUID" "CFUserNotification" "CFUtilities" "CFXMLNode" "CFXMLParser" "alloc" "bitflags" "block2" "default" "dispatch2" "libc" "objc2" "std" ];
+      };
+      "objc2-core-graphics" = rec {
+        crateName = "objc2-core-graphics";
+        version = "0.3.2";
+        edition = "2021";
+        sha256 = "01x8413pxq0m5rwidlaczni8v5cz9dc3xqzq8l9zlpl9cv8cj8p0";
+        libName = "objc2_core_graphics";
+        dependencies = [
+          {
+            name = "bitflags";
+            packageId = "bitflags";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "block2";
+            packageId = "block2";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "alloc" ];
+          }
+          {
+            name = "dispatch2";
+            packageId = "dispatch2";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "alloc" ];
+          }
+          {
+            name = "libc";
+            packageId = "libc";
+            optional = true;
+            usesDefaultFeatures = false;
+          }
+          {
+            name = "objc2";
+            packageId = "objc2";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2-core-foundation";
+            packageId = "objc2-core-foundation";
+            usesDefaultFeatures = false;
+          }
+          {
+            name = "objc2-io-surface";
+            packageId = "objc2-io-surface";
+            optional = true;
+            usesDefaultFeatures = false;
+            target = { target, features }: (!("watchos" == target."os" or null));
+            features = [ "IOSurfaceRef" ];
+          }
+          {
+            name = "objc2-metal";
+            packageId = "objc2-metal";
+            optional = true;
+            usesDefaultFeatures = false;
+            target = { target, features }: (!("watchos" == target."os" or null));
+            features = [ "MTLDevice" ];
+          }
+        ];
+        features = {
+          "CGAffineTransform" = [ "objc2-core-foundation/CFCGTypes" ];
+          "CGBitmapContext" = [ "bitflags" "objc2-core-foundation/CFByteOrder" "objc2-core-foundation/CFDictionary" "objc2-core-foundation/CFError" ];
+          "CGColor" = [ "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFDictionary" ];
+          "CGColorConversionInfo" = [ "objc2-core-foundation/CFDictionary" "objc2-core-foundation/CFError" ];
+          "CGColorSpace" = [ "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFData" ];
+          "CGContext" = [ "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFDictionary" ];
+          "CGConvertColorDataWithFormat" = [ "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFDictionary" ];
+          "CGDataConsumer" = [ "objc2-core-foundation/CFData" "objc2-core-foundation/CFURL" ];
+          "CGDataProvider" = [ "objc2-core-foundation/CFData" "objc2-core-foundation/CFURL" ];
+          "CGDirectDisplay" = [ "bitflags" "objc2-core-foundation/CFArray" "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFDictionary" ];
+          "CGDisplayConfiguration" = [ "bitflags" "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFDictionary" ];
+          "CGDisplayStream" = [ "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFDictionary" "objc2-core-foundation/CFRunLoop" ];
+          "CGEXRToneMappingGamma" = [ "objc2-core-foundation/CFDictionary" ];
+          "CGEvent" = [ "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFData" "objc2-core-foundation/CFMachPort" ];
+          "CGEventSource" = [ "objc2-core-foundation/CFDate" ];
+          "CGEventTypes" = [ "bitflags" ];
+          "CGFont" = [ "objc2-core-foundation/CFArray" "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFData" "objc2-core-foundation/CFDictionary" ];
+          "CGFunction" = [ "objc2-core-foundation/CFCGTypes" ];
+          "CGGeometry" = [ "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFDictionary" ];
+          "CGGradient" = [ "bitflags" "objc2-core-foundation/CFArray" "objc2-core-foundation/CFCGTypes" ];
+          "CGImage" = [ "bitflags" "objc2-core-foundation/CFCGTypes" ];
+          "CGLayer" = [ "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFDictionary" ];
+          "CGPDFArray" = [ "objc2-core-foundation/CFCGTypes" ];
+          "CGPDFContentStream" = [ "objc2-core-foundation/CFArray" ];
+          "CGPDFContext" = [ "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFData" "objc2-core-foundation/CFDictionary" "objc2-core-foundation/CFURL" ];
+          "CGPDFDictionary" = [ "objc2-core-foundation/CFCGTypes" ];
+          "CGPDFDocument" = [ "bitflags" "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFDictionary" "objc2-core-foundation/CFURL" ];
+          "CGPDFObject" = [ "objc2-core-foundation/CFCGTypes" ];
+          "CGPDFPage" = [ "objc2-core-foundation/CFCGTypes" ];
+          "CGPDFScanner" = [ "objc2-core-foundation/CFCGTypes" ];
+          "CGPDFStream" = [ "objc2-core-foundation/CFData" ];
+          "CGPDFString" = [ "objc2-core-foundation/CFDate" ];
+          "CGPSConverter" = [ "objc2-core-foundation/CFDictionary" ];
+          "CGPath" = [ "objc2-core-foundation/CFArray" "objc2-core-foundation/CFCGTypes" ];
+          "CGPattern" = [ "objc2-core-foundation/CFCGTypes" ];
+          "CGRemoteOperation" = [ "bitflags" "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFDate" "objc2-core-foundation/CFMachPort" ];
+          "CGRenderingBufferProvider" = [ "objc2-core-foundation/CFData" ];
+          "CGSession" = [ "objc2-core-foundation/CFDictionary" ];
+          "CGShading" = [ "objc2-core-foundation/CFCGTypes" ];
+          "CGToneMapping" = [ "objc2-core-foundation/CFDictionary" ];
+          "CGWindow" = [ "bitflags" "objc2-core-foundation/CFArray" "objc2-core-foundation/CFCGTypes" ];
+          "bitflags" = [ "dep:bitflags" ];
+          "block2" = [ "dep:block2" ];
+          "default" = [ "std" "CGAffineTransform" "CGBase" "CGBitmapContext" "CGColor" "CGColorConversionInfo" "CGColorSpace" "CGContext" "CGConvertColorDataWithFormat" "CGDataConsumer" "CGDataProvider" "CGDirectDisplay" "CGDirectDisplayMetal" "CGDirectPalette" "CGDisplayConfiguration" "CGDisplayFade" "CGDisplayStream" "CGEXRToneMappingGamma" "CGError" "CGEvent" "CGEventSource" "CGEventTypes" "CGFont" "CGFunction" "CGGeometry" "CGGradient" "CGITUToneMapping" "CGImage" "CGLayer" "CGPDFArray" "CGPDFContentStream" "CGPDFContext" "CGPDFDictionary" "CGPDFDocument" "CGPDFObject" "CGPDFOperatorTable" "CGPDFPage" "CGPDFScanner" "CGPDFStream" "CGPDFString" "CGPSConverter" "CGPath" "CGPattern" "CGRemoteOperation" "CGRenderingBufferProvider" "CGSession" "CGShading" "CGToneMapping" "CGWindow" "CGWindowLevel" "bitflags" "block2" "dispatch2" "libc" "objc2" "objc2-metal" ];
+          "dispatch2" = [ "dep:dispatch2" ];
+          "libc" = [ "dep:libc" ];
+          "objc2" = [ "dep:objc2" "dispatch2?/objc2" "objc2-core-foundation/objc2" "objc2-io-surface?/objc2" ];
+          "objc2-io-surface" = [ "dep:objc2-io-surface" ];
+          "objc2-metal" = [ "dep:objc2-metal" ];
+          "std" = [ "alloc" ];
+        };
+        resolvedDefaultFeatures = [ "CGAffineTransform" "CGBase" "CGBitmapContext" "CGColor" "CGColorConversionInfo" "CGColorSpace" "CGContext" "CGConvertColorDataWithFormat" "CGDataConsumer" "CGDataProvider" "CGDirectDisplay" "CGDirectDisplayMetal" "CGDirectPalette" "CGDisplayConfiguration" "CGDisplayFade" "CGDisplayStream" "CGEXRToneMappingGamma" "CGError" "CGEvent" "CGEventSource" "CGEventTypes" "CGFont" "CGFunction" "CGGeometry" "CGGradient" "CGITUToneMapping" "CGImage" "CGLayer" "CGPDFArray" "CGPDFContentStream" "CGPDFContext" "CGPDFDictionary" "CGPDFDocument" "CGPDFObject" "CGPDFOperatorTable" "CGPDFPage" "CGPDFScanner" "CGPDFStream" "CGPDFString" "CGPSConverter" "CGPath" "CGPattern" "CGRemoteOperation" "CGRenderingBufferProvider" "CGSession" "CGShading" "CGToneMapping" "CGWindow" "CGWindowLevel" "alloc" "bitflags" "block2" "default" "dispatch2" "libc" "objc2" "objc2-metal" "std" ];
+      };
+      "objc2-core-image" = rec {
+        crateName = "objc2-core-image";
+        version = "0.3.2";
+        edition = "2021";
+        sha256 = "01phi7cx2k32a8x45qr0y1623l2b8gg764c6isgj15rbinrn7mg5";
+        libName = "objc2_core_image";
+        dependencies = [
+          {
+            name = "objc2";
+            packageId = "objc2";
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2-foundation";
+            packageId = "objc2-foundation";
+            usesDefaultFeatures = false;
+            features = [ "alloc" ];
+          }
+        ];
+        features = {
+          "CIBarcodeDescriptor" = [ "objc2-foundation/NSData" "objc2-foundation/NSObject" "objc2-foundation/NSUserActivity" ];
+          "CIColor" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "CIContext" = [ "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "CIDetector" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSString" ];
+          "CIFeature" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "CIFilter" = [ "objc2-foundation/NSArray" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "CIFilterBuiltins" = [ "objc2-foundation/NSArray" "objc2-foundation/NSAttributedString" "objc2-foundation/NSData" "objc2-foundation/NSString" ];
+          "CIFilterConstructor" = [ "objc2-foundation/NSString" ];
+          "CIFilterGenerator" = [ "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "CIFilterShape" = [ "objc2-foundation/NSObject" ];
+          "CIImage" = [ "objc2-foundation/NSArray" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "CIImageProcessor" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSString" ];
+          "CIImageProvider" = [ "objc2-foundation/NSDictionary" "objc2-foundation/NSString" ];
+          "CIKernel" = [ "objc2-foundation/NSArray" "objc2-foundation/NSData" "objc2-foundation/NSError" "objc2-foundation/NSString" ];
+          "CIPlugIn" = [ "objc2-foundation/NSURL" ];
+          "CIRAWFilter" = [ "objc2-foundation/NSArray" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "CIRAWFilter_Deprecated" = [ "objc2-foundation/NSArray" "objc2-foundation/NSData" "objc2-foundation/NSDictionary" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "CIRenderDestination" = [ "objc2-foundation/NSDate" "objc2-foundation/NSError" "objc2-foundation/NSURL" ];
+          "CISampler" = [ "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "CIVector" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "block2" = [ "dep:block2" ];
+          "default" = [ "std" "CIBarcodeDescriptor" "CIColor" "CIContext" "CIDetector" "CIFeature" "CIFilter" "CIFilterBuiltins" "CIFilterConstructor" "CIFilterGenerator" "CIFilterShape" "CIImage" "CIImageAccumulator" "CIImageProcessor" "CIImageProvider" "CIKernel" "CIKernelMetalLib" "CIPlugIn" "CIPlugInInterface" "CIRAWFilter" "CIRAWFilter_Deprecated" "CIRenderDestination" "CISampler" "CIVector" "CoreImageDefines" "block2" "objc2-core-foundation" "objc2-core-graphics" "objc2-core-video" "objc2-image-io" "objc2-metal" ];
+          "gnustep-1-7" = [ "objc2/gnustep-1-7" "block2?/gnustep-1-7" "objc2-foundation/gnustep-1-7" ];
+          "gnustep-1-8" = [ "gnustep-1-7" "objc2/gnustep-1-8" "block2?/gnustep-1-8" "objc2-foundation/gnustep-1-8" ];
+          "gnustep-1-9" = [ "gnustep-1-8" "objc2/gnustep-1-9" "block2?/gnustep-1-9" "objc2-foundation/gnustep-1-9" ];
+          "gnustep-2-0" = [ "gnustep-1-9" "objc2/gnustep-2-0" "block2?/gnustep-2-0" "objc2-foundation/gnustep-2-0" ];
+          "gnustep-2-1" = [ "gnustep-2-0" "objc2/gnustep-2-1" "block2?/gnustep-2-1" "objc2-foundation/gnustep-2-1" ];
+          "objc2-core-foundation" = [ "dep:objc2-core-foundation" ];
+          "objc2-core-graphics" = [ "dep:objc2-core-graphics" ];
+          "objc2-core-ml" = [ "dep:objc2-core-ml" ];
+          "objc2-core-video" = [ "dep:objc2-core-video" ];
+          "objc2-image-io" = [ "dep:objc2-image-io" ];
+          "objc2-io-surface" = [ "dep:objc2-io-surface" ];
+          "objc2-metal" = [ "dep:objc2-metal" ];
+          "objc2-open-gl" = [ "dep:objc2-open-gl" ];
+          "std" = [ "alloc" ];
+        };
+        resolvedDefaultFeatures = [ "CIColor" "CIContext" "CIFilter" "CIImage" ];
+      };
+      "objc2-core-text" = rec {
+        crateName = "objc2-core-text";
+        version = "0.3.2";
+        edition = "2021";
+        sha256 = "0bfrzqxhgh4y1imk1bb9g0v28g0frigls6hnc942npfj93xhvphc";
+        libName = "objc2_core_text";
+        dependencies = [
+          {
+            name = "bitflags";
+            packageId = "bitflags";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2";
+            packageId = "objc2";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2-core-foundation";
+            packageId = "objc2-core-foundation";
+            usesDefaultFeatures = false;
+          }
+          {
+            name = "objc2-core-graphics";
+            packageId = "objc2-core-graphics";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "CGContext" "CGFont" "CGImage" "CGPath" ];
+          }
+        ];
+        features = {
+          "CTFont" = [ "bitflags" "objc2-core-foundation/CFArray" "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFCharacterSet" "objc2-core-foundation/CFData" "objc2-core-foundation/CFDictionary" "objc2-core-foundation/CFString" ];
+          "CTFontCollection" = [ "bitflags" "objc2-core-foundation/CFArray" "objc2-core-foundation/CFDictionary" "objc2-core-foundation/CFSet" ];
+          "CTFontDescriptor" = [ "objc2-core-foundation/CFArray" "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFDictionary" "objc2-core-foundation/CFNumber" "objc2-core-foundation/CFSet" ];
+          "CTFontManager" = [ "objc2-core-foundation/CFArray" "objc2-core-foundation/CFBundle" "objc2-core-foundation/CFData" "objc2-core-foundation/CFDictionary" "objc2-core-foundation/CFError" "objc2-core-foundation/CFRunLoop" "objc2-core-foundation/CFURL" ];
+          "CTFontTraits" = [ "bitflags" ];
+          "CTFrame" = [ "objc2-core-foundation/CFArray" "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFDictionary" ];
+          "CTFramesetter" = [ "objc2-core-foundation/CFAttributedString" "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFDictionary" ];
+          "CTLine" = [ "bitflags" "objc2-core-foundation/CFArray" "objc2-core-foundation/CFAttributedString" "objc2-core-foundation/CFCGTypes" ];
+          "CTRubyAnnotation" = [ "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFDictionary" ];
+          "CTRun" = [ "bitflags" "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFDictionary" ];
+          "CTRunDelegate" = [ "objc2-core-foundation/CFCGTypes" ];
+          "CTStringAttributes" = [ "bitflags" ];
+          "CTTextTab" = [ "objc2-core-foundation/CFDictionary" ];
+          "CTTypesetter" = [ "objc2-core-foundation/CFAttributedString" "objc2-core-foundation/CFDictionary" ];
+          "bitflags" = [ "dep:bitflags" ];
+          "block2" = [ "dep:block2" ];
+          "default" = [ "std" "CTDefines" "CTFont" "CTFontCollection" "CTFontDescriptor" "CTFontManager" "CTFontManagerErrors" "CTFontTraits" "CTFrame" "CTFramesetter" "CTGlyphInfo" "CTLine" "CTParagraphStyle" "CTRubyAnnotation" "CTRun" "CTRunDelegate" "CTStringAttributes" "CTTextTab" "CTTypesetter" "SFNTLayoutTypes" "SFNTTypes" "bitflags" "block2" "libc" "objc2" "objc2-core-graphics" ];
+          "libc" = [ "dep:libc" ];
+          "objc2" = [ "dep:objc2" "objc2-core-foundation/objc2" "objc2-core-graphics?/objc2" ];
+          "objc2-core-graphics" = [ "dep:objc2-core-graphics" ];
+          "std" = [ "alloc" ];
+        };
+        resolvedDefaultFeatures = [ "CTFont" "CTFontCollection" "CTFontDescriptor" "CTGlyphInfo" "bitflags" "objc2" ];
+      };
+      "objc2-core-video" = rec {
+        crateName = "objc2-core-video";
+        version = "0.3.2";
+        edition = "2021";
+        sha256 = "19j1a7f863gh30nq03w70x1js3f3vdg3wp4azllky8vkvzqwl9fl";
+        libName = "objc2_core_video";
+        dependencies = [
+          {
+            name = "bitflags";
+            packageId = "bitflags";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2";
+            packageId = "objc2";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2-core-foundation";
+            packageId = "objc2-core-foundation";
+            usesDefaultFeatures = false;
+          }
+          {
+            name = "objc2-core-graphics";
+            packageId = "objc2-core-graphics";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "CGColorSpace" "CGDirectDisplay" ];
+          }
+          {
+            name = "objc2-io-surface";
+            packageId = "objc2-io-surface";
+            optional = true;
+            usesDefaultFeatures = false;
+            target = { target, features }: (!("watchos" == target."os" or null));
+            features = [ "IOSurfaceRef" ];
+          }
+        ];
+        features = {
+          "CVBase" = [ "bitflags" ];
+          "CVBuffer" = [ "objc2-core-foundation/CFDictionary" ];
+          "CVImageBuffer" = [ "objc2-core-foundation/CFCGTypes" "objc2-core-foundation/CFDictionary" ];
+          "CVMetalBufferCache" = [ "objc2-core-foundation/CFDictionary" ];
+          "CVMetalTextureCache" = [ "objc2-core-foundation/CFDictionary" ];
+          "CVOpenGLBuffer" = [ "objc2-core-foundation/CFDictionary" ];
+          "CVOpenGLBufferPool" = [ "objc2-core-foundation/CFDictionary" ];
+          "CVOpenGLTextureCache" = [ "objc2-core-foundation/CFDictionary" ];
+          "CVPixelBuffer" = [ "bitflags" "objc2-core-foundation/CFArray" "objc2-core-foundation/CFDictionary" ];
+          "CVPixelBufferIOSurface" = [ "objc2-core-foundation/CFDictionary" ];
+          "CVPixelBufferPool" = [ "bitflags" "objc2-core-foundation/CFDictionary" ];
+          "CVPixelFormatDescription" = [ "objc2-core-foundation/CFArray" "objc2-core-foundation/CFDictionary" ];
+          "bitflags" = [ "dep:bitflags" ];
+          "block2" = [ "dep:block2" ];
+          "default" = [ "std" "CVBase" "CVBuffer" "CVDisplayLink" "CVHostTime" "CVImageBuffer" "CVMetalBuffer" "CVMetalBufferCache" "CVMetalTexture" "CVMetalTextureCache" "CVOpenGLBuffer" "CVOpenGLBufferPool" "CVOpenGLTexture" "CVOpenGLTextureCache" "CVPixelBuffer" "CVPixelBufferIOSurface" "CVPixelBufferPool" "CVPixelFormatDescription" "CVReturn" "bitflags" "block2" "objc2" "objc2-core-graphics" "objc2-metal" ];
+          "objc2" = [ "dep:objc2" "objc2-core-foundation/objc2" "objc2-core-graphics?/objc2" "objc2-io-surface?/objc2" ];
+          "objc2-core-graphics" = [ "dep:objc2-core-graphics" ];
+          "objc2-io-surface" = [ "dep:objc2-io-surface" ];
+          "objc2-metal" = [ "dep:objc2-metal" ];
+          "objc2-open-gl" = [ "dep:objc2-open-gl" ];
+          "std" = [ "alloc" ];
+        };
+        resolvedDefaultFeatures = [ "CVBase" "bitflags" "objc2" ];
+      };
+      "objc2-encode" = rec {
+        crateName = "objc2-encode";
+        version = "4.1.0";
+        edition = "2021";
+        sha256 = "0cqckp4cpf68mxyc2zgnazj8klv0z395nsgbafa61cjgsyyan9gg";
+        libName = "objc2_encode";
+        authors = [
+          "Mads Marquart <mads@marquart.dk>"
+        ];
+        features = {
+          "default" = [ "std" ];
+          "std" = [ "alloc" ];
+        };
+        resolvedDefaultFeatures = [ "alloc" "std" ];
+      };
+      "objc2-foundation" = rec {
+        crateName = "objc2-foundation";
+        version = "0.3.2";
+        edition = "2021";
+        sha256 = "0wijkxzzvw2xkzssds3fj8279cbykz2rz9agxf6qh7y2agpsvq73";
+        libName = "objc2_foundation";
+        dependencies = [
+          {
+            name = "bitflags";
+            packageId = "bitflags";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "block2";
+            packageId = "block2";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "alloc" ];
+          }
+          {
+            name = "libc";
+            packageId = "libc";
+            optional = true;
+            usesDefaultFeatures = false;
+          }
+          {
+            name = "objc2";
+            packageId = "objc2";
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2-core-foundation";
+            packageId = "objc2-core-foundation";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "CFArray" "CFAttributedString" "CFCGTypes" "CFCalendar" "CFCharacterSet" "CFData" "CFDate" "CFDictionary" "CFError" "CFFileSecurity" "CFLocale" "CFMachPort" "CFMessagePort" "CFRunLoop" "CFSet" "CFStream" "CFURL" "objc2" ];
+          }
+        ];
+        devDependencies = [
+          {
+            name = "objc2-core-foundation";
+            packageId = "objc2-core-foundation";
+            usesDefaultFeatures = false;
+            features = [ "CFString" ];
+          }
+        ];
+        features = {
+          "NSAppleEventDescriptor" = [ "bitflags" ];
+          "NSArray" = [ "bitflags" ];
+          "NSAttributedString" = [ "bitflags" ];
+          "NSByteCountFormatter" = [ "bitflags" ];
+          "NSCalendar" = [ "bitflags" ];
+          "NSComparisonPredicate" = [ "bitflags" ];
+          "NSData" = [ "bitflags" ];
+          "NSDateComponentsFormatter" = [ "bitflags" ];
+          "NSDistributedNotificationCenter" = [ "bitflags" ];
+          "NSFileCoordinator" = [ "bitflags" ];
+          "NSFileManager" = [ "bitflags" ];
+          "NSFileVersion" = [ "bitflags" ];
+          "NSFileWrapper" = [ "bitflags" ];
+          "NSGeometry" = [ "bitflags" ];
+          "NSISO8601DateFormatter" = [ "bitflags" ];
+          "NSItemProvider" = [ "bitflags" ];
+          "NSJSONSerialization" = [ "bitflags" ];
+          "NSKeyValueObserving" = [ "bitflags" ];
+          "NSLinguisticTagger" = [ "bitflags" ];
+          "NSMeasurement" = [ "NSUnit" ];
+          "NSMeasurementFormatter" = [ "bitflags" ];
+          "NSNetServices" = [ "bitflags" ];
+          "NSNotificationQueue" = [ "bitflags" ];
+          "NSObjCRuntime" = [ "bitflags" ];
+          "NSOrderedCollectionDifference" = [ "bitflags" ];
+          "NSPathUtilities" = [ "bitflags" ];
+          "NSPersonNameComponentsFormatter" = [ "bitflags" ];
+          "NSPointerFunctions" = [ "bitflags" ];
+          "NSPort" = [ "bitflags" ];
+          "NSProcessInfo" = [ "bitflags" ];
+          "NSPropertyList" = [ "bitflags" ];
+          "NSRegularExpression" = [ "bitflags" ];
+          "NSStream" = [ "bitflags" ];
+          "NSString" = [ "bitflags" ];
+          "NSTextCheckingResult" = [ "bitflags" ];
+          "NSURL" = [ "bitflags" ];
+          "NSXMLNodeOptions" = [ "bitflags" ];
+          "NSXPCConnection" = [ "bitflags" ];
+          "bitflags" = [ "dep:bitflags" ];
+          "block2" = [ "dep:block2" ];
+          "default" = [ "std" "FoundationErrors" "FoundationLegacySwiftCompatibility" "NSAffineTransform" "NSAppleEventDescriptor" "NSAppleEventManager" "NSAppleScript" "NSArchiver" "NSArray" "NSAttributedString" "NSAutoreleasePool" "NSBackgroundActivityScheduler" "NSBundle" "NSByteCountFormatter" "NSByteOrder" "NSCache" "NSCalendar" "NSCalendarDate" "NSCharacterSet" "NSClassDescription" "NSCoder" "NSComparisonPredicate" "NSCompoundPredicate" "NSConnection" "NSData" "NSDate" "NSDateComponentsFormatter" "NSDateFormatter" "NSDateInterval" "NSDateIntervalFormatter" "NSDebug" "NSDecimal" "NSDecimalNumber" "NSDictionary" "NSDistantObject" "NSDistributedLock" "NSDistributedNotificationCenter" "NSEnergyFormatter" "NSEnumerator" "NSError" "NSException" "NSExpression" "NSExtensionContext" "NSExtensionItem" "NSExtensionRequestHandling" "NSFileCoordinator" "NSFileHandle" "NSFileManager" "NSFilePresenter" "NSFileVersion" "NSFileWrapper" "NSFormatter" "NSGarbageCollector" "NSGeometry" "NSHFSFileTypes" "NSHTTPCookie" "NSHTTPCookieStorage" "NSHashTable" "NSHost" "NSISO8601DateFormatter" "NSIndexPath" "NSIndexSet" "NSInflectionRule" "NSInvocation" "NSItemProvider" "NSJSONSerialization" "NSKeyValueCoding" "NSKeyValueObserving" "NSKeyValueSharedObservers" "NSKeyedArchiver" "NSLengthFormatter" "NSLinguisticTagger" "NSListFormatter" "NSLocale" "NSLocalizedNumberFormatRule" "NSLock" "NSMapTable" "NSMassFormatter" "NSMeasurement" "NSMeasurementFormatter" "NSMetadata" "NSMetadataAttributes" "NSMethodSignature" "NSMorphology" "NSNetServices" "NSNotification" "NSNotificationQueue" "NSNull" "NSNumberFormatter" "NSObjCRuntime" "NSObject" "NSObjectScripting" "NSOperation" "NSOrderedCollectionChange" "NSOrderedCollectionDifference" "NSOrderedSet" "NSOrthography" "NSPathUtilities" "NSPersonNameComponents" "NSPersonNameComponentsFormatter" "NSPointerArray" "NSPointerFunctions" "NSPort" "NSPortCoder" "NSPortMessage" "NSPortNameServer" "NSPredicate" "NSProcessInfo" "NSProgress" "NSPropertyList" "NSProtocolChecker" "NSProxy" "NSRange" "NSRegularExpression" "NSRelativeDateTimeFormatter" "NSRunLoop" "NSScanner" "NSScriptClassDescription" "NSScriptCoercionHandler" "NSScriptCommand" "NSScriptCommandDescription" "NSScriptExecutionContext" "NSScriptKeyValueCoding" "NSScriptObjectSpecifiers" "NSScriptStandardSuiteCommands" "NSScriptSuiteRegistry" "NSScriptWhoseTests" "NSSet" "NSSortDescriptor" "NSSpellServer" "NSStream" "NSString" "NSTask" "NSTermOfAddress" "NSTextCheckingResult" "NSThread" "NSTimeZone" "NSTimer" "NSURL" "NSURLAuthenticationChallenge" "NSURLCache" "NSURLConnection" "NSURLCredential" "NSURLCredentialStorage" "NSURLDownload" "NSURLError" "NSURLHandle" "NSURLProtectionSpace" "NSURLProtocol" "NSURLRequest" "NSURLResponse" "NSURLSession" "NSUUID" "NSUbiquitousKeyValueStore" "NSUndoManager" "NSUnit" "NSUserActivity" "NSUserDefaults" "NSUserNotification" "NSUserScriptTask" "NSValue" "NSValueTransformer" "NSXMLDTD" "NSXMLDTDNode" "NSXMLDocument" "NSXMLElement" "NSXMLNode" "NSXMLNodeOptions" "NSXMLParser" "NSXPCConnection" "NSZone" "bitflags" "block2" "libc" "objc2-core-foundation" ];
+          "gnustep-1-7" = [ "objc2/gnustep-1-7" "block2?/gnustep-1-7" ];
+          "gnustep-1-8" = [ "gnustep-1-7" "objc2/gnustep-1-8" "block2?/gnustep-1-8" ];
+          "gnustep-1-9" = [ "gnustep-1-8" "objc2/gnustep-1-9" "block2?/gnustep-1-9" ];
+          "gnustep-2-0" = [ "gnustep-1-9" "objc2/gnustep-2-0" "block2?/gnustep-2-0" ];
+          "gnustep-2-1" = [ "gnustep-2-0" "objc2/gnustep-2-1" "block2?/gnustep-2-1" ];
+          "libc" = [ "dep:libc" ];
+          "objc2-core-foundation" = [ "dep:objc2-core-foundation" ];
+          "objc2-core-services" = [ "dep:objc2-core-services" ];
+          "std" = [ "alloc" ];
+          "unstable-mutation-return-null" = [ "NSNull" ];
+        };
+        resolvedDefaultFeatures = [ "FoundationErrors" "FoundationLegacySwiftCompatibility" "NSAffineTransform" "NSAppleEventDescriptor" "NSAppleEventManager" "NSAppleScript" "NSArchiver" "NSArray" "NSAttributedString" "NSAutoreleasePool" "NSBackgroundActivityScheduler" "NSBundle" "NSByteCountFormatter" "NSByteOrder" "NSCache" "NSCalendar" "NSCalendarDate" "NSCharacterSet" "NSClassDescription" "NSCoder" "NSComparisonPredicate" "NSCompoundPredicate" "NSConnection" "NSData" "NSDate" "NSDateComponentsFormatter" "NSDateFormatter" "NSDateInterval" "NSDateIntervalFormatter" "NSDebug" "NSDecimal" "NSDecimalNumber" "NSDictionary" "NSDistantObject" "NSDistributedLock" "NSDistributedNotificationCenter" "NSEnergyFormatter" "NSEnumerator" "NSError" "NSException" "NSExpression" "NSExtensionContext" "NSExtensionItem" "NSExtensionRequestHandling" "NSFileCoordinator" "NSFileHandle" "NSFileManager" "NSFilePresenter" "NSFileVersion" "NSFileWrapper" "NSFormatter" "NSGarbageCollector" "NSGeometry" "NSHFSFileTypes" "NSHTTPCookie" "NSHTTPCookieStorage" "NSHashTable" "NSHost" "NSISO8601DateFormatter" "NSIndexPath" "NSIndexSet" "NSInflectionRule" "NSInvocation" "NSItemProvider" "NSJSONSerialization" "NSKeyValueCoding" "NSKeyValueObserving" "NSKeyValueSharedObservers" "NSKeyedArchiver" "NSLengthFormatter" "NSLinguisticTagger" "NSListFormatter" "NSLocale" "NSLocalizedNumberFormatRule" "NSLock" "NSMapTable" "NSMassFormatter" "NSMeasurement" "NSMeasurementFormatter" "NSMetadata" "NSMetadataAttributes" "NSMethodSignature" "NSMorphology" "NSNetServices" "NSNotification" "NSNotificationQueue" "NSNull" "NSNumberFormatter" "NSObjCRuntime" "NSObject" "NSObjectScripting" "NSOperation" "NSOrderedCollectionChange" "NSOrderedCollectionDifference" "NSOrderedSet" "NSOrthography" "NSPathUtilities" "NSPersonNameComponents" "NSPersonNameComponentsFormatter" "NSPointerArray" "NSPointerFunctions" "NSPort" "NSPortCoder" "NSPortMessage" "NSPortNameServer" "NSPredicate" "NSProcessInfo" "NSProgress" "NSPropertyList" "NSProtocolChecker" "NSProxy" "NSRange" "NSRegularExpression" "NSRelativeDateTimeFormatter" "NSRunLoop" "NSScanner" "NSScriptClassDescription" "NSScriptCoercionHandler" "NSScriptCommand" "NSScriptCommandDescription" "NSScriptExecutionContext" "NSScriptKeyValueCoding" "NSScriptObjectSpecifiers" "NSScriptStandardSuiteCommands" "NSScriptSuiteRegistry" "NSScriptWhoseTests" "NSSet" "NSSortDescriptor" "NSSpellServer" "NSStream" "NSString" "NSTask" "NSTermOfAddress" "NSTextCheckingResult" "NSThread" "NSTimeZone" "NSTimer" "NSURL" "NSURLAuthenticationChallenge" "NSURLCache" "NSURLConnection" "NSURLCredential" "NSURLCredentialStorage" "NSURLDownload" "NSURLError" "NSURLHandle" "NSURLProtectionSpace" "NSURLProtocol" "NSURLRequest" "NSURLResponse" "NSURLSession" "NSUUID" "NSUbiquitousKeyValueStore" "NSUndoManager" "NSUnit" "NSUserActivity" "NSUserDefaults" "NSUserNotification" "NSUserScriptTask" "NSValue" "NSValueTransformer" "NSXMLDTD" "NSXMLDTDNode" "NSXMLDocument" "NSXMLElement" "NSXMLNode" "NSXMLNodeOptions" "NSXMLParser" "NSXPCConnection" "NSZone" "alloc" "bitflags" "block2" "default" "libc" "objc2-core-foundation" "std" ];
+      };
+      "objc2-io-surface" = rec {
+        crateName = "objc2-io-surface";
+        version = "0.3.2";
+        edition = "2021";
+        sha256 = "07fqx4fmwydf2arrc4xs4awv7zyzzxh60fyqdfmrpm9n148qh1qq";
+        libName = "objc2_io_surface";
+        dependencies = [
+          {
+            name = "bitflags";
+            packageId = "bitflags";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2";
+            packageId = "objc2";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2-core-foundation";
+            packageId = "objc2-core-foundation";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "CFDictionary" ];
+          }
+        ];
+        features = {
+          "IOSurfaceRef" = [ "bitflags" ];
+          "IOSurfaceTypes" = [ "bitflags" ];
+          "ObjC" = [ "objc2" ];
+          "bitflags" = [ "dep:bitflags" ];
+          "default" = [ "std" "IOSurface" "IOSurfaceAPI" "IOSurfaceBase" "IOSurfaceRef" "IOSurfaceTypes" "bitflags" "libc" "objc2" "objc2-core-foundation" "objc2-foundation" ];
+          "libc" = [ "dep:libc" ];
+          "objc2" = [ "dep:objc2" "objc2-core-foundation?/objc2" ];
+          "objc2-core-foundation" = [ "dep:objc2-core-foundation" ];
+          "objc2-foundation" = [ "dep:objc2-foundation" ];
+          "std" = [ "alloc" ];
+        };
+        resolvedDefaultFeatures = [ "IOSurfaceRef" "bitflags" "objc2" ];
+      };
+      "objc2-metal" = rec {
+        crateName = "objc2-metal";
+        version = "0.3.2";
+        edition = "2021";
+        sha256 = "1527q158b8kagmdzlmvg782s5m7h15j62x1d2ps0ml0hd9vmy4m0";
+        libName = "objc2_metal";
+        dependencies = [
+          {
+            name = "bitflags";
+            packageId = "bitflags";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2";
+            packageId = "objc2";
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2-foundation";
+            packageId = "objc2-foundation";
+            usesDefaultFeatures = false;
+            features = [ "alloc" ];
+          }
+        ];
+        features = {
+          "MTL4AccelerationStructure" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTL4Archive" = [ "objc2-foundation/NSError" "objc2-foundation/NSString" ];
+          "MTL4ArgumentTable" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTL4BinaryFunction" = [ "objc2-foundation/NSString" ];
+          "MTL4BinaryFunctionDescriptor" = [ "bitflags" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTL4CommandAllocator" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTL4CommandBuffer" = [ "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" ];
+          "MTL4CommandEncoder" = [ "bitflags" "objc2-foundation/NSString" ];
+          "MTL4CommandQueue" = [ "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" ];
+          "MTL4CommitFeedback" = [ "objc2-foundation/NSError" ];
+          "MTL4Compiler" = [ "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "MTL4ComputeCommandEncoder" = [ "objc2-foundation/NSRange" ];
+          "MTL4ComputePipeline" = [ "objc2-foundation/NSObject" ];
+          "MTL4Counters" = [ "objc2-foundation/NSData" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" ];
+          "MTL4FunctionDescriptor" = [ "objc2-foundation/NSObject" ];
+          "MTL4LibraryDescriptor" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTL4LibraryFunctionDescriptor" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTL4LinkingDescriptor" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTL4MachineLearningPipeline" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" ];
+          "MTL4MeshRenderPipeline" = [ "objc2-foundation/NSObject" ];
+          "MTL4PipelineDataSetSerializer" = [ "bitflags" "objc2-foundation/NSData" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSURL" ];
+          "MTL4PipelineState" = [ "bitflags" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTL4RenderCommandEncoder" = [ "bitflags" "objc2-foundation/NSRange" ];
+          "MTL4RenderPass" = [ "objc2-foundation/NSObject" ];
+          "MTL4RenderPipeline" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" ];
+          "MTL4SpecializedFunctionDescriptor" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTL4StitchedFunctionDescriptor" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" ];
+          "MTL4TileRenderPipeline" = [ "objc2-foundation/NSObject" ];
+          "MTLAccelerationStructure" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTLAccelerationStructureCommandEncoder" = [ "objc2-foundation/NSObject" "MTLAccelerationStructure" ];
+          "MTLArgument" = [ "objc2-foundation/NSArray" "objc2-foundation/NSString" "MTLDataType" ];
+          "MTLArgumentEncoder" = [ "objc2-foundation/NSRange" "objc2-foundation/NSString" ];
+          "MTLBinaryArchive" = [ "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "MTLBlitCommandEncoder" = [ "bitflags" "objc2-foundation/NSRange" ];
+          "MTLBlitPass" = [ "objc2-foundation/NSObject" ];
+          "MTLBuffer" = [ "objc2-foundation/NSError" "objc2-foundation/NSRange" "objc2-foundation/NSString" ];
+          "MTLCaptureManager" = [ "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "MTLCaptureScope" = [ "objc2-foundation/NSString" ];
+          "MTLCommandBuffer" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSEnumerator" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTLCommandEncoder" = [ "bitflags" "objc2-foundation/NSString" ];
+          "MTLCommandQueue" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTLComputeCommandEncoder" = [ "objc2-foundation/NSRange" ];
+          "MTLComputePass" = [ "objc2-foundation/NSObject" ];
+          "MTLComputePipeline" = [ "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSString" "MTLAllocation" ];
+          "MTLCounters" = [ "objc2-foundation/NSArray" "objc2-foundation/NSData" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" ];
+          "MTLDepthStencil" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTLDevice" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSBundle" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSURL" "MTLLibrary" "MTLResource" "MTLGPUAddress" ];
+          "MTLDeviceCertification" = [ "objc2-foundation/NSNotification" "objc2-foundation/NSProcessInfo" "objc2-foundation/NSString" ];
+          "MTLDynamicLibrary" = [ "objc2-foundation/NSError" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "MTLEvent" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTLFence" = [ "objc2-foundation/NSString" ];
+          "MTLFunctionConstantValues" = [ "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" ];
+          "MTLFunctionDescriptor" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTLFunctionHandle" = [ "objc2-foundation/NSString" ];
+          "MTLFunctionLog" = [ "objc2-foundation/NSEnumerator" "objc2-foundation/NSString" "objc2-foundation/NSURL" ];
+          "MTLFunctionStitching" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTLHeap" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTLIOCommandBuffer" = [ "objc2-foundation/NSError" "objc2-foundation/NSString" ];
+          "MTLIOCommandQueue" = [ "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTLIndirectCommandBuffer" = [ "bitflags" "objc2-foundation/NSObject" "objc2-foundation/NSRange" ];
+          "MTLIntersectionFunctionTable" = [ "bitflags" "objc2-foundation/NSObject" "objc2-foundation/NSRange" ];
+          "MTLLibrary" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTLLinkedFunctions" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTLLogState" = [ "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTLPipeline" = [ "objc2-foundation/NSObject" ];
+          "MTLRasterizationRate" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSValue" ];
+          "MTLRenderCommandEncoder" = [ "bitflags" "objc2-foundation/NSRange" ];
+          "MTLRenderPass" = [ "bitflags" "objc2-foundation/NSObject" ];
+          "MTLRenderPipeline" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSString" "MTLAllocation" ];
+          "MTLResidencySet" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTLResource" = [ "bitflags" "objc2-foundation/NSString" ];
+          "MTLResourceStatePass" = [ "objc2-foundation/NSObject" ];
+          "MTLResourceViewPool" = [ "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" ];
+          "MTLSampler" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTLStageInputOutputDescriptor" = [ "objc2-foundation/NSObject" "MTLArgument" ];
+          "MTLTensor" = [ "bitflags" "objc2-foundation/NSError" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "MTLTexture" = [ "bitflags" "objc2-foundation/NSObject" "objc2-foundation/NSRange" "objc2-foundation/NSString" ];
+          "MTLVertexDescriptor" = [ "objc2-foundation/NSObject" ];
+          "MTLVisibleFunctionTable" = [ "objc2-foundation/NSObject" "objc2-foundation/NSRange" ];
+          "bitflags" = [ "dep:bitflags" ];
+          "block2" = [ "dep:block2" ];
+          "default" = [ "std" "MTL4AccelerationStructure" "MTL4Archive" "MTL4ArgumentTable" "MTL4BinaryFunction" "MTL4BinaryFunctionDescriptor" "MTL4BufferRange" "MTL4CommandAllocator" "MTL4CommandBuffer" "MTL4CommandEncoder" "MTL4CommandQueue" "MTL4CommitFeedback" "MTL4Compiler" "MTL4CompilerTask" "MTL4ComputeCommandEncoder" "MTL4ComputePipeline" "MTL4Counters" "MTL4FunctionDescriptor" "MTL4LibraryDescriptor" "MTL4LibraryFunctionDescriptor" "MTL4LinkingDescriptor" "MTL4MachineLearningCommandEncoder" "MTL4MachineLearningPipeline" "MTL4MeshRenderPipeline" "MTL4PipelineDataSetSerializer" "MTL4PipelineState" "MTL4RenderCommandEncoder" "MTL4RenderPass" "MTL4RenderPipeline" "MTL4SpecializedFunctionDescriptor" "MTL4StitchedFunctionDescriptor" "MTL4TileRenderPipeline" "MTLAccelerationStructure" "MTLAccelerationStructureCommandEncoder" "MTLAccelerationStructureTypes" "MTLAllocation" "MTLArgument" "MTLArgumentEncoder" "MTLBinaryArchive" "MTLBlitCommandEncoder" "MTLBlitPass" "MTLBuffer" "MTLCaptureManager" "MTLCaptureScope" "MTLCommandBuffer" "MTLCommandEncoder" "MTLCommandQueue" "MTLComputeCommandEncoder" "MTLComputePass" "MTLComputePipeline" "MTLCounters" "MTLDataType" "MTLDefines" "MTLDepthStencil" "MTLDevice" "MTLDeviceCertification" "MTLDrawable" "MTLDynamicLibrary" "MTLEvent" "MTLFence" "MTLFunctionConstantValues" "MTLFunctionDescriptor" "MTLFunctionHandle" "MTLFunctionLog" "MTLFunctionStitching" "MTLGPUAddress" "MTLHeap" "MTLIOCommandBuffer" "MTLIOCommandQueue" "MTLIOCompressor" "MTLIndirectCommandBuffer" "MTLIndirectCommandEncoder" "MTLIntersectionFunctionTable" "MTLLibrary" "MTLLinkedFunctions" "MTLLogState" "MTLParallelRenderCommandEncoder" "MTLPipeline" "MTLPixelFormat" "MTLRasterizationRate" "MTLRenderCommandEncoder" "MTLRenderPass" "MTLRenderPipeline" "MTLResidencySet" "MTLResource" "MTLResourceStateCommandEncoder" "MTLResourceStatePass" "MTLResourceViewPool" "MTLSampler" "MTLStageInputOutputDescriptor" "MTLTensor" "MTLTexture" "MTLTextureViewPool" "MTLTypes" "MTLVertexDescriptor" "MTLVisibleFunctionTable" "bitflags" "block2" "dispatch2" "objc2-core-foundation" ];
+          "dispatch2" = [ "dep:dispatch2" ];
+          "objc2-core-foundation" = [ "dep:objc2-core-foundation" ];
+          "objc2-io-surface" = [ "dep:objc2-io-surface" ];
+          "std" = [ "alloc" ];
+          "unstable-private" = [ "objc2-foundation/NSString" "objc2-foundation/NSError" ];
+        };
+        resolvedDefaultFeatures = [ "MTLDevice" "MTLGPUAddress" "MTLLibrary" "MTLResource" "bitflags" ];
+      };
+      "objc2-quartz-core" = rec {
+        crateName = "objc2-quartz-core";
+        version = "0.3.2";
+        edition = "2021";
+        sha256 = "07vzaf6y1lk7zygkgvpp23mm19ipdm9yq8af22gvywdkaa23bhcn";
+        libName = "objc2_quartz_core";
+        dependencies = [
+          {
+            name = "bitflags";
+            packageId = "bitflags";
+            optional = true;
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2";
+            packageId = "objc2";
+            usesDefaultFeatures = false;
+            features = [ "std" ];
+          }
+          {
+            name = "objc2-foundation";
+            packageId = "objc2-foundation";
+            usesDefaultFeatures = false;
+            features = [ "alloc" ];
+          }
+        ];
+        features = {
+          "CAAnimation" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSValue" ];
+          "CAConstraintLayoutManager" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "CADisplayLink" = [ "objc2-foundation/NSObjCRuntime" "objc2-foundation/NSRunLoop" "objc2-foundation/NSString" ];
+          "CAEDRMetadata" = [ "objc2-foundation/NSData" "objc2-foundation/NSObject" ];
+          "CAEmitterCell" = [ "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "CAEmitterLayer" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "CAGradientLayer" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSValue" ];
+          "CALayer" = [ "bitflags" "objc2-foundation/NSArray" "objc2-foundation/NSDictionary" "objc2-foundation/NSNull" "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "CAMediaTiming" = [ "objc2-foundation/NSString" ];
+          "CAMediaTimingFunction" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "CAMetalDisplayLink" = [ "objc2-foundation/NSObjCRuntime" "objc2-foundation/NSRunLoop" "objc2-foundation/NSString" ];
+          "CAMetalLayer" = [ "objc2-foundation/NSDictionary" "objc2-foundation/NSObject" ];
+          "CAOpenGLLayer" = [ "objc2-foundation/NSObject" ];
+          "CARenderer" = [ "objc2-foundation/NSDictionary" "objc2-foundation/NSString" ];
+          "CAReplicatorLayer" = [ "objc2-foundation/NSObject" ];
+          "CAScrollLayer" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "CAShapeLayer" = [ "objc2-foundation/NSArray" "objc2-foundation/NSObject" "objc2-foundation/NSString" "objc2-foundation/NSValue" ];
+          "CATextLayer" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "CATiledLayer" = [ "objc2-foundation/NSObject" ];
+          "CATransaction" = [ "objc2-foundation/NSString" ];
+          "CATransform3D" = [ "objc2-foundation/NSValue" ];
+          "CATransformLayer" = [ "objc2-foundation/NSObject" ];
+          "CAValueFunction" = [ "objc2-foundation/NSObject" "objc2-foundation/NSString" ];
+          "bitflags" = [ "dep:bitflags" ];
+          "block2" = [ "dep:block2" ];
+          "default" = [ "std" "CAAnimation" "CABase" "CAConstraintLayoutManager" "CADisplayLink" "CAEAGLLayer" "CAEDRMetadata" "CAEmitterCell" "CAEmitterLayer" "CAFrameRateRange" "CAGradientLayer" "CALayer" "CAMediaTiming" "CAMediaTimingFunction" "CAMetalDisplayLink" "CAMetalLayer" "CAOpenGLLayer" "CARemoteLayerClient" "CARemoteLayerServer" "CARenderer" "CAReplicatorLayer" "CAScrollLayer" "CAShapeLayer" "CATextLayer" "CATiledLayer" "CATransaction" "CATransform3D" "CATransformLayer" "CAValueFunction" "CoreAnimation" "bitflags" "block2" "libc" "objc2-core-foundation" "objc2-core-graphics" "objc2-core-video" "objc2-metal" ];
+          "libc" = [ "dep:libc" ];
+          "objc2-core-foundation" = [ "dep:objc2-core-foundation" ];
+          "objc2-core-graphics" = [ "dep:objc2-core-graphics" ];
+          "objc2-core-video" = [ "dep:objc2-core-video" ];
+          "objc2-metal" = [ "dep:objc2-metal" ];
+          "objc2-open-gl" = [ "dep:objc2-open-gl" ];
+          "std" = [ "alloc" ];
+        };
+        resolvedDefaultFeatures = [ "CADisplayLink" "CALayer" "CAMediaTiming" "CAMediaTimingFunction" "CAOpenGLLayer" "bitflags" ];
+      };
       "once_cell" = rec {
         crateName = "once_cell";
         version = "1.21.4";
@@ -5547,6 +7031,17 @@ rec {
         version = "0.5.2";
         edition = "2021";
         sha256 = "03pzw9aj4qskqhh0fkagy2mkgfwgj5a1m67ajlba5hw80h68100s";
+
+      };
+      "paste" = rec {
+        crateName = "paste";
+        version = "1.0.15";
+        edition = "2018";
+        sha256 = "02pxffpdqkapy292harq6asfjvadgp1s005fip9ljfsn9fvxgh2p";
+        procMacro = true;
+        authors = [
+          "David Tolnay <dtolnay@gmail.com>"
+        ];
 
       };
       "pear" = rec {
@@ -5837,7 +7332,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.42";
+            packageId = "rustls 0.23.43";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -5953,7 +7448,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.42";
+            packageId = "rustls 0.23.43";
             optional = true;
             usesDefaultFeatures = false;
             features = [ "std" ];
@@ -6231,6 +7726,12 @@ rec {
             packageId = "bytes";
           }
           {
+            name = "futures-channel";
+            packageId = "futures-channel";
+            optional = true;
+            target = { target, features }: (!("wasm32" == target."arch" or null));
+          }
+          {
             name = "futures-core";
             packageId = "futures-core";
             usesDefaultFeatures = false;
@@ -6243,7 +7744,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
           }
           {
             name = "http-body";
@@ -6311,7 +7812,7 @@ rec {
           }
           {
             name = "rustls";
-            packageId = "rustls 0.23.42";
+            packageId = "rustls 0.23.43";
             optional = true;
             usesDefaultFeatures = false;
             target = { target, features }: (!("wasm32" == target."arch" or null));
@@ -6489,7 +7990,7 @@ rec {
           "system-proxy" = [ "hyper-util/client-proxy-system" ];
           "zstd" = [ "tower-http/decompression-zstd" ];
         };
-        resolvedDefaultFeatures = [ "__rustls" "__rustls-ring" "__tls" "json" "multipart" "rustls-tls" "rustls-tls-webpki-roots" "rustls-tls-webpki-roots-no-provider" ];
+        resolvedDefaultFeatures = [ "__rustls" "__rustls-ring" "__tls" "blocking" "json" "multipart" "rustls-tls" "rustls-tls-webpki-roots" "rustls-tls-webpki-roots-no-provider" ];
       };
       "ring" = rec {
         crateName = "ring";
@@ -6728,11 +8229,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "default" "log" "logging" "tls12" ];
       };
-      "rustls 0.23.42" = rec {
+      "rustls 0.23.43" = rec {
         crateName = "rustls";
-        version = "0.23.42";
+        version = "0.23.43";
         edition = "2021";
-        sha256 = "0f619dq1izpl40glcqgfjbqzpmwg8g5iffjx4429sh4v06mzqm1w";
+        sha256 = "01nsagj78r88pifaz55ln1rw31py5n00h7bnw58h3g1aw1n3i0q2";
         dependencies = [
           {
             name = "aws-lc-rs";
@@ -7042,11 +8543,11 @@ rec {
         };
         resolvedDefaultFeatures = [ "std" ];
       };
-      "schemars 1.2.1" = rec {
+      "schemars 1.2.2" = rec {
         crateName = "schemars";
-        version = "1.2.1";
+        version = "1.2.2";
         edition = "2021";
-        sha256 = "1k16qzpdpy6p9hrh18q2l6cwawxzyqi25f8masa13l0wm8v2zd52";
+        sha256 = "0jng632s64njf9vghr3i1l4m15h4y85m5vhg7vkwdkdnjg978wk8";
         authors = [
           "Graham Esau <gesau@hotmail.co.uk>"
         ];
@@ -7484,7 +8985,7 @@ rec {
           }
           {
             name = "schemars";
-            packageId = "schemars 1.2.1";
+            packageId = "schemars 1.2.2";
             rename = "schemars_1";
             optional = true;
             usesDefaultFeatures = false;
@@ -7522,7 +9023,7 @@ rec {
           }
           {
             name = "schemars";
-            packageId = "schemars 1.2.1";
+            packageId = "schemars 1.2.2";
             rename = "schemars_1";
           }
           {
@@ -7663,7 +9164,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.412";
+        version = "0.1.435";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -7692,6 +9193,11 @@ rec {
             optional = true;
           }
           {
+            name = "base64";
+            packageId = "base64";
+            optional = true;
+          }
+          {
             name = "blake3";
             packageId = "blake3";
             optional = true;
@@ -7714,6 +9220,11 @@ rec {
           {
             name = "gen-types";
             packageId = "gen-types";
+          }
+          {
+            name = "kanchi";
+            packageId = "kanchi";
+            optional = true;
           }
           {
             name = "notify";
@@ -7756,7 +9267,6 @@ rec {
           {
             name = "tatara-lisp";
             packageId = "tatara-lisp";
-            rename = "tatara-lisp";
             optional = true;
           }
           {
@@ -7804,11 +9314,13 @@ rec {
           "cli" = [ "dep:clap" ];
           "gcp-native" = [ "dep:reqwest" "dep:tokio" ];
           "hotswap" = [ "dep:pleme-hotswap" "dep:blake3" ];
+          "kube" = [ "kube-discovery" "dep:reqwest" "reqwest/blocking" "dep:base64" ];
+          "kube-discovery" = [ "dep:kanchi" ];
           "lisp" = [ "dep:tatara-lisp" ];
           "op-native" = [ "dep:reqwest" "dep:tokio" ];
           "vault-native" = [ "dep:reqwest" "dep:tokio" ];
         };
-        resolvedDefaultFeatures = [ "akeyless-native" "aws-native" "cli" "default" "gcp-native" "hotswap" "lisp" "op-native" "vault-native" ];
+        resolvedDefaultFeatures = [ "akeyless-native" "aws-native" "cli" "default" "gcp-native" "hotswap" "kube" "kube-discovery" "lisp" "op-native" "vault-native" ];
       };
       "shlex" = rec {
         crateName = "shlex";
@@ -8095,14 +9607,9 @@ rec {
       };
       "tatara-lisp" = rec {
         crateName = "tatara-lisp";
-        version = "0.2.154";
+        version = "0.3.4";
         edition = "2021";
-        workspace_member = null;
-        src = pkgs.fetchgit {
-          url = "https://github.com/pleme-io/tatara";
-          rev = "5ece4a62b4879d7229999f45cc7ef655e7c070b8";
-          sha256 = "1xqf33pn2ydij5bvzsjnwrggknhy5d4nmhrm4qs71wkrw5fmfbdb";
-        };
+        sha256 = "1jffa0xgsjqv6m9ng0v12jh7kk2wl6rbhl14kc8fdaj03l64ra80";
         libName = "tatara_lisp";
         authors = [
           "Pleme.io <engineering@pleme.io>"
@@ -8131,20 +9638,14 @@ rec {
           }
         ];
         features = {
-          "iac-forge" = [ "dep:iac-forge" ];
         };
         resolvedDefaultFeatures = [ "default" ];
       };
       "tatara-lisp-derive" = rec {
         crateName = "tatara-lisp-derive";
-        version = "0.2.154";
+        version = "0.3.4";
         edition = "2021";
-        workspace_member = null;
-        src = pkgs.fetchgit {
-          url = "https://github.com/pleme-io/tatara";
-          rev = "5ece4a62b4879d7229999f45cc7ef655e7c070b8";
-          sha256 = "1xqf33pn2ydij5bvzsjnwrggknhy5d4nmhrm4qs71wkrw5fmfbdb";
-        };
+        sha256 = "1a9nh17nxsp04xpcmysfmijyy8khh9xgdlszw3yj5w9kv9l57c5x";
         procMacro = true;
         libName = "tatara_lisp_derive";
         authors = [
@@ -8558,9 +10059,9 @@ rec {
       };
       "tokio-macros" = rec {
         crateName = "tokio-macros";
-        version = "2.7.1";
+        version = "2.7.2";
         edition = "2021";
-        sha256 = "1fj2h3gysqzwqchyhcyyvslwdj7qjgyzlc20d6sajwqf949sya33";
+        sha256 = "03kvy2r5gr4zccm4vdx8vvv3q69kbjc1b006rs11aibz74m3lxvq";
         procMacro = true;
         libName = "tokio_macros";
         authors = [
@@ -8577,7 +10078,7 @@ rec {
           }
           {
             name = "syn";
-            packageId = "syn 2.0.119";
+            packageId = "syn 3.0.3";
             features = [ "full" ];
           }
         ];
@@ -8625,7 +10126,7 @@ rec {
         dependencies = [
           {
             name = "rustls";
-            packageId = "rustls 0.23.42";
+            packageId = "rustls 0.23.43";
             usesDefaultFeatures = false;
             features = [ "std" ];
           }
@@ -8960,7 +10461,7 @@ rec {
           }
           {
             name = "http";
-            packageId = "http 1.4.2";
+            packageId = "http 1.5.0";
           }
           {
             name = "http-body";

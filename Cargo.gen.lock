@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "bede52df113078d85238da37e523420b0d0d281375a5b44cd1fa3c7b418a1ed2",
+  "cargo_lock_sha256": "3f7fda02c3f66fb8ee5d359ae46e6203771805301e3974706934b3e7b07814fb",
   "manifest_sha256": {
-    "Cargo.toml": "cf7a659929c82848647d7eef0e820daa7277fd9c62f925f8d04e120b3ee41b14"
+    "Cargo.toml": "0624f31f83e90cd337b5cf942b5e512e4eb1d00f35bead2c8fdc621e1cdb2ce7"
   },
   "target_resolves": {
     "base": {
@@ -308,7 +308,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-macros-0.1.29-25797adf022275255528d545a2deba8d6b748b96": {
+      "gen-macros-0.1.30-52883694820f96fc8822bd9d0dc187e3e95c71f9": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -347,11 +347,11 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-platform-0.1.29-25797adf022275255528d545a2deba8d6b748b96": {
+      "gen-platform-0.1.30-52883694820f96fc8822bd9d0dc187e3e95c71f9": {
         "runtime_dependencies": [
           {
             "name": "gen_macros",
-            "package_key": "gen-macros-0.1.29-25797adf022275255528d545a2deba8d6b748b96",
+            "package_key": "gen-macros-0.1.30-52883694820f96fc8822bd9d0dc187e3e95c71f9",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -361,7 +361,7 @@
           },
           {
             "name": "gen_types",
-            "package_key": "gen-types-0.1.29-25797adf022275255528d545a2deba8d6b748b96",
+            "package_key": "gen-types-0.1.30-52883694820f96fc8822bd9d0dc187e3e95c71f9",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -415,7 +415,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "gen-types-0.1.29-25797adf022275255528d545a2deba8d6b748b96": {
+      "gen-types-0.1.30-52883694820f96fc8822bd9d0dc187e3e95c71f9": {
         "runtime_dependencies": [
           {
             "name": "blake3",
@@ -1206,7 +1206,7 @@
         "build_dependencies": [],
         "features": []
       },
-      "shikumi-0.1.434": {
+      "shikumi-0.1.435": {
         "runtime_dependencies": [
           {
             "name": "arc_swap",
@@ -1244,7 +1244,7 @@
           },
           {
             "name": "gen_platform",
-            "package_key": "gen-platform-0.1.29-25797adf022275255528d545a2deba8d6b748b96",
+            "package_key": "gen-platform-0.1.30-52883694820f96fc8822bd9d0dc187e3e95c71f9",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -1254,7 +1254,7 @@
           },
           {
             "name": "gen_types",
-            "package_key": "gen-types-0.1.29-25797adf022275255528d545a2deba8d6b748b96",
+            "package_key": "gen-types-0.1.30-52883694820f96fc8822bd9d0dc187e3e95c71f9",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -4050,14 +4050,14 @@
     "find-msvc-tools-0.1.9": {
       "edition": "2018"
     },
-    "gen-macros-0.1.29-25797adf022275255528d545a2deba8d6b748b96": {
+    "gen-macros-0.1.30-52883694820f96fc8822bd9d0dc187e3e95c71f9": {
       "edition": "2024",
       "proc_macro": true
     },
-    "gen-platform-0.1.29-25797adf022275255528d545a2deba8d6b748b96": {
+    "gen-platform-0.1.30-52883694820f96fc8822bd9d0dc187e3e95c71f9": {
       "edition": "2024"
     },
-    "gen-types-0.1.29-25797adf022275255528d545a2deba8d6b748b96": {
+    "gen-types-0.1.30-52883694820f96fc8822bd9d0dc187e3e95c71f9": {
       "edition": "2024"
     },
     "getrandom-0.4.3": {
@@ -4187,7 +4187,7 @@
     "serde_yaml-0.9.34+deprecated": {
       "edition": "2021"
     },
-    "shikumi-0.1.434": {
+    "shikumi-0.1.435": {
       "edition": "2024",
       "lib_target": {
         "name": "shikumi",
@@ -4281,9 +4281,9 @@
     }
   },
   "git_nar_sha256": {
-    "gen-macros-0.1.29-25797adf022275255528d545a2deba8d6b748b96": "sha256-ASvYurg23gn1O9T1L/9X89dTT2CPzwk92Dl6EZkuI+8=",
-    "gen-platform-0.1.29-25797adf022275255528d545a2deba8d6b748b96": "sha256-ASvYurg23gn1O9T1L/9X89dTT2CPzwk92Dl6EZkuI+8=",
-    "gen-types-0.1.29-25797adf022275255528d545a2deba8d6b748b96": "sha256-ASvYurg23gn1O9T1L/9X89dTT2CPzwk92Dl6EZkuI+8=",
+    "gen-macros-0.1.30-52883694820f96fc8822bd9d0dc187e3e95c71f9": "sha256-GPE/+Jr6MghHHigYM+vLNSfCa6X5P52lsn4JblgnzSM=",
+    "gen-platform-0.1.30-52883694820f96fc8822bd9d0dc187e3e95c71f9": "sha256-GPE/+Jr6MghHHigYM+vLNSfCa6X5P52lsn4JblgnzSM=",
+    "gen-types-0.1.30-52883694820f96fc8822bd9d0dc187e3e95c71f9": "sha256-GPE/+Jr6MghHHigYM+vLNSfCa6X5P52lsn4JblgnzSM=",
     "pleme-hotswap-derive-0.1.0-1ecf9faffc8c20013051663966929ab0fb8ff946": "sha256-cBTKeWcJ+GJnCjPhnpJrWAEtUrhIpNUkPKj6gMCdK04="
   },
   "flake_metadata": {}
