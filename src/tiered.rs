@@ -2857,6 +2857,194 @@ impl ProvenanceMap {
         self.source_kind_histogram().peak_trough_sum_of_squares()
     }
 
+    /// The **joint-extremes-cube-magnitude of source-kind counts** — the
+    /// sum of the cubes of the modal and anti-modal per-source-kind leaf
+    /// counts on this resolved fold. Routes through
+    /// [`crate::AxisHistogram::peak_trough_sum_of_cubes`] one altitude
+    /// down: the fused `peak_count().pow(3) + trough_count().pow(3)`
+    /// sum-of-cubes on the histogram surface, halving the cost of the
+    /// inline `peak_source_kind_count().pow(3) +
+    /// trough_source_kind_count().pow(3)` idiom which walked the counts
+    /// vector twice.
+    ///
+    /// The **sum-of-cubes / power-sum `p_3` sibling** of the shipped
+    /// source-kind altitude [`Self::source_kind_spread`] subtraction-form,
+    /// [`Self::source_kind_peak_trough_sum`] addition-form,
+    /// [`Self::source_kind_peak_trough_product`] multiplication-form, and
+    /// [`Self::source_kind_peak_trough_sum_of_squares`] quadratic-power-
+    /// sum `p_2` scalars on the same closed count-endpoint pair, extending
+    /// the symmetric-polynomial / power-sum representation of the endpoint
+    /// pair at the source-kind altitude through Newton's two-variable
+    /// identity `p_3 == e_1 * p_2 - e_2 * p_1` (specialized to
+    /// `sum · sum_of_squares - product · sum`, equivalently
+    /// `sum · (sum_of_squares - product)`).
+    ///
+    /// **Three orthogonal read-off surfaces.** Together with the four
+    /// shipped siblings, the joint sum-of-cubes composes with the endpoint
+    /// pair through three orthogonal identities that read `soc` off any
+    /// two of the shipped scalars with no histogram re-walk:
+    ///
+    /// ```text
+    /// source_kind_peak_trough_sum_of_cubes
+    ///     == source_kind_peak_trough_sum³
+    ///        - 3 * source_kind_peak_trough_product * source_kind_peak_trough_sum
+    ///     (the (sum, product) surface Newton-recovery for p_3)
+    /// source_kind_peak_trough_sum_of_cubes
+    ///     == source_kind_peak_trough_sum
+    ///        * (source_kind_peak_trough_sum_of_squares - source_kind_peak_trough_product)
+    ///     (the (sum, sos, product) surface factorization
+    ///      p³ + t³ = (p + t)(p² - pt + t²) — non-negative subtraction by
+    ///      the AM-QM bound sos >= 2*product >= product)
+    /// source_kind_peak_trough_sum_of_cubes
+    ///     == source_kind_peak_trough_sum
+    ///        * (source_kind_spread² + source_kind_peak_trough_product)
+    ///     (the (sum, spread, product) surface identity
+    ///      p³ + t³ = (p + t)((p - t)² + pt))
+    /// ```
+    ///
+    /// The **source-altitude joint-extremes-cube-magnitude peer** — the
+    /// natural typed primitive for fleet dashboards, attestation
+    /// manifests, and alerting policies asking *"how large is the peak³ +
+    /// trough³ joint cube magnitude of the two extreme layer-class
+    /// buckets?"*: the dashboard headline *"peak³+trough³ layer-class
+    /// load: 9 leaves³ (peak File 2³ + trough Env 1³)"* (where 9 is this
+    /// scalar), the attestation manifest recording the joint cube
+    /// magnitude of a resolved fold by source-kind between rebuild
+    /// windows, the alerting policy reading
+    /// *"`source_kind_peak_trough_sum_of_cubes` >= threshold"* to gate on
+    /// the joint cubic two-sided layer-class magnitude. Before this lift,
+    /// every such consumer re-derived the projection inline as
+    /// `map.peak_source_kind_count().pow(3) +
+    /// map.trough_source_kind_count().pow(3)` — two method calls plus two
+    /// cubings plus an addition at every site, each site walking the
+    /// counts vector twice with no named surface for the joint scalar.
+    ///
+    /// The source-altitude climb of the "peak³ + trough³ sums-of-cubes
+    /// across altitudes" projection seeded on the scalar altitude by
+    /// [`crate::AxisHistogram::peak_trough_sum_of_cubes`], lifted to the
+    /// diff altitude by [`ConfigDiff::kind_peak_trough_sum_of_cubes`], and
+    /// lifted to the tier altitude by
+    /// [`Self::tier_peak_trough_sum_of_cubes`]. Parallels the sibling
+    /// source-kind altitude "spread", "peak+trough sum", "peak×trough
+    /// product", and "peak² + trough² sum-of-squares" projections on the
+    /// same closed-endpoint pair.
+    ///
+    /// **AM-cube / power-mean bound.**
+    /// `4 * source_kind_peak_trough_sum_of_cubes() >=
+    /// source_kind_peak_trough_sum().pow(3)` always (the power-mean
+    /// inequality `p³ + t³ >= (p + t)³ / 4`, from
+    /// `pt <= ((p + t) / 2)² = (p + t)² / 4` applied to
+    /// `(p + t)³ = p³ + t³ + 3pt(p + t)`). Equality holds iff
+    /// `peak_source_kind_count() == trough_source_kind_count()` — the two
+    /// endpoints coincide, so `4 * sum-of-cubes` collapses onto
+    /// `sum-cubed`. Peer to the AM-QM bound
+    /// `source_kind_peak_trough_sum_of_squares >= 2 *
+    /// source_kind_peak_trough_product` on `p_2` and the AM-GM bound
+    /// `4 * source_kind_peak_trough_product <=
+    /// source_kind_peak_trough_sum²` on the elementary-symmetric pair —
+    /// all three collapse to the same `(p - t)² >= 0` witness on the
+    /// closed endpoint pair at the source-kind altitude.
+    ///
+    /// **Empty-map convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::peak_trough_sum_of_cubes`] empty convention
+    /// one altitude down and the [`Self::peak_source_kind_count`] /
+    /// [`Self::trough_source_kind_count`] / [`Self::source_kind_spread`] /
+    /// [`Self::source_kind_peak_trough_sum`] /
+    /// [`Self::source_kind_peak_trough_product`] /
+    /// [`Self::source_kind_peak_trough_sum_of_squares`] empty conventions
+    /// on the same altitude. The scalar-count septuple
+    /// `(peak_source_kind_count, trough_source_kind_count,
+    /// source_kind_spread, source_kind_peak_trough_sum,
+    /// source_kind_peak_trough_product,
+    /// source_kind_peak_trough_sum_of_squares,
+    /// source_kind_peak_trough_sum_of_cubes)` reads uniformly
+    /// `(0, 0, 0, 0, 0, 0, 0)` on the empty map.
+    ///
+    /// **Empty-boundary equivalence.**
+    /// `source_kind_peak_trough_sum_of_cubes() == 0` ⇔ `self.is_empty()`
+    /// — both endpoints are structurally `>= 1` on every non-empty map
+    /// (by [`Self::peak_source_kind_count`]'s and
+    /// [`Self::trough_source_kind_count`]'s non-emptiness floors), and
+    /// cubing cannot introduce a zero from non-zero operands, so the
+    /// sum-of-cubes is zero exactly on the empty map. Contrapositively,
+    /// every non-empty map has `source_kind_peak_trough_sum_of_cubes() >=
+    /// 2` (both cubed endpoints are structurally `>= 1`, so their
+    /// sum-of-cubes is `>= 1 + 1 == 2`).
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_peak_trough_sum_of_cubes() ==
+    ///   source_kind_histogram().peak_trough_sum_of_cubes()` — both
+    ///   project the same scalar off the same primitive; the named seam
+    ///   is the cube-native routing of the histogram surface.
+    /// - `source_kind_peak_trough_sum_of_cubes() ==
+    ///   peak_source_kind_count().pow(3) +
+    ///   trough_source_kind_count().pow(3)` — the fused-pair identity of
+    ///   the joint-extremes-cube-magnitude peer on the underlying scalar
+    ///   count pair.
+    /// - `source_kind_peak_trough_sum_of_cubes() == 0` ⇔
+    ///   `self.is_empty()` — the empty-boundary equivalence peer to the
+    ///   two-endpoint surface.
+    /// - `source_kind_peak_trough_sum_of_cubes() >= 2` whenever
+    ///   `!self.is_empty()` — non-empty floor: both cubed endpoints are
+    ///   at least `1` on every non-empty map, so their sum-of-cubes is
+    ///   at least `2`.
+    /// - `source_kind_peak_trough_sum_of_cubes() <=
+    ///   source_kind_peak_trough_sum().pow(3)` always — `p³ + t³ <=
+    ///   (p + t)³` reduces to `3 * product * sum >= 0`. Equality iff
+    ///   `self.is_empty()` — the sole shape where
+    ///   `source_kind_peak_trough_product == 0`.
+    /// - `4 * source_kind_peak_trough_sum_of_cubes() >=
+    ///   source_kind_peak_trough_sum().pow(3)` always — the AM-cube
+    ///   bound. Equality iff `peak_source_kind_count() ==
+    ///   trough_source_kind_count()`.
+    /// - `source_kind_peak_trough_sum_of_cubes() <=
+    ///   2 * peak_source_kind_count().pow(3)` always — `p³ + t³ <= 2p³`
+    ///   reduces to `trough <= peak` (both non-negative), the structural
+    ///   `trough_source_kind_count <= peak_source_kind_count` invariant.
+    ///   Equality iff `peak_source_kind_count() ==
+    ///   trough_source_kind_count()`.
+    /// - `source_kind_peak_trough_sum_of_cubes() <=
+    ///   2 * self.len().pow(3)` always — composition of both cubed
+    ///   endpoints being bounded above by `self.len().pow(3)`.
+    /// - `source_kind_peak_trough_sum_of_cubes() +
+    ///   3 * source_kind_peak_trough_product() *
+    ///   source_kind_peak_trough_sum() ==
+    ///   source_kind_peak_trough_sum().pow(3)` always — the Newton-
+    ///   identity read-off on the `(sum, product)` surface
+    ///   (`p_3 = e_1³ - 3·e_1·e_2`).
+    /// - `source_kind_peak_trough_sum_of_cubes() ==
+    ///   source_kind_peak_trough_sum() *
+    ///   (source_kind_peak_trough_sum_of_squares() -
+    ///   source_kind_peak_trough_product())` — the sum-of-cubes
+    ///   factorization on the `(sum, sos, product)` surface (`p³ + t³ =
+    ///   (p + t)(p² - pt + t²)`; the subtraction is non-negative by the
+    ///   AM-QM bound `sos >= 2*product >= product`).
+    /// - `source_kind_peak_trough_sum_of_cubes() ==
+    ///   source_kind_peak_trough_sum() * (source_kind_spread().pow(2) +
+    ///   source_kind_peak_trough_product())` — the `(sum, spread,
+    ///   product)` surface identity `p³ + t³ = (p + t)((p - t)² + pt)`.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// peak³ + trough³ fused scan through
+    /// [`crate::AxisHistogram::peak_trough_sum_of_cubes`]). Both are
+    /// `O(n)` in practice since the source-kind axis carries a fixed
+    /// three-cell cardinality; the returned `usize` reads one scalar.
+    /// Halves the cost of the previous inline
+    /// `map.peak_source_kind_count().pow(3) +
+    /// map.trough_source_kind_count().pow(3)` idiom (which walked the
+    /// counts vector twice — once for the max, once for the min-over-
+    /// support), where
+    /// [`crate::AxisHistogram::peak_trough_sum_of_cubes`] routes both
+    /// through a single scalar read.
+    #[must_use]
+    pub fn source_kind_peak_trough_sum_of_cubes(&self) -> usize {
+        self.source_kind_histogram().peak_trough_sum_of_cubes()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -57316,6 +57504,485 @@ mod progressive_tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak * peak + trough * trough);
+        }
+    }
+
+    // ── ProvenanceMap::source_kind_peak_trough_sum_of_cubes — joint-
+    //    extremes-cube-magnitude peer on the source-kind altitude,
+    //    sum-of-cubes / power-sum p_3 sibling of `source_kind_spread`,
+    //    `source_kind_peak_trough_sum`, `source_kind_peak_trough_product`,
+    //    and `source_kind_peak_trough_sum_of_squares` on the same closed-
+    //    endpoint pair, and source-altitude climb of the "peak³ + trough³
+    //    sums-of-cubes across altitudes" projection ──
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_cubes_matches_source_kind_histogram_peak_trough_sum_of_cubes_pointwise()
+     {
+        // Routing pin: `source_kind_peak_trough_sum_of_cubes` routes
+        // through `source_kind_histogram().peak_trough_sum_of_cubes()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared cube-native primitive.
+        // Source-altitude peer of
+        // `tier_peak_trough_sum_of_cubes_matches_tier_histogram_peak_trough_sum_of_cubes_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().peak_trough_sum_of_cubes();
+            assert_eq!(map.source_kind_peak_trough_sum_of_cubes(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_cubes_equals_peak_cubed_plus_trough_cubed_pointwise() {
+        // Fused-pair pin: `source_kind_peak_trough_sum_of_cubes ==
+        // peak_source_kind_count³ + trough_source_kind_count³` on every
+        // fixture — the defining equivalence on the underlying scalar
+        // pair. Source-altitude peer of
+        // `tier_peak_trough_sum_of_cubes_equals_peak_cubed_plus_trough_cubed_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let peak = map.peak_source_kind_count();
+            let trough = map.trough_source_kind_count();
+            assert_eq!(
+                map.source_kind_peak_trough_sum_of_cubes(),
+                peak * peak * peak + trough * trough * trough,
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_cubes_prog_fixture_is_one_twenty_eight() {
+        // Prog attributes 4 leaves, all with source-kind `Defaults`
+        // (singleton-support fold on the source-kind axis). Peak lands
+        // on Defaults at 4; trough over support {Defaults} lands at 4
+        // (the sole observed source-kind is both modal and anti-modal).
+        // Sum-of-cubes = 4³ + 4³ = 64 + 64 = 128. Direct pin — the
+        // `(peak_source_kind_count, trough_source_kind_count,
+        // source_kind_spread, source_kind_peak_trough_sum,
+        // source_kind_peak_trough_product,
+        // source_kind_peak_trough_sum_of_squares,
+        // source_kind_peak_trough_sum_of_cubes)` septuple reads
+        // `(4, 4, 0, 8, 16, 32, 128)`. Sum-of-cubes-form peer of
+        // `source_kind_peak_trough_sum_of_squares_prog_fixture_is_thirty_two`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().peak_source_kind_count(), 4);
+        assert_eq!(r.provenance().trough_source_kind_count(), 4);
+        assert_eq!(r.provenance().source_kind_spread(), 0);
+        assert_eq!(r.provenance().source_kind_peak_trough_sum(), 8);
+        assert_eq!(r.provenance().source_kind_peak_trough_product(), 16);
+        assert_eq!(r.provenance().source_kind_peak_trough_sum_of_squares(), 32);
+        assert_eq!(r.provenance().source_kind_peak_trough_sum_of_cubes(), 128);
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_cubes_mixed_fixture_is_nine() {
+        // Mixed fixture attributes 4 leaves: a→Defaults, b→File,
+        // c→Env, d→Defaults. Counts: Defaults=2, Env=1, File=1. Peak
+        // lands on Defaults at 2; trough over support {Defaults, Env,
+        // File} lands at 1. Sum-of-cubes = 2³ + 1³ = 8 + 1 = 9, sos = 5,
+        // sum = 3, spread = 1, product = 2. Direct pin — the
+        // `(peak_source_kind_count, trough_source_kind_count,
+        // source_kind_spread, source_kind_peak_trough_sum,
+        // source_kind_peak_trough_product,
+        // source_kind_peak_trough_sum_of_squares,
+        // source_kind_peak_trough_sum_of_cubes)` septuple reads
+        // `(2, 1, 1, 3, 2, 5, 9)`. Sum-of-cubes-form peer of
+        // `source_kind_peak_trough_sum_of_squares_mixed_fixture_is_five`
+        // on the same fixture; also witnesses the (sum, sos, product)
+        // factorization in-place: soc = 3 * (5 - 2) = 9.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().peak_source_kind_count(), 2);
+        assert_eq!(r.provenance().trough_source_kind_count(), 1);
+        assert_eq!(r.provenance().source_kind_spread(), 1);
+        assert_eq!(r.provenance().source_kind_peak_trough_sum(), 3);
+        assert_eq!(r.provenance().source_kind_peak_trough_product(), 2);
+        assert_eq!(r.provenance().source_kind_peak_trough_sum_of_squares(), 5);
+        assert_eq!(r.provenance().source_kind_peak_trough_sum_of_cubes(), 9);
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_cubes_empty_map_is_zero() {
+        // An empty ProvenanceMap has no leaves and therefore zero joint
+        // cube magnitude — reads `0` per the
+        // AxisHistogram::peak_trough_sum_of_cubes empty convention one
+        // altitude down; the `(peak_source_kind_count,
+        // trough_source_kind_count, source_kind_spread,
+        // source_kind_peak_trough_sum, source_kind_peak_trough_product,
+        // source_kind_peak_trough_sum_of_squares,
+        // source_kind_peak_trough_sum_of_cubes)` septuple reads
+        // `(0, 0, 0, 0, 0, 0, 0)` uniformly on the empty map. Source-
+        // altitude peer of `tier_peak_trough_sum_of_cubes_empty_map_is_zero`.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.peak_source_kind_count(), 0);
+        assert_eq!(empty.trough_source_kind_count(), 0);
+        assert_eq!(empty.source_kind_spread(), 0);
+        assert_eq!(empty.source_kind_peak_trough_sum(), 0);
+        assert_eq!(empty.source_kind_peak_trough_product(), 0);
+        assert_eq!(empty.source_kind_peak_trough_sum_of_squares(), 0);
+        assert_eq!(empty.source_kind_peak_trough_sum_of_cubes(), 0);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_cubes_singleton_support_is_twice_len_cubed() {
+        // Singleton-support pin: every leaf lands on the same source-
+        // kind, so that one source-kind is both peak and trough of the
+        // observed support, and the joint sum-of-cubes is `self.len()³ +
+        // self.len()³ == 2 * self.len()³`. Source-altitude peer of
+        // `tier_peak_trough_sum_of_cubes_singleton_support_is_twice_len_cubed`
+        // on the tier altitude.
+        let m: ProvenanceMap = ["a", "b", "c"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_source_kinds().len(), 1);
+        assert_eq!(m.peak_source_kind_count(), 3);
+        assert_eq!(m.trough_source_kind_count(), 3);
+        assert_eq!(m.source_kind_peak_trough_sum_of_cubes(), 54);
+        assert_eq!(
+            m.source_kind_peak_trough_sum_of_cubes(),
+            2 * m.len() * m.len() * m.len(),
+        );
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_cubes_uniform_cover_is_twice_shared_count_cubed() {
+        // Uniform-cover pin: every observed source-kind contributes the
+        // same nonzero count (one leaf each across all three source-
+        // kinds), so peak == trough == 1 and the joint sum-of-cubes is
+        // `2 * shared_count³ == 2`. On the uniform-cover shape,
+        // `source_kind_peak_trough_sum_of_cubes == 2 *
+        // peak_source_kind_count³` (equality boundary of the
+        // `source_kind_peak_trough_sum_of_cubes <= 2 *
+        // peak_source_kind_count³` invariant). Source-altitude peer of
+        // `tier_peak_trough_sum_of_cubes_uniform_cover_is_twice_shared_count_cubed`
+        // on the sum-of-cubes-form side.
+        let m: ProvenanceMap = crate::ConfigSourceKind::ALL
+            .iter()
+            .copied()
+            .map(|k| {
+                let p = match k {
+                    crate::ConfigSourceKind::Defaults => Provenance::bare(),
+                    crate::ConfigSourceKind::Env => Provenance::env("PFX_"),
+                    crate::ConfigSourceKind::File => Provenance::file("/etc/x.yaml"),
+                };
+                (vec![k.as_str().to_owned()], p)
+            })
+            .collect();
+        assert!(m.source_kind_histogram().is_full_cover());
+        assert_eq!(m.peak_source_kind_count(), 1);
+        assert_eq!(m.trough_source_kind_count(), 1);
+        assert_eq!(m.source_kind_peak_trough_sum_of_cubes(), 2);
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_cubes_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence pin:
+        // `source_kind_peak_trough_sum_of_cubes() == 0` iff the map is
+        // empty. Both endpoints are structurally `>= 1` on every non-
+        // empty map, and cubing cannot introduce a zero from non-zero
+        // operands, so the sum-of-cubes is zero exactly on the empty
+        // map. Contrapositively, every non-empty map has
+        // `source_kind_peak_trough_sum_of_cubes >= 2`. Source-altitude
+        // peer of `tier_peak_trough_sum_of_cubes_zero_iff_empty_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let soc_zero = map.source_kind_peak_trough_sum_of_cubes() == 0;
+            let is_empty = map.is_empty();
+            assert_eq!(
+                soc_zero,
+                is_empty,
+                "source_kind_peak_trough_sum_of_cubes == 0 must agree \
+                 with is_empty() for map with peak={p}, trough={t}, soc={soc}",
+                p = map.peak_source_kind_count(),
+                t = map.trough_source_kind_count(),
+                soc = map.source_kind_peak_trough_sum_of_cubes(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_cubes_non_empty_bounded_below_by_two() {
+        // Non-empty floor pin: every non-empty map has
+        // `source_kind_peak_trough_sum_of_cubes >= 2` — the joint cube
+        // magnitude is at least `2` because both cubed endpoints are
+        // structurally `>= 1` on every non-empty map (by
+        // `peak_source_kind_count >= 1` and `trough_source_kind_count >=
+        // 1` on the non-empty case), and their sum-of-cubes is at least
+        // `1 + 1 == 2`. Source-altitude peer of
+        // `tier_peak_trough_sum_of_cubes_non_empty_bounded_below_by_two`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            assert!(
+                map.source_kind_peak_trough_sum_of_cubes() >= 2,
+                "source_kind_peak_trough_sum_of_cubes ({soc}) must be \
+                 >= 2 on non-empty map (peak={p}, trough={t})",
+                soc = map.source_kind_peak_trough_sum_of_cubes(),
+                p = map.peak_source_kind_count(),
+                t = map.trough_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_cubes_am_cube_bounded_below_by_quarter_sum_cubed() {
+        // AM-cube bound: `4 * source_kind_peak_trough_sum_of_cubes >=
+        // source_kind_peak_trough_sum³` on every fixture — the power-
+        // mean inequality `p³ + t³ >= (p + t)³ / 4`, from
+        // `pt <= ((p + t) / 2)²` applied to
+        // `(p + t)³ = p³ + t³ + 3pt(p + t)`. Equality holds iff
+        // `peak_source_kind_count == trough_source_kind_count` (the
+        // balanced-source-kind-counts shape). Source-altitude peer of
+        // `tier_peak_trough_sum_of_cubes_am_cube_bounded_below_by_quarter_sum_cubed`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let soc = map.source_kind_peak_trough_sum_of_cubes();
+            let sum = map.source_kind_peak_trough_sum();
+            let sum_cubed = sum * sum * sum;
+            let four_soc = 4 * soc;
+            assert!(
+                four_soc >= sum_cubed,
+                "4 * source_kind_peak_trough_sum_of_cubes ({four_soc}) \
+                 must be >= source_kind_peak_trough_sum³ ({sum_cubed})",
+            );
+            let equality = four_soc == sum_cubed;
+            let balanced = map.peak_source_kind_count() == map.trough_source_kind_count();
+            assert_eq!(
+                equality,
+                balanced,
+                "4 * source_kind_peak_trough_sum_of_cubes == sum³ must \
+                 agree with peak == trough for map with peak={p}, \
+                 trough={t}, sum={sum}, soc={soc}",
+                p = map.peak_source_kind_count(),
+                t = map.trough_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_cubes_bounded_above_by_sum_cubed() {
+        // Structural bound: `source_kind_peak_trough_sum_of_cubes() <=
+        // source_kind_peak_trough_sum().pow(3)` on every fixture — `p³
+        // + t³ <= (p + t)³` reduces to `3 * product * sum >= 0`, always
+        // true. Equality holds iff `self.is_empty()` — the sole shape
+        // where `source_kind_peak_trough_product == 0`. Source-altitude
+        // peer of `tier_peak_trough_sum_of_cubes_bounded_above_by_sum_cubed`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let soc = map.source_kind_peak_trough_sum_of_cubes();
+            let sum = map.source_kind_peak_trough_sum();
+            let sum_cubed = sum * sum * sum;
+            assert!(
+                soc <= sum_cubed,
+                "source_kind_peak_trough_sum_of_cubes ({soc}) must be \
+                 <= sum³ ({sum_cubed})",
+            );
+            let equality = soc == sum_cubed;
+            let is_empty = map.is_empty();
+            assert_eq!(
+                equality,
+                is_empty,
+                "source_kind_peak_trough_sum_of_cubes == sum³ must \
+                 agree with is_empty() for map with peak={p}, \
+                 trough={t}, sum={sum}, soc={soc}",
+                p = map.peak_source_kind_count(),
+                t = map.trough_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_cubes_bounded_above_by_twice_peak_cubed() {
+        // Structural bound: `source_kind_peak_trough_sum_of_cubes() <=
+        // 2 * peak_source_kind_count()³` on every fixture — `p³ + t³ <=
+        // 2p³` reduces to `trough <= peak` (both non-negative), the
+        // structural `trough_source_kind_count <=
+        // peak_source_kind_count` invariant. Equality holds iff
+        // `peak_source_kind_count == trough_source_kind_count` (the
+        // balanced-source-kind-counts shape). Source-altitude peer of
+        // `tier_peak_trough_sum_of_cubes_bounded_above_by_twice_peak_cubed`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let soc = map.source_kind_peak_trough_sum_of_cubes();
+            let peak = map.peak_source_kind_count();
+            let twice_peak_cubed = 2 * peak * peak * peak;
+            assert!(
+                soc <= twice_peak_cubed,
+                "source_kind_peak_trough_sum_of_cubes ({soc}) must be \
+                 <= 2 * peak³ ({twice_peak_cubed})",
+            );
+            let equality = soc == twice_peak_cubed;
+            let balanced = map.peak_source_kind_count() == map.trough_source_kind_count();
+            assert_eq!(
+                equality,
+                balanced,
+                "source_kind_peak_trough_sum_of_cubes == 2 * peak³ \
+                 must agree with peak == trough for map with peak={peak}, \
+                 trough={t}, soc={soc}",
+                t = map.trough_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_cubes_bounded_above_by_twice_len_cubed() {
+        // Composition bound: `source_kind_peak_trough_sum_of_cubes() <=
+        // 2 * self.len()³` on every fixture — chaining
+        // `source_kind_peak_trough_sum_of_cubes <= 2 *
+        // peak_source_kind_count³` (previous pin) with
+        // `peak_source_kind_count <= self.len()`. The joint cube
+        // magnitude of a resolved fold is bounded above by twice the
+        // cube of the total leaf count of the fold. Source-altitude peer
+        // of `tier_peak_trough_sum_of_cubes_bounded_above_by_twice_len_cubed`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let soc = map.source_kind_peak_trough_sum_of_cubes();
+            let n = map.len();
+            let twice_n_cubed = 2 * n * n * n;
+            assert!(
+                soc <= twice_n_cubed,
+                "source_kind_peak_trough_sum_of_cubes ({soc}) must not \
+                 exceed 2 * len³ ({twice_n_cubed})",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_cubes_newton_identity_with_sum_and_product_pointwise() {
+        // Newton-identity read-off on the `(sum, product)` surface:
+        // `source_kind_peak_trough_sum_of_cubes + 3 *
+        // source_kind_peak_trough_product * source_kind_peak_trough_sum
+        // == source_kind_peak_trough_sum³` on every fixture — the
+        // identity `p³ + t³ + 3pt(p + t) = (p + t)³` specialization of
+        // Newton's `p_3 = e_1³ - 3·e_1·e_2`. Reads `soc` off the
+        // `(sum, product)` surface with no histogram re-walk. Source-
+        // altitude peer of
+        // `tier_peak_trough_sum_of_cubes_newton_identity_with_sum_and_product_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let soc = map.source_kind_peak_trough_sum_of_cubes();
+            let product = map.source_kind_peak_trough_product();
+            let sum = map.source_kind_peak_trough_sum();
+            assert_eq!(soc + 3 * product * sum, sum * sum * sum);
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_cubes_factorization_with_sum_sos_and_product_pointwise() {
+        // Sum-of-cubes factorization on the `(sum, sos, product)`
+        // surface: `source_kind_peak_trough_sum_of_cubes ==
+        // source_kind_peak_trough_sum *
+        // (source_kind_peak_trough_sum_of_squares -
+        // source_kind_peak_trough_product)` on every fixture — the
+        // identity `p³ + t³ = (p + t)(p² - pt + t²)`. The subtraction
+        // `sos - product` is non-negative by the AM-QM bound `sos >=
+        // 2*product >= product` on the closed endpoint pair (with
+        // equality iff product == 0, i.e. iff `self.is_empty()`).
+        // Source-altitude peer of
+        // `tier_peak_trough_sum_of_cubes_factorization_with_sum_sos_and_product_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let soc = map.source_kind_peak_trough_sum_of_cubes();
+            let sos = map.source_kind_peak_trough_sum_of_squares();
+            let product = map.source_kind_peak_trough_product();
+            let sum = map.source_kind_peak_trough_sum();
+            assert!(
+                product <= sos,
+                "sos - product must be non-negative: product ({product}) <= sos ({sos})",
+            );
+            assert_eq!(soc, sum * (sos - product));
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_cubes_factorization_with_sum_spread_and_product_pointwise() {
+        // Sum-of-cubes factorization on the `(sum, spread, product)`
+        // surface: `source_kind_peak_trough_sum_of_cubes ==
+        // source_kind_peak_trough_sum * (source_kind_spread² +
+        // source_kind_peak_trough_product)` on every fixture — the
+        // identity `p³ + t³ = (p + t)((p - t)² + pt)`. Third orthogonal
+        // read-off surface, complementing the (sum, product) Newton-
+        // identity and the (sum, sos, product) factorization above.
+        // Source-altitude peer of
+        // `tier_peak_trough_sum_of_cubes_factorization_with_sum_spread_and_product_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let soc = map.source_kind_peak_trough_sum_of_cubes();
+            let sum = map.source_kind_peak_trough_sum();
+            let spread = map.source_kind_spread();
+            let product = map.source_kind_peak_trough_product();
+            assert_eq!(soc, sum * (spread * spread + product));
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_cubes_agrees_with_open_coded_max_cubed_plus_min_cubed_walk() {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0).pow(3) + hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0).pow(3)` walk this lift
+        // replaces — both the named seam and the hand-rolled joint cube
+        // magnitude must pointwise agree over every fixture. The
+        // `.filter(c > 0)` on the min side is essential (mirroring
+        // `trough_count`'s support discipline); the `.max()` on the
+        // peak side operates over the full axis (mirroring
+        // `peak_count`). Source-altitude peer of
+        // `tier_peak_trough_sum_of_cubes_agrees_with_open_coded_max_cubed_plus_min_cubed_walk`
+        // and sum-of-cubes-form peer of
+        // `source_kind_peak_trough_sum_of_squares_agrees_with_open_coded_max_sq_plus_min_sq_walk`
+        // on the same fixture set.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kind_peak_trough_sum_of_cubes();
+            let hist = map.source_kind_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .filter(|&(_, c)| c > 0)
+                .map(|(_, c)| c)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(via_seam, peak * peak * peak + trough * trough * trough);
         }
     }
 }
