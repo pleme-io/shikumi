@@ -3045,6 +3045,202 @@ impl ProvenanceMap {
         self.source_kind_histogram().peak_trough_sum_of_cubes()
     }
 
+    /// The **joint-extremes-quartic-magnitude of source-kind counts** —
+    /// the sum of the fourth powers of the modal and anti-modal per-
+    /// source-kind leaf counts on this resolved fold. Routes through
+    /// [`crate::AxisHistogram::peak_trough_sum_of_fourth_powers`] one
+    /// altitude down: the fused `peak_count().pow(4) +
+    /// trough_count().pow(4)` sum-of-fourth-powers on the histogram
+    /// surface, halving the cost of the inline
+    /// `peak_source_kind_count().pow(4) +
+    /// trough_source_kind_count().pow(4)` idiom which walked the counts
+    /// vector twice.
+    ///
+    /// The **sum-of-fourth-powers / power-sum `p_4` sibling** of the
+    /// shipped source-kind altitude [`Self::source_kind_spread`]
+    /// subtraction-form, [`Self::source_kind_peak_trough_sum`]
+    /// addition-form, [`Self::source_kind_peak_trough_product`]
+    /// multiplication-form,
+    /// [`Self::source_kind_peak_trough_sum_of_squares`] quadratic-
+    /// power-sum `p_2`, and
+    /// [`Self::source_kind_peak_trough_sum_of_cubes`] cubic-power-sum
+    /// `p_3` scalars on the same closed count-endpoint pair — extending
+    /// the symmetric-polynomial `(e₁, e₂) = (peak+trough, peak*trough)` /
+    /// power-sum `(p_2, p_3, p_4) = (peak² + trough², peak³ + trough³,
+    /// peak⁴ + trough⁴)` representation of the
+    /// `(peak_source_kind_count, trough_source_kind_count)` endpoint
+    /// pair at the source-kind altitude through Newton's two-variable
+    /// identity `p_4 == e_1 * p_3 - e_2 * p_2` (specialized to
+    /// `sum · sum_of_cubes - product · sum_of_squares`) and the quartic
+    /// factorization `p_4 == p_2² - 2·e_2²` (equivalently
+    /// `sum_of_squares² - 2·product²`). Together with the shipped
+    /// source-kind altitude quintuple, the sextuple
+    /// `(source_kind_peak_trough_sum, source_kind_spread,
+    /// source_kind_peak_trough_product,
+    /// source_kind_peak_trough_sum_of_squares,
+    /// source_kind_peak_trough_sum_of_cubes,
+    /// source_kind_peak_trough_sum_of_fourth_powers)` reads the joint
+    /// sum-of-fourth-powers off two orthogonal scalar surfaces of the
+    /// closed endpoint pair:
+    ///
+    /// ```text
+    /// source_kind_peak_trough_sum_of_fourth_powers
+    ///     == source_kind_peak_trough_sum_of_squares²
+    ///        - 2 * source_kind_peak_trough_product²
+    ///     (the (sos, product) surface factorization
+    ///      p⁴ + t⁴ = (p² + t²)² - 2(pt)² — non-negative subtraction by
+    ///      the AM-QM bound sos² >= (2·product)² / 2 = 2·product²)
+    /// source_kind_peak_trough_sum_of_fourth_powers
+    ///     == source_kind_peak_trough_sum
+    ///        * source_kind_peak_trough_sum_of_cubes
+    ///        - source_kind_peak_trough_product
+    ///        * source_kind_peak_trough_sum_of_squares
+    ///     (the (sum, soc, product, sos) surface Newton-recovery for p_4;
+    ///      non-negative subtraction: (p+t)(p³+t³) = p⁴+t⁴+pt(p²+t²)
+    ///      while pt·(p²+t²) reads exactly the second term)
+    /// ```
+    ///
+    /// Every consumer that wanted `peak⁴ + trough⁴` from either of the
+    /// shipped source-kind altitude scalar surfaces — `(sos, product)`
+    /// or `(sum, soc, product, sos)` — reads it off in one arithmetic
+    /// step with no histogram re-walk.
+    ///
+    /// The **source-altitude joint-extremes-quartic-magnitude peer** —
+    /// the natural typed primitive for fleet dashboards, attestation
+    /// manifests, and alerting policies asking *"how large is the peak⁴ +
+    /// trough⁴ joint quartic magnitude of the two extreme layer-class
+    /// buckets?"*: the dashboard headline *"peak⁴+trough⁴ layer-class load:
+    /// 17 leaves⁴ (peak File 2⁴ + trough Env 1⁴)"* (where 17 is this
+    /// scalar), the attestation manifest recording the joint quartic
+    /// magnitude of a resolved fold by source-kind between rebuild windows,
+    /// the alerting policy reading
+    /// *"`source_kind_peak_trough_sum_of_fourth_powers` >= threshold"* to
+    /// gate on the joint quartic two-sided layer-class magnitude. Before
+    /// this lift, every such consumer re-derived the projection inline as
+    /// `map.peak_source_kind_count().pow(4) +
+    /// map.trough_source_kind_count().pow(4)` — two method calls plus two
+    /// fourth-powerings plus an addition at every site, each site walking
+    /// the counts vector twice with no named surface for the joint scalar.
+    ///
+    /// The source-altitude climb of the "peak⁴ + trough⁴ sums-of-fourth
+    /// -powers across altitudes" projection seeded on the scalar
+    /// altitude by
+    /// [`crate::AxisHistogram::peak_trough_sum_of_fourth_powers`],
+    /// lifted to the diff altitude by
+    /// [`ConfigDiff::kind_peak_trough_sum_of_fourth_powers`], and
+    /// lifted to the tier altitude by
+    /// [`Self::tier_peak_trough_sum_of_fourth_powers`]. Parallels the
+    /// sibling source-kind altitude "spread", "peak+trough sum",
+    /// "peak×trough product", "peak² + trough² sum-of-squares", and
+    /// "peak³ + trough³ sum-of-cubes" projections on the same closed-
+    /// endpoint pair.
+    ///
+    /// **AM-quartic / power-mean bound.** `8 *
+    /// source_kind_peak_trough_sum_of_fourth_powers() >=
+    /// source_kind_peak_trough_sum().pow(4)` always — the power-mean
+    /// inequality `p⁴ + t⁴ >= (p + t)⁴ / 8`. Equality holds iff
+    /// `peak_source_kind_count() == trough_source_kind_count()` (the
+    /// balanced-source-kind-counts shape). Peer to the AM-cube bound
+    /// `4 * source_kind_peak_trough_sum_of_cubes >=
+    /// source_kind_peak_trough_sum³` on `p_3`, the AM-QM bound
+    /// `source_kind_peak_trough_sum_of_squares >= 2 *
+    /// source_kind_peak_trough_product` on `p_2`, and the AM-GM bound
+    /// `4 * source_kind_peak_trough_product <=
+    /// source_kind_peak_trough_sum²` on the elementary-symmetric pair —
+    /// all four collapse to the same `(p - t)² >= 0` witness on the
+    /// closed endpoint pair at the source-kind altitude.
+    ///
+    /// **Empty-map convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::peak_trough_sum_of_fourth_powers`] empty
+    /// convention one altitude down and every source-kind altitude
+    /// scalar peer on the same altitude. The scalar-count octuple
+    /// `(peak_source_kind_count, trough_source_kind_count,
+    /// source_kind_spread, source_kind_peak_trough_sum,
+    /// source_kind_peak_trough_product,
+    /// source_kind_peak_trough_sum_of_squares,
+    /// source_kind_peak_trough_sum_of_cubes,
+    /// source_kind_peak_trough_sum_of_fourth_powers)` reads uniformly
+    /// `(0, 0, 0, 0, 0, 0, 0, 0)` on the empty map.
+    ///
+    /// **Empty-boundary equivalence.**
+    /// `source_kind_peak_trough_sum_of_fourth_powers() == 0` ⇔
+    /// `self.is_empty()` — both endpoints are structurally `>= 1` on
+    /// every non-empty map (by [`Self::peak_source_kind_count`]'s and
+    /// [`Self::trough_source_kind_count`]'s non-emptiness floors), so
+    /// their sum-of-fourth-powers is zero exactly on the empty map.
+    /// Contrapositively, every non-empty map has
+    /// `source_kind_peak_trough_sum_of_fourth_powers() >= 2` (both
+    /// fourth-powered endpoints are structurally `>= 1`, so their sum-
+    /// of-fourth-powers is `>= 1 + 1 == 2`).
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_peak_trough_sum_of_fourth_powers() ==
+    ///   source_kind_histogram().peak_trough_sum_of_fourth_powers()` —
+    ///   both project the same scalar off the same primitive; the named
+    ///   seam is the quartic-native routing of the histogram surface.
+    /// - `source_kind_peak_trough_sum_of_fourth_powers() ==
+    ///   peak_source_kind_count().pow(4) +
+    ///   trough_source_kind_count().pow(4)` — the fused-pair identity
+    ///   of the joint-extremes-quartic-magnitude peer on the underlying
+    ///   scalar count pair.
+    /// - `source_kind_peak_trough_sum_of_fourth_powers() == 0` ⇔
+    ///   `self.is_empty()` — the empty-boundary equivalence peer to the
+    ///   two-endpoint surface.
+    /// - `source_kind_peak_trough_sum_of_fourth_powers() >= 2` whenever
+    ///   `!self.is_empty()` — non-empty floor: both endpoints are at
+    ///   least `1` on every non-empty map, so their sum-of-fourth-
+    ///   powers is at least `2`.
+    /// - `source_kind_peak_trough_sum_of_fourth_powers() <=
+    ///   source_kind_peak_trough_sum().pow(4)` always (equality iff
+    ///   `self.is_empty()`).
+    /// - `8 * source_kind_peak_trough_sum_of_fourth_powers() >=
+    ///   source_kind_peak_trough_sum().pow(4)` always (AM-quartic;
+    ///   equality iff `peak_source_kind_count() ==
+    ///   trough_source_kind_count()`).
+    /// - `source_kind_peak_trough_sum_of_fourth_powers() <=
+    ///   2 * peak_source_kind_count().pow(4)` always
+    ///   (⇔ `trough_source_kind_count() <= peak_source_kind_count()`,
+    ///   the structural invariant). Equality iff
+    ///   `peak_source_kind_count() == trough_source_kind_count()`.
+    /// - `source_kind_peak_trough_sum_of_fourth_powers() <=
+    ///   2 * self.len().pow(4)` always (composition of both fourth-
+    ///   powered endpoints being bounded above by `self.len().pow(4)`).
+    /// - `source_kind_peak_trough_sum_of_fourth_powers() ==
+    ///   source_kind_peak_trough_sum_of_squares().pow(2) - 2 *
+    ///   source_kind_peak_trough_product().pow(2)` always — the sum-of-
+    ///   fourth-powers factorization on the `(sos, product)` surface
+    ///   (`p⁴ + t⁴ = (p² + t²)² - 2(pt)²`; non-negative subtraction by
+    ///   the AM-QM bound `sos >= 2·product` squared).
+    /// - `source_kind_peak_trough_sum_of_fourth_powers() ==
+    ///   source_kind_peak_trough_sum() *
+    ///   source_kind_peak_trough_sum_of_cubes() -
+    ///   source_kind_peak_trough_product() *
+    ///   source_kind_peak_trough_sum_of_squares()` always — Newton's
+    ///   identity `p_4 = e_1 * p_3 - e_2 * p_2` on the
+    ///   `(sum, sum_of_cubes, product, sum_of_squares)` surface.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// peak⁴ + trough⁴ fused scan through
+    /// [`crate::AxisHistogram::peak_trough_sum_of_fourth_powers`]). Both
+    /// are `O(n)` in practice since the source-kind axis carries a fixed
+    /// three-cell cardinality; the returned `usize` reads one scalar.
+    /// Halves the cost of the previous inline
+    /// `map.peak_source_kind_count().pow(4) +
+    /// map.trough_source_kind_count().pow(4)` idiom (which walked the
+    /// counts vector twice — once for the max, once for the min-over-
+    /// support), where
+    /// [`crate::AxisHistogram::peak_trough_sum_of_fourth_powers`] routes
+    /// both through a single scalar read.
+    #[must_use]
+    pub fn source_kind_peak_trough_sum_of_fourth_powers(&self) -> usize {
+        self.source_kind_histogram()
+            .peak_trough_sum_of_fourth_powers()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -57983,6 +58179,515 @@ mod progressive_tests {
                 .min()
                 .unwrap_or(0);
             assert_eq!(via_seam, peak * peak * peak + trough * trough * trough);
+        }
+    }
+
+    // ── ProvenanceMap::source_kind_peak_trough_sum_of_fourth_powers —
+    //    joint-extremes-quartic-magnitude peer on the source-kind
+    //    altitude, sum-of-fourth-powers / power-sum p_4 sibling of
+    //    `source_kind_spread`, `source_kind_peak_trough_sum`,
+    //    `source_kind_peak_trough_product`,
+    //    `source_kind_peak_trough_sum_of_squares`, and
+    //    `source_kind_peak_trough_sum_of_cubes`, climbing the "peak⁴ +
+    //    trough⁴ sums-of-fourth-powers across altitudes" projection from
+    //    the tier altitude to the source-kind altitude ──
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fourth_powers_matches_source_kind_histogram_peak_trough_sum_of_fourth_powers_pointwise()
+     {
+        // Routing pin: `source_kind_peak_trough_sum_of_fourth_powers`
+        // routes through
+        // `source_kind_histogram().peak_trough_sum_of_fourth_powers()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared quartic-native primitive.
+        // Source-altitude peer of
+        // `tier_peak_trough_sum_of_fourth_powers_matches_tier_histogram_peak_trough_sum_of_fourth_powers_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map
+                .source_kind_histogram()
+                .peak_trough_sum_of_fourth_powers();
+            assert_eq!(
+                map.source_kind_peak_trough_sum_of_fourth_powers(),
+                via_histogram,
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fourth_powers_equals_peak_quartic_plus_trough_quartic_pointwise()
+     {
+        // Fused-pair pin:
+        // `source_kind_peak_trough_sum_of_fourth_powers ==
+        // peak_source_kind_count⁴ + trough_source_kind_count⁴` on every
+        // fixture — the defining equivalence on the underlying scalar
+        // pair. Source-altitude peer of
+        // `tier_peak_trough_sum_of_fourth_powers_equals_peak_quartic_plus_trough_quartic_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let peak = map.peak_source_kind_count();
+            let trough = map.trough_source_kind_count();
+            assert_eq!(
+                map.source_kind_peak_trough_sum_of_fourth_powers(),
+                peak * peak * peak * peak + trough * trough * trough * trough,
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fourth_powers_prog_fixture_is_five_hundred_twelve() {
+        // Prog attributes 4 leaves, all with source-kind `Defaults`
+        // (singleton-support fold on the source-kind axis). Peak lands
+        // on Defaults at 4; trough over support {Defaults} lands at 4
+        // (the sole observed source-kind is both modal and anti-modal).
+        // Sum-of-fourth-powers = 4⁴ + 4⁴ = 256 + 256 = 512. Direct pin —
+        // the `(peak_source_kind_count, trough_source_kind_count,
+        // source_kind_spread, source_kind_peak_trough_sum,
+        // source_kind_peak_trough_product,
+        // source_kind_peak_trough_sum_of_squares,
+        // source_kind_peak_trough_sum_of_cubes,
+        // source_kind_peak_trough_sum_of_fourth_powers)` octuple reads
+        // `(4, 4, 0, 8, 16, 32, 128, 512)`. Sum-of-fourth-powers peer of
+        // `source_kind_peak_trough_sum_of_cubes_prog_fixture_is_one_twenty_eight`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().peak_source_kind_count(), 4);
+        assert_eq!(r.provenance().trough_source_kind_count(), 4);
+        assert_eq!(r.provenance().source_kind_spread(), 0);
+        assert_eq!(r.provenance().source_kind_peak_trough_sum(), 8);
+        assert_eq!(r.provenance().source_kind_peak_trough_product(), 16);
+        assert_eq!(r.provenance().source_kind_peak_trough_sum_of_squares(), 32);
+        assert_eq!(r.provenance().source_kind_peak_trough_sum_of_cubes(), 128);
+        assert_eq!(
+            r.provenance()
+                .source_kind_peak_trough_sum_of_fourth_powers(),
+            512,
+        );
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fourth_powers_mixed_fixture_is_seventeen() {
+        // Mixed fixture attributes 4 leaves: a→Defaults, b→File,
+        // c→Env, d→Defaults. Counts: Defaults=2, Env=1, File=1. Peak
+        // lands on Defaults at 2; trough over support {Defaults, Env,
+        // File} lands at 1. Sum-of-fourth-powers = 2⁴ + 1⁴ = 16 + 1 =
+        // 17, soc = 9, sos = 5, sum = 3, spread = 1, product = 2.
+        // Direct pin — the `(peak_source_kind_count,
+        // trough_source_kind_count, source_kind_spread,
+        // source_kind_peak_trough_sum,
+        // source_kind_peak_trough_product,
+        // source_kind_peak_trough_sum_of_squares,
+        // source_kind_peak_trough_sum_of_cubes,
+        // source_kind_peak_trough_sum_of_fourth_powers)` octuple reads
+        // `(2, 1, 1, 3, 2, 5, 9, 17)`. Sum-of-fourth-powers peer of
+        // `source_kind_peak_trough_sum_of_cubes_mixed_fixture_is_nine`
+        // on the same fixture; also witnesses the (sos, product)
+        // factorization in-place: sofp = 5² - 2·2² = 25 - 8 = 17.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().peak_source_kind_count(), 2);
+        assert_eq!(r.provenance().trough_source_kind_count(), 1);
+        assert_eq!(r.provenance().source_kind_spread(), 1);
+        assert_eq!(r.provenance().source_kind_peak_trough_sum(), 3);
+        assert_eq!(r.provenance().source_kind_peak_trough_product(), 2);
+        assert_eq!(r.provenance().source_kind_peak_trough_sum_of_squares(), 5);
+        assert_eq!(r.provenance().source_kind_peak_trough_sum_of_cubes(), 9);
+        assert_eq!(
+            r.provenance()
+                .source_kind_peak_trough_sum_of_fourth_powers(),
+            17,
+        );
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fourth_powers_empty_map_is_zero() {
+        // An empty ProvenanceMap has no leaves and therefore zero joint
+        // quartic magnitude — reads `0` per the
+        // AxisHistogram::peak_trough_sum_of_fourth_powers empty
+        // convention one altitude down; the `(peak_source_kind_count,
+        // trough_source_kind_count, source_kind_spread,
+        // source_kind_peak_trough_sum,
+        // source_kind_peak_trough_product,
+        // source_kind_peak_trough_sum_of_squares,
+        // source_kind_peak_trough_sum_of_cubes,
+        // source_kind_peak_trough_sum_of_fourth_powers)` octuple reads
+        // `(0, 0, 0, 0, 0, 0, 0, 0)` uniformly on the empty map.
+        // Source-altitude peer of
+        // `tier_peak_trough_sum_of_fourth_powers_empty_map_is_zero`.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.peak_source_kind_count(), 0);
+        assert_eq!(empty.trough_source_kind_count(), 0);
+        assert_eq!(empty.source_kind_spread(), 0);
+        assert_eq!(empty.source_kind_peak_trough_sum(), 0);
+        assert_eq!(empty.source_kind_peak_trough_product(), 0);
+        assert_eq!(empty.source_kind_peak_trough_sum_of_squares(), 0);
+        assert_eq!(empty.source_kind_peak_trough_sum_of_cubes(), 0);
+        assert_eq!(empty.source_kind_peak_trough_sum_of_fourth_powers(), 0);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fourth_powers_singleton_support_is_twice_len_quartic() {
+        // Singleton-support pin: every leaf lands on the same source-
+        // kind, so that one source-kind is both peak and trough of the
+        // observed support, and the joint sum-of-fourth-powers is
+        // `self.len()⁴ + self.len()⁴ == 2 * self.len()⁴`. Source-
+        // altitude peer of
+        // `tier_peak_trough_sum_of_fourth_powers_singleton_support_is_twice_len_quartic`.
+        let m: ProvenanceMap = ["a", "b", "c"]
+            .iter()
+            .copied()
+            .map(|k| {
+                (
+                    vec![k.to_owned()],
+                    Provenance::computed(ConfigTierKind::Default),
+                )
+            })
+            .collect();
+        assert_eq!(m.contributing_source_kinds().len(), 1);
+        assert_eq!(m.peak_source_kind_count(), 3);
+        assert_eq!(m.trough_source_kind_count(), 3);
+        // 3⁴ + 3⁴ = 81 + 81 = 162
+        assert_eq!(m.source_kind_peak_trough_sum_of_fourth_powers(), 162);
+        assert_eq!(
+            m.source_kind_peak_trough_sum_of_fourth_powers(),
+            2 * m.len() * m.len() * m.len() * m.len(),
+        );
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fourth_powers_uniform_cover_is_twice_shared_count_quartic() {
+        // Uniform-cover pin: every observed source-kind contributes the
+        // same nonzero count (one leaf each across all three source-
+        // kinds), so peak == trough == 1 and the joint sum-of-fourth-
+        // powers is `2 * shared_count⁴ == 2`. On the uniform-cover
+        // shape, `source_kind_peak_trough_sum_of_fourth_powers == 2 *
+        // peak_source_kind_count⁴` (equality boundary of the
+        // `source_kind_peak_trough_sum_of_fourth_powers <= 2 *
+        // peak_source_kind_count⁴` invariant). Source-altitude peer of
+        // `tier_peak_trough_sum_of_fourth_powers_uniform_cover_is_twice_shared_count_quartic`.
+        let m: ProvenanceMap = crate::ConfigSourceKind::ALL
+            .iter()
+            .copied()
+            .map(|k| {
+                let p = match k {
+                    crate::ConfigSourceKind::Defaults => Provenance::bare(),
+                    crate::ConfigSourceKind::Env => Provenance::env("PFX_"),
+                    crate::ConfigSourceKind::File => Provenance::file("/etc/x.yaml"),
+                };
+                (vec![k.as_str().to_owned()], p)
+            })
+            .collect();
+        assert!(m.source_kind_histogram().is_full_cover());
+        assert_eq!(m.peak_source_kind_count(), 1);
+        assert_eq!(m.trough_source_kind_count(), 1);
+        assert_eq!(m.source_kind_peak_trough_sum_of_fourth_powers(), 2);
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fourth_powers_zero_iff_empty_pointwise() {
+        // Empty-boundary equivalence pin:
+        // `source_kind_peak_trough_sum_of_fourth_powers() == 0` iff the
+        // map is empty. Both endpoints are structurally `>= 1` on every
+        // non-empty map, and fourth-powering cannot introduce a zero
+        // from non-zero operands, so the sum-of-fourth-powers is zero
+        // exactly on the empty map. Contrapositively, every non-empty
+        // map has `source_kind_peak_trough_sum_of_fourth_powers >= 2`.
+        // Source-altitude peer of
+        // `tier_peak_trough_sum_of_fourth_powers_zero_iff_empty_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofp_zero = map.source_kind_peak_trough_sum_of_fourth_powers() == 0;
+            let is_empty = map.is_empty();
+            assert_eq!(
+                sofp_zero,
+                is_empty,
+                "source_kind_peak_trough_sum_of_fourth_powers == 0 must \
+                 agree with is_empty() for map with peak={p}, trough={t}, sofp={sofp}",
+                p = map.peak_source_kind_count(),
+                t = map.trough_source_kind_count(),
+                sofp = map.source_kind_peak_trough_sum_of_fourth_powers(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fourth_powers_non_empty_bounded_below_by_two() {
+        // Non-empty floor pin: every non-empty map has
+        // `source_kind_peak_trough_sum_of_fourth_powers >= 2` — the
+        // joint quartic magnitude is at least `2` because both fourth-
+        // powered endpoints are structurally `>= 1` on every non-empty
+        // map (by `peak_source_kind_count >= 1` and
+        // `trough_source_kind_count >= 1` on the non-empty case), and
+        // their sum-of-fourth-powers is at least `1 + 1 == 2`. Source-
+        // altitude peer of
+        // `tier_peak_trough_sum_of_fourth_powers_non_empty_bounded_below_by_two`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+        ] {
+            assert!(
+                map.source_kind_peak_trough_sum_of_fourth_powers() >= 2,
+                "source_kind_peak_trough_sum_of_fourth_powers ({sofp}) must \
+                 be >= 2 on non-empty map (peak={p}, trough={t})",
+                sofp = map.source_kind_peak_trough_sum_of_fourth_powers(),
+                p = map.peak_source_kind_count(),
+                t = map.trough_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fourth_powers_am_quartic_bounded_below_by_eighth_sum_quartic()
+    {
+        // AM-quartic bound:
+        // `8 * source_kind_peak_trough_sum_of_fourth_powers >=
+        // source_kind_peak_trough_sum⁴` on every fixture — the power-
+        // mean inequality `p⁴ + t⁴ >= (p + t)⁴ / 8`. Equality holds iff
+        // `peak_source_kind_count == trough_source_kind_count` (the
+        // balanced-source-kind-counts shape). Peer to the AM-cube bound
+        // `4 * soc >= sum³` on `p_3`, the AM-QM bound `sos >= 2*product`
+        // on `p_2`, and the AM-GM bound `4 * product <= sum²` on the
+        // elementary-symmetric pair. Source-altitude peer of
+        // `tier_peak_trough_sum_of_fourth_powers_am_quartic_bounded_below_by_eighth_sum_quartic`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofp = map.source_kind_peak_trough_sum_of_fourth_powers();
+            let sum = map.source_kind_peak_trough_sum();
+            let sum_quartic = sum * sum * sum * sum;
+            let eight_sofp = 8 * sofp;
+            assert!(
+                eight_sofp >= sum_quartic,
+                "8 * source_kind_peak_trough_sum_of_fourth_powers \
+                 ({eight_sofp}) must be >= source_kind_peak_trough_sum⁴ \
+                 ({sum_quartic})",
+            );
+            let equality = eight_sofp == sum_quartic;
+            let balanced = map.peak_source_kind_count() == map.trough_source_kind_count();
+            assert_eq!(
+                equality,
+                balanced,
+                "8 * source_kind_peak_trough_sum_of_fourth_powers == sum⁴ \
+                 must agree with peak == trough for map with peak={p}, \
+                 trough={t}, sum={sum}, sofp={sofp}",
+                p = map.peak_source_kind_count(),
+                t = map.trough_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fourth_powers_bounded_above_by_sum_quartic() {
+        // Structural bound:
+        // `source_kind_peak_trough_sum_of_fourth_powers() <=
+        // source_kind_peak_trough_sum().pow(4)` on every fixture —
+        // expanding `(p + t)⁴ = p⁴ + t⁴ + 4pt(p² + t²) + 6p²t²`, the
+        // excess terms over `p⁴ + t⁴` are all non-negative. Equality
+        // holds iff `self.is_empty()` — the sole shape where either
+        // endpoint is zero, since both endpoints are `>= 1` on every
+        // non-empty map. Source-altitude peer of
+        // `tier_peak_trough_sum_of_fourth_powers_bounded_above_by_sum_quartic`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofp = map.source_kind_peak_trough_sum_of_fourth_powers();
+            let sum = map.source_kind_peak_trough_sum();
+            let sum_quartic = sum * sum * sum * sum;
+            assert!(
+                sofp <= sum_quartic,
+                "source_kind_peak_trough_sum_of_fourth_powers ({sofp}) \
+                 must be <= sum⁴ ({sum_quartic})",
+            );
+            let equality = sofp == sum_quartic;
+            let is_empty = map.is_empty();
+            assert_eq!(
+                equality,
+                is_empty,
+                "source_kind_peak_trough_sum_of_fourth_powers == sum⁴ \
+                 must agree with is_empty() for map with peak={p}, \
+                 trough={t}, sum={sum}, sofp={sofp}",
+                p = map.peak_source_kind_count(),
+                t = map.trough_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fourth_powers_bounded_above_by_twice_peak_quartic() {
+        // Structural bound:
+        // `source_kind_peak_trough_sum_of_fourth_powers() <= 2 *
+        // peak_source_kind_count()⁴` on every fixture — `p⁴ + t⁴ <=
+        // 2p⁴` reduces to `trough <= peak` (both non-negative), the
+        // structural `trough_source_kind_count <=
+        // peak_source_kind_count` invariant. Equality holds iff
+        // `peak_source_kind_count == trough_source_kind_count` (the
+        // balanced-source-kind-counts shape). Source-altitude peer of
+        // `tier_peak_trough_sum_of_fourth_powers_bounded_above_by_twice_peak_quartic`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofp = map.source_kind_peak_trough_sum_of_fourth_powers();
+            let peak = map.peak_source_kind_count();
+            let twice_peak_quartic = 2 * peak * peak * peak * peak;
+            assert!(
+                sofp <= twice_peak_quartic,
+                "source_kind_peak_trough_sum_of_fourth_powers ({sofp}) \
+                 must be <= 2 * peak⁴ ({twice_peak_quartic})",
+            );
+            let equality = sofp == twice_peak_quartic;
+            let balanced = map.peak_source_kind_count() == map.trough_source_kind_count();
+            assert_eq!(
+                equality,
+                balanced,
+                "source_kind_peak_trough_sum_of_fourth_powers == 2 * peak⁴ \
+                 must agree with peak == trough for map with peak={peak}, \
+                 trough={t}, sofp={sofp}",
+                t = map.trough_source_kind_count(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fourth_powers_bounded_above_by_twice_len_quartic() {
+        // Composition bound:
+        // `source_kind_peak_trough_sum_of_fourth_powers() <= 2 *
+        // self.len()⁴` on every fixture — chaining `sofp <= 2 * peak⁴`
+        // (previous pin) with `peak <= self.len()`. The joint quartic
+        // magnitude of a resolved fold is bounded above by twice the
+        // fourth power of the total leaf count of the fold. Source-
+        // altitude peer of
+        // `tier_peak_trough_sum_of_fourth_powers_bounded_above_by_twice_len_quartic`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofp = map.source_kind_peak_trough_sum_of_fourth_powers();
+            let n = map.len();
+            let twice_n_quartic = 2 * n * n * n * n;
+            assert!(
+                sofp <= twice_n_quartic,
+                "source_kind_peak_trough_sum_of_fourth_powers ({sofp}) \
+                 must not exceed 2 * self.len()⁴ ({twice_n_quartic})",
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fourth_powers_factorization_with_sos_and_product_pointwise() {
+        // Sum-of-fourth-powers factorization on the (sos, product)
+        // surface: `source_kind_peak_trough_sum_of_fourth_powers ==
+        // source_kind_peak_trough_sum_of_squares² - 2 *
+        // source_kind_peak_trough_product²` on every fixture — the
+        // identity `p⁴ + t⁴ = (p² + t²)² - 2(pt)²`. The subtraction is
+        // non-negative because `sos = p² + t² >= 2pt = 2·product`
+        // (AM-QM), so `sos² >= 4·product² >= 2·product²`. Source-
+        // altitude peer of
+        // `tier_peak_trough_sum_of_fourth_powers_factorization_with_sos_and_product_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofp = map.source_kind_peak_trough_sum_of_fourth_powers();
+            let sos = map.source_kind_peak_trough_sum_of_squares();
+            let product = map.source_kind_peak_trough_product();
+            let two_product_sq = 2 * product * product;
+            let sos_sq = sos * sos;
+            assert!(
+                two_product_sq <= sos_sq,
+                "sos² - 2·product² must be non-negative: 2·product² \
+                 ({two_product_sq}) <= sos² ({sos_sq})",
+            );
+            assert_eq!(sofp, sos_sq - two_product_sq);
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fourth_powers_newton_identity_with_sum_soc_product_sos_pointwise()
+     {
+        // Newton's identity `p_4 = e_1 * p_3 - e_2 * p_2` read-off on
+        // the (sum, sum_of_cubes, product, sum_of_squares) surface:
+        // `source_kind_peak_trough_sum_of_fourth_powers ==
+        // source_kind_peak_trough_sum *
+        // source_kind_peak_trough_sum_of_cubes -
+        // source_kind_peak_trough_product *
+        // source_kind_peak_trough_sum_of_squares` on every fixture. The
+        // subtraction is non-negative: expanding
+        // `(p+t)(p³+t³) = p⁴ + t⁴ + pt(p²+t²)`, the second term is
+        // exactly `product * sos`, so LHS - RHS = p⁴ + t⁴ = sofp >= 0.
+        // Source-altitude peer of
+        // `tier_peak_trough_sum_of_fourth_powers_newton_identity_with_sum_soc_product_sos_pointwise`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let sofp = map.source_kind_peak_trough_sum_of_fourth_powers();
+            let sum = map.source_kind_peak_trough_sum();
+            let soc = map.source_kind_peak_trough_sum_of_cubes();
+            let product = map.source_kind_peak_trough_product();
+            let sos = map.source_kind_peak_trough_sum_of_squares();
+            let lhs = sum * soc;
+            let rhs = product * sos;
+            assert!(
+                rhs <= lhs,
+                "sum·soc - product·sos must be non-negative: \
+                 product·sos ({rhs}) <= sum·soc ({lhs})",
+            );
+            assert_eq!(sofp, lhs - rhs);
+        }
+    }
+
+    #[test]
+    fn source_kind_peak_trough_sum_of_fourth_powers_agrees_with_open_coded_max_quartic_plus_min_quartic_walk()
+     {
+        // Parity against the exact `hist.iter().map(|(_, c)| c).max()
+        // .unwrap_or(0).pow(4) + hist.iter().filter(|&(_, c)| c > 0)
+        // .map(|(_, c)| c).min().unwrap_or(0).pow(4)` walk this lift
+        // replaces — both the named seam and the hand-rolled joint
+        // quartic magnitude must pointwise agree over every fixture.
+        // The `.filter(c > 0)` on the min side is essential (mirroring
+        // `trough_count`'s support discipline); the `.max()` on the
+        // peak side operates over the full axis (mirroring
+        // `peak_count`). Source-altitude peer of
+        // `tier_peak_trough_sum_of_fourth_powers_agrees_with_open_coded_max_quartic_plus_min_quartic_walk`
+        // and sum-of-fourth-powers-form peer of
+        // `source_kind_peak_trough_sum_of_cubes_agrees_with_open_coded_max_cubed_plus_min_cubed_walk`
+        // on the same fixture set.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kind_peak_trough_sum_of_fourth_powers();
+            let hist = map.source_kind_histogram();
+            let peak = hist.iter().map(|(_, c)| c).max().unwrap_or(0);
+            let trough = hist
+                .iter()
+                .filter(|&(_, c)| c > 0)
+                .map(|(_, c)| c)
+                .min()
+                .unwrap_or(0);
+            assert_eq!(
+                via_seam,
+                peak * peak * peak * peak + trough * trough * trough * trough,
+            );
         }
     }
 }
