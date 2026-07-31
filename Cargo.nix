@@ -3189,6 +3189,23 @@ rec {
         ];
 
       };
+      "fsevent-sys" = rec {
+        crateName = "fsevent-sys";
+        version = "4.1.0";
+        edition = "2018";
+        sha256 = "1liz67v8b0gcs8r31vxkvm2jzgl9p14i78yfqx81c8sdv817mvkn";
+        libName = "fsevent_sys";
+        authors = [
+          "Pierre Baillet <pierre@baillet.name>"
+        ];
+        dependencies = [
+          {
+            name = "libc";
+            packageId = "libc";
+          }
+        ];
+
+      };
       "futures-channel" = rec {
         crateName = "futures-channel";
         version = "0.3.33";
@@ -5504,6 +5521,12 @@ rec {
             target = { target, features }: ("macos" == target."os" or null);
           }
           {
+            name = "fsevent-sys";
+            packageId = "fsevent-sys";
+            optional = true;
+            target = { target, features }: ("macos" == target."os" or null);
+          }
+          {
             name = "inotify";
             packageId = "inotify";
             usesDefaultFeatures = false;
@@ -5574,7 +5597,7 @@ rec {
           "serde" = [ "notify-types/serde" ];
           "serialization-compat-6" = [ "notify-types/serialization-compat-6" ];
         };
-        resolvedDefaultFeatures = [ "kqueue" "macos_kqueue" "mio" ];
+        resolvedDefaultFeatures = [ "fsevent-sys" "macos_fsevent" ];
       };
       "notify-types" = rec {
         crateName = "notify-types";
@@ -9164,7 +9187,7 @@ rec {
       };
       "shikumi" = rec {
         crateName = "shikumi";
-        version = "0.1.451";
+        version = "0.1.452";
         edition = "2024";
         src = lib.cleanSourceWith { filter = sourceFilter;  src = ./.; };
         dependencies = [
@@ -9236,7 +9259,7 @@ rec {
             packageId = "notify";
             usesDefaultFeatures = false;
             target = { target, features }: ("macos" == target."os" or null);
-            features = [ "macos_kqueue" ];
+            features = [ "macos_fsevent" ];
           }
           {
             name = "pleme-hotswap";
