@@ -3785,6 +3785,197 @@ impl ProvenanceMap {
         self.source_kind_histogram().trough_multiplicity()
     }
 
+    /// The **modality-shape amplitude of source-kind counts** — the
+    /// absolute difference between the modal and antimodal
+    /// [`crate::ConfigSourceKind`] level-set cardinalities on this
+    /// resolved fold. Equal to
+    /// `self.peak_source_kind_multiplicity().abs_diff(self.trough_source_kind_multiplicity())`
+    /// by construction, routed through [`Self::source_kind_histogram`]:
+    /// [`crate::AxisHistogram::modality_amplitude`] reads the same
+    /// scalar off the fixed-cardinality counts vector in one pass.
+    /// Returns `0` exactly when the modal and antimodal level sets
+    /// share cardinality — including the empty map (`0.abs_diff(0)`),
+    /// every singleton-support fold (`1.abs_diff(1)`), every uniform
+    /// per-source-kind cover (both level sets walk the full observed
+    /// support), and every strictly-ordered three-cell shape (both
+    /// level sets are singletons, `1.abs_diff(1)`).
+    ///
+    /// The **source-altitude peer** of [`Self::tier_modality_amplitude`]
+    /// on the tier altitude: both read the modality-amplitude scalar
+    /// off the same shared [`crate::AxisHistogram::modality_amplitude`]
+    /// primitive one altitude down, matched by name, by return-type
+    /// shape (`usize`), and by empty-map convention (both return `0`).
+    /// The **scalar-amplitude peer** on the source-kind multiplicity
+    /// surface — the structural dual of [`Self::source_kind_spread`]
+    /// on the count surface at the source-kind altitude. Where
+    /// [`Self::source_kind_spread`] fuses the extremal-count pair
+    /// `(peak_source_kind_count, trough_source_kind_count)` into
+    /// `peak - trough` (underflow-safe since `peak >= trough` always),
+    /// `source_kind_modality_amplitude` fuses the extremal-
+    /// multiplicity pair `(peak_source_kind_multiplicity,
+    /// trough_source_kind_multiplicity)` into
+    /// `peak_mult.abs_diff(trough_mult)`. The `abs_diff` operation is
+    /// required (unlike the count-side subtraction) because neither
+    /// multiplicity dominates the other structurally — a right-skewed
+    /// fold (two source-kinds tied at the peak, one uniquely at the
+    /// trough) has `peak_mult > trough_mult`, whereas a heavy-tail
+    /// fold (one uniquely at the peak, two tied at the trough) has
+    /// `peak_mult < trough_mult`. The unsigned-diff form reads the
+    /// *magnitude* of the cardinality gap without committing to a
+    /// signed direction.
+    ///
+    /// The natural typed primitive for fleet dashboards, attestation
+    /// manifests, and alerting policies asking *"how symmetric is the
+    /// modality-shape of this resolved fold between its peak and
+    /// trough source-kinds?"*: the fleet dashboard headline *"source-
+    /// kind amplitude 1: 2 layer classes tied at peak, 1 alone at
+    /// trough"* (where `1` is this scalar), the attestation manifest
+    /// recording the modality-amplitude of the resolved fold between
+    /// two rebuild windows, the alerting policy reading *"source-kind
+    /// amplitude = 2"* to flag a rebuild window where the modality
+    /// distribution is sharply asymmetric. Before this lift, every
+    /// such consumer re-derived the projection inline as
+    /// `map.peak_source_kind_multiplicity().abs_diff(map.trough_source_kind_multiplicity())`
+    /// — two method calls plus an `abs_diff`, each site walking the
+    /// counts vector twice where
+    /// [`crate::AxisHistogram::modality_amplitude`] fuses both into a
+    /// single walk through [`crate::AxisHistogram::modality_degree`].
+    ///
+    /// The source-kind-altitude scalar-amplitude peer that **climbs
+    /// the "modality-amplitude across altitudes" projection** from the
+    /// diff altitude — the natural scalar sister of the two closed
+    /// source-kind-multiplicity scalars
+    /// ([`Self::peak_source_kind_multiplicity`] and
+    /// [`Self::trough_source_kind_multiplicity`], both surfaced at this
+    /// altitude) on every altitude of the fully-closed cube. Lifts the
+    /// diff-altitude seed [`ConfigDiff::kind_modality_amplitude`] one
+    /// altitude up and matches the tier-altitude
+    /// [`Self::tier_modality_amplitude`] one axis over on the same
+    /// [`ProvenanceMap`] surface. Parallels the "spread across
+    /// altitudes" projection climbed on the same altitude by
+    /// [`Self::source_kind_spread`] (the count-surface dispersion peer
+    /// of this multiplicity-surface amplitude).
+    ///
+    /// **Cardinality-`3` reachability at the source-kind altitude.**
+    /// [`crate::ConfigSourceKind`] carries three cells
+    /// ([`crate::ConfigSourceKind::Defaults`],
+    /// [`crate::ConfigSourceKind::Env`], [`crate::ConfigSourceKind::File`]),
+    /// so `source_kind_modality_amplitude()` reads `0` on every
+    /// amplitude-zero shape (empty / singleton / uniform-per-kind /
+    /// strictly-ordered three-cell) and up to `1` on the maximally-
+    /// asymmetric non-uniform shape where one cell holds one extreme
+    /// count and two cells tie at the other extreme. The trait-
+    /// uniform `modality_amplitude() <= distinct_cells()` law caps the
+    /// amplitude at `3` on the three-cell axis, but the tighter
+    /// composed bound `|peak_mult - trough_mult| <= distinct_cells -
+    /// 2 * 1 == 1` (from `peak_mult >= 1` + `trough_mult >= 1` + the
+    /// disjointness of the two level sets on non-uniform folds) pins
+    /// the reachable maximum at `1` on non-empty three-cell folds.
+    /// One cardinality below the tier altitude's higher-reachable
+    /// range on the same amplitude surface, matching the axis-
+    /// cardinality gap between the four-cell tier axis and the three-
+    /// cell source-kind axis.
+    ///
+    /// **Empty-map convention** — returns `0`, matching the
+    /// [`crate::AxisHistogram::modality_amplitude`] empty convention
+    /// one altitude down and the [`Self::peak_source_kind_multiplicity`]
+    /// / [`Self::trough_source_kind_multiplicity`] empty conventions
+    /// on the same altitude. The scalar-multiplicity triple
+    /// `(peak_source_kind_multiplicity,
+    /// trough_source_kind_multiplicity,
+    /// source_kind_modality_amplitude)` reads uniformly `(0, 0, 0)` on
+    /// the empty map — the vacuous-balance boundary lifted from the
+    /// empty support.
+    ///
+    /// **Singleton-support convention** — returns `0` on every fold
+    /// whose observed support is a single [`crate::ConfigSourceKind`]
+    /// cell: the sole observed cell is simultaneously the unique peak
+    /// and the unique trough (both multiplicities read `1`, so the
+    /// absolute difference reads `0`). Every singleton-support fold
+    /// sits on the amplitude-zero boundary.
+    ///
+    /// **Uniform per-source-kind convention** — returns `0` on every
+    /// uniform per-source-kind cover (every observed cell contributes
+    /// the same nonzero count): peak and trough coincide across the
+    /// full observed support, so both multiplicities read
+    /// `contributing_source_kinds_count()` and their absolute
+    /// difference reads `0`. The scalar-side signature of *"uniform-
+    /// per-source-kind"* on the multiplicity surface.
+    ///
+    /// **Strictly-ordered three-cell convention** — returns `0` on
+    /// every strictly-ordered three-cell fold (three distinct positive
+    /// counts, e.g. `Defaults=1, Env=2, File=3`): both multiplicities
+    /// are `1` (one unique cell at the peak, one unique cell at the
+    /// trough), so the amplitude reads `0` even though the shape is
+    /// *not* uniform. The predicate
+    /// `source_kind_modality_amplitude() == 0` is therefore strictly
+    /// weaker than the uniform-count predicate on the source-kind
+    /// altitude — this shape witnesses the gap between the two
+    /// amplitude-zero boundaries at the source-kind altitude, matching
+    /// the analogous strictly-ordered witness the tier altitude
+    /// carries on its four-cell axis.
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_modality_amplitude() ==
+    ///   source_kind_histogram().modality_amplitude()` — both project
+    ///   the same scalar off the same primitive; the named seam is the
+    ///   cube-native routing of the histogram surface.
+    /// - `source_kind_modality_amplitude() ==
+    ///   peak_source_kind_multiplicity().abs_diff(trough_source_kind_multiplicity())`
+    ///   — the defining equivalence on the multiplicity-scalar pair at
+    ///   the source-kind altitude. The `abs_diff` form is required
+    ///   because `peak_mult` and `trough_mult` can go either way
+    ///   (unlike `peak_count >= trough_count`).
+    /// - `source_kind_modality_amplitude() == 0` on the empty map —
+    ///   the vacuous-balance boundary. The
+    ///   `(peak_source_kind_multiplicity,
+    ///   trough_source_kind_multiplicity,
+    ///   source_kind_modality_amplitude)` triple reads uniformly
+    ///   `(0, 0, 0)` on the empty map.
+    /// - `source_kind_modality_amplitude() == 0` on every singleton-
+    ///   support fold — the sole observed cell is both the unique peak
+    ///   and the unique trough, so both multiplicities read `1` and
+    ///   the amplitude reads `0`.
+    /// - `source_kind_modality_amplitude() == 0 ⇔
+    ///   peak_source_kind_multiplicity() ==
+    ///   trough_source_kind_multiplicity()` — the typed *modality-
+    ///   symmetric* predicate on the multiplicity surface at the
+    ///   source-kind altitude. The modal and antimodal level sets
+    ///   share cardinality (though not necessarily membership).
+    /// - `source_kind_modality_amplitude() <= contributing_source_kinds_count()`
+    ///   always — both level sets are subsets of the observed support,
+    ///   so their absolute difference is bounded by the support size.
+    ///   Lifted from the trait-uniform
+    ///   `modality_amplitude() <= distinct_cells()` law on
+    ///   [`crate::AxisHistogram`].
+    /// - `source_kind_modality_amplitude() <=
+    ///   crate::axis_cardinality::<crate::ConfigSourceKind>()` always
+    ///   — bounded above by the axis cardinality `3` on the three-cell
+    ///   source-kind axis. Composition of the above with
+    ///   `contributing_source_kinds_count() <=
+    ///   crate::axis_cardinality::<crate::ConfigSourceKind>()`.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    /// (the fused peak + trough scan through
+    /// [`crate::AxisHistogram::modality_degree`]). Both are `O(n)` in
+    /// practice since the source-kind axis carries a fixed three-cell
+    /// cardinality; the returned `usize` reads one scalar. Halves the
+    /// cost of the previous inline
+    /// `map.peak_source_kind_multiplicity().abs_diff(map.trough_source_kind_multiplicity())`
+    /// idiom (which walked the counts vector twice — once for the peak
+    /// multiplicity, once for the trough multiplicity — where
+    /// [`crate::AxisHistogram::modality_amplitude`] fuses both into a
+    /// single walk through
+    /// [`crate::AxisHistogram::modality_degree`]).
+    #[must_use]
+    pub fn source_kind_modality_amplitude(&self) -> usize {
+        self.source_kind_histogram().modality_amplitude()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -60300,6 +60491,275 @@ mod progressive_tests {
                 0
             } else {
                 hist.iter().filter(|(_, c)| *c == min).count()
+            };
+            assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::source_kind_modality_amplitude — modality-shape
+    //    amplitude peer on the source-kind altitude, source-altitude
+    //    peer of `tier_modality_amplitude` on the same
+    //    `AxisHistogram::modality_amplitude` primitive one altitude
+    //    down ──
+
+    #[test]
+    fn source_kind_modality_amplitude_matches_source_kind_histogram_modality_amplitude_pointwise() {
+        // Routing pin: `source_kind_modality_amplitude` routes through
+        // `source_kind_histogram().modality_amplitude()`. Both must
+        // agree pointwise on every fixture; the named seam is the
+        // cube-native routing of the histogram surface.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert_eq!(
+                map.source_kind_modality_amplitude(),
+                map.source_kind_histogram().modality_amplitude(),
+            );
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_amplitude_equals_abs_diff_of_peak_and_trough_multiplicities() {
+        // Defining equivalence on the multiplicity-scalar pair at the
+        // source-kind altitude: the amplitude reads
+        // `peak.abs_diff(trough)`. Locks the identity against inline
+        // re-derivation the seam replaces.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let peak = map.peak_source_kind_multiplicity();
+            let trough = map.trough_source_kind_multiplicity();
+            assert_eq!(map.source_kind_modality_amplitude(), peak.abs_diff(trough));
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_amplitude_empty_map_is_zero() {
+        // Empty-map convention: the vacuous-balance boundary. Both
+        // multiplicities read `0`, so the amplitude reads `0`.
+        let empty = ProvenanceMap::default();
+        assert_eq!(empty.source_kind_modality_amplitude(), 0);
+        assert_eq!(empty.peak_source_kind_multiplicity(), 0);
+        assert_eq!(empty.trough_source_kind_multiplicity(), 0);
+    }
+
+    #[test]
+    fn source_kind_modality_amplitude_prog_singleton_support_is_zero() {
+        // Prog: singleton-support all-Defaults fold — the sole
+        // observed cell is both the unique peak and the unique trough,
+        // so both multiplicities read `1` and the amplitude reads `0`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().peak_source_kind_multiplicity(), 1);
+        assert_eq!(r.provenance().trough_source_kind_multiplicity(), 1);
+        assert_eq!(r.provenance().source_kind_modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn source_kind_modality_amplitude_mixed_fixture_is_one() {
+        // Mixed fixture: Defaults=2, Env=1, File=1 — Defaults uniquely
+        // peaks (multiplicity `1`) and Env+File tie at the trough
+        // (multiplicity `2`), so the amplitude reads
+        // `1.abs_diff(2) == 1`. The heavy-tail witness on the
+        // cardinality-`3` source-kind axis.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().peak_source_kind_multiplicity(), 1);
+        assert_eq!(r.provenance().trough_source_kind_multiplicity(), 2);
+        assert_eq!(r.provenance().source_kind_modality_amplitude(), 1);
+    }
+
+    #[test]
+    fn source_kind_modality_amplitude_right_skew_two_at_peak_is_one() {
+        // Right-skew witness: Defaults=2, Env=2, File=1 — Defaults+Env
+        // tie at the peak (multiplicity `2`) and File uniquely troughs
+        // (multiplicity `1`), so the amplitude reads
+        // `2.abs_diff(1) == 1`. The mirror of the heavy-tail witness
+        // on the same cardinality-`3` axis.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (
+                vec!["b".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["c".to_owned()], Provenance::env("E_")),
+            (vec!["d".to_owned()], Provenance::env("E_")),
+            (vec!["e".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.peak_source_kind_multiplicity(), 2);
+        assert_eq!(m.trough_source_kind_multiplicity(), 1);
+        assert_eq!(m.source_kind_modality_amplitude(), 1);
+    }
+
+    #[test]
+    fn source_kind_modality_amplitude_uniform_full_cover_is_zero() {
+        // Uniform three-source-kind cover: all three cells at count
+        // `1`, both multiplicities read `3`, so the amplitude reads
+        // `0`. The uniform-per-source-kind boundary on the amplitude
+        // surface.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.peak_source_kind_multiplicity(), 3);
+        assert_eq!(m.trough_source_kind_multiplicity(), 3);
+        assert_eq!(m.source_kind_modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn source_kind_modality_amplitude_strictly_ordered_three_cell_is_zero() {
+        // Strictly-ordered three-cell fold: three distinct positive
+        // counts (Defaults=1, Env=2, File=3) — both extremes uniquely
+        // held, so both multiplicities read `1` and the amplitude
+        // reads `0`. This shape witnesses the gap between the two
+        // amplitude-zero boundaries on the cardinality-`3` axis: not
+        // uniform-per-kind but still amplitude-zero.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::env("E_")),
+            (vec!["d".to_owned()], Provenance::file("/f.yaml")),
+            (vec!["e".to_owned()], Provenance::file("/f.yaml")),
+            (vec!["f".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.peak_source_kind_count(), 3);
+        assert_eq!(m.trough_source_kind_count(), 1);
+        assert_eq!(m.peak_source_kind_multiplicity(), 1);
+        assert_eq!(m.trough_source_kind_multiplicity(), 1);
+        assert_eq!(m.source_kind_modality_amplitude(), 0);
+    }
+
+    #[test]
+    fn source_kind_modality_amplitude_maximally_asymmetric_three_cell_is_one() {
+        // Reachable-maximum witness on the cardinality-`3` axis. The
+        // amplitude is `peak_mult.abs_diff(trough_mult)`; on any non-
+        // uniform three-cell fold the peak and trough level sets are
+        // *disjoint* (peak_count != trough_count ⇒ the two extremes
+        // sit on different cells), so `peak_mult + trough_mult <=
+        // distinct_cells <= 3`. Composed with the non-empty lower
+        // bounds `peak_mult >= 1` and `trough_mult >= 1`, the widest
+        // reachable amplitude on non-empty three-cell folds is
+        // `|peak_mult - trough_mult| <= distinct_cells - 2 * 1 == 1`
+        // — realised by the (1, 2) and (2, 1) shapes. Pinned here on
+        // the (1, 2) shape Defaults=3, Env=1, File=1: Defaults
+        // uniquely peaks, Env+File tie at the trough. Structural
+        // consequence: the amplitude upper bound `2` documented at
+        // this altitude is never *reached* on non-empty three-cell
+        // folds — it is bounded away by the `>= 1` non-empty
+        // multiplicity floors on each level set.
+        let asym: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (
+                vec!["b".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (
+                vec!["c".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["d".to_owned()], Provenance::env("E_")),
+            (vec!["e".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(asym.peak_source_kind_multiplicity(), 1);
+        assert_eq!(asym.trough_source_kind_multiplicity(), 2);
+        assert_eq!(asym.source_kind_modality_amplitude(), 1);
+    }
+
+    #[test]
+    fn source_kind_modality_amplitude_is_zero_iff_multiplicities_are_equal() {
+        // The typed *modality-symmetric* predicate on the multiplicity
+        // surface at the source-kind altitude. Iff-lock:
+        // `amplitude == 0` exactly when the peak and trough
+        // multiplicities coincide.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let symmetric =
+                map.peak_source_kind_multiplicity() == map.trough_source_kind_multiplicity();
+            assert_eq!(map.source_kind_modality_amplitude() == 0, symmetric);
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_amplitude_bounded_above_by_contributing_source_kinds_count() {
+        // Trait-uniform `modality_amplitude() <= distinct_cells()`
+        // law lifted to the source-kind altitude: the absolute-
+        // difference of the two multiplicities is bounded above by the
+        // support size (both level sets are subsets of the observed
+        // support).
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.source_kind_modality_amplitude() <= map.contributing_source_kinds_count());
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_amplitude_bounded_by_axis_cardinality() {
+        // Composition bound: since `contributing_source_kinds_count()
+        // <= axis_cardinality::<ConfigSourceKind>() == 3`, the
+        // amplitude is bounded above by the axis cardinality `3` on
+        // the three-cell source-kind axis.
+        let card = crate::axis_cardinality::<crate::ConfigSourceKind>();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            assert!(map.source_kind_modality_amplitude() <= card);
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_amplitude_agrees_with_open_coded_amplitude_walk() {
+        // Parity against the hand-rolled amplitude walk: over the
+        // histogram's *support* (nonzero cells), compute the max and
+        // min counts, then take the multiplicity of each and their
+        // absolute difference. Empty histogram has no support so all
+        // three scalars read `0` and the amplitude reads `0`.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_seam = map.source_kind_modality_amplitude();
+            let hist = map.source_kind_histogram();
+            let positive: Vec<usize> = hist.iter().map(|(_, c)| c).filter(|&c| c > 0).collect();
+            let hand_rolled = if positive.is_empty() {
+                0
+            } else {
+                let max = *positive.iter().max().unwrap();
+                let min = *positive.iter().min().unwrap();
+                let peak_mult = positive.iter().filter(|&&c| c == max).count();
+                let trough_mult = positive.iter().filter(|&&c| c == min).count();
+                peak_mult.abs_diff(trough_mult)
             };
             assert_eq!(via_seam, hand_rolled);
         }
