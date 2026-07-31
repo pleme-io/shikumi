@@ -146,13 +146,32 @@ kanchi = { git = "https://github.com/pleme-io/kanchi", rev = "0569d9655ac9ab0784
 # base64 decode for the real in-cluster Secret value (`kube` feature only).
 base64 = { version = "0.22", optional = true }
 
-# macOS opts into the kqueue backend for notify. Gating via
-# `[target.'cfg(target_os = "macos")']` is the only way to keep this
-# feature out of Linux builds — Cargo feature unification per-target
-# means a global `features = ["macos_kqueue"]` would activate the
-# apple-only kqueue → kqueue-sys chain in every target.
+# macOS opts into the FSEvents backend for notify. The target-gate is still
+# required: Cargo unifies features per-target, so a bare `[dependencies]` line
+# would activate the macOS backend chain on every Linux build too. Linux gets
+# notify's only Linux backend (inotify) with no macOS dep activated.
+#
+# ★ It MUST be `macos_fsevent`, never `macos_kqueue` — this line was the latter
+# until 2026-07-31 and the difference is not stylistic. In notify 8:
+#
+#     #[cfg(all(target_os = "macos", not(feature = "macos_kqueue")))]
+#     pub type RecommendedWatcher = FsEventWatcher;
+#
+# `macos_kqueue` is a POISON feature. Cargo features are additive and unify
+# across the whole graph, so ONE crate enabling it switches every macOS
+# consumer of notify to the kqueue backend — and a consumer cannot un-enable
+# it. kqueue holds one open FILE DESCRIPTOR per watched path; FSEvents holds
+# none. Measured on cid: the seki prompt daemon, watching one repo recursively,
+# held 26,517 open FDs across 3,014 paths (8,967 of them in a cargo
+# `target/debug/deps` it had no reason to watch). FSEvents holds zero.
+#
+# The original rationale was wrong, not merely outdated: it read as though
+# `macos_fsevent` would drag `fsevent-sys` into Linux builds. It cannot —
+# notify declares fsevent-sys under `[target.'cfg(target_os="macos")']`, so it
+# is unreachable off macOS. kqueue was adopted to solve a Linux problem that
+# the correct feature never had.
 [target.'cfg(target_os = "macos")'.dependencies]
-notify = { version = "8.2", default-features = false, features = ["macos_kqueue"] }
+notify = { version = "8.2", default-features = false, features = ["macos_fsevent"] }
 
 [dev-dependencies]
 tempfile = "3"
