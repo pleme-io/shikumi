@@ -4167,6 +4167,157 @@ impl ProvenanceMap {
         self.source_kind_histogram().modality_degree_sum()
     }
 
+    /// The **modality-shape fused-pair of source-kind counts** — the joint
+    /// modal and antimodal [`crate::ConfigSourceKind`] level-set
+    /// cardinality pair on this resolved fold. Equal to
+    /// `(self.peak_source_kind_multiplicity(),
+    /// self.trough_source_kind_multiplicity())` by construction, routed
+    /// through [`Self::source_kind_histogram`]:
+    /// [`crate::AxisHistogram::modality_degree`] reads the same tuple off
+    /// the fixed-cardinality counts vector in one fused single-pass scan
+    /// that tracks the running max + reset-on-rise modal multiplicity and
+    /// the running min (initialized to `usize::MAX` so the first positive
+    /// count promotes the sentinel) + reset-on-fall antimodal
+    /// multiplicity simultaneously, halving the work of the two-scan
+    /// `(peak_source_kind_multiplicity(),
+    /// trough_source_kind_multiplicity())` fusion the scalar-pair form
+    /// pays for on every non-empty fold.
+    ///
+    /// The **fused-pair peer** of the two closed multiplicity scalars
+    /// ([`Self::peak_source_kind_multiplicity`] and
+    /// [`Self::trough_source_kind_multiplicity`], both already surfaced
+    /// at this altitude) — the joint-projection dual of the two scalar
+    /// halves the sibling additive
+    /// [`Self::source_kind_modality_degree_sum`] and absolute-difference
+    /// [`Self::source_kind_modality_amplitude`] scalars project through
+    /// as `.0 + .1` and `.0.abs_diff(.1)` respectively. Where the two
+    /// scalar siblings each read one arithmetic fusion off the pair, the
+    /// fused-pair primitive names the *pair itself* as one scalar-tuple
+    /// read — a *modality summary* dashboard line, a *modality-degree*
+    /// attestation cell, or a *peer-tied* gate now reads off one method
+    /// call rather than two.
+    ///
+    /// The natural typed primitive for fleet dashboards, attestation
+    /// manifests, and alerting policies asking *"how multiply tied are
+    /// both extremes of this resolved fold's source-kind
+    /// distribution?"*: the fleet dashboard headline *"source-kind
+    /// modality-degree `(1, 2)`: one layer class alone at peak, two
+    /// tied at trough"* (where `(1, 2)` is this pair), the attestation
+    /// manifest recording the joint modal / antimodal level-set
+    /// cardinalities of the resolved fold between two rebuild windows,
+    /// the alerting policy reading *"source-kind modality-degree
+    /// `(3, 3)`"* to classify balanced full-cover folds (modal /
+    /// antimodal coincidence — the whole three-cell support sits at
+    /// both level sets). Before this lift, every such consumer re-
+    /// derived the projection inline as
+    /// `(map.peak_source_kind_multiplicity(),
+    /// map.trough_source_kind_multiplicity())` — two method calls,
+    /// each walking the counts vector where the shared
+    /// [`crate::AxisHistogram::modality_degree`] primitive fuses both
+    /// into a single walk.
+    ///
+    /// The source-kind altitude fused-pair peer that **climbs the
+    /// "modality-degree across altitudes" projection** from the diff
+    /// altitude — the natural fused-pair upstream of the two closed
+    /// source-kind multiplicity scalars
+    /// ([`Self::peak_source_kind_multiplicity`] and
+    /// [`Self::trough_source_kind_multiplicity`]) on every altitude of
+    /// the fully-closed cube. Matches the tier-altitude
+    /// [`Self::tier_modality_degree`] one axis over on the same
+    /// [`ProvenanceMap`] surface. Parallels the fully-closed
+    /// "modality-amplitude across altitudes" projection climbed on the
+    /// same altitude by [`Self::source_kind_modality_amplitude`] and
+    /// the fully-closed "modality-degree-sum across altitudes"
+    /// projection climbed on the same altitude by
+    /// [`Self::source_kind_modality_degree_sum`] one seam over — this
+    /// climb carries the *joint pair itself* the two fused-scalar
+    /// siblings project through.
+    ///
+    /// **Cardinality-`3` reachability at the source-kind altitude.**
+    /// [`crate::ConfigSourceKind`] carries three cells
+    /// ([`crate::ConfigSourceKind::Defaults`],
+    /// [`crate::ConfigSourceKind::Env`],
+    /// [`crate::ConfigSourceKind::File`]), so
+    /// `source_kind_modality_degree()` reads `(0, 0)` on the empty map
+    /// (support `0`, vacuous), `(1, 1)` on every singleton-support fold
+    /// (support `1`, trivial) and on every non-uniform partial-cover
+    /// fold with distinct positive counts (both extremes uniquely held
+    /// — including the strictly-ordered three-cell shape), `(k, k)`
+    /// with `k == contributing_source_kinds_count()` on every balanced
+    /// fold (both level sets walk the full observed support), the
+    /// heavy-tail three-cell `(1, 2)`, the right-skew three-cell
+    /// `(2, 1)`, and the full-cover balanced `(3, 3)` on the three-
+    /// cell source-kind axis — witnesses on every corner of the
+    /// modality classifier on the cardinality-`3` source-kind axis,
+    /// one cardinality below the tier altitude's `(k, l)` range on
+    /// the same surface (which reaches components up to `4`).
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kind_modality_degree() ==
+    ///   source_kind_histogram().modality_degree()` — the routing
+    ///   equivalence one altitude down; both project the same fused
+    ///   pair off the same primitive.
+    /// - `source_kind_modality_degree() ==
+    ///   (peak_source_kind_multiplicity(),
+    ///   trough_source_kind_multiplicity())` — the defining
+    ///   equivalence on the underlying scalar pair at the source-kind
+    ///   altitude. Both routings read the same tuple off the same
+    ///   primitive.
+    /// - `source_kind_modality_degree().0 +
+    ///   source_kind_modality_degree().1 ==
+    ///   source_kind_modality_degree_sum()` — the additive-side
+    ///   fusion the sibling scalar reads as `peak + trough`.
+    ///   Overflow-safe since both components are bounded above by
+    ///   `crate::axis_cardinality::<crate::ConfigSourceKind>() == 3`.
+    /// - `source_kind_modality_degree().0.abs_diff(source_kind_modality_degree().1)
+    ///   == source_kind_modality_amplitude()` — the absolute-
+    ///   difference-side fusion the sibling scalar reads as
+    ///   `peak.abs_diff(trough)`. The `(sum, amplitude)` pair recovers
+    ///   the *unordered* multiplicity pair under the invertible
+    ///   transform `max = (sum + amp) / 2, min = (sum - amp) / 2`
+    ///   (exact integer division since both share parity).
+    /// - `source_kind_modality_degree() == (0, 0)` iff the map is
+    ///   empty — the vacuous-nothing boundary lifted from the empty
+    ///   support.
+    /// - Both components are `>= 1` on every non-empty map — every
+    ///   non-empty support has at least one observed source-kind at
+    ///   the peak and at least one observed source-kind at the trough
+    ///   (they may coincide as the same cell on the singleton-
+    ///   support case), so both multiplicities are `>= 1`.
+    /// - `source_kind_modality_degree().0 <=
+    ///   contributing_source_kinds_count()` and
+    ///   `source_kind_modality_degree().1 <=
+    ///   contributing_source_kinds_count()` always — both level sets
+    ///   are subsets of the observed support, so their cardinalities
+    ///   are each bounded by the support size.
+    /// - `source_kind_modality_degree().0 <=
+    ///   crate::axis_cardinality::<crate::ConfigSourceKind>()` and
+    ///   `source_kind_modality_degree().1 <=
+    ///   crate::axis_cardinality::<crate::ConfigSourceKind>()` always
+    ///   — both components bounded above by `3` on the three-cell
+    ///   source-kind axis.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build)
+    /// and `k = crate::axis_cardinality::<crate::ConfigSourceKind>()`
+    /// (the fused peak + trough scan through
+    /// [`crate::AxisHistogram::modality_degree`]). Both are `O(n)` in
+    /// practice since the source-kind axis carries a fixed three-cell
+    /// cardinality; the returned `(usize, usize)` fits in two
+    /// scalars. Halves the cost of the previous inline
+    /// `(map.peak_source_kind_multiplicity(),
+    /// map.trough_source_kind_multiplicity())` idiom (which walked the
+    /// counts vector twice — once for the peak multiplicity, once for
+    /// the trough multiplicity — where
+    /// [`crate::AxisHistogram::modality_degree`] fuses both into a
+    /// single walk).
+    #[must_use]
+    pub fn source_kind_modality_degree(&self) -> (usize, usize) {
+        self.source_kind_histogram().modality_degree()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -61221,6 +61372,426 @@ mod progressive_tests {
                 peak_mult + trough_mult
             };
             assert_eq!(via_seam, hand_rolled);
+        }
+    }
+
+    // ── ProvenanceMap::source_kind_modality_degree — fused-pair
+    //    modality-shape seam on the source-kind altitude, source-
+    //    altitude peer of `tier_modality_degree` on the same
+    //    `AxisHistogram::modality_degree` primitive one altitude down.
+    //    Fused-pair upstream of both scalar siblings on this altitude
+    //    (`source_kind_modality_amplitude` reads `.0.abs_diff(.1)` and
+    //    `source_kind_modality_degree_sum` reads `.0 + .1`), and of
+    //    the two closed multiplicity scalars
+    //    (`peak_source_kind_multiplicity`,
+    //    `trough_source_kind_multiplicity`) whose pair it collapses
+    //    into one single-pass histogram walk. Cardinality-`3`
+    //    ConfigSourceKind axis: reaches `(1, 2)` heavy-tail, `(2, 1)`
+    //    right-skew, and `(3, 3)` balanced full-cover — one
+    //    cardinality below the tier altitude's `(1, 3)` / `(3, 1)` /
+    //    `(4, 4)` reachable pairs on the same surface. ──
+
+    #[test]
+    fn source_kind_modality_degree_matches_source_kind_histogram_modality_degree_pointwise() {
+        // Routing pin: `source_kind_modality_degree` routes through
+        // `source_kind_histogram().modality_degree()`, so the two
+        // seams must stay pointwise equivalent under every fixture.
+        // Catches any future drift where either implementation stops
+        // projecting through the shared cube-native fused-pair
+        // primitive. Source-altitude peer of
+        // `tier_modality_degree_matches_tier_histogram_modality_degree_pointwise`
+        // on the tier altitude one axis over on the same primitive.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().modality_degree();
+            assert_eq!(map.source_kind_modality_degree(), via_histogram);
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_degree_matches_peak_trough_multiplicity_pair_pointwise() {
+        // Structural-form pin: `source_kind_modality_degree` agrees
+        // with the open-coded `(peak_source_kind_multiplicity(),
+        // trough_source_kind_multiplicity())` pair on every fixture.
+        // Pins the defining equivalence on the underlying scalar-pair
+        // surface — both routings read the same tuple off the same
+        // primitive, so the fused-pair form is behaviorally
+        // indistinguishable from the two-call open-coded pair.
+        // Source-altitude peer of
+        // `tier_modality_degree_matches_peak_trough_multiplicity_pair_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_pair = (
+                map.peak_source_kind_multiplicity(),
+                map.trough_source_kind_multiplicity(),
+            );
+            assert_eq!(map.source_kind_modality_degree(), via_pair);
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_degree_component_sum_equals_source_kind_modality_degree_sum_pointwise()
+    {
+        // Additive-sibling pin: `.0 + .1 ==
+        // source_kind_modality_degree_sum()` on every fixture. Pins
+        // the fused-pair primitive as the upstream of the sibling
+        // additive scalar, which reads the same value through
+        // `peak + trough` (via the shared
+        // `AxisHistogram::modality_degree` walk one altitude down).
+        // Overflow-safe since both components are bounded above by
+        // `crate::axis_cardinality::<ConfigSourceKind>() == 3`.
+        // Source-altitude peer of
+        // `tier_modality_degree_component_sum_equals_tier_modality_degree_sum_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (peak, trough) = map.source_kind_modality_degree();
+            assert_eq!(peak + trough, map.source_kind_modality_degree_sum());
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_degree_component_abs_diff_equals_source_kind_modality_amplitude_pointwise()
+     {
+        // Abs-diff-sibling pin: `.0.abs_diff(.1) ==
+        // source_kind_modality_amplitude()` on every fixture. Pins
+        // the fused-pair primitive as the upstream of the sibling
+        // absolute-difference scalar, which reads the same value
+        // through `peak.abs_diff(trough)` (via the shared
+        // `AxisHistogram::modality_degree` walk one altitude down).
+        // The `abs_diff` form is required because neither
+        // multiplicity dominates the other structurally. Source-
+        // altitude peer of
+        // `tier_modality_degree_component_abs_diff_equals_tier_modality_amplitude_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (peak, trough) = map.source_kind_modality_degree();
+            assert_eq!(peak.abs_diff(trough), map.source_kind_modality_amplitude());
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_degree_empty_map_is_zero_pair() {
+        // Empty-map polarity pin: the empty map has no observed
+        // cells, so both multiplicities read `0` and the fused pair
+        // reads `(0, 0)` — the vacuous-nothing boundary lifted from
+        // the empty support. Matches the AxisHistogram::modality_degree
+        // empty convention one altitude down and the
+        // (peak_source_kind_multiplicity,
+        // trough_source_kind_multiplicity,
+        // source_kind_modality_amplitude,
+        // source_kind_modality_degree_sum) quadruple's uniform
+        // `(0, 0, 0, 0)` reading on the empty map. Source-altitude
+        // peer of `tier_modality_degree_empty_map_is_zero_pair` on the
+        // tier altitude.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert_eq!(empty.peak_source_kind_multiplicity(), 0);
+        assert_eq!(empty.trough_source_kind_multiplicity(), 0);
+        assert_eq!(empty.source_kind_modality_degree(), (0, 0));
+    }
+
+    #[test]
+    fn source_kind_modality_degree_prog_singleton_support_is_one_one_pair() {
+        // Singleton-support polarity pin: Prog is a pure-progressive
+        // fold with every leaf attributed to the computed-tier
+        // `Defaults` source-kind, so that one cell is simultaneously
+        // the unique peak and the unique trough. Both multiplicities
+        // read `1`, so the fused pair reads `(1, 1)` — the strictly-
+        // unimodal AND strictly-anti-unimodal corner of the modality
+        // classifier on the source-kind axis. Source-altitude peer
+        // of `tier_modality_degree_singleton_support_is_one_one_pair`
+        // on the tier altitude.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().contributing_source_kinds_count(), 1);
+        assert_eq!(r.provenance().source_kind_modality_degree(), (1, 1));
+    }
+
+    #[test]
+    fn source_kind_modality_degree_mixed_fixture_is_one_two_pair() {
+        // Heavy-tail three-cell polarity pin: the mixed fixture is
+        // Defaults=2, Env=1, File=1 → peak_count=2 (unique at
+        // Defaults), trough_count=1 (tied at Env + File). peak_mult=1,
+        // trough_mult=2, so the fused pair reads `(1, 2)` — the
+        // strictly-unimodal-antimodally-tied corner reachable on the
+        // cardinality-`3` source-kind axis. One cardinality below the
+        // tier altitude's four-cell heavy-tail `(1, 3)` witness.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().peak_source_kind_multiplicity(), 1);
+        assert_eq!(r.provenance().trough_source_kind_multiplicity(), 2);
+        assert_eq!(r.provenance().source_kind_modality_degree(), (1, 2));
+    }
+
+    #[test]
+    fn source_kind_modality_degree_right_skew_three_cell_fixture_is_two_one_pair() {
+        // Right-skew three-cell polarity pin: Defaults=2, Env=2,
+        // File=1 → peak_count=2 (tied at Defaults + Env),
+        // trough_count=1 (unique at File). peak_mult=2, trough_mult=1,
+        // so the fused pair reads `(2, 1)` — the modally-tied-anti-
+        // unimodal corner on the cardinality-`3` source-kind axis.
+        // Mirror of the heavy-tail three-cell pin above — together
+        // they pin both signed branches of the fused pair at the
+        // one-magnitude asymmetry the cardinality-`3` axis makes
+        // reachable.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (
+                vec!["b".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["c".to_owned()], Provenance::env("E_")),
+            (vec!["d".to_owned()], Provenance::env("E_")),
+            (vec!["e".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.peak_source_kind_multiplicity(), 2);
+        assert_eq!(m.trough_source_kind_multiplicity(), 1);
+        assert_eq!(m.source_kind_modality_degree(), (2, 1));
+    }
+
+    #[test]
+    fn source_kind_modality_degree_uniform_full_cover_is_three_three_pair() {
+        // Uniform-axis-cover polarity pin: every ConfigSourceKind cell
+        // contributes exactly one leaf, so all three cells tie at both
+        // the peak and the trough. Both multiplicities read `3` (=
+        // axis cardinality), so the fused pair reads `(3, 3)` — the
+        // top-corner witness of the modal / antimodal coincidence
+        // corner on the uniform full-cover shape at the source-kind
+        // altitude. One cardinality below the tier altitude's
+        // `(4, 4)` uniform full-cover witness on the same surface.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.contributing_source_kinds_count(), 3);
+        assert_eq!(m.peak_source_kind_multiplicity(), 3);
+        assert_eq!(m.trough_source_kind_multiplicity(), 3);
+        assert_eq!(m.source_kind_modality_degree(), (3, 3));
+        assert_eq!(
+            m.source_kind_modality_degree().0,
+            crate::axis_cardinality::<crate::ConfigSourceKind>(),
+        );
+    }
+
+    #[test]
+    fn source_kind_modality_degree_strictly_ordered_three_cell_fixture_is_one_one_pair() {
+        // Strictly-ordered three-cell polarity pin: three distinct
+        // positive counts (Defaults=1, Env=2, File=3). Both peak and
+        // trough are uniquely held (peak_mult=1, trough_mult=1), so
+        // the fused pair reads `(1, 1)` even though the shape is *not*
+        // balanced. This fixture witnesses the strictly-unimodal AND
+        // strictly-anti-unimodal corner on a support-`3` skewed shape
+        // (both extremes uniquely held without matching counts —
+        // distinct from the singleton-support `(1, 1)` case), the
+        // three-cell counterpart of the tier altitude's strictly-
+        // ordered four-cell `(1, 1)` witness.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::env("E_")),
+            (vec!["d".to_owned()], Provenance::file("/f.yaml")),
+            (vec!["e".to_owned()], Provenance::file("/f.yaml")),
+            (vec!["f".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.contributing_source_kinds_count(), 3);
+        assert_eq!(m.peak_source_kind_count(), 3);
+        assert_eq!(m.trough_source_kind_count(), 1);
+        assert_eq!(m.source_kind_modality_degree(), (1, 1));
+    }
+
+    #[test]
+    fn source_kind_modality_degree_zero_pair_iff_empty_pointwise() {
+        // Empty-boundary equivalence pin: `source_kind_modality_degree()
+        // == (0, 0)` iff the map is empty on every fixture. Direct
+        // pin of the histogram-side `is_empty ⇔ modality_degree ==
+        // (0, 0)` equivalence one altitude down — the shared vacuous-
+        // nothing boundary on the empty support. Source-altitude peer
+        // of `tier_modality_degree_zero_pair_iff_empty_pointwise` on
+        // the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let is_zero_pair = map.source_kind_modality_degree() == (0, 0);
+            assert_eq!(is_zero_pair, map.is_empty());
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_degree_components_bounded_by_contributing_source_kinds_count_pointwise()
+    {
+        // Support-cardinality upper bound pin: both components are
+        // bounded above by the observed-support cardinality
+        // `contributing_source_kinds_count()` — both level sets are
+        // subsets of the observed support, so their cardinalities are
+        // each bounded by the support size. Lifted from the trait-
+        // uniform `modality_degree().0 <= distinct_cells()` / `.1 <=
+        // distinct_cells()` laws on `crate::AxisHistogram`. Source-
+        // altitude peer of
+        // `tier_modality_degree_components_bounded_by_contributing_tiers_count_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (peak, trough) = map.source_kind_modality_degree();
+            let support = map.contributing_source_kinds_count();
+            assert!(peak <= support);
+            assert!(trough <= support);
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_degree_components_bounded_by_axis_cardinality_pointwise() {
+        // Axis-cardinality upper bound pin: both components are
+        // bounded above by `crate::axis_cardinality::<ConfigSourceKind>()`
+        // (== `3` on the three-cell source-kind axis). Composition
+        // of the above with `contributing_source_kinds_count() <=
+        // crate::axis_cardinality::<ConfigSourceKind>()`. Source-
+        // altitude peer of
+        // `tier_modality_degree_components_bounded_by_axis_cardinality_pointwise`
+        // on the tier altitude, one cardinality down (`4` → `3`).
+        let cardinality = crate::axis_cardinality::<crate::ConfigSourceKind>();
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (peak, trough) = map.source_kind_modality_degree();
+            assert!(peak <= cardinality);
+            assert!(trough <= cardinality);
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_degree_components_at_least_one_on_non_empty_pointwise() {
+        // Non-empty lower bound pin: both components are `>= 1` on
+        // every non-empty map — every non-empty support has at least
+        // one observed source-kind at the peak and at least one
+        // observed source-kind at the trough (they may coincide as
+        // the same cell on the singleton-support case). The `(0, 0)`
+        // pair is unreachable on any non-empty map. Source-altitude
+        // peer of
+        // `tier_modality_degree_components_at_least_one_on_non_empty_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if !map.is_empty() {
+                let (peak, trough) = map.source_kind_modality_degree();
+                assert!(peak >= 1);
+                assert!(trough >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_degree_sum_amplitude_recovers_unordered_pair_pointwise() {
+        // Invertibility pin: the pair `(source_kind_modality_degree_sum,
+        // source_kind_modality_amplitude)` recovers the *unordered*
+        // multiplicity pair under the invertible transform
+        // `max(peak, trough) = (sum + amp) / 2, min(peak, trough) =
+        // (sum - amp) / 2` with exact integer division (both share
+        // parity via `sum % 2 == amp % 2`). Pins the fused-pair
+        // primitive as the upstream both scalar siblings project
+        // through — the two arithmetic fusions together recover the
+        // *sorted* pair (though not the peak-versus-trough labelling
+        // itself, which requires the fused pair). Source-altitude
+        // peer of
+        // `tier_modality_degree_sum_amplitude_recovers_unordered_pair_pointwise`
+        // on the tier altitude.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let (peak, trough) = map.source_kind_modality_degree();
+            let sum = map.source_kind_modality_degree_sum();
+            let amp = map.source_kind_modality_amplitude();
+            assert_eq!(sum % 2, amp % 2, "sum and amp must share parity");
+            let hi = (sum + amp) / 2;
+            let lo = (sum - amp) / 2;
+            assert_eq!(hi, peak.max(trough));
+            assert_eq!(lo, peak.min(trough));
+        }
+    }
+
+    #[test]
+    fn source_kind_modality_degree_agrees_with_open_coded_peak_trough_walk_pointwise() {
+        // Parity against the exact hand-rolled open-coded pair walk
+        // this lift replaces: scan the histogram's per-cell counts
+        // vector, track the running max + reset-on-rise modal
+        // multiplicity and the running min (initialized to usize::MAX
+        // so the first positive count promotes the sentinel) + reset-
+        // on-fall antimodal multiplicity simultaneously, excluding
+        // zero-count cells. Catches any future drift where either
+        // implementation stops projecting through the same fused
+        // peak-trough multiplicity walk. Source-altitude peer of
+        // `tier_modality_degree_agrees_with_open_coded_peak_trough_walk_pointwise`
+        // on the tier altitude, one cardinality down (four-cell
+        // ConfigTierKind axis → three-cell ConfigSourceKind axis).
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let hist = map.source_kind_histogram();
+            let mut max = 0usize;
+            let mut peak_mult = 0usize;
+            let mut min = usize::MAX;
+            let mut trough_mult = 0usize;
+            for k in crate::ConfigSourceKind::ALL {
+                let c = hist.count(*k);
+                if c == 0 {
+                    continue;
+                }
+                if c > max {
+                    max = c;
+                    peak_mult = 1;
+                } else if c == max {
+                    peak_mult += 1;
+                }
+                if c < min {
+                    min = c;
+                    trough_mult = 1;
+                } else if c == min {
+                    trough_mult += 1;
+                }
+            }
+            assert_eq!(map.source_kind_modality_degree(), (peak_mult, trough_mult));
         }
     }
 }
