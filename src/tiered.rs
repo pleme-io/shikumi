@@ -4462,6 +4462,156 @@ impl ProvenanceMap {
         self.source_kind_histogram().is_modally_tied()
     }
 
+    /// Returns `true` exactly when this fold's observed
+    /// [`crate::ConfigSourceKind`] histogram has exactly one cell holding
+    /// the peak leaf count — the **strictly-modally-unique-source-kind-
+    /// counts boolean predicate** on the source-kind altitude, the direct
+    /// strict-complement of the modally-tied predicate
+    /// [`Self::source_kinds_modally_tied`] on every non-empty fold (both
+    /// read `false` on the empty map — the shared boundary below both
+    /// branches of the strict modal partition). Routes through
+    /// [`crate::AxisHistogram::is_strictly_modally_unique`] one altitude
+    /// down: the single-pass scan over the fixed-cardinality counts
+    /// vector reading `self.peak_multiplicity() == 1` off one predicate,
+    /// tighter than either open-coded surface form one seam over.
+    ///
+    /// The **strictly-modally-unique-source-kind-counts peer** of the two
+    /// documented surface forms consumers previously re-derived inline:
+    /// `map.source_kind_histogram().peak_multiplicity() == 1` (the
+    /// multiplicity-scalar equality form, one method call *plus* a
+    /// comparison against a magic `1` threshold), and
+    /// `map.source_kind_modality_degree().0 == 1` (the modality-pair
+    /// projection-equality form, reading the modal component of the
+    /// fused `(peak_multiplicity, trough_multiplicity)` pair before the
+    /// equality). Both surface forms drift subtly at every consumer site
+    /// (scalar vs. pair-component, `== 1` vs. `!= 2` after singular-
+    /// support fixup). This lift names the strictly-modally-unique-
+    /// source-kind-counts predicate directly at the source-kind-altitude
+    /// surface as one method call — the typed boolean every operator-
+    /// facing *"is the dominant source-kind uniquely held on this fold,
+    /// or is the declaration-order tie-break exercised?"* check reads off
+    /// at one method call, on the strict-uniqueness side of the strict
+    /// modal partition.
+    ///
+    /// The source-kind altitude strict-modal-uniqueness predicate peer
+    /// that **climbs the "strictly-modally-unique across altitudes"
+    /// projection** from the diff altitude — the strict-uniqueness row
+    /// on top of the closed modality-tie boolean pair
+    /// (`source_kinds_modally_tied`, `source_kinds_strictly_modally_unique`)
+    /// on the source-kind altitude, lifting the diff-altitude seed
+    /// [`ConfigDiff::kinds_strictly_modally_unique`] one altitude up on
+    /// the same projection [`Self::tiers_strictly_modally_unique`] climbs
+    /// one axis over on the same [`ProvenanceMap`] surface. Fuses the two
+    /// open-coded surface forms (multiplicity-scalar equality, modality-
+    /// pair projection-equality) into a single boolean predicate named at
+    /// the surface, routed through the shared
+    /// [`crate::AxisHistogram::is_strictly_modally_unique`] primitive one
+    /// altitude down.
+    ///
+    /// **Cardinality-`3` reachability at the source-kind altitude.**
+    /// [`crate::ConfigSourceKind`] carries three cells
+    /// ([`crate::ConfigSourceKind::Defaults`],
+    /// [`crate::ConfigSourceKind::Env`],
+    /// [`crate::ConfigSourceKind::File`]), so
+    /// `source_kinds_strictly_modally_unique()` reads `true` on every
+    /// fold whose peak leaf count is uniquely held by exactly one
+    /// observed source-kind cell (e.g. a singleton-support fold where a
+    /// lone cell peaks at its own count, heavy-tail `(2, 1, 1)` where
+    /// Defaults uniquely peaks at `2`, or strictly-ordered `(1, 2, 3)`
+    /// where File uniquely peaks at `3`), and `false` on the empty map
+    /// (no observed cell, no peak), on every right-skew `(2, 2, 1)` fold
+    /// where two cells share the peak count `2`, and on the uniform
+    /// full-cover `(1, 1, 1)` where all three cells share the peak count
+    /// `1`. One cardinality below the tier altitude's four-cell axis:
+    /// only two off-peak support cardinalities carry non-trivial witnesses
+    /// (support-`2` tied-at-peak, support-`3` full-cover tied) rather
+    /// than the three on the cardinality-`4` tier axis.
+    ///
+    /// **Empty-map convention** — returns `false` on the empty map: the
+    /// empty map observes zero cells, so
+    /// [`crate::AxisHistogram::peak_multiplicity`] reads `0` and the
+    /// equality `0 == 1` fails. Matches
+    /// [`crate::AxisHistogram::is_strictly_modally_unique`]'s empty-
+    /// histogram convention one altitude down. The empty-map row on the
+    /// strict modal partition pair
+    /// `(is_strictly_modally_unique, is_modally_tied)` reads
+    /// `(false, false)` — the shared boundary below both branches.
+    ///
+    /// **Singleton-support convention** — returns `true` on every fold
+    /// whose observed support is a single [`crate::ConfigSourceKind`]
+    /// cell: the lone observed cell stands alone at its own peak (no
+    /// tie-break to exercise), so `peak_multiplicity` reads `1` and the
+    /// equality `1 == 1` fires. Every fold with all leaves attributed to
+    /// only-`Defaults` (the pure-progressive fold), only-`Env`, or only-
+    /// `File` is a witness on the `true` side — the singleton-support
+    /// corner is uniformly on the strictly-modally-unique side of the
+    /// strict modal partition. Direct pin of the histogram-side
+    /// subsumption `has_singular_support ⇒ is_strictly_modally_unique`
+    /// one altitude down.
+    ///
+    /// **Uniform three-source-kind cover convention** — returns `false`
+    /// on every fold where each [`crate::ConfigSourceKind`] cell was
+    /// observed at exactly the same positive count (in particular the
+    /// fold with one leaf per source-kind): the three cells share the
+    /// same count, so `peak_multiplicity` reads `3` and the equality
+    /// `3 == 1` fails. Peer of the histogram-side axis-cover convention
+    /// one altitude down.
+    ///
+    /// **Two-way modal partition on non-empty maps** — on every non-
+    /// empty map exactly one of the modal-uniqueness pair
+    /// `(source_kinds_strictly_modally_unique, source_kinds_modally_tied)`
+    /// fires: either the peak is uniquely held (strictly-modally-unique
+    /// fires, modally-tied does not) or the peak is shared (modally-
+    /// tied fires, strictly-modally-unique does not). The empty map
+    /// sits below both branches (both read `false`).
+    ///
+    /// # Invariants
+    ///
+    /// - `source_kinds_strictly_modally_unique() ==
+    ///   source_kind_histogram().is_strictly_modally_unique()` — both
+    ///   project the same predicate off the same primitive; the named
+    ///   seam is the cube-native routing of the histogram surface.
+    /// - `source_kinds_strictly_modally_unique() ⇔
+    ///   source_kind_histogram().peak_multiplicity() == 1` — the defining
+    ///   multiplicity-scalar equality form.
+    /// - `source_kinds_strictly_modally_unique() ⇔
+    ///   peak_source_kind_multiplicity() == 1` — the same equality read
+    ///   through the named source-kind-altitude scalar peer of the
+    ///   histogram multiplicity.
+    /// - `source_kinds_strictly_modally_unique() ⇔
+    ///   source_kind_modality_degree().0 == 1` — the modality-pair
+    ///   projection-equality form, reading the modal component of the
+    ///   fused `(peak, trough)` pair.
+    /// - `!is_empty() ⇒ source_kinds_strictly_modally_unique() ⇔
+    ///   !source_kinds_modally_tied()` — the strict modal partition on
+    ///   non-empty maps: exactly one of the pair fires.
+    /// - `source_kinds_strictly_modally_unique() ⇒ !is_empty()` — a
+    ///   strictly-unique peak requires at least one observed cell, so
+    ///   the empty map cannot fire. Contrapositively, `is_empty() ⇒
+    ///   !source_kinds_strictly_modally_unique()`.
+    /// - `contributing_source_kinds_count() == 1 ⇒
+    ///   source_kinds_strictly_modally_unique()` — a singleton-support
+    ///   fold has exactly one observed cell as the sole member of the
+    ///   modal level set, so the uniqueness predicate fires. Direct pin
+    ///   of the histogram-side subsumption `has_singular_support ⇒
+    ///   is_strictly_modally_unique` one altitude down.
+    ///
+    /// # Cost
+    ///
+    /// `O(n + k)` where `n = self.inner.len()` (the histogram build) and
+    /// `k = crate::axis_cardinality::<crate::ConfigSourceKind>()` (the
+    /// peak-multiplicity scan). Both are `O(n)` in practice since the
+    /// source-kind axis carries a fixed three-cell cardinality; the
+    /// returned `bool` reads one predicate. Strictly tighter than the two
+    /// documented open-coded surfaces one seam over (no exposed `== 1`
+    /// magic threshold at the consumer site, no
+    /// [`crate::AxisHistogram::modality_degree`] fused-pair build for a
+    /// single-component projection).
+    #[must_use]
+    pub fn source_kinds_strictly_modally_unique(&self) -> bool {
+        self.source_kind_histogram().is_strictly_modally_unique()
+    }
+
     /// The distinct tiers that produced ≥1 surviving effective leaf, in
     /// [`ConfigTier`] precedence order — the post-fold dual of "which tiers'
     /// opinions survived".
@@ -62240,6 +62390,326 @@ mod progressive_tests {
                 }
             }
             assert_eq!(map.source_kinds_modally_tied(), peak_mult >= 2);
+        }
+    }
+
+    // ── ProvenanceMap::source_kinds_strictly_modally_unique — strictly-
+    //    modally-unique-source-kind-counts boolean predicate on the
+    //    source-kind altitude, source-altitude peer of
+    //    `tiers_strictly_modally_unique` on the same
+    //    `AxisHistogram::is_strictly_modally_unique` primitive one
+    //    altitude down. Direct strict-complement of `is_modally_tied` on
+    //    non-empty maps; both read `false` on the empty map. Fuses two
+    //    open-coded surface forms into ONE named boolean:
+    //    `source_kind_histogram().peak_multiplicity() == 1` (scalar
+    //    equality) and `source_kind_modality_degree().0 == 1` (fused-pair
+    //    projection equality). Cardinality-`3` ConfigSourceKind axis:
+    //    reaches `true` on singleton support, heavy-tail `(2, 1, 1)` and
+    //    strictly-ordered `(1, 2, 3)`; `false` on empty, right-skew
+    //    `(2, 2, 1)` and uniform full-cover `(1, 1, 1)`. ──
+
+    #[test]
+    fn source_kinds_strictly_modally_unique_matches_source_kind_histogram_is_strictly_modally_unique_pointwise()
+     {
+        // Routing pin: `source_kinds_strictly_modally_unique` routes
+        // through `source_kind_histogram().is_strictly_modally_unique()`,
+        // so the two seams must stay pointwise equivalent under every
+        // fixture. Catches any future drift where either implementation
+        // stops projecting through the shared cube-native strict-modal-
+        // uniqueness primitive. Source-altitude peer of the tier-altitude
+        // `tiers_strictly_modally_unique` →
+        // `tier_histogram().is_strictly_modally_unique()` routing one
+        // axis over on the same `ProvenanceMap` surface.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_histogram = map.source_kind_histogram().is_strictly_modally_unique();
+            assert_eq!(map.source_kinds_strictly_modally_unique(), via_histogram,);
+        }
+    }
+
+    #[test]
+    fn source_kinds_strictly_modally_unique_matches_peak_multiplicity_eq_one_pointwise() {
+        // Multiplicity-scalar equivalence pin:
+        // `source_kinds_strictly_modally_unique()` iff
+        // `source_kind_histogram().peak_multiplicity() == 1` on every
+        // fixture. Pins the defining open-coded surface form the named
+        // seam replaces — one method call plus a magic `1` threshold at
+        // the consumer site, now folded into one typed boolean at the
+        // surface.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_scalar = map.source_kind_histogram().peak_multiplicity() == 1;
+            assert_eq!(map.source_kinds_strictly_modally_unique(), via_scalar,);
+        }
+    }
+
+    #[test]
+    fn source_kinds_strictly_modally_unique_matches_named_peak_source_kind_multiplicity_eq_one_pointwise()
+     {
+        // Named-scalar-peer equivalence pin:
+        // `source_kinds_strictly_modally_unique()` iff
+        // `peak_source_kind_multiplicity() == 1` on every fixture. The
+        // same defining equality read through the source-kind-altitude
+        // scalar peer of the histogram multiplicity — pinning the two
+        // named seams on the same altitude against the shared underlying
+        // predicate.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_named_scalar = map.peak_source_kind_multiplicity() == 1;
+            assert_eq!(map.source_kinds_strictly_modally_unique(), via_named_scalar,);
+        }
+    }
+
+    #[test]
+    fn source_kinds_strictly_modally_unique_matches_modality_degree_first_component_eq_one_pointwise()
+     {
+        // Modality-pair projection-equality pin:
+        // `source_kinds_strictly_modally_unique()` iff
+        // `source_kind_modality_degree().0 == 1` on every fixture. Pins
+        // the second documented open-coded surface form the named seam
+        // replaces — reading the modal component of the fused
+        // `(peak, trough)` pair and comparing against the `1` threshold.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let via_pair_projection = map.source_kind_modality_degree().0 == 1;
+            assert_eq!(
+                map.source_kinds_strictly_modally_unique(),
+                via_pair_projection,
+            );
+        }
+    }
+
+    #[test]
+    fn source_kinds_strictly_modally_unique_empty_map_is_false() {
+        // Empty-map polarity pin: the empty map has no observed cells,
+        // so `peak_multiplicity` reads `0` and the equality `0 == 1`
+        // fails. Matches the AxisHistogram::is_strictly_modally_unique
+        // empty convention one altitude down and the empty-row of the
+        // strict modal partition pair
+        // `(is_strictly_modally_unique, is_modally_tied)` =
+        // `(false, false)`.
+        let empty = ProvenanceMap::default();
+        assert!(empty.is_empty());
+        assert!(!empty.source_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn source_kinds_strictly_modally_unique_prog_singleton_support_is_true() {
+        // Singleton-support polarity pin: Prog is a pure-progressive
+        // fold with every leaf attributed to the computed-tier
+        // `Defaults` source-kind, so that one cell stands alone at its
+        // own peak (`peak_multiplicity == 1`). The strict-modally-unique
+        // side of the strict modal partition fires; the modally-tied
+        // side does not. Direct witness of the singleton-support corner
+        // of the histogram-side subsumption `has_singular_support ⇒
+        // is_strictly_modally_unique`.
+        let r = Prog::resolve_progressive();
+        assert_eq!(r.provenance().contributing_source_kinds_count(), 1);
+        assert!(r.provenance().source_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn source_kinds_strictly_modally_unique_heavy_tail_mixed_fixture_is_true() {
+        // Heavy-tail three-cell polarity pin: the mixed fixture is
+        // Defaults=2, Env=1, File=1 → peak uniquely held by Defaults at
+        // count `2` (peak_mult=1), so the strict-modal-uniqueness
+        // predicate fires. Direct pin: even though the *trough* is tied
+        // at Env + File (count `1`), that lives on the antimodal side of
+        // the four-primitive multiplicity boolean algebra and is not
+        // what `source_kinds_strictly_modally_unique()` reads.
+        let r = source_kind_histogram_mixed_fixture();
+        assert_eq!(r.provenance().peak_source_kind_multiplicity(), 1);
+        assert!(r.provenance().source_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn source_kinds_strictly_modally_unique_right_skew_three_cell_fixture_is_false() {
+        // Right-skew three-cell polarity pin: Defaults=2, Env=2, File=1
+        // → peak tied at Defaults + Env at count `2` (peak_mult=2), so
+        // the strict-modal-uniqueness predicate does not fire. Direct
+        // witness of the modally-tied corner on the cardinality-`3`
+        // source-kind axis.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (
+                vec!["b".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["c".to_owned()], Provenance::env("E_")),
+            (vec!["d".to_owned()], Provenance::env("E_")),
+            (vec!["e".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.peak_source_kind_multiplicity(), 2);
+        assert!(!m.source_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn source_kinds_strictly_modally_unique_uniform_full_cover_is_false() {
+        // Uniform-axis-cover polarity pin: every ConfigSourceKind cell
+        // contributes exactly one leaf, so all three cells tie at the
+        // peak count `1` (peak_mult=3 = axis cardinality). The strict-
+        // modal-uniqueness predicate does not fire — the top-corner
+        // witness of the balanced-full-cover shape on the source-kind
+        // altitude sitting on the modally-tied side of the partition.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.contributing_source_kinds_count(), 3);
+        assert_eq!(m.peak_source_kind_multiplicity(), 3);
+        assert!(!m.source_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn source_kinds_strictly_modally_unique_strictly_ordered_three_cell_fixture_is_true() {
+        // Strictly-ordered three-cell polarity pin: Defaults=1, Env=2,
+        // File=3 — three distinct positive counts, so the peak (at
+        // File=3) is uniquely held (peak_mult=1). The strict-modal-
+        // uniqueness predicate fires even though the shape is *not*
+        // singleton-support — a strict advance over the singleton-
+        // support witness above, distinguishing full-cover strictly-
+        // ordered from singleton-support on the cardinality-`3` source-
+        // kind axis.
+        let m: ProvenanceMap = [
+            (
+                vec!["a".to_owned()],
+                Provenance::computed(ConfigTierKind::Default),
+            ),
+            (vec!["b".to_owned()], Provenance::env("E_")),
+            (vec!["c".to_owned()], Provenance::env("E_")),
+            (vec!["d".to_owned()], Provenance::file("/f.yaml")),
+            (vec!["e".to_owned()], Provenance::file("/f.yaml")),
+            (vec!["f".to_owned()], Provenance::file("/f.yaml")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(m.contributing_source_kinds_count(), 3);
+        assert_eq!(m.peak_source_kind_multiplicity(), 1);
+        assert!(m.source_kinds_strictly_modally_unique());
+    }
+
+    #[test]
+    fn source_kinds_strictly_modally_unique_implies_non_empty_pointwise() {
+        // Non-empty subsumption pin:
+        // `source_kinds_strictly_modally_unique()` fires only on non-
+        // empty maps — a strictly-unique peak requires at least one
+        // observed cell, so the empty map (zero observed cells) cannot
+        // fire. Contrapositively, `is_empty() ⇒
+        // !source_kinds_strictly_modally_unique()`. Direct pin of the
+        // histogram-side subsumption `!is_empty ⇐
+        // is_strictly_modally_unique` one altitude down.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.source_kinds_strictly_modally_unique() {
+                assert!(!map.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_strictly_modally_unique_singleton_support_subsumption_pointwise() {
+        // Singleton-support subsumption pin:
+        // `contributing_source_kinds_count() == 1 ⇒
+        // source_kinds_strictly_modally_unique()` on every fixture — a
+        // fold with a single observed source-kind cell is uniformly on
+        // the strict-modally-unique side of the partition. Direct pin of
+        // the histogram-side subsumption `has_singular_support ⇒
+        // is_strictly_modally_unique` one altitude down.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            if map.contributing_source_kinds_count() == 1 {
+                assert!(map.source_kinds_strictly_modally_unique());
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_strictly_modally_unique_strict_partition_on_non_empty_pointwise() {
+        // Strict modal partition pin: on every non-empty map exactly one
+        // of `(source_kinds_strictly_modally_unique,
+        // source_kinds_modally_tied)` fires; both read `false` on the
+        // empty map — the shared boundary below both branches of the
+        // strict modal partition. Direct pin of the histogram-side
+        // strict modal partition
+        // `!is_empty ⇒ is_strictly_modally_unique ⇔ !is_modally_tied`
+        // one altitude down, now phrased as an XOR on the two named
+        // source-kind-altitude seams at the surface.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let unique = map.source_kinds_strictly_modally_unique();
+            let tied = map.source_kinds_modally_tied();
+            if map.is_empty() {
+                assert!(!unique);
+                assert!(!tied);
+            } else {
+                assert_ne!(unique, tied);
+            }
+        }
+    }
+
+    #[test]
+    fn source_kinds_strictly_modally_unique_agrees_with_open_coded_peak_multiplicity_walk_pointwise()
+     {
+        // Parity against the exact hand-rolled open-coded peak-
+        // multiplicity walk this lift replaces: scan the histogram's
+        // per-cell counts vector, track the running max + reset-on-rise
+        // modal multiplicity, then read `peak_mult == 1` off the
+        // equality. Catches any future drift where either implementation
+        // stops projecting through the same peak-multiplicity scan on
+        // the underlying counts.
+        for map in [
+            Prog::resolve_progressive().provenance().clone(),
+            source_kind_histogram_mixed_fixture().provenance().clone(),
+            ProvenanceMap::default(),
+        ] {
+            let hist = map.source_kind_histogram();
+            let mut max = 0usize;
+            let mut peak_mult = 0usize;
+            for k in crate::ConfigSourceKind::ALL {
+                let c = hist.count(*k);
+                if c == 0 {
+                    continue;
+                }
+                if c > max {
+                    max = c;
+                    peak_mult = 1;
+                } else if c == max {
+                    peak_mult += 1;
+                }
+            }
+            assert_eq!(map.source_kinds_strictly_modally_unique(), peak_mult == 1,);
         }
     }
 }
